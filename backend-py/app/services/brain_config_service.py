@@ -42,6 +42,7 @@ boolKeys: tuple[str, ...] = (
     'enabled',
     'skillRelevanceMatch',
     'modelMemoryRead',
+    'memoryAutoInject',
     'modelMemoryWrites',
     'memorySensitiveTopics',
     'cameraAccess',
@@ -87,11 +88,16 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # `autoRouteMinSamples` stays: harness_self_improve prints it in the
     # flow map.
     ('autoRouteMinSamples', 'auto_route_min_samples', 3, 'num'),
-    # Memory read gate: when off, no <memory> block is injected into the
-    # turn and the intake stops advertising auto-injected facts. Explicit
-    # brain_query lookups stay available (sessions/messages, not the facts
-    # store) so the model can still list its own history.
+    # Memory read gate: when off, the facts-recall tool (brain_query/memory_search
+    # over the facts store) is not offered. Default on so the model can pull
+    # memory ON DEMAND. Per-turn auto-injection is a SEPARATE flag below.
     ('modelMemoryRead', 'model_memory_read', True, 'bool'),
+    # Auto-inject gate: when on, a <memory> block of facts relevant to the
+    # latest turn is appended every turn (plus the names-only index in the
+    # system prompt). Default OFF — memory is recalled only when the model
+    # calls the read tool, per the user's design. modelMemoryRead must stay on
+    # for the tool to be available.
+    ('memoryAutoInject', 'memory_auto_inject', False, 'bool'),
     # Memory write door: the `remember` tool is offered to the model only while
     # this is on; sensitive-topic facts additionally need memorySensitiveTopics.
     ('modelMemoryWrites', 'model_memory_writes', True, 'bool'),

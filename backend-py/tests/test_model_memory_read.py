@@ -39,13 +39,17 @@ async def testPutPersistsModelMemoryRead(isolatedData):
         assert bcs.getRuntimeConfig().get('modelMemoryRead') is False
 
 
-def _promptWithToggle(monkeypatch, readOn: bool) -> str:
+def _promptWithToggle(monkeypatch, autoInjectOn: bool) -> str:
     from app.services import brain_config_service as _bcs
     from app.services import memory_store
     from app.services.workbench import workbench as wb
 
+    # Per-turn auto-injection is gated by memoryAutoInject (decoupled from
+    # modelMemoryRead, which gates the read tool). modelMemoryRead stays on so
+    # the on-demand tools remain advertised in both cases.
     monkeypatch.setattr(
-        _bcs, 'getRuntimeConfig', lambda: {'modelMemoryRead': readOn}
+        _bcs, 'getRuntimeConfig',
+        lambda: {'modelMemoryRead': True, 'memoryAutoInject': autoInjectOn},
     )
     # Seed a fact so the boot index (names-only list) has content — the
     # toggle must hide it, not an empty store.
@@ -70,10 +74,11 @@ def testIntakeAdvertisesAutoInjectionWhenOn(monkeypatch):
 
 def testIntakeDropsAutoInjectionAndIndexWhenOff(monkeypatch):
     prompt = _promptWithToggle(monkeypatch, False)
-    assert 'auto-injection is OFF (modelMemoryRead)' in prompt
+    assert 'auto-injection is OFF (memoryAutoInject)' in prompt
     assert 'relevant stored facts auto-inject each turn' not in prompt
     # The name-only fact index advertises readable facts — gone when off.
     assert 'Memory index (names only' not in prompt
     assert 'Dark mode preference' not in prompt
-    # On-demand lookups stay advertised (brain_query is not gated).
+    # On-demand lookups stay advertised (the read tool is gated by
+    # modelMemoryRead, which is independent of auto-injection).
     assert 'brain_query' in prompt

@@ -57,7 +57,7 @@ interface StorePage {
 
 interface BrainConfigResponse {
   source?: string;
-  config?: { modelMemoryRead?: boolean; modelMemoryWrites?: boolean; memorySensitiveTopics?: boolean } & Record<string, unknown>;
+  config?: { modelMemoryRead?: boolean; memoryAutoInject?: boolean; modelMemoryWrites?: boolean; memorySensitiveTopics?: boolean } & Record<string, unknown>;
   defaults?: Record<string, unknown>;
 }
 
@@ -726,10 +726,18 @@ export function MemorySection({ active }: { active: { id: string } }) {
         <SettingsToggle
           checked={Boolean(cfg?.modelMemoryRead ?? true)}
           onCheckedChange={(next) => configMut.mutate({ modelMemoryRead: next })}
-          label="Model can read memories"
-          description="Injects stored facts into each turn. Off stops the auto-injection; explicit lookups still work."
+          label="Model can read memories on demand"
+          description="Offers the memory lookup tools (brain_query / memory_search) so the model can pull stored facts when it needs them."
           disabled={configQ.isLoading || configMut.isPending}
           data-testid="memory-model-read-toggle"
+        />
+        <SettingsToggle
+          checked={Boolean(cfg?.memoryAutoInject ?? false)}
+          onCheckedChange={(next) => configMut.mutate({ memoryAutoInject: next })}
+          label="Auto-inject relevant memories each turn"
+          description="Off (recommended): memories surface only when the model calls them. On: a block of facts relevant to the latest turn is added to every message."
+          disabled={configQ.isLoading || configMut.isPending}
+          data-testid="memory-auto-inject-toggle"
         />
         <SettingsToggle
           checked={Boolean(cfg?.modelMemoryWrites)}
@@ -1193,9 +1201,13 @@ export function MemorySection({ active }: { active: { id: string } }) {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onImported={() => {
-          void storesQ.refetch();
-          void unifiedQa.refetch();
-          void unifiedQb.refetch();
+          // Invalidate every memory observer (store counts + the active
+          // unified list + project view), same as add/delete/edit — a plain
+          // refetch of the two query objects missed the counts and any store
+          // the import actually wrote to, so the list looked stale.
+          invalidate();
+          void qc.invalidateQueries({ queryKey: ['memory-workspaces'] });
+          void qc.invalidateQueries({ queryKey: ['project-memory'] });
         }}
       />
     </div>

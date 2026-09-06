@@ -128,6 +128,7 @@ class BrainConfigDict(TypedDict, total=False):
     maxWorkbenchToolLoops: int
     autoRouteMinSamples: int
     modelMemoryRead: bool
+    memoryAutoInject: bool
     modelMemoryWrites: bool
     memorySensitiveTopics: bool
     cameraAccess: bool

@@ -1213,9 +1213,12 @@ def buildSystemPrompt(
         try:
             from app.services import brain_config_service as _bc
 
-            memReadOn = bool(_bc.getRuntimeConfig().get('modelMemoryRead', True))
+            # Auto-injection is its OWN flag (default off): memory is recalled
+            # only when the model calls the read tool. modelMemoryRead still
+            # gates the tool itself (session_tools), so the two are decoupled.
+            memReadOn = bool(_bc.getRuntimeConfig().get('memoryAutoInject', False))
         except Exception:
-            memReadOn = True
+            memReadOn = False
         if memReadOn:
             memParts = [
                 '- Memory: relevant stored facts auto-inject each turn (a <memory> block '
@@ -1250,11 +1253,11 @@ def buildSystemPrompt(
                 for ln in memIdx.splitlines():
                     memParts.append('  ' + ln)
         else:
-            # modelMemoryRead off: no auto-injection and no fact index — the
-            # model keeps on-demand lookups (brain_query reads sessions and
-            # messages, not the facts store, so it stays ungated).
+            # memoryAutoInject off: no per-turn <memory> block and no fact
+            # index — the model pulls stored context on demand via the read
+            # tools (gated by modelMemoryRead, which stays independent).
             memParts = [
-                '- Memory: auto-injection is OFF (modelMemoryRead); pull stored context '
+                '- Memory: auto-injection is OFF (memoryAutoInject); pull stored context '
                 'on demand via ' + ', '.join(memoryTools) + '. ' + storeHint
             ]
         # Frozen per-session project-memory index (titles
@@ -3342,9 +3345,12 @@ async def _sendWorkbenchMessageStreamImpl(
         try:
             from app.services import brain_config_service as _bc
 
-            _memReadOn = bool(_bc.getRuntimeConfig().get('modelMemoryRead', True))
+            # Per-turn <memory> recall block is gated by memoryAutoInject
+            # (default off) — recall happens only when the model calls the
+            # read tool, not automatically every turn.
+            _memReadOn = bool(_bc.getRuntimeConfig().get('memoryAutoInject', False))
         except Exception:
-            _memReadOn = True
+            _memReadOn = False
         _lastUserIdx = next(
             (
                 i

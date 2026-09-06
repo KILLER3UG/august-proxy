@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
 import {
   Pencil,
@@ -14,6 +15,7 @@ import {
   CheckCircle2,
   AlertCircle,
   ScanSearch,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { providersApi, type ApiFormat, type Provider } from '@/api/providers';
@@ -90,6 +92,8 @@ export function ModelRow({
     setMaxToolResultChars((model.maxToolResultChars ?? 0).toString());
   }, [model.id, model.name, model.contextWindow, model.reasoning, model.apiFormat, model.supportsReasoningEffort, model.maxReasoningEffort, model.toolSurface, model.maxTools, model.maxToolResultChars]);
 
+  useModalDismiss(editing, () => setEditing(false));
+
   const update = useMutation({
     mutationFn: (body: {
       name?: string;
@@ -164,153 +168,204 @@ export function ModelRow({
     update.mutate({ toolSurface: probeResult.suggestedSurface });
   };
 
-  if (editing) {
-    return (
+  /** Escape closes the modal; backdrop click too. */
+function useModalDismiss(open: boolean, onClose: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+}
+
+if (editing) {
+    return createPortal(
       <div
-        className="px-3 py-3 space-y-2 bg-primary/5 border-l-2 border-primary"
-        data-editing="true"
+        className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Edit model ${model.id}`}
+        onClick={() => setEditing(false)}
+        data-testid="model-edit-modal"
       >
-        <div className="flex items-center gap-2">
-          <Pencil className="size-3 text-primary" />
-          <span className="text-[11px] uppercase tracking-caps font-semibold text-primary">
-            Editing
-          </span>
-          <span className="text-xs font-mono text-muted-foreground truncate">{model.id}</span>
-        </div>
-        <div className="border-t border-border/30 pt-2 space-y-2">
-          <div className="grid grid-cols-[1fr_140px] gap-2">
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Display name"
-              aria-label="Display name"
-            />
-            <Input
-              value={contextWindow}
-              onChange={(e) => setContextWindow(e.target.value)}
-              placeholder="Context window"
-              type="number"
-              min={1}
-              aria-label="Context window"
-            />
+        <div
+          className="w-full max-w-lg rounded-xl border border-border bg-card shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 pt-4">
+            <h2 className="text-base font-semibold text-foreground">
+              Edit model
+            </h2>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              aria-label="Close"
+              className="rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
           </div>
-          <div className="flex items-center gap-2 text-xs">
-            <Button size="sm" variant="ghost" onClick={() => probe.mutate()} disabled={probe.isPending}>
-              {probe.isPending ? (
-                <>
-                  <Loader2 className="size-3.5 mr-1.5 animate-spin" />
-                  Probing…
-                </>
-              ) : (
-                <>
-                  <ScanSearch className="size-3.5 mr-1.5" />
-                  Probe capabilities
-                </>
-              )}
+
+          {/* Fields */}
+          <div className="space-y-3.5 px-5 py-4">
+            <label className="block">
+              <span className="mb-1.5 block text-[13px] font-medium text-foreground">Display name</span>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Display name"
+                aria-label="Display name"
+                className="h-9"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-[13px] font-medium text-foreground">Context window</span>
+              <Input
+                value={contextWindow}
+                onChange={(e) => setContextWindow(e.target.value)}
+                placeholder="128000"
+                type="number"
+                min={1}
+                aria-label="Context window"
+                className="h-9"
+              />
+            </label>
+
+            {/* Advanced wire/harness controls — collapsed by default so the
+                modal matches the reference's simple field stack. */}
+            <details className="rounded-lg border border-border/60 bg-background/40 px-3 py-2">
+              <summary className="cursor-pointer select-none text-[13px] font-medium text-foreground/90">
+                Advanced settings
+              </summary>
+              <div className="mt-3 space-y-3">
+                <div className="flex items-center gap-2 text-xs">
+                  <Button size="sm" variant="ghost" onClick={() => probe.mutate()} disabled={probe.isPending}>
+                    {probe.isPending ? (
+                      <>
+                        <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                        Probing…
+                      </>
+                    ) : (
+                      <>
+                        <ScanSearch className="size-3.5 mr-1.5" />
+                        Probe capabilities
+                      </>
+                    )}
+                  </Button>
+                  <span className="text-muted-foreground">Tool-call support, instruction-following, suggested surface</span>
+                </div>
+                <label className="flex items-center gap-2 text-xs">
+                  <input type="checkbox" checked={reasoning} onChange={(e) => setReasoning(e.target.checked)} />
+                  Supports reasoning
+                </label>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-2 text-xs">
+                    <span className="w-36 shrink-0">Request format</span>
+                    <select
+                      value={format}
+                      onChange={(e) => setFormat(e.target.value as ApiFormat | '')}
+                      aria-label="Request format override"
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+                    >
+                      <option value="">Auto (provider format)</option>
+                      {API_FORMATS.map((f) => (
+                        <option key={f.value} value={f.value}>
+                          {f.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {!format && suggestModelApiFormat(model.id) && (
+                    <p className="text-[11px] text-amber-500/90">
+                      {model.id} looks like an Anthropic model — multi-format gateways
+                      (e.g. OpenCode Zen) need{' '}
+                      <button
+                        type="button"
+                        className="underline underline-offset-2"
+                        onClick={() => setFormat('anthropicMessages')}
+                      >
+                        v1/messages
+                      </button>{' '}
+                      for it.
+                    </p>
+                  )}
+                  <label className="flex items-center gap-2 text-xs">
+                    <span className="w-36 shrink-0">reasoning_effort</span>
+                    <select
+                      value={reasoningEffortSupport}
+                      onChange={(e) => setReasoningEffortSupport(e.target.value as '' | 'yes' | 'no')}
+                      aria-label="Supports reasoning_effort"
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+                    >
+                      <option value="">Auto (heuristic)</option>
+                      <option value="yes">Yes — always send</option>
+                      <option value="no">No — never send</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs">
+                    <span className="w-36 shrink-0">Tool surface</span>
+                    <select
+                      value={toolSurface}
+                      onChange={(e) => setToolSurface(e.target.value as 'full' | 'reduced' | 'bare' | '')}
+                      aria-label="Tool surface"
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+                    >
+                      <option value="">Full (default)</option>
+                      <option value="reduced">Reduced — drop heavy tools</option>
+                      <option value="bare">Bare — read/write/run_command/state only</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs">
+                    <span className="w-36 shrink-0">Max tools</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={maxTools}
+                      onChange={(e) => setMaxTools(e.target.value)}
+                      aria-label="Max tools"
+                      placeholder="0 = no cap"
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-xs">
+                    <span className="w-36 shrink-0">Result cap (KB)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={maxToolResultChars}
+                      onChange={(e) => setMaxToolResultChars(e.target.value)}
+                      aria-label="Max tool result chars"
+                      placeholder="0 = 64 KB default"
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-xs">
+                    <span className="w-36 shrink-0">Max effort</span>
+                    <select
+                      value={maxReasoningEffort}
+                      onChange={(e) => setMaxReasoningEffort(e.target.value)}
+                      aria-label="Max reasoning effort"
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+                    >
+                      <option value="">Auto (no cap)</option>
+                      <option value="low">low</option>
+                      <option value="medium">medium</option>
+                      <option value="high">high</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          {/* Footer — right-aligned Cancel / Save like the reference. */}
+          <div className="flex items-center justify-end gap-2 border-t border-border/60 px-5 py-3.5">
+            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+              Cancel
             </Button>
-            <span className="text-muted-foreground">Tool-call support, instruction-following, suggested surface</span>
-          </div>
-          <label className="flex items-center gap-2 text-xs">
-            <input type="checkbox" checked={reasoning} onChange={(e) => setReasoning(e.target.checked)} />
-            Supports reasoning
-          </label>
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-2 text-xs">
-              <span className="shrink-0">Request format</span>
-              <select
-                value={format}
-                onChange={(e) => setFormat(e.target.value as ApiFormat | '')}
-                aria-label="Request format override"
-                className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
-              >
-                <option value="">Auto (provider format)</option>
-                {API_FORMATS.map((f) => (
-                  <option key={f.value} value={f.value}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {!format && suggestModelApiFormat(model.id) && (
-              <p className="text-[11px] text-amber-500/90">
-                {model.id} looks like an Anthropic model — multi-format gateways
-                (e.g. OpenCode Zen) need{' '}
-                <button
-                  type="button"
-                  className="underline underline-offset-2"
-                  onClick={() => setFormat('anthropicMessages')}
-                >
-                  v1/messages
-                </button>{' '}
-                for it.
-              </p>
-            )}
-            <label className="flex items-center gap-2 text-xs">
-              <span className="shrink-0">reasoning_effort</span>
-              <select
-                value={reasoningEffortSupport}
-                onChange={(e) => setReasoningEffortSupport(e.target.value as '' | 'yes' | 'no')}
-                aria-label="Supports reasoning_effort"
-                className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
-              >
-                <option value="">Auto (heuristic)</option>
-                <option value="yes">Yes — always send</option>
-                <option value="no">No — never send</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-2 text-xs">
-              <span className="shrink-0">Tool surface</span>
-              <select
-                value={toolSurface}
-                onChange={(e) => setToolSurface(e.target.value as 'full' | 'reduced' | 'bare' | '')}
-                aria-label="Tool surface"
-                className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
-              >
-                <option value="">Full (default)</option>
-                <option value="reduced">Reduced — drop heavy tools</option>
-                <option value="bare">Bare — read/write/run_command/state only</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-2 text-xs">
-              <span className="shrink-0">Max tools</span>
-              <input
-                type="number"
-                min={0}
-                value={maxTools}
-                onChange={(e) => setMaxTools(e.target.value)}
-                aria-label="Max tools"
-                placeholder="0 = no cap"
-                className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
-              />
-            </label>
-            <label className="flex items-center gap-2 text-xs">
-              <span className="shrink-0">Result cap (KB)</span>
-              <input
-                type="number"
-                min={0}
-                value={maxToolResultChars}
-                onChange={(e) => setMaxToolResultChars(e.target.value)}
-                aria-label="Max tool result chars"
-                placeholder="0 = 64 KB default"
-                className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
-              />
-            </label>
-            <label className="flex items-center gap-2 text-xs">
-              <span className="shrink-0">Max effort</span>
-              <select
-                value={maxReasoningEffort}
-                onChange={(e) => setMaxReasoningEffort(e.target.value)}
-                aria-label="Max reasoning effort"
-                className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
-              >
-                <option value="">Auto (no cap)</option>
-                <option value="low">low</option>
-                <option value="medium">medium</option>
-                <option value="high">high</option>
-              </select>
-            </label>
-          </div>
-          <div className="flex gap-2">
             <Button
               size="sm"
               onClick={() =>
@@ -330,14 +385,12 @@ export function ModelRow({
               }
               disabled={update.isPending}
             >
-              {update.isPending ? 'Saving…' : 'Save changes'}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
-              Cancel
+              {update.isPending ? 'Saving…' : 'Save'}
             </Button>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body,
     );
   }
 

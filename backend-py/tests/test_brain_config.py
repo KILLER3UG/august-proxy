@@ -30,6 +30,8 @@ _ALLCamelKeys = {
     'autoRouteMinSamples',
     # Memory read gate (Bug 8a) + write door + sensitive-topic toggle.
     'modelMemoryRead',
+    # Per-turn auto-injection gate (decoupled from the read tool; default off).
+    'memoryAutoInject',
     'modelMemoryWrites',
     'memorySensitiveTopics',
     # Camera capture access toggle (Workstream D).
