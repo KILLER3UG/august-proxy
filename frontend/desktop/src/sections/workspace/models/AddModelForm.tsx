@@ -1,15 +1,94 @@
-/* Manual model entry form for a provider's model list.
- * Creates a manual-source model via providersApi.addModel with optional
- * display name, context window, and reasoning flag.
+/* Add-model modal — reference layout (Model ID / Context window / Max output
+ * tokens / Input types / Output types, footer Cancel/Save). Creates a
+ * manual-source model via providersApi.addModel. Advanced harness controls
+ * (reasoning, wire format) live in the edit modal's Advanced section.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
-import { Check, Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { providersApi } from '@/api/providers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+
+const MODALITIES = ['Text', 'Image', 'Video', 'PDF'] as const;
+
+export function ModelModalField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-[13px] font-medium text-foreground">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+/** Pill-style checkbox used for Input/Output types (reference layout). */
+export function ModalityPills({
+  label,
+  value,
+  onChange,
+  lockedFirst,
+}: {
+  label: string;
+  value: string[];
+  onChange: (next: string[]) => void;
+  /** The first entry is always-on + locked (e.g. Text for input). */
+  lockedFirst?: string;
+}) {
+  const toggle = (m: string) => {
+    if (lockedFirst && m === lockedFirst) return;
+    onChange(value.includes(m) ? value.filter((x) => x !== m) : [...value, m]);
+  };
+  return (
+    <div>
+      <span className="mb-1.5 block text-[13px] font-medium text-foreground">{label}</span>
+      <div className="flex flex-wrap items-center gap-2">
+        {MODALITIES.map((m) => {
+          const checked = value.includes(m);
+          const locked = lockedFirst === m;
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => toggle(m)}
+              aria-pressed={checked}
+              disabled={locked}
+              className={
+                'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[13px] transition ' +
+                (checked
+                  ? 'border-primary/50 bg-primary/10 text-foreground'
+                  : 'border-border/60 bg-card/60 text-muted-foreground hover:border-border hover:text-foreground') +
+                (locked ? ' cursor-default' : '')
+              }
+            >
+              <span
+                aria-hidden
+                className={
+                  'grid size-3.5 place-items-center rounded-sm border text-[9px] ' +
+                  (checked
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-transparent')
+                }
+              >
+                {checked ? '✓' : ''}
+              </span>
+              {m}
+              {locked && <span className="text-[10px] opacity-50">🔒</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function AddModelForm({
   providerId,
@@ -21,17 +100,27 @@ export function AddModelForm({
   onCreated: () => void;
 }) {
   const [id, setId] = useState('');
-  const [name, setName] = useState('');
-  const [contextWindow, setContextWindow] = useState('128000');
-  const [reasoning, setReasoning] = useState(false);
+  const [contextWindow, setContextWindow] = useState('1000000');
+  const [maxOutputTokens, setMaxOutputTokens] = useState('128000');
+  const [inputTypes, setInputTypes] = useState<string[]>(['Text']);
+  const [outputTypes, setOutputTypes] = useState<string[]>(['Text']);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onCancel]);
 
   const create = useMutation({
     mutationFn: () =>
       providersApi.addModel(providerId, {
         id,
-        name: name || undefined,
         contextWindow: contextWindow ? Number(contextWindow) : 128000,
-        reasoning,
+        maxOutputTokens: maxOutputTokens ? Number(maxOutputTokens) : null,
+        inputTypes: inputTypes.length ? inputTypes.map((t) => t.toLowerCase()) : null,
+        outputTypes: outputTypes.length ? outputTypes.map((t) => t.toLowerCase()) : null,
       }),
     onSuccess: () => {
       toast.success(`Added ${id}`);
@@ -42,33 +131,76 @@ export function AddModelForm({
     },
   });
 
-  return (
-    <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 space-y-2">
-      <div className="grid grid-cols-[1fr_1fr_140px] gap-2">
-        <Input value={id} onChange={(e) => setId(e.target.value)} placeholder="model-id" />
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Display name (optional)" />
-        <Input
-          value={contextWindow}
-          onChange={(e) => setContextWindow(e.target.value)}
-          placeholder="Context window"
-          type="number"
-          min={1}
-          aria-label="Context window"
-        />
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Add model"
+      onClick={onCancel}
+      data-testid="model-add-modal"
+    >
+      <div
+        className="w-full max-w-lg rounded-xl border border-border bg-card shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 pt-4">
+          <h2 className="text-base font-semibold text-foreground">Add model</h2>
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Close"
+            className="rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="space-y-3.5 px-5 py-4">
+          <ModelModalField label="Model ID">
+            <Input
+              value={id}
+              onChange={(e) => setId(e.target.value)}
+              placeholder="Model ID"
+              className="h-9"
+              autoFocus
+            />
+          </ModelModalField>
+          <ModelModalField label="Context window">
+            <Input
+              value={contextWindow}
+              onChange={(e) => setContextWindow(e.target.value)}
+              placeholder="1000000"
+              type="number"
+              min={1}
+              className="h-9"
+            />
+          </ModelModalField>
+          <ModelModalField label="Max output tokens">
+            <Input
+              value={maxOutputTokens}
+              onChange={(e) => setMaxOutputTokens(e.target.value)}
+              placeholder="128000"
+              type="number"
+              min={1}
+              className="h-9"
+            />
+          </ModelModalField>
+          <ModalityPills label="Input types" value={inputTypes} onChange={setInputTypes} lockedFirst="Text" />
+          <ModalityPills label="Output types" value={outputTypes} onChange={setOutputTypes} lockedFirst="Text" />
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border/60 px-5 py-3.5">
+          <Button size="sm" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={() => create.mutate()} disabled={!id.trim() || create.isPending}>
+            {create.isPending && <Loader2 className="mr-1.5 size-3 animate-spin" />}
+            Save
+          </Button>
+        </div>
       </div>
-      <label className="flex items-center gap-2 text-xs">
-        <input type="checkbox" checked={reasoning} onChange={(e) => setReasoning(e.target.checked)} />
-        Supports reasoning
-      </label>
-      <div className="flex gap-2">
-        <Button size="sm" onClick={() => create.mutate()} disabled={!id.trim() || create.isPending}>
-          {create.isPending ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-          Add
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

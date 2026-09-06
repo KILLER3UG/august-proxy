@@ -672,6 +672,91 @@ async def _deleteSession(sessionId: str) -> str:
         return f'Error deleting session {sessionId}: {exc}'
 
 
+_SESSION_CONTEXT_MAX_CHARS = 6000
+
+
+def _contextCapsule(blob: dict[str, object], maxChars: int) -> str:
+    """Render a past session as a compact handoff capsule (title, metadata,
+    plan, and one trimmed line per dialogue turn — never a raw dump)."""
+    title = str(blob.get('title') or '(untitled)')
+    sid = str(blob.get('id') or '')
+    updated = str(blob.get('updatedAt') or blob.get('startedAt') or '')
+    messages = blob.get('messages')
+    if not isinstance(messages, list):
+        messages = []
+    lines: list[str] = [
+        f'SESSION {sid} — "{title}"' + (f' · last updated {updated[:19]}' if updated else ''),
+    ]
+    plan = blob.get('plan')
+    if isinstance(plan, dict):
+        steps = plan.get('steps')
+        if isinstance(steps, list) and steps:
+            lines.append(f'Plan: {len(steps)} step(s) — ' + '; '.join(str(s)[:80] for s in steps[:6]))
+    lines.append('')
+
+    turnCount = 0
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = str(msg.get('role') or '')
+        if role not in ('user', 'assistant'):
+            continue
+        content = str(msg.get('content') or '').strip()
+        if not content:
+            continue
+        turnCount += 1
+        one = ' '.join(content.split())
+        if len(one) > 260:
+            one = one[:257] + '…'
+        prefix = 'USER' if role == 'user' else 'AUG'
+        lines.append(f'{prefix}: {one}')
+
+    text = '\n'.join(lines)
+    if not turnCount:
+        text += '\n(no dialogue turns recorded)'
+    else:
+        text += f'\n({turnCount} turn(s))'
+    if len(text) > maxChars:
+        text = text[: maxChars - 1].rsplit('\n', 1)[0] + '\n…(truncated)'
+    return text
+
+
+async def _sessionContext(sessionId: str = '', query: str = '') -> str:
+    """Handoff capsule for a past session — what was asked, decided, changed."""
+    from app.services.memory_store.sessions import get_workbench_blob
+    from app.services.workbench import workbench as _wb
+
+    sid = (sessionId or '').strip()
+    if not sid:
+        return (
+            'Error: sessionId is required. List candidates first with '
+            "brain_query(store='sessions', query='<topic>') and pick the id."
+        )
+    blob: dict[str, object] | None = None
+    try:
+        live = _wb.getWorkbenchSession(sid)
+    except Exception:
+        live = None
+    if live is not None:
+        # The in-memory session is the freshest copy (a session being
+        # chatted in may not be persisted yet).
+        blob = {
+            'id': getattr(live, 'id', sid) or sid,
+            'title': getattr(live, 'title', '') or '',
+            'plan': getattr(live, 'plan', None),
+            'messages': list(getattr(live, 'messages', None) or []),
+        }
+    if not blob:
+        # Pruned from the in-memory map — read the SQLite snapshot.
+        try:
+            blob = await asyncio.to_thread(get_workbench_blob, sid)
+        except Exception as exc:
+            return f'Error reading session {sid}: {exc}'
+    if not blob:
+        return f'Session {sid} not found. Check the id via brain_query(store=sessions).'
+    return _contextCapsule(blob, _SESSION_CONTEXT_MAX_CHARS)
+
+
 async def _deleteSessions(sessionIds: object = None, sessionId: str = '') -> str:
     """Bulk-delete chat sessions. Prefer over many delete_session calls."""
     from app.services.tool_registrations.bulk_helpers import coerce_str_list, format_bulk_report
@@ -760,6 +845,29 @@ async def _deleteFolder(folderId: str) -> str:
 
 def register() -> None:
     """Register session-management and search tools."""
+    tool_registry.register(
+        'session_context',
+        'Read a condensed context capsule for a PAST chat session — its title, plan, '
+        'and a one-line digest of every turn. Use to recall what a previous '
+        'conversation covered before continuing its work. sessionId is required '
+        "(list candidates via brain_query(store='sessions')). Read-only; costs one "
+        'call regardless of session length.',
+        _sessionContext,
+        {
+            'type': 'object',
+            'properties': {
+                'sessionId': {
+                    'type': 'string',
+                    'description': 'The session to read (e.g. wb_20260715_143052_a1b2c3).',
+                },
+                'query': {
+                    'type': 'string',
+                    'description': 'Optional focus hint (reserved — currently unused by the renderer).',
+                },
+            },
+            'required': ['sessionId'],
+        },
+    )
     tool_registry.register(
         'rename_session',
         'Rename a chat session in the sidebar when the user asks. Titles auto-generate after the first '

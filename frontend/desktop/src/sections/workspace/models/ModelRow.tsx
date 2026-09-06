@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { API_FORMATS, apiFormatShortLabel, fmtContextWindow } from './modelSettingsShared';
+import { ModalityPills } from './AddModelForm';
 
 /** Suggest a wire format from the model id family (multi-format gateways like
  *  OpenCode Zen serve Claude at /v1/messages while the provider defaults to
@@ -52,6 +53,15 @@ export function ModelRow({
   const [name, setName] = useState(model.name ?? model.id);
   const [contextWindow, setContextWindow] = useState(
     (model.contextWindow ?? 128000).toString(),
+  );
+  const [maxOutputTokens, setMaxOutputTokens] = useState(
+    (model.maxOutputTokens ?? 128000).toString(),
+  );
+  const [inputTypes, setInputTypes] = useState<string[]>(
+    (model.inputTypes ?? ['text']).map((t) => t.charAt(0).toUpperCase() + t.slice(1)),
+  );
+  const [outputTypes, setOutputTypes] = useState<string[]>(
+    (model.outputTypes ?? ['text']).map((t) => t.charAt(0).toUpperCase() + t.slice(1)),
   );
   const [reasoning, setReasoning] = useState(!!model.reasoning);
   const [format, setFormat] = useState<ApiFormat | ''>(model.apiFormat ?? '');
@@ -82,6 +92,13 @@ export function ModelRow({
   useEffect(() => {
     setName(model.name ?? model.id);
     setContextWindow((model.contextWindow ?? 128000).toString());
+    setMaxOutputTokens((model.maxOutputTokens ?? 128000).toString());
+    setInputTypes(
+      (model.inputTypes ?? ['text']).map((t) => t.charAt(0).toUpperCase() + t.slice(1)),
+    );
+    setOutputTypes(
+      (model.outputTypes ?? ['text']).map((t) => t.charAt(0).toUpperCase() + t.slice(1)),
+    );
     setReasoning(!!model.reasoning);
     setFormat(model.apiFormat ?? '');
     setReasoningEffortSupport(
@@ -105,6 +122,9 @@ export function ModelRow({
       toolSurface?: string | null;
       maxTools?: number | null;
       maxToolResultChars?: number | null;
+      maxOutputTokens?: number | null;
+      inputTypes?: string[] | null;
+      outputTypes?: string[] | null;
     }) => providersApi.updateModel(providerId, model.id, body),
     onSuccess: () => {
       setEditing(false);
@@ -209,7 +229,7 @@ if (editing) {
             </button>
           </div>
 
-          {/* Fields */}
+          {/* Fields — reference layout */}
           <div className="space-y-3.5 px-5 py-4">
             <label className="block">
               <span className="mb-1.5 block text-[13px] font-medium text-foreground">Display name</span>
@@ -226,16 +246,30 @@ if (editing) {
               <Input
                 value={contextWindow}
                 onChange={(e) => setContextWindow(e.target.value)}
-                placeholder="128000"
+                placeholder="1000000"
                 type="number"
                 min={1}
                 aria-label="Context window"
                 className="h-9"
               />
             </label>
+            <label className="block">
+              <span className="mb-1.5 block text-[13px] font-medium text-foreground">Max output tokens</span>
+              <Input
+                value={maxOutputTokens}
+                onChange={(e) => setMaxOutputTokens(e.target.value)}
+                placeholder="128000"
+                type="number"
+                min={1}
+                aria-label="Max output tokens"
+                className="h-9"
+              />
+            </label>
+            <ModalityPills label="Input types" value={inputTypes} onChange={setInputTypes} lockedFirst="Text" />
+            <ModalityPills label="Output types" value={outputTypes} onChange={setOutputTypes} lockedFirst="Text" />
 
-            {/* Advanced wire/harness controls — collapsed by default so the
-                modal matches the reference's simple field stack. */}
+            {/* Advanced wire/harness controls — collapsed so the modal matches
+                the reference's simple field stack. */}
             <details className="rounded-lg border border-border/60 bg-background/40 px-3 py-2">
               <summary className="cursor-pointer select-none text-[13px] font-medium text-foreground/90">
                 Advanced settings
@@ -374,6 +408,11 @@ if (editing) {
                   contextWindow: contextWindow.trim()
                     ? Number(contextWindow)
                     : 128000,
+                  maxOutputTokens: maxOutputTokens.trim()
+                    ? Number(maxOutputTokens)
+                    : null,
+                  inputTypes: inputTypes.map((t) => t.toLowerCase()),
+                  outputTypes: outputTypes.map((t) => t.toLowerCase()),
                   reasoning,
                   apiFormat: format || null,
                   supportsReasoningEffort: reasoningEffortSupport === '' ? null : reasoningEffortSupport === 'yes',

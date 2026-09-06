@@ -38,6 +38,11 @@ class ModelConfig(ExtraAllowBaseModel):
     tool_surface: str | None = None
     max_tools: int = 0
     max_tool_result_chars: int = 0
+    # Reference-modal fields: output cap + modality support badges. All
+    # optional; absent/None = unspecified (heuristic defaults apply).
+    max_output_tokens: int | None = None
+    input_types: list[str] | None = None
+    output_types: list[str] | None = None
 
 
 class ProviderConfig(ExtraAllowBaseModel):
@@ -88,6 +93,10 @@ class ModelCreate(ExtraAllowBaseModel):
     api_format: str | None = None
     supports_reasoning_effort: bool | None = None
     max_reasoning_effort: str | None = None
+    # Reference-modal fields: output cap + modality support badges.
+    max_output_tokens: int | None = None
+    input_types: list[str] | None = None
+    output_types: list[str] | None = None
 
 
 class ModelUpdate(ExtraAllowBaseModel):
@@ -104,3 +113,7 @@ class ModelUpdate(ExtraAllowBaseModel):
     tool_surface: str | None = None
     max_tools: int | None = None
     max_tool_result_chars: int | None = None
+    # Reference-modal fields: output cap + modality support badges.
+    max_output_tokens: int | None = None
+    input_types: list[str] | None = None
+    output_types: list[str] | None = None

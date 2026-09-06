@@ -38,6 +38,11 @@ export interface ProviderModel {
   maxTools?: number;
   /** Cap on tool-result chars echoed back to the model (0 = 64 KB default). */
   maxToolResultChars?: number;
+  /** Output cap for the model (tokens). Absent = unspecified. */
+  maxOutputTokens?: number | null;
+  /** Modality support badges (e.g. ['text','image']). Absent = text-only. */
+  inputTypes?: string[] | null;
+  outputTypes?: string[] | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -79,6 +84,11 @@ export interface ModelCreate {
   apiFormat?: ApiFormat | null;
   supportsReasoningEffort?: boolean | null;
   maxReasoningEffort?: string | null;
+  /** Output cap (tokens); null/0 clears. */
+  maxOutputTokens?: number | null;
+  /** Modality badges; empty clears. */
+  inputTypes?: string[] | null;
+  outputTypes?: string[] | null;
 }
 
 export interface RefreshResult {

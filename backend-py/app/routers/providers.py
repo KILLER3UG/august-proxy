@@ -47,6 +47,9 @@ def _provider_to_dict(p: object) -> dict:
                     'toolSurface': m.tool_surface,
                     'maxTools': m.max_tools or None,
                     'maxToolResultChars': m.max_tool_result_chars or None,
+                    'maxOutputTokens': getattr(m, 'max_output_tokens', None) or None,
+                    'inputTypes': getattr(m, 'input_types', None) or None,
+                    'outputTypes': getattr(m, 'output_types', None) or None,
                 }
                 for m in p.models
             ],
@@ -560,6 +563,13 @@ async def addModel(providerId: str, body: ModelCreate):
                 entry['supportsReasoningEffort'] = body.supports_reasoning_effort
             if body.max_reasoning_effort:
                 entry['maxReasoningEffort'] = body.max_reasoning_effort
+            # Reference-modal fields: output cap + modality badges.
+            if body.max_output_tokens and body.max_output_tokens > 0:
+                entry['maxOutputTokens'] = body.max_output_tokens
+            if body.input_types:
+                entry['inputTypes'] = [str(t) for t in body.input_types]
+            if body.output_types:
+                entry['outputTypes'] = [str(t) for t in body.output_types]
             p_models.append(entry)
             config_service.saveProvidersStore(store)
             model_service.invalidate_cache()
@@ -641,6 +651,26 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                             m.pop('maxToolResultChars', None)
                         else:
                             m['maxToolResultChars'] = val
+                    # Reference-modal fields: output cap + modality badges
+                    # (explicit null / empty clears the stored value).
+                    if 'max_output_tokens' in dumped:
+                        val = dumped['max_output_tokens']
+                        if not val or (isinstance(val, int) and val <= 0):
+                            m.pop('maxOutputTokens', None)
+                        else:
+                            m['maxOutputTokens'] = val
+                    if 'input_types' in dumped:
+                        val = dumped['input_types']
+                        if val:
+                            m['inputTypes'] = [str(t) for t in val]
+                        else:
+                            m.pop('inputTypes', None)
+                    if 'output_types' in dumped:
+                        val = dumped['output_types']
+                        if val:
+                            m['outputTypes'] = [str(t) for t in val]
+                        else:
+                            m.pop('outputTypes', None)
                     config_service.saveProvidersStore(store)
                     model_service.invalidate_cache()
                     return {'updated': True}
