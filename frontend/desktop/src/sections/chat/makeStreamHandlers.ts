@@ -918,8 +918,9 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     },
     onRetrying: ({ attempt, maxRetries }) => {
       // Minimal, calm notice — the raw upstream text and the backoff seconds
-      // are noise; the attempt count is what the user cares about.
-      retryNotice = `Reconnecting… ${attempt}/${maxRetries}`;
+      // are noise; the attempt count is what the user cares about. The dots
+      // animate in the renderer (AssistantMessageContent), not in the string.
+      retryNotice = `Reconnecting ${attempt}/${maxRetries}`;
       // Roll back ONLY the failed attempt's partial stream: truncate the
       // accumulators and the block list back to the snapshot taken when this
       // round's model call began (turn start or the last tool result). Earlier
@@ -942,7 +943,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // (429/503/connection refused, pre-first-token of this round).
       // Notice-only — no buffer rollback: nothing of this round streamed,
       // and earlier rounds' text blocks must stay on screen.
-      retryNotice = `Reconnecting… ${attempt}/${maxRetries}`;
+      retryNotice = `Reconnecting ${attempt}/${maxRetries}`;
       scheduleUpdate();
     },
     onError: ({ message }) => {

@@ -708,6 +708,149 @@ async def import_memory(body: MemoryImportBody):
     return {'ok': True, 'count': written, 'total': len(raw_items), 'results': results, 'failed': failed}
 
 
+class MemoryImportAiBody(CamelModel):
+    """AI-arranged import: the user-selected model reads the raw export and
+    returns a normalized plan of add/update/delete operations."""
+
+    text: str = ''
+    model: str = ''
+    provider: str = ''
+
+
+@router.post('/memory/import/ai')
+async def import_memory_ai(body: MemoryImportAiBody):
+    """Ask the model the user picked (composer dropdown) to ARRANGE a memory
+    export into concrete operations. The model reads the raw export plus the
+    current memory keys and returns a deduplicated plan of add/update/delete
+    ops; the UI reviews it and applies it through the same save/delete doors
+    the memory tools use — so the chosen model is the one that organizes and
+    manages the memories, not a fixed parser.
+    """
+    import json as _json
+    import re as _re
+
+    from app.services import memory_store
+    from app.services.workbench.providers import (
+        call_anthropic_workbench,
+        call_openai_workbench,
+        extract_text,
+        is_anthropic_provider,
+        is_openai_provider,
+        resolve_chat_llm,
+    )
+
+    text = (body.text or '').strip()
+    if not text:
+        raise HTTPException(status_code=400, detail='text is required')
+
+    provider, model = resolve_chat_llm(model=body.model or '', model_provider=body.provider or '')
+    if not provider or not model:
+        raise HTTPException(status_code=503, detail='No model selected for the AI import.')
+
+    # Current keys so the model can update/delete instead of duplicating.
+    try:
+        existing = memory_store.list_facts(limit=500)
+        existing_keys = [str(f.get('factKey') or '') for f in existing]
+        existing_keys = [k for k in existing_keys if k]
+    except Exception:
+        existing_keys = []
+    existing_set = set(existing_keys)
+
+    system_text = (
+        'You organize a memory import for a personal AI assistant. You are given '
+        '(1) the current memory keys and (2) a raw memory export from another AI. '
+        'Produce a clean, deduplicated set of durable memories. Return ONLY a JSON '
+        'array (no prose, no code fences). Each element is one of:\n'
+        '  {"action":"add","key":"<short-slug>","value":"<concise durable fact>",'
+        '"category":"user|feedback|project|reference|general"}\n'
+        '  {"action":"update","key":"<existing key>","value":"<improved value>",'
+        '"category":"user|feedback|project|reference|general"}\n'
+        '  {"action":"delete","key":"<existing key that is now stale or wrong>"}\n'
+        'Merge duplicates; keep values short and factual; prefer "update" over a '
+        'near-duplicate "add"; use "delete" only for existing keys clearly superseded '
+        'by the export. Never use update/delete on a key not in the current list.'
+    )
+    user_text = (
+        'CURRENT MEMORY KEYS:\n'
+        + (', '.join(existing_keys[:400]) or '(none)')
+        + '\n\nMEMORY EXPORT TO ARRANGE:\n'
+        + text[:60000]
+    )
+    msgs: list[dict[str, object]] = [{'role': 'user', 'content': user_text}]
+
+    answer = ''
+    err = ''
+    try:
+        if is_anthropic_provider(provider):
+            result = await call_anthropic_workbench(
+                messages=msgs, system_text=system_text, model=model,
+                tools=[], effort='low', provider=provider,
+            )
+        elif is_openai_provider(provider):
+            result = await call_openai_workbench(
+                messages=msgs, system_text=system_text, model=model,
+                tools=[], effort='low', provider=provider,
+            )
+        else:
+            raise HTTPException(
+                status_code=503, detail='Selected model format unsupported for import.'
+            )
+        if isinstance(result, dict):
+            if result.get('error'):
+                err = str(result.get('error'))
+            else:
+                answer = str(result.get('text') or result.get('content') or '')
+                if not answer and isinstance(result.get('content'), list):
+                    answer = extract_text(
+                        [b for b in cast(list, result.get('content')) if isinstance(b, dict)]
+                    )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        err = str(exc)
+
+    if not answer:
+        raise HTTPException(
+            status_code=503, detail=err or 'The selected model returned no arrangement.'
+        )
+
+    # Parse the JSON array, tolerating code fences / surrounding prose.
+    cleaned = _re.sub(r'^\s*```(?:json)?|```\s*$', '', answer.strip(), flags=_re.MULTILINE).strip()
+    m = _re.search(r'\[.*\]', cleaned, flags=_re.DOTALL)
+    try:
+        parsed = _json.loads(m.group(0) if m else cleaned)
+    except Exception:
+        raise HTTPException(status_code=502, detail='The model did not return valid JSON operations.')
+    if not isinstance(parsed, list):
+        raise HTTPException(status_code=502, detail='The model did not return a JSON array.')
+
+    accepted_cat = {'user', 'feedback', 'project', 'reference', 'general'}
+    ops: list[dict[str, object]] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        action = str(item.get('action') or 'add').strip().lower()
+        key = str(item.get('key') or '').strip()
+        value = str(item.get('value') or '').strip()
+        category = str(item.get('category') or 'general').strip().lower()
+        if category not in accepted_cat:
+            category = 'general'
+        if action not in ('add', 'update', 'delete') or not key:
+            continue
+        if action in ('update', 'delete') and key not in existing_set:
+            # Model referenced a non-existent key: drop a phantom delete, treat a
+            # phantom update as a fresh add.
+            if action == 'delete':
+                continue
+            action = 'add'
+        if action in ('add', 'update') and not value:
+            continue
+        ops.append({'action': action, 'key': key, 'value': value, 'category': category})
+
+    pname = str(provider.get('name') or provider.get('id') or '')
+    return {'operations': ops, 'model': model, 'provider': pname}
+
+
 class ProposalDecideBody(CamelModel):
     decision: str = ''  # approve | reject
 

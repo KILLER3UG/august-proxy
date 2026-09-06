@@ -104,9 +104,12 @@ describe('ToolStepRow — Task block', () => {
 
   it('reports toggles to the parent with the next open value', () => {
     const onToggle = vi.fn();
+    // Errored tools stay inspectable (the failure must be reachable), so the
+    // toggle mechanism is exercised on one rather than a now-header-only plain call.
     const tool = makeTool({
       name: 'diagnose_proxy',
-      status: 'done',
+      status: 'error',
+      error: 'probe failed',
       summary: '{"ok":true}',
     });
     render(
@@ -121,6 +124,29 @@ describe('ToolStepRow — Task block', () => {
     );
     fireEvent.click(screen.getByRole('button'));
     expect(onToggle).toHaveBeenCalledWith(true);
+  });
+
+  it('plain tool calls are header-only — no chevron, nothing to expand', () => {
+    const tool = makeTool({
+      name: 'diagnose_proxy',
+      status: 'done',
+      context: JSON.stringify({ target: 'proxy' }),
+      summary: '{"ok":true}',
+    });
+    render(
+      <ToolStepRow
+        tool={tool}
+        label="Diagnosed proxy"
+        expanded={false}
+        onToggle={() => {}}
+      >
+        <div>response body</div>
+      </ToolStepRow>,
+    );
+    const toggle = screen.getByRole('button');
+    expect(toggle).toBeDisabled();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('response body')).toBeNull();
   });
 });
 

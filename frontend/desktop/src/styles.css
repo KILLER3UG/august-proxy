@@ -785,6 +785,15 @@ input::placeholder {
 .row-enter {
   animation: row-enter 0.15s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+/* Reconnecting notice: three dots that light up in sequence (travel),
+   replacing the old whole-line fade. */
+@keyframes reconnect-dot {
+  0%, 70%, 100% { opacity: 0.25; }
+  35% { opacity: 1; }
+}
+.reconnect-dot {
+  animation: reconnect-dot 1.1s ease-in-out infinite;
+}
 
 @keyframes md-live-fade {
   from { opacity: 0.42; }

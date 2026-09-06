@@ -158,9 +158,11 @@ describe('AssistantBlockTimeline process UI', () => {
         type: 'thinking',
         content: 'Considering the clock.',
       },
-      // Non-view tool so summary remains expandable (view tools are header-only).
-      makeToolBlock('tool_a', 'diagnose_proxy', 'done', {
+      // Errored non-view tool so the row stays expandable (plain done tool
+      // calls are now header-only).
+      makeToolBlock('tool_a', 'diagnose_proxy', 'error', {
         summary: '{"time":"12:00"}',
+        error: 'probe failed',
       }),
       {
         id: 'f1',
@@ -359,8 +361,9 @@ describe('AssistantBlockTimeline process UI', () => {
 
   it('keyboard Enter on collapsed tool toggles aria-expanded', () => {
     renderTimeline([
-      makeToolBlock('tool_k', 'diagnose_proxy', 'done', {
+      makeToolBlock('tool_k', 'diagnose_proxy', 'error', {
         summary: '{"ok":1}',
+        error: 'probe failed',
       }),
     ]);
 

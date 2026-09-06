@@ -16,10 +16,12 @@
 /* `imported:<provider>` so the Memory UI can badge imported rows.          */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, FileUp, Loader2, Upload } from 'lucide-react';
+import { ChevronDown, FileUp, Loader2, Sparkles, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
+import { useModels } from '@/hooks/useModels';
+import { loadLastModel, type ModelItem } from '@/sections/chat/model-display';
 
 interface ParsedEntry {
   /** Stable id used by the React list (file basename + line index). */
@@ -350,6 +352,19 @@ export function parseMemoryImportEntries(text: string, source: string): ParsedEn
   return parseProseEntries(text);
 }
 
+interface AiOp {
+  action: 'add' | 'update' | 'delete';
+  key: string;
+  value: string;
+  category: string;
+}
+
+const ACTION_BADGE: Record<AiOp['action'], { label: string; className: string }> = {
+  add: { label: 'add', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' },
+  update: { label: 'update', className: 'border-sky-500/30 bg-sky-500/10 text-sky-400' },
+  delete: { label: 'delete', className: 'border-rose-500/30 bg-rose-500/10 text-rose-400' },
+};
+
 export function ImportMemoryDialog({
   open,
   onClose,
@@ -360,20 +375,36 @@ export function ImportMemoryDialog({
   onImported: () => void;
 }) {
   const [fileName, setFileName] = useState<string | null>(null);
+  const [rawText, setRawText] = useState('');
+  const [mode, setMode] = useState<'ai' | 'parse'>('ai');
   const [entries, setEntries] = useState<ParsedEntry[] | null>(null);
   const [provider, setProvider] = useState('claude');
   const [defaultCategory, setDefaultCategory] = useState<Category>('general');
   const [parseError, setParseError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  // AI-arrange mode: the selected model turns the export into add/update/delete ops.
+  const [aiOps, setAiOps] = useState<AiOp[] | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { models } = useModels();
+  const [model, setModel] = useState<{ id: string; name: string; provider: string } | null>(() => {
+    const m = loadLastModel();
+    return m ? { id: m.id, name: m.name || m.id, provider: m.provider } : null;
+  });
 
   // Reset state whenever the dialog re-opens (so previous parses don't leak).
   useEffect(() => {
     if (!open) {
       setFileName(null);
+      setRawText('');
       setEntries(null);
       setParseError(null);
       setImporting(false);
+      setAiOps(null);
+      setAiError(null);
+      setAiLoading(false);
     }
   }, [open]);
 
@@ -384,30 +415,70 @@ export function ImportMemoryDialog({
 
   const groupedCount = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const e of entries ?? []) {
-      counts[e.category] = (counts[e.category] ?? 0) + 1;
-    }
+    for (const e of entries ?? []) counts[e.category] = (counts[e.category] ?? 0) + 1;
     return counts;
   }, [entries]);
 
+  const aiCounts = useMemo(() => {
+    const c = { add: 0, update: 0, delete: 0 };
+    for (const o of aiOps ?? []) c[o.action] += 1;
+    return c;
+  }, [aiOps]);
+
+  async function runAiArrange(text: string) {
+    if (!text.trim()) return;
+    setAiLoading(true);
+    setAiError(null);
+    setAiOps(null);
+    try {
+      const res = await api.post<{ operations: AiOp[]; model: string; provider: string }>(
+        '/api/august/memory/import/ai',
+        { text, model: model?.id ?? '', provider: model?.provider ?? '' },
+      );
+      setAiOps(res?.operations ?? []);
+      if ((res?.operations ?? []).length === 0) {
+        setAiError('The model found nothing worth importing.');
+      }
+    } catch (err) {
+      setAiError((err as Error).message || 'The model could not arrange the memories.');
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   async function handleFile(file: File) {
     setParseError(null);
+    setAiError(null);
     if (file.size > MAX_FILE_BYTES) {
       setParseError(`File is too large (${(file.size / 1024 / 1024).toFixed(1)} MiB > 5 MiB).`);
       return;
     }
     const text = await file.text();
-    const parsed = parseMemoryImportEntries(text, file.name);
-    if (parsed.length === 0) {
-      setParseError(
-        'No entries found. The file should be a Markdown bullet list, an August export, or a JSON array of {key, value}.',
-      );
-      setEntries(null);
-      setFileName(file.name);
-      return;
-    }
-    setEntries(parsed);
+    setRawText(text);
     setFileName(file.name);
+    if (mode === 'ai') {
+      void runAiArrange(text);
+    } else {
+      const parsed = parseMemoryImportEntries(text, file.name);
+      if (parsed.length === 0) {
+        setParseError(
+          'No entries found. The file should be a Markdown bullet list, an August export, a Claude prose dump, or a JSON array of {key, value}.',
+        );
+        setEntries(null);
+        return;
+      }
+      setEntries(parsed);
+    }
+  }
+
+  function switchMode(next: 'ai' | 'parse') {
+    setMode(next);
+    if (!rawText.trim()) return;
+    if (next === 'ai') {
+      void runAiArrange(rawText);
+    } else {
+      setEntries(parseMemoryImportEntries(rawText, fileName ?? 'import'));
+    }
   }
 
   function applyCategoryOverride() {
@@ -416,6 +487,10 @@ export function ImportMemoryDialog({
   }
 
   async function doImport() {
+    if (mode === 'ai') {
+      await doAiImport();
+      return;
+    }
     if (!entries || entries.length === 0) return;
     setImporting(true);
     try {
@@ -449,7 +524,48 @@ export function ImportMemoryDialog({
     }
   }
 
+  async function doAiImport() {
+    if (!aiOps || aiOps.length === 0) return;
+    setImporting(true);
+    try {
+      const upserts = aiOps
+        .filter((o) => o.action !== 'delete')
+        .map((o) => ({ key: o.key, value: o.value, category: o.category, source: providerSource }));
+      let written = 0;
+      if (upserts.length > 0) {
+        const res = await api.post<ImportResult>('/api/august/memory/import', {
+          items: upserts,
+          defaultCategory: 'general',
+          defaultSource: providerSource,
+        });
+        written = res?.count ?? upserts.length;
+      }
+      let deleted = 0;
+      for (const o of aiOps.filter((x) => x.action === 'delete')) {
+        try {
+          await api.post('/api/august/memory/manage', { action: 'delete', key: o.key });
+          deleted += 1;
+        } catch {
+          /* a missing key is fine — count it as not deleted */
+        }
+      }
+      toast.success(
+        `Arranged memory — ${written} saved${deleted ? `, ${deleted} removed` : ''}`,
+      );
+      onImported();
+      onClose();
+    } catch (err) {
+      toast.error(`Import failed: ${(err as Error).message}`);
+    } finally {
+      setImporting(false);
+    }
+  }
+
   if (!open) return null;
+
+  const busy = mode === 'ai' ? aiLoading : importing;
+  const canImport =
+    mode === 'ai' ? (aiOps?.length ?? 0) > 0 : (entries?.length ?? 0) > 0;
 
   return (
     <div
@@ -480,12 +596,63 @@ export function ImportMemoryDialog({
         <div className="space-y-4 px-5 py-4">
           <p className="text-xs text-muted-foreground">
             Drop a <code className="font-mono">.md</code> or <code className="font-mono">.json</code>{' '}
-            memory export. Supported: August's own export, Claude memory dumps (bullet lists
-            <span className="mx-1 font-medium text-muted-foreground">or</span> bold-section prose
-            paragraphs), generic
-            <code className="font-mono"> {'{ key, value }'} </code> JSON arrays, and
-            <code className="font-mono"> - key: value </code> bullet lists.
+            memory export. <span className="text-foreground">AI arrange</span> sends it to the model
+            you pick below, which merges duplicates and decides what to add, update, or delete.{' '}
+            <span className="text-foreground">Parse locally</span> uses the built-in reader instead.
           </p>
+
+          {/* Mode toggle */}
+          <div className="inline-flex rounded-lg border border-border/60 bg-card/60 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => switchMode('ai')}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 transition',
+                mode === 'ai' ? 'bg-primary/15 text-foreground' : 'text-muted-foreground hover:text-foreground',
+              )}
+              data-testid="import-mode-ai"
+            >
+              <Sparkles className="size-3.5" /> AI arrange
+            </button>
+            <button
+              type="button"
+              onClick={() => switchMode('parse')}
+              className={cn(
+                'rounded-md px-3 py-1.5 transition',
+                mode === 'parse' ? 'bg-primary/15 text-foreground' : 'text-muted-foreground hover:text-foreground',
+              )}
+              data-testid="import-mode-parse"
+            >
+              Parse locally
+            </button>
+          </div>
+
+          {/* Model selector (AI mode) */}
+          {mode === 'ai' && (
+            <label className="block space-y-1">
+              <span className="text-[11px] text-muted-foreground">Arranging model</span>
+              <div className="relative">
+                <select
+                  value={model?.id ?? ''}
+                  onChange={(e) => {
+                    const m = models.find((x) => x.id === e.target.value) ?? null;
+                    setModel(m ? { id: m.id, name: m.name || m.id, provider: m.provider } : null);
+                    if (m && rawText.trim()) void runAiArrange(rawText);
+                  }}
+                  className="w-full appearance-none rounded-md border border-border/60 bg-background/60 px-2 py-1.5 pr-7 text-xs outline-none focus:border-primary/40"
+                  data-testid="import-model-select"
+                >
+                  {!model && <option value="">Select a model…</option>}
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name || m.id} · {m.provider}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+              </div>
+            </label>
+          )}
 
           <input
             ref={fileInputRef}
@@ -518,8 +685,65 @@ export function ImportMemoryDialog({
               {parseError}
             </div>
           )}
+          {aiError && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {aiError}
+            </div>
+          )}
+          {aiLoading && (
+            <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-card/40 px-3 py-3 text-xs text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" />
+              {model?.name || model?.id || 'The model'} is arranging the memories…
+            </div>
+          )}
 
-          {entries && entries.length > 0 && (
+          {/* AI operations preview */}
+          {mode === 'ai' && aiOps && aiOps.length > 0 && (
+            <div className="rounded-lg border border-border/60 bg-card/40">
+              <div className="flex items-center justify-between border-b border-border/60 px-3 py-1.5 text-[11px] text-muted-foreground">
+                <span>
+                  {aiOps.length} operations ·{' '}
+                  <span className="text-emerald-400">{aiCounts.add} add</span> ·{' '}
+                  <span className="text-sky-400">{aiCounts.update} update</span> ·{' '}
+                  <span className="text-rose-400">{aiCounts.delete} delete</span>
+                </span>
+                <span className="text-[10px] text-muted-foreground/70">
+                  by {model?.name || model?.id}
+                </span>
+              </div>
+              <ul className="max-h-72 divide-y divide-border/40 overflow-y-auto">
+                {aiOps.slice(0, 80).map((o, i) => (
+                  <li key={`${o.action}-${o.key}-${i}`} className="flex items-start gap-3 px-3 py-2 text-xs">
+                    <span
+                      className={cn(
+                        'mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide',
+                        ACTION_BADGE[o.action].className,
+                      )}
+                    >
+                      {ACTION_BADGE[o.action].label}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono text-[11px] text-foreground/90">{o.key}</div>
+                      {o.action !== 'delete' && (
+                        <div className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{o.value}</div>
+                      )}
+                    </div>
+                    {o.action !== 'delete' && (
+                      <span className="shrink-0 text-[10px] text-muted-foreground/70">{o.category}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {aiOps.length > 80 && (
+                <div className="border-t border-border/60 px-3 py-1.5 text-[10px] text-muted-foreground">
+                  showing 80 of {aiOps.length} — all will be applied
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Parse-mode controls + preview */}
+          {mode === 'parse' && entries && entries.length > 0 && (
             <>
               <div className="grid grid-cols-2 gap-3">
                 <label className="space-y-1">
@@ -628,15 +852,21 @@ export function ImportMemoryDialog({
           <button
             type="button"
             onClick={doImport}
-            disabled={!entries || entries.length === 0 || importing}
+            disabled={!canImport || busy || (mode === 'ai' && !model)}
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
           >
-            {importing && <Loader2 className="size-3 animate-spin" />}
-            {importing
-              ? 'Importing…'
-              : entries && entries.length > 0
-                ? `Import ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`
-                : 'Import'}
+            {busy && <Loader2 className="size-3 animate-spin" />}
+            {mode === 'ai'
+              ? importing
+                ? 'Applying…'
+                : aiOps && aiOps.length > 0
+                  ? `Apply ${aiOps.length} ${aiOps.length === 1 ? 'change' : 'changes'}`
+                  : 'Apply'
+              : importing
+                ? 'Importing…'
+                : entries && entries.length > 0
+                  ? `Import ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`
+                  : 'Import'}
           </button>
         </footer>
       </div>

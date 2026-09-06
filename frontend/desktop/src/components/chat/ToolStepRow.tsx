@@ -192,12 +192,27 @@ export function ToolStepRow({
     tool.pendingApproval ||
     (hasChildren && (!isView || verbose))
   );
-  // Minimal-output policy: settled read rows are header-only — no chevron,
-  // nothing to expand into. Command rows are expandable into their output
-  // box (collapsed by default, auto-open while running) so the transcript
-  // stays minimal but the result is one click away. Failures always stay
-  // inspectable. /verbose lifts the read lock too.
-  const minimalLocked = !verbose && !running && isView && !errored;
+  // Minimal-output policy: settled read rows AND plain tool calls (the
+  // 'tool' bucket — introspect, skill-load, config, …) are header-only: just
+  // the name, no chevron, no redundant CONTEXT dropdown. Command rows stay
+  // expandable into their output box; anything with real payload (error, diff,
+  // search hits, setup/approval widgets) or a running turn stays inspectable.
+  // /verbose lifts the lock so raw output is reachable inline.
+  const isPlainTool = !isCommand && !isEdit && bucket === 'tool';
+  const hasSpecialContent = !!(
+    tool.error ||
+    tool.inlineDiff ||
+    (tool.searchHits && tool.searchHits.length > 0) ||
+    tool.providerSetup ||
+    tool.integrationSetup ||
+    tool.pendingApproval ||
+    tool.actionNeeded
+  );
+  const minimalLocked =
+    !verbose &&
+    !running &&
+    !errored &&
+    (isView || (isPlainTool && !hasSpecialContent));
   // View tools stay header-only while empty (no blank "Running…" panel).
   const canExpand =
     !minimalLocked && (hasExpandableContent || (running && !isView));

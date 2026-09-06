@@ -26,7 +26,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Brain, ChevronLeft, ChevronRight, Download, FileUp, FolderTree, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { Brain, ChevronLeft, ChevronRight, Download, FolderTree, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
@@ -749,6 +749,30 @@ export function MemorySection({ active }: { active: { id: string } }) {
         />
       </div>
 
+      {/* Import from another AI — prominent row (Claude-parity layout):
+          title + description on the left, a single "Start import" action on
+          the right. Opens the parser dialog (Markdown / JSON export). */}
+      <div className="flex items-start justify-between gap-4 rounded-xl border border-white/[0.06] bg-card/60 p-4">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">
+            Import memory from other AI providers
+          </h3>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            Bring relevant context and data from another AI provider into August. Drop a
+            Markdown or JSON memory export — August parses it into entries you can review
+            before importing.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setImportOpen(true)}
+          className="shrink-0 rounded-lg border border-border/60 bg-card px-3.5 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:bg-muted/60"
+          data-testid="memory-import-open"
+        >
+          Start import
+        </button>
+      </div>
+
       {storesQ.isLoading ? (
         <PageLoader label="Loading memory stores…" variant="card" className="py-10" />
       ) : (
@@ -877,15 +901,6 @@ export function MemorySection({ active }: { active: { id: string } }) {
               className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-[11px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
             >
               <Download className="size-3.5" /> Export
-            </button>
-            <button
-              type="button"
-              onClick={() => setImportOpen(true)}
-              title="Import memory from another AI (Markdown or JSON export)"
-              className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-[11px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
-              data-testid="memory-import-open"
-            >
-              <FileUp className="size-3.5" /> Import
             </button>
           </div>
 

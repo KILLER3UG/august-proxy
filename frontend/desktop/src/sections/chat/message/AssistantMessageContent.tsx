@@ -158,10 +158,17 @@ export function AssistantMessageContent({
           </div>
         )}
         {/* Transient provider-retry notice (429/5xx backoff) — replaced on
-            each attempt, cleared when the turn finalizes. */}
+            each attempt, cleared when the turn finalizes. The dots animate
+            (travel) rather than the whole line fading. */}
         {message.retryNotice && (
-          <div className="text-[11px] text-warning/90 animate-pulse" data-testid="retry-notice">
-            {message.retryNotice}
+          <div className="flex items-center gap-1 text-[11px] text-warning/90" data-testid="retry-notice">
+            <span>Reconnecting</span>
+            <span className="inline-flex items-center gap-0.5" aria-hidden>
+              <span className="reconnect-dot size-1 rounded-full bg-current" style={{ animationDelay: '0ms' }} />
+              <span className="reconnect-dot size-1 rounded-full bg-current" style={{ animationDelay: '180ms' }} />
+              <span className="reconnect-dot size-1 rounded-full bg-current" style={{ animationDelay: '360ms' }} />
+            </span>
+            <span className="tabular-nums">{message.retryNotice.replace(/^Reconnecting\s*/, '')}</span>
           </div>
         )}
         {/* Fallback chip (D8): a chain/promotion switch answered this turn. */}
