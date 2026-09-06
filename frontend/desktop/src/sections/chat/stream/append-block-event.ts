@@ -7,6 +7,14 @@
 
 import type { MessageBlock, AppendBlockEvent } from '@/types/chat';
 
+/** Cap for the live command preview accumulated on a block. Matches the
+ *  80 KB cap `makeStreamHandlers` applies to the parallel `toolResults`
+ *  array — blocks are what the UI renders AND persists to localStorage, so
+ *  an uncapped accumulator here is what let a chatty command (npm install)
+ *  grow a single block past the storage quota. Keep the TAIL: the most
+ *  recent output is the interesting part while a command runs. */
+const MAX_BLOCK_PREVIEW = 80_000;
+
 /** Merge adjacent thinking blocks so demotion cannot produce Thought (2). */
 export function coalesceAdjacentThinking(blocks: MessageBlock[]): MessageBlock[] {
   if (blocks.length < 2) return blocks;
@@ -105,9 +113,16 @@ export function appendBlockEvent(
     if (targetIdx !== -1) {
       const target = { ...blocks[targetIdx] };
       if (target.tool) {
+        const next = (target.tool.preview || '') + (event.preview || '');
+        const dropped = next.length > MAX_BLOCK_PREVIEW;
         target.tool = {
           ...target.tool,
-          preview: (target.tool.preview || '') + (event.preview || ''),
+          ...(event.preview
+            ? {
+                preview: dropped ? next.slice(next.length - MAX_BLOCK_PREVIEW) : next,
+                previewDropped: target.tool.previewDropped || dropped,
+              }
+            : {}),
           ...(event.summary ? { summary: event.summary } : {}),
         };
       }
@@ -188,6 +203,15 @@ export function appendBlockEvent(
           providerSetup: event.providerSetup ?? target.tool.providerSetup,
           integrationSetup: event.integrationSetup ?? target.tool.integrationSetup,
           actionNeeded: event.actionNeeded ?? target.tool.actionNeeded,
+          // The live preview is redundant once the result lands — `summary`
+          // carries the final output. Keeping the (up to 80 KB) preview in
+          // the block would persist it to localStorage for the life of the
+          // session; that accumulation is what fed the quota failures behind
+          // the a405e996 fix.
+          preview: undefined,
+          previewDropped: undefined,
+          contentTruncated: event.contentTruncated,
+          contentFullLength: event.contentFullLength,
         };
       }
       blocks[targetIdx] = target;

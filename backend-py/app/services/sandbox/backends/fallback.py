@@ -14,7 +14,11 @@ import shlex
 import time
 from pathlib import Path
 
-from app.services.sandbox.paths import path_looks_outside_workspace, resolve_workspace_root
+from app.services.sandbox.paths import (
+    is_null_sink,
+    path_looks_outside_workspace,
+    resolve_workspace_root,
+)
 from app.services.sandbox.policy import (
     NETWORK_COMMAND_PREFIXES,
     READ_ONLY_BLOCKED_PREFIXES,
@@ -159,6 +163,22 @@ def rewrite_command_for_platform(command: str) -> str:
             return command
         return f'cmd /c dir /b "{path}"'
 
+    # Piped viewer forms: `find . | head -5` / `git log | tail -20`. The
+    # anchored rewrites above only see the command head, so a trailing
+    # head/tail segment was left to fail in cmd.exe (no such builtin).
+    # Rewrite just the viewer segment into a PowerShell stdin filter.
+    m = re.match(
+        r'^(.*\|\s*)(head|tail)(?:\s+-n)?\s+(\d+)\s*$',
+        text,
+        flags=re.IGNORECASE,
+    )
+    if m and 'powershell' not in text.lower():
+        verb = 'First' if m.group(2).lower() == 'head' else 'Last'
+        return (
+            f'{m.group(1)}powershell -NoProfile -NonInteractive -Command '
+            f'"$input | Select-Object -{verb} {int(m.group(3))}"'
+        )
+
     return command
 
 
@@ -190,6 +210,54 @@ def _first_word(command: str) -> str:
     return parts[0].lower() if parts else ''
 
 
+# Cmdlets that only read: a powershell -Command payload whose every pipeline
+# segment starts with one of these (and carries no redirect) cannot write to
+# disk, so naming an outside path in it is a read, not a write.
+_PS_READ_ONLY_CMDLETS = frozenset({
+    'get-childitem', 'gci', 'ls', 'dir', 'get-content', 'gc', 'type',
+    'select-string', 'sls', 'test-path', 'tp', 'get-item', 'gi',
+    'get-itemproperty', 'gip', 'get-member', 'gm', 'where-object', 'where',
+    'select-object', 'select', 'sort-object', 'sort', 'group-object', 'group',
+    'measure-object', 'measure', 'format-table', 'ft', 'format-list', 'fl',
+    'resolve-path', 'rp',
+})
+
+
+def _is_read_only_powershell(command: str) -> bool:
+    """True for a single powershell/pwsh -Command invocation that provably
+    cannot write files: every pipeline segment in the payload starts with a
+    read-only cmdlet, the payload has no redirect, and nothing is chained
+    outside the quoted payload. Such commands are exempt from the
+    outside-workspace path scans — reading e.g. %USERPROFILE%\\Pictures is
+    the whole point of them (the scans punished exactly that)."""
+    first = _first_word(command)
+    if first not in ('powershell', 'pwsh'):
+        return False
+    m = _INTERPRETER_FLAG_PAYLOAD_RE.search(command)
+    if not m:
+        return False
+    payload = m.group(2)
+    if re.search(r'[><]', payload):
+        return False
+    # Anything chained outside the payload rides along unchecked.
+    remainder = command[:m.start()] + command[m.end():]
+    if re.search(r'[;&|<>`$]', remainder):
+        return False
+    for seg in re.split(r';|\|', payload):
+        seg = seg.strip()
+        if not seg:
+            continue
+        # `$x = Get-ChildItem …` stores in a variable (no disk write) — check
+        # the cmdlet after the assignment.
+        assign = re.match(r'^\$?\w+\s*=\s*(.+)$', seg)
+        if assign:
+            seg = assign.group(1).strip()
+        head = re.split(r'[\s(]', seg, maxsplit=1)[0].lower().lstrip('$&')
+        if head not in _PS_READ_ONLY_CMDLETS:
+            return False
+    return True
+
+
 def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
     """Return a denial reason, or None if soft policy allows the command."""
     if policy.is_full_access:
@@ -204,7 +272,13 @@ def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
                 f'read-only sandbox blocks interpreters ({first}) — they can mutate files '
                 'regardless of the command; use the file tools or Full access instead.'
             )
-        if _REDIRECT_RE.search(command):
+        # Redirects to null sinks discard output — harmless even in read-only
+        # mode; only real writes are blocked.
+        redirectTargets = [
+            m.group(1) or m.group(2) or m.group(3) or ''
+            for m in _REDIRECT_RE.finditer(command)
+        ]
+        if redirectTargets and not all(is_null_sink(t) for t in redirectTargets):
             return 'read-only sandbox blocks shell redirects / tee'
     if not policy.network:
         # Scan EVERY chained segment's first word, not just the
@@ -224,17 +298,21 @@ def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
         target = match.group(1) or match.group(2) or match.group(3)
         if path_looks_outside_workspace(target, rootStr):
             return f'write redirect outside workspace blocked: {target}'
-    for tok in _shell_tokens_for_scan(command):
-        if path_looks_outside_workspace(tok, rootStr):
-            return f'path outside workspace blocked: {tok}'
-    # String literals inside interpreter payloads (`python -c "..."`,
-    # `node -e "..."`, `powershell -Command "..."`) can name paths the
-    # token scan never sees — scan them against the same containment rule.
-    for m in _INTERPRETER_FLAG_PAYLOAD_RE.finditer(command):
-        payload = m.group(2)
-        for lit in re.findall(r"['\"]([^'\"]+)['\"]", payload):
-            if path_looks_outside_workspace(lit, rootStr):
-                return f'path inside interpreter payload blocked: {lit}'
+    # A provably read-only powershell payload (see _is_read_only_powershell)
+    # cannot write outside the workspace, so its path arguments are reads —
+    # exempt it from the token + payload-literal containment scans.
+    if not _is_read_only_powershell(command):
+        for tok in _shell_tokens_for_scan(command):
+            if path_looks_outside_workspace(tok, rootStr):
+                return f'path outside workspace blocked: {tok}'
+        # String literals inside interpreter payloads (`python -c "..."`,
+        # `node -e "..."`, `powershell -Command "..."`) can name paths the
+        # token scan never sees — scan them against the same containment rule.
+        for m in _INTERPRETER_FLAG_PAYLOAD_RE.finditer(command):
+            payload = m.group(2)
+            for lit in re.findall(r"['\"]([^'\"]+)['\"]", payload):
+                if path_looks_outside_workspace(lit, rootStr):
+                    return f'path inside interpreter payload blocked: {lit}'
     return None
 
 
@@ -274,6 +352,11 @@ async def _spawn(
         )
     except SubprocessAborted as abort:
         elapsed = int((time.monotonic() - started) * 1000)
+        # A killed command's partial output is far better than nothing —
+        # before this, two 110 s scans that timed out returned literally
+        # zero bytes.
+        partialOut = abort.stdout.decode('utf-8', errors='replace') if abort.stdout else ''
+        partialErr = abort.stderr.decode('utf-8', errors='replace') if abort.stderr else ''
         if abort.reason == 'cancelled':
             msg = 'Error: Command cancelled by user.'
         else:
@@ -281,9 +364,13 @@ async def _spawn(
                 f'Error: Command timed out after {int(timeout)}s and was killed. '
                 'Use non-interactive flags only (no pagers, REPLs, or password prompts).'
             )
+        if partialOut or partialErr:
+            msg += f'\n[killed at {abort.reason} — partial output below]'
+            if partialErr:
+                msg += '\n' + partialErr
         return SandboxResult(
             ok=False,
-            stdout='',
+            stdout=partialOut,
             stderr=msg,
             exit_code=-1,
             enforcement=enforcement,  # type: ignore[arg-type]

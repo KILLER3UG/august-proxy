@@ -78,7 +78,7 @@ async def test_fallback_hard_timeout(monkeypatch, tmp_path):
     """A stuck walk must surface a timeout error, never hang the turn."""
     monkeypatch.setattr(file_tools, '_SEARCH_FALLBACK_TIMEOUT_S', 0.2)
 
-    def _stuck(query, searchPath, cancelEvent=None):
+    def _stuck(query, searchPath, cancelEvent=None, *a, **k):
         import time
 
         time.sleep(2)
@@ -88,3 +88,47 @@ async def test_fallback_hard_timeout(monkeypatch, tmp_path):
 
     result = await file_tools._pySearchFiles('x', tmp_path)
     assert 'timed out' in result
+
+
+# ── glob / type / maxResults filters ───────────────────────────────────
+
+
+async def test_search_files_forwards_filters_to_rg(monkeypatch, tmp_path):
+    captured: dict = {}
+
+    async def _fakeExec(*args, **kwargs):
+        captured['args'] = list(args)
+        return _FakeProc(1)
+
+    async def _fakeCommunicate(proc, timeout=None):
+        return (b'', b'')
+
+    monkeypatch.setattr(asyncio, 'create_subprocess_exec', _fakeExec)
+    monkeypatch.setattr('app.lib.async_subprocess.communicate_or_kill', _fakeCommunicate)
+
+    result = await file_tools._searchFiles(
+        'q', str(tmp_path), glob='*.py', type='py', maxResults=5
+    )
+    assert result == 'No matches found.'
+    a = captured['args']
+    assert '-g' in a and '*.py' in a
+    assert '--type' in a and 'py' in a
+
+
+async def test_search_files_max_results_caps_output(monkeypatch, tmp_path):
+    lines = '\n'.join(f'file.py:{i}:match {i}' for i in range(150))
+    _patchRg(monkeypatch, 0, stdout=lines.encode())
+    result = await file_tools._searchFiles('match', str(tmp_path), maxResults=10)
+    assert '... and 140 more results' in result
+    assert result.count('match') <= 11  # 10 results + the suffix line
+
+
+def test_fallback_glob_and_type_filters(tmp_path):
+    (tmp_path / 'a.py').write_text('needle', encoding='utf-8')
+    (tmp_path / 'b.txt').write_text('needle', encoding='utf-8')
+
+    byGlob = file_tools._pySearchFilesSync('needle', tmp_path, glob='*.py')
+    assert 'a.py' in byGlob and 'b.txt' not in byGlob
+
+    byType = file_tools._pySearchFilesSync('needle', tmp_path, type='txt')
+    assert 'b.txt' in byType and 'a.py' not in byType

@@ -34,6 +34,7 @@ import { dispatchFocusComposer, dispatchInsertComposerText, onUiAction } from "@
 import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { useDefaultWorkspace } from "@/hooks/useDefaultWorkspace";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 
@@ -621,6 +622,10 @@ export function ChatLayout() {
                 <Outlet />
               </div>
             ) : (
+              /* Keyed by route: a render throw in one chat shows a
+                 recoverable card here (sidebar stays alive), and navigating
+                 to another session remounts the boundary and clears it. */
+              <ErrorBoundary key={location.pathname}>
               <>
                 {/* Full-width chat column — scroll container spans the full
                     chat-area width so the thumb sits at the chat-area edge.
@@ -654,6 +659,7 @@ export function ChatLayout() {
                   />
                 )}
               </>
+              </ErrorBoundary>
             )}
           </div>
 

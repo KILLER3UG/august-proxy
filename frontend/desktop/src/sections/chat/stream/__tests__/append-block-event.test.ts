@@ -184,3 +184,59 @@ describe('appendBlockEvent memoryUpdated', () => {
     expect(notices.map((n) => n.content)).toContain('fact 5');
   });
 });
+
+describe('appendBlockEvent command preview bounds', () => {
+  const seed = () =>
+    appendBlockEvent([], { type: 'command', id: 'c1', name: 'run_command', status: 'running' });
+
+  it('caps the live preview at 80 KB keeping the tail, and flags the drop', () => {
+    let blocks = seed();
+    const chunk = 'x'.repeat(30_000);
+    for (let i = 0; i < 5; i++) {
+      blocks = appendBlockEvent(blocks, { type: 'tool_progress', id: 'c1', preview: chunk });
+    }
+    const tool = blocks[0].tool!;
+    expect((tool.preview || '').length).toBeLessThanOrEqual(80_000);
+    expect(tool.previewDropped).toBe(true);
+    // Tail kept: the newest chunk is present.
+    expect(tool.preview!.endsWith(chunk)).toBe(true);
+  });
+
+  it('leaves short previews untouched and unflagged', () => {
+    let blocks = seed();
+    blocks = appendBlockEvent(blocks, { type: 'tool_progress', id: 'c1', preview: 'hello' });
+    const tool = blocks[0].tool!;
+    expect(tool.preview).toBe('hello');
+    expect(tool.previewDropped).toBeFalsy();
+  });
+
+  it('drops the preview once the toolResult lands (summary carries the output)', () => {
+    let blocks = seed();
+    blocks = appendBlockEvent(blocks, { type: 'tool_progress', id: 'c1', preview: 'partial' });
+    blocks = appendBlockEvent(blocks, {
+      type: 'toolResult',
+      id: 'c1',
+      status: 'done',
+      summary: 'full final output',
+    });
+    const tool = blocks[0].tool!;
+    expect(tool.preview).toBeUndefined();
+    expect(tool.previewDropped).toBeUndefined();
+    expect(tool.summary).toBe('full final output');
+  });
+
+  it('carries contentTruncated/contentFullLength onto the block', () => {
+    let blocks = seed();
+    blocks = appendBlockEvent(blocks, {
+      type: 'toolResult',
+      id: 'c1',
+      status: 'done',
+      summary: 'cut here',
+      contentTruncated: true,
+      contentFullLength: 123456,
+    });
+    const tool = blocks[0].tool!;
+    expect(tool.contentTruncated).toBe(true);
+    expect(tool.contentFullLength).toBe(123456);
+  });
+});

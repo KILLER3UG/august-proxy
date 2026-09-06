@@ -57,6 +57,7 @@ function persistAttachment(a: FileAttachment): FileAttachment {
     path: a.path,
     content: a.content,
     dataUrl: a.dataUrl,
+    savedPath: a.savedPath,
     thumbnailUrl: a.thumbnailUrl,
     type: a.type,
     truncated: a.truncated,
@@ -189,11 +190,24 @@ export function useChatSend(opts: UseChatSendOptions) {
       // Sending the full transcript as one blob every time bloated context and
       // could make the model/provider look "stuck" or fail silently on large chats.
       const lastUser = [...chatHistory].reverse().find((m) => m.role === 'user');
+      // Upload pasted images into the workspace BEFORE composing the prompt
+      // so the model receives a real path it can open with analyze_media —
+      // the data URL alone never reached the backend, leaving the agent
+      // blind to every attached image.
+      const lastAtts = lastUser?.attachments ?? [];
+      if (lastAtts.some((a) => a.type === 'image' && a.dataUrl && !a.savedPath)) {
+        const wbId = ChatSendService.resolveWorkbenchQueueId(
+          workbenchSessionId,
+          activeWorkbenchSessionId,
+          turnSessionId,
+        );
+        await ChatAttachmentService.uploadImages(wbId, lastAtts);
+      }
       // Compose attachment prompt at send time so message.content stays
       // display-friendly (typed text only) while the model still gets file text.
       const latestText = ChatAttachmentService.composeUserText(
         lastUser?.content ?? '',
-        lastUser?.attachments ?? [],
+        lastAtts,
       ).trim();
       if (!latestText) {
         toast.error('Nothing to send');
@@ -449,15 +463,20 @@ export function useChatSend(opts: UseChatSendOptions) {
       // next tool/LLM boundary without cancelling the turn (Hermes-style /steer).
       if (streaming && sessionId) {
         try {
-          const savedAttachments =
-            readyAttachments.length > 0
-              ? readyAttachments.map(persistAttachment)
-              : undefined;
           const wbId = ChatSendService.resolveWorkbenchQueueId(
             workbenchSessionId,
             activeWorkbenchSessionId,
             sessionId,
           );
+          // Same upload-then-name dance as the main send path: the queue
+          // formatter renders savedPath so the steered turn can open it.
+          if (readyAttachments.some((a) => a.type === 'image' && a.dataUrl && !a.savedPath)) {
+            await ChatAttachmentService.uploadImages(wbId, readyAttachments);
+          }
+          const savedAttachments =
+            readyAttachments.length > 0
+              ? readyAttachments.map(persistAttachment)
+              : undefined;
           const entry = await queueWorkbenchMessage(
             wbId,
             text,

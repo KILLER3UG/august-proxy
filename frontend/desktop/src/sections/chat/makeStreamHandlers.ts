@@ -411,7 +411,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       });
       scheduleUpdate();
     },
-    onToolResult: ({ id, content, isError, status, providerSetup, integrationSetup }) => {
+    onToolResult: ({ id, content, isError, status, providerSetup, integrationSetup, contentTruncated, contentFullLength }) => {
       let parsedResult: Record<string, unknown> | null;
       try {
         parsedResult = typeof content === 'string' ? JSON.parse(content) as Record<string, unknown> : content as Record<string, unknown>;
@@ -471,11 +471,25 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
           toolEntry.name.startsWith('@run_command') ||
           toolEntry.name === 'bash' ||
           toolEntry.name.endsWith('__bash'));
-      // Commands keep a large output buffer for the live terminal pane;
-      // other tools stay compact in the disclosure summary.
+      // Commands keep a bounded output buffer for the live terminal pane;
+      // other tools stay compact in the disclosure summary. The block summary
+      // is persisted into localStorage with the transcript, so a full 80 KB
+      // head-slice per command was a quota bomb — keep head+tail instead and
+      // point at the drawer, which still holds the complete `result`.
+      const COMMAND_SUMMARY_CAP = 10_000;
+      const commandSummary = (text: string) => {
+        if (text.length <= COMMAND_SUMMARY_CAP) return text;
+        const half = COMMAND_SUMMARY_CAP / 2;
+        const omitted = text.length - COMMAND_SUMMARY_CAP;
+        return (
+          `${text.slice(0, half)}\n\n` +
+          `[… ${omitted.toLocaleString()} characters omitted — full output in the output drawer …]\n\n` +
+          text.slice(-half)
+        );
+      };
       const summaryText =
         viewSummary ??
-        (isCommandResult ? resultText.slice(0, 80_000) : resultText.slice(0, 240));
+        (isCommandResult ? commandSummary(resultText) : resultText.slice(0, 240));
       if (toolEntry && (toolEntry.name === 'web_search' || toolEntry.name === 'WebSearch')) {
         if (parsedResult && Array.isArray(parsedResult.results)) {
           searchHits = (parsedResult.results as Array<{ title?: string; url?: string; snippet?: string }>).map((r) => ({
@@ -525,6 +539,10 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         status: toolFailed && parsedResult?.type !== 'mutation_pending_confirmation' ? 'error' : 'done',
         result: resultText,
         summary: summaryText,
+        // The live preview is redundant once `result` lands; dropping it here
+        // keeps the persisted `tools[]` entry from carrying a second 80 KB
+        // copy of the same output.
+        preview: undefined,
         error: toolFailed && parsedResult?.type !== 'mutation_pending_confirmation' ? resultText : '',
         duration: t.startedAt ? Date.now() - t.startedAt : undefined,
         searchHits: searchHits ?? t.searchHits,
@@ -554,6 +572,8 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         providerSetup: providerSetupResult,
         integrationSetup: integrationSetupResult,
         actionNeeded: actionNeededResult,
+        contentTruncated,
+        contentFullLength,
       });
       // 3.1: a successful edit-class tool result is a real mutation. Count it
       // so the post-turn git-diff fetch fires even though the `session` event

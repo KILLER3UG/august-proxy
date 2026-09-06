@@ -649,6 +649,74 @@ async def readFile(path: str = '', sessionId: str = ''):
     }
 
 
+_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+
+
+@router.post('/attachments')
+async def uploadAttachment(body: dict):
+    """Persist a composer attachment (typically a pasted image) into the
+    session workspace so the agent can actually open it.
+
+    Images attached in the chat lived as data URLs that never left the
+    client — analyze_media/read_file had no path to read, so the agent was
+    blind to them. This decodes the base64 payload, writes it under
+    ``<workspace>/.aug/attachments/<sessionId>/``, and returns the path the
+    frontend names in the prompt text. Size cap mirrors the /files/read
+    base64 envelope (25 MB).
+    """
+    import base64
+
+    sessionId = as_str(body.get('sessionId'), '').strip()
+    name = as_str(body.get('name'), '').strip() or 'image.png'
+    dataUrl = as_str(body.get('dataUrl'), '')
+    if not sessionId or not dataUrl:
+        raise HTTPException(status_code=400, detail='sessionId and dataUrl required')
+    if not dataUrl.startswith('data:') or ';base64,' not in dataUrl:
+        raise HTTPException(status_code=400, detail='dataUrl must be a base64 data URL')
+    session = wb.getWorkbenchSession(sessionId)
+    workspace = as_str(getattr(session, 'workspacePath', '') or '') if session else ''
+    if not workspace:
+        raise HTTPException(
+            status_code=409,
+            detail='session has no workspace — attachments need a folder-backed chat',
+        )
+    try:
+        raw = base64.b64decode(dataUrl.partition(';base64,')[2])
+    except Exception:
+        raise HTTPException(status_code=400, detail='invalid base64 payload')
+    if len(raw) > _MAX_ATTACHMENT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f'attachment exceeds the {_MAX_ATTACHMENT_BYTES // (1024 * 1024)} MB cap',
+        )
+    # Basename only — the client-supplied name must not escape the
+    # attachments dir (`..`, absolute paths, separators).
+    safeName = Path(name).name
+    if not safeName or safeName in ('.', '..'):
+        safeName = 'image.png'
+    safeSession = Path(sessionId).name or 'session'
+    targetDir = Path(workspace) / '.aug' / 'attachments' / safeSession
+    try:
+        targetDir.mkdir(parents=True, exist_ok=True)
+        target = targetDir / safeName
+        # Don't clobber a previous upload with the same name.
+        if target.exists():
+            for i in range(1, 1000):
+                candidate = targetDir / f'{target.stem}-{i}{target.suffix}'
+                if not candidate.exists():
+                    target = candidate
+                    break
+        target.write_bytes(raw)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f'failed to store attachment: {exc}')
+    return {
+        'ok': True,
+        'path': str(target),
+        'relativePath': f'.aug/attachments/{safeSession}/{target.name}',
+        'bytes': len(raw),
+    }
+
+
 async def _resolve_shared_read_file(
     path: str, sessionId: str, max_bytes: int = 50 * 1024 * 1024
 ) -> tuple[Path, str]:

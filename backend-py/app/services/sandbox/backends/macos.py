@@ -104,9 +104,15 @@ async def run(command: str, policy: SandboxPolicy, *, timeout: float) -> Sandbox
                 'Use non-interactive flags only (no pagers, REPLs, or password prompts).'
             )
         )
+        partialOut = abort.stdout.decode('utf-8', errors='replace') if abort.stdout else ''
+        partialErr = abort.stderr.decode('utf-8', errors='replace') if abort.stderr else ''
+        if partialOut or partialErr:
+            msg += f'\n[killed at {abort.reason} — partial output below]'
+            if partialErr:
+                msg += '\n' + partialErr
         return SandboxResult(
             ok=False,
-            stdout='',
+            stdout=partialOut,
             stderr=msg,
             exit_code=-1,
             enforcement='seatbelt',

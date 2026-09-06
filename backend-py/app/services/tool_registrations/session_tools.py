@@ -11,6 +11,18 @@ from app.services import tool_registry
 from app.services.sensitive_topics import isSensitiveMemory as _isSensitiveMemory
 
 
+def _emitMemoryInvalidate() -> None:
+    """Push a realtime invalidate after remember/forget wrote, so an open
+    Memory tab refetches its store lists / project view instead of showing a
+    stale snapshot (the model saved a memory and the tab never learned)."""
+    try:
+        from app.services.realtime_bus import emit_invalidate
+
+        emit_invalidate('brain-stores', 'brain-store', 'project-memory', 'memory-workspaces')
+    except Exception:
+        pass
+
+
 async def _search(query: str, scope: str = 'files', limit: int = 10) -> str:
     """Unified search across files and web with dedup."""
     from app.json_narrowing import as_int as _as_int
@@ -311,6 +323,7 @@ async def _remember(
             )
         except Exception:
             pass
+        _emitMemoryInvalidate()
         return _json.dumps(
             {
                 'ok': True,
@@ -376,6 +389,7 @@ async def _remember(
         )
     except Exception:
         pass
+    _emitMemoryInvalidate()
     return _json.dumps({'ok': True, 'key': factKey, 'category': cat, 'updated': before is not None})
 
 
@@ -455,6 +469,7 @@ async def _forget(key: str) -> str:
                 )
             except Exception:
                 pass
+            _emitMemoryInvalidate()
             return _json.dumps(
                 {'ok': True, 'deleted': True, 'scope': 'project', 'key': entry.title}
             )
@@ -526,6 +541,8 @@ async def _forget(key: str) -> str:
             )
         except Exception:
             pass
+    if deleted:
+        _emitMemoryInvalidate()
     return _json.dumps({'ok': bool(deleted), 'deleted': bool(deleted), 'key': factKey})
 
 

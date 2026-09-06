@@ -89,7 +89,11 @@ export function loadLastModel(): ModelItem | null {
   }
 }
 
-export function modelDisplayParts(id: string): { name: string; tag: string } {
+export function modelDisplayParts(id: string | null | undefined): { name: string; tag: string } {
+  // Sessions can carry an unset model (legacy rows, chats that never sent a
+  // turn). Sidebar rows call this unconditionally for status lines — a throw
+  // here blackens the whole app (no boundary below the root).
+  if (!id) return { name: '', tag: '' };
   const sepIdx = id.search(/[/:]/);
   const base = stripProviderPrefix(id);
   let cleaned = base;

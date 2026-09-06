@@ -23,6 +23,8 @@ _ORACLE_READ = frozenset({
     'desktop_mouse_position', 'desktop_screen_size', 'desktop_screenshot',
     'diagnose_proxy', 'get_fallback', 'list_aliases',
     'list_directory', 'list_integrations', 'list_mcp_servers',
+    # Read-only context capsule for a past session (mirrors _PROMPT_READ).
+    'session_context',
     'pptx_list_elements',
     'read_blackboard', 'read_file', 'read_files', 'search_files', 'web_fetch',
     'web_fetch_many', 'web_search',

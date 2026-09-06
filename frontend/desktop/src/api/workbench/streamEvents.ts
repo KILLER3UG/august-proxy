@@ -93,6 +93,8 @@ export function dispatchWorkbenchEvent(
         blocked: p?.blocked === true,
         providerSetup: p?.providerSetup,
         integrationSetup: p?.integrationSetup,
+        contentTruncated: p?.contentTruncated === true,
+        contentFullLength: typeof p?.contentFullLength === 'number' ? p.contentFullLength : undefined,
       });
       break;
     }

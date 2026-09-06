@@ -27,4 +27,11 @@ export interface ToolEntry {
    *  result JSON. Extracted structurally because actionNeeded serializes
    *  last in the result and the summary is truncated long before it. */
   actionNeeded?: ActionNeededPayload;
+  /** Live preview accumulator hit its cap — earlier chunks were dropped
+   *  (mirrors MessageBlockToolCall). */
+  previewDropped?: boolean;
+  /** Backend truncated the SSE result content (100 KB cap). */
+  contentTruncated?: boolean;
+  /** Full (pre-truncation) byte length of the tool result, when known. */
+  contentFullLength?: number;
 }

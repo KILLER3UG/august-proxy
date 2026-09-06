@@ -34,10 +34,17 @@ _CREDENTIAL_ENV_RE = re.compile(
 
 
 class SubprocessAborted(Exception):
-    """Raised when a child is killed due to timeout or cancel."""
+    """Raised when a child is killed due to timeout or cancel.
 
-    def __init__(self, reason: str) -> None:
+    Carries whatever stdout/stderr was already read (the streaming reader
+    buffers incrementally) so callers can return partial output instead of
+    throwing a long scan's results away.
+    """
+
+    def __init__(self, reason: str, stdout: bytes = b'', stderr: bytes = b'') -> None:
         self.reason = reason  # 'timeout' | 'cancelled'
+        self.stdout = stdout
+        self.stderr = stderr
         super().__init__(reason)
 
 
@@ -348,9 +355,12 @@ async def _communicate_streaming(
 
         await close_process(proc, grace=1.0, kill_grace=1.0)
         await _flush(True)
+        # Hand the partial buffers to the caller — a 110 s scan that gets
+        # killed produced literally nothing before this; now its output up to
+        # the kill survives.
         if cancel_task is not None and cancel_task in done:
-            raise SubprocessAborted('cancelled')
-        raise SubprocessAborted('timeout')
+            raise SubprocessAborted('cancelled', bytes(stdout_buf), bytes(stderr_buf))
+        raise SubprocessAborted('timeout', bytes(stdout_buf), bytes(stderr_buf))
     except asyncio.CancelledError:
         # Outer task cancelled — guarantee child process teardown before propagating.
         await close_process(proc, grace=1.0, kill_grace=1.0)

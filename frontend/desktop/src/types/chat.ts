@@ -115,6 +115,14 @@ export interface MessageBlockToolCall {
   /** For browser tools: a login-wall/escalation payload extracted from the
    *  result JSON. Mirrors `AppendBlockEvent.actionNeeded`. */
   actionNeeded?: import('@/components/chat/ActionNeededCard').ActionNeededPayload;
+  /** True once the live preview accumulator dropped earlier chunks to stay
+   *  under the block cap — the pane renders an "earlier output dropped" line. */
+  previewDropped?: boolean;
+  /** Backend truncated the SSE result content (100 KB cap). Mirrors the
+   *  `contentTruncated` field on the toolResult event. */
+  contentTruncated?: boolean;
+  /** Full (pre-truncation) byte length of the tool result, when known. */
+  contentFullLength?: number;
   pendingApproval?: {
     message?: string;
     detail?: string;
@@ -134,8 +142,14 @@ export interface FileAttachment {
   path?: string;
   /** Extracted text content for text-type files (PDF, DOCX, code, etc.) */
   content?: string;
-  /** Base64 data URL for images (sent to the model) and small inline previews. */
+  /** Base64 data URL for images — held client-side; the bytes reach the
+   *  agent only after `ChatAttachmentService.uploadImages` stores them in
+   *  the workspace (see `savedPath`). */
   dataUrl?: string;
+  /** Workspace path the attachment was uploaded to via
+   *  POST /api/workbench/attachments. Named in the prompt so
+   *  analyze_media / read_file can open the file. */
+  savedPath?: string;
   /** Original MIME type, used by the inline file preview when available. */
   mimeType?: string;
   /** Local object-URL preview shown while reading (revoked when done/removed). */
@@ -333,6 +347,10 @@ export interface AppendBlockEvent {
    *  result JSON (actionNeeded serializes last in the result, past the
    *  truncated summary — extraction is structural, not string-scanned). */
   actionNeeded?: import('@/components/chat/ActionNeededCard').ActionNeededPayload;
+  /** For toolResult: backend SSE content truncation flag + full length, so
+   *  the pane can show a "truncated" badge instead of silently cutting. */
+  contentTruncated?: boolean;
+  contentFullLength?: number;
   /** For type === 'recalledMemories': the recalled auto-memory rows. */
   memories?: RecalledMemoryItem[];
   /**

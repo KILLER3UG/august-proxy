@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import fnmatch
+import re
 from pathlib import Path
 
 from app.json_narrowing import as_int, as_str
@@ -86,6 +88,12 @@ _ALLOWEDCommandPrefixes = [
     'pwsh',
     'powershell',
     'cmd',
+    # Windows cmd.exe builtins — models emit `dir /s /b`, `type file`,
+    # `findstr pattern file` constantly on Windows; without these the
+    # allowlist rejected them even though `cmd /c dir` was allowed.
+    'dir',
+    'type',
+    'findstr',
 ]
 
 
@@ -116,9 +124,14 @@ _MEDIA_EXTS = frozenset({
     # images
     '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.tif', '.tiff',
     '.svg', '.heic', '.heif', '.avif',
-    # video
+    # video — NOTE: `.ts` (MPEG-TS) is deliberately absent. In a code repo
+    # `.ts` is overwhelmingly TypeScript; guarding it made read_file refuse
+    # every TypeScript file, and analyze_media's own video list never
+    # accepted `.ts` anyway, so the redirect was a dead end (both lists now
+    # agree: `.ts` is text). Real MPEG-TS streams can be probed via
+    # run_command + ffprobe.
     '.mp4', '.mkv', '.avi', '.mov', '.webm', '.wmv', '.flv', '.m4v', '.mpg',
-    '.mpeg', '.ts', '.3gp',
+    '.mpeg', '.3gp',
     # audio
     '.mp3', '.wav', '.flac', '.ogg', '.oga', '.opus', '.m4a', '.aac', '.wma',
     '.aiff', '.mid', '.midi',
@@ -146,7 +159,7 @@ def _media_kind(ext: str) -> str:
     if ext in ('.pdf', '.docx', '.xlsx', '.pptx', '.epub'):
         return 'document'
     if ext in ('.mp4', '.mkv', '.avi', '.mov', '.webm', '.wmv', '.flv',
-               '.m4v', '.mpg', '.mpeg', '.ts', '.3gp'):
+               '.m4v', '.mpg', '.mpeg', '.3gp'):
         return 'video'
     if ext in ('.mp3', '.wav', '.flac', '.ogg', '.oga', '.opus', '.m4a',
                '.aac', '.wma', '.aiff', '.mid', '.midi'):
@@ -591,8 +604,21 @@ async def _applyPatch(path: str, patch: str, fileHash: str = '') -> str:
         return f'Error applying patch: {exc}'
 
 
-async def _searchFiles(query: str, path: str = '.') -> str:
-    """Search file contents using ripgrep or fallback grep (workspace-bound)."""
+async def _searchFiles(
+    query: str,
+    path: str = '.',
+    glob: str | None = None,
+    type: str | None = None,  # noqa: A002 — mirrors the rg --type arg name the model expects
+    maxResults: int | None = None,
+    **_extra: object,
+) -> str:
+    """Search file contents using ripgrep or fallback grep (workspace-bound).
+
+    ``glob`` (e.g. ``*.py``) and ``type`` (e.g. ``py``, ``ts``) restrict which
+    files are searched; ``maxResults`` caps returned lines (default and hard
+    maximum 100). Without filters a common query drowns the caller in
+    docs/cache noise.
+    """
     ws = _workspace()
     if path in ('', '.', None):
         path = ws or '.'
@@ -601,17 +627,23 @@ async def _searchFiles(query: str, path: str = '.') -> str:
         return err or f'Error: Invalid path: {path}'
     if not searchPath.exists():
         return f'Error: Path not found: {path}'
+    cap = _MAXSearchResults
+    if maxResults is not None:
+        try:
+            cap = max(1, min(int(maxResults), _MAXSearchResults))
+        except (TypeError, ValueError):
+            pass
     try:
         from app.lib.async_subprocess import SubprocessAborted, communicate_or_kill
 
+        rgArgs = ['rg', '-n', '--max-count', '5', '-i']
+        if glob:
+            rgArgs += ['-g', str(glob)]
+        if type:
+            rgArgs += ['--type', str(type).lstrip('.')]
+        rgArgs += [query, str(searchPath)]
         proc = await asyncio.create_subprocess_exec(
-            'rg',
-            '-n',
-            '--max-count',
-            '5',
-            '-i',
-            query,
-            str(searchPath),
+            *rgArgs,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             stdin=asyncio.subprocess.DEVNULL,
@@ -630,25 +662,34 @@ async def _searchFiles(query: str, path: str = '.') -> str:
             output = stdout.decode('utf-8', errors='replace')
             lines = [ln for ln in output.split('\n') if ln.strip()]
             total = len(lines)
-            if total > _MAXSearchResults:
-                lines = lines[:_MAXSearchResults]
-                lines.append(f'... and {total - _MAXSearchResults} more results')
+            if total > cap:
+                lines = lines[:cap]
+                lines.append(f'... and {total - cap} more results')
             return '\n'.join(lines) if lines else 'No matches found.'
-        return await _pySearchFiles(query, searchPath)
+        return await _pySearchFiles(query, searchPath, glob=glob, type=type, cap=cap)
     except Exception:
-        return await _pySearchFiles(query, searchPath)
+        return await _pySearchFiles(query, searchPath, glob=glob, type=type, cap=cap)
 
 
-def _pySearchFilesSync(query: str, searchPath: Path, cancelEvent: object | None = None) -> str:
+def _pySearchFilesSync(
+    query: str,
+    searchPath: Path,
+    cancelEvent: object | None = None,
+    glob: str | None = None,
+    type: str | None = None,  # noqa: A002
+    cap: int = _MAXSearchResults,
+) -> str:
     """Bounded synchronous Python fallback search (no external deps).
 
     Runs on a worker thread — never call directly on the event loop. Skips
     VCS/build/dependency directories, caps the number of files scanned, and
-    checks the turn cancel event so Stop actually interrupts it.
+    checks the turn cancel event so Stop actually interrupts it. ``glob``/
+    ``type`` mirror the rg filters (type is matched as a plain extension).
     """
     results: list[str] = []
     filesScanned = 0
     needle = query.lower()
+    typeSuffix = ('.' + str(type).lstrip('.').lower()) if type else None
     isCancelled = getattr(cancelEvent, 'is_set', None)
     try:
         for filePath in searchPath.rglob('*'):
@@ -664,6 +705,12 @@ def _pySearchFilesSync(query: str, searchPath: Path, cancelEvent: object | None 
             parts = filePath.relative_to(searchPath).parts[:-1]
             if any((p.startswith('.') or p in _SEARCH_SKIP_DIRS for p in parts)):
                 continue
+            if typeSuffix and filePath.suffix.lower() != typeSuffix:
+                continue
+            if glob:
+                relPosix = filePath.relative_to(searchPath).as_posix()
+                if not (fnmatch.fnmatch(relPosix, str(glob)) or fnmatch.fnmatch(filePath.name, str(glob))):
+                    continue
             filesScanned += 1
             if filesScanned > _SEARCH_MAX_FILES:
                 results.append(
@@ -679,18 +726,24 @@ def _pySearchFilesSync(query: str, searchPath: Path, cancelEvent: object | None 
                     if needle in line.lower():
                         rel = filePath.relative_to(searchPath)
                         results.append(f'{rel}:{i}:{line[:200].strip()}')
-                        if len(results) >= _MAXSearchResults:
+                        if len(results) >= cap:
                             break
             except (UnicodeDecodeError, OSError):
                 continue
-            if len(results) >= _MAXSearchResults:
+            if len(results) >= cap:
                 break
         return '\n'.join(results) if results else 'No matches found.'
     except Exception as exc:
         return f'Error during search: {exc}'
 
 
-async def _pySearchFiles(query: str, searchPath: Path) -> str:
+async def _pySearchFiles(
+    query: str,
+    searchPath: Path,
+    glob: str | None = None,
+    type: str | None = None,  # noqa: A002
+    cap: int = _MAXSearchResults,
+) -> str:
     """Python fallback search — offloaded to a thread with a hard timeout so a
     huge tree can never hang the turn (and the tool card) indefinitely."""
     from app.lib.async_subprocess import current_subprocess_cancel
@@ -698,7 +751,9 @@ async def _pySearchFiles(query: str, searchPath: Path) -> str:
     cancelEvent = current_subprocess_cancel.get()
     try:
         return await asyncio.wait_for(
-            asyncio.to_thread(_pySearchFilesSync, query, searchPath, cancelEvent),
+            asyncio.to_thread(
+                _pySearchFilesSync, query, searchPath, cancelEvent, glob, type, cap
+            ),
             timeout=_SEARCH_FALLBACK_TIMEOUT_S,
         )
     except asyncio.TimeoutError:
@@ -796,6 +851,16 @@ async def _runCommand(
     ]
     for pattern in dangerous:
         if pattern in command:
+            # The device-write guard exists for destructive raw writes
+            # (`> /dev/sda`), not for the null sink — `> /dev/null` discards
+            # output and is the most common suppression idiom there is.
+            if pattern == '> /dev/':
+                devTargets = re.findall(r'>\s*(/dev/\S+)', command)
+                if devTargets and all(
+                    t.rstrip('/').lower() in ('/dev/null', '/dev/stdout', '/dev/stderr')
+                    for t in devTargets
+                ):
+                    continue
             return f'Error: Command contains dangerous pattern: {pattern}'
 
     raw_timeout = timeout_s if timeout_s is not None else timeout
@@ -946,13 +1011,26 @@ def register() -> None:
     )
     tool_registry.register(
         'search_files',
-        'Search file contents using ripgrep or fallback grep. Case-insensitive. Path defaults to workspace.',
+        'Search file contents using ripgrep or fallback grep. Case-insensitive. Path defaults to workspace. '
+        'Use glob/type to cut noise (e.g. glob="*.py" or type="py"), maxResults to cap returned lines.',
         _searchFiles,
         {
             'type': 'object',
             'properties': {
                 'query': {'type': 'string', 'description': 'The text to search for.'},
                 'path': {'type': 'string', 'description': 'Directory to search in (default: workspace).'},
+                'glob': {
+                    'type': 'string',
+                    'description': 'Only search files matching this glob (e.g. "*.py", "src/**/*.ts").',
+                },
+                'type': {
+                    'type': 'string',
+                    'description': 'Only search files of this type/extension (e.g. py, ts, rs, json).',
+                },
+                'maxResults': {
+                    'type': 'integer',
+                    'description': 'Maximum result lines to return (default and hard maximum: 100).',
+                },
             },
             'required': ['query'],
         },

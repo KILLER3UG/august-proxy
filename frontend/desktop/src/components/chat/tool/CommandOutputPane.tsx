@@ -69,18 +69,26 @@ export function CommandOutputPane({
   toolName,
   context,
   preview,
+  previewDropped,
   summary,
   status,
   verbose = false,
+  contentTruncated,
+  contentFullLength,
 }: {
   toolName: string;
   context?: string;
   preview?: string;
+  /** Live preview accumulator hit its cap — earlier chunks were dropped. */
+  previewDropped?: boolean;
   summary?: string;
   status: string;
   /** /verbose: full output renders inline without the click,
    *  for successes and live runs too — debug depth for the session. */
   verbose?: boolean;
+  /** Backend cut the SSE result at its 100 KB cap. */
+  contentTruncated?: boolean;
+  contentFullLength?: number;
 }) {
   const scrollRef = useRef<HTMLPreElement>(null);
   // Full output is opt-in on failure — start collapsed (verbose forces it open).
@@ -140,6 +148,19 @@ export function CommandOutputPane({
           {running && <Loader2 className="size-2.5 animate-spin" />}
           {statusLabel}
         </span>
+        {!running && contentTruncated && (
+          <span
+            className="inline-flex shrink-0 items-center rounded-full bg-amber-500/10 px-1.5 py-px text-[10px] font-medium text-amber-400"
+            title={
+              contentFullLength
+                ? `Result cut at 100 KB — full output was ${contentFullLength.toLocaleString()} bytes`
+                : 'Result cut at 100 KB'
+            }
+            data-testid="command-truncated-pill"
+          >
+            truncated
+          </span>
+        )}
         {isError && hasOutput && !verbose && (
           <button
             type="button"
@@ -163,6 +184,14 @@ export function CommandOutputPane({
           data-testid="command-error-line"
         >
           {errorLine}
+        </div>
+      )}
+      {showFull && running && previewDropped && (
+        <div
+          className="border-t border-[hsl(var(--border)/0.4)] px-3.5 py-1 font-mono text-[10.5px] text-muted-foreground"
+          data-testid="command-preview-dropped"
+        >
+          … earlier output dropped — showing the last 80 KB …
         </div>
       )}
       {showFull && (

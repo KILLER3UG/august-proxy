@@ -61,6 +61,37 @@ def test_soft_preflight_blocks_outside_redirect(tmp_path: Path):
     assert denial is not None
 
 
+def test_soft_preflight_allows_null_sinks(tmp_path: Path):
+    """`2>/dev/null` / `> /dev/null` discard output — they are not
+    outside-workspace writes and must pass in every mode."""
+    root = tmp_path / 'ws'
+    root.mkdir()
+    policy = SandboxPolicy(mode='workspace-write', workspace_root=str(root), network=False)
+    assert soft_preflight('python x.py 2>/dev/null', policy) is None
+    assert soft_preflight('npm install > /dev/null', policy) is None
+    ro = SandboxPolicy(mode='read-only', workspace_root=str(root), network=False)
+    assert soft_preflight('grep x file 2>/dev/null', ro) is None
+    # A real write redirect stays blocked in read-only mode.
+    assert soft_preflight('grep x file > out.txt', ro)
+
+
+def test_soft_preflight_readonly_powershell_exemption(tmp_path: Path):
+    """A provably read-only powershell payload may name outside paths (it is
+    a read); write-capable payloads and chained commands stay blocked. The
+    paths are quoted inside the payload — that is what the literal scan (the
+    one being exempted) actually catches."""
+    root = tmp_path / 'ws'
+    root.mkdir()
+    policy = SandboxPolicy(mode='workspace-write', workspace_root=str(root), network=False)
+    outside = Path.home() / 'Pictures'
+    readCmd = f'powershell -NoProfile -NonInteractive -Command "Get-ChildItem \'{outside}\' -Recurse"'
+    assert soft_preflight(readCmd, policy) is None
+    writeCmd = f'powershell -NoProfile -NonInteractive -Command "Set-Content \'{outside / "x.txt"}\' hi"'
+    assert soft_preflight(writeCmd, policy)
+    chained = f'powershell -NoProfile -NonInteractive -Command "Get-ChildItem \'{outside}\'"; rm -rf x'
+    assert soft_preflight(chained, policy)
+
+
 @pytest.mark.asyncio
 async def test_run_soft_echo(tmp_path: Path):
     root = tmp_path / 'ws'

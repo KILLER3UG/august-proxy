@@ -119,6 +119,62 @@ MAX_STALLED_ROUNDS = 8
 # 25-round cap before stall protection engaged. Fire the check from round 8:
 # nudge at 16, hard-stop at 18 — real self-correction room stays.
 MIN_ROUNDS_BEFORE_STALL_CHECK = 8
+
+
+def _assistant_round_is_novel(
+    messages: list[dict[str, object]], seenToolSigs: set[tuple[str, str]]
+) -> bool:
+    """Did the most recent assistant round do genuinely new work?
+
+    The phase/step stall signature punishes deep investigation exactly as
+    hard as real spinning: many ``search_files``/``read_file`` calls on
+    *different* files never advance phase/step. Treat a round as progress
+    when it emitted user-visible text or called a tool with a
+    (name, primary-arg) signature not already seen this turn — the nudge
+    then fires only on genuine repetition (same command re-run, no prose).
+    Handles both wire shapes: Anthropic content blocks and OpenAI
+    ``tool_calls``.
+    """
+    last = next(
+        (m for m in reversed(messages) if as_str(m.get('role'), '') == 'assistant'),
+        None,
+    )
+    if last is None:
+        return False
+    novel = False
+    content = last.get('content')
+    if isinstance(content, str):
+        novel = bool(content.strip())
+    elif isinstance(content, list):
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            btype = as_str(block.get('type'), '')
+            if btype == 'text' and as_str(block.get('text'), '').strip():
+                novel = True
+            elif btype == 'tool_use':
+                args = as_dict(block.get('input'), {})
+                primary = next(iter(args.values()), None) if args else None
+                sig = (as_str(block.get('name'), ''), str(primary)[:200])
+                if sig not in seenToolSigs:
+                    novel = True
+                seenToolSigs.add(sig)
+    toolCalls = as_list(last.get('tool_calls'), [])
+    for call in toolCalls:
+        fn = as_dict(as_dict(call).get('function'), {})
+        argsRaw = as_str(fn.get('arguments'), '')
+        try:
+            args = as_dict(json.loads(argsRaw), {}) if argsRaw else {}
+        except (json.JSONDecodeError, TypeError):
+            args = {}
+        primary = next(iter(args.values()), None) if args else None
+        sig = (as_str(fn.get('name'), ''), str(primary)[:200])
+        if sig not in seenToolSigs:
+            novel = True
+        seenToolSigs.add(sig)
+    return novel
+
+
 # Code-mode (fenced python) execution cap.
 _CODE_RUN_TIMEOUT_S = 60
 # Tool dispatch cap: a hung MCP server or registry handler must not hold a
@@ -2288,11 +2344,20 @@ def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[st
         for entry in queues:
             queuedAt = entry.get('queuedAt') or ''
             text = as_str(entry.get('text'), '')
-            attachmentCount = len(as_list(entry.get('attachments'), []))
+            atts = as_list(entry.get('attachments'), [])
+            attachmentCount = len(atts)
+            # An uploaded attachment carries the workspace path the frontend
+            # stored it at — name it so analyze_media/read_file can open it;
+            # a bare count told the model nothing (the bytes sat in the queue
+            # entry unrecoverable).
+            savedPaths = [as_str(as_dict(a).get('savedPath'), '') for a in atts]
+            savedPaths = [p for p in savedPaths if p]
             attrParts = []
             if queuedAt:
                 attrParts.append(f'timestamp="{queuedAt}"')
-            if attachmentCount:
+            if savedPaths:
+                attrParts.append(f'attachments="{", ".join(savedPaths)}"')
+            elif attachmentCount:
                 attrParts.append(f'attachments="{attachmentCount}"')
             attrStr = ' ' + ' '.join(attrParts) if attrParts else ''
             parts.append(f'<queued_message{attrStr}>')
@@ -3518,6 +3583,9 @@ async def _sendWorkbenchMessageStreamImpl(
     lastExecSig: tuple[str, int] | None = None
     stalledRounds = 0
     stallMessageSent = False
+    # (name, primary-arg) signatures already called this turn — feeds the
+    # novelty exemption in the stall check below.
+    seenToolSigs: set[tuple[str, str]] = set()
     # Turn-scoped malformed-tool counter: accumulates ACROSS rounds (a reset
     # per round meant repeated malformed calls never triggered the downgrade).
     parseFailures = 0
@@ -3646,6 +3714,11 @@ async def _sendWorkbenchMessageStreamImpl(
                     # finding: stallMessageSent was never reset, so the first
                     # nudge suppressed all later warnings until hard-stop).
                     stallMessageSent = False
+                elif _assistant_round_is_novel(currentMessages, seenToolSigs):
+                    # Real exploration — new files read/searched or prose
+                    # emitted — is progress even though phase/step is flat.
+                    # Only repeated identical calls keep counting.
+                    stalledRounds = 0
                 else:
                     stalledRounds += 1
                     if stalledRounds >= MAX_STALLED_ROUNDS and not stallMessageSent:
@@ -4815,19 +4888,36 @@ async def _sendWorkbenchMessageStreamImpl(
 
                             async def _run_command_with_stream() -> str:
                                 last_emit = time.monotonic()
+                                # Cumulative live-preview budget. Every chunk
+                                # also lands in the durable event log (one
+                                # tool_progress event each), so an uncapped
+                                # stream let `npm install` write hundreds of
+                                # events per command. Stop forwarding previews
+                                # past the cap — the final toolResult still
+                                # carries the full (SSE-truncated) output.
+                                preview_budget = [100 * 1024]
 
                                 async def _on_output(chunk: str) -> None:
                                     nonlocal last_emit
                                     if not emit or not chunk:
                                         return
+                                    # Keep the idle-beat suppression honest
+                                    # even once previews are capped: output
+                                    # is still flowing, so no "Still working…".
                                     last_emit = time.monotonic()
+                                    if preview_budget[0] <= 0:
+                                        return
+                                    sent = chunk[: preview_budget[0]]
+                                    preview_budget[0] -= len(sent)
+                                    if preview_budget[0] <= 0:
+                                        sent += '\n[live preview capped at 100 KB — remaining output not streamed]\n'
                                     emit(
                                         {
                                             'type': 'tool_progress',
                                             'id': toolUseId,
                                             'name': toolName,
                                             'phase': 'running',
-                                            'preview': chunk,
+                                            'preview': sent,
                                         }
                                     )
 

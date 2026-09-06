@@ -28,6 +28,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Brain, ChevronLeft, ChevronRight, Download, FolderTree, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { api } from '@/api/client';
+import { useSessionsStore } from '@/store/sessions';
 import { PageLoader } from '@/components/PageLoader';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
@@ -708,6 +709,23 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const unifiedLoading = unified && (unifiedQa.isLoading || (!!unifiedStoreB && unifiedQb.isLoading));
   const unifiedError = unified && ((unifiedQa.isError && unifiedQa.error) || (unifiedQb.isError && unifiedQb.error));
   const workspaces = workspacesQ.data?.workspaces ?? [];
+  // The remember tool defaults to project scope inside a workspace session
+  // (session_tools writes the workspace md-file, not the global facts store),
+  // so a memory saved during a project chat is invisible to the default
+  // Global view. Surface where it went instead of showing an empty list.
+  const sessions = useSessionsStore((s) => s.sessions);
+  const activeProjectPath = useMemo(() => {
+    try {
+      const lastId = localStorage.getItem('august_last_session');
+      if (!lastId) return '';
+      const s = sessions.find((x) => x.id === lastId || x.workbenchSessionId === lastId);
+      const wp = (s?.workspacePath || '').trim();
+      // Home is never in the workspace list, so membership means "a project".
+      return wp && workspaces.some((w) => w.path === wp) ? wp : '';
+    } catch {
+      return '';
+    }
+  }, [sessions, workspaces]);
 
   return (
     <div className="px-8 py-6 max-w-4xl space-y-5">
@@ -809,6 +827,28 @@ export function MemorySection({ active }: { active: { id: string } }) {
               />
             </div>
           </div>
+
+          {!wsScope && activeProjectPath && (
+            <div
+              className="flex items-center gap-2 rounded-lg border border-sky-500/25 bg-sky-500/5 px-3 py-2 text-[11px] text-muted-foreground"
+              data-testid="memory-project-scope-hint"
+            >
+              <span className="min-w-0 flex-1">
+                Memories the model saved in your last chat (
+                <span className="font-mono text-foreground/80">
+                  {activeProjectPath.split(/[\\/]/).filter(Boolean).pop()}
+                </span>
+                ) live in that project’s scope, not Global.
+              </span>
+              <button
+                type="button"
+                onClick={() => setWsScope(activeProjectPath)}
+                className="shrink-0 rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-1 font-medium text-sky-400 transition hover:bg-sky-500/20"
+              >
+                View project memories
+              </button>
+            </div>
+          )}
 
           {/* Search + filters + sort + refresh + export-store */}
           <div className="flex flex-wrap items-center gap-2">

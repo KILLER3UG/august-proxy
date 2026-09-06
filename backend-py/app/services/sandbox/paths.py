@@ -147,6 +147,18 @@ def _candidate_paths(token: str) -> list[str]:
     return [c for c in out if c]
 
 
+# Null sinks discard output — they are not workspace writes. `2>/dev/null`
+# (and `>nul` on Windows) is the most common stderr-suppression idiom and was
+# being blocked as an "outside-workspace redirect".
+NULL_SINKS = frozenset({'/dev/null', '/dev/stdout', '/dev/stderr', 'nul', './dev/null'})
+
+
+def is_null_sink(token: str) -> bool:
+    """True for redirect targets that discard output (`/dev/null`, `nul`, …)."""
+    cleaned = (token or '').strip().strip('"').strip("'").lower().rstrip('\\/')
+    return cleaned in NULL_SINKS
+
+
 def _one_points_outside(cleaned: str, root: Path) -> bool:
     if not cleaned or cleaned.startswith('-'):
         return False
@@ -155,6 +167,8 @@ def _one_points_outside(cleaned: str, root: Path) -> bool:
     # legitimate commands. Gated to Windows (B8): on POSIX `/c` IS a real
     # absolute dir, so the exemption must not apply there.
     if os.name == 'nt' and re.fullmatch(r'/[A-Za-z]', cleaned):
+        return False
+    if is_null_sink(cleaned):
         return False
     cleaned = _expand_safe_env(cleaned)
     if cleaned in ('~', '/', '\\') or cleaned.startswith('~/') or cleaned.startswith('~\\'):

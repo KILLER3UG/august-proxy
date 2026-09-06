@@ -194,9 +194,12 @@ export function ToolCallItemBody({
         toolName={tool.name}
         context={tool.context}
         preview={tool.preview}
+        previewDropped={tool.previewDropped}
         summary={tool.summary || tool.error}
         status={tool.status}
         verbose={verbose}
+        contentTruncated={tool.contentTruncated}
+        contentFullLength={tool.contentFullLength}
       />,
     );
   } else if (

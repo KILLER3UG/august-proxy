@@ -204,6 +204,20 @@ class TestFormatter:
         assert 'a' in result['content']
         assert 'b' in result['content']
 
+    def testSavedPathRenderedInsteadOfCount(self):
+        """An uploaded attachment must name its workspace path so the model
+        can open it — a bare count left the bytes unrecoverable."""
+        entries = [
+            {
+                'id': 'qm_1', 'text': 'look at this',
+                'attachments': [{'name': 'shot.png', 'savedPath': '/ws/.aug/attachments/s1/shot.png'}],
+                'queuedAt': '2026-07-01T00:00:00Z',
+            },
+        ]
+        result = wb._formatQueuedMessagesAsUserTurn(entries)
+        assert 'attachments="/ws/.aug/attachments/s1/shot.png"' in result['content']
+        assert 'attachments="1"' not in result['content']
+
 
 class TestChatLoopInjection:
     """Verify queued messages appear in the model-call payload without

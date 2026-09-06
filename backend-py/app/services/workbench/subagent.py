@@ -613,6 +613,7 @@ async def executeSubAgent(
         from app.services.workbench.workbench import (
             MAX_STALLED_ROUNDS,
             MIN_ROUNDS_BEFORE_STALL_CHECK,
+            _assistant_round_is_novel,
             _is_failing_receipt,
             _is_update_state_transition,
             _resolveModelContextWindow,
@@ -621,6 +622,7 @@ async def executeSubAgent(
         stalledRounds = 0
         stallMessageSent = False
         lastExecSig: tuple[object, object] | None = None
+        seenToolSigs: set[tuple[str, str]] = set()
         capReached = False
         # Worker-local execution state (update_state is intercepted below):
         # the parent session's _execution_state is shared by every concurrent
@@ -849,6 +851,10 @@ async def executeSubAgent(
                 sig: tuple[object, object] = (localPhase, localStep)
                 if sig != lastExecSig:
                     lastExecSig = sig
+                    stalledRounds = 0
+                elif _assistant_round_is_novel(messages, seenToolSigs):
+                    # Parent-loop parity: new files read/searched or prose
+                    # emitted is real exploration, not spinning.
                     stalledRounds = 0
                 else:
                     stalledRounds += 1

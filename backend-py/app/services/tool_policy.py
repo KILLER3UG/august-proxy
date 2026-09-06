@@ -24,6 +24,8 @@ _PROMPT_READ = frozenset({
     'desktop_mouse_position', 'desktop_screen_size', 'desktop_screenshot',
     'diagnose_proxy', 'get_fallback', 'list_aliases',
     'list_directory', 'list_integrations', 'list_mcp_servers',
+    # Read-only context capsule for a past session (title/plan/turn digests).
+    'session_context',
     'pptx_list_elements',
     # Media analysis — the sanctioned reader for images/video/audio/docs
     # (read_file refuses binary media and redirects here).

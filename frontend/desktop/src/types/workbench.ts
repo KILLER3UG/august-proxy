@@ -207,6 +207,10 @@ export interface WorkbenchEventHandlers {
     blocked?: boolean;
     providerSetup?: unknown;
     integrationSetup?: unknown;
+    /** Backend cut the SSE content at its 100 KB cap. */
+    contentTruncated?: boolean;
+    /** Full (pre-truncation) byte length when `contentTruncated`. */
+    contentFullLength?: number;
   }) => void;
   onToolProgress?: (data: {
     id: string;

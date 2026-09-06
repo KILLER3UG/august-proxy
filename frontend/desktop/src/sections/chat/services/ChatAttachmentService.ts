@@ -264,6 +264,36 @@ export class ChatAttachmentService {
     return attachments.some((a) => a.status === 'reading');
   }
 
+  /**
+   * Upload image attachments (data URLs) into the session workspace so the
+   * agent can actually open them — before this the bytes never left the
+   * client and analyze_media could only say "File not found". Mutates each
+   * uploaded attachment with `savedPath`. Best-effort: a failed upload
+   * leaves the placeholder text (and the chat send) intact.
+   */
+  static async uploadImages(
+    workbenchSessionId: string,
+    attachments: FileAttachment[],
+  ): Promise<void> {
+    if (!workbenchSessionId) return;
+    const pending = attachments.filter(
+      (a) => a.type === 'image' && a.dataUrl && !a.savedPath,
+    );
+    await Promise.all(
+      pending.map(async (a) => {
+        try {
+          const res = await api.post<{ ok?: boolean; path?: string }>(
+            '/api/workbench/attachments',
+            { sessionId: workbenchSessionId, name: a.name, dataUrl: a.dataUrl },
+          );
+          if (res?.ok && res.path) a.savedPath = res.path;
+        } catch {
+          /* upload failed — the prompt keeps the placeholder */
+        }
+      }),
+    );
+  }
+
   /** Serialize attachments into markdown sections for the model prompt. */
   static formatForPrompt(attachments: FileAttachment[]): string {
     const ready = this.readyOnly(attachments);
@@ -274,7 +304,10 @@ export class ChatAttachmentService {
         const lang = this.codeLangFor(a.name);
         return `${header}\n\`\`\`${lang}\n${a.content}\n\`\`\``;
       }
-      if (a.type === 'image' && a.dataUrl) {
+      if (a.type === 'image') {
+        if (a.savedPath) {
+          return `${header}\n[Image attached — stored at ${a.savedPath}. Open it with analyze_media (vision description) or read_file.]`;
+        }
         return `${header}\n[Image attached — available for vision analysis]`;
       }
       return `${header}\n[File attached — content could not be extracted]`;
