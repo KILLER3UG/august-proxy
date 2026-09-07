@@ -253,6 +253,20 @@ function SubagentInnerBlock({
       </ThinkingDisclosure>
     );
   }
+  if (block.type === 'system') {
+    // Harness notice — muted inline row, never inside a Thought disclosure.
+    return (
+      <div
+        data-testid="chat-system-notice"
+        className="flex items-start gap-1.5 py-0.5 text-[11px] leading-relaxed text-muted-foreground/70"
+      >
+        <span aria-hidden="true" className="shrink-0">
+          ⚙
+        </span>
+        <span className="min-w-0 flex-1">{block.content}</span>
+      </div>
+    );
+  }
   if (block.type === 'finalOutput') {
     return (
       <div className="text-[13px] text-foreground/90 chat-message-text">

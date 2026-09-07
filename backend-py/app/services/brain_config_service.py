@@ -32,6 +32,7 @@ import time
 from typing import cast
 
 from app.config import settings
+from app.json_narrowing import as_bool, as_int
 from app.services import config_service
 from app.services.cognitive_config import DEFAULT_FEATURES
 from app.services.memory_store import record_config_audit
@@ -45,6 +46,7 @@ boolKeys: tuple[str, ...] = (
     'memoryAutoInject',
     'modelMemoryWrites',
     'memorySensitiveTopics',
+    'subagentWorktreeIsolation',
     'cameraAccess',
     'consolidationModelSummarize',
     'preferenceRetireEnabled',
@@ -59,6 +61,9 @@ numKeys: tuple[str, ...] = (
     'escalationBudgetPerDay',
     'episodicRetentionDays',
     'preferenceRetireDays',
+    'subagentMaxConcurrent',
+    'subagentMaxIterations',
+    'subagentMaxDepth',
 )
 floatKeys: tuple[str, ...] = ('flagRateCap',)
 strKeys: tuple[str, ...] = ('titleModel', 'skillLearning', 'skillLearningJudgeModel')
@@ -69,6 +74,10 @@ minSamplesRange = (1, 20)
 consolidationIntervalRange = (1, 168)
 escalationBudgetRange = (0, 50)
 flagRateCapRange = (0.0, 0.5)
+# Subagent delegation limits (Settings → Subagents panel, routers/subagent.py)
+subagentMaxConcurrentRange = (1, 30)
+subagentMaxIterationsRange = (5, 200)
+subagentMaxDepthRange = (1, 5)
 fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('enabled', 'enabled', DEFAULT_FEATURES.get('enabled', True), 'bool'),
     # The agent-jobs flag is gone: the registry job ledger is an in-memory
@@ -145,6 +154,14 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # Workspace-scoped skills root (.aug/skills shadowing
     # bundled + agent skills). Off = catalogue falls back to agent+bundled.
     ('projectSkills', 'project_skills', True, 'bool'),
+    # Global subagent delegation limits (Settings → Subagents). These are the
+    # fallback the spawn path uses when a session has no per-session override
+    # in its workbench metadata — the settings panel posts them with no
+    # session id (routers/subagent.py GET/POST /config).
+    ('subagentMaxConcurrent', 'subagent_max_concurrent', 5, 'num'),
+    ('subagentMaxIterations', 'subagent_max_iterations', 50, 'num'),
+    ('subagentMaxDepth', 'subagent_max_depth', 1, 'num'),
+    ('subagentWorktreeIsolation', 'subagent_worktree_isolation', False, 'bool'),
 )
 snakeToCamel: dict[str, str] = {snake: camel for camel, snake, _d, _k in fieldTable}
 camelToSnake: dict[str, str] = {camel: snake for camel, snake, _d, _k in fieldTable}
@@ -162,6 +179,20 @@ def _defaultsCamel() -> BrainConfigDict:
 def getDefaults() -> BrainConfigDict:
     """Public accessor — returns the camelCase defaults the frontend renders."""
     return _defaultsCamel()
+
+
+def getDelegationLimits() -> dict[str, object]:
+    """Global subagent delegation limits (Settings → Subagents), already
+    clamped to the Hermes-style ranges the orchestrator enforces. One source
+    of truth shared by the /api/subagents/config router and the spawn path
+    (subagent_orchestrator) for sessions without a per-session override."""
+    cfg = getRuntimeConfig()
+    return {
+        'maxConcurrent': max(1, min(30, as_int(cfg.get('subagentMaxConcurrent'), 5) or 5)),
+        'maxIterations': max(5, min(200, as_int(cfg.get('subagentMaxIterations'), 50) or 50)),
+        'maxDepth': max(1, min(5, as_int(cfg.get('subagentMaxDepth'), 1) or 1)),
+        'worktreeIsolation': as_bool(cfg.get('subagentWorktreeIsolation'), False),
+    }
 
 
 _RUNTIME_TTL_S = 2.0
@@ -276,6 +307,12 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 lo, hi = consolidationIntervalRange
             elif key == 'escalationBudgetPerDay':
                 lo, hi = escalationBudgetRange
+            elif key == 'subagentMaxConcurrent':
+                lo, hi = subagentMaxConcurrentRange
+            elif key == 'subagentMaxIterations':
+                lo, hi = subagentMaxIterationsRange
+            elif key == 'subagentMaxDepth':
+                lo, hi = subagentMaxDepthRange
             else:
                 lo, hi = maxWorkbenchLoopsRange
             if value < lo or value > hi:

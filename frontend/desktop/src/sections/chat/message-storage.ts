@@ -2,6 +2,7 @@
 /* LocalStorage adapters for session transcripts and composer drafts.     */
 
 import type { ChatMessage } from '@/types/chat';
+import { normalizeSystemBlocks } from '@/sections/chat/stream/append-block-event';
 
 const MESSAGES_STORAGE_PREFIX = 'chat_messages_';
 const COMPOSER_DRAFT_PREFIX = 'august_composer_draft_';
@@ -18,7 +19,15 @@ export function loadMessagesForSession(sessionId: string | null): ChatMessage[] 
 
   try {
     const saved = localStorage.getItem(key);
-    if (saved) return JSON.parse(saved) as ChatMessage[];
+    if (saved) {
+      // Persisted history may carry legacy `thinking`+system:true notice
+      // rows — normalize them to `type: 'system'` blocks so the thinking
+      // pack renders only model chain-of-thought.
+      const messages = JSON.parse(saved) as ChatMessage[];
+      return messages.map((m) =>
+        m.blocks ? { ...m, blocks: normalizeSystemBlocks(m.blocks) } : m,
+      );
+    }
   } catch {
     /* ignore parse errors */
   }

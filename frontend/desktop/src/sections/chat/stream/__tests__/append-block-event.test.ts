@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { appendBlockEvent, coalesceAdjacentThinking } from '../append-block-event';
+import { appendBlockEvent, coalesceAdjacentThinking, normalizeSystemBlocks } from '../append-block-event';
+import type { MessageBlock } from '@/types/chat';
 
 describe('appendBlockEvent thinking vs final', () => {
   it('demotes provisional finalOutput when thinking resumes', () => {
@@ -35,9 +36,13 @@ describe('appendBlockEvent thinking vs final', () => {
     const finalBlocks = blocks.filter((b) => b.type === 'finalOutput');
     expect(finalBlocks).toHaveLength(1);
     expect(finalBlocks[0].content).toBe('The real answer');
-    // The warning is in the thinking pack.
+    // The warning routes to a system block — the thinking pack holds ONLY
+    // model chain-of-thought (legacy system:true events included).
     const thinking = blocks.filter((b) => b.type === 'thinking');
-    expect(thinking.some((b) => b.content?.includes('⚠️'))).toBe(true);
+    expect(thinking.some((b) => b.content?.includes('⚠️'))).toBe(false);
+    expect(
+      blocks.some((b) => b.type === 'system' && b.content?.includes('⚠️')),
+    ).toBe(true);
   });
 
   it('keeps thinking segments separated by tools', () => {
@@ -267,5 +272,53 @@ describe('appendBlockEvent mid-answer chip does not split the answer', () => {
 
     const finals = blocks.filter((b) => b.type === 'finalOutput');
     expect(finals).toHaveLength(2);
+  });
+});
+
+describe('appendBlockEvent system notices never enter the thinking block', () => {
+  it('routes warning/info events to system blocks, not thinking blocks', () => {
+    let blocks = appendBlockEvent([], { type: 'thinking', content: 'model reasoning only' });
+    blocks = appendBlockEvent(blocks, { type: 'system', content: '⚠️ retrying without tools' });
+    blocks = appendBlockEvent(blocks, { type: 'system', content: 'ℹ️ circuit mode on' });
+
+    const thinking = blocks.filter((b) => b.type === 'thinking');
+    expect(thinking).toHaveLength(1);
+    expect(thinking[0].content).toBe('model reasoning only');
+    const notices = blocks.filter((b) => b.type === 'system');
+    expect(notices.map((b) => b.content)).toEqual([
+      '⚠️ retrying without tools',
+      'ℹ️ circuit mode on',
+    ]);
+  });
+
+  it('keeps model thinking pure when a notice lands mid-thought', () => {
+    let blocks = appendBlockEvent([], { type: 'thinking', content: 'CoT part one. ' });
+    blocks = appendBlockEvent(blocks, { type: 'system', content: '⚠️ context pressure' });
+    blocks = appendBlockEvent(blocks, { type: 'thinking', content: 'CoT part two.' });
+
+    const thinking = blocks.filter((b) => b.type === 'thinking');
+    // The notice must not merge into either thinking block.
+    expect(thinking.map((b) => b.content)).toEqual(['CoT part one. ', 'CoT part two.']);
+  });
+
+  it('does not demote the final answer for system events', () => {
+    let blocks = appendBlockEvent([], { type: 'text', content: 'final answer prose' });
+    blocks = appendBlockEvent(blocks, { type: 'system', content: '⚠️ late warning' });
+
+    expect(blocks.some((b) => b.type === 'finalOutput')).toBe(true);
+    expect(blocks.some((b) => b.type === 'thinking')).toBe(false);
+  });
+
+  it('normalizes legacy persisted thinking+system blocks on load', () => {
+    const legacy: MessageBlock[] = [
+      { id: 'a', type: 'thinking', content: 'real CoT' },
+      { id: 'b', type: 'thinking', content: '⚠️ old warning', system: true },
+    ];
+    const out = normalizeSystemBlocks(legacy);
+    expect(out[0].type).toBe('thinking');
+    expect(out[1].type).toBe('system');
+    expect(out[1].system).toBeUndefined();
+    // Idempotent on already-normalized lists.
+    expect(normalizeSystemBlocks(out)).toBe(out);
   });
 });

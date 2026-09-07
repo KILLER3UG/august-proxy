@@ -614,18 +614,27 @@ def _reasoning_effort_rejected(status: object, msg: str | None) -> bool:
     configured for reasoning_effort``). We treat that as "drop the optional hint
     and retry" rather than a fatal error. ``status`` may be ``None`` on the
     exception path, where we rely on the message text alone.
+
+    Z.ai-family gateways (B.AI GLM) reject the DISALLOWED values without naming
+    the field: 该模型始终思考，不支持关闭思考；请使用 low、high 或 max — an
+    always-thinking model that only accepts low/high/max. Match those tell-tale
+    phrases so the hint is dropped and the turn retried instead of failing.
     """
     text = (msg or '').lower()
-    if 'reasoning_effort' not in text:
-        return False
-    if status is None:
+    if 'reasoning_effort' in text:
+        if status is None:
+            return True
+        sval = status if isinstance(status, (int, str)) else str(status)
+        try:
+            return int(sval) == 400
+        except (TypeError, ValueError):
+            return False
+    # Field-less phrasings (upstream messages may stay untranslated).
+    if '始终思考' in (msg or '') or '不支持关闭思考' in (msg or ''):
         return True
-    # Narrow to int|str so int() resolves a concrete overload (status is `object`).
-    sval = status if isinstance(status, (int, str)) else str(status)
-    try:
-        return int(sval) == 400
-    except (TypeError, ValueError):
-        return False
+    if 'does not support disabling thinking' in text or 'always thinks' in text:
+        return True
+    return False
 
 
 async def call_openai_workbench(

@@ -813,9 +813,9 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     },
     onWarning: ({ message }) => {
       const warning = `⚠️ ${message || 'Warning'}`;
-      // Push as a THINKING block with system:true — it collapses into the
-      // thinking pack but does NOT demote the real final answer.
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: warning, system: true });
+      // A 'system' block — the thinking pack holds ONLY model CoT, and a
+      // system notice must not demote the real final answer either.
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'system', content: warning });
       scheduleUpdate();
     },
     onContextPressure: ({ contextUsedPct, attentionPressure, totalTokens, maxContext, remainingTokens, promptCache }) => {
@@ -838,12 +838,12 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       const hitRate = pc?.hitRate ?? (pc && (pc.hitTokens ?? 0) + (pc.missTokens ?? 0) > 0 ? (pc.hitTokens ?? 0) / ((pc.hitTokens ?? 0) + (pc.missTokens ?? 0)) : undefined);
       const cacheSuffix = typeof hitRate === 'number' ? ` — cache ${Math.round(hitRate * 100)}% (goal 96%)` : '';
       const warning = `⚠️ Context window nearly full${label}${detail}${cacheSuffix}. Consider compacting or starting a new session.`;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: warning, system: true });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'system', content: warning });
       scheduleUpdate();
     },
     onInfo: ({ message }) => {
       const info = `ℹ️ ${message || ''}`;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: info, system: true });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'system', content: info });
       scheduleUpdate();
     },
     onRecurringTask: ({ message }) => {
@@ -887,7 +887,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         closeRightDrawerSection('circuit');
       }
       const info = `⚡ ${message || (active ? 'Circuit workbench opened.' : 'Circuit workbench closed.')}`;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: info, system: true });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'system', content: info });
       scheduleUpdate();
     },
     onDone: (data) => {

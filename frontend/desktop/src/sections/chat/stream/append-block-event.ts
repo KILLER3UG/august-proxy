@@ -37,18 +37,49 @@ export function coalesceAdjacentThinking(blocks: MessageBlock[]): MessageBlock[]
   return out;
 }
 
+/** Migrate persisted-history blocks: older turns stored harness notices
+ *  (warnings / infos / context pressure) as `thinking` blocks with
+ *  `system: true`. The thinking pack holds ONLY model chain-of-thought now —
+ *  normalize those rows to `type: 'system'` on load. */
+export function normalizeSystemBlocks(blocks: MessageBlock[]): MessageBlock[] {
+  let changed = false;
+  const out = blocks.map((b) => {
+    if (b.type === 'thinking' && b.system) {
+      changed = true;
+      const { system: _system, ...rest } = b;
+      return { ...rest, type: 'system' } as MessageBlock;
+    }
+    return b;
+  });
+  return changed ? out : blocks;
+}
+
 export function appendBlockEvent(
   prevBlocks: MessageBlock[],
   event: AppendBlockEvent
 ): MessageBlock[] {
   const blocks = [...prevBlocks];
 
-  if (event.type === 'thinking') {
+  if (event.type === 'system') {
+    // Harness notice (retry warning / context pressure / info) — its own
+    // block kind. The thinking block holds ONLY model chain-of-thought.
+    blocks.push({
+      id: `b_sys_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'system',
+      content: event.content || '',
+    });
+  } else if (event.type === 'thinking' && event.system) {
+    // Legacy-shaped replay (old event log): route to a system block so the
+    // thinking pack still receives only model chain-of-thought.
+    blocks.push({
+      id: `b_sys_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'system',
+      content: event.content || '',
+    });
+  } else if (event.type === 'thinking') {
     const text = event.content || '';
     // Model wrote "answer" then kept thinking — that prose was provisional.
     // Demote it into thinking so it cannot stack into the true final reply.
-    // Skip demotion for system notices (warnings/info/errors) — those should
-    // collapse into the thinking pack WITHOUT displacing the real answer.
     let demoted = false;
     if (!event.system) {
       for (let i = 0; i < blocks.length; i++) {

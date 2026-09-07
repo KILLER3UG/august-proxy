@@ -108,11 +108,14 @@ function formatSequenceDuration(ms: number): string {
 /** Split blocks into process (thinking/tools) vs final answer. Error blocks
  *  are pulled out entirely — they render as a standalone message bubble below
  *  the timeline, never buried inside the collapsible activity pack (a failed
- *  turn left the only visible trace behind a collapsed "Task completed" row). */
+ *  turn left the only visible trace behind a collapsed "Task completed" row).
+ *  System notices (retry warnings, context pressure, infos) are likewise
+ *  pulled out — the thinking pack holds ONLY model chain-of-thought. */
 function splitProcessAndFinal(blocks: DisplayBlock[]): {
   processBlocks: DisplayBlock[];
   finalBlocks: DisplayBlock[];
   errorBlocks: DisplayBlock[];
+  noticeBlocks: DisplayBlock[];
   hasFinalOutput: boolean;
 } {
   let lastFinalIdx = -1;
@@ -122,10 +125,13 @@ function splitProcessAndFinal(blocks: DisplayBlock[]): {
   const processBlocks: DisplayBlock[] = [];
   const finalBlocks: DisplayBlock[] = [];
   const errorBlocks: DisplayBlock[] = [];
+  const noticeBlocks: DisplayBlock[] = [];
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i];
     if (block.type === 'error') {
       errorBlocks.push(block);
+    } else if (block.type === 'system') {
+      noticeBlocks.push(block);
     } else if (isFinalOutput(block)) {
       if (i === lastFinalIdx) finalBlocks.push(block);
       else processBlocks.push({ ...block, type: 'thinking' });
@@ -137,6 +143,7 @@ function splitProcessAndFinal(blocks: DisplayBlock[]): {
     processBlocks,
     finalBlocks,
     errorBlocks,
+    noticeBlocks,
     hasFinalOutput: finalBlocks.length > 0,
   };
 }
@@ -276,7 +283,7 @@ export function AssistantBlockTimeline({
   // progress no longer renders an inline model label.
   void modelId;
 
-  const { processBlocks, finalBlocks, errorBlocks, hasFinalOutput } =
+  const { processBlocks, finalBlocks, errorBlocks, noticeBlocks, hasFinalOutput } =
     splitProcessAndFinal(displayBlocks);
 
   // Id-keyed expand overrides; missing key → default from status.
@@ -1112,6 +1119,26 @@ export function AssistantBlockTimeline({
       );
     });
 
+  const renderSystemNotices = (blocks: DisplayBlock[]) =>
+    blocks.map((block, index) => {
+      // Harness notice (retry warning, context pressure, info) — a muted
+      // inline strip below the answer, never inside the thinking pack: the
+      // Thinking disclosure holds only the model's chain-of-thought.
+      const key = block.id || `notice_${index}`;
+      return (
+        <div
+          key={key}
+          data-testid="chat-system-notice"
+          className="mt-1 flex w-full max-w-3xl items-start gap-2 text-[11px] leading-relaxed text-muted-foreground/80"
+        >
+          <span aria-hidden="true" className="mt-px shrink-0">
+            ⚙
+          </span>
+          <span className="min-w-0 flex-1">{block.content}</span>
+        </div>
+      );
+    });
+
   const renderErrorBubble = (blocks: DisplayBlock[]) =>
     blocks.map((block, index) => {
       // A provider/turn failure rendered as its OWN message bubble — left
@@ -1233,6 +1260,7 @@ export function AssistantBlockTimeline({
         </ActivitySummary>
       )}
       {hasFinalOutput && renderFinal(finalBlocks)}
+      {noticeBlocks.length > 0 && renderSystemNotices(noticeBlocks)}
       {errorBlocks.length > 0 && renderErrorBubble(errorBlocks)}
     </div>
   );

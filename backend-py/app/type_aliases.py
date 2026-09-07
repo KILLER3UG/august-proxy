@@ -136,6 +136,10 @@ class BrainConfigDict(TypedDict, total=False):
     consolidationIntervalHours: int
     consolidationModelSummarize: bool
     titleModel: str
+    subagentMaxConcurrent: int
+    subagentMaxIterations: int
+    subagentMaxDepth: int
+    subagentWorktreeIsolation: bool
 
 
 class ProviderConfigDict(TypedDict, total=False):

@@ -3880,6 +3880,16 @@ async def _sendWorkbenchMessageStreamImpl(
                         _wireTools = []
                         _wireOpenaiTools = []
                     _attemptMessages = currentMessages
+                    if not toolsFallbackUsed:
+                        # Hermes-style multimodal turns: user messages that
+                        # reference stored image attachments carry the image
+                        # inline on the wire (storage keeps plain text).
+                        try:
+                            from app.services.workbench.image_parts import inline_image_parts
+
+                            _attemptMessages = inline_image_parts(currentMessages)
+                        except Exception:
+                            logger.debug('image part inline failed', exc_info=True)
                     if toolsFallbackUsed:
                         # The stripped request — no tools array,
                         # tool-call history flattened to text.

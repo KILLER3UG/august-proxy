@@ -37,6 +37,38 @@ eligibility).
 
 from __future__ import annotations
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _memAutoInjectOn():
+    """The boot mem-index (and its freeze) only renders when memoryAutoInject
+    is on — default OFF since the 2026-09-06 recall decoupling (memory reaches
+    the model via the read tool / per-turn tail, not the system prompt). These
+    tests pin the freeze contract, so they opt the flag in for the module;
+    the runtime default stays OFF."""
+    from app.services import brain_config_service as bcs
+    from app.services import config_service
+
+    cfg = config_service.getConfig()
+    aux = cfg.get('auxiliary')
+    if not isinstance(aux, dict):
+        aux = {}
+        cfg['auxiliary'] = aux
+    cognitive = aux.get('cognitive')
+    if not isinstance(cognitive, dict):
+        cognitive = {}
+        aux['cognitive'] = cognitive
+    orch = cognitive.get('orchestrator')
+    if not isinstance(orch, dict):
+        orch = {}
+        cognitive['orchestrator'] = orch
+    orch['memory_auto_inject'] = True
+    config_service.saveConfig(cfg)
+    bcs._runtime_cache = None
+    yield
+    bcs._runtime_cache = None
+
 
 def _build(session, tools=None):
     from app.services.workbench import workbench as wb

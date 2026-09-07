@@ -64,7 +64,10 @@ export interface MessageBlock {
     | 'recalledMemories'
     | 'memoryNotice'
     | 'phase'
-    | 'error';
+    | 'error'
+    /** Harness notice (retry warning, context pressure, info) — NOT model
+     *  chain-of-thought; the thinking block holds only model reasoning. */
+    | 'system';
   content?: string;
   /** For type === 'error': the raw upstream error text, kept for the
    *  expandable details — content holds the friendly copy. */
@@ -79,6 +82,10 @@ export interface MessageBlock {
   /** For type === 'recalledMemories': the auto-memory rows that
    *  getRelevantMemories() prefetched into the system prompt this turn. */
   memories?: RecalledMemoryItem[];
+  /** Legacy persisted rows only: a `thinking` block that was actually a
+   *  harness notice (old reducer collapsed warnings into the thinking pack).
+   *  normalizeSystemBlocks() converts these to `type: 'system'` on load. */
+  system?: boolean;
 }
 
 /** One auto-memory row surfaced by the `recalledMemories` SSE event. */
@@ -320,7 +327,10 @@ export interface AppendBlockEvent {
     | 'recalledMemories'
     | 'memoryUpdated'
     | 'executionState'
-    | 'error';
+    | 'error'
+    /** Harness notice (warning / info / context pressure) — becomes a
+     *  `type: 'system'` block; the thinking block holds only model CoT. */
+    | 'system';
   content?: string;
   /** For type === 'error': raw upstream text (friendly copy goes in content). */
   rawContent?: string;
@@ -355,10 +365,11 @@ export interface AppendBlockEvent {
   memories?: RecalledMemoryItem[];
   /**
    * Marks a `thinking` event as a system notice (warning / info / error)
-   * rather than model reasoning. System thinking events append to the
-   * thinking pack WITHOUT demoting prior `finalOutput` blocks — so a
-   * post-answer warning collapses into thinking but never displaces the
-   * real final answer.
+   * rather than model reasoning. System notices become `type: 'system'`
+   * blocks — they never demote prior `finalOutput` blocks and never merge
+   * into the thinking pack (only model chain-of-thought lives there).
+   * The flag stays on the event type for persisted-history blocks, where
+   * older `thinking` blocks may still carry `system: true`.
    */
   system?: boolean;
 }

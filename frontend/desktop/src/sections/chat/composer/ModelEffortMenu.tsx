@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronRight, Gauge, Pin, RefreshCw } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Gauge, Pin, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -418,10 +418,10 @@ export function ModelEffortMenu({
         <span className="min-w-0 truncate font-medium text-foreground">
           {chipModelLabel(selected)}
         </span>
-        <ChevronRight
+        <ChevronDown
           className={cn(
             'size-3 shrink-0 opacity-60 transition-transform duration-200',
-            modelsOpen && 'rotate-90',
+            modelsOpen && 'rotate-180',
           )}
         />
       </motion.button>
@@ -444,10 +444,10 @@ export function ModelEffortMenu({
       >
         <Gauge className="size-3.5 shrink-0 opacity-70" />
         <span className="shrink-0">{effortOpt.triggerLabel}</span>
-        <ChevronRight
+        <ChevronDown
           className={cn(
             'size-3 shrink-0 opacity-60 transition-transform duration-200',
-            effortOpen && 'rotate-90',
+            effortOpen && 'rotate-180',
           )}
         />
       </motion.button>

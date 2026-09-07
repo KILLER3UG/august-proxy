@@ -152,7 +152,9 @@ def test_introspection_includes_flow_map_and_registry(hsi):
     data = hsi.build_introspection()
     assert 'broken_registrations' in data['tools']
     flow = data['flow_map']
-    assert flow['max_tool_rounds_per_turn'] >= 1
+    # 0 = the shipped default since 0.18.3: the round cap is DISABLED
+    # (unlimited); stall detection still stops genuinely spinning turns.
+    assert flow['max_tool_rounds_per_turn'] >= 0
     assert 'research' in flow['phases']
     text = hsi.format_introspection(data)
     assert '<harness_introspection>' in text

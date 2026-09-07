@@ -27,6 +27,20 @@ def test_reasoning_effort_rejected_detection():
     assert P._reasoning_effort_rejected(500, "reasoning_effort internal error") is False
 
 
+def test_reasoning_effort_rejected_zai_fieldless():
+    """Z.ai-family gateways (B.AI GLM) reject the disallowed values WITHOUT
+    naming the field: 该模型始终思考，不支持关闭思考 (always-thinking model;
+    use low/high/max). The tell-tale phrases must trigger the drop-and-retry."""
+    zai = "[400] The request is invalid: 该模型始终思考，不支持关闭思考；请使用 low、high 或 max. Please check the request body"
+    assert P._reasoning_effort_rejected(400, zai) is True
+    assert P._reasoning_effort_rejected(None, zai) is True
+    # English phrasing of the same refusal.
+    en = "[400] This model always thinks and does not support disabling thinking; use low, high or max."
+    assert P._reasoning_effort_rejected(400, en) is True
+    # Unrelated 400 stays fatal.
+    assert P._reasoning_effort_rejected(400, "该模型不存在") is False
+
+
 class _FakeStreamClient:
     """Yields a reasoning_effort 400 on the first call, normal chunks after."""
 

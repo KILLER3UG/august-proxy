@@ -2,7 +2,7 @@
 /* Slim pill controls: + menu, model/effort, voice, send / steer / stop.   */
 
 import { useState, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
-import { Loader2, Mic, Send, Square } from 'lucide-react';
+import { ArrowUp, Loader2, Square } from 'lucide-react';
 import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchAgentMode } from '@/api/workbench';
 import { updateSessionModel } from '@/store/sessions';
 import type { WorkbenchSession } from '@/types/workbench';
@@ -307,15 +307,17 @@ export function ComposerToolbar({
           </span>
         )}
 
-        <button
-          type="button"
-          onClick={onVoice}
-          className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 transition"
-          title="Voice input"
-          aria-label="Voice input"
-        >
-          <Mic className="size-3.5" />
-        </button>
+        {/* ZCode parity: no always-on mic button in the row (voice input
+            lives in the "+" actions menu); while streaming the slot shows the
+            spinner instead. */}
+        {streaming ? (
+          <span
+            className="h-8 w-8 flex items-center justify-center text-muted-foreground"
+            aria-live="polite"
+          >
+            <Loader2 className="size-3.5 animate-spin" />
+          </span>
+        ) : null}
 
         {streaming ? (
           <>
@@ -335,7 +337,7 @@ export function ComposerToolbar({
               onClick={stop}
               title="Stop"
               aria-label="Stop"
-              className="h-8 w-8 rounded-full flex items-center justify-center bg-primary text-primary-foreground hover:bg-primary/90 transition"
+              className="h-8 w-8 rounded-lg flex items-center justify-center bg-foreground text-background hover:bg-foreground/90 transition"
             >
               <Square className="size-3 fill-current" />
             </button>
@@ -372,12 +374,12 @@ export function ComposerToolbar({
                     : 'Send'
             }
             className={cn(
-              'h-8 w-8 justify-center rounded-full p-0 text-xs font-medium flex items-center gap-1.5 transition',
-              'bg-primary text-primary-foreground hover:bg-primary/90',
+              'h-8 w-8 justify-center rounded-lg p-0 text-xs font-medium flex items-center gap-1.5 transition',
+              'bg-foreground text-background hover:bg-foreground/90',
               'disabled:opacity-40 disabled:pointer-events-none',
             )}
           >
-            <Send className="size-3" />
+            <ArrowUp className="size-3.5" />
           </button>
         )}
       </div>

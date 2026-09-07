@@ -195,36 +195,74 @@ async def listRuns(sessionId: Optional[str] = None, limit: int = 50):
     return {'runs': [_row_as_wire(r) for r in rows]}
 
 
-@router.get('/config')
-async def getDelegationConfig(sessionId: Optional[str] = None):
-    """Hermes-style delegation config for a session (well-structured harness)."""
+def _globalDelegationConfig() -> dict[str, object]:
+    """Global delegation limits stored via brain_config (Settings → Subagents).
+
+    One source of truth shared by every session without its own per-session
+    override — the settings panel posts here with no session id.
+    """
+    from app.services.brain_config_service import getDelegationLimits
+
+    return getDelegationLimits()
+
+
+def _saveGlobalDelegationConfig(config: dict[str, object]) -> None:
+    """Persist the global delegation limits through brain_config_service."""
+    from app.services.brain_config_service import saveBrainConfig
+
+    patch: dict[str, object] = {}
+    if 'maxConcurrent' in config:
+        patch['subagentMaxConcurrent'] = max(1, min(30, as_int(config['maxConcurrent'], 5) or 5))
+    if 'maxIterations' in config:
+        patch['subagentMaxIterations'] = max(5, min(200, as_int(config['maxIterations'], 50) or 50))
+    if 'maxDepth' in config:
+        patch['subagentMaxDepth'] = max(1, min(5, as_int(config['maxDepth'], 1) or 1))
+    if 'worktreeIsolation' in config:
+        patch['subagentWorktreeIsolation'] = bool(config['worktreeIsolation'])
+    ok, err, _merged = saveBrainConfig(patch)
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+
+
+def _sessionDelegationConfig(sid: str) -> dict[str, object]:
+    """Per-session delegation config from workbench metadata (may be {})."""
     from app.services.workbench import workbench as wb
 
-    sid = sessionId or ''
-    if not sid:
-        return {'maxConcurrent': 3, 'maxIterations': 50, 'maxDepth': 1, 'worktreeIsolation': False}
     sess = wb.getWorkbenchSession(sid)
     if not sess:
-        return {'maxConcurrent': 3, 'maxIterations': 50, 'maxDepth': 1, 'worktreeIsolation': False}
+        return {}
     meta = sess.metadata if isinstance(sess.metadata, dict) else {}
     delegation_raw = meta.get('delegation')
-    delegation: dict[str, object] = delegation_raw if isinstance(delegation_raw, dict) else {}
-    # Migrate from old isolate flag
-    worktree = bool(delegation.get('worktreeIsolation', meta.get('isolateSubagents', False)))
-    return {
-        'maxConcurrent': int(as_int(delegation.get('maxConcurrent', 5), 5) or 5),
-        'maxIterations': int(as_int(delegation.get('maxIterations', 50), 50) or 50),
-        'maxDepth': int(as_int(delegation.get('maxDepth', 1), 1) or 1),
-        'worktreeIsolation': worktree,
-    }
+    delegation: dict[str, object] = dict(delegation_raw) if isinstance(delegation_raw, dict) else {}
+    if 'worktreeIsolation' not in delegation and bool(meta.get('isolateSubagents', False)):
+        delegation['worktreeIsolation'] = True
+    return delegation
+
+
+def _mergeDelegation(globalCfg: dict[str, object], sessionCfg: dict[str, object]) -> dict[str, object]:
+    """Session overrides win key-by-key; global fills the rest."""
+    merged = dict(globalCfg)
+    merged.update({k: v for k, v in sessionCfg.items() if k in globalCfg})
+    return merged
+
+
+@router.get('/config')
+async def getDelegationConfig(sessionId: Optional[str] = None):
+    """Delegation config: global defaults (brain_config) merged with any
+    per-session override — well-structured harness."""
+    sid = sessionId or ''
+    if not sid:
+        return _globalDelegationConfig()
+    return _mergeDelegation(_globalDelegationConfig(), _sessionDelegationConfig(sid))
 
 
 @router.post('/config')
 async def setDelegationConfig(request: Request, sessionId: Optional[str] = None):
-    """Persist delegation config for a session."""
-    from app.services.workbench import workbench as wb
-    from app.services.workbench.sessions import save_sessions
+    """Persist delegation config.
 
+    No sessionId → global defaults (brain_config, what the settings panel
+    posts); with sessionId → per-session override in workbench metadata.
+    """
     body: dict = {}
     try:
         raw = await request.json()
@@ -234,7 +272,11 @@ async def setDelegationConfig(request: Request, sessionId: Optional[str] = None)
         body = {}
     sid = sessionId or str(body.get('sessionId') or body.get('session_id') or request.headers.get('X-Session-Id', '') or '')
     if not sid:
-        raise HTTPException(status_code=400, detail='sessionId is required')
+        _saveGlobalDelegationConfig(body)
+        return {'ok': True, 'config': _globalDelegationConfig(), 'scope': 'global'}
+    from app.services.workbench import workbench as wb
+    from app.services.workbench.sessions import save_sessions
+
     sess = wb.getWorkbenchSession(sid)
     if not sess:
         raise HTTPException(status_code=404, detail='Session not found')

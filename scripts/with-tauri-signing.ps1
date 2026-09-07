@@ -26,5 +26,10 @@ if ($args.Count -eq 0) {
     exit 0
 }
 
-& $args[0] @($args | Select-Object -Skip 1)
+# Rebuild the command line from the RAW argv (not $args — PowerShell mangles
+# tokens like -w or --flag value pairs when splatting positionally) and run it.
+# `& $args[0] @($args | Select-Object -Skip 1)` broke `npm run tauri -w ...`:
+# npm received '-w' as its own arg in the wrong position and failed.
+$cmd = ($args -join ' ')
+Invoke-Expression $cmd
 exit $LASTEXITCODE

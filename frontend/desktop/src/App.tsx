@@ -16,6 +16,7 @@ import { useUiCustomizationSync } from '@/hooks/useUiCustomizationSync';
 import { registerStreamResync } from '@/sections/chat/stream/session-subscriber';
 import { toggleCommandPalette } from '@/store/command-palette';
 import { toggleShortcutsModal } from '@/store/shortcuts-modal';
+import { createSession } from '@/store/sessions';
 
 /** True when keystrokes belong to a text-editing surface (skip global hotkeys). */
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -44,7 +45,8 @@ export default function App() {
     registerStreamResync(() => Promise.resolve(null));
   }, []);
 
-  // Global hotkeys: ⌘/Ctrl+K|P palette, `?` shortcuts reference, `,` settings.
+  // Global hotkeys: ⌘/Ctrl+K|P palette, ⌘/Ctrl+N new chat, `?` shortcuts
+  // reference, `,` settings.
   // (Formerly lived in the never-mounted AppShell — mounted here so they work.)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -52,6 +54,15 @@ export default function App() {
       if (cmd && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'p')) {
         e.preventDefault();
         toggleCommandPalette();
+        return;
+      }
+      if (cmd && !e.altKey && !e.shiftKey && e.key === 'n') {
+        // ZCode-parity Ctrl+N: new chat, same path as the sidebar button
+        // (creates a Tasks-home session and opens it). Skips typing targets
+        // so Ctrl+N inside a composer field is untouched.
+        e.preventDefault();
+        const session = createSession(null);
+        navigate(`/c/${session.id}`);
         return;
       }
       if (cmd || e.altKey || e.metaKey) return;

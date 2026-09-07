@@ -54,6 +54,11 @@ _ALLCamelKeys = {
     # Per-project memory + workspace skills toggles.
     'projectMemory',
     'projectSkills',
+    # Global subagent delegation limits (Settings → Subagents panel).
+    'subagentMaxConcurrent',
+    'subagentMaxIterations',
+    'subagentMaxDepth',
+    'subagentWorktreeIsolation',
 }
 
 
