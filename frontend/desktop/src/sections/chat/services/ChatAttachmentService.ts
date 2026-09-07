@@ -3,6 +3,7 @@
 
 import { isImageFile, readFileContent, type FileReadResult } from '@/lib/file-reader';
 import { api } from '@/api/client';
+import { toast } from 'sonner';
 import type { FileAttachment } from '@/types/chat';
 
 const CODE_LANG_MAP: Record<string, string> = {
@@ -265,33 +266,58 @@ export class ChatAttachmentService {
   }
 
   /**
-   * Upload image attachments (data URLs) into the session workspace so the
-   * agent can actually open them — before this the bytes never left the
-   * client and analyze_media could only say "File not found". Mutates each
-   * uploaded attachment with `savedPath`. Best-effort: a failed upload
-   * leaves the placeholder text (and the chat send) intact.
+   * Upload ready attachments into the session workspace so the agent can
+   * actually open them — before this the bytes never left the client and
+   * analyze_media could only say "File not found". Images upload their data
+   * URL bytes; text files upload their extracted content. Mutates each
+   * uploaded attachment with `savedPath`. On failure the prompt keeps the
+   * placeholder — the caller surfaces one toast so the user isn't left
+   * thinking the model can see the file.
    */
   static async uploadImages(
     workbenchSessionId: string,
     attachments: FileAttachment[],
+    workspacePath?: string,
   ): Promise<void> {
     if (!workbenchSessionId) return;
     const pending = attachments.filter(
-      (a) => a.type === 'image' && a.dataUrl && !a.savedPath,
+      (a) =>
+        a.status === 'ready' &&
+        !a.savedPath &&
+        ((a.type === 'image' && a.dataUrl) || (a.type === 'text' && a.content)),
     );
+    if (pending.length === 0) return;
+    let failed = 0;
     await Promise.all(
       pending.map(async (a) => {
         try {
+          // Image bytes ride the data URL; text files send their extracted
+          // content as a data URL so the backend stores real file bytes.
+          const payload =
+            a.type === 'image'
+              ? a.dataUrl
+              : `data:text/plain;base64,${btoa(unescape(encodeURIComponent(a.content ?? '')))}`;
           const res = await api.post<{ ok?: boolean; path?: string }>(
             '/api/workbench/attachments',
-            { sessionId: workbenchSessionId, name: a.name, dataUrl: a.dataUrl },
+            {
+              sessionId: workbenchSessionId,
+              name: a.name,
+              dataUrl: payload,
+              ...(workspacePath ? { workspace: workspacePath } : {}),
+            },
           );
           if (res?.ok && res.path) a.savedPath = res.path;
+          else failed += 1;
         } catch {
-          /* upload failed — the prompt keeps the placeholder */
+          failed += 1;
         }
       }),
     );
+    if (failed > 0) {
+      toast.error(
+        `Could not store ${failed} attachment${failed === 1 ? '' : 's'} — the model may not be able to open ${failed === 1 ? 'it' : 'them'}`,
+      );
+    }
   }
 
   /** Serialize attachments into markdown sections for the model prompt. */
@@ -300,14 +326,18 @@ export class ChatAttachmentService {
     if (ready.length === 0) return '';
     const sections = ready.map((a) => {
       const header = `📄 **${a.name}**`;
+      // An uploaded attachment is a real workspace file — name the path so
+      // analyze_media/read_file can open it (and skip the inline text dump:
+      // the file is on disk now, inlining both would double the tokens).
+      if (a.savedPath) {
+        const kind = a.type === 'image' ? 'vision description' : 'contents';
+        return `${header}\n[Attached file — stored at ${a.savedPath}. Open it with analyze_media (${kind}) or read_file.]`;
+      }
       if (a.type === 'text' && a.content) {
         const lang = this.codeLangFor(a.name);
         return `${header}\n\`\`\`${lang}\n${a.content}\n\`\`\``;
       }
       if (a.type === 'image') {
-        if (a.savedPath) {
-          return `${header}\n[Image attached — stored at ${a.savedPath}. Open it with analyze_media (vision description) or read_file.]`;
-        }
         return `${header}\n[Image attached — available for vision analysis]`;
       }
       return `${header}\n[File attached — content could not be extracted]`;

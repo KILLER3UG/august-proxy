@@ -104,7 +104,7 @@ export function AssistantMessageContent({
 
   return (
     <>
-      <div className="flex flex-col w-full gap-2">
+      <div className="flex min-w-0 flex-col w-full gap-2">
         {showRaw ? (
           <div className="p-3 bg-muted/40 rounded-xl border border-border/50 text-xs font-mono text-muted-foreground whitespace-pre-wrap overflow-x-auto leading-relaxed">
             {JSON.stringify(message, null, 2)}

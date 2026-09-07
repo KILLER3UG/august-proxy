@@ -85,3 +85,55 @@ def test_upload_unknown_session_rejected(session):
     with TestClient(app) as client:
         res = _post(client, session, sessionId='nope-missing')
         assert res.status_code == 409
+
+
+def test_upload_unknown_session_with_workspace_succeeds(tmp_path):
+    """The FIRST message of a new chat has no backend session (the client
+    only holds its UI session_* id) — passing the known workspace must let
+    the upload succeed instead of 409-ing and leaving the placeholder."""
+    ws = tmp_path / 'ws'
+    ws.mkdir()
+    with TestClient(app) as client:
+        res = client.post(
+            '/api/workbench/attachments',
+            json={
+                'sessionId': 'session_20260907_101010_abcd',
+                'name': 'shot.png',
+                'dataUrl': f'data:image/png;base64,{_PNG_B64}',
+                'workspace': str(ws),
+            },
+        )
+    assert res.status_code == 200, res.text
+    assert Path(res.json()['path']).exists()
+
+
+def test_upload_workspace_must_be_a_real_dir():
+    with TestClient(app) as client:
+        res = client.post(
+            '/api/workbench/attachments',
+            json={
+                'sessionId': 'session_20260907_101010_abcd',
+                'name': 'shot.png',
+                'dataUrl': f'data:image/png;base64,{_PNG_B64}',
+                'workspace': str(Path(';') / 'nonexistent' / 'ws'),
+            },
+        )
+    assert res.status_code == 409
+
+
+def test_upload_text_file_roundtrip(tmp_path):
+    ws = tmp_path / 'ws'
+    ws.mkdir()
+    text_b64 = base64.b64encode(b'hello attachment').decode('ascii')
+    with TestClient(app) as client:
+        res = client.post(
+            '/api/workbench/attachments',
+            json={
+                'sessionId': 'session_20260907_101010_abcd',
+                'name': 'notes.txt',
+                'dataUrl': f'data:text/plain;base64,{text_b64}',
+                'workspace': str(ws),
+            },
+        )
+    assert res.status_code == 200, res.text
+    assert Path(res.json()['path']).read_bytes() == b'hello attachment'

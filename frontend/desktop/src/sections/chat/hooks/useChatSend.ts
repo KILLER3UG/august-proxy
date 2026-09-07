@@ -190,18 +190,29 @@ export function useChatSend(opts: UseChatSendOptions) {
       // Sending the full transcript as one blob every time bloated context and
       // could make the model/provider look "stuck" or fail silently on large chats.
       const lastUser = [...chatHistory].reverse().find((m) => m.role === 'user');
-      // Upload pasted images into the workspace BEFORE composing the prompt
-      // so the model receives a real path it can open with analyze_media —
-      // the data URL alone never reached the backend, leaving the agent
-      // blind to every attached image.
+      // Upload attachments into the workspace BEFORE composing the prompt so
+      // the model receives real paths it can open with analyze_media/read_file
+      // — the data URL alone never reached the backend. On the FIRST message
+      // the backend session doesn't exist yet, so ensure it first (it creates
+      // one bound to this chat's workspace); otherwise the upload 409s and
+      // the model gets only the useless placeholder line.
       const lastAtts = lastUser?.attachments ?? [];
-      if (lastAtts.some((a) => a.type === 'image' && a.dataUrl && !a.savedPath)) {
-        const wbId = ChatSendService.resolveWorkbenchQueueId(
-          workbenchSessionId,
-          activeWorkbenchSessionId,
-          turnSessionId,
-        );
-        await ChatAttachmentService.uploadImages(wbId, lastAtts);
+      if (
+        lastAtts.some(
+          (a) => a.status === 'ready' && !a.savedPath && ((a.type === 'image' && a.dataUrl) || (a.type === 'text' && a.content)),
+        )
+      ) {
+        try {
+          const wb = await ensureWorkbenchSession();
+          const wbId = ChatSendService.resolveWorkbenchQueueId(
+            wb?.id ?? workbenchSessionId,
+            activeWorkbenchSessionId,
+            turnSessionId,
+          );
+          await ChatAttachmentService.uploadImages(wbId, lastAtts);
+        } catch {
+          /* surfaced inside uploadImages as a toast; send still proceeds */
+        }
       }
       // Compose attachment prompt at send time so message.content stays
       // display-friendly (typed text only) while the model still gets file text.
@@ -470,7 +481,11 @@ export function useChatSend(opts: UseChatSendOptions) {
           );
           // Same upload-then-name dance as the main send path: the queue
           // formatter renders savedPath so the steered turn can open it.
-          if (readyAttachments.some((a) => a.type === 'image' && a.dataUrl && !a.savedPath)) {
+          if (
+            readyAttachments.some(
+              (a) => a.status === 'ready' && !a.savedPath && ((a.type === 'image' && a.dataUrl) || (a.type === 'text' && a.content)),
+            )
+          ) {
             await ChatAttachmentService.uploadImages(wbId, readyAttachments);
           }
           const savedAttachments =

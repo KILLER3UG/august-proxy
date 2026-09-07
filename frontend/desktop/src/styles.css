@@ -1288,6 +1288,8 @@ input::placeholder {
   margin: 6px 0;
   border-radius: 10px;
   background: color-mix(in srgb, var(--dt-foreground) 2.5%, transparent);
+  min-width: 0;
+  max-width: 100%;
 }
 .activity-summary[data-expanded="true"] {
   background: color-mix(in srgb, var(--dt-foreground) 3.5%, transparent);
@@ -1343,6 +1345,11 @@ input::placeholder {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* Long nowrap command lines must not widen the row past the card: every
+     flex-column level needs its min-width floor removed or the browser
+     sizes the column to min-content (the longest unbreakable line). */
+  min-width: 0;
+  max-width: 100%;
 }
 .activity-summary-live {
   display: flex;
@@ -1388,6 +1395,8 @@ input::placeholder {
   flex-direction: column;
   gap: 8px;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 .process-step {
   display: grid;
@@ -1399,6 +1408,8 @@ input::placeholder {
   display: flex;
   flex-direction: column;
   gap: 0;
+  min-width: 0;
+  max-width: 100%;
 }
 .process-step-gutter {
   display: flex;

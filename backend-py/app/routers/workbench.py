@@ -663,22 +663,29 @@ async def uploadAttachment(body: dict):
     ``<workspace>/.aug/attachments/<sessionId>/``, and returns the path the
     frontend names in the prompt text. Size cap mirrors the /files/read
     base64 envelope (25 MB).
+
+    The FIRST message of a new chat has no backend Workbench session yet
+    (the client only has its UI ``session_*`` id), so the client also sends
+    the workspace path it already knows — same trust level as the git
+    router's explicit ``repoPath``.
     """
     import base64
 
     sessionId = as_str(body.get('sessionId'), '').strip()
     name = as_str(body.get('name'), '').strip() or 'image.png'
     dataUrl = as_str(body.get('dataUrl'), '')
+    workspace = as_str(body.get('workspace'), '').strip()
     if not sessionId or not dataUrl:
         raise HTTPException(status_code=400, detail='sessionId and dataUrl required')
     if not dataUrl.startswith('data:') or ';base64,' not in dataUrl:
         raise HTTPException(status_code=400, detail='dataUrl must be a base64 data URL')
-    session = wb.getWorkbenchSession(sessionId)
-    workspace = as_str(getattr(session, 'workspacePath', '') or '') if session else ''
     if not workspace:
+        session = wb.getWorkbenchSession(sessionId)
+        workspace = as_str(getattr(session, 'workspacePath', '') or '') if session else ''
+    if not workspace or not Path(workspace).is_dir():
         raise HTTPException(
             status_code=409,
-            detail='session has no workspace — attachments need a folder-backed chat',
+            detail='no workspace for this chat — attachments need a folder-backed session',
         )
     try:
         raw = base64.b64decode(dataUrl.partition(';base64,')[2])
