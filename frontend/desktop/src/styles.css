@@ -767,12 +767,12 @@ input::placeholder {
 
 /* One-shot rise when the final answer block mounts — not on every token flush. */
 @keyframes chat-final-stream-enter {
-  from { opacity: 0.72; }
-  to { opacity: 1; }
+  from { opacity: 0.35; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .chat-streaming-block--live {
-  animation: chat-final-stream-enter 0.14s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: chat-final-stream-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* Part 27 G2: one-shot rise for newly-mounted transcript rows (delegate rows,
@@ -796,21 +796,21 @@ input::placeholder {
 }
 
 @keyframes md-live-fade {
-  from { opacity: 0.42; }
+  from { opacity: 0.2; }
   to { opacity: 1; }
 }
 
 .md-live-tail {
-  animation: md-live-fade 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: md-live-fade 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes md-settle-fade {
-  from { opacity: 0.82; }
+  from { opacity: 0.6; }
   to { opacity: 1; }
 }
 
 .markdown-content--settle {
-  animation: md-settle-fade 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: md-settle-fade 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
