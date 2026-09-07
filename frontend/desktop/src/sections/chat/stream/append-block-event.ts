@@ -15,9 +15,16 @@ import type { MessageBlock, AppendBlockEvent } from '@/types/chat';
  *  recent output is the interesting part while a command runs. */
 const MAX_BLOCK_PREVIEW = 80_000;
 
+/** ES2023 Array.prototype.findLastIndex, local copy (lib target < ES2023). */
+function findLastIndex<T>(arr: T[], pred: (item: T) => boolean): number {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (pred(arr[i])) return i;
+  }
+  return -1;
+}
+
 /** Merge adjacent thinking blocks so demotion cannot produce Thought (2). */
-export function coalesceAdjacentThinking(blocks: MessageBlock[]): MessageBlock[] {
-  if (blocks.length < 2) return blocks;
+export function coalesceAdjacentThinking(blocks: MessageBlock[]): MessageBlock[] {  if (blocks.length < 2) return blocks;
   const out: MessageBlock[] = [];
   for (const block of blocks) {
     const prev = out[out.length - 1];
@@ -75,11 +82,29 @@ export function appendBlockEvent(
     if (last && last.type === 'finalOutput') {
       last.content = (last.content || '') + text;
     } else {
-      blocks.push({
-        id: `b_out_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        type: 'finalOutput',
-        content: text
-      });
+      // A mid-answer tool receipt (memory chip, phase marker, recall block)
+      // lands BETWEEN text chunks and splits the final answer into fragments
+      // with gaps ("…sentence. | chip | Also saved the lesson…"). The prose
+      // belongs to the already-open answer: re-open it by appending there and
+      // leave the chip where it is — the chip then reads as an inline notice
+      // and the answer stays one flowing block.
+      const lastFinalIdx = findLastIndex(blocks, (b) => b.type === 'finalOutput');
+      const intervening = lastFinalIdx !== -1 && blocks.slice(lastFinalIdx + 1).every(
+        (b) => b.type === 'memoryNotice' || b.type === 'phase' || b.type === 'recalledMemories',
+      );
+      if (intervening && text.trim()) {
+        const openFinal = blocks[lastFinalIdx];
+        blocks[lastFinalIdx] = {
+          ...openFinal,
+          content: `${openFinal.content || ''}${text}`,
+        };
+      } else {
+        blocks.push({
+          id: `b_out_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          type: 'finalOutput',
+          content: text
+        });
+      }
     }
   } else if (event.type === 'toolCall' || event.type === 'command') {
     const isCommand = event.type === 'command' || event.name?.startsWith('@run_command') || event.name?.startsWith('run_command');

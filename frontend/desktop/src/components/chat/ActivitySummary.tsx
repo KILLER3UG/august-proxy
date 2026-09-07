@@ -342,7 +342,13 @@ export function ActivitySummary({
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className={cn('overflow-x-hidden', bodyClip ? 'overflow-hidden' : 'overflow-visible')}
+            // NOTE: cn() is tailwind-merge — a later `overflow-visible` would
+            // strip `overflow-x-hidden` (superset group), which is exactly
+            // how the open row's long command line escaped the card in
+            // 0.18.4. Keep the horizontal clip in a class the merge can't
+            // touch: overflow-x-hidden + overflow-y-visible are distinct
+            // groups, so both survive.
+            className={cn(bodyClip ? 'overflow-hidden' : 'overflow-x-hidden overflow-y-visible')}
             onAnimationStart={() => setBodyClip(true)}
             onAnimationComplete={() => setBodyClip(false)}
           >

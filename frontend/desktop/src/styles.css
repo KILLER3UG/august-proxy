@@ -1347,9 +1347,12 @@ input::placeholder {
   gap: 6px;
   /* Long nowrap command lines must not widen the row past the card: every
      flex-column level needs its min-width floor removed or the browser
-     sizes the column to min-content (the longest unbreakable line). */
+     sizes the column to min-content (the longest unbreakable line). The
+     overflow-x clip here is twMerge-proof (plain CSS, not a utility that a
+     later `overflow-visible` utility can strip). */
   min-width: 0;
   max-width: 100%;
+  overflow-x: hidden;
 }
 .activity-summary-live {
   display: flex;

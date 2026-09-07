@@ -240,3 +240,32 @@ describe('appendBlockEvent command preview bounds', () => {
     expect(tool.contentFullLength).toBe(123456);
   });
 });
+
+describe('appendBlockEvent mid-answer chip does not split the answer', () => {
+  it('appends text after a memoryNotice chip back into the open finalOutput', () => {
+    let blocks = appendBlockEvent([], { type: 'text', content: 'First part of the answer.' });
+    blocks = appendBlockEvent(blocks, {
+      type: 'memoryUpdated',
+      summary: 'Remembered: vision lesson',
+    });
+    blocks = appendBlockEvent(blocks, { type: 'text', content: ' Also saved the lesson to memory.' });
+
+    // ONE flowing answer block — the chip must not split the prose.
+    const finals = blocks.filter((b) => b.type === 'finalOutput');
+    expect(finals).toHaveLength(1);
+    expect(finals[0].content).toBe(
+      'First part of the answer. Also saved the lesson to memory.',
+    );
+    // The chip still renders, positioned after the answer text block.
+    expect(blocks.map((b) => b.type)).toEqual(['finalOutput', 'memoryNotice']);
+  });
+
+  it('still opens a new finalOutput after real tool blocks', () => {
+    let blocks = appendBlockEvent([], { type: 'text', content: 'before tool' });
+    blocks = appendBlockEvent(blocks, { type: 'toolCall', id: 't1', name: 'run_command' });
+    blocks = appendBlockEvent(blocks, { type: 'text', content: 'after tool' });
+
+    const finals = blocks.filter((b) => b.type === 'finalOutput');
+    expect(finals).toHaveLength(2);
+  });
+});
