@@ -342,7 +342,7 @@ export function ActivitySummary({
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className={bodyClip ? 'overflow-hidden' : 'overflow-visible'}
+            className={cn('overflow-x-hidden', bodyClip ? 'overflow-hidden' : 'overflow-visible')}
             onAnimationStart={() => setBodyClip(true)}
             onAnimationComplete={() => setBodyClip(false)}
           >

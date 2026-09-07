@@ -247,6 +247,18 @@ const BackendMonitorWrapper = lazySection(() => import('./BackendMonitorSection'
 const FeatureFlowWrapper = lazySection(() => import('./FeatureFlowSection'), 'FeatureFlowSection');
 const ExternalAccessWrapper = lazySection(() => import('./ExternalAccessSection'), 'ExternalAccessSection');
 const AppUpdatesWrapper = lazySection(() => import('./UpdateSection'), 'UpdateSection');
+const SubagentsWrapper = lazySection(
+  () => import('./CapabilitySections').then((m) => ({ default: m.SubagentsSection })),
+  'SubagentsSection',
+);
+const PluginsWrapper = lazySection(
+  () => import('./CapabilitySections').then((m) => ({ default: m.PluginsSection })),
+  'PluginsSection',
+);
+const BrowserUseWrapper = lazySection(
+  () => import('./CapabilitySections').then((m) => ({ default: m.BrowserUseSection })),
+  'BrowserUseSection',
+);
 const UsageWrapper = lazySection(() => import('@/sections/workspace/WorkspaceUsageSection'), 'WorkspaceUsageSection');
 const RecurringTasksWrapper = lazySection(() => import('./RecurringTasksSection'), 'RecurringTasksSection');
 const InspectorWrapper = lazySection(() => import('@/sections/workspace/WorkspaceInspectorSection'), 'WorkspaceInspectorSection');
@@ -312,11 +324,14 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'model-fleet': ModelFleetWrapper,
   'model-live': ModelLiveWrapper,
   'model-quotas': ModelQuotasWrapper,
-  // browser-use / subagents / plugins / hooks / indexing intentionally
-  // fall through to SettingsStub: the registry entries exist for the IA,
-  // but their real pages are not built yet. Rendering a *different*
-  // feature's page (Computer Use, MCP, Privacy, ...) under these ids
+  // browser-use / subagents / plugins are wired to CapabilitySections —
+  // the live panels for delegation limits, the plugin roster, and the
+  // browser/web tool surface. hooks / indexing remain stubs until their
+  // pages exist; rendering a *different* feature's page under these ids
   // misleads users searching for what the section title promises.
+  'browser-use': BrowserUseWrapper,
+  subagents: SubagentsWrapper,
+  plugins: PluginsWrapper,
   account: AccountWrapper,
   general: GeneralWrapper,
   appearance: AppearanceWrapper,

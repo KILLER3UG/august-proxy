@@ -12,9 +12,28 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
+from app.json_narrowing import as_str
 from app.lib.paths import dataPath
 
 router = APIRouter(prefix='/api/browser', tags=['browser'])
+
+
+@router.get('/registered-tools')
+async def registeredTools() -> dict[str, object]:
+    """The browser/web tools currently registered for the agent.
+
+    Backs Settings → Browser Use: the panel shows the live roster so the
+    user sees exactly what the model is offered (and registration gaps
+    instead of a silent empty surface).
+    """
+    from app.services.tool_registry import listRaw
+
+    tools = [
+        {'name': as_str(t.get('name'), ''), 'description': as_str(t.get('description'), '')[:220]}
+        for t in listRaw()
+        if as_str(t.get('name'), '').startswith(('browser_', 'web_search', 'web_fetch'))
+    ]
+    return {'tools': tools}
 
 
 def _inside(requested: Path, root: Path) -> bool:

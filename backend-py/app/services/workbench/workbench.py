@@ -66,11 +66,13 @@ from app.services.workbench.validator import validationErrorText
 from app.type_aliases import JsonValue
 
 logger = logging.getLogger('workbench')
-# Default tool-round cap (25). brain-orchestrator maxWorkbenchToolLoops can
-# raise/lower it at runtime via config (Settings → Brain) — the effective cap
-# is resolved per turn in _managedToolLoopCap. The stall detector below stops
-# loops that spin without making progress even before the cap.
-MAX_MANAGED_TOOL_ROUNDS = 25
+# Tool-round cap. DISABLED by default (0 = unlimited): a hard 25-round cap
+# killed long legitimate runs (big refactors, multi-step research) and read to
+# the model as an arbitrary stop. Real runaway protection now comes from the
+# stall detector below (phase/step stuck + novel-work check). Set
+# brain-orchestrator maxWorkbenchToolLoops > 0 in Settings → Brain to opt back
+# into a cap.
+MAX_MANAGED_TOOL_ROUNDS = 0
 # Recurring-task / daemon sub-agents run unbounded today (they bypass the
 # orchestrator's worker pool). Cap concurrent runs so a burst of due tasks
 # cannot spawn an arbitrary number of model calls at once.

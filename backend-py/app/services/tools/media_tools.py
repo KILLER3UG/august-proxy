@@ -128,6 +128,12 @@ async def _vision_describe(image_path: Path | str, question: str, url: str = '')
     Uses the session's chat model/provider by default (same resolution as
     BTW), sending an OpenAI-style image_url part. Works with any provider
     whose gateway accepts multimodal chat input.
+
+    ``chat_completions`` returns a raw ProviderResponse (status/body) — the
+    old code read nonexistent ``.content``/``.text`` attributes and so EVERY
+    call reported "(empty vision response)". Parse the OpenAI envelope from
+    ``body_json`` instead: choices[0].message.content as a plain string or
+    as content parts.
     """
     from app.providers.clients import getClient
     from app.services.workbench.context import currentSessionId
@@ -181,16 +187,27 @@ async def _vision_describe(image_path: Path | str, question: str, url: str = '')
     response = await client.chat_completions(body, apiKey=None)
     if response is None:
         return '(vision provider returned no response)'
-    # ProviderResponse shape: content blocks or text.
+    if not response.is_success:
+        err = response.body_json if isinstance(response.body_json, dict) else {}
+        detail = ''
+        raw_err = err.get('error')
+        if isinstance(raw_err, dict):
+            detail = str(raw_err.get('message') or '')
+        return f'(vision request failed: HTTP {response.status}{": " + detail if detail else ""})'
+    payload = response.body_json if isinstance(response.body_json, dict) else None
+    choices = payload.get('choices') if isinstance(payload, dict) else None
+    message = (
+        (choices[0] or {}).get('message') if isinstance(choices, list) and choices else None
+    ) or {}
+    content = message.get('content')
     text_parts: list[str] = []
-    for block in getattr(response, 'content', None) or []:
-        if isinstance(block, dict) and block.get('type') == 'text':
-            text_parts.append(str(block.get('text', '')))
-    if not text_parts:
-        fallback_text = getattr(response, 'text', None)
-        if fallback_text:
-            text_parts.append(str(fallback_text))
-    return '\n'.join(text_parts) or '(empty vision response)'
+    if isinstance(content, str) and content.strip():
+        text_parts.append(content)
+    elif isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get('type') == 'text':
+                text_parts.append(str(block.get('text', '')))
+    return '\n'.join(t for t in text_parts if t.strip()) or '(empty vision response)'
 
 
 async def analyze_media(

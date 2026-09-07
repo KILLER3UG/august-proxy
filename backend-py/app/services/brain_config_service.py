@@ -78,9 +78,10 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # <relevant_skills>). Default on; AUGUST_SKILL_RELEVANCE=0 also forces off.
     ('skillRelevanceMatch', 'skill_relevance_match', True, 'bool'),
     ('maxAgentDepth', 'max_agent_depth', DEFAULT_FEATURES.get('max_agent_depth', 4), 'num'),
-    # The documented default is 25 tool rounds (MAX_MANAGED_TOOL_ROUNDS);
-    # the stale 100 seed made that constant dead on every fresh install.
-    ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', DEFAULT_FEATURES.get('max_workbench_tool_loops', 25), 'num'),
+    # Tool-round cap: DISABLED by default (0 = unlimited) — the old 25-round
+    # cap killed long legitimate runs. Set > 0 in Settings → Brain to opt in;
+    # stall detection still stops genuinely spinning turns.
+    ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', DEFAULT_FEATURES.get('max_workbench_tool_loops', 0), 'num'),
     # Evidence-driven routing introspection: `autoRoute` /
     # `autoRouteMinWinRate` / `autoRouteWinGap` are REMOVED — no turn-loop
     # reader ever existed (the "auto-routing" claim was corrected in Part 25
