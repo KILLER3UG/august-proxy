@@ -49,7 +49,6 @@ import {
   Palette,
   Paintbrush,
   UserRound,
-  ArrowUpCircle,
   Bell,
   HeartPulse,
   Wand2,
@@ -63,6 +62,7 @@ import {
   Users,
   Flame,
   Sparkles,
+  Info,
   CheckCircle2,
   Zap,
 } from 'lucide-react';
@@ -236,12 +236,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
   {
     id: 'app-updates',
-    label: 'Updates',
-    description: 'Check for desktop app releases from GitHub and install updates.',
-    icon: ArrowUpCircle,
+    label: 'About',
+    description: 'App version, update checks, and release notes for the desktop build.',
+    icon: Info,
     category: 'basics',
-    tier: 'hidden',
-    keywords: ['update', 'release', 'version', 'download app', 'upgrade', 'changelog'],
+    tier: 'basic',
+    keywords: ['about', 'update', 'release', 'version', 'download app', 'upgrade', 'changelog'],
     legacyAliases: ['updates', 'updater', 'version', 'about'],
   },
   {

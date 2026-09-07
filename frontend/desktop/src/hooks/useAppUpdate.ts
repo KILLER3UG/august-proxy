@@ -257,6 +257,9 @@ export function useAppUpdate() {
     isTauri,
     available: query.data ?? null,
     checking: query.isFetching,
+    /** Non-null when the update check itself failed (network / endpoint /
+     *  missing latest.json) — distinct from "no update available". */
+    error: query.isError ? (query.error as Error | null) : null,
     installing,
     progress: installing ? progress : IDLE_UPDATE_PROGRESS,
     formatBytes,
