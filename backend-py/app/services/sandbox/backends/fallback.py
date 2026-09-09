@@ -222,6 +222,17 @@ _PS_READ_ONLY_CMDLETS = frozenset({
     'resolve-path', 'rp',
 })
 
+# Shell commands whose path ARGUMENTS are provably reads (they cannot write a
+# file given only a path operand — `sort -o`, `find -delete`, interpreters and
+# tee are deliberately NOT here). The preflight lets these touch the app's own
+# logs directory (paths.app_logs_root) so the model can read backend.log for
+# self-diagnosis; every other out-of-workspace token stays blocked, and write
+# redirects are scanned separately with no such exemption.
+_READ_ONLY_VIEWER_HEADS = frozenset({
+    'type', 'cat', 'head', 'tail', 'more', 'less', 'grep', 'rg', 'findstr',
+    'wc', 'ls', 'dir', 'nl',
+})
+
 
 def _is_read_only_powershell(command: str) -> bool:
     """True for a single powershell/pwsh -Command invocation that provably
@@ -302,8 +313,9 @@ def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
     # cannot write outside the workspace, so its path arguments are reads —
     # exempt it from the token + payload-literal containment scans.
     if not _is_read_only_powershell(command):
+        viewerRead = first in _READ_ONLY_VIEWER_HEADS
         for tok in _shell_tokens_for_scan(command):
-            if path_looks_outside_workspace(tok, rootStr):
+            if path_looks_outside_workspace(tok, rootStr, allow_app_logs=viewerRead):
                 return f'path outside workspace blocked: {tok}'
         # String literals inside interpreter payloads (`python -c "..."`,
         # `node -e "..."`, `powershell -Command "..."`) can name paths the

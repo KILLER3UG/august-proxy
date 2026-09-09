@@ -76,6 +76,31 @@ def is_within_root(path: Path, root: Path) -> bool:
         return False
 
 
+def app_logs_root() -> Path | None:
+    """The app's own log directory (``dataDir/logs``) as a READ-ONLY extra root.
+
+    Self-diagnosis needs this: when August dogfoods on a project, the model
+    must be able to read ``backend.log`` (update failures, startup races,
+    port conflicts) without flipping the whole session to Full access. The
+    scope is deliberately the logs subdirectory ONLY — ``providers.json``
+    (API keys), the brain SQLite and every other data-dir file stay outside
+    every sandbox root. Writes there remain blocked; only reads through
+    ``bind_path`` and read-only viewer commands get through.
+    """
+    try:
+        from app.config import settings
+
+        logs = Path(str(settings.dataDir)).expanduser() / 'logs'
+        return logs if logs.is_dir() else None
+    except Exception:
+        return None
+
+
+def is_within_app_logs(path: Path) -> bool:
+    root = app_logs_root()
+    return root is not None and is_within_root(path, root)
+
+
 def bind_path(path: str, workspace: str | None, *, for_write: bool = False) -> tuple[Path | None, str | None]:
     """Resolve ``path`` and ensure it stays inside the workspace when set.
 
@@ -121,6 +146,11 @@ def bind_path(path: str, workspace: str | None, *, for_write: bool = False) -> t
         return resolved, None
 
     if not is_within_root(resolved, root):
+        # Reads of the app's own logs are the one sanctioned exception —
+        # the model diagnoses August itself without Full access (see
+        # app_logs_root). Writes never are.
+        if not for_write and is_within_app_logs(resolved):
+            return resolved, None
         action = 'write' if for_write else 'access'
         return None, (
             f'Error: Sandbox blocked {action} outside workspace. '
@@ -159,7 +189,7 @@ def is_null_sink(token: str) -> bool:
     return cleaned in NULL_SINKS
 
 
-def _one_points_outside(cleaned: str, root: Path) -> bool:
+def _one_points_outside(cleaned: str, root: Path, *, allow_app_logs: bool = False) -> bool:
     if not cleaned or cleaned.startswith('-'):
         return False
     # Windows-style single-letter flags (`find /c`, `/s`, `/q`) are slash +
@@ -179,14 +209,29 @@ def _one_points_outside(cleaned: str, root: Path) -> bool:
         p = Path(cleaned).expanduser()
         if not p.is_absolute():
             p = root / p
-        return not is_within_root(p, root)
+        if not is_within_root(p, root):
+            # Viewer commands may read the app's own logs (see app_logs_root).
+            if allow_app_logs and is_within_app_logs(p):
+                return False
+            return True
+        return False
     except OSError:
         return False
 
 
-def path_looks_outside_workspace(token: str, workspace: str | None) -> bool:
-    """Heuristic: does a shell token point outside the workspace?"""
+def path_looks_outside_workspace(
+    token: str, workspace: str | None, *, allow_app_logs: bool = False
+) -> bool:
+    """Heuristic: does a shell token point outside the workspace?
+
+    ``allow_app_logs`` carves out the app's own ``logs`` directory for
+    read-only viewer commands (set by the preflight only when the command
+    head provably cannot write).
+    """
     root = resolve_workspace_root(workspace)
     if root is None or not token:
         return False
-    return any(_one_points_outside(c, root) for c in _candidate_paths(token))
+    return any(
+        _one_points_outside(c, root, allow_app_logs=allow_app_logs)
+        for c in _candidate_paths(token)
+    )

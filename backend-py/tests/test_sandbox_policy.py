@@ -167,3 +167,55 @@ def test_full_access_enables_network():
     )
     assert p.is_full_access
     assert p.network is True
+
+
+# ── App logs as a read-only extra root (self-diagnosis without Full access) ──
+
+
+def _logs_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    """Workspace at tmp/ws, app data at tmp/data with data/logs/backend.log.
+
+    Returns (workspace, logsDir). settings.dataDir is redirected so
+    app_logs_root() resolves inside the test's tmp tree (conftest's
+    isolatedData already points it at tmp_path; we move it deeper so the
+    logs dir is OUTSIDE the workspace).
+    """
+    from app.config import settings
+
+    ws = tmp_path / 'ws'
+    ws.mkdir()
+    logs = tmp_path / 'data' / 'logs'
+    logs.mkdir(parents=True)
+    (logs / 'backend.log').write_text('startup ok\n', encoding='utf-8')
+    monkeypatch.setattr(settings, 'dataDir', tmp_path / 'data')
+    return ws, logs
+
+
+def test_bind_path_reads_app_logs_denies_write(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ws, logs = _logs_env(tmp_path, monkeypatch)
+    ok, err = bind_path(str(logs / 'backend.log'), str(ws), for_write=False)
+    assert err is None and ok is not None
+    bad, err2 = bind_path(str(logs / 'backend.log'), str(ws), for_write=True)
+    assert bad is None and err2 is not None and 'write' in err2
+    # The rest of the data dir stays outside every root: providers.json
+    # (API keys) and the brain DB are NOT readable through this hole.
+    secret = tmp_path / 'data' / 'providers.json'
+    secret.write_text('{}', encoding='utf-8')
+    nope, err3 = bind_path(str(secret), str(ws), for_write=False)
+    assert nope is None and err3 is not None
+
+
+def test_soft_preflight_viewer_reads_app_logs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ws, logs = _logs_env(tmp_path, monkeypatch)
+    policy = SandboxPolicy(mode='workspace-write', workspace_root=str(ws), network=False)
+    logFile = logs / 'backend.log'
+    # Read-only viewer heads may touch the logs dir…
+    assert soft_preflight(f'type "{logFile}"', policy) is None
+    assert soft_preflight(f'grep -i error "{logFile}"', policy) is None
+    # …but non-viewer commands still cannot.
+    assert soft_preflight(f'del "{logFile}"', policy)
+    assert soft_preflight(f'find "{logs}" -delete', policy)
+    # Redirects into the logs dir stay blocked (write path, no exemption).
+    assert soft_preflight(f'type "{logFile}" > "{logs / "out.txt"}"', policy)
+    # Other outside paths are unaffected.
+    assert soft_preflight(f'type "{Path.home() / "secrets.txt"}"', policy)
