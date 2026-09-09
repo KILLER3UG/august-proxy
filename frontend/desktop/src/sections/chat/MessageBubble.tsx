@@ -101,7 +101,6 @@ function MessageBubbleInner({
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [speaking, setSpeaking] = useState(false);
 
-  const [showRaw, setShowRaw] = useState(false);
   const [userMsgExpanded, setUserMsgExpanded] = useState(false);
 
   // Hooks must run on every render path, so compute these BEFORE the early
@@ -113,7 +112,7 @@ function MessageBubbleInner({
     if (isUser) return [];
     return getDisplayBlocks(message.blocks, message.thinking, message.tools, message.content);
   }, [message.blocks, message.thinking, message.tools, message.content, isUser]);
-  const showPendingThinking = !isUser && isLast && streaming && !showRaw && displayBlocks.length === 0;
+  const showPendingThinking = !isUser && isLast && streaming && displayBlocks.length === 0;
 
   const startEdit = () => {
     setEditText(ChatAttachmentService.displayText(message.content, message.attachments));
@@ -334,8 +333,6 @@ function MessageBubbleInner({
           sessionId={sessionId}
           displayBlocks={displayBlocks}
           showPendingThinking={!!showPendingThinking}
-          showRaw={showRaw}
-          setShowRaw={setShowRaw}
           showActions={showActions}
           copied={copied}
           speaking={speaking}

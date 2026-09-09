@@ -24,10 +24,22 @@ export interface ExecutionStateLive {
   at: number;
 }
 
+/** Live todo checklist from `submit_todos` / `update_todos` (todosUpdated). */
+export interface TodosLive {
+  items: Array<{
+    id: string;
+    content: string;
+    status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  }>;
+  title: string;
+  at: number;
+}
+
 export interface SessionLiveActivity {
   headline: string;
   items: LiveActivityItem[];
   execution?: ExecutionStateLive;
+  todos?: TodosLive;
 }
 
 interface LiveActivityState {
@@ -53,8 +65,9 @@ export function publishLiveActivity(input: {
         headline: input.headline,
         items: input.items.slice(-MAX_ITEMS),
         // The timeline rebuilds items every rAF — preserve the phase/step
-        // chip published by the executionState SSE handler.
+        // chip and todo list published by their own SSE handlers.
         execution: prev.bySession[input.sessionId]?.execution,
+        todos: prev.bySession[input.sessionId]?.todos,
       },
     },
   }));
@@ -71,6 +84,30 @@ export function publishExecutionState(sessionId: string, phase: string, step: nu
           headline: entry?.headline ?? '',
           items: entry?.items ?? [],
           execution: { phase, step, at: Date.now() },
+          todos: entry?.todos,
+        },
+      },
+    };
+  });
+}
+
+/** `todosUpdated` SSE handler — replaces the live checklist wholesale. */
+export function publishTodos(
+  sessionId: string,
+  items: TodosLive['items'],
+  title: string,
+): void {
+  if (!sessionId) return;
+  useLiveActivityStore.setState((prev) => {
+    const entry = prev.bySession[sessionId];
+    return {
+      bySession: {
+        ...prev.bySession,
+        [sessionId]: {
+          headline: entry?.headline ?? '',
+          items: entry?.items ?? [],
+          execution: entry?.execution,
+          todos: { items, title, at: Date.now() },
         },
       },
     };

@@ -46,6 +46,9 @@ describe('appendBlockEvent — basic event merging', () => {
   it('coalesces demoted finalOutput into one thinking block', () => {
     let blocks = appendBlockEvent([], { type: 'thinking', content: 'think' });
     blocks = appendBlockEvent(blocks, { type: 'text', content: 'draft' });
+    // The narration round ended with a tool call — the reclassify marker
+    // demotes the draft and coalescing merges it back into the open thought.
+    blocks = appendBlockEvent(blocks, { type: 'reclassifyText' });
     blocks = appendBlockEvent(blocks, { type: 'thinking', content: ' more' });
     expect(blocks.filter((b) => b.type === 'thinking')).toHaveLength(1);
     expect(blocks[0].content).toBe('thinkdraft more');

@@ -30,7 +30,21 @@ def _err(exc: Exception) -> str:
     return f'Error: {exc}'
 
 
+def _bad_path(path: object) -> str | None:
+    """Actionable receipt when a model passes a non-string path — without
+    this the deep ``path.strip()`` leaks `'int' object has no attribute
+    'strip'` through ``_err`` as unhelpful noise."""
+    if not isinstance(path, str):
+        return (
+            f'Error: path must be a string (got {type(path).__name__}). '
+            'Pass the output file path as a plain string, e.g. "report.pptx".'
+        )
+    return None
+
+
 async def _createPptx(path: str = '', slides=None) -> str:
+    if (bad := _bad_path(path)) is not None:
+        return bad
     try:
         result = artifact_tools.create_pptx(path, slides, _workspace())
         return json.dumps(result)
@@ -48,6 +62,8 @@ async def _renderChart(
     ylabel: str = '',
     traces=None,
 ) -> str:
+    if (bad := _bad_path(path)) is not None:
+        return bad
     try:
         result = artifact_tools.render_chart(
             path, kind, series, labels=labels, title=title,
@@ -60,6 +76,8 @@ async def _renderChart(
 
 
 async def _renderVideo(path: str = '', frames=None, fps: int = 12, holdLastMs: int = 400) -> str:
+    if (bad := _bad_path(path)) is not None:
+        return bad
     try:
         result = artifact_tools.render_video(
             path, frames, fps=int(fps or 12), hold_last_ms=int(holdLastMs or 0),
@@ -71,6 +89,8 @@ async def _renderVideo(path: str = '', frames=None, fps: int = 12, holdLastMs: i
 
 
 async def _drawCircuit(path: str = '', elements=None, title: str = '') -> str:
+    if (bad := _bad_path(path)) is not None:
+        return bad
     try:
         result = artifact_tools.draw_circuit(path, elements, title=title, workspace=_workspace())
         return json.dumps(result)
@@ -79,6 +99,8 @@ async def _drawCircuit(path: str = '', elements=None, title: str = '') -> str:
 
 
 async def _createHtmlArtifact(path: str = '', html: str = '', title: str = '') -> str:
+    if (bad := _bad_path(path)) is not None:
+        return bad
     try:
         result = artifact_tools.create_html_artifact(path, html, title=title, workspace=_workspace())
         return json.dumps(result)

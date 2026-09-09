@@ -69,8 +69,16 @@ async def _search(query: str, scope: str = 'files', limit: int = 10) -> str:
 
 async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int = 10) -> str:
     """Read-only query over runtime stores (sessions, messages, daemons, blackboard)."""
+    from app.json_narrowing import as_int, as_str
     from app.services.memory_store import brain_query as _bq
 
+    # Coerce before touching: a model passing store=42 or filters as a real
+    # dict used to leak `'int' object is not iterable` through the except.
+    store = as_str(store)
+    query = as_str(query)
+    filters = as_str(filters)
+    if not store:
+        return '{"error": "brain_query: store is required — one of sessions, messages, daemons, blackboard, facts."}'
     try:
         filtersDict = {}
         if filters and filters.strip():
@@ -80,7 +88,7 @@ async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int
                 filtersDict = _json.loads(filters)
             except _json.JSONDecodeError:
                 pass
-        result = _bq(store, query, filtersDict or None, limit)
+        result = _bq(store, query, filtersDict or None, as_int(limit, 10))
         return result
     except Exception as exc:
         return f'{{"error": "brain_query: {exc}"}}'

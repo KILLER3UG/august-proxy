@@ -23,6 +23,7 @@ import { SubagentDelegateRow } from '@/components/chat/SubagentDelegateRow';
 import { ExploreGroup } from '@/components/chat/ExploreGroup';
 import { classifyTool, normalizeToolName } from '@/lib/tool-classify';
 import { Markdown } from '../ChatMarkdown';
+import { useSmoothReveal } from '../hooks/useSmoothReveal';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 import type { SubagentBlockState } from '../chat-stream-manager';
 import { buildProcessSummaryLine } from '@/lib/process-summary';
@@ -42,6 +43,23 @@ type DisplayBlock = MessageBlock;
 /** Completed thinking sentences kept in the live feed per thinking block —
  *  the working indicator shows the last 3 lines, so older ones are ballast. */
 const MAX_LIVE_THINKING_SENTENCES = 6;
+
+/** update_state phase → present-continuous title for the "Working…" row. */
+const PHASE_ACTION_TITLES: Record<string, string> = {
+  research: 'Researching',
+  plan: 'Planning',
+  implement: 'Implementing',
+  review: 'Reviewing',
+  complete: 'Finalizing',
+};
+
+/** Answer markdown with the smooth character reveal applied while `live`.
+ *  A component (not a hook call in a `.map`) so each final block owns its
+ *  own rAF loop; when `live` is false it renders the full text directly. */
+function RevealedMarkdown({ content, live }: { content: string; live: boolean }) {
+  const revealed = useSmoothReveal(content, live);
+  return <Markdown content={revealed} variant="assistant" live={live} />;
+}
 
 /** Split running thinking text into sentence-ish parts (period + whitespace
  *  or paragraph breaks). The final part is the still-in-flight tail. */
@@ -425,7 +443,13 @@ export function AssistantBlockTimeline({
 
   const { liveDetail, liveItems } = useMemo(() => {
     const items: LiveActivityItem[] = [];
-    let liveDetail = '';
+    // The "Working…" row shows a TITLE of what the model is doing — never a
+    // thinking snippet (the CoT already streams above the composer in the
+    // WorkingIndicator). Priority: running tool > update_state phase >
+    // last completed tool > generic Thinking….
+    let runningTitle = '';
+    let completedTitle = '';
+    let phaseTitle = '';
     for (const block of displayBlocks) {
       if (block.type === 'thinking' && block.content?.trim()) {
         // One item per completed sentence so the working indicator advances
@@ -459,20 +483,26 @@ export function AssistantBlockTimeline({
             at: Date.now(),
           });
         }
-        const newest = tail || completed[completed.length - 1] || '';
-        if (newest) {
-          const cleanNewest = newest.replace(/^Thinking(?:\.{1,3}|:|\s*·|\s+)/i, '').trim();
-          const snippet = (cleanNewest || newest).slice(0, 80);
-          liveDetail = `${snippet}${(cleanNewest || newest).length > 80 ? '…' : ''}`;
-        }
+      }
+      if (block.type === 'phase') {
+        const phase = (block.content || '').trim().toLowerCase();
+        phaseTitle = PHASE_ACTION_TITLES[phase] || '';
       }
       if ((block.type === 'toolCall' || block.type === 'command') && block.tool) {
         const bucket = classifyTool(block.tool.name) as LiveActivityKind;
         const kind: LiveActivityKind =
           bucket === 'view' || bucket === 'edit' || bucket === 'run' ? bucket : 'tool';
+        const toolStatus =
+          block.tool.status === 'error'
+            ? ('error' as const)
+            : block.tool.status === 'running'
+              ? ('running' as const)
+              : ('done' as const);
         const label = getToolLabel(block.tool.name, {
-          status: block.tool.status,
+          status: toolStatus,
           command: extractCommand(block.tool.context) ?? undefined,
+          filename: extractFilename(block.tool.context) ?? undefined,
+          agentId: extractAgentId(block.tool.context) ?? undefined,
         });
         const detail =
           block.tool.preview?.slice(-120) ||
@@ -492,19 +522,14 @@ export function AssistantBlockTimeline({
                 : 'done',
           at: block.tool.startedAt || Date.now(),
         });
-        if (block.tool.status === 'running' || !liveDetail) {
-          liveDetail =
-            kind === 'view'
-              ? `Reading ${detail || 'files…'}`
-              : kind === 'edit'
-                ? `Editing ${detail || 'files…'}`
-                : kind === 'run'
-                  ? `Running ${detail || 'command…'}`
-                  : // Prefer live progress summary (e.g. web_search fetch status).
-                    detail || label;
+        if (block.tool.status === 'running') {
+          runningTitle = label;
+        } else {
+          completedTitle = label;
         }
       }
     }
+    let liveDetail = runningTitle || phaseTitle || completedTitle;
     if (showPendingThinking && !liveDetail) liveDetail = 'Thinking…';
     if (items.length > 0) {
       const last = items[items.length - 1];
@@ -1109,11 +1134,7 @@ export function AssistantBlockTimeline({
               isFinalStreaming && 'streaming-markdown-content',
             )}
           >
-            <Markdown
-              content={block.content}
-              variant="assistant"
-              live={isFinalStreaming}
-            />
+            <RevealedMarkdown content={block.content} live={isFinalStreaming} />
           </div>
         </div>
       );

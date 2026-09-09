@@ -1,18 +1,21 @@
 /**
- * Minimal-output command pane:
- *   success → command line + green pill, nothing else;
- *   failure → command line + red pill + ONE red error line (structured
- *             digest when the output carries one), full stdout/stderr
- *             behind the click;
- *   running → command line + running pill, no raw stream into the
- *             transcript (full output lives in the drawer/trajectory).
+ * Minimal-output command pane (ZCode-parity card, 2026-09-08):
+ *   a rounded `bg-card` surface that fills the chat column — never a
+ *   black block. Command line wraps with a `$` prompt; output sits on the
+ *   same surface. Status (Running/Done/Failed) lives on the ToolStepRow
+ *   header above the card, not inside it.
+ *   success → command line + output;
+ *   failure → command line + ONE red error line (structured digest when
+ *             the output carries one), full stdout/stderr behind the click;
+ *   running → command line + live preview (full output also lives in the
+ *             drawer/trajectory).
  *
  * Still exports the ANSI/sandbox/exit-code cleaners so the drawer and the
  * unit tests keep using one code path.
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Loader2 } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { commandErrorOneLiner } from '@/lib/command-error-line';
 import { extractCommand } from './extractors';
@@ -98,7 +101,7 @@ export function CommandOutputPane({
   const source = running
     ? (preview || '')
     : (summary || preview || '');
-  const { body, exitCode, failed } = formatCommandOutputForDisplay(source);
+  const { body, failed } = formatCommandOutputForDisplay(source);
   const isError = !running && (failed || status === 'error');
   const errorLine = isError ? commandErrorOneLiner(body) : null;
   const hasOutput = body.length > 0;
@@ -113,40 +116,23 @@ export function CommandOutputPane({
     el.scrollTop = 0;
   }, [showFull, body]);
 
-  let statusLabel = 'Done';
-  let statusClass = 'bg-emerald-500/10 text-emerald-400';
-  if (running) {
-    statusLabel = 'Running';
-    statusClass = 'bg-sky-500/10 text-sky-400';
-  } else if (isError) {
-    statusLabel = exitCode !== null ? `Failed · exit ${exitCode}` : 'Failed';
-    statusClass = 'bg-rose-500/10 text-rose-400';
-  }
-
   return (
     <div
-      className="mt-1 w-full max-w-2xl overflow-hidden rounded-lg border border-[hsl(var(--border)/0.5)] bg-[hsl(var(--foreground)/0.03)]"
+      className="mt-1 w-full overflow-hidden rounded-xl border border-border/60 bg-card"
       data-testid="command-output-pane"
       data-status={running ? 'running' : isError ? 'error' : 'done'}
     >
-      {/* Command line — `$ <cmd>` like a real terminal prompt, status chip right. */}
-      <div className="flex items-center gap-2 px-3.5 py-2">
+      {/* Command line — `$ <cmd>` like a real terminal prompt (wraps, never
+          truncated mid-line). No status pill here: the ToolStepRow header
+          above the card already carries Running/Done/Failed (reference
+          design, ZCode parity 2026-09-08). */}
+      <div className="flex items-start gap-2 px-4 py-2.5">
         <span
-          className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-[hsl(var(--foreground)/0.82)]"
+          className="min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-[11.5px] leading-5 text-foreground/80"
           title={command}
         >
           <span className="select-none text-muted-foreground/50">$ </span>
-          {shortenCommand(command, 160)}
-        </span>
-        <span
-          className={cn(
-            'inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium',
-            statusClass,
-          )}
-          data-testid="command-status-pill"
-        >
-          {running && <Loader2 className="size-2.5 animate-spin" />}
-          {statusLabel}
+          {shortenCommand(command, 400)}
         </span>
         {!running && contentTruncated && (
           <span
@@ -179,7 +165,7 @@ export function CommandOutputPane({
       </div>
       {isError && errorLine && (
         <div
-          className="truncate border-t border-[hsl(var(--border)/0.4)] px-3.5 py-1.5 font-mono text-[11px] text-rose-400"
+          className="truncate border-t border-border/50 px-4 py-1.5 font-mono text-[11px] text-rose-400"
           title={errorLine}
           data-testid="command-error-line"
         >
@@ -188,7 +174,7 @@ export function CommandOutputPane({
       )}
       {showFull && running && previewDropped && (
         <div
-          className="border-t border-[hsl(var(--border)/0.4)] px-3.5 py-1 font-mono text-[10.5px] text-muted-foreground"
+          className="border-t border-border/50 px-4 py-1 font-mono text-[10.5px] text-muted-foreground"
           data-testid="command-preview-dropped"
         >
           … earlier output dropped — showing the last 80 KB …
@@ -197,7 +183,7 @@ export function CommandOutputPane({
       {showFull && (
         <pre
           ref={scrollRef}
-          className="tool-result-scroll bg-code-block text-code-block m-0 max-h-60 overflow-y-auto overscroll-contain border-t border-[hsl(var(--border)/0.4)] px-3.5 py-2.5 font-mono text-[11px] leading-5 whitespace-pre-wrap break-words"
+          className="tool-result-scroll m-0 max-h-60 overflow-y-auto overscroll-contain px-4 pb-3 pt-2 font-mono text-[11px] leading-5 whitespace-pre-wrap break-words text-foreground/75"
           data-testid="command-full-output"
           onWheel={(e) => {
             if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) e.stopPropagation();

@@ -27,6 +27,7 @@ import { ComposerAttachmentChips } from './composer/ComposerAttachmentChips';
 import { ComposerMentionsDropdown } from './composer/ComposerMentionsDropdown';
 import { ComposerCommandsDropdown } from './composer/ComposerCommandsDropdown';
 import { ComposerToolbar } from './composer/ComposerToolbar';
+import { ComposerWorkspaceChips } from './composer/ComposerWorkspaceChips';
 import { ComposerVoiceListening } from './composer/ComposerVoiceListening';
 import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
@@ -411,6 +412,12 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           <ComposerVoiceListening />
         ) : (
           <>
+            <ComposerWorkspaceChips
+              sessionId={sessionId}
+              workbenchSessionId={workbenchSession?.id || activeWorkbenchSessionId || null}
+              workspacePath={workspacePath}
+              className="px-2 pt-1.5"
+            />
             <ComposerAttachmentChips
               attachments={attachments}
               onRemove={removeAttachment}

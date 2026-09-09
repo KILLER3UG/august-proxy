@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { ChangesCard } from '@/components/chat/ChangesCard';
 import { CircuitArtifactCard } from '@/components/chat/CircuitArtifactCard';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
@@ -22,8 +21,6 @@ export function AssistantMessageContent({
   sessionId,
   displayBlocks,
   showPendingThinking,
-  showRaw,
-  setShowRaw,
   showActions,
   copied,
   speaking,
@@ -49,8 +46,6 @@ export function AssistantMessageContent({
   sessionId?: string | null;
   displayBlocks: DisplayBlock[];
   showPendingThinking: boolean;
-  showRaw: boolean;
-  setShowRaw: (v: boolean) => void;
   showActions: boolean;
   copied: boolean;
   speaking: boolean;
@@ -79,54 +74,25 @@ export function AssistantMessageContent({
   /** Dismiss the provider-error bubble (removes the error block). */
   onDismissError?: () => void;
 }) {
-  // Live generation-rate estimate while the last message streams: output
-  // tokens ≈ chars/4 over elapsed time (same heuristic ChatThread blends).
-  // Replaced by the real chip once the `done` event lands usage+durationMs.
-  const isStreamingThis = Boolean(isLast && streaming);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!isStreamingThis) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [isStreamingThis]);
-  let liveRate: string | null = null;
-  if (isStreamingThis) {
-    const startMs = Date.parse(message.timestamp);
-    const elapsedS = Math.max(1, (now - startMs) / 1000);
-    const chars = (message.content || '').length;
-    if (Number.isFinite(startMs) && chars >= 20) {
-      const rate = chars / 4 / elapsedS;
-      if (Number.isFinite(rate) && rate > 0) {
-        liveRate = rate >= 100 ? String(Math.round(rate)) : (Math.round(rate * 10) / 10).toString();
-      }
-    }
-  }
-
   return (
     <>
       <div className="flex min-w-0 flex-col w-full gap-2">
-        {showRaw ? (
-          <div className="p-3 bg-muted/40 rounded-xl border border-border/50 text-xs font-mono text-muted-foreground whitespace-pre-wrap overflow-x-auto leading-relaxed">
-            {JSON.stringify(message, null, 2)}
-          </div>
-        ) : (
-          <AssistantBlockTimeline
-            displayBlocks={displayBlocks}
-            message={message}
-            isLast={isLast}
-            streaming={streaming}
-            showPendingThinking={showPendingThinking}
-            toolProgress={toolProgress}
-            subagentPrompts={subagentPrompts}
-            subagentBlocks={subagentBlocks}
-            subagentRoster={subagentRoster}
-            modelId={modelId}
-            sessionId={sessionId}
-            onRetryTurn={onRegen}
-            onSwitchModel={onReanswer}
-            onDismissError={onDismissError}
-          />
-        )}
+        <AssistantBlockTimeline
+          displayBlocks={displayBlocks}
+          message={message}
+          isLast={isLast}
+          streaming={streaming}
+          showPendingThinking={showPendingThinking}
+          toolProgress={toolProgress}
+          subagentPrompts={subagentPrompts}
+          subagentBlocks={subagentBlocks}
+          subagentRoster={subagentRoster}
+          modelId={modelId}
+          sessionId={sessionId}
+          onRetryTurn={onRegen}
+          onSwitchModel={onReanswer}
+          onDismissError={onDismissError}
+        />
         {/* Unified ZCode-style changes card (plan §4.5): aggregate
             `X files changed +N −M [Undo]` header with type-aware per-file
             rows. Deferred until the turn finishes — mid-stream the totals
@@ -147,16 +113,19 @@ export function AssistantMessageContent({
         )}
         {/* End-of-turn recap card removed by user request (2026-08-25):
             the chat area stays clean — activity lives in the right panel. */}
-        {/* Live generation-rate estimate while streaming (tilde = estimate). */}
-        {isStreamingThis && liveRate && (
+        {/* Generation rate — ONLY once the turn completes, from the real
+            usage numbers (output tokens / model generation time). The old
+            live "~N t/s" estimate was removed (2026-09-08): the smooth
+            character reveal is the in-flight feedback now. */}
+        {isLast && !streaming && message.usage && message.usage.outputTokens > 0 && message.usage.durationMs && message.usage.durationMs > 0 ? (
           <div
             className="text-[10px] tabular-nums text-muted-foreground/60"
-            title="Estimated live generation rate (final rate shows when the turn completes)"
-            data-testid="live-rate-chip"
+            title={`${message.usage.outputTokens.toLocaleString()} output tokens in ${(message.usage.durationMs / 1000).toFixed(1)}s of model generation`}
+            data-testid="final-rate-chip"
           >
-            ~{liveRate} t/s
+            {(message.usage.outputTokens / (message.usage.durationMs / 1000)).toFixed(1)} t/s
           </div>
-        )}
+        ) : null}
         {/* Transient provider-retry notice (429/5xx backoff) — replaced on
             each attempt, cleared when the turn finalizes. The dots animate
             (travel) rather than the whole line fading. */}
@@ -189,8 +158,6 @@ export function AssistantMessageContent({
         isLast={isLast}
         streaming={streaming}
         isRegenerating={isRegenerating}
-        showRaw={showRaw}
-        setShowRaw={setShowRaw}
         onSpeak={onSpeak}
         onCopy={onCopy}
         onRegen={onRegen}

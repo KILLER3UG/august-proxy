@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import { WorkingIndicator } from '../WorkingIndicator';
-import { publishLiveActivity, clearLiveActivity } from '@/store/liveActivity';
+import { publishLiveActivity, clearLiveActivity, publishTodos, publishExecutionState } from '@/store/liveActivity';
 
 describe('WorkingIndicator', () => {
   beforeEach(() => {
@@ -61,5 +61,41 @@ describe('WorkingIndicator', () => {
     // keeps the component stable rather than crashing).
     render(<WorkingIndicator sessionId="wb_unknown" />);
     expect(screen.getByText('Thinking')).toBeTruthy();
+  });
+
+  it('shows the todo checklist widget with progress once todosUpdated lands', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    render(<WorkingIndicator sessionId="sess_ind" />);
+    act(() => {
+      publishTodos('sess_ind', [
+        { id: '1', content: 'Map the composer', status: 'completed' },
+        { id: '2', content: 'Add chips row', status: 'in_progress' },
+        { id: '3', content: 'Wire branch switch', status: 'pending' },
+      ], 'Composer parity');
+    });
+    const toggle = screen.getByTestId('working-todos-toggle');
+    expect(toggle.textContent).toContain('Composer parity');
+    expect(toggle.textContent).toContain('1/3');
+    // Collapsed: the in-progress item reads as the current step.
+    expect(screen.getByTestId('working-todo-current').textContent).toContain('Add chips row');
+    // The phase pill is replaced while todos exist.
+    expect(screen.queryByTestId('working-phase')).toBeNull();
+
+    fireEvent.click(toggle);
+    const rows = screen.getAllByTestId('working-todo-row');
+    expect(rows).toHaveLength(3);
+    expect(rows[2].getAttribute('data-status')).toBe('pending');
+    expect(rows[2].textContent).toContain('Wire branch switch');
+  });
+
+  it('falls back to the phase pill when no todos were submitted', () => {
+    render(<WorkingIndicator sessionId="sess_ind" />);
+    act(() => {
+      publishExecutionState('sess_ind', 'research', 1);
+    });
+    const chip = screen.getByTestId('working-phase');
+    expect(chip.textContent).toContain('research');
+    expect(chip.textContent).toContain('step 1');
+    expect(screen.queryByTestId('working-todos')).toBeNull();
   });
 });

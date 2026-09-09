@@ -19,6 +19,7 @@ WORKBENCH_EMIT_TYPES: frozenset[str] = frozenset(
         'planProposed',
         'clarifyProposed',
         'todosUpdated',
+        'narrationReclassify',
         'browserAction',
         'compaction',
         'subagentStart',

@@ -6,8 +6,9 @@ import asyncio
 import fnmatch
 import re
 from pathlib import Path
+from typing import cast
 
-from app.json_narrowing import as_int, as_str
+from app.json_narrowing import as_int, as_str, coerce_json_list
 from app.services import tool_registry
 from app.services.execution_world import bind_path, run_sandboxed
 from app.services.sandbox import policy_from_session, unsandboxed_grant_key
@@ -453,14 +454,26 @@ async def _editLines(
         return f'Error decoding file: {exc}'
     newline = '\r\n' if b'\r\n' in raw else '\n'
     lines = text.splitlines()
-    if not changes:
+    # Coerce the model's most common mistakes BEFORE touching elements:
+    # `changes` stringified as JSON, or a single object instead of a list.
+    # (The old code sorted first and crashed with `'str' object has no
+    # attribute 'get'` when iterating a stringified array.)
+    changesList = coerce_json_list(changes)
+    if isinstance(changesList, str):
+        return changesList
+    if not changesList:
         return 'Error: changes must be a non-empty array of {line, old, new}.'
+    for change in changesList:
+        if not isinstance(change, dict):
+            return 'Error: each change must be an object {line, old, new}.'
     # Apply from the bottom up so earlier line numbers stay valid.
     applied = 0
     fuzzyNotes: list[str] = []
-    for change in sorted(changes, key=lambda c: as_int(c.get('line'), 0), reverse=True):
-        if not isinstance(change, dict):
-            return 'Error: each change must be an object {line, old, new}.'
+    for change in sorted(
+        cast('list[dict[str, object]]', changesList),
+        key=lambda c: as_int(c.get('line'), 0),
+        reverse=True,
+    ):
         lineNo = as_int(change.get('line'), 0)
         oldText = as_str(change.get('old'), '')
         newText = as_str(change.get('new'), '')

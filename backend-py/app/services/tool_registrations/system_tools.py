@@ -226,6 +226,13 @@ async def _updateState(
     """
     from app.services.workbench.workbench import get_session, updateSessionState
 
+    # Coerce every string-typed param up front: a model passing phase=42 or
+    # completed as a real list used to leak `'int' object has no attribute
+    # 'strip'` through the except below.
+    phase = as_str(phase)
+    step = as_int(step, 1)
+    completed = as_str(completed)
+    blockers = as_str(blockers)
     try:
         session = get_session()
         if not session:

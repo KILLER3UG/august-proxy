@@ -7,7 +7,10 @@ Supports reserved bridge names and optional keywords per tool.
 from __future__ import annotations
 
 import contextvars
+import logging
 from typing import Callable, Coroutine
+
+logger = logging.getLogger(__name__)
 
 _registry: dict[str, dict[str, object]] = {}
 ToolHandler = Callable[..., Coroutine[object, object, str]]
@@ -205,6 +208,34 @@ def listTools(*, include_host_agent: bool | None = None) -> list[dict[str, objec
     return result
 
 
+def schema_param_hint(tool: dict[str, object]) -> str:
+    """Render a tool's registered JSON-schema parameters as a compact
+    ``name:type`` list (required params starred) for error receipts."""
+    params = tool.get('parameters')
+    if not isinstance(params, dict):
+        return ''
+    props = params.get('properties')
+    if not isinstance(props, dict):
+        return ''
+    required = params.get('required')
+    requiredSet = {str(r) for r in required} if isinstance(required, list) else set()
+    parts: list[str] = []
+    for key, spec in props.items():
+        typ = spec.get('type') if isinstance(spec, dict) else None
+        label = f'{key}:{typ}' if typ else str(key)
+        if str(key) in requiredSet:
+            label += '*'
+        parts.append(label)
+    return ', '.join(parts)
+
+
+# Argument-shape mistakes surface deep in handlers as these — the raw text
+# ('str' object has no attribute 'get') tells the model nothing, so we swap
+# it for a schema-aware receipt. Anything else (OSError, ValueError from
+# real logic) keeps its message — it is genuinely informative.
+ARG_SHAPE_EXCEPTIONS = (TypeError, AttributeError, KeyError, IndexError)
+
+
 async def dispatch(name: str, args: dict[str, object]) -> str:
     """Dispatch a tool call by name and arguments.
 
@@ -235,7 +266,29 @@ async def dispatch(name: str, args: dict[str, object]) -> str:
         handler = tool['handler']
         if not callable(handler):
             return f'Error: Tool "{name}" handler is not callable.'
-        result: str = await handler(**args)
+        result = await handler(**args)
+        # Safety net: the tool-result pipeline (SSE, history, model context)
+        # requires a string. A handler that returns dict/list (the camera
+        # tools did) must not smuggle a non-str into the transcript.
+        if not isinstance(result, str):
+            import json
+
+            try:
+                result = json.dumps(result, ensure_ascii=False, default=str)
+            except (TypeError, ValueError):
+                result = str(result)
         return result
+    except ARG_SHAPE_EXCEPTIONS as e:
+        # The handler choked on the argument shape — hand the model a
+        # schema-aware receipt instead of a raw Python message it cannot
+        # act on (the old text made models flail through retry spirals).
+        logger.warning('tool %s argument-shape failure', name, exc_info=True)
+        hint = schema_param_hint(tool)
+        suffix = f' Expected parameters: {hint}.' if hint else ''
+        return (
+            f'Error executing {name}: the arguments did not match this tool\'s schema '
+            f'({type(e).__name__}). Pass arrays as arrays and objects as objects — '
+            f'never stringified JSON. Required shape: {name}({hint or "see tool definition"}).{suffix}'
+        )
     except Exception as e:
         return f'Error executing {name}: {e}'

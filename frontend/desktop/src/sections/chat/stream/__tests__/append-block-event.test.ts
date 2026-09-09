@@ -3,21 +3,68 @@ import { appendBlockEvent, coalesceAdjacentThinking, normalizeSystemBlocks } fro
 import type { MessageBlock } from '@/types/chat';
 
 describe('appendBlockEvent thinking vs final', () => {
-  it('demotes provisional finalOutput when thinking resumes', () => {
+  it('demotes provisional finalOutput when thinking resumes after a tool call', () => {
     let blocks = appendBlockEvent([], { type: 'thinking', content: 'plan…' });
     blocks = appendBlockEvent(blocks, { type: 'text', content: 'Draft answer' });
     expect(blocks.map((b) => b.type)).toEqual(['thinking', 'finalOutput']);
 
+    blocks = appendBlockEvent(blocks, {
+      type: 'toolCall',
+      id: 't1',
+      name: 'grep',
+      context: '{}',
+      status: 'running',
+    });
     blocks = appendBlockEvent(blocks, { type: 'thinking', content: ' wait' });
-    // Demotion must coalesce adjacent thinking — not Thought (2).
-    expect(blocks.filter((b) => b.type === 'thinking')).toHaveLength(1);
-    expect(blocks[0].content).toContain('plan…');
-    expect(blocks[0].content).toContain('Draft answer');
-    expect(blocks[0].content).toContain('wait');
+    // The draft PRECEDED the tool call → provisional narration: demoted into
+    // thinking and coalesced with the earlier thought (not Thought (2)).
+    const thinking = blocks.filter((b) => b.type === 'thinking');
+    expect(thinking).toHaveLength(2);
+    expect(thinking[0].content).toContain('plan…');
+    expect(thinking[0].content).toContain('Draft answer');
+    expect(thinking[1].content).toContain('wait');
+    expect(blocks.filter((b) => b.type === 'finalOutput')).toHaveLength(0);
 
     blocks = appendBlockEvent(blocks, { type: 'text', content: 'Real final' });
     expect(blocks.filter((b) => b.type === 'finalOutput')).toHaveLength(1);
     expect(blocks[blocks.length - 1].content).toBe('Real final');
+  });
+
+  it('trailing thinking does NOT demote the final answer (guard)', () => {
+    // Some providers emit a reasoning summary AFTER the answer text. The
+    // answer streamed after the last tool block, so it must survive.
+    let blocks = appendBlockEvent([], {
+      type: 'toolCall',
+      id: 't1',
+      name: 'grep',
+      context: '{}',
+      status: 'done',
+    });
+    blocks = appendBlockEvent(blocks, { type: 'text', content: 'The real answer' });
+    blocks = appendBlockEvent(blocks, { type: 'thinking', content: 'summarizing my reasoning' });
+    const finals = blocks.filter((b) => b.type === 'finalOutput');
+    expect(finals).toHaveLength(1);
+    expect(finals[0].content).toBe('The real answer');
+  });
+
+  it('reclassifyText demotes narration without a thinking event (thinking_enabled=False)', () => {
+    let blocks = appendBlockEvent([], { type: 'text', content: 'Let me check the file' });
+    blocks = appendBlockEvent(blocks, {
+      type: 'toolCall',
+      id: 't1',
+      name: 'read_file',
+      context: '{}',
+      status: 'running',
+    });
+    blocks = appendBlockEvent(blocks, { type: 'reclassifyText' });
+    expect(blocks.filter((b) => b.type === 'finalOutput')).toHaveLength(0);
+    expect(blocks.some((b) => b.type === 'thinking' && b.content?.includes('Let me check'))).toBe(true);
+    // A later answer round stays finalOutput — the marker only demotes what
+    // streamed before it.
+    blocks = appendBlockEvent(blocks, { type: 'text', content: 'Real final' });
+    const finals = blocks.filter((b) => b.type === 'finalOutput');
+    expect(finals).toHaveLength(1);
+    expect(finals[0].content).toBe('Real final');
   });
 
   it('system thinking (warnings/info/errors) does NOT demote the final answer', () => {

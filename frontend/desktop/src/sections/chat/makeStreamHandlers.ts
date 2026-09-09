@@ -49,7 +49,7 @@ import { resolveUiSessionId, resolveWorkbenchSessionId } from './stream/session-
 import { advanceSessionSubscriberLastSeq } from './stream/session-subscriber';
 import { setSubagentProposal } from './subagent-proposals-store';
 import { pushNotification } from '@/store/notifications';
-import { publishExecutionState } from '@/store/liveActivity';
+import { publishExecutionState, publishTodos } from '@/store/liveActivity';
 import { setPromptCacheLive } from '@/store/promptCacheLive';
 import {
   addRightDrawerSection,
@@ -370,6 +370,9 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // Skip empty thinking deltas — they create a visible thinking block
       // with no text content and no way to dismiss it.
       if (!content) return;
+      // Stream resumed — the transient "Reconnecting" banner must not stay
+      // pinned after a backoff that recovered (it used to last the whole turn).
+      retryNotice = undefined;
       if (!thinkingEnd && content.trim()) {
         thinkingEnd = Date.now();
       }
@@ -378,6 +381,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       scheduleUpdate();
     },
     onText: ({ content }) => {
+      retryNotice = undefined;
       if (!thinkingEnd && thinkingContent.trim()) {
         thinkingEnd = Date.now();
       }
@@ -386,6 +390,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       scheduleUpdate();
     },
     onToolUse: ({ id, name, input }) => {
+      retryNotice = undefined;
       const existingIdx = toolResults.findIndex(t => t.id === id);
       const toolEntry = {
         name,
@@ -412,6 +417,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       scheduleUpdate();
     },
     onToolResult: ({ id, content, isError, status, providerSetup, integrationSetup, contentTruncated, contentFullLength }) => {
+      retryNotice = undefined;
       let parsedResult: Record<string, unknown> | null;
       try {
         parsedResult = typeof content === 'string' ? JSON.parse(content) as Record<string, unknown> : content as Record<string, unknown>;
@@ -674,6 +680,28 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         phase,
         step,
       });
+      scheduleUpdate();
+    },
+    onTodosUpdated: ({ todos, title }) => {
+      // submit_todos / update_todos landed — the live checklist widget above
+      // the composer reads it from the activity store; the message stamp
+      // (latestWorkbenchTodos) keeps a post-turn copy for persistence.
+      latestWorkbenchTodos = todos ?? [];
+      publishTodos(resolveUiSessionId(sessionId), latestWorkbenchTodos, title ?? '');
+      scheduleUpdate();
+    },
+    onNarrationReclassify: () => {
+      // The round that streamed text also called tools: that prose was
+      // provisional narration. The reducer demotes every finalOutput block
+      // so far into the thinking pack — deterministic, works even when
+      // thinking is disabled and no thinking events ever arrive. Mirror the
+      // move in the plain-text accumulators so copy/TTS and the thinking
+      // fallback see the same split as the blocks.
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'reclassifyText' });
+      if (assistantContent) {
+        thinkingContent += assistantContent;
+        assistantContent = '';
+      }
       scheduleUpdate();
     },
     onBrowserAction: (data) => {

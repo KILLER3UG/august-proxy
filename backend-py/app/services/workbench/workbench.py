@@ -2833,9 +2833,12 @@ async def sendWorkbenchMessageStream(
 
     _batched: BatchedEmit | None = None
     if emit is not None:
+        # 64 chars ≈ a few words per SSE event: fine enough for the client's
+        # smooth character reveal (256 merged whole sentences → visible
+        # bursts). First-token flush behavior is unchanged.
         _batched = BatchedEmit(
             emit,
-            max_chars=256,
+            max_chars=64,
             on_first_content=trace.mark_ttft,
         )
         emit = _batched  # type: ignore[assignment]
@@ -3847,11 +3850,19 @@ async def _sendWorkbenchMessageStreamImpl(
                 # partial emission must not replay the completion — the
                 # provider already generated (and may have billed) tokens.
                 attemptEmittedContent = False
+                # Narration reclassify: text-only flag — a round that streams
+                # prose AND ends in tool_use had provisional narration, not
+                # the final answer. The client demotes it to thinking on the
+                # marker below (works even with thinking_enabled=False, where
+                # no thinking events arrive to trigger the heuristic).
+                attemptEmittedText = False
 
                 def _attemptEmit(evt: dict[str, object]) -> None:
-                    nonlocal attemptEmittedContent
+                    nonlocal attemptEmittedContent, attemptEmittedText
                     if evt.get('type') in ('finalOutput', 'thinking'):
                         attemptEmittedContent = True
+                    if evt.get('type') == 'finalOutput':
+                        attemptEmittedText = True
                     if emit is not None:
                         emit(evt)
 
@@ -3957,6 +3968,13 @@ async def _sendWorkbenchMessageStreamImpl(
                         _toolArgsTailMs = _tailMs()
                     except Exception:
                         _toolArgsTailMs = 0
+                    if attemptEmittedText and emit is not None:
+                        # This round streamed prose AND called tools: the
+                        # prose was provisional narration, not the answer.
+                        # Tell the client to reclassify it to thinking —
+                        # deterministic, unlike the old heuristic that only
+                        # fired when a later thinking event happened to arrive.
+                        emit({'type': 'narrationReclassify'})
                 # Retry transient upstream failures (429 rate limits, 5xx, network)
                 # instead of killing the turn — up to maxRetries, then surface the
                 # error as before.
@@ -4624,7 +4642,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 if stateBlock:
                     receipt = receipt + '\n\n' + stateBlock
                 if emit:
-                    emit({'type': 'todosUpdated', 'todos': session.todos})
+                    emit({'type': 'todosUpdated', 'todos': session.todos, 'title': title})
                     emit(
                         {
                             'type': 'toolResult',
@@ -4647,7 +4665,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 if stateBlock:
                     receipt = receipt + '\n\n' + stateBlock
                 if emit:
-                    emit({'type': 'todosUpdated', 'todos': session.todos})
+                    emit({'type': 'todosUpdated', 'todos': session.todos, 'title': title})
                     emit(
                         {
                             'type': 'toolResult',

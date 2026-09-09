@@ -49,3 +49,72 @@ def as_float(value: object, default: float = 0.0) -> float:
 def as_bool(value: object, default: bool = False) -> bool:
     """Return ``value`` as a ``bool``, or ``default`` if it is not a bool."""
     return value if isinstance(value, bool) else default
+
+
+def coerce_json_list(value: object) -> list[object] | str:
+    """Narrow a tool argument that must be a JSON array.
+
+    Models frequently stringify array arguments (``changes='[{...}]'``) or
+    pass a single object where a one-item list is meant. This accepts:
+
+      * a real ``list`` → returned as-is;
+      * a ``dict``      → wrapped into ``[dict]``;
+      * a ``str``       → ``json.loads``; a parsed list is returned, a
+        parsed dict is wrapped; anything else is a parse failure.
+
+    On failure returns a short, actionable ``str`` error the handler can
+    hand straight back to the model (never a raw Python exception).
+    """
+    import json
+
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+        except (ValueError, TypeError):
+            return (
+                'Error: expected a JSON array of objects but received a plain string. '
+                'Pass the parameter as a real JSON array, not a stringified one.'
+            )
+        if isinstance(parsed, list):
+            return parsed
+        if isinstance(parsed, dict):
+            return [parsed]
+        return (
+            'Error: expected a JSON array of objects but the string parsed to a '
+            f'{type(parsed).__name__}. Pass the parameter as a real JSON array.'
+        )
+    return 'Error: expected a JSON array of objects for this parameter.'
+
+
+def coerce_json_dict(value: object) -> dict[str, object] | str:
+    """Narrow a tool argument that must be a JSON object.
+
+    Accepts a real ``dict`` or a stringified object (``json.loads``).
+    On failure returns a short actionable ``str`` error, never raises.
+    """
+    import json
+
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except (ValueError, TypeError):
+            return (
+                'Error: expected a JSON object but received a plain string. '
+                'Pass the parameter as a real JSON object, not a stringified one.'
+            )
+        if isinstance(parsed, dict):
+            return parsed
+        return 'Error: expected a JSON object but the string parsed to a non-object.'
+    return 'Error: expected a JSON object for this parameter.'

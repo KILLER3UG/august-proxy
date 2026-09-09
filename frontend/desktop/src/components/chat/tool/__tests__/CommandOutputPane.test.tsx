@@ -49,7 +49,11 @@ describe('CommandOutputPane — minimal output', () => {
         status="done"
       />,
     );
-    expect(screen.getByTestId('command-status-pill').textContent).toBe('Done');
+    // ZCode-parity card (2026-09-08): no status pill inside the card — the
+    // ToolStepRow header above carries Running/Done/Failed; the pane exposes
+    // the status as a data attribute only.
+    expect(screen.queryByTestId('command-status-pill')).toBeNull();
+    expect(screen.getByTestId('command-output-pane')).toHaveAttribute('data-status', 'done');
     expect(container.textContent).toContain('ls -la');
     // The pane only mounts when its row is expanded, so the output is shown
     // here; transcript minimality comes from the row's default-collapsed
@@ -68,8 +72,7 @@ describe('CommandOutputPane — minimal output', () => {
         status="error"
       />,
     );
-    const pill = screen.getByTestId('command-status-pill');
-    expect(pill.textContent).toContain('Failed');
+    expect(screen.getByTestId('command-output-pane')).toHaveAttribute('data-status', 'error');
     // Structured digest — the pytest verdict, not the raw head.
     expect(screen.getByTestId('command-error-line').textContent).toBe(
       '1 failed, 1 passed in 0.42s',
@@ -95,7 +98,7 @@ describe('CommandOutputPane — minimal output', () => {
         status="running"
       />,
     );
-    expect(screen.getByTestId('command-status-pill').textContent).toBe('Running');
+    expect(screen.getByTestId('command-output-pane')).toHaveAttribute('data-status', 'running');
     // Running rows auto-expand, so the live preview is visible in the box.
     expect(screen.getByTestId('command-full-output').textContent).toContain('partial output');
     expect(screen.queryByTestId('command-error-line')).toBeNull();

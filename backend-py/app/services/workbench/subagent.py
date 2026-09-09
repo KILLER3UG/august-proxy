@@ -17,6 +17,7 @@ import uuid
 from typing import Callable, cast
 
 from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
+from app.services.tool_registry import ARG_SHAPE_EXCEPTIONS
 from app.services.tools.agent_registry import (
     _MAXAgentDepth,
     createJob,
@@ -1095,6 +1096,17 @@ async def executeSubAgent(
                                             _observeMutatedFile(
                                                 cast('WorkbenchSession', session), tName, tInput
                                             )
+                        except ARG_SHAPE_EXCEPTIONS as exc:
+                            # Parity with tool_registry.dispatch: argument-shape
+                            # failures get a schema-aware receipt, not raw
+                            # Python text the worker cannot act on.
+                            result = (
+                                f'Error executing {tName}: the arguments did not match this '
+                                f'tool\'s schema ({type(exc).__name__}). Pass arrays as arrays '
+                                f'and objects as objects — never stringified JSON. Re-read the '
+                                f'tool definition and retry.'
+                            )
+                            status = 'error'
                         except Exception as exc:
                             result = f'Error executing {tName}: {exc}'
                             status = 'error'

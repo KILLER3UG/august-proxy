@@ -222,6 +222,11 @@ export interface WorkbenchEventHandlers {
     preview?: string;
   }) => void;
   onSession?: (data: WorkbenchSession) => void;
+  /** `submit_todos` / `update_todos` landed — full replacement list + title. */
+  onTodosUpdated?: (data: { todos: WorkbenchTodo[]; title?: string }) => void;
+  /** A model round streamed text AND called tools — that text was
+   *  provisional narration; demote current finalOutput blocks to thinking. */
+  onNarrationReclassify?: () => void;
   onBtw?: (data: WorkbenchBtwResult) => void;
   onCompaction?: (data: {
     headCount: number;

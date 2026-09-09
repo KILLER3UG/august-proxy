@@ -76,14 +76,39 @@ export function appendBlockEvent(
       type: 'system',
       content: event.content || '',
     });
+  } else if (event.type === 'reclassifyText') {
+    // Backend narrationReclassify marker: the round that streamed the text
+    // so far ALSO called tools, so every finalOutput block up to here was
+    // provisional narration, not the answer. Demote them all into the
+    // thinking pack — deterministic, unlike the heuristic below.
+    let demoted = false;
+    for (let i = 0; i < blocks.length; i++) {
+      if (blocks[i].type === 'finalOutput') {
+        blocks[i] = { ...blocks[i], type: 'thinking' };
+        demoted = true;
+      }
+    }
+    if (demoted) {
+      const coalesced = coalesceAdjacentThinking(blocks);
+      blocks.length = 0;
+      blocks.push(...coalesced);
+    }
   } else if (event.type === 'thinking') {
     const text = event.content || '';
     // Model wrote "answer" then kept thinking — that prose was provisional.
     // Demote it into thinking so it cannot stack into the true final reply.
+    // Guard: only blocks BEFORE the last tool/command marker are provisional
+    // — text that streamed after the last tool call is the candidate final
+    // answer, and a trailing reasoning-summary delta (some providers emit
+    // thinking AFTER output text) must not swallow it.
     let demoted = false;
     if (!event.system) {
+      const lastToolIdx = findLastIndex(
+        blocks,
+        (b) => b.type === 'toolCall' || b.type === 'command',
+      );
       for (let i = 0; i < blocks.length; i++) {
-        if (blocks[i].type === 'finalOutput') {
+        if (blocks[i].type === 'finalOutput' && i < lastToolIdx) {
           blocks[i] = {
             ...blocks[i],
             type: 'thinking',

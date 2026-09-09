@@ -98,4 +98,26 @@ describe('previously-undispatched backend events', () => {
     });
   });
 
+  it('todosUpdated dispatches onTodosUpdated with list + title', () => {
+    const onTodosUpdated = vi.fn();
+    const todos = [
+      { id: '1', content: 'Map the composer', status: 'completed' },
+      { id: '2', content: 'Add chips row', status: 'in_progress' },
+    ];
+    dispatchWorkbenchEvent('todosUpdated', { todos, title: 'Composer parity' }, { onTodosUpdated });
+    expect(onTodosUpdated).toHaveBeenCalledWith({ todos, title: 'Composer parity' });
+  });
+
+  it('todosUpdated with a non-array payload degrades to an empty list', () => {
+    const onTodosUpdated = vi.fn();
+    dispatchWorkbenchEvent('todosUpdated', { todos: 'oops', title: 42 }, { onTodosUpdated });
+    expect(onTodosUpdated).toHaveBeenCalledWith({ todos: [], title: undefined });
+  });
+
+  it('narrationReclassify dispatches onNarrationReclassify', () => {
+    const onNarrationReclassify = vi.fn();
+    dispatchWorkbenchEvent('narrationReclassify', {}, { onNarrationReclassify });
+    expect(onNarrationReclassify).toHaveBeenCalledTimes(1);
+  });
+
 });

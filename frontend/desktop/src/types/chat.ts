@@ -330,7 +330,11 @@ export interface AppendBlockEvent {
     | 'error'
     /** Harness notice (warning / info / context pressure) — becomes a
      *  `type: 'system'` block; the thinking block holds only model CoT. */
-    | 'system';
+    | 'system'
+    /** Backend `narrationReclassify` marker: the round that streamed this
+     *  text also called tools, so every `finalOutput` block so far was
+     *  provisional narration — demote them to `thinking`. */
+    | 'reclassifyText';
   content?: string;
   /** For type === 'error': raw upstream text (friendly copy goes in content). */
   rawContent?: string;

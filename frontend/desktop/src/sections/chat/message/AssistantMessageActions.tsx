@@ -1,7 +1,7 @@
-import { Check, RefreshCw, Play, Pause, Bug, GitBranch, ArrowLeftRight, GitCompare } from 'lucide-react';
+import { Check, RefreshCw, Play, Pause, GitBranch, ArrowLeftRight, GitCompare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-/** Speak / copy / re-answer / regenerate / fork / raw-debug controls under an assistant message. */
+/** Speak / copy / re-answer / regenerate / fork controls under an assistant message. */
 export function AssistantMessageActions({
   showActions,
   copied,
@@ -9,8 +9,6 @@ export function AssistantMessageActions({
   isLast,
   streaming,
   isRegenerating,
-  showRaw,
-  setShowRaw,
   onSpeak,
   onCopy,
   onRegen,
@@ -25,8 +23,6 @@ export function AssistantMessageActions({
   isLast?: boolean;
   streaming?: boolean;
   isRegenerating: boolean;
-  showRaw: boolean;
-  setShowRaw: (v: boolean) => void;
   onSpeak: () => void;
   onCopy: () => void;
   onRegen: () => void;
@@ -125,14 +121,6 @@ export function AssistantMessageActions({
           <GitBranch className="size-3" />
         </button>
       )}
-      <button
-        onClick={() => setShowRaw(!showRaw)}
-        className={cn("p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition", showRaw && "text-primary")}
-        title="Toggle raw data"
-        aria-label="Toggle raw data"
-      >
-        <Bug className="size-3" />
-      </button>
     </div>
   );
 }

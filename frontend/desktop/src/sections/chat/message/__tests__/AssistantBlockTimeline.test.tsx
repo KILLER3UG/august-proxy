@@ -276,8 +276,16 @@ describe('AssistantBlockTimeline process UI', () => {
     );
 
     expandActivitySummary();
-    const a = screen.getByRole('button', { name: /Reading/i });
-    const b = screen.getByRole('button', { name: /Writing/i });
+    // Scope to the row toggles (view tools render process-tool-toggle, edit
+    // tools render edit-rail-trigger): the ActivitySummary header now
+    // legitimately carries the action title too ("Writing b.ts"), so a bare
+    // role query would match both buttons.
+    const rowToggle = (re: RegExp) =>
+      Array.from(
+        document.querySelectorAll('button.process-tool-toggle, button.edit-rail-trigger'),
+      ).find((el) => re.test(el.textContent || ''))!;
+    const a = rowToggle(/Reading/i);
+    const b = rowToggle(/Writing/i);
     // View tools stay collapsed; edit tools auto-expand while running.
     expect(a).toHaveAttribute('aria-expanded', 'false');
     expect(b).toHaveAttribute('aria-expanded', 'true');

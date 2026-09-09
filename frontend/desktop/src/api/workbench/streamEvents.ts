@@ -175,8 +175,20 @@ export function dispatchWorkbenchEvent(
     case 'user_message_queue_reordered':
     case 'user_message_queue_updated':
     case 'user_message_queue_cleared':
-    case 'todosUpdated':
     case 'checkpoint':
+      break;
+    case 'todosUpdated': {
+      const rawTodos = Array.isArray(p?.todos) ? p.todos : [];
+      handlers.onTodosUpdated?.({
+        todos: rawTodos as WorkbenchSession['todos'],
+        title: typeof p?.title === 'string' ? p.title : undefined,
+      });
+      break;
+    }
+    case 'narrationReclassify':
+      // The round that streamed text so far also called tools — the client
+      // reducer demotes provisional narration blocks into the thinking pack.
+      handlers.onNarrationReclassify?.();
       break;
     case 'subagentStart':
       handlers.onSubagentStart?.({

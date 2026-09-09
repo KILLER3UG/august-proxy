@@ -46,8 +46,6 @@ function renderContent({ isLast, streaming }: { isLast: boolean; streaming: bool
           sessionId="sess_gate"
           displayBlocks={[finalBlock]}
           showPendingThinking={false}
-          showRaw={false}
-          setShowRaw={() => {}}
           showActions={false}
           copied={false}
           speaking={false}
