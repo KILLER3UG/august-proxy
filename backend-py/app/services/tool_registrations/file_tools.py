@@ -394,13 +394,21 @@ def _resolveAnchor(
     if oldText.strip() and oldText.strip() == lines[idx].strip():
         return idx, idx + 1, 'ws'
     # Drift: the model's line number is off by a few lines (edits above
-    # shifted it). Search ±3 for the anchor.
+    # shifted it). Search ±3 for the anchor — single-line or block.
     lo, hi = max(0, idx - 3), min(len(lines), idx + 4)
     for jdx in range(lo, hi):
         if jdx == idx:
             continue
         if oldText == lines[jdx] or (oldText.lstrip() and oldText.lstrip() == lines[jdx].lstrip()):
             return jdx, jdx + 1, 'drift'
+        if '\n' in oldText:
+            oldLines = oldText.splitlines()
+            end = _matchBlock(lines, jdx, oldLines, wsTolerant=False)
+            if end is not None:
+                return jdx, end, 'block-drift'
+            end = _matchBlock(lines, jdx, oldLines, wsTolerant=True)
+            if end is not None:
+                return jdx, end, 'block-drift-fuzzy'
     return None
 
 
@@ -410,12 +418,15 @@ async def _editLines(
     changes: list[dict[str, object]],
     **_extra: object,
 ) -> str:
-    """Precision line edits (R1): replace specific lines, verified by the
-    sha256 of the file as read AND per-line anchors.
+    """Precision block edits (R1): replace a contiguous region of text — ONE
+    line or MANY — verified by the sha256 of the file as read AND the anchor.
 
-    ``changes`` = ``[{line: 1-based int, old: exact current line text,
-    new: replacement text}]``. The file is rejected (no write) when the hash
-    is missing/stale or any ``old`` anchor does not match the current line —
+    ``changes`` = ``[{line: 1-based int, old: exact current text (single line
+    OR a multi-line block copied verbatim from read_file), new: replacement
+    text (single line OR a multi-line block)}]``. Write the whole fix as one
+    ``old``/``new`` pair — never split a multi-line replacement across
+    several change entries. The file is rejected (no write) when the hash is
+    missing/stale or an ``old`` anchor does not match the current content —
     the model must re-read and retry. Line endings of the original file are
     preserved.
     """
@@ -983,9 +994,12 @@ def register() -> None:
     )
     tool_registry.register(
         'edit_lines',
-        'Precision line edits: replace specific lines, each verified by a per-line anchor (current text) AND '
-        'the fileHash from the last read_file. Prefer over write_file for surgical changes — a stale hash or '
-        'mismatched anchor rejects the edit without writing. Line numbers are 1-based read_file output lines.',
+        'Precision block edits: replace a contiguous region of text — ONE line or MANY lines — each verified '
+        'by its anchor (the exact current text) AND the fileHash from the last read_file. Prefer over '
+        'write_file for surgical changes — a stale hash or mismatched anchor rejects the edit without writing. '
+        'Write the whole fix as a single old/new pair: old may span multiple lines (copy the block verbatim '
+        'from read_file), new is the full replacement block. NEVER split one multi-line replacement across '
+        'several change entries. Line numbers are 1-based read_file output lines.',
         _editLines,
         {
             'type': 'object',
@@ -1000,13 +1014,25 @@ def register() -> None:
                     'items': {
                         'type': 'object',
                         'properties': {
-                            'line': {'type': 'integer', 'description': '1-based line number to replace.'},
-                            'old': {'type': 'string', 'description': 'EXACT current text of that line (anchor).'},
-                            'new': {'type': 'string', 'description': 'Replacement text for that line.'},
+                            'line': {
+                                'type': 'integer',
+                                'description': '1-based line where the region to replace STARTS.',
+                            },
+                            'old': {
+                                'type': 'string',
+                                'description': 'EXACT current text to replace — a single line, or a multi-line block copied verbatim from read_file.',
+                            },
+                            'new': {
+                                'type': 'string',
+                                'description': 'Full replacement text — a single line, or a multi-line block. Empty string deletes the region.',
+                            },
                         },
                         'required': ['line', 'old', 'new'],
                     },
-                    'description': 'Line edits; applied bottom-up so earlier numbers stay valid.',
+                    'description': (
+                        'Block edits, one entry per contiguous region (old/new may each span multiple '
+                        'lines); applied bottom-up so earlier numbers stay valid.'
+                    ),
                 },
             },
             'required': ['path', 'fileHash', 'changes'],

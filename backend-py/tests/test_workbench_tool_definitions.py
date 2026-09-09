@@ -254,3 +254,58 @@ async def test_edit_lines_anchored_and_hash_verified(tmp_path):
     res = await ft._editLines(str(p2), digest2, [{'line': 1, 'old': 'alpha', 'new': 'ALPHA'}])
     assert 'Applied 1 edit' in res
     assert p2.read_bytes() == b'ALPHA\r\nbeta\r\n'
+
+
+@pytest.mark.asyncio
+async def test_edit_lines_block_replacement(tmp_path):
+    """edit_lines takes the WHOLE fix as one multi-line old/new pair — the
+    model must never split a block replacement across line-by-line entries."""
+    import hashlib
+
+    from app.services.tool_registrations import file_tools as ft
+
+    src = 'header\nold_a\nold_b\nold_c\nfooter\n'
+    p = tmp_path / 'block.txt'
+    p.write_text(src, encoding='utf-8')
+    digest = hashlib.sha256(p.read_bytes()).hexdigest()
+
+    # One entry replaces three lines with a new block.
+    res = await ft._editLines(
+        str(p),
+        digest,
+        [{'line': 2, 'old': 'old_a\nold_b\nold_c', 'new': 'new_x\nnew_y'}],
+    )
+    assert 'Applied 1 edit' in res
+    assert p.read_text(encoding='utf-8') == 'header\nnew_x\nnew_y\nfooter\n'
+
+    # Block anchor with whitespace drift still matches (ws-tolerant ladder).
+    p.write_text(src, encoding='utf-8')
+    digest = hashlib.sha256(p.read_bytes()).hexdigest()
+    res = await ft._editLines(
+        str(p),
+        digest,
+        [{'line': 2, 'old': '  old_a\n\told_b\nold_c', 'new': 'indented fix'}],
+    )
+    assert 'Applied 1 edit' in res
+    assert 'fuzzy anchor' in res
+    assert p.read_text(encoding='utf-8') == 'header\nindented fix\nfooter\n'
+
+    # Line number off by two → block-drift still lands (±3 search).
+    p.write_text(src, encoding='utf-8')
+    digest = hashlib.sha256(p.read_bytes()).hexdigest()
+    res = await ft._editLines(
+        str(p),
+        digest,
+        [{'line': 4, 'old': 'old_a\nold_b\nold_c', 'new': 'drifted'}],
+    )
+    assert 'Applied 1 edit' in res
+    assert p.read_text(encoding='utf-8') == 'header\ndrifted\nfooter\n'
+
+    # Empty new deletes the block.
+    p.write_text(src, encoding='utf-8')
+    digest = hashlib.sha256(p.read_bytes()).hexdigest()
+    res = await ft._editLines(
+        str(p), digest, [{'line': 2, 'old': 'old_a\nold_b\nold_c', 'new': ''}]
+    )
+    assert 'Applied 1 edit' in res
+    assert p.read_text(encoding='utf-8') == 'header\nfooter\n'

@@ -524,7 +524,7 @@ class TestPostEditVerificationInLoop:
 
         async def fake_run(command, workspace, session, timeout):
             ran.append(command)
-            return True, 'All checks passed.'
+            return True, 'All checks passed.', False
 
         async def fake_hash(workspace):
             return None  # dedup off — no git in the tmp workspace
@@ -567,7 +567,7 @@ class TestPostEditVerificationInLoop:
         )
 
         async def fake_run(command, workspace, session, timeout):
-            return False, 'foo.py:1:1: E999 syntax error'
+            return False, 'foo.py:1:1: E999 syntax error', False
 
         async def fake_hash(workspace):
             return None

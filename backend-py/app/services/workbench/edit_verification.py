@@ -299,11 +299,14 @@ def _cap_output(text: str) -> str:
 
 async def _run_gate_command(
     command: str, workspace: Path, session: 'WorkbenchSession | None', timeout: float
-) -> tuple[bool, str]:
+) -> tuple[bool, str, bool]:
     """Run one gate command through the same sandbox path as run_command.
 
-    Returns ``(ok, text)``. A sandbox denial reports as not-ok with the
-    reason so the receipt can tell the model (or suggest disabling the gate).
+    Returns ``(ok, text, timed_out)``. A sandbox denial reports as not-ok
+    with the reason so the receipt can tell the model (or suggest disabling
+    the gate). A KILLED gate (timeout) is NOT a code failure — ``timed_out``
+    lets the caller report it as inconclusive instead of sending the model
+    into a fix loop over a suite that never finished.
     """
     from app.services.execution_world import run_sandboxed
     from app.services.sandbox.runner import policy_from_session
@@ -324,15 +327,19 @@ async def _run_gate_command(
     )
     result = await run_sandboxed(command, policy, timeout=timeout)
     if result.denial_reason:
-        return False, f'[sandbox:{result.enforcement}] Blocked: {result.denial_reason}'
+        return False, f'[sandbox:{result.enforcement}] Blocked: {result.denial_reason}', False
     parts: list[str] = []
     if result.stdout:
         parts.append(result.stdout.rstrip())
     if result.stderr:
         parts.append('STDERR:\n' + result.stderr.rstrip())
     text = '\n'.join(parts) if parts else '(no output)'
+    # The sandbox backends report a killed command as exit_code -1 with a
+    # "Command timed out after Ns" header (fallback.py). That sentinel is
+    # inconclusive, not a failure.
+    timed_out = result.exit_code == -1 and 'timed out' in (result.stderr or '').lower()
     ok = result.exit_code == 0 if result.exit_code is not None else result.ok
-    return ok, text
+    return ok, text, timed_out
 
 
 def _verify_state(session: 'WorkbenchSession') -> dict[str, object]:
@@ -343,6 +350,9 @@ def _verify_state(session: 'WorkbenchSession') -> dict[str, object]:
             'lastFailHash': None,
             'skippedAttempts': 0,
             'disarmedUntilTurn': 0,
+            # Set when the test gate times out once — a suite that cannot
+            # finish inside TEST_TIMEOUT_S must not block every later edit.
+            'testPaused': False,
         }
         session._verify_state = state  # type: ignore[attr-defined]
     return state
@@ -419,18 +429,42 @@ async def verify_after_edit(
 
     if lintCmd:
         scoped = lintCmd.replace('{file}', relpath) if relpath else lintCmd.replace('{file}', '.')
-        ok, text = await _run_gate_command(scoped, workspace, session, LINT_TIMEOUT_S)
+        ok, text, timed_out = await _run_gate_command(scoped, workspace, session, LINT_TIMEOUT_S)
+        if timed_out:
+            return (
+                f'[verification inconclusive] lint ({scoped}) timed out after '
+                f'{int(LINT_TIMEOUT_S)}s and was killed — the check never completed, so this '
+                'is NOT a code failure. Do NOT "fix" anything for this receipt; keep working. '
+                'The edit itself already succeeded.'
+            )
         ranParts.append('lint')
         if not ok:
             return _failure_receipt(
                 session, state, treeHash, maxFix, f'lint: {scoped}', text, workspace
             )
-    if testCmd:
-        ok, text = await _run_gate_command(testCmd, workspace, session, TEST_TIMEOUT_S)
+    if testCmd and not state.get('testPaused'):
+        scopedTest = (
+            testCmd.replace('{file}', relpath) if relpath else testCmd.replace('{file}', '.')
+        )
+        ok, text, timed_out = await _run_gate_command(scopedTest, workspace, session, TEST_TIMEOUT_S)
+        if timed_out:
+            # A full-suite gate that can't finish in TEST_TIMEOUT_S would
+            # otherwise re-block every subsequent edit for minutes. Pause the
+            # test gate for the rest of the session; lint (fast, file-scoped)
+            # keeps running.
+            state['testPaused'] = True
+            return (
+                f'[verification inconclusive] tests ({scopedTest}) timed out after '
+                f'{int(TEST_TIMEOUT_S)}s and were killed — the suite never finished, so this '
+                'is NOT a code failure and there is nothing to fix. The edit succeeded. '
+                'The test gate is now PAUSED for this session (lint still runs); run the '
+                'tests yourself via run_command when you actually need them, or scope the '
+                'gate per-workspace in .aug/verify.json (testCmd with {file}).'
+            )
         ranParts.append('tests')
         if not ok:
             return _failure_receipt(
-                session, state, treeHash, maxFix, f'test: {testCmd}', text, workspace
+                session, state, treeHash, maxFix, f'test: {scopedTest}', text, workspace
             )
 
     if not ranParts:

@@ -250,8 +250,11 @@ class TestVerifyAfterEdit:
             results = script['results']
             assert isinstance(results, list)
             if results:
-                return results.pop(0)
-            return True, 'All checks passed.'
+                r = results.pop(0)
+                # Scripts may use 2-tuples (ok, text); the real runner now
+                # returns (ok, text, timed_out). Normalize.
+                return (r[0], r[1], False) if len(r) == 2 else r
+            return True, 'All checks passed.', False
 
         async def fake_hash(workspace: Path) -> str | None:
             h = script.get('hash')
@@ -279,6 +282,57 @@ class TestVerifyAfterEdit:
         commands = [c for c, _ in calls]  # type: ignore[attr-defined]
         assert commands[0] == 'mylint foo.py'
         assert commands[1] == 'mytest'
+
+    @pytest.mark.asyncio
+    async def testTestCmdFileScoping(self, workspace: Path, calls: object) -> None:
+        # testCmd supports {file} too, so a workspace can gate on targeted
+        # tests instead of a full suite.
+        (workspace / '.aug' / 'verify.json').write_text(
+            json.dumps({'testCmd': 'mytest {file}'})
+        )
+        s = _session(workspace)
+        receipt = await ev.verify_after_edit(s, 'edit_lines', {'path': 'foo.py'})
+        commands = [c for c, _ in calls]  # type: ignore[attr-defined]
+        assert commands == ['mytest foo.py']
+        assert receipt == '[verification passed] tests clean.'
+
+    @pytest.mark.asyncio
+    async def testGateTimeoutIsInconclusiveAndPausesTests(
+        self, workspace: Path, calls: object
+    ) -> None:
+        # The dogfood bug: `npm test` = full monorepo suite → killed at the
+        # timeout → used to feed a FAILED receipt and a fix loop that re-paid
+        # the timeout on every edit. Now: inconclusive, no failStreak, and the
+        # test gate pauses for the session (lint keeps running).
+        self._script(calls)['results'] = [
+            (True, 'lint ok', False),
+            (False, 'Error: Command timed out after 180s and was killed.', True),
+        ]
+        s = _session(workspace)
+        r1 = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
+        assert r1.startswith('[verification inconclusive]')
+        assert 'NOT a code failure' in r1
+        assert 'PAUSED' in r1
+        assert s._verify_state['failStreak'] == 0
+        assert s._verify_state['testPaused'] is True
+        # Second edit: lint runs, tests are skipped entirely.
+        r2 = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
+        assert r2 == '[verification passed] lint clean.'
+        commands = [c for c, _ in calls]  # type: ignore[attr-defined]
+        assert commands == ['mylint foo.py', 'mytest', 'mylint foo.py']
+
+    @pytest.mark.asyncio
+    async def testLintTimeoutInconclusiveWithoutPause(self, workspace: Path, calls: object) -> None:
+        # A lint timeout is inconclusive too, but it does NOT pause the test
+        # gate (lint is file-scoped and cheap; the suite is the heavy one).
+        self._script(calls)['results'] = [
+            (False, 'Error: Command timed out after 60s and was killed.', True),
+        ]
+        s = _session(workspace)
+        r1 = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
+        assert r1.startswith('[verification inconclusive]')
+        assert s._verify_state.get('testPaused') is not True
+        assert len(calls) == 1  # type: ignore[arg-type]
 
     @pytest.mark.asyncio
     async def testLintFailureSkipsTests(self, workspace: Path, calls: object) -> None:
