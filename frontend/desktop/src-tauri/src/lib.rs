@@ -28,6 +28,18 @@ fn confirm_quit(app: AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Task Manager / taskbar identity: claim the bundle identifier as this
+    // process's AppUserModelID BEFORE any window exists. The WebView2 loader
+    // propagates it to the msedgewebview2 child processes, so Task Manager
+    // groups them under the "August" app node instead of surfacing a bare
+    // "Microsoft Edge WebView2" background entry.
+    #[cfg(windows)]
+    unsafe {
+        use windows::core::w;
+        use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+        let _ = SetCurrentProcessExplicitAppUserModelID(w!("com.august.proxy"));
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_process::init())
@@ -75,6 +87,23 @@ pub fn run() {
 
             // 2) Install the system tray (Show / Hide / Quit)
             tray::install(app.handle())?;
+
+            // 3) WebView2 hardening: wry leaves the default browser context
+            // menu enabled (Back / Reload / Save as / Print / Inspect) and
+            // Tauri's config doesn't expose the toggle, so turn it off on the
+            // controller directly. Right-click then behaves like a native app.
+            // (Zoom controls and the link-hover status bar are already off —
+            // wry ties them to `zoomHotkeysEnabled`, which defaults false.)
+            #[cfg(windows)]
+            if let Some(main) = app.get_webview_window("main") {
+                let _ = main.with_webview(|platform| unsafe {
+                    if let Ok(core) = platform.controller().CoreWebView2() {
+                        if let Ok(settings) = core.Settings() {
+                            let _ = settings.SetAreDefaultContextMenusEnabled(false);
+                        }
+                    }
+                });
+            }
 
             Ok(())
         })

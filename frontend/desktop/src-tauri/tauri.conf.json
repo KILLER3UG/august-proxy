@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "August",
-  "version": "0.18.7",
+  "version": "0.18.8",
   "identifier": "com.august.proxy",
+  "mainBinaryName": "August",
   "build": {
     "frontendDist": "../../../web-dist",
     "devUrl": "http://localhost:5173"

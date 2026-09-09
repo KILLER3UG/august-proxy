@@ -1,6 +1,6 @@
 [package]
 name = "august-desktop"
-version = "0.18.7"
+version = "0.18.8"
 description = "August Proxy — desktop shell"
 edition = "2021"
 rust-version = "1.77"
@@ -27,6 +27,13 @@ base64 = "0.22"
 which = "6.0"
 log = "0.4"
 tokio = { version = "1", features = ["rt"] }
+
+[target.'cfg(windows)'.dependencies]
+# WebView2 COM settings (kill the browser context menu) + explicit
+# AppUserModelID so Task Manager groups the msedgewebview2 children
+# under "August" instead of a bare "Microsoft Edge WebView2" node.
+webview2-com = "0.38"
+windows = { version = "0.61", features = ["Win32_UI_Shell"] }
 
 [features]
 default = ["custom-protocol"]
