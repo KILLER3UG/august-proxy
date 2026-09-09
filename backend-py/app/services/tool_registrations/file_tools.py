@@ -369,11 +369,55 @@ def _matchBlock(
     return i
 
 
+# Similarity floor for auto-applying an anchor the model transcribed
+# slightly wrong (ratio >= 0.9 AND the runner-up is clearly worse), and the
+# floor for at least HINTING the closest region in a mismatch receipt.
+_SIMILAR_AUTO = 0.90
+_SIMILAR_UNIQUE = 0.85
+_SIMILAR_HINT = 0.60
+_SIMILAR_MAX_LINES = 20_000
+
+
+def _bestTwo(lines: list[str], oldText: str) -> tuple[tuple[int, int, float] | None, float]:
+    """(best window, runner-up ratio) — for the uniqueness gate.
+
+    Returns ``(None, 0.0)`` when the file is too large to scan or nothing
+    reaches the hint floor. Windows are compared on stripped text so
+    indentation noise doesn't dominate.
+    """
+    import difflib
+
+    if not oldText or len(lines) > _SIMILAR_MAX_LINES:
+        return None, 0.0
+    old = oldText.rstrip('\r\n')
+    oldLines = old.splitlines() if '\n' in old else None
+    target = [ln.strip() for ln in oldLines] if oldLines else [old.strip()]
+    width = len(target)
+    if width == 0 or len(lines) < width:
+        return None, 0.0
+    scored: list[tuple[int, int, float]] = []
+    a = '\n'.join(target)
+    for i in range(len(lines) - width + 1):
+        window = '\n'.join(lines[i + k].strip() for k in range(width))
+        sm = difflib.SequenceMatcher(None, a, window)
+        if sm.quick_ratio() < _SIMILAR_HINT:
+            continue
+        # No early return on an exact hit: two exact matches must score as an
+        # ambiguous pair (second == 1.0) so the uniqueness gate rejects.
+        scored.append((i, i + width, sm.ratio()))
+    if not scored:
+        return None, 0.0
+    scored.sort(key=lambda t: (-t[2], t[0]))
+    best = scored[0]
+    second = scored[1][2] if len(scored) > 1 else 0.0
+    return best, second
+
+
 def _resolveAnchor(
     lines: list[str], idx: int, oldText: str
 ) -> tuple[int, int, str] | None:
     """T4 fuzzy edit ladder: exact → leading-whitespace →
-    blank-line/elided block → nearby drift, before rejecting.
+    blank-line/elided block → nearby drift → similar-string, before rejecting.
 
     The hash anchor already proved the file is exactly what the model read,
     so fuzzy tolerance is about transcription drift, not staleness.
@@ -409,6 +453,12 @@ def _resolveAnchor(
             end = _matchBlock(lines, jdx, oldLines, wsTolerant=True)
             if end is not None:
                 return jdx, end, 'block-drift-fuzzy'
+    # Similar-string: the model transcribed the anchor slightly wrong (a
+    # renamed variable, a reworded comment). Auto-apply ONLY a near-perfect,
+    # UNIQUE match — an ambiguous one is worse than the mismatch receipt.
+    best, second = _bestTwo(lines, oldText)
+    if best is not None and best[2] >= _SIMILAR_AUTO and second < _SIMILAR_UNIQUE:
+        return best[0], best[1], 'similar'
     return None
 
 
@@ -493,11 +543,30 @@ async def _editLines(
         idx = lineNo - 1
         match = _resolveAnchor(lines, idx, oldText)
         if match is None:
+            # A near-miss deserves more than "re-read everything": show the
+            # closest region so the model can retry correctly in ONE step.
+            hint = ''
+            best, _second = _bestTwo(lines, oldText)
+            if best is not None and best[2] >= _SIMILAR_HINT:
+                preview = '\n'.join(lines[best[0] : best[1]])
+                if len(preview) > 400:
+                    preview = preview[:400] + ' …'
+                span = (
+                    f'line {best[0] + 1}'
+                    if best[1] - best[0] == 1
+                    else f'lines {best[0] + 1}-{best[1]}'
+                )
+                hint = (
+                    f'\nClosest match ({best[2] :.0%}) at {span}:\n'
+                    f'{preview}\n'
+                    'Retry with that EXACT text (or re-read the file).'
+                )
             return (
                 f"Error: anchor mismatch on line {lineNo}.\n"
                 f'Expected: {oldText!r}\n'
                 f'Actual:   {lines[idx]!r}\n'
                 'Re-read the file and retry with the current content.'
+                + hint
             )
         startIdx, endIdx, level = match
         newLines = newText.splitlines() if newText else []

@@ -309,3 +309,43 @@ async def test_edit_lines_block_replacement(tmp_path):
     )
     assert 'Applied 1 edit' in res
     assert p.read_text(encoding='utf-8') == 'header\nfooter\n'
+
+
+@pytest.mark.asyncio
+async def test_edit_lines_similar_anchor_autoapplies(tmp_path):
+    """A slightly-mis-transcribed anchor (unique, >=90% similar) is APPLIED
+    with a fuzzy note instead of bouncing the model through a re-read."""
+    import hashlib
+
+    from app.services.tool_registrations import file_tools as ft
+
+    p = tmp_path / 's.py'
+    p.write_text('def calculate_total(items):\n    return sum(items)\n', encoding='utf-8')
+    digest = hashlib.sha256(p.read_bytes()).hexdigest()
+    res = await ft._editLines(
+        str(p),
+        digest,
+        [{'line': 1, 'old': 'def calculate_total(item):', 'new': 'def calculate_total(items: list):'}],
+    )
+    assert 'Applied 1 edit' in res
+    assert 'similar' in res  # fuzzy-note level
+    assert p.read_text(encoding='utf-8') == 'def calculate_total(items: list):\n    return sum(items)\n'
+
+
+@pytest.mark.asyncio
+async def test_edit_lines_ambiguous_similarity_rejects_with_hint(tmp_path):
+    """Two near-identical candidate regions → NOT unique → refuse, but the
+    receipt names the closest match so the model retries in one step."""
+    import hashlib
+
+    from app.services.tool_registrations import file_tools as ft
+
+    src = 'header\nx = compute(a, b)\nblank\nx = compute(a, b)\nfooter\n'
+    p = tmp_path / 'h.py'
+    p.write_text(src, encoding='utf-8')
+    digest = hashlib.sha256(p.read_bytes()).hexdigest()
+    res = await ft._editLines(str(p), digest, [{'line': 1, 'old': 'x = compute(a, b )', 'new': 'y'}])
+    assert 'anchor mismatch' in res
+    assert 'Closest match' in res
+    assert 'line 2' in res
+    assert p.read_text(encoding='utf-8') == src  # untouched

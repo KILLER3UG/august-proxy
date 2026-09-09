@@ -2,14 +2,19 @@
 
 Per-session in-memory map ``file -> observed version`` (sha256 of content at
 last read). Editing a file the session never observed fails with a distinct
-``[edit-unseen]`` error code + remedy text ("read the file, then retry");
-editing a file whose content changed since the last observation fails with
-``[edit-stale]`` + "re-read, then retry".
+``[edit-unseen]`` error code + remedy text ("File has not been read yet.
+Read it first before writing to it."); editing a file whose content changed
+since the last observation fails with ``[edit-stale]`` + "re-read, then
+retry".
 
-A successful mutation FORGETS the observed version instead of trusting the
-new bytes: the model must re-read after changing a file so its next edit is
-grounded in what is actually on disk (line-ending rewrites, formatter drift,
-and fuzzy patch application can all differ from what the model intended).
+A successful mutation records the new bytes in a second ``written`` map
+INSTEAD of forgetting the observation: this is what makes MULTI-EDITING
+work — the model can issue several edits to the same file in one turn
+without re-reading. A follow-up edit whose provided ``fileHash`` still
+matches the ORIGINAL observation is accepted when the only intervening
+change was August's own write (the gate normalizes the stale hash to the
+current bytes before dispatch). Any foreign change (user edit, formatter,
+another process) still fails fast as stale.
 
 No prompt or schema changes — the gate is a listener on file mutations in
 the workbench loop and can be removed without breaking the tools. The map
@@ -40,6 +45,8 @@ BULK_TOOL = 'bulk'
 UNSEEN_CODE = '[edit-unseen]'
 STALE_CODE = '[edit-stale]'
 _ATTR = '_observedFiles'
+# Hashes of bytes August itself wrote (chained multi-edit support).
+_WRITTEN_ATTR = '_writtenFiles'
 _SHA_HEADER_RE = re.compile(r'^\[sha256 ([0-9a-f]{64})\]')
 # Bulk read report blocks: "===== <path> =====" followed by the read_file
 # body whose first line is the sha256 header.
@@ -53,6 +60,14 @@ def _observed_map(session: 'WorkbenchSession') -> dict[str, str]:
     if not isinstance(m, dict):
         m = {}
         setattr(session, _ATTR, m)
+    return m
+
+
+def _written_map(session: 'WorkbenchSession') -> dict[str, str]:
+    m = getattr(session, _WRITTEN_ATTR, None)
+    if not isinstance(m, dict):
+        m = {}
+        setattr(session, _WRITTEN_ATTR, m)
     return m
 
 
@@ -111,12 +126,13 @@ def _input_keys(
 
 def _refusal(names: list[str], code: str, unseen: bool) -> str:
     shown = ', '.join(names[:3]) + (f' … +{len(names) - 3} more' if len(names) > 3 else '')
-    verb = 'have' if len(names) > 1 else 'has'
     if unseen:
         return (
-            f'Error: {code} {shown} {verb} not been read '
-            'in this session. Read the file(s) with read_file first, then retry the edit.'
+            f'Error: {code} {shown} — File has not been read yet. '
+            'Read it first before writing to it: call read_file on the path, '
+            'then retry the edit (copy the anchor text from that output).'
         )
+    verb = 'have' if len(names) > 1 else 'has'
     return (
         f'Error: {code} {shown} {verb} changed since you last read '
         f'{"them" if len(names) > 1 else "it"}. Re-read the file(s), then retry the edit.'
@@ -131,6 +147,12 @@ def check_read_before_edit(
     Creating a new file is always allowed; editing an unseen or stale file
     fails fast with a distinct code + remedy so the model can self-correct.
     A batch write is refused whole when any target is unseen or stale.
+
+    Chained multi-edit: when the file changed ONLY because of August's own
+    previous write this session, and the model still passes the hash from
+    its original read (or no hash at all), the edit is legitimate follow-up
+    work — the stale ``fileHash`` in ``tool_input`` is normalized to the
+    current bytes so the tool's internal anchor check passes too.
     """
     if tool_name not in GATED_EDIT_TOOLS and tool_name != BULK_TOOL:
         return None
@@ -138,6 +160,7 @@ def check_read_before_edit(
     if not keys:
         return None
     observed_map = _observed_map(session)
+    written_map = _written_map(session)
     unseen: list[str] = []
     stale: list[str] = []
     for key in keys:
@@ -149,8 +172,14 @@ def check_read_before_edit(
             unseen.append(target.name)
             continue
         current = _file_version(target)
-        if current is not None and current != observed:
-            stale.append(target.name)
+        if current is None or current == observed:
+            continue
+        provided = as_str(tool_input.get('fileHash'), '')
+        if written_map.get(key) == current and (not provided or provided == observed):
+            if provided:
+                tool_input['fileHash'] = current
+            continue
+        stale.append(target.name)
     if unseen:
         return _refusal(unseen, UNSEEN_CODE, unseen=True)
     if stale:
@@ -171,29 +200,40 @@ def observe_from_read_result(
         key = _key(session, as_str(tool_input.get('path'), ''))
         if key:
             _observed_map(session)[key] = m.group(1)
+            # A fresh read re-anchors: prior August-write tracking is moot.
+            _written_map(session).pop(key, None)
         return
     if tool_name == 'read_files' or tool_name == BULK_TOOL:
         # Bulk read report: observe every per-file block that carries a
         # sha256 header (failed reads appear in the error list, not as
         # blocks, so they are never observed).
         observed = _observed_map(session)
+        written = _written_map(session)
         for m in _BULK_READ_BLOCK_RE.finditer(result):
             key = _key(session, m.group(1))
             if key:
                 observed[key] = m.group(2)
+                written.pop(key, None)
 
 
 def observe_after_mutation(
     session: 'WorkbenchSession', tool_name: str, tool_input: dict[str, object]
 ) -> None:
-    """After a successful mutation, FORGET the observed version.
+    """After a successful mutation, record the bytes August just wrote.
 
-    The model must re-read after changing a file so its next edit is grounded
-    in the bytes actually on disk — clearing the entry makes the follow-up
-    edit fail fast with [edit-unseen] until read_file re-observes it.
+    The observation from the model's read STAYS — that is what lets the
+    model chain several edits to the same file in one turn: the gate sees
+    ``current == written``, recognizes the only change was its own, and
+    normalizes the next call's stale hash instead of refusing it. A foreign
+    change (user edit, formatter) matches neither map and still fails as
+    stale.
     """
     if tool_name not in GATED_EDIT_TOOLS and tool_name != BULK_TOOL:
         return
-    observed = _observed_map(session)
+    written = _written_map(session)
     for key in _input_keys(session, tool_name, tool_input):
-        observed.pop(key, None)
+        target = Path(key)
+        if target.exists():
+            version = _file_version(target)
+            if version is not None:
+                written[key] = version

@@ -33,8 +33,17 @@ class TestResolveAnchor:
         got = ft._resolveAnchor(lines, 0, 'def foo():')
         assert got == (1, 2, 'drift')
 
-    def testDriftTooFarRejected(self) -> None:
+    def testDriftTooFarButUniqueMatchesAsSimilar(self) -> None:
+        # Beyond the ±3 drift window, a UNIQUE near/exact match is still
+        # applied — the text is the source of truth, the line number a hint
+        # (the similar-string feature; the receipt notes the fuzzy level).
         lines = ['a', 'b', 'c', 'd', 'e', 'target']
+        assert ft._resolveAnchor(lines, 0, 'target') == (5, 6, 'similar')
+
+    def testFarAmbiguousAnchorRejected(self) -> None:
+        # Two identical candidate regions, both OUTSIDE the ±3 drift window
+        # → the similar step sees second == best → not unique → reject.
+        lines = ['a', 'b', 'c', 'd', 'target', 'e', 'f', 'g', 'h', 'target']
         assert ft._resolveAnchor(lines, 0, 'target') is None
 
     def testBlockExact(self) -> None:

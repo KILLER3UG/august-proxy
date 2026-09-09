@@ -123,18 +123,20 @@ class TestBulkWrites:
         )
         assert rbe.check_read_before_edit(s, 'write_file', {'path': 'a.txt'}) is None
 
-    def testBulkMutationForgetsVersions(self, tmp_path: Path) -> None:
+    def testBulkMutationChainsVersions(self, tmp_path: Path) -> None:
         f = tmp_path / 'a.txt'
         f.write_text('v1')
         s = _session(tmp_path)
         rbe.observe_from_read_result(
             s, 'bulk', {'paths': ['a.txt']}, self._report('read_files', ['a.txt'], [_sha(f)])
         )
+        # August's own bulk write records the new bytes instead of forgetting
+        # the observation → a follow-up write chains through.
+        f.write_text('v2')
         rbe.observe_after_mutation(
             s, 'bulk', {'operation': 'write_files', 'files': [{'path': 'a.txt', 'content': 'v2'}]}
         )
-        err = rbe.check_read_before_edit(s, 'write_file', {'path': 'a.txt'})
-        assert err is not None and rbe.UNSEEN_CODE in err
+        assert rbe.check_read_before_edit(s, 'write_file', {'path': 'a.txt'}) is None
 
 
 class TestObservation:
@@ -143,20 +145,36 @@ class TestObservation:
         rbe.observe_from_read_result(s, 'read_file', {'path': 'a.txt'}, 'Error: file not found')
         assert getattr(s, rbe._ATTR, {}) == {}
 
-    def testMutationForgetsObservation(self, tmp_path: Path) -> None:
+    def testMutationChainsSameFileEdits(self, tmp_path: Path) -> None:
         f = tmp_path / 'a.txt'
         f.write_text('v1')
+        original = _sha(f)
         s = _session(tmp_path)
-        # Observed via read → first edit passes.
-        rbe.observe_from_read_result(s, 'read_file', {'path': 'a.txt'}, f'[sha256 {_sha(f)}]\nv1')
+        rbe.observe_from_read_result(s, 'read_file', {'path': 'a.txt'}, f'[sha256 {original}]\nv1')
         assert rbe.check_read_before_edit(s, 'edit_lines', {'path': 'a.txt'}) is None
-        # A successful mutation FORGETS the version: the model must re-read
-        # after changing a file so its next edit is grounded in the bytes
-        # actually on disk — the follow-up edit is refused until it does.
+        # A successful mutation records August's own bytes: the follow-up
+        # edit CHAINS (multi-editing in one turn) instead of being refused.
         f.write_text('v2')
         rbe.observe_after_mutation(s, 'write_file', {'path': 'a.txt'})
+        assert rbe.check_read_before_edit(s, 'edit_lines', {'path': 'a.txt'}) is None
+        # The stale hash the model still carries is normalized to the current
+        # bytes so the tool's internal anchor check passes too.
+        ti: dict[str, object] = {'path': 'a.txt', 'fileHash': original}
+        assert rbe.check_read_before_edit(s, 'edit_lines', ti) is None
+        assert ti['fileHash'] == _sha(f)
+        # A FOREIGN change after August's write is still stale — chaining
+        # only trusts bytes August itself produced.
+        f.write_text('v3-external')
         err = rbe.check_read_before_edit(s, 'edit_lines', {'path': 'a.txt'})
-        assert err is not None and rbe.UNSEEN_CODE in err
+        assert err is not None and rbe.STALE_CODE in err
+
+    def testUnseenRefusalWording(self, tmp_path: Path) -> None:
+        (tmp_path / 'a.txt').write_text('x')
+        err = rbe.check_read_before_edit(_session(tmp_path), 'edit_lines', {'path': 'a.txt'})
+        assert err is not None
+        assert 'File has not been read yet' in err
+        assert 'Read it first before writing to it' in err
+        assert rbe.UNSEEN_CODE in err
 
     def testMapIsSessionScoped(self, tmp_path: Path) -> None:
         f = tmp_path / 'a.txt'
