@@ -2,6 +2,21 @@
 
 ## Unreleased (working tree)
 
+**P3 prompt-assembly split — prompt_build.py.** The second workbench.py
+seam after state_blocks.py: the git workspace probe (+ its TTL memo),
+model display name, harness-guide digest + memo, capabilities memo,
+`clear_skill_prompt_caches`, and the memory-habit nudge pair moved to
+`app/services/workbench/prompt_build.py`; workbench.py re-exports every
+name (same objects, same memo dicts — clearing through either import path
+clears THE cache), so wb.* test seams and receipts resolve unchanged.
+skill_service now imports the real module (the workbench alias is a
+re-export mypy can't follow — same fix shape state_blocks needed).
+workbench.py 6,936 → 6,780 lines. The cluster had zero monkeypatch
+coverage against it (checked repo-wide) and 165 prompt/skill/workbench
+tests green on the moved paths. `test_prompt_split_p3.py` pins the
+identity invariant so a future edit can't silently fork a second caps
+cache.
+
 **P5 outcome ledger + pending_skills retire + scheduler completeness +
 run4 test fixups** — the final fixes batch:
 

@@ -508,7 +508,7 @@ def _bust_prompt_skills_cache() -> None:
     """
     _cat_cache.clear()
     try:
-        from app.services.workbench.workbench import clear_skill_prompt_caches
+        from app.services.workbench.prompt_build import clear_skill_prompt_caches
 
         clear_skill_prompt_caches()
     except Exception:
