@@ -38,6 +38,11 @@ _ALLCamelKeys = {
     'cameraAccess',
     # M4 consolidation v2 cadence + model-summarize toggle.
     'consolidationIntervalHours',
+    # P2 unified scheduler + P5 outcome ledger cadences.
+    'introspectionIntervalHours',
+    'refineIntervalHours',
+    'outcomeIntervalHours',
+    'outcomeWindowDays',
     'episodicRetentionDays',
     'consolidationModelSummarize',
     # Propose-only preference-retire pass (toggle + window).

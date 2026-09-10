@@ -994,6 +994,15 @@ async def auto_refine(
             'target_key': result.get('refineId', ''),
             'detail': reason,
         })
+        # P5 outcome ledger: each kept edit gets a before-stats row so the
+        # scheduled outcome job can measure whether the note actually helped.
+        try:
+            from app.services.harness_outcome import record_refine_outcome
+
+            for item in applied:
+                record_refine_outcome(item, as_str(result.get('refineId'), ''))
+        except Exception:
+            logger.debug('refine outcome recording failed', exc_info=True)
         return {'status': 'kept', 'refineId': result.get('refineId'), 'review': reason, 'result': result}
     # Discard: roll back every applied edit (newest-version undo per entry).
     rolled_back: list[str] = []

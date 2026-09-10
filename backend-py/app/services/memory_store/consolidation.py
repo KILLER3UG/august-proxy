@@ -481,24 +481,10 @@ def _skill_learning_pass() -> dict[str, object]:
 
             dist = run_distiller_pass()
             out['distiller'] = {'verdicts': dist.get('verdicts', 0), 'skipped': dist.get('skipped', '')}
-        # Versioned refine store (T15): the gated auto-refine rides the same
-        # cadence — evidence from the sections above, producer + independent
-        # reviewer inside auto_refine, discard rolls the batch back. Own
-        # config gate (refineConfig.autoRefine, default off), so this call is
-        # a no-op until the user enables it.
-        try:
-            from app.json_narrowing import as_dict as _ad
-            from app.json_narrowing import as_list as _al
-            from app.services.refine_store import run_scheduled_refine
-
-            refine = run_scheduled_refine()
-            out['refine'] = {
-                'status': str(refine.get('status', '')),
-                'applied': len(_al(_ad(refine.get('result')).get('applied'), [])),
-            }
-        except Exception as exc:
-            logger.debug('scheduled refine pass failed', exc_info=True)
-            out['refine'] = {'status': 'error', 'reason': str(exc)[:200]}
+        # Versioned refine store (T15): the gated auto-refine is its OWN
+        # scheduler job now (learning_scheduler._refine_job), not folded in
+        # here — it gets its own cadence, ledger row, and run-now button
+        # instead of hiding inside the consolidation blob.
     except Exception as exc:
         logger.debug('skill-learning pass failed: %s', exc, exc_info=True)
         out['skillLearningError'] = str(exc)

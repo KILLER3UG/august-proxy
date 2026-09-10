@@ -74,7 +74,17 @@ interface SchedulerJob {
   summary?: {
     observationsFiled?: number;
     promotionsFiled?: number;
-    refine?: { status?: string; applied?: number };
+    // The refine job's own ledger row (status + applied count) — was nested
+    // inside the consolidation summary before the P5 batch made it a
+    // first-class job.
+    status?: string;
+    applied?: number;
+    // The outcome-measurement job's row.
+    measured?: number;
+    v_improved?: number;
+    v_flat?: number;
+    v_regressed?: number;
+    v_insufficient?: number;
     error?: string;
   };
 }
@@ -91,6 +101,39 @@ const REFINE_PHRASE: Record<string, string> = {
   skipped: 'no evidence',
   error: 'failed',
 };
+
+/** Per-job one-line outcome for the ledger row. Each scheduled job's
+ *  summary shape is known here; unknown jobs fall back to the raw error. */
+function jobOutcomeLine(j: SchedulerJob): string {
+  const s = j.summary ?? {};
+  if (j.job === 'introspection') {
+    return [
+      s.observationsFiled ? `${s.observationsFiled} observation(s) filed` : null,
+      s.promotionsFiled ? `${s.promotionsFiled} promotion(s) filed` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  }
+  if (j.job === 'refine') {
+    return s.status
+      ? `refine: ${REFINE_PHRASE[s.status] ?? s.status}` +
+        (s.status === 'kept' && s.applied ? ` (${s.applied} applied)` : '')
+      : '';
+  }
+  if (j.job === 'outcome') {
+    if (typeof s.measured === 'number') {
+      const parts = [
+        s.v_improved ? `${s.v_improved} improved` : null,
+        s.v_flat ? `${s.v_flat} flat` : null,
+        s.v_regressed ? `${s.v_regressed} regressed` : null,
+        s.v_insufficient ? `${s.v_insufficient} insufficient` : null,
+      ].filter(Boolean);
+      return `${s.measured} measured${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
+    }
+    return '';
+  }
+  return s.error ? String(s.error).slice(0, 80) : '';
+}
 
 /** Compact relative time for ledger rows ("3h ago"); absolute fallback. */
 function agoLabel(iso: string | null): string {
@@ -459,20 +502,7 @@ export function LearningPanel() {
             ) : (
               <ul className="space-y-1.5">
                 {schedulerQ.data.jobs.map((j) => {
-                  const refine = j.summary?.refine;
-                  const filed =
-                    j.job === 'introspection'
-                      ? [
-                          j.summary?.observationsFiled ? `${j.summary.observationsFiled} observation(s) filed` : null,
-                          j.summary?.promotionsFiled ? `${j.summary.promotionsFiled} promotion(s) filed` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')
-                      : '';
-                  const outcome = refine
-                    ? `refine: ${REFINE_PHRASE[refine.status ?? ''] ?? refine.status}` +
-                      (refine.status === 'kept' && refine.applied ? ` (${refine.applied} applied)` : '')
-                    : filed || (j.summary?.error ? String(j.summary.error).slice(0, 80) : '');
+                  const outcome = jobOutcomeLine(j) || (j.summary?.error ? String(j.summary.error).slice(0, 80) : '');
                   return (
                     <li
                       key={j.job}

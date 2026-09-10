@@ -326,3 +326,14 @@ async def runScheduledJob(job: str):
     if job not in JOBS:
         raise HTTPException(status_code=404, detail=f'unknown job {job!r}')
     return await run_job_async(job)
+
+
+@router.get('/outcomes')
+async def outcomeReport(limit: int = 30):
+    """P5 outcome ledger: what the harness changed and whether it helped
+    (improved / flat / regressed / insufficient), newest first."""
+    import asyncio
+
+    from app.services.harness_outcome import outcome_report
+
+    return await asyncio.to_thread(outcome_report, max(1, min(200, int(limit))))

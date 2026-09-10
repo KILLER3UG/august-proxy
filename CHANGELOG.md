@@ -2,6 +2,48 @@
 
 ## Unreleased (working tree)
 
+**P5 outcome ledger + pending_skills retire + scheduler completeness +
+run4 test fixups** — the final fixes batch:
+
+- **P5 — the loop now checks its own work.** Every side-effecting learning
+  write — an approved harness proposal (approvable/promotion kinds, only
+  when the applier returns ok) and each KEPT refine edit — books a row in
+  the new `harness_outcome` ledger (migration 042) with its BEFORE episode
+  stats. A fourth scheduler job (`outcome`, 72h cadence
+  `outcomeIntervalHours`, window `outcomeWindowDays` default 14) later
+  measures the AFTER window and stores a verdict: improved / flat /
+  regressed / insufficient. Targeted changes (a skill for one failure
+  fingerprint) decide on recurrence even with tiny samples; corpus-wide
+  changes need ≥3 episodes per side and use resolved+0.5·rescued rate
+  with a 5pt hysteresis. `expectedOutcome` was written since day one and
+  never checked — this closes that. Route: `GET /api/curator/outcomes`;
+  LearningPanel job rows phrase the outcome line ("4 measured · 1
+  improved · 2 flat · 1 insufficient").
+- **Refine is a first-class scheduler job now.** It used to hide inside
+  `_skill_learning_pass`'s consolidation blob (my P0 wiring, folded into
+  the P2 design): own cadence (`refineIntervalHours`, 24h), own ledger
+  row, own run-now button. The wiring guard follows the move.
+- **`pending_skills` retired (migration 043)** — audited dead: schema +
+  cascade + rename-map entry, zero writers/readers/routes/UI. Skill
+  drafts wait in the proposals queue + Review Inbox; this orphan queue's
+  rows escaped retention forever (024/verifier_gate_log precedent). The
+  cascade delete stays guarded for old installs; CREATE removed from
+  schema so init doesn't resurrect it; fresh-install + upgrade both
+  asserted in test_sqlite_safety.
+- **Three real defects from the f66d6ec1 full-suite run fixed, one env
+  failure confirmed:** test_brain_config's `_ALLCamelKeys` (f66d6ec1
+  added `introspectionIntervalHours` without updating the defaults-set
+  test — plus this batch's 3 new keys), test_cognitive_gaps' boot service
+  assertion (renamed `consolidation` → `learning_scheduler` in boot
+  without the test), the refine-wiring guard now pins the scheduler job
+  instead of the consolidation source.
+  `test_golden_fpga_compile_and_gate` fails on `Error (292026):
+  Specified license file does not exist` — Quartus license, pre-existing
+  env issue, not code.
+- lazySection regression test given an explicit 30s budget (it renders
+  the whole SettingsPage graph and raced the backend suite under full
+  gates).
+
 **P2 unified learning scheduler + LearningPanel job ledger** — closing the
 last architectural debt from the learning-loop audit:
 

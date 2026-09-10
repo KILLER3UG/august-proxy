@@ -445,6 +445,13 @@ def decide_proposal(pid: str, decision: str, note: str = '') -> dict[str, Any]:
     applied: dict[str, Any] = {}
     if decision == 'approve':
         applied = _apply_approved(row)
+        if applied.get('ok') and str(row.get('kind') or '') in APPROVABLE_KINDS | PROMOTION_KINDS:
+            # P5 outcome ledger: book the side effect so the scheduled
+            # measurement job can answer "did it help?" later. Best-effort —
+            # a failed measurement row must never fail a live approval.
+            from app.services.harness_outcome import record_proposal_outcome
+
+            record_proposal_outcome({**row, 'applyResult': applied})
 
     row['status'] = (
         'applied' if decision == 'approve' and applied.get('ok') else

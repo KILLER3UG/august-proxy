@@ -330,24 +330,11 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
         )
     """
     )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS pending_skills (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL,
-            description TEXT,
-            trigger_text TEXT,
-            draft_path TEXT NOT NULL,
-            source_session_id TEXT,
-            source_workflow TEXT,
-            created_by TEXT DEFAULT 'auto-gen',
-            created_at TEXT DEFAULT (datetime('now')),
-            status TEXT DEFAULT 'pending',
-            use_count INTEGER DEFAULT 0,
-            last_surfaced_at TEXT
-        )
-    """
-    )
+    # pending_skills RETIRED (migration 043, 2026-09-11): the table had no
+    # writer, reader, router, or UI consumer anywhere — human-gated skill
+    # drafts go through the harness proposals queue + Review Inbox instead.
+    # The sessions.py cascade delete stays (try/except) for old installs
+    # until the drop lands.
     # Additive columns for blackboard workspace persistence (must run before indexes on them).
     ensure_column(conn, 'blackboard', 'workspace_path', "TEXT DEFAULT ''")
     ensure_column(conn, 'blackboard', 'folder_id', "TEXT DEFAULT ''")

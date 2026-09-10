@@ -59,6 +59,9 @@ numKeys: tuple[str, ...] = (
     'autoRouteMinSamples',
     'consolidationIntervalHours',
     'introspectionIntervalHours',
+    'refineIntervalHours',
+    'outcomeIntervalHours',
+    'outcomeWindowDays',
     'escalationBudgetPerDay',
     'episodicRetentionDays',
     'preferenceRetireDays',
@@ -125,6 +128,12 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # P2 unified learning scheduler: the introspection job's cadence, was a
     # hardcoded 6h in scheduled_introspection_loop; now config like the rest.
     ('introspectionIntervalHours', 'introspection_interval_hours', 6, 'num'),
+    # The refine pass's own cadence (it rides the scheduler, not
+    # consolidation, since the P5 batch); and the outcome-measurement job's
+    # cadence + pre/post episode window.
+    ('refineIntervalHours', 'refine_interval_hours', 24, 'num'),
+    ('outcomeIntervalHours', 'outcome_interval_hours', 72, 'num'),
+    ('outcomeWindowDays', 'outcome_window_days', 14, 'num'),
     ('consolidationModelSummarize', 'consolidation_model_summarize', False, 'bool'),
     # M-4: episodic_timeline retention window in days — the sweep
     # in consolidation._sweep_episodic prunes rows older than this.
@@ -309,6 +318,10 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 lo, hi = minSamplesRange
             elif key == 'consolidationIntervalHours' or key == 'introspectionIntervalHours':
                 lo, hi = consolidationIntervalRange
+            elif key in ('refineIntervalHours', 'outcomeIntervalHours'):
+                lo, hi = consolidationIntervalRange
+            elif key == 'outcomeWindowDays':
+                lo, hi = (3, 90)
             elif key == 'escalationBudgetPerDay':
                 lo, hi = escalationBudgetRange
             elif key == 'subagentMaxConcurrent':

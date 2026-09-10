@@ -33,7 +33,7 @@ vi.mock('@/api/subagents', () => ({
 }));
 
 describe('lazySection wrappers', () => {
-  it('renders the .then()-mapped Subagents section instead of crashing', async () => {
+  it('renders the .then()-mapped Subagents section instead of crashing', { timeout: 30_000 }, async () => {
     const { SECTION_COMPONENTS } = await import('@/sections/settings/SettingsPage');
     const Wrapper = SECTION_COMPONENTS['subagents'];
     expect(Wrapper).toBeTruthy();
@@ -46,9 +46,11 @@ describe('lazySection wrappers', () => {
       </QueryClientProvider>,
     );
     // The crash was a thrown promise-resolution, so waiting for the real
-    // heading is the assertion (fallback text must be replaced).
+    // heading is the assertion (fallback text must be replaced). The budget
+    // is generous: SettingsPage is a huge graph to dynamically import, and
+    // this can race the backend suite for CPU under full-gate runs.
     await waitFor(() => expect(screen.getByText('Subagents')).toBeTruthy(), {
-      timeout: 3000,
+      timeout: 15_000,
     });
   });
 });

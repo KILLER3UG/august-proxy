@@ -65,7 +65,26 @@ beforeEach(() => {
           lastStatus: 'ok',
           lastDurationS: 30,
           nextDueAt: null,
-          summary: { refine: { status: 'kept', applied: 3 } },
+          summary: { expired: 1 },
+        },
+        {
+          // P5 batch: refine is a first-class job with its own ledger row.
+          job: 'refine',
+          intervalHours: 24,
+          lastRunAt: new Date(Date.now() - 20 * 3_600_000 - 60_000).toISOString(),
+          lastStatus: 'ok',
+          lastDurationS: 4,
+          nextDueAt: null,
+          summary: { status: 'kept', applied: 3, refineId: 'refine_x' },
+        },
+        {
+          job: 'outcome',
+          intervalHours: 72,
+          lastRunAt: new Date(Date.now() - 5 * 3_600_000).toISOString(),
+          lastStatus: 'ok',
+          lastDurationS: 0.5,
+          nextDueAt: null,
+          summary: { measured: 4, v_improved: 1, v_flat: 2, v_insufficient: 1 },
         },
       ],
       runs: [],
@@ -87,8 +106,15 @@ describe('LearningPanel scheduler section', () => {
     const cons = screen.getByTestId('learning-scheduler-job-consolidation');
     expect(cons.textContent).toContain('every 24h');
     expect(cons.textContent).toContain('20h ago');
-    // UI suggestion 6: the refine verdict of the last pass is visible inline.
-    expect(cons.textContent).toContain('refine: kept (3 applied)');
+    // UI suggestion 6: the refine verdict of the last pass is visible
+    // inline — now on the refine job's OWN row (first-class cadence).
+    const refine = screen.getByTestId('learning-scheduler-job-refine');
+    expect(refine.textContent).toContain('refine: kept (3 applied)');
+    const outcome = screen.getByTestId('learning-scheduler-job-outcome');
+    expect(outcome.textContent).toContain('4 measured');
+    expect(outcome.textContent).toContain('1 improved');
+    expect(outcome.textContent).toContain('2 flat');
+    expect(outcome.textContent).toContain('1 insufficient');
   });
 
   it('run now posts to the scheduler job route', async () => {

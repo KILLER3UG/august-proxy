@@ -228,8 +228,40 @@ def _consolidation_job() -> dict[str, Any]:
     return {k: v for k, v in summary.items() if not isinstance(v, (list, tuple))}
 
 
+def _outcome_job() -> dict[str, Any]:
+    """P5: measure due harness_outcome rows (pre/post episode stats)."""
+    from app.services.harness_outcome import measure_pending
+
+    return measure_pending()
+
+
+def _refine_job() -> dict[str, Any]:
+    """The gated refine pass as its OWN cadence.
+
+    It used to ride inside _skill_learning_pass (consolidation, 24h): a
+    refine batch could only land when memory consolidation ran, and its
+    ledger row hid inside the consolidation blob. As a first-class job it
+    gets its own due-ness, its own ledger row, and its own run-now button —
+    and _skill_learning_pass no longer calls it (see consolidation.py).
+    """
+    from app.services.refine_store import get_refine_config, run_scheduled_refine
+
+    if not get_refine_config()['autoRefine']:
+        return {'status': 'disabled'}
+    out = run_scheduled_refine()
+    # Compact ledger row: keep status + counts, drop the raw model output
+    # blob (the applied list lives in the refine journal, not here).
+    detail = {k: v for k, v in out.items() if k != 'result'}
+    result = out.get('result')
+    if isinstance(result, dict) and isinstance(result.get('applied'), list):
+        detail['applied'] = len(result['applied'])
+    return detail
+
+
 _register(Job('introspection', _introspection_job, _config_interval('introspectionIntervalHours', 6.0)))
 _register(Job('consolidation', _consolidation_job, _config_interval('consolidationIntervalHours', 24.0)))
+_register(Job('refine', _refine_job, _config_interval('refineIntervalHours', 24.0)))
+_register(Job('outcome', _outcome_job, _config_interval('outcomeIntervalHours', 72.0)))
 
 
 # ── Execution ─────────────────────────────────────────────────────────────

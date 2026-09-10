@@ -82,7 +82,8 @@ _EXPECTED_SNAKE_TABLES = (
     'episodic_timeline',
     'exam_questions',
     'exam_attempts',
-    'pending_skills',
+    # pending_skills retired (migration 043) — a DB must NOT retain it;
+    # asserted absent below instead of expected.
     'blackboard',
     'sessions',
     'messages',
@@ -128,6 +129,39 @@ def test_snake_case_tables_after_init(isolatedData):
         assert camel not in tables
     # Empty legacy heuristics table is dropped at init.
     assert 'learned_heuristics' not in tables
+    # pending_skills retired by migration 043 — a fresh init must not carry it.
+    assert 'pending_skills' not in tables
+
+
+def test_pending_skills_dropped_on_upgrade(tmp_path, monkeypatch) -> None:
+    """An install that predates the retire keeps the table; init must drop it
+    (the migration runs on upgrade, not just fresh creates)."""
+    import sqlite3
+
+    db = tmp_path / 'brain.sqlite'
+    conn = sqlite3.connect(str(db))
+    conn.executescript(
+        'CREATE TABLE pending_skills (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, draft_path TEXT NOT NULL);'
+        "INSERT INTO pending_skills (name, draft_path) VALUES ('demo-pending-skill', '/tmp/x.md');"
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setenv('AUGUST_BRAIN_SQLITE_FILE', str(db))
+    from app.services import memory_conn, memory_store
+
+    memory_conn.close()  # drop the fixture's cached thread-local conn
+    try:
+        memory_store.init()
+    finally:
+        memory_conn.close()
+    tables = {
+        r[0]
+        for r in sqlite3.connect(str(db)).execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    assert 'pending_skills' not in tables
+    assert 'facts' in tables  # real schema still came up
 
 
 def test_schema_migration_camel_to_snake(monkeypatch, tmp_path):

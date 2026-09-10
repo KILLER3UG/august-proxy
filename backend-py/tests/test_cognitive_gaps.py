@@ -28,8 +28,11 @@ async def test_cognitive_boot_start_stop():
     services = status.get('services') or {}
     assert 'cron_scheduler' in services
     assert 'daemon_manager' in services
-    # M4 consolidation v2 registers as a tracked service at boot.
-    assert 'consolidation' in services
+    # M4 consolidation v2 became one job of the P2 unified scheduler — the
+    # tracked boot service is 'learning_scheduler' now (f66d6ec1 renamed it
+    # without updating this assertion; caught by the 2026-09-11 full run).
+    assert 'learning_scheduler' in services
+    assert 'consolidation' not in services
     await stop_cognitive_services()
     after = get_boot_status()
     assert after.get('started') is False

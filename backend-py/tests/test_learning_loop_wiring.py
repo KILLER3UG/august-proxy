@@ -30,13 +30,21 @@ def _read(rel: str) -> str:
 
 class TestRefineWiring:
     def test_consolidation_runs_the_refine_pass(self) -> None:
-        """The scheduled learning pass must call the refine entry point
-        (sync wrapper on the cadence thread, async fn underneath)."""
-        src = inspect.getsource(consolidation._skill_learning_pass)
-        assert 'run_scheduled_refine' in src, (
-            'refine store is dead again: nothing in the consolidation cadence '
-            'calls the refine pass'
+        """The refine entry point must have a live scheduled caller.
+
+        It moved from _skill_learning_pass into the unified scheduler as the
+        'refine' job (own cadence + ledger row + run-now), so the assertion
+        follows the wiring: the job exists and calls the entry point."""
+        import inspect
+
+        from app.services import learning_scheduler as ls
+
+        refine = ls.JOBS.get('refine')
+        assert refine is not None, (
+            'refine job unregistered: the scheduler no longer starts the '
+            'refine pass and the store is dead again'
         )
+        assert 'run_scheduled_refine' in inspect.getsource(refine.fn)
 
     def test_refine_pass_producer_uses_configured_hint(self) -> None:
         """The auto-refine config's producerModel must reach the LLM client —
