@@ -9,6 +9,15 @@ This module provides:
 - Format converters (Anthropic ↔ OpenAI tool definitions) — re-exported from proxy_tool_defs
 - Tool execution dispatch for proxy-managed tools
 - Tool result formatting
+
+SECURITY CONTRACT (documented per audit batch 2026-09-09): a /v1 client that
+DECLARES a tool named ``bash`` has it EXECUTED SERVER-SIDE (as run_command)
+instead of receiving an ordinary ``tool_use`` block to run itself. That is
+intentional — but it means the gateway API key is a code-execution credential.
+It is reachable only behind require_gateway_key (default-closed 403; desktop
+binds 127.0.0.1), and execution still runs through the sandbox policy +
+non-overridable hardline checks. Do not share the gateway key with parties
+you would not let run shell commands on this machine.
 """
 
 from __future__ import annotations
@@ -356,7 +365,6 @@ async def execute_managed_proxy_tool(
     args: dict[str, object],
     workspace_path: str | None = None,
     onProgress: Callable[[str], None] | None = None,
-    parentSignal: object = None,
 ) -> object:
     """Execute a managed proxy tool via the real tool_registry.
 
@@ -400,7 +408,6 @@ async def execute_managed_openai_tool_calls(
     messages: list[dict[str, object]],
     workspace_path: str | None = None,
     onToolEvent: Callable[[dict[str, object]], None] | None = None,
-    parentSignal: object = None,
 ) -> list[dict[str, object]]:
     """Execute OpenAI-format managed tool calls.
 
@@ -442,7 +449,7 @@ async def execute_managed_openai_tool_calls(
         except (json.JSONDecodeError, TypeError):
             parsedArgs = {}
         try:
-            result = await execute_managed_proxy_tool(toolName, parsedArgs, workspace_path, parentSignal=parentSignal)
+            result = await execute_managed_proxy_tool(toolName, parsedArgs, workspace_path)
             results.append(
                 {'tool_call_id': tc.get('id'), 'role': 'tool', 'content': format_managed_tool_result(toolName, result)}
             )

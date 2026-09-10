@@ -21,32 +21,12 @@ _RESERVEDNames: frozenset[str] = frozenset()
 _daemonContext: contextvars.ContextVar[bool] = contextvars.ContextVar('daemon_context', default=False)
 # Monotonic generation for tool-definition caches (increments on register/clear).
 _generation: int = 0
-_DAEMONBlockedCommandPatterns = [
-    'rm ',
-    ' rm',
-    'mv ',
-    ' mv',
-    'del ',
-    ' del',
-    'format',
-    'mkfs',
-    'dd ',
-    ' dd',
-    'shutdown',
-    'reboot',
-    'halt',
-    ':(){:|:&};:',
-    'curl -X POST',
-    'wget -O',
-    'chmod 777',
-    'chown',
-]
 
 
 def setDaemonContext(*, pollInterval: int = 30) -> None:
     """v2: Mark subsequent tool calls as coming from a daemon.
 
-    While this context is set, `run_command` rejects mutating commands.
+    While set, the workbench treats calls as unattended (no approval prompts).
     The `poll_interval` is recorded for use in adaptive TTL (Phase 10.1).
     """
     _daemonContext.set(True)
@@ -60,12 +40,6 @@ def clearDaemonContext() -> None:
 def isDaemonContext() -> bool:
     """v2: Check if currently in daemon context."""
     return _daemonContext.get()
-
-
-def isCommandBlocked(command: str) -> bool:
-    """v2: Check if a command matches a mutating pattern."""
-    cmdLower = command.lower()
-    return any((p in cmdLower for p in _DAEMONBlockedCommandPatterns))
 
 
 def register(
@@ -239,8 +213,6 @@ ARG_SHAPE_EXCEPTIONS = (TypeError, AttributeError, KeyError, IndexError)
 async def dispatch(name: str, args: dict[str, object]) -> str:
     """Dispatch a tool call by name and arguments.
 
-    v2: When called from a daemon (set via set_daemon_context), `run_command`
-    rejects mutating commands per the daemon blocklist.
     Host/desktop tools refuse when the host agent is configured but down.
     """
     tool = _registry.get(name)
@@ -256,12 +228,10 @@ async def dispatch(name: str, args: dict[str, object]) -> str:
                     'which is disconnected. Set AUGUST_HOST_AGENT_URL to a healthy '
                     'agent or clear it to use local desktop automation.'
                 )
-    if name == 'run_command' and isDaemonContext():
-        command = args.get('command', '')
-        if not isinstance(command, str):
-            command = ''
-        if isCommandBlocked(command):
-            return f"[BLOCKED] run_command rejected in daemon context: '{command}' contains a mutating pattern. Daemons are read-only."
+    # (Daemon run_command blocklist removed 2026-09-09: setDaemonContext had
+    # no callers in-repo, so the gate could never fire. The contextvar trio
+    # stays — the workbench _unattended check reads it — and re-adding a
+    # daemon command gate belongs with an actual daemon tool-execution path.)
     try:
         handler = tool['handler']
         if not callable(handler):

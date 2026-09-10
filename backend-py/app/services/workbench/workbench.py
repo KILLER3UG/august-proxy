@@ -3085,7 +3085,18 @@ async def _sendWorkbenchMessageStreamImpl(
                         except Exception:
                             logger.debug('recurring-task subagent enqueue failed', exc_info=True)
 
-                    asyncio.create_task(_run_recurring_subagent())
+                    _recurringTask = asyncio.create_task(_run_recurring_subagent())
+                    # Register the handle at CREATION, not from inside the
+                    # coroutine: a session delete landing before the task's
+                    # first await (semaphore acquire in executeSubAgent's
+                    # path) would otherwise leave it uncancellable (audit
+                    # batch 2026-09-09).
+                    try:
+                        from app.services.workbench.subagent import register_recurring_task
+
+                        register_recurring_task(session.id, _recurringTask)
+                    except Exception:
+                        logger.debug('recurring-task registration failed', exc_info=True)
                 except Exception:
                     logger.debug('recurring-task subagent dispatch failed', exc_info=True)
     except Exception:
@@ -5559,8 +5570,13 @@ async def _sendWorkbenchMessageStreamImpl(
         session.turnCount = getattr(session, 'turnCount', 0) + 1
         with _trace.span('persist'):
             # Persist session to SQLite (primary); JSON export is best-effort.
+            # immediate=True: turnOpen=False was JUST set, and the debounced
+            # path leaves a ~150 ms window where a crash loses the final
+            # assistant message and recovery paints a phantom [interrupted]
+            # marker (audit batch 2026-09-09). The barrier saves are already
+            # synchronous; the turn-end close must be too.
             try:
-                saveSessions(dirty=session.id)
+                saveSessions(immediate=True, dirty=session.id)
             except Exception as exc:
                 logger.exception('workbench session persist failed; still emitting done')
                 if emit:
@@ -6312,6 +6328,15 @@ def _resolveCommandApproval(
     )
 
 
+# Shell-family tools exempt from the read-only SANDBOX pre-check: run_command
+# carries reads (type/cat/grep/dir) that must stay usable in read-only mode,
+# and its own soft/OS preflight + sandbox backend deny the mutating forms.
+# Keep in sync with the shell entries of tool_policy._PLAN_BLOCKED_EXACT.
+_READ_ONLY_SHELL_PASSTHROUGH = frozenset({
+    'run_command', 'run_commands', 'bash', 'bashtool', 'shell', 'exec', 'execute', 'terminal',
+})
+
+
 def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, object]) -> str | None:
     """Check if a tool execution is blocked by guard mode or permissions.
 
@@ -6321,24 +6346,16 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
     """
     mode = normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
 
-    # Codex read-only sandbox: block mutating file tools. Shell still goes through
-    # run_command soft/OS preflight (which denies redirects / mutating prefixes).
+    # Codex read-only sandbox: block mutating tools via the CENTRAL classifier
+    # (tool_policy.is_mutating — resolves bulk nested ops, edit_lines, mkdir,
+    # the install/browser families; the old hand-maintained 11-name list had
+    # drifted in both directions). Shell is deliberately excluded: run_command
+    # still goes through the soft/OS preflight, which denies redirects and
+    # mutating prefixes while leaving `type`/`cat`/`grep` reads usable.
     sandbox_mode = (getattr(session, 'sandboxMode', None) or 'workspace-write').strip().lower()
     if sandbox_mode in ('read-only', 'readonly', 'read'):
         name = (toolName or '').lower()
-        if name in {
-            'write_file',
-            'edit_file',
-            'create_file',
-            'str_replace',
-            'str_replace_editor',
-            'apply_patch',
-            'patch_file',
-            'delete_file',
-            'remove_file',
-            'move_file',
-            'rename_file',
-        }:
+        if name not in _READ_ONLY_SHELL_PASSTHROUGH and is_mutating(name, args):
             return (
                 f"Tool '{toolName}' is blocked by read-only sandbox. "
                 'Switch sandbox mode to Workspace or Full access to make changes.'

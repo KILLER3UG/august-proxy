@@ -27,10 +27,17 @@ vi.mock('@/api/subagents', () => ({
   stopAll: vi.fn(),
   steer: vi.fn(),
   continueWorkstream: vi.fn(),
+  getSubagentTranscript: vi.fn(async () => ({
+    events: [{ type: 'text', content: 'replayed output' }],
+  })),
 }));
 
 vi.mock('@/components/chat/SubagentTimeline', () => ({
-  SubagentTimeline: () => <div data-testid="subagent-timeline">Live subagent timeline</div>,
+  SubagentTimeline: ({ state }: { state: { status: string } }) => (
+    <div data-testid="subagent-timeline" data-status={state.status}>
+      Live subagent timeline
+    </div>
+  ),
 }));
 
 const listAgentsMock = vi.mocked(listWorkbenchSessionAgents);
@@ -198,5 +205,29 @@ describe('RightDrawerSubagentsSection', () => {
     renderSection();
     const row = await screen.findByTestId('right-drawer-subagent-q-1');
     expect(row.textContent).toContain('queued #2/2');
+  });
+
+  it('replayed settled error run keeps failure semantics (audit 2026-09-09)', async () => {
+    listAgentsMock.mockResolvedValue({
+      agents: [{ taskId: 'r-err', agentId: 'goodall', goal: 'Errored run', status: 'error' }],
+      meta: {},
+    });
+    renderSection();
+    fireEvent.click(await screen.findByTestId('right-drawer-subagent-r-err'));
+    const tl = await screen.findByTestId('subagent-timeline');
+    // The old replay mapped everything except 'failed' to 'completed' — an
+    // errored run reloaded from disk must still read as failed.
+    expect(tl.getAttribute('data-status')).toBe('failed');
+  });
+
+  it('replayed settled cancelled run stays cancelled', async () => {
+    listAgentsMock.mockResolvedValue({
+      agents: [{ taskId: 'r-cancel', agentId: 'goodall', goal: 'Cancelled run', status: 'cancelled' }],
+      meta: {},
+    });
+    renderSection();
+    fireEvent.click(await screen.findByTestId('right-drawer-subagent-r-cancel'));
+    const tl = await screen.findByTestId('subagent-timeline');
+    expect(tl.getAttribute('data-status')).toBe('cancelled');
   });
 });

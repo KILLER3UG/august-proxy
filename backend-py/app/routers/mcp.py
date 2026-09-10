@@ -31,8 +31,8 @@ class MCPServerCreate(CamelModel):
 
 @router.get('/servers')
 async def listServers():
-    """List all registered MCP servers."""
-    return {'servers': mcp_client.listRegisteredServers()}
+    """List all registered MCP servers (env/header VALUES masked)."""
+    return {'servers': [mcp_client.redactedServerRow(s) for s in mcp_client.listRegisteredServers()]}
 
 
 @router.get('/directory')
@@ -74,20 +74,27 @@ async def mcpDirectory():
 
 @router.post('/servers')
 async def createServer(body: MCPServerCreate):
-    """Register a new MCP server (does not start the process yet)."""
+    """Register a new MCP server (does not start the process yet).
+
+    400s when the stdio launch fails validation (shell command, catastrophic
+    args) — the check is non-overridable and lives in mcp_client.
+    """
     if not body.command and not body.url:
         raise HTTPException(status_code=400, detail='command or url is required')
     # stdio servers need a command; URL-only is stored for future SSE transport.
-    server = mcp_client.registerServer(
-        body.name,
-        body.command or body.url or 'true',
-        args=list(body.args) if body.args else None,
-        env=dict(body.env) if body.env else None,
-        enabled=body.enabled,
-        transport=body.transport or 'stdio',
-        url=body.url or '',
-        persist=True,
-    )
+    try:
+        server = mcp_client.registerServer(
+            body.name,
+            body.command or body.url or 'true',
+            args=list(body.args) if body.args else None,
+            env=dict(body.env) if body.env else None,
+            enabled=body.enabled,
+            transport=body.transport or 'stdio',
+            url=body.url or '',
+            persist=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if body.catalog_id:
         mcp_client.set_server_meta(str(server.get('id')), catalogId=body.catalog_id)
         server['catalogId'] = body.catalog_id
@@ -95,15 +102,15 @@ async def createServer(body: MCPServerCreate):
         server['url'] = body.url
     if body.transport:
         server['transport'] = body.transport
-    return server
+    return mcp_client.redactedServerRow(server)
 
 
 @router.get('/servers/{serverId}')
 async def getServer(serverId: str):
-    """Get an MCP server by ID."""
+    """Get an MCP server by ID (env/header VALUES masked)."""
     for s in mcp_client.listRegisteredServers():
         if s.get('id') == serverId:
-            return s
+            return mcp_client.redactedServerRow(s)
     raise HTTPException(status_code=404, detail='Server not found')
 
 
@@ -147,17 +154,21 @@ async def updateServer(serverId: str, body: MCPServerUpdate):
         pass
     current_args = [str(a) for a in as_list(current.get('args'), [])]
     current_env = {str(k): str(v) for k, v in as_dict(current.get('env'), {}).items()}
-    return mcp_client.registerServer(
-        body.name or str(current.get('name') or ''),
-        command or url or 'true',
-        args=body.args if body.args is not None else current_args,
-        env=body.env if body.env is not None else current_env,
-        enabled=body.enabled if body.enabled is not None else bool(current.get('enabled', True)),
-        transport=body.transport or str(current.get('transport') or 'stdio'),
-        url=url,
-        server_id=str(current.get('id')),
-        persist=True,
-    )
+    try:
+        updated = mcp_client.registerServer(
+            body.name or str(current.get('name') or ''),
+            command or url or 'true',
+            args=body.args if body.args is not None else current_args,
+            env=body.env if body.env is not None else current_env,
+            enabled=body.enabled if body.enabled is not None else bool(current.get('enabled', True)),
+            transport=body.transport or str(current.get('transport') or 'stdio'),
+            url=url,
+            server_id=str(current.get('id')),
+            persist=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return mcp_client.redactedServerRow(updated)
 
 
 def _resolve_server(server_id: str) -> dict[str, object] | None:
@@ -226,10 +237,10 @@ async def listMcpTools():
 
 @router.get('/config')
 async def getMcpConfig():
-    """Get MCP configuration snapshot."""
+    """Get MCP configuration snapshot (secrets masked)."""
     servers = mcp_client.listRegisteredServers()
     return {
         'servers': [s.get('id') for s in servers],
         'count': len(servers),
-        'details': servers,
+        'details': [mcp_client.redactedServerRow(s) for s in servers],
     }

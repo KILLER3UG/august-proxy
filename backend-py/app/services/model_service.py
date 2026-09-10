@@ -361,7 +361,14 @@ async def _aggregateModels() -> list[dict[str, object]]:
         store = config_service.getProvidersStore()
         for entry_raw in as_list(store.get('providers'), []):
             entry = as_dict(entry_raw)
-            if not entry.get('enabled') or not entry.get('apiKey'):
+            # Only `enabled` gates the dropdown — NOT a literal apiKey.
+            # Chat routes through resolver.resolve(), which serves enabled
+            # providers whose credentials come from env vars / config.json
+            # (resolveApiKey) or not at all (local gateways like Ollama/LM
+            # Studio). The old raw-field check hid those models in the chat
+            # picker while Model settings listed them — the "dropdown is
+            # missing models the settings show" bug.
+            if not entry.get('enabled'):
                 continue
             for m_raw in as_list(entry.get('models'), []):
                 m = as_dict(m_raw)

@@ -235,6 +235,28 @@ export function RightDrawer({
                   aria-label="Workbench sections"
                   data-testid="drawer-tab-strip"
                   className="-mx-3 flex h-full min-w-0 items-stretch overflow-x-auto px-1"
+                  onKeyDown={(e) => {
+                    // ARIA tabs automatic activation: arrows/Home/End move the
+                    // selection and carry DOM focus to the newly active tab.
+                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+                    if (sections.length === 0) return;
+                    e.preventDefault();
+                    const cur = activeSection ? sections.indexOf(activeSection) : -1;
+                    const next =
+                      e.key === 'Home'
+                        ? 0
+                        : e.key === 'End'
+                          ? sections.length - 1
+                          : e.key === 'ArrowRight'
+                            ? (cur + 1 + sections.length) % sections.length
+                            : (cur - 1 + sections.length) % sections.length;
+                    const target = sections[next];
+                    if (!target) return;
+                    setActiveRightDrawerSection(target);
+                    (e.currentTarget as HTMLElement)
+                      .querySelector<HTMLElement>(`[data-testid="drawer-tab-${target}"]`)
+                      ?.focus();
+                  }}
                 >
                   {sections.map((sectionId) => (
                     <DrawerTab key={sectionId} sectionId={sectionId} active={sectionId === activeSection} />
@@ -314,10 +336,20 @@ function DrawerTab({ sectionId, active }: { sectionId: RightDrawerSectionId; act
     <div
       role="tab"
       aria-selected={active}
+      // ARIA tabs pattern: roving tabindex (the active tab is the single tab
+      // stop) + Enter/Space activation; arrow navigation lives on the tablist
+      // (audit batch 2026-09-09 — the strip used to be click-only divs).
+      tabIndex={active ? 0 : -1}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          setActiveRightDrawerSection(sectionId);
+        }
+      }}
       data-testid={`drawer-tab-${sectionId}`}
       onClick={() => setActiveRightDrawerSection(sectionId)}
       className={cn(
-        'group relative flex min-w-0 cursor-pointer select-none items-center gap-1.5 px-2.5 pt-1',
+        'group relative flex min-w-0 cursor-pointer select-none items-center gap-1.5 rounded-t px-2.5 pt-1 outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
         active ? 'text-foreground' : 'text-muted-foreground/70 hover:text-foreground',
       )}
     >

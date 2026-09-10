@@ -192,7 +192,6 @@ async def resolveManagedOpenaiToolCalls(
     clientToolNames: set[str],
     workspacePath: str | None = None,
     onToolEvent: Callable[[dict[str, object]], None] | None = None,
-    parentSignal: object = None,
     client: object = None,
     sampling: dict[str, object] | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object] | None]:
@@ -247,7 +246,7 @@ async def resolveManagedOpenaiToolCalls(
             currentMessages.append(message)
             break
         toolResults = await execute_managed_openai_tool_calls(
-            classification['managed_tool_calls'], knownTools, currentMessages, workspacePath, onToolEvent, parentSignal
+            classification['managed_tool_calls'], knownTools, currentMessages, workspacePath, onToolEvent
         )
         currentMessages.append(message)
         currentMessages.extend(toolResults)

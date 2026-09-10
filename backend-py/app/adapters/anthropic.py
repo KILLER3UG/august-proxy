@@ -482,7 +482,6 @@ async def resolveManagedAnthropicToolUses(
     clientToolNames: set[str],
     workspacePath: str | None = None,
     onToolEvent: Callable[[dict[str, object]], None] | None = None,
-    parentSignal: object = None,
     client: BaseProviderClient | None = None,
     sampling: dict[str, object] | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object] | None]:
@@ -632,7 +631,7 @@ async def resolveManagedAnthropicToolUses(
                 )
                 continue
             try:
-                result = await execute_managed_proxy_tool(toolName, toolInput, workspacePath, parentSignal=parentSignal)
+                result = await execute_managed_proxy_tool(toolName, toolInput, workspacePath)
                 tr = ToolResultBlock(tool_use_id=toolUseId, content=format_managed_tool_result(toolName, result))
                 toolResults.append(_toolResultBlockMessage(tr))
             except Exception as exc:

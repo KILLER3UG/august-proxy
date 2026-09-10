@@ -18,7 +18,7 @@ import {
 } from '@/api/workbench';
 import { getSubagentTranscript } from '@/api/subagents';
 import type { WorkbenchTodo } from '@/types/workbench';
-import type { MessageBlock, AppendBlockEvent } from '@/types/chat';
+import type { MessageBlock, AppendBlockEvent, SubagentBlockState } from '@/types/chat';
 import { appendBlockEvent } from '@/sections/chat/stream/append-block-event';
 import { getAgentRoleLabel } from '@/lib/tool-labels';
 import { useSessionStreamStore } from '@/sections/chat/stream/session-stream-store';
@@ -90,6 +90,18 @@ function statusWord(status: string): string {
   if (ACTIVE_STATUSES.has(status)) return 'working';
   if (status === 'completed' || status === 'recovered') return 'done';
   if (status === 'cancelled') return 'cancelled';
+  return 'failed';
+}
+
+/** Map a persisted roster status onto the replay timeline's state union.
+ *  The old one-liner collapsed everything except 'failed' into 'completed'
+ *  — a reloaded error/blocked/cancelled/partial run must keep its failure
+ *  semantics (audit batch 2026-09-09). Unknown statuses default to
+ *  'failed', mirroring statusWord's default. */
+function replayStatus(status: string): SubagentBlockState['status'] {
+  if (status === 'completed' || status === 'recovered') return 'completed';
+  if (status === 'cancelled') return 'cancelled';
+  if (status === 'partial') return 'partial';
   return 'failed';
 }
 
@@ -588,7 +600,7 @@ export function RightDrawerSubagentsSection({
                 parentToolId: '',
                 agentId: selectedAgent.agentId,
                 task: selectedAgent.goal,
-                status: selectedAgent.status === 'failed' ? 'failed' : 'completed',
+                status: replayStatus(selectedAgent.status),
                 startedAt: 0,
                 blocks: replayBlocks,
                 error: run?.error,
@@ -677,7 +689,7 @@ export function RightDrawerSubagentsSection({
                   type="button"
                   onClick={() => stop.mutate(key)}
                   disabled={stop.isPending}
-                  className="absolute right-8 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground/50 opacity-0 transition group-hover:opacity-100 hover:bg-white/[0.08] hover:text-danger"
+                  className="absolute right-8 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground/50 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 hover:bg-white/[0.08] hover:text-danger"
                   aria-label={`Stop ${getAgentRoleLabel(agent.agentId)}`}
                   title="Stop this subagent"
                   data-testid={`stop-subagent-${key}`}

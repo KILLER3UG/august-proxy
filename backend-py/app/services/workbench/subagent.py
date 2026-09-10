@@ -73,17 +73,35 @@ def _capability_filter(capability: str | None) -> set[str] | None:
 # cancel_subagent_tasks_for_session.
 _subagent_session_tasks: dict[str, set[asyncio.Task]] = {}
 
+# Recurring-task sub-agents: the workbench chat loop creates these as detached
+# tasks; the handle is registered HERE at creation time (not from inside the
+# coroutine) so session teardown can cancel them even in the few-millisecond
+# window before executeSubAgent self-registers (audit batch 2026-09-09).
+_recurring_session_tasks: dict[str, set[asyncio.Task]] = {}
+
+
+def register_recurring_task(session_id: str, task: asyncio.Task) -> None:
+    """Track a freshly-created recurring sub-agent task for cancellation."""
+    if not session_id:
+        return
+    _recurring_session_tasks.setdefault(session_id, set()).add(task)
+    task.add_done_callback(
+        lambda t, sid=session_id: _recurring_session_tasks.get(sid, set()).discard(t)
+    )
+
 
 def cancel_subagent_tasks_for_session(session_id: str) -> int:
     """Cancel every in-flight executeSubAgent task bound to a session.
 
     Used by the session-delete path (sessions.cancel_session_work) so
     fire-and-forget recurring-task sub-agents cannot outlive their session.
-    Returns the number of tasks cancelled.
+    Covers both the self-registered worker tasks and the detached recurring
+    tasks registered at creation. Returns the number of tasks cancelled.
     """
     if not session_id:
         return 0
     tasks = _subagent_session_tasks.pop(session_id, set())
+    tasks |= _recurring_session_tasks.pop(session_id, set())
     cancelled = 0
     for t in tasks:
         if not t.done():
@@ -243,10 +261,14 @@ async def executeSubAgent(
     # concurrent workers each see their own depth and a nested spawn inherits
     # depth+1 — the old ``setattr(session, 'subagent_depth', …)`` raced across
     # workers and leaked to later root spawns.
+    # The token is retained so the finally below restores the PREVIOUS value:
+    # a caller that awaits executeSubAgent twice in one long-lived task must
+    # not see the first call's depth (audit batch 2026-09-09).
+    _depthToken = None
     try:
         from app.services.workbench.context import currentSubagentDepth
 
-        currentSubagentDepth.set(runtimeDepth)
+        _depthToken = currentSubagentDepth.set(runtimeDepth)
     except Exception:
         pass
 
@@ -1291,3 +1313,8 @@ async def executeSubAgent(
         _unregister_current_subagent(getattr(session, 'id', '') or '', _subagentTask)
         currentSubagentTaskId.reset(tidToken)
         currentSessionId.reset(token)
+        if _depthToken is not None:
+            try:
+                currentSubagentDepth.reset(_depthToken)
+            except Exception:
+                pass

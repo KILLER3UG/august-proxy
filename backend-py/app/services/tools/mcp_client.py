@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from pathlib import Path
@@ -48,6 +49,72 @@ _refresh_task: asyncio.Task | None = None
 
 def _mcpConfigPath() -> Path:
     return dataPath(MCP_CONFIG_FILE)
+
+
+# ── Launch validation & response redaction (audit batch 2026-09-09) ──────
+# MCP stdio servers run as real child processes with the app's privileges.
+# A registered command must never be a shell (arbitrary code exec dressed as
+# an integration) and the command+args must not name a catastrophic
+# invocation. Enforced at BOTH registration and spawn, so a hand-edited
+# mcp-servers.json still cannot launch. Not overridable by config.
+_SHELL_COMMAND_NAMES = frozenset({
+    'cmd', 'cmd.exe', 'command.com', 'powershell', 'powershell.exe',
+    'pwsh', 'pwsh.exe', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
+})
+_CATASTROPHIC_ARG_RE = re.compile(
+    r'(rm\s+(-[a-z]*[rf][a-z]*\s+)+/|'
+    r'\bmkfs(\.|\s)|'
+    r'\bdd\b.*\bof=/dev/|'
+    r':\(\)\s*\{\s*:\|:\s*&|'
+    r'format\s+[a-z]:|'
+    r'\b(shutdown|reboot|halt|poweroff)\b|'
+    r'\bdel\s+/[sq]|rd\s+/s)',
+    re.IGNORECASE,
+)
+
+
+def validateStdioLaunch(command: str, args: list[str]) -> str | None:
+    """Return a refusal reason for a stdio launch, or None when allowed."""
+    from pathlib import PurePosixPath, PureWindowsPath
+
+    cmd = (command or '').strip()
+    if not cmd:
+        return 'stdio MCP server requires a command'
+    # A URL-only row stored under stdio transport (legacy shape) is not a
+    # local launch — never scan it (the spawn path treats it as a URL too).
+    if cmd.lower().startswith(('http://', 'https://')):
+        return None
+    base = PureWindowsPath(PurePosixPath(cmd.lower()).name).name
+    if base in _SHELL_COMMAND_NAMES:
+        return (
+            f'MCP stdio servers cannot run a shell ({cmd}) — that is arbitrary '
+            'command execution. Register the real binary (npx/uvx/python/node) instead.'
+        )
+    joined = ' '.join([cmd, *args])
+    if _CATASTROPHIC_ARG_RE.search(joined):
+        return (
+            'MCP launch refused: the command/args match a catastrophic pattern '
+            '(filesystem destruction, fork bomb, or system shutdown).'
+        )
+    return None
+
+
+def redactedServerRow(server: dict[str, object]) -> dict[str, object]:
+    """Copy of a server row with env/header VALUES masked.
+
+    The registry keeps plaintext (the spawned process needs the real values —
+    same storage model as providers.json), but API responses must not echo
+    secrets. Uses the app-wide ``secrets.mask`` so the UI still shows a
+    fingerprint. Keys survive (names are not secret; values are).
+    """
+    from app.lib.secrets import mask
+
+    row = dict(server)
+    for field in ('env', 'headers'):
+        vals = row.get(field)
+        if isinstance(vals, dict):
+            row[field] = {str(k): (mask(str(v)) or '') for k, v in vals.items()}
+    return row
 
 
 _servers: dict[str, dict[str, object]] = {}
@@ -113,8 +180,16 @@ def registerServer(
 
     ``headers`` is an optional per-server header map (e.g. Authorization)
     sent on remote (SSE/HTTP) GET and POST calls.
+
+    Raises ``ValueError`` when a stdio launch fails validation (shell as
+    command, catastrophic args) — callers surface it as a 400 / tool error.
     """
     serverId = server_id or f'mcp_{uuid.uuid4().hex[:8]}'
+    transport = transport or 'stdio'
+    if transport not in ('sse', 'http'):
+        refusal = validateStdioLaunch(command, [str(a) for a in (args or [])])
+        if refusal:
+            raise ValueError(f'Error: MCP registration refused — {refusal}')
     server: dict[str, object] = {
         'id': serverId,
         'name': name,
@@ -123,7 +198,7 @@ def registerServer(
         'env': env or {},
         'status': 'registered',
         'enabled': enabled,
-        'transport': transport or 'stdio',
+        'transport': transport,
         'url': url or '',
     }
     if headers:
@@ -382,6 +457,15 @@ async def _startServerProcessLocked(
     if isinstance(env_cfg, dict):
         env.update({str(k): str(v) for k, v in env_cfg.items()})
     args_list = [as_str(a) for a in as_list(server.get('args'))]
+    # Defense-in-depth: registration validated this, but a hand-edited
+    # mcp-servers.json must still not launch a shell or a catastrophic
+    # command (audit batch 2026-09-09 — non-overridable).
+    refusal = validateStdioLaunch(as_str(server.get('command')), args_list)
+    if refusal:
+        server['status'] = 'error'
+        server['error'] = refusal
+        logger.warning('MCP spawn refused for %s: %s', serverId, refusal)
+        return None
     try:
         # stderr must be drained or the MCP process can block once the pipe
         # buffer fills (common with FastMCP / uvx logs on Windows).

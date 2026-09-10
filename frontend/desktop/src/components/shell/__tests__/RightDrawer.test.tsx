@@ -179,6 +179,40 @@ describe('RightDrawer tab-strip header (Zed-style)', () => {
     expect(artifactsTab.getAttribute('aria-selected')).toBe('false');
   });
 
+  it('arrow keys move the active tab and carry focus (ARIA tabs, audit 2026-09-09)', () => {
+    act(() => {
+      toggleRightDrawerSection('tasks');
+      toggleRightDrawerSection('artifacts');
+    });
+    setupDrawer();
+    const strip = document.querySelector('[data-testid="drawer-tab-strip"]')!;
+    const tasksTab = document.querySelector('[data-testid="drawer-tab-tasks"]') as HTMLElement;
+    const artifactsTab = document.querySelector(
+      '[data-testid="drawer-tab-artifacts"]',
+    ) as HTMLElement;
+    // Roving tabindex: the active tab is the single tab stop.
+    expect(artifactsTab.getAttribute('tabindex')).toBe('0');
+    expect(tasksTab.getAttribute('tabindex')).toBe('-1');
+    fireEvent.keyDown(strip, { key: 'ArrowRight' });
+    expect(tasksTab.getAttribute('aria-selected')).toBe('true');
+    expect(tasksTab.getAttribute('tabindex')).toBe('0');
+    expect(document.activeElement).toBe(tasksTab);
+  });
+
+  it('Enter activates the focused tab', () => {
+    act(() => {
+      toggleRightDrawerSection('tasks');
+      toggleRightDrawerSection('artifacts');
+    });
+    setupDrawer();
+    const tasksTab = document.querySelector(
+      '[data-testid="drawer-tab-tasks"]',
+    ) as HTMLElement;
+    tasksTab.focus();
+    fireEvent.keyDown(tasksTab, { key: 'Enter' });
+    expect(tasksTab.getAttribute('aria-selected')).toBe('true');
+  });
+
   it('closing a tab via its ✕ removes just that section', () => {
     act(() => {
       toggleRightDrawerSection('tasks');

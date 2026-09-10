@@ -450,6 +450,13 @@ fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
             "--no-index",
             "--find-links",
             &wheels_str,
+            // --upgrade: on an app update we reuse the existing AppData venv
+            // but the BUNDLED wheels are the new pinned set. Without it pip
+            // reports every requirement "already satisfied" and installs
+            // nothing — fresh backend code then runs against stale libraries,
+            // dies at import, and the supervisor reports "not healthy after
+            // spawn" exactly after updates.
+            "--upgrade",
             "august-proxy",
         ],
         &runtime_backend,
@@ -941,6 +948,14 @@ fn waitForProxy(app: &AppHandle, port: u16, timeout: Duration) -> bool {
 /// probe, never after pip-install alone.
 fn markProxyPort(port: u16, app: &AppHandle) {
     ACTIVE_PROXY_PORT.store(port, Ordering::SeqCst);
+    // The supervisor recovered (possibly after retried ports or a
+    // wipe-and-reinstall) — clear the stale spawn error so the UI never shows
+    // "Backend: up" alongside "Last error: … not healthy on :8085 after spawn".
+    if let Some(state) = app.try_state::<BackendProcess>() {
+        if let Ok(mut guard) = state.1.lock() {
+            *guard = None;
+        }
+    }
     if let Some(stamp) = bundledStamp(app) {
         let stamp_path = runtimeStampPath(app);
         if let Some(parent) = stamp_path.parent() {
@@ -1101,11 +1116,15 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                     }
                 }
 
-                // Self-heal: a runtime that was previously stamped healthy
-                // (matching the bundled stamp) but never comes up must be
-                // wiped and reinstalled — a corrupted AppData runtime would
-                // otherwise loop on 45s health timeouts forever.
-                if !force_reinstall && bundledStamp(app).is_some() && runtimeStampMatches(app) {
+                // Self-heal: an installed runtime that never comes up healthy
+                // must be wiped and reinstalled — a corrupted or update-skewed
+                // AppData runtime would otherwise loop on 45s health timeouts
+                // forever. The stamp file only advances after a healthy probe,
+                // so a FAILED update keeps the OLD stamp: requiring
+                // runtimeStampMatches here would skip recovery in exactly the
+                // case it exists for. Any packaged install whose runtime was
+                // materialized but never boots gets one clean rebuild.
+                if !force_reinstall && bundledStamp(app).is_some() && runtimeBackendMain(app).is_file() {
                     log::warn!(
                         "[backend] runtime stamped healthy but proxy never up — wiping AppData runtime for clean reinstall"
                     );
@@ -1293,6 +1312,12 @@ pub async fn restart_proxy(app: AppHandle) -> String {
     // The kill + ensureRunning path can take up to ~65s (killChild wait +
     // 45s health poll) — never block the Tauri main thread on it.
     match tokio::task::spawn_blocking(move || {
+        // An explicit user Retry overrides the update/quit holdoff: a cancelled
+        // or failed installer leaves holdoff on forever (stopBackend is the only
+        // writer), and ensureRunning would then silently skip every respawn —
+        // both here and in the watchdog — with no recovery path short of a
+        // reboot. This command is the recovery door: clear it first.
+        UPDATE_HOLDOFF.store(false, Ordering::SeqCst);
         killStoredChild(&app2);
         if ensureRunning(&app2) {
             "restarted".into()
