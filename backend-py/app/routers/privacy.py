@@ -60,6 +60,14 @@ _MEMORY_TABLES = [
     'episodes',
     'failure_fingerprints',
     'turn_outcomes',
+    # Refine-store entries are authored from episode digests (which carry
+    # user-message excerpts), so they are user-derived knowledge: an
+    # "erase memory" that left them standing would keep injecting the
+    # user's old lessons into every prompt. (Part 22: store moved from
+    # dataDir JSON into these tables, which is what makes the wipe able
+    # to reach it at all.)
+    'refine_entries',
+    'refine_ledger',
 ]
 
 # memory_store KV keys that survive the memory purge — the Bot roster is the
@@ -75,6 +83,7 @@ _LOG_TABLES = [
     'tool_guardrail_log',
     'consolidation_audit',
     'friction_events',
+    'refine_ledger',
 ]
 
 

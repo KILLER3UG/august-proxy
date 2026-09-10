@@ -12,7 +12,7 @@ router = APIRouter(prefix='/api/harness/proposals')
 
 
 class ProposalDecision(CamelModel):
-    decision: str = Field(..., description='approve | reject | dismiss')
+    decision: str = Field(..., description='approve | reject | dismiss | reopen')
     note: str = ''
 
 
@@ -35,6 +35,26 @@ async def listProposals(status: str = '', origin: str = ''):
         'proposals': proposals,
         'openCount': len(harness_self_improve.list_proposals(status='open')),
     }
+
+
+@router.get('/inbox/count')
+async def inboxCount():
+    """Open review counts across every review queue — the settings-rail
+    badge. Deliberately cheap: counts only (file-name scan + one SQL count),
+    no payloads, safe to poll on an interval.
+
+    The badge exists because the queues were invisible: a proposal filed
+    Sep 4 sat unreviewed for a week while its only surfacing sat behind
+    Settings (tier 'hidden')."""
+    from app.services import memory_store
+
+    harness = len(harness_self_improve.list_proposals(status='open'))
+    memory = 0
+    try:
+        memory = len(memory_store.list_proposals('consolidation', status='pending'))
+    except Exception:
+        pass
+    return {'harness': harness, 'memory': memory, 'total': harness + memory}
 
 
 @router.get('/{pid}')

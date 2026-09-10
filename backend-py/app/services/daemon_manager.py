@@ -358,7 +358,7 @@ class DaemonManager:
         try:
             from app.services.tool_registry import setDaemonContext
 
-            setDaemonContext(pollInterval=POLL_INTERVAL)
+            setDaemonContext()
         except Exception:
             logger.debug('daemon context set failed', exc_info=True)
         while True:

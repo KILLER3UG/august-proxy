@@ -405,13 +405,40 @@ def get_proposal(pid: str) -> dict[str, Any] | None:
 
 
 def decide_proposal(pid: str, decision: str, note: str = '') -> dict[str, Any]:
-    """Approve/reject/dismiss a proposal. Approval runs the deterministic applier."""
+    """Approve/reject/dismiss/reopen a proposal. Approval runs the deterministic applier.
+
+    'reopen' is the batch-decision undo path and is deliberately restricted
+    to rejected/dismissed rows — those decisions had no side effects, so
+    flipping the status back is the whole undo. An applied proposal would
+    need its patch reverted, which is a different operation (and refused
+    here on purpose).
+    """
     decision = decision.strip().lower()
-    if decision not in ('approve', 'reject', 'dismiss'):
-        raise ValueError("decision must be approve|reject|dismiss")
+    if decision not in ('approve', 'reject', 'dismiss', 'reopen'):
+        raise ValueError("decision must be approve|reject|dismiss|reopen")
     row = get_proposal(pid)
     if row is None:
         raise ValueError(f'proposal {pid} not found')
+    if decision == 'reopen':
+        if row.get('status') not in ('rejected', 'dismissed'):
+            raise ValueError(
+                f"proposal {pid} is {row.get('status')} — only rejected/dismissed "
+                'rows can be reopened (applied changes need a real revert)'
+            )
+        row['status'] = 'open'
+        row['decidedAt'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        if note.strip():
+            row['decisionNote'] = note.strip()[:1000]
+        path = _proposals_dir() / f'{pid}.json'
+        path.write_text(json.dumps(row, indent=2, ensure_ascii=False), encoding='utf-8')
+        _append_ledger({
+            'at': row['decidedAt'],
+            'actor': 'human',
+            'action': 'reopen_proposal',
+            'target_key': pid,
+            'kind': row.get('kind', ''),
+        })
+        return {'ok': True, 'decision': 'reopen', 'status': 'open'}
     if row.get('status') != 'open':
         raise ValueError(f"proposal {pid} already {row.get('status')}")
 

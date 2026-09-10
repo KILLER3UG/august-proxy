@@ -505,10 +505,12 @@ async def _editLines(
         return f'Error reading file: {exc}'
     actualHash = hashlib.sha256(raw).hexdigest()
     if actualHash != expectedHash:
+        from app.services.workbench.read_before_edit import STALE_WRITE_HEADLINE
+
         return (
-            'Error: File has been modified since read, either by the user or by a '
-            'linter. Read it again before attempting to write it — the fileHash from '
-            'your last read_file no longer matches the bytes on disk.'
+            f'Error: File {STALE_WRITE_HEADLINE}. Read it again before '
+            'attempting to write it — the fileHash from your last read_file '
+            'no longer matches the bytes on disk.'
         )
     try:
         text = raw.decode('utf-8', errors='replace')
@@ -657,7 +659,13 @@ async def _applyPatch(path: str, patch: str, fileHash: str = '') -> str:
             raw = filePath.read_bytes() if filePath.exists() else b''
             actual = hashlib.sha256(raw).hexdigest()
             if actual != fileHash.strip().lower():
-                return 'Error: File changed since you read it (hash mismatch). Re-read and retry.'
+                from app.services.workbench.read_before_edit import STALE_WRITE_HEADLINE
+
+                return (
+                    f'Error: File {STALE_WRITE_HEADLINE}. Read it again before '
+                    'attempting to write it — the fileHash you passed no longer '
+                    'matches the bytes on disk. Re-read the file, then retry.'
+                )
         except Exception as exc:
             return f'Error checking hash: {exc}'
     if not patch or '@@' not in patch:

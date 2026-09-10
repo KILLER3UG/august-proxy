@@ -14,8 +14,32 @@ distinct failure classes the advisory rule does not cover.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import defaultdict
+
+logger = logging.getLogger(__name__)
+
+
+def record_guardrail_block(session_id: str, tool_name: str, reason: str) -> None:
+    """Append a guardrail block to ``tool_guardrail_log`` (best-effort).
+
+    This is the table's ONLY writer — the episode-miner docstring advertised
+    the log as a mining source for its whole life without one. Consumers:
+    the refine store's evidence builder (block hot-spots are learning signal)
+    and the privacy wipe (``routers/privacy.py``). Never raises into the
+    turn: telemetry loss must not change tool behavior.
+    """
+    try:
+        from app.services.memory_conn import conn
+
+        conn().execute(
+            'INSERT INTO tool_guardrail_log (session_id, tool_name, reason) VALUES (?, ?, ?)',
+            (str(session_id or ''), str(tool_name or ''), str(reason or '')[:600]),
+        )
+        conn().commit()
+    except Exception:
+        logger.debug('guardrail block log write failed', exc_info=True)
 
 
 class ToolCallTracker:

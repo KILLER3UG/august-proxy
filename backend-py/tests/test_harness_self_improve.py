@@ -199,3 +199,32 @@ def test_open_proposals_are_never_pruned(hsi, monkeypatch: pytest.MonkeyPatch):
     remaining = {p['id'] for p in hsi.list_proposals()}
     # The two OPEN proposals must survive even though they are oldest.
     assert ids[2] in remaining and ids[3] in remaining
+
+
+def test_reopen_undoes_reject_but_not_applied(hsi):
+    """reopen is the batch-undo path: side-effect-free decisions
+    (rejected/dismissed) flip back to open; applied ones must not (the
+    applier already ran — undoing needs a real revert)."""
+    row = hsi.save_proposal(
+        problem='trim descriptions', evidence='e', proposal='p',
+        rollback='r', kind='observation',
+    )
+    hsi.decide_proposal(row['id'], 'reject')
+    out = hsi.decide_proposal(row['id'], 'reopen', note='batch undo')
+    assert out['status'] == 'open'
+    assert hsi.get_proposal(row['id'])['status'] == 'open'
+    # ledger records the undo
+    assert any(
+        r.get('action') == 'reopen_proposal' and r.get('target_key') == row['id']
+        for r in hsi.read_ledger()
+    )
+    # applied/failed rows refuse reopen. An 'observation' approval lands as
+    # apply_failed by design (observation kinds never apply) — either way it
+    # is not rejected/dismissed, so undo must refuse it.
+    row2 = hsi.save_proposal(
+        problem='second', evidence='e', proposal='p', rollback='r', kind='observation',
+    )
+    hsi.decide_proposal(row2['id'], 'approve')
+    assert hsi.get_proposal(row2['id'])['status'] == 'apply_failed'
+    with pytest.raises(ValueError, match='only rejected/dismissed'):
+        hsi.decide_proposal(row2['id'], 'reopen')

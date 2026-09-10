@@ -35,6 +35,13 @@ from app.json_narrowing import as_str
 if TYPE_CHECKING:
     from app.services.workbench.sessions import WorkbenchSession
 
+# Shared staleness receipt sentence (ZCode-style). Every stale-write guard in
+# the product — the read-before-edit gate, edit_lines' fileHash check,
+# apply_patch's hash check, and the workbench-level hash gate — composes this
+# constant so the model sees ONE wording for one failure class regardless of
+# which gate catches it. Each site supplies its own "has"/"have" auxiliary.
+STALE_WRITE_HEADLINE = 'been modified since read, either by the user or by a linter'
+
 # Registered mutation tools that write workspace files. ``bulk`` is gated
 # only when its operation resolves to write_files. Code-mode's child-process
 # write_file stays out of scope — it runs in a spawned interpreter that
@@ -135,9 +142,9 @@ def _refusal(names: list[str], code: str, unseen: bool) -> str:
     verb = 'have' if len(names) > 1 else 'has'
     obj = 'them' if len(names) > 1 else 'it'
     return (
-        f'Error: {code} {shown} {verb} been modified since read, either by the '
-        f'user or by a linter. Read {obj} again before attempting to write '
-        f'{obj}: call read_file on the path, then retry the edit.'
+        f'Error: {code} {shown} {verb} {STALE_WRITE_HEADLINE}. Read {obj} '
+        f'again before attempting to write {obj}: call read_file on the '
+        'path, then retry the edit.'
     )
 
 

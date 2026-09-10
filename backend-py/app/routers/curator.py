@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
+from app.models.camel_base import CamelModel
+
 router = APIRouter(prefix='/api/curator')
 
 
@@ -205,3 +207,99 @@ def _skillLearningMetrics(resolution: dict[str, object]) -> dict[str, object]:
         'resolved': _resInt('resolved'),
         'demotionSuggestions': _resInt('demotionSuggestions'),
     }
+
+
+# ── Versioned refine store (T15 wiring) ───────────────────────────────────
+# The store had a reader in the prompt path and no reachable write/manage
+# surface since its router was deleted. These routes complete the loop: the
+# Learning panel shows what the auto-refine pass wrote, a human can roll back
+# any entry (append-only undo, the journal keeps the story), and the config
+# gate (autoRefine, producer/reviewer model pins) is user-reachable.
+
+@router.get('/refine')
+async def refineEntries(includeDeleted: bool = False, kind: str = ''):
+    """Active refine-store entries (prompt_note/memory/skill/subagent)."""
+    from app.services import refine_store
+
+    return {
+        'entries': refine_store.list_entries(kind=kind, include_deleted=includeDeleted),
+        'config': refine_store.get_refine_config(),
+        'ledger': refine_store.read_ledger(limit=20),
+    }
+
+
+class RefineConfigPatch(CamelModel):
+    autoRefine: bool | None = None
+    producerModel: str | None = None
+    reviewModel: str | None = None
+
+
+@router.post('/refine/config')
+async def setRefineConfig(body: RefineConfigPatch):
+    """Update the refine gate/config. Producer and reviewer must be
+    different models — auto_refine's batch review discards same-model
+    pairs, so saving an equal pair is refused here rather than silently
+    dooming every batch."""
+    from app.services import refine_store
+
+    current = refine_store.get_refine_config()
+    merged = {
+        'autoRefine': current['autoRefine'] if body.autoRefine is None else body.autoRefine,
+        'producerModel': current['producerModel'] if body.producerModel is None else body.producerModel,
+        'reviewModel': current['reviewModel'] if body.reviewModel is None else body.reviewModel,
+    }
+    if (
+        merged['autoRefine']
+        and merged['producerModel']
+        and merged['producerModel'] == merged['reviewModel']
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail='producer and reviewer must be different models (same-model judging is inert)',
+        )
+    out = refine_store.set_refine_config(merged)
+    if not out.get('ok'):
+        raise HTTPException(status_code=500, detail=str(out.get('error')))
+    return out
+
+
+@router.post('/refine/run')
+async def runRefineNow():
+    """One gated refine pass on demand (evidence from the learning stores).
+    The independent reviewer + discard-default still gate it; enabling here
+    does not bypass autoRefine's config gate unless it is on."""
+    import asyncio
+
+    from app.services import refine_store
+
+    return await asyncio.to_thread(refine_store.run_scheduled_refine)
+
+
+@router.post('/refine/{entry_id}/rollback')
+async def rollbackRefine(entry_id: str):
+    """Undo the newest version of one entry (append-only; the undo is itself
+    a version so the journal never loses anything)."""
+    from app.services import refine_store
+
+    try:
+        entry = refine_store.rollback_entry(entry_id, actor='user')
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {'ok': True, 'id': entry.get('id'), 'version': len(entry.get('versions') or [])}
+
+
+@router.delete('/refine/{entry_id}')
+async def deleteRefine(entry_id: str, rationale: str = 'deleted from Learning panel'):
+    """Soft-delete an entry (a versioned delete; rollback can revive it)."""
+    from app.services import refine_store
+
+    try:
+        refine_store.delete_entry(
+            entry_id,
+            rationale=rationale,
+            expected_outcome='the entry no longer injects into prompts',
+            actor='user',
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {'ok': True}

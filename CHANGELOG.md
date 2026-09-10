@@ -2,6 +2,98 @@
 
 ## Unreleased (working tree)
 
+**Review inbox + refine store on SQLite + the first workbench split** —
+the "both" batch (UI/UX improvements + long-run architecture):
+
+- **The Review Inbox (was "Harness Improvements").** The two human-decision
+  queues merged into one list with origin chips: harness proposals
+  (self-improve / distiller / promotion) and the memory-retire proposals
+  that previously had **no UI at all** (`/api/august/memory/proposals` was
+  write-only forever — the same dead-surface class as the refine store).
+  Batch-select → reject with a one-click **Undo** (a new `reopen` decision
+  on the applier side, deliberately refused for applied rows: undo of a
+  side-effect-free decision is a status flip; undo of an apply needs a real
+  revert). The section moved from rail tier `hidden` to `basic` — hiding
+  the loop's only review surface is why a Sep-4 proposal sat unseen a week.
+- **Ambient badge.** `GET /api/harness/proposals/inbox/count` (cheap counts
+  across both queues) feeds the settings-rail badge on Review Inbox — the
+  same pattern as the app-updates "New" badge — invalidated from every
+  decide/refresh path (LearningPanel too). New hook:
+  `lib/useReviewInboxCount.ts`.
+- **Refine store → brain SQLite (migration 040).** Entries and the journal
+  now live in `refine_entries`/`refine_ledger` (`doc` keeps the exact JSON
+  shape; the module API is unchanged — the 56 pre-existing tests pass
+  untouched), joining episodes/facts/outcomes where cross-store queries
+  (promote judge, privacy wipe, session purge, backup) actually work.
+  First use imports any legacy `refine_store/entries` dir + `ledger.jsonl`
+  once, then renames them aside. Both tables are wired into the privacy
+  matrix: memory wipe clears them (entries are user-derived lessons),
+  session delete removes session-local rows, "clear activity logs" clears
+  the journal.
+- **`workbench.py` first split: `state_blocks.py`** (7,166 → 6,936 lines).
+  The per-turn volatile tail (`<plan_state>`, `<session_state>`,
+  compaction-proximity and ambient-daemon lines, post-compaction
+  re-injection, session cost) moved verbatim; workbench re-imports every
+  name so `wb._planStateBlock` — the seam tests/test_plan_state_t7.py pins
+  — resolves to the same function objects (identity asserted). This is the
+  prompt/state seam, deliberately not the `_executeTool` hot path.
+- Regression coverage: `reopen` semantics (2 tests), SQLite container +
+  legacy import + privacy-list assertions (3 tests) in
+  `tests/test_learning_loop_wiring.py`.
+
+**Audit batch follow-through + the refine store finally gets a caller** —
+closing the review findings on `c6fa4b6d`/`f14452d0` and the 2026-09-10
+learning-loop wiring audit:
+
+- **Stale-write wording is now one constant, four gates.** The ZCode-style
+  "has been modified since read…" receipt was only used by two of the four
+  stale-write guards; the workbench-level fileHash gate (the main chat path
+  for `write_file`/`apply_patch`) and `apply_patch`'s own check still said
+  the old "(content hash mismatch)" text. All sites now compose
+  `STALE_WRITE_HEADLINE` from `read_before_edit.py`, and a wiring test fails
+  if any site re-fragments the wording.
+- **Daemon context cleanup:** `setDaemonContext` no longer accepts a
+  `pollInterval` it silently discarded (the "recorded for adaptive TTL"
+  docstring was a lie — no consumer exists); caller updated.
+- **The refine store's dead half is wired (P0).** `auto_refine` shipped with
+  a producer, an independent-model reviewer with discard-default, rollback,
+  config, and 160+ tests — and zero production callers after its router was
+  deleted: the prompt path read a store that could never be written. Now:
+  `build_scheduled_evidence()` (recurring fingerprints + guardrail-block
+  hot-spots + judged episodes + current entries for dedupe — digests, not
+  raw transcripts, per SWE-Exp) feeds `run_refine_pass_from_store()`, which
+  rides the consolidation cadence inside `_skill_learning_pass` exactly like
+  the distiller does. `render_refinements_block` is budgeted (12 entries,
+  320 chars each, elision marker visible to the model) instead of injecting
+  the whole store.
+- **`tool_guardrail_log` gets its first writer.** The table had a schema, a
+  privacy wipe-list entry, and a miner docstring claiming it as a mining
+  source — nothing ever inserted into it. Guardrail blocks now record
+  (session, tool, reason) via `record_guardrail_block`, and
+  `guardrail_block_hotspots()` aggregates the 7-day window for the evidence
+  builder. Same-roundtrip fix on the curator surface: `POST /refine/config`
+  refuses a producer==reviewer pair instead of silently dooming every batch.
+- **Curator routes + Learning panel UI.** `GET /api/curator/refine` (entries
+  + config + ledger), `POST /refine/run` (one on-demand pass),
+  `POST /refine/{id}/rollback`, `DELETE /refine/{id}` (versioned soft
+  delete). The Learning panel gains a **Refine store** block: an Auto-refine
+  toggle (honest empty-state text for both positions), per-entry chips
+  (kind/scope/version + rationale line), a rollback button on every row, and
+  a collapsible refine journal.
+- **Wiring guard (`tests/test_learning_loop_wiring.py`, 9 tests).** The
+  dead-surface class this audit keeps finding gets a CI gate: the
+  consolidation pass must call the refine entry point, the prompt path must
+  inject the block, `/api/curator/refine` must answer, blocks must
+  round-trip into hotspots, evidence must cite them, the wording constant
+  must stay single-sourced, and the injection budget must bound.
+
+**Daemon blocklist restored + wired; staleness wording (2026-09-10, c6fa4b6d)**
+and the preceding audit hardening batch (f14452d0) — recorded here
+retroactively: unattended daemon runs now refuse mutating `run_command`
+patterns at dispatch (the contextvar had no setter before), MCP secrets are
+redacted, a launch blocklist gates daemon spawns, the read-only tool gate is
+classifier-driven, subagent durability races fixed, drawer a11y.
+
 **Memory becomes human-readable + gets a model write door; camera capture** —
 the memory-audit follow-through, per the 8-screenshot ruling:
 

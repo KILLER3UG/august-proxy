@@ -19,6 +19,7 @@ import { WorkspaceNavLink } from './WorkspaceNavLink';
 import { SettingsSearch } from '@/components/settings/SettingsSearch';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { useAccountStore } from '@/store/account';
+import { useReviewInboxCount } from '@/lib/useReviewInboxCount';
 import { cn } from '@/lib/utils';
 import {
   SETTINGS_SECTIONS,
@@ -64,6 +65,7 @@ export function WorkspaceShell({
   const location = useLocation();
   const [query, setQuery] = useState('');
   const { available: updateAvailable } = useAppUpdate();
+  const inbox = useReviewInboxCount();
 
   const railActive = railCanonicalId(active);
   // Header IA: active can be a section id OR a category id (e.g. /settings/capabilities). Resolve category for highlight.
@@ -179,7 +181,9 @@ export function WorkspaceShell({
                         badge={
                           s.id === 'app-updates' && updateAvailable
                             ? 'New'
-                            : null
+                            : s.id === 'harness-improve' && inbox.total > 0
+                              ? String(inbox.total)
+                              : null
                         }
                         onSelect={() => {
                           if (s.id === railActive && s.id === active) return;
@@ -212,7 +216,11 @@ export function WorkspaceShell({
                         label={s.label}
                         active={active === s.id || railActive === s.id}
                         badge={
-                          s.id === 'app-updates' && updateAvailable ? 'New' : null
+                          s.id === 'app-updates' && updateAvailable
+                            ? 'New'
+                            : s.id === 'harness-improve' && inbox.total > 0
+                              ? String(inbox.total)
+                              : null
                         }
                         onSelect={() => {
                           if (s.id === active) return;

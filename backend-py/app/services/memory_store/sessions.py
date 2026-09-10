@@ -262,6 +262,11 @@ _SESSION_CHILD_TABLES: tuple[str, ...] = (
     # the Curator UI after "delete this chat").
     'episodes',
     'turn_outcomes',
+    # Local refine entries belong to the session that learned them; global
+    # entries carry an empty session_id and are untouched by this purge
+    # (same key-space rule as episodes). The refine journal survives with
+    # the other audit journals — it is cleared by "clear activity logs".
+    'refine_entries',
 )
 
 

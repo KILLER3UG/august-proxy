@@ -606,12 +606,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
   {
     id: 'harness-improve',
-    label: 'Harness Improvements',
-    description: 'Improvement proposals the model filed against its own harness — review, approve, or reject.',
+    label: 'Review Inbox',
+    description: 'Everything August wants a human to decide: harness proposals and memory retirements — review, approve, or reject.',
     icon: HeartPulse,
     category: 'data',
-    tier: 'hidden',
-    keywords: ['harness', 'proposal', 'self-improvement', 'introspect', 'review queue', 'approve'],
+    // Was 'hidden': the only human-decision surface of the learning loop,
+    // reachable only by deep link or search — proposals piled up unseen.
+    // The rail badge (open inbox count) makes it ambient now.
+    tier: 'basic',
+    keywords: ['harness', 'proposal', 'self-improvement', 'introspect', 'review queue', 'approve', 'retirement', 'inbox'],
     legacyAliases: ['reliability', 'harness-proposals'],
   },
   {

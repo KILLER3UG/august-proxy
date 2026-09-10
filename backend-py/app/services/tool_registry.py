@@ -48,13 +48,12 @@ _DAEMONBlockedCommandPatterns = [
 ]
 
 
-def setDaemonContext(*, pollInterval: int = 30) -> None:
+def setDaemonContext() -> None:
     """Mark subsequent tool calls as coming from a daemon.
 
     While set, `run_command` rejects mutating commands (daemons are
     read-only — nobody is watching to approve a write) and the workbench
-    treats calls as unattended (no approval prompts). The `pollInterval` is
-    recorded for use in adaptive TTL (Phase 10.1).
+    treats calls as unattended (no approval prompts).
     """
     _daemonContext.set(True)
 

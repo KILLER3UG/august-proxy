@@ -51,7 +51,56 @@ _MAX_EDITS_PER_PASS = 20
 RefineProducer = Callable[[list[dict[str, str]]], Awaitable[str]]
 
 
-# Storage
+# Storage — brain SQLite (migration 040).
+#
+# Entries live in ``refine_entries`` (one row per entry; ``doc`` is the full
+# entry JSON with its version list — the shape from the old JSON-directory
+# era is preserved verbatim so callers never changed). The journal lives in
+# ``refine_ledger``. One-time import: the first use copies any legacy
+# ``dataDir/refine_store/entries`` files, then renames the legacy directory
+# aside (visible, idempotent, nothing silently lost). Rationale: the
+# learning loop's other stores (episodes, facts, outcomes, proposals) are
+# SQL — cross-store joins (provenance, the promote judge, privacy wipe)
+# only work in one container.
+
+# Imported bases tracked per part: the entries dir and the ledger file are
+# separate touches, and a store first opened by list_entries (no ledger)
+# must still import its journal when read_ledger arrives later. The renames
+# are the true idempotency guard; these sets only skip repeated scans.
+# (Process-global bools would also break per-test dataDir isolation — the
+# key is the store base path.)
+_IMPORTED_ENTRIES: set[str] = set()
+_IMPORTED_LEDGER: set[str] = set()
+
+
+def _conn():
+    from app.services.memory_conn import conn
+
+    return conn()
+
+
+def _ensure_schema() -> None:
+    """Tables come from migration 040 at schema init; this covers contexts
+    that touch the store before a full init (tests, scripts)."""
+    conn = _conn()
+    conn.execute(
+        'CREATE TABLE IF NOT EXISTS refine_entries ('
+        '  id TEXT PRIMARY KEY, kind TEXT NOT NULL, scope TEXT NOT NULL,'
+        "  session_id TEXT DEFAULT '', updated_at TEXT DEFAULT '',"
+        '  doc TEXT NOT NULL)'
+    )
+    conn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_refine_entries_scope '
+        'ON refine_entries(scope, updated_at)'
+    )
+    conn.execute(
+        'CREATE TABLE IF NOT EXISTS refine_ledger ('
+        '  id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, actor TEXT, action TEXT,'
+        "  entry_id TEXT DEFAULT '', target_key TEXT DEFAULT '', kind TEXT DEFAULT '',"
+        "  scope TEXT DEFAULT '', detail TEXT DEFAULT '', raw TEXT)"
+    )
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_refine_ledger_at ON refine_ledger(at)')
+    conn.commit()
 
 
 def _store_dir() -> Path:
@@ -62,46 +111,136 @@ def _store_dir() -> Path:
     return d
 
 
-def _entries_dir() -> Path:
-    d = _store_dir() / 'entries'
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+def _import_legacy(ledger_to_sql: bool) -> None:
+    """One-time copy of pre-SQLite JSON into the tables.
+
+    INSERT OR IGNORE makes a crashed half-import finish on the next call;
+    the directory rename makes it once-per-install and keeps the old data
+    visible for manual recovery."""
+    base = _store_dir()
+    key = str(base)
+    needEntries = key not in _IMPORTED_ENTRIES
+    needLedger = ledger_to_sql and key not in _IMPORTED_LEDGER
+    if not needEntries and not needLedger:
+        return
+    _ensure_schema()
+    conn = _conn()
+    legacy = base / 'entries'
+    n = 0
+    if needEntries:
+        _IMPORTED_ENTRIES.add(key)
+        for path in sorted(legacy.glob('ref_*.json')) if legacy.is_dir() else []:
+            try:
+                entry = json.loads(path.read_text(encoding='utf-8'))
+            except Exception:
+                continue
+            if not isinstance(entry, dict) or not entry.get('id'):
+                continue
+            try:
+                conn.execute(
+                    'INSERT OR IGNORE INTO refine_entries '
+                    '(id, kind, scope, session_id, updated_at, doc) VALUES (?, ?, ?, ?, ?, ?)',
+                    (
+                        str(entry['id']),
+                        as_str(entry.get('kind')),
+                        as_str(entry.get('scope')),
+                        as_str(entry.get('sessionId')),
+                        as_str(entry.get('updatedAt')),
+                        json.dumps(entry, ensure_ascii=False),
+                    ),
+                )
+                n += 1
+            except Exception:
+                logger.debug('refine legacy import failed for %s', path, exc_info=True)
+        try:
+            legacy.rename(base / 'entries.migrated')
+        except OSError:
+            pass
+    old_ledger = base / 'ledger.jsonl'
+    if needLedger and old_ledger.exists():
+        _IMPORTED_LEDGER.add(key)
+        for line in old_ledger.read_text(encoding='utf-8').splitlines():
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(row, dict):
+                _ledger_insert(conn, row)
+        try:
+            old_ledger.rename(base / 'ledger.jsonl.migrated')
+        except OSError:
+            pass
+    try:
+        conn.commit()
+    except Exception:
+        logger.debug('refine legacy import commit failed', exc_info=True)
+    if n:
+        logger.info('refine_store imported %d legacy entr(y/ies) into SQLite', n)
+
+
+def _ledger_insert(conn, row: dict[str, Any]) -> None:
+    conn.execute(
+        'INSERT INTO refine_ledger (at, actor, action, entry_id, target_key, kind, scope, detail, raw) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (
+            as_str(row.get('at')),
+            as_str(row.get('actor')),
+            as_str(row.get('action')),
+            as_str(row.get('entryId')),
+            as_str(row.get('target_key')),
+            as_str(row.get('kind')),
+            as_str(row.get('scope')),
+            as_str(row.get('detail')),
+            json.dumps(row, ensure_ascii=False),
+        ),
+    )
 
 
 def _append_ledger(row: dict[str, Any]) -> None:
     try:
-        with (_store_dir() / 'ledger.jsonl').open('a', encoding='utf-8') as f:
-            f.write(json.dumps(row, ensure_ascii=False) + '\n')
+        _import_legacy(ledger_to_sql=False)
+        _ledger_insert(_conn(), row)
+        _conn().commit()
     except Exception:
         logger.debug('refine_store ledger append failed', exc_info=True)
 
 
 def read_ledger(limit: int = 20) -> list[dict[str, Any]]:
     try:
-        p = _store_dir() / 'ledger.jsonl'
-        if not p.exists():
-            return []
-        lines = p.read_text(encoding='utf-8').strip().splitlines()
+        _import_legacy(ledger_to_sql=True)
+        rows = _conn().execute(
+            'SELECT raw FROM refine_ledger ORDER BY id DESC LIMIT ?', (int(limit),)
+        ).fetchall()
         out: list[dict[str, Any]] = []
-        for line in lines[-limit:]:
+        for r in rows:
             try:
-                out.append(as_dict(json.loads(line)))
+                parsed = as_dict(json.loads(str(r['raw'])))
             except Exception:
                 continue
+            if parsed:
+                out.append(parsed)
+        out.reverse()  # oldest-first, the JSONL reader's contract
         return out
     except Exception:
+        logger.debug('refine_store ledger read failed', exc_info=True)
         return []
 
 
-def _entry_path(entry_id: str) -> Path:
-    safe = ''.join(c for c in (entry_id or '') if c.isalnum() or c in '_-')
-    return _entries_dir() / f'{safe}.json'
-
-
 def _write_entry(entry: dict[str, Any]) -> None:
-    _entry_path(as_str(entry.get('id'))).write_text(
-        json.dumps(entry, indent=2, ensure_ascii=False), encoding='utf-8'
+    _import_legacy(ledger_to_sql=False)
+    _conn().execute(
+        'INSERT OR REPLACE INTO refine_entries (id, kind, scope, session_id, updated_at, doc) '
+        'VALUES (?, ?, ?, ?, ?, ?)',
+        (
+            as_str(entry.get('id')),
+            as_str(entry.get('kind')),
+            as_str(entry.get('scope')),
+            as_str(entry.get('sessionId')),
+            as_str(entry.get('updatedAt')),
+            json.dumps(entry, ensure_ascii=False),
+        ),
     )
+    _conn().commit()
 
 
 def _now() -> str:
@@ -168,11 +307,14 @@ def _append_version(entry: dict[str, Any], version: dict[str, Any]) -> None:
 
 
 def get_entry(entry_id: str) -> dict[str, Any] | None:
-    path = _entry_path((entry_id or '').strip())
-    if not path.exists():
+    _import_legacy(ledger_to_sql=False)
+    row = _conn().execute(
+        'SELECT doc FROM refine_entries WHERE id = ?', ((entry_id or '').strip(),)
+    ).fetchone()
+    if row is None:
         return None
     try:
-        entry = json.loads(path.read_text(encoding='utf-8'))
+        entry = json.loads(str(row['doc']))
         return entry if isinstance(entry, dict) and entry.get('id') else None
     except Exception:
         return None
@@ -321,21 +463,30 @@ def list_entries(
     include_deleted: bool = False,
 ) -> list[dict[str, Any]]:
     """Summaries of matching entries, local-before-global, newest first."""
-    out: list[dict[str, Any]] = []
+    _import_legacy(ledger_to_sql=False)
+    clauses: list[str] = []
+    params: list[Any] = []
+    if scope:
+        clauses.append('scope = ?')
+        params.append(scope)
+    if kind:
+        clauses.append('kind = ?')
+        params.append(kind)
+    sql = 'SELECT doc FROM refine_entries'
+    if clauses:
+        sql += ' WHERE ' + ' AND '.join(clauses)
     try:
-        paths = sorted(_entries_dir().glob('ref_*.json'))
-    except OSError:
+        rows = _conn().execute(sql, params).fetchall()
+    except Exception:
+        logger.debug('refine_store list_entries query failed', exc_info=True)
         return []
-    for path in paths:
+    out: list[dict[str, Any]] = []
+    for row in rows:
         try:
-            entry = json.loads(path.read_text(encoding='utf-8'))
+            entry = json.loads(str(row['doc']))
         except Exception:
             continue
         if not isinstance(entry, dict) or not entry.get('id'):
-            continue
-        if scope and entry.get('scope') != scope:
-            continue
-        if kind and entry.get('kind') != kind:
             continue
         if session_id and entry.get('scope') == 'local' and entry.get('sessionId') != session_id:
             continue
@@ -363,6 +514,14 @@ def list_entries(
 
 # Prompt injection (additive context — never the base system prompt)
 
+# Injection budget for the refinements block. SWE-Exp measured that ONE
+# retrieved experience beats four (more actively degraded resolution); the
+# block therefore carries at most _MAX_INJECT_ENTRIES entries (local first,
+# then newest global) with each entry text clamped, instead of growing with
+# the store. The cut is made visible so the model knows context was elided.
+_MAX_INJECT_ENTRIES = 12
+_MAX_ENTRY_INJECT_CHARS = 320
+
 
 def render_refinements_block(session_id: str = '') -> str:
     """Active prompt_note/memory entries as an extra context block.
@@ -370,11 +529,16 @@ def render_refinements_block(session_id: str = '') -> str:
     Local entries first (they override global guidance on conflict), then
     global ones. Returns '' when nothing applies — callers append nothing.
     Without a session id only global entries apply.
+
+    Bounded: at most _MAX_INJECT_ENTRIES rows, each text clamped to
+    _MAX_ENTRY_INJECT_CHARS; a trailing marker names how many entries were
+    left out (they stay in the store — only the window drops them).
     """
     entries = (
         list_entries(session_id=session_id) if session_id else list_entries(scope='global')
     )
     lines: list[str] = []
+    shown = 0
     for entry in entries:
         if entry.get('kind') not in ('prompt_note', 'memory'):
             continue
@@ -382,10 +546,23 @@ def render_refinements_block(session_id: str = '') -> str:
         text = ' '.join(as_str(content.get('text'), '').split())
         if not text:
             continue
+        if shown >= _MAX_INJECT_ENTRIES:
+            break
+        if len(text) > _MAX_ENTRY_INJECT_CHARS:
+            text = text[:_MAX_ENTRY_INJECT_CHARS].rstrip() + '…'
         tag = 'local' if entry.get('scope') == 'local' else 'global'
         lines.append(f'- [{tag}] {text}')
+        shown += 1
     if not lines:
         return ''
+    omitted = sum(
+        1
+        for e in entries
+        if e.get('kind') in ('prompt_note', 'memory')
+        and as_str(as_dict(e.get('content')).get('text'), '').strip()
+    ) - shown
+    if omitted > 0:
+        lines.append(f'(… {omitted} older entries not shown)')
     return (
         '<refinements>\n'
         'Learned harness notes (versioned refine store; local entries take '
@@ -646,7 +823,11 @@ async def run_refine_pass(
 
 
 def _resolve_producer() -> RefineProducer | None:
-    """Producer client from config ('refineProducerModel'), else default."""
+    """Producer client from config ('refineConfig.producerModel'), else default.
+
+    The hint must reach the client factory: a model pin named in config but
+    silently dropped makes the config lie about which model writes the store.
+    """
     try:
         from app.services.config_service import getConfig
 
@@ -843,3 +1024,136 @@ async def auto_refine(
         'rolledBack': rolled_back,
         'result': result,
     }
+
+
+# Scheduled refine: the production entry point
+#
+# auto_refine shipped with a full write half and no caller — the router that
+# exposed it was deleted, leaving only the prompt reader. This is the wiring:
+# evidence is built from the learning stores (episodes + guardrail blocks +
+# current entries), and the pass rides the consolidation cadence inside
+# memory_store.consolidation._skill_learning_pass — same piggyback pattern
+# the distiller uses, so no new scheduler and no model call on a live turn.
+
+
+def build_scheduled_evidence(max_chars: int = 6000) -> str:
+    """A compact digest of what the harness learned since the last pass.
+
+    Deliberately NOT raw transcripts (SWE-Exp: stuffing raw trajectories back
+    in cost 6 points): typed episode events, guardrail block hot-spots, and
+    the currently-active entries so the producer dedupes instead of re-
+    authoring notes that already exist. Returns '' when there is nothing to
+    learn from — auto_refine skips on empty evidence (no model spend).
+    """
+    sections: list[str] = []
+    try:
+        from app.services.episode_miner import (
+            guardrail_block_hotspots,
+            recent_fingerprints,
+        )
+
+        fps = [f for f in recent_fingerprints(limit=12) if int(f.get('episode_count') or 0) >= 2]
+        if fps:
+            sections.append(
+                'Recurring failure fingerprints (seen >=2x, last 90d):\n'
+                + '\n'.join(
+                    f"- {f.get('fingerprint')}: {int(f.get('episode_count') or 0)} episodes, "
+                    f"status={f.get('status') or 'open'}"
+                    for f in fps
+                )
+            )
+        hot = guardrail_block_hotspots(limit=8)
+        if hot:
+            sections.append(
+                'Guardrail block hot-spots (last 7d) — repeated blocks are harness-shape signal:\n'
+                + '\n'.join(
+                    f"- {h.get('tool_name')} x{h.get('n')}: {str(h.get('reason_head', '')).strip()}"
+                    for h in hot
+                )
+            )
+    except Exception:
+        logger.debug('refine evidence: fingerprint/hotspot section failed', exc_info=True)
+    try:
+        from app.services.episode_miner import flagged_episodes
+
+        eps = flagged_episodes(limit=5)
+        if eps:
+            lines = []
+            for ep in eps:
+                events = ep.get('events')
+                if isinstance(events, str):
+                    try:
+                        events = json.loads(events)
+                    except Exception:
+                        events = []
+                kinds = sorted({str(e.get('type', '')) for e in (events or [])[:6] if isinstance(e, dict)})
+                lines.append(
+                    f"- [{ep.get('kind')}] outcome={ep.get('outcome')} events={','.join(k for k in kinds if k)}"
+                )
+            sections.append('Recently judged (tier-2) episodes:\n' + '\n'.join(lines))
+    except Exception:
+        logger.debug('refine evidence: episode section failed', exc_info=True)
+    active = list_entries(scope='global')
+    if active:
+        def _entryLine(e: dict[str, Any]) -> str:
+            text = as_str(as_dict(e.get('content')).get('text'), '') or as_str(e.get('rationale'), '')
+            return f"- id={e.get('id')} kind={e.get('kind')} text={text[:140]}"
+
+        sections.append(
+            'Entries already in the store (UPDATE these instead of authoring near-duplicates):\n'
+            + '\n'.join(_entryLine(e) for e in active[:15])
+        )
+    return '\n\n'.join(sections)[:max_chars]
+
+
+async def run_refine_pass_from_store() -> dict[str, Any]:
+    """Scheduled entry: build evidence, run the gated auto-refine.
+
+    Safe to await from any cadence. The config gate (autoRefine off), the
+    empty-evidence skip, the independent-reviewer discard, and every failure
+    mode stay inside auto_refine — this only supplies evidence.
+    """
+    if not get_refine_config()['autoRefine']:
+        return {'status': 'disabled'}
+    evidence = build_scheduled_evidence()
+    if not evidence.strip():
+        return {'status': 'skipped', 'reason': 'no learning evidence since last pass'}
+    return await auto_refine(evidence=evidence)
+
+
+def run_scheduled_refine(timeoutS: int = 180) -> dict[str, Any]:
+    """Synchronous wrapper for the consolidation cadence (worker-thread context).
+
+    Mirrors the distiller's judge: run the coroutine on a throwaway loop; if
+    this thread unexpectedly HAS a loop (a live request path), offload to a
+    worker so a refine pass can never block the event loop. Returns the
+    auto_refine status dict, or a failure status — never raises.
+    """
+    import asyncio
+    import threading
+
+    def _run() -> dict[str, Any]:
+        try:
+            return asyncio.run(
+                asyncio.wait_for(run_refine_pass_from_store(), timeout=timeoutS)
+            )
+        except Exception as exc:
+            logger.warning('scheduled refine pass failed: %s', exc)
+            return {'status': 'error', 'reason': str(exc)[:300]}
+
+    try:
+        asyncio.get_running_loop()
+        running = True
+    except RuntimeError:
+        running = False
+    if not running:
+        return _run()
+    box: dict[str, Any] = {}
+
+    def _worker() -> None:
+        box['result'] = _run()
+
+    thread = threading.Thread(target=_worker, daemon=True, name='august-refine-pass')
+    thread.start()
+    thread.join(timeoutS + 15)
+    return box.get('result') or {'status': 'error', 'reason': 'refine worker did not finish in time'}

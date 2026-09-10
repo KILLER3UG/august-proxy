@@ -7,9 +7,10 @@
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Brain, Check, ChevronDown, ChevronRight, Loader2, X } from 'lucide-react';
+import { Brain, Check, ChevronDown, ChevronRight, Loader2, RotateCcw, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
+import { invalidateReviewInboxCount } from '@/lib/useReviewInboxCount';
 import { CuratorSuggestionBar } from '@/sections/chat/CuratorSuggestionBar';
 
 interface Rubric {
@@ -38,6 +39,24 @@ interface Proposal {
   problem: string;
   proposal: string;
   payload?: { name?: string; fingerprint?: string; origin?: string };
+}
+
+interface RefineEntry {
+  id: string;
+  kind: string;
+  scope: string;
+  version: number;
+  active: boolean;
+  content?: { text?: string; name?: string; description?: string };
+  rationale?: string;
+  expectedOutcome?: string;
+  updatedAt?: string;
+}
+
+interface RefineState {
+  entries: RefineEntry[];
+  config: { autoRefine?: boolean; producerModel?: string; reviewModel?: string };
+  ledger: Array<{ at?: string; actor?: string; action?: string; entryId?: string; kind?: string }>;
 }
 
 interface Report {
@@ -109,12 +128,49 @@ export function LearningPanel() {
       ),
     enabled: expanded,
   });
+  const refineQ = useQuery({
+    queryKey: ['curator-refine'],
+    queryFn: () => api.get<RefineState>('/api/curator/refine'),
+    enabled: expanded,
+  });
 
   const refresh = useCallback(() => {
     void qc.invalidateQueries({ queryKey: ['curator-report'] });
     void qc.invalidateQueries({ queryKey: ['curator-episodes'] });
     void qc.invalidateQueries({ queryKey: ['harness-proposals'] });
+    void qc.invalidateQueries({ queryKey: ['curator-refine'] });
+    invalidateReviewInboxCount(qc);
   }, [qc]);
+
+  const rollbackRefine = useMutation({
+    mutationFn: (id: string) => api.post(`/api/curator/refine/${encodeURIComponent(id)}/rollback`),
+    onSuccess: () => {
+      toast.success('Entry rolled back (undo is versioned — nothing is lost)');
+      refresh();
+    },
+    onError: (e: Error) => toast.error(e.message || 'Rollback failed'),
+  });
+
+  const setAutoRefine = useMutation({
+    mutationFn: (on: boolean) =>
+      api.post('/api/curator/refine/config', {
+        autoRefine: on,
+        ...(on &&
+        refineQ.data?.config?.producerModel &&
+        refineQ.data?.config?.producerModel === refineQ.data?.config?.reviewModel
+          ? { reviewModel: '' }
+          : {}),
+      }),
+    onSuccess: () => {
+      toast.success(
+        refineQ.data?.config?.autoRefine
+          ? 'Auto-refine turned off'
+          : 'Auto-refine on — passes ride the consolidation cadence behind an independent reviewer',
+      );
+      void qc.invalidateQueries({ queryKey: ['curator-refine'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Config update failed'),
+  });
 
   const decide = useMutation({
     mutationFn: ({ id, decision }: { id: string; decision: 'approve' | 'reject' }) =>
@@ -312,6 +368,86 @@ export function LearningPanel() {
                   </li>
                 ))}
               </ul>
+            )}
+          </div>
+
+          {/* Refine store — the versioned harness-state notes that inject into
+              every prompt. Written by gated auto-refine passes (independent
+              reviewer, discard-default, rollback on reject); every row here is
+              a diff you can undo. */}
+          <div data-testid="learning-refine">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Refine store ({refineQ.data?.entries?.length ?? 0} active)
+              </p>
+              <label className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
+                <input
+                  type="checkbox"
+                  data-testid="learning-auto-refine"
+                  className="size-3 accent-primary"
+                  checked={!!refineQ.data?.config?.autoRefine}
+                  disabled={setAutoRefine.isPending}
+                  onChange={(e) => setAutoRefine.mutate(e.target.checked)}
+                />
+                Auto-refine
+              </label>
+            </div>
+            {!refineQ.data?.entries?.length ? (
+              <p className="text-xs text-muted-foreground">
+                {refineQ.data?.config?.autoRefine
+                  ? 'Auto-refine is on — notes appear after the next consolidation pass finds evidence worth keeping.'
+                  : 'Empty. Enable auto-refine to let gated passes (producer + a different-model reviewer, rollback on reject) write durable notes here — or leave it off and nothing injects.'}
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {refineQ.data.entries.map((en) => (
+                  <li
+                    key={en.id}
+                    data-testid="learning-refine-entry"
+                    className="flex items-start justify-between gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-1.5 text-xs"
+                  >
+                    <span className="min-w-0">
+                      <span className="mr-1.5 inline-block rounded-full border border-border/60 bg-muted/30 px-1.5 py-px text-[9px] uppercase text-muted-foreground">
+                        {en.kind} · {en.scope} · v{en.version}
+                      </span>
+                      <span className="text-foreground/90">
+                        {en.content?.text || en.content?.name || en.id}
+                      </span>
+                      {en.rationale ? (
+                        <span className="mt-0.5 block truncate text-[10.5px] text-muted-foreground" title={en.rationale}>
+                          why: {en.rationale}
+                        </span>
+                      ) : null}
+                    </span>
+                    <button
+                      type="button"
+                      data-testid={`learning-refine-rollback-${en.id}`}
+                      onClick={() => rollbackRefine.mutate(en.id)}
+                      disabled={rollbackRefine.isPending}
+                      title="Roll back the newest version (undo is itself versioned)"
+                      aria-label={`Roll back refine entry ${en.id}`}
+                      className="shrink-0 rounded p-1 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
+                    >
+                      <RotateCcw className="size-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {(refineQ.data?.ledger?.length ?? 0) > 0 && (
+              <details className="mt-1.5">
+                <summary className="cursor-pointer text-[10.5px] text-muted-foreground">
+                  Recent refine journal
+                </summary>
+                <ul className="mt-1 space-y-0.5 text-[10px] text-muted-foreground/80">
+                  {refineQ.data!.ledger.slice(-6).reverse().map((row, i) => (
+                    <li key={i} className="flex items-center gap-1.5 truncate">
+                      <Sparkles className="size-2.5 shrink-0" />
+                      {row.at} · {row.actor} · {row.action} {row.kind ?? ''} {row.entryId ?? ''}
+                    </li>
+                  ))}
+                </ul>
+              </details>
             )}
           </div>
         </div>

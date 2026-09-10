@@ -699,6 +699,26 @@ def prune_old_episodes(days: int = EPISODE_RETENTION_DAYS) -> int:
     return int(cur.rowcount)
 
 
+def guardrail_block_hotspots(limit: int = 10) -> list[dict[str, Any]]:
+    """Top blocked (tool, reason-prefix) pairs in the recent log window.
+
+    The refine pass evidence builder reads this: a guardrail that keeps
+    firing is a harness-shape signal (missing tool, wrong policy), not just
+    a blocked call. Aggregated server-side so the evidence stays small.
+    """
+    conn = _conn()
+    # Same format the INSERT writes (SQLite datetime('now') = 'YYYY-MM-DD HH:MM:SS',
+    # UTC) — a mixed ISO 'T' cutoff would mis-order same-day rows.
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+    rows = conn.execute(
+        'SELECT tool_name, SUBSTR(reason, 1, 80) AS reason_head, COUNT(*) AS n '
+        "FROM tool_guardrail_log WHERE COALESCE(created_at, '') >= ? "
+        'GROUP BY tool_name, reason_head ORDER BY n DESC LIMIT ?',
+        (cutoff, int(limit)),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def learning_report() -> dict[str, Any]:
     """Counters for the Phase E skillLearningReport blob."""
     conn = _conn()
