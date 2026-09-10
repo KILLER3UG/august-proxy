@@ -133,9 +133,11 @@ def _refusal(names: list[str], code: str, unseen: bool) -> str:
             'then retry the edit (copy the anchor text from that output).'
         )
     verb = 'have' if len(names) > 1 else 'has'
+    obj = 'them' if len(names) > 1 else 'it'
     return (
-        f'Error: {code} {shown} {verb} changed since you last read '
-        f'{"them" if len(names) > 1 else "it"}. Re-read the file(s), then retry the edit.'
+        f'Error: {code} {shown} {verb} been modified since read, either by the '
+        f'user or by a linter. Read {obj} again before attempting to write '
+        f'{obj}: call read_file on the path, then retry the edit.'
     )
 
 

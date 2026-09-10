@@ -56,7 +56,7 @@ class TestCheckReadBeforeEdit:
         err = rbe.check_read_before_edit(s, 'apply_patch', {'path': 'a.txt'})
         assert err is not None
         assert rbe.STALE_CODE in err
-        assert 'Re-read' in err
+        assert 'modified since read' in err and 'Read it again' in err
 
     def testRelativePathResolvedAgainstWorkspace(self, tmp_path: Path) -> None:
         f = tmp_path / 'sub' / 'a.txt'

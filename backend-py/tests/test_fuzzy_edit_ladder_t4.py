@@ -136,4 +136,4 @@ class TestEditLinesLadder:
     async def testStaleHashStillRejects(self, tmp_path: Path) -> None:
         f, _ = self._write(tmp_path, 'alpha\n')
         result = await ft._editLines(str(f), 'deadbeef', [{'line': 1, 'old': 'alpha', 'new': 'b'}])
-        assert 'hash mismatch' in result
+        assert 'modified since read' in result

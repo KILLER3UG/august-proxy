@@ -348,6 +348,19 @@ class DaemonManager:
         info = self._daemons.get(daemonId)
         if not info:
             return
+        # Daemons are unattended background work — nobody is watching to
+        # approve a write. Mark this task's context so any tool dispatch that
+        # happens underneath (today the cerebellum is a bare generate() with
+        # no tools; a future tool-using daemon inherits the guard) rejects
+        # mutating run_command patterns via tool_registry's daemon gate.
+        # asyncio copies the context at task creation, so this is scoped to
+        # the daemon and leaks to no other session.
+        try:
+            from app.services.tool_registry import setDaemonContext
+
+            setDaemonContext(pollInterval=POLL_INTERVAL)
+        except Exception:
+            logger.debug('daemon context set failed', exc_info=True)
         while True:
             try:
                 if as_float(info.get('backoff_until'), 0.0) > time.time():

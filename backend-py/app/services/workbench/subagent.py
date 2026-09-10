@@ -85,9 +85,11 @@ def register_recurring_task(session_id: str, task: asyncio.Task) -> None:
     if not session_id:
         return
     _recurring_session_tasks.setdefault(session_id, set()).add(task)
-    task.add_done_callback(
-        lambda t, sid=session_id: _recurring_session_tasks.get(sid, set()).discard(t)
-    )
+
+    def _discard(done: asyncio.Task, sid: str = session_id) -> None:
+        _recurring_session_tasks.get(sid, set()).discard(done)
+
+    task.add_done_callback(_discard)
 
 
 def cancel_subagent_tasks_for_session(session_id: str) -> int:

@@ -229,7 +229,7 @@ async def test_edit_lines_anchored_and_hash_verified(tmp_path):
 
     # Stale hash → rejected.
     res = await ft._editLines(str(p), '0' * 64, [{'line': 2, 'old': 'two', 'new': 'deux'}])
-    assert 'hash mismatch' in res
+    assert 'modified since read' in res
 
     # Missing hash → rejected with the re-read instruction.
     res = await ft._editLines(str(p), '', [{'line': 2, 'old': 'two', 'new': 'deux'}])

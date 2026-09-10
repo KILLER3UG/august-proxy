@@ -506,8 +506,9 @@ async def _editLines(
     actualHash = hashlib.sha256(raw).hexdigest()
     if actualHash != expectedHash:
         return (
-            'Error: File changed since you read it (content hash mismatch). '
-            'Re-read the file with the read tool, then retry the edit.'
+            'Error: File has been modified since read, either by the user or by a '
+            'linter. Read it again before attempting to write it — the fileHash from '
+            'your last read_file no longer matches the bytes on disk.'
         )
     try:
         text = raw.decode('utf-8', errors='replace')

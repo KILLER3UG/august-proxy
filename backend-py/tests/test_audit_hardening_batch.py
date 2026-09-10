@@ -136,3 +136,78 @@ async def test_recurring_task_registry_self_cleans_on_completion() -> None:
     await task
     await asyncio.sleep(0)  # let the done-callback run
     assert cancel_subagent_tasks_for_session('sess-clean') == 0
+
+
+# ── Daemon blocklist is now LIVE (context set by the daemon loop) ─────────
+
+
+@pytest.mark.asyncio
+async def test_daemon_context_blocks_mutating_run_command() -> None:
+    """Restored + wired: with the daemon context set (as DaemonManager._runLoop
+    now does), a mutating run_command is refused at dispatch — previously this
+    gate was dead code because nothing ever set the contextvar."""
+    from app.services import tool_registry
+    from app.services.tool_registrations import register_all
+
+    register_all()  # run_command must be registered so dispatch reaches the gate
+    tool_registry.setDaemonContext()
+    try:
+        assert tool_registry.isDaemonContext() is True
+        assert tool_registry.isCommandBlocked('rm -rf /tmp/x') is True
+        assert tool_registry.isCommandBlocked('ls -la') is False
+        # dispatch() consults the gate before the handler runs.
+        result = await tool_registry.dispatch('run_command', {'command': 'rm -rf /'})
+        assert '[BLOCKED]' in result and 'daemon context' in result
+    finally:
+        tool_registry.clearDaemonContext()
+    assert tool_registry.isDaemonContext() is False
+
+
+@pytest.mark.asyncio
+async def test_non_daemon_run_command_not_blocked_by_daemon_gate() -> None:
+    """Outside the daemon context the gate must not fire — the handler is
+    reached. The handler is stubbed so no real subprocess spawns (a leaked
+    child transport races the event-loop teardown on Python 3.14)."""
+    from app.services import tool_registry
+    from app.services.tool_registrations import register_all
+
+    register_all()
+    assert tool_registry.isDaemonContext() is False
+
+    reached = {'hit': False}
+
+    async def _stub(**_kw: object) -> str:
+        reached['hit'] = True
+        return 'handler-ran'
+
+    original = tool_registry._registry['run_command']['handler']  # noqa: SLF001
+    tool_registry._registry['run_command']['handler'] = _stub  # noqa: SLF001
+    try:
+        result = await tool_registry.dispatch('run_command', {'command': 'rm -rf /'})
+    finally:
+        tool_registry._registry['run_command']['handler'] = original  # noqa: SLF001
+    # No daemon context → gate does not short-circuit → handler ran, and the
+    # daemon-specific [BLOCKED] reason is absent.
+    assert reached['hit'] is True
+    assert result == 'handler-ran'
+    assert 'daemon context' not in str(result)
+
+
+# ── ZCode-style "modified since read" wording ─────────────────────────────
+
+
+def test_stale_gate_uses_modified_since_read_wording(tmp_path) -> None:
+    from app.services.workbench import read_before_edit as rbe
+
+    f = tmp_path / 'a.txt'
+    f.write_text('v1')
+    s = SimpleNamespace(workspacePath=str(tmp_path))
+    rbe.observe_from_read_result(
+        s, 'read_file', {'path': 'a.txt'},
+        f'[sha256 {__import__("hashlib").sha256(f.read_bytes()).hexdigest()}]\nv1',
+    )
+    f.write_text('v2 external change')
+    err = rbe.check_read_before_edit(s, 'edit_lines', {'path': 'a.txt'})
+    assert err is not None
+    assert 'modified since read' in err
+    assert 'Read it again before attempting to write it' in err
