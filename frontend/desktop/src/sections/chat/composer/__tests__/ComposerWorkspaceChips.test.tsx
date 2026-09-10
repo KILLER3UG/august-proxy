@@ -77,7 +77,10 @@ describe('ComposerWorkspaceChips', () => {
     setup();
     expect(screen.getByTestId('composer-folder-chip').textContent).toContain('august-proxy');
     await waitFor(() => expect(branchMock).toHaveBeenCalled());
-    expect(screen.getByText('master')).toBeTruthy();
+    // waitFor passing on "called" does not mean the resolved value has
+    // settled into the query yet — assert the render after it lands, not
+    // synchronously (this raced since the 30s refetchInterval was added).
+    await waitFor(() => expect(screen.getByText('master')).toBeTruthy());
   });
 
   it('falls back to "Open folder" when the chat has no workspace', () => {
