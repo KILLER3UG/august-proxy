@@ -243,7 +243,7 @@ async def refreshAllModels():
     try:
         from app.services.realtime_bus import emit_invalidate
 
-        emit_invalidate('models', 'providers', 'provider-health')
+        emit_invalidate('aggregated-models', 'ws-providers', 'provider-availability', 'providers')
     except Exception:
         pass
     return {'refreshed': refreshed, 'failed': failed, 'added': addedTotal, 'removed': removedTotal}
@@ -289,7 +289,7 @@ async def createProvider(body: ProviderCreate):
     try:
         from app.services.realtime_bus import emit_invalidate
 
-        emit_invalidate('models', 'providers', 'provider-health')
+        emit_invalidate('aggregated-models', 'ws-providers', 'provider-availability', 'providers')
     except Exception:
         pass
     return {**entry, 'apiKeySet': bool(body.api_key)}
@@ -321,7 +321,7 @@ async def importProviderConfig(body: dict):
     try:
         from app.services.realtime_bus import emit_invalidate
 
-        emit_invalidate('models', 'providers', 'provider-health')
+        emit_invalidate('aggregated-models', 'ws-providers', 'provider-availability', 'providers')
     except Exception:
         pass
     return {**entry, 'apiKeySet': bool(entry.get('apiKey'))}
@@ -364,7 +364,7 @@ async def updateProvider(providerId: str, body: ProviderUpdate):
             try:
                 from app.services.realtime_bus import emit_invalidate
 
-                emit_invalidate('models', 'providers', 'provider-health')
+                emit_invalidate('aggregated-models', 'ws-providers', 'provider-availability', 'providers')
             except Exception:
                 pass
             return {**p, 'apiKeySet': bool(p.get('apiKey'))}
@@ -392,7 +392,7 @@ async def deleteProvider(providerId: str):
     try:
         from app.services.realtime_bus import emit_invalidate
 
-        emit_invalidate('models', 'providers', 'provider-health')
+        emit_invalidate('aggregated-models', 'ws-providers', 'provider-availability', 'providers')
     except Exception:
         pass
     return {'deleted': True}

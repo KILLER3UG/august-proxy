@@ -233,6 +233,24 @@ async def manage_providers(body: ActionBody):
     from app.services.config_service import getProvidersStore, saveProvidersStore
     from app.services.rollback_store import record_rollback
 
+    def _bust_model_catalog() -> None:
+        """providers.json changed: drop the server-side aggregate cache and
+        tell the frontend to refetch the keys that actually back the chat
+        picker (useModels) and the provider tabs — the old emit named
+        'models'/'providers', which no react-query consumer owns."""
+        try:
+            from app.services import model_service
+
+            model_service.invalidate_cache()
+        except Exception:
+            pass
+        try:
+            from app.services.realtime_bus import emit_invalidate
+
+            emit_invalidate('aggregated-models', 'ws-providers', 'provider-availability')
+        except Exception:
+            pass
+
     store = getProvidersStore()
     providers = list(as_list(store.get('providers')))
     action = (body.action or '').lower()
@@ -250,6 +268,12 @@ async def manage_providers(body: ActionBody):
             providers.append(body.provider)
         store['providers'] = providers
         saveProvidersStore(store)
+        # Same invalidation contract as routers/providers.py: without this
+        # the aggregate cache serves the pre-edit snapshot for up to 5 min
+        # (the "dropdown shows models from before I added one" window), and
+        # 'aggregated-models' is the key the chat picker actually queries —
+        # emitting only 'models'/'providers' left every open dropdown stale.
+        _bust_model_catalog()
         try:
             record_rollback(
                 type='restore_provider',
@@ -270,6 +294,7 @@ async def manage_providers(body: ActionBody):
                 kept.append(p)
         store['providers'] = kept
         saveProvidersStore(store)
+        _bust_model_catalog()
         try:
             if before is not None:
                 record_rollback(

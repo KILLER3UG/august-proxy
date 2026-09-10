@@ -2,6 +2,43 @@
 
 ## Unreleased (working tree)
 
+**Model dropdown completeness + lazy-crash + catalog invalidation fixes** —
+from the 2026-09-10 user reports:
+
+- **Dropdown "sometimes doesn't show all models" — root-caused with the
+  live catalog.** `model_service._aggregateModels` deduped by model id
+  ALONE, so a model offered by two enabled gateways (the Kilo and
+  OpenRouter catalogs in this install share 356 ids — `anthropic/
+  claude-sonnet-5` etc.) kept only its first provider's copy: the
+  provider-grouped chat dropdown showed 491 rows where Model settings
+  (raw per-provider lists) show all, and which copy survived depended on
+  providers.json order — the "sometimes" in the report. Dedupe is now
+  (id, provider); `/api/models` on this install goes 491 → 847 rows.
+  `/v1/models` keeps the OpenAI unique-ids contract by collapsing per-id
+  in its own route (pinned/free-sorted winner).
+  `test_aggregate_dedupe_keeps_pinned_across_providers` had encoded the
+  bug as a contract — replaced with the per-provider behavior plus a
+  /v1/models uniqueness test. (Selection resolves provider-first via
+  session.provider, so the duplicate ids never made chat route wrong —
+  only the list lied.)
+- **Settings "Lazy element type must resolve to a class or function"
+  crash** on the Subagents/Plugins/Browser tabs: `38944632` (09-07) wired
+  those wrappers with `.then(m => ({ default: m.X }))` loaders, but
+  `lazySection` still looked the name up on the returned `{ default }`
+  object → undefined component. It now falls back to `m.default`;
+  `lazySection.mapping.test.tsx` renders the mapped wrapper end-to-end
+  (verified RED against the old code, GREEN after).
+- **Catalog invalidation actually reaches the picker.** Provider writes
+  emitted invalidate keys `models`/`providers`/`provider-health` — no
+  react-query consumer owns those keys; the chat picker queries
+  `aggregated-models` and only refreshed via its 120s poll.
+  `routers/providers.py` now emits the real keys (`aggregated-models`,
+  `ws-providers`, `provider-availability`), and
+  `POST /api/august/providers/manage` — used by the model tool and
+  automations, previously saving providers.json with NO cache bust at
+  all — now invalidates the server aggregate + emits the same keys,
+  closing the 5-minute stale-cache window after out-of-band edits.
+
 **Review inbox + refine store on SQLite + the first workbench split** —
 the "both" batch (UI/UX improvements + long-run architecture):
 

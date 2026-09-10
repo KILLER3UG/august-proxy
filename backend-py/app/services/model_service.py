@@ -420,19 +420,27 @@ async def _aggregateModels() -> list[dict[str, object]]:
         allModels.extend(aliasModels)
     except Exception:
         pass
-    seen: dict[str, dict[str, object]] = {}
+    seen: dict[tuple[str, str], dict[str, object]] = {}
     for m in allModels:
-        mid = as_str(m['id'])
-        if mid not in seen:
-            seen[mid] = m
+        # Dedupe by (id, provider), NOT id alone. The same model id is
+        # routinely offered by several gateways (anthropic/claude-* on both
+        # OpenRouter and Kilo); id-only collapsing dropped every later
+        # provider's copy, so the chat dropdown — grouped by provider —
+        # hid models that Model settings (raw per-provider lists) showed:
+        # the "dropdown is missing models" bug. /v1/models keeps OpenAI
+        # unique-ids by collapsing per-provider entries in its own route.
+        key = (as_str(m['id']), as_str(m.get('provider'), ''))
+        if key not in seen:
+            seen[key] = m
             continue
-        # Dedupe keeps the best entry: free wins over non-free, and a model
-        # pinned on ANY provider shows as pinned in the aggregated list.
-        existing = seen[mid]
+        # Same-provider duplicate (or alias colliding with its own name):
+        # keep the best entry — free wins over non-free, and a pinned
+        # model shows pinned in the aggregated list.
+        existing = seen[key]
         if m.get('isFree') and not existing.get('isFree'):
-            seen[mid] = {**m, 'pinned': bool(existing.get('pinned') or m.get('pinned'))}
+            seen[key] = {**m, 'pinned': bool(existing.get('pinned') or m.get('pinned'))}
         elif m.get('pinned') and not existing.get('pinned'):
-            seen[mid] = {**m, 'isFree': bool(existing.get('isFree') or m.get('isFree'))}
+            seen[key] = {**m, 'isFree': bool(existing.get('isFree') or m.get('isFree'))}
     result = list(seen.values())
     # Pinned first, then free, then alphabetical — mirrored by the UI.
     result.sort(

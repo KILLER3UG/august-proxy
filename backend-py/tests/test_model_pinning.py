@@ -66,7 +66,12 @@ async def test_aggregate_sorts_pinned_before_free_before_name():
     assert pinned['pinned'] is True
 
 
-async def test_aggregate_dedupe_keeps_pinned_across_providers():
+async def test_aggregate_keeps_same_model_per_provider():
+    """(id, provider) dedupe, not id-only: the same model offered by two
+    gateways appears under BOTH provider groups (the chat dropdown was
+    hiding Kilo's copy of every OpenRouter-shared id — the 'dropdown is
+    missing models' bug). The old cross-provider collapse test encoded the
+    bug as a contract; /v1/models still exposes ids uniquely below."""
     _seedProviders(
         [
             _provider('p-one', [{'id': 'shared-model', 'source': 'manual'}]),
@@ -77,8 +82,31 @@ async def test_aggregate_dedupe_keeps_pinned_across_providers():
 
     models = await model_service._aggregateModels()
     shared = [m for m in models if m['id'] == 'shared-model']
-    assert len(shared) == 1
-    assert shared[0]['pinned'] is True
+    assert len(shared) == 2
+    byProvider = {m['provider']: m for m in shared}
+    assert byProvider['p-two']['pinned'] is True
+    assert byProvider['p-one']['pinned'] is False
+    # Pinned sorts first even with a second copy of the id present.
+    assert models[0]['pinned'] is True
+
+
+async def test_v1_models_ids_unique_across_providers():
+    """The OpenAI wire contract wants unique ids; the /v1/models view
+    collapses the per-provider duplicates while /api/models keeps them.
+    Route fn called directly — over HTTP it sits behind require_gateway_key."""
+    from app.routers.models import openaiModels
+
+    _seedProviders(
+        [
+            _provider('p-one', [{'id': 'shared-model', 'source': 'manual'}]),
+            _provider('p-two', [{'id': 'shared-model', 'source': 'manual', 'pinned': True}]),
+        ]
+    )
+    model_service.invalidate_cache()
+    body = await openaiModels(_auth=True)
+    ids = [m['id'] for m in body['data']]
+    assert ids.count('shared-model') == 1
+    assert body['data'][0]['owned_by'] in ('p-one', 'p-two')
 
 
 async def test_api_models_exposes_pinned():

@@ -236,7 +236,13 @@ function lazySection(
 ): React.ComponentType<SectionProps> {
   return React.lazy<React.ComponentType<SectionProps>>(async () => {
     const m = (await load()) as Record<string, React.ComponentType<SectionProps>>;
-    const C = m[name];
+    // Callers pass either a raw module (name lookup) or a pre-mapped
+    // { default } — some loaders .then()-map and then still pass the name,
+    // so falling back to default keeps both shapes alive. Without this,
+    // m[name] on a { default } module resolved to undefined and React
+    // threw "Lazy element type must resolve to a class or function"
+    // (Subagents/Plugins/Browser tabs, wired 2026-09-07).
+    const C = m[name] ?? (m as { default?: React.ComponentType<SectionProps> }).default;
     return { default: C };
   });
 }
@@ -312,7 +318,7 @@ const MemoryWrapper = lazySection(() => import('./MemorySection'), 'MemorySectio
 const HealthSimulatorWrapper = lazySection(() => import('./HealthSimulatorSection'), 'HealthSimulatorSection');
 const AISetupWizardWrapper = lazySection(() => import('./AISetupWizardSection'), 'AISetupWizardSection');
 
-const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
+export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   usage: UsageWrapper,
   'recurring-tasks': RecurringTasksWrapper,
   'conversation-inspector': InspectorWrapper,

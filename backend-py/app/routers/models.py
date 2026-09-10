@@ -82,8 +82,16 @@ async def openaiModels(_auth: bool = Depends(require_gateway_key)):
     Gated by the gateway key: this is the external /v1 surface, and the
     unauthenticated twin in proxy.py was shadowed by this route — every
     other /v1/* endpoint requires the Bearer key (audit finding).
+
+    Aggregate dedupes by (id, provider) so the UI can show the same model
+    offered by several gateways; the OpenAI wire contract wants ids
+    unique, so this view collapses per-id and keeps the first (pinned/free-
+    sorted) entry.
     """
     models = await model_service.aggregate()
+    byId: dict[str, dict[str, object]] = {}
+    for m in models:
+        byId.setdefault(str(m['id']), m)
     return {
         'object': 'list',
         'data': [
@@ -93,7 +101,7 @@ async def openaiModels(_auth: bool = Depends(require_gateway_key)):
                 'created': 0,
                 'owned_by': m.get('provider', 'unknown'),
             }
-            for m in models
+            for m in byId.values()
         ],
     }
 
