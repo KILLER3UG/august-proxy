@@ -58,6 +58,7 @@ numKeys: tuple[str, ...] = (
     'maxWorkbenchToolLoops',
     'autoRouteMinSamples',
     'consolidationIntervalHours',
+    'introspectionIntervalHours',
     'escalationBudgetPerDay',
     'episodicRetentionDays',
     'preferenceRetireDays',
@@ -121,6 +122,9 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # and the Q5 model-assisted merge summarization flag (default off — each
     # merge costs one cheap-model call).
     ('consolidationIntervalHours', 'consolidation_interval_hours', 24, 'num'),
+    # P2 unified learning scheduler: the introspection job's cadence, was a
+    # hardcoded 6h in scheduled_introspection_loop; now config like the rest.
+    ('introspectionIntervalHours', 'introspection_interval_hours', 6, 'num'),
     ('consolidationModelSummarize', 'consolidation_model_summarize', False, 'bool'),
     # M-4: episodic_timeline retention window in days — the sweep
     # in consolidation._sweep_episodic prunes rows older than this.
@@ -303,7 +307,7 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 lo, hi = maxAgentDepthRange
             elif key == 'autoRouteMinSamples':
                 lo, hi = minSamplesRange
-            elif key == 'consolidationIntervalHours':
+            elif key == 'consolidationIntervalHours' or key == 'introspectionIntervalHours':
                 lo, hi = consolidationIntervalRange
             elif key == 'escalationBudgetPerDay':
                 lo, hi = escalationBudgetRange

@@ -303,3 +303,26 @@ async def deleteRefine(entry_id: str, rationale: str = 'deleted from Learning pa
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {'ok': True}
+
+
+# ── P2 unified learning scheduler ─────────────────────────────────────────
+
+
+@router.get('/scheduler')
+async def schedulerStatus():
+    """Per-job cadence + last-run ledger for the Learning panel: the single
+    place to answer 'when did the learning brain last run, and what did it
+    do?' (replaces the per-poller logging the old loops each kept)."""
+    from app.services.learning_scheduler import scheduler_status
+
+    return scheduler_status()
+
+
+@router.post('/scheduler/run/{job}')
+async def runScheduledJob(job: str):
+    """Run one scheduler job now (same ledger rows as the cadence)."""
+    from app.services.learning_scheduler import JOBS, run_job_async
+
+    if job not in JOBS:
+        raise HTTPException(status_code=404, detail=f'unknown job {job!r}')
+    return await run_job_async(job)

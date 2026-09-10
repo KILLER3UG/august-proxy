@@ -362,7 +362,7 @@ export function HarnessImprovementsSection() {
               )}
             </div>
 
-            <InfoRow label="Evidence" body={selected.evidence} mono={false} />
+            <EvidenceRow label="Evidence" body={selected.evidence} />
             <InfoRow label="Proposed change" body={selected.proposal} mono={false} />
             <InfoRow label="Rollback" body={selected.rollback} mono={false} />
             {selected.expectedMetric && (
@@ -559,6 +559,90 @@ function InfoRow({ label, body, mono }: { label: string; body: string; mono: boo
       >
         {body}
       </pre>
+    </div>
+  );
+}
+
+/* ── Evidence chips ─────────────────────────────────────────────────────── */
+/* The scheduled passes build evidence as "Section header:" lines followed by
+ * "- item" bullets (refine_store.build_scheduled_evidence,
+ * harness_self_improve._run_scheduled_pass). As raw text it is a wall the
+ * reviewer skims past; as chips each datum is a scannable unit. Text that
+ * does not parse into that shape (prose from the memory queue, hand-written
+ * observations) falls back to the old block — the parser must never eat or
+ * reorder evidence a human is deciding on. Exported for direct tests. */
+export interface EvidenceSection {
+  title: string;
+  items: string[];
+}
+export interface EvidenceParse {
+  sections: EvidenceSection[];
+  structured: boolean;
+}
+
+export function parseEvidence(body: string): EvidenceParse {
+  const lines = (body || '').split(/\r?\n/);
+  const sections: EvidenceSection[] = [];
+  let current: EvidenceSection = { title: '', items: [] };
+  let sawBullet = false;
+  let bulletChars = 0;
+  let prose = 0;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith('- ')) {
+      sawBullet = true;
+      bulletChars += line.length;
+      current.items.push(line.slice(2).trim());
+    } else if (line.endsWith(':') && line.length <= 120) {
+      if (current.items.length) sections.push(current);
+      current = { title: line.slice(0, -1).trim(), items: [] };
+    } else {
+      prose += line.length;
+      current.items.push(line);
+    }
+  }
+  if (current.items.length) sections.push(current);
+  // Structured = bullets exist and the text isn't mostly non-bullet prose.
+  const structured = sawBullet && bulletChars >= prose;
+  return { sections, structured };
+}
+
+function EvidenceRow({ label, body }: { label: string; body: string }) {
+  if (!body?.trim()) return null;
+  const { sections, structured } = parseEvidence(body);
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      {structured ? (
+        <div data-testid="evidence-chips" className="mt-1 max-h-52 space-y-2 overflow-y-auto">
+          {sections.map((sec, i) => (
+            <div key={i} data-testid="evidence-section">
+              {sec.title ? (
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                  {sec.title}
+                </p>
+              ) : null}
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {sec.items.map((item, j) => (
+                  <span
+                    key={j}
+                    data-testid="evidence-chip"
+                    title={item}
+                    className="max-w-full truncate rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-[11px] text-foreground/90"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border/40 bg-muted/20 px-3 py-2 text-[12px] leading-relaxed text-foreground/90">
+          {body}
+        </pre>
+      )}
     </div>
   );
 }

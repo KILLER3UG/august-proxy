@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Brain, Check, ChevronDown, ChevronRight, Loader2, RotateCcw, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
+import { useModels } from '@/hooks/useModels';
 import { invalidateReviewInboxCount } from '@/lib/useReviewInboxCount';
 import { CuratorSuggestionBar } from '@/sections/chat/CuratorSuggestionBar';
 
@@ -57,6 +58,50 @@ interface RefineState {
   entries: RefineEntry[];
   config: { autoRefine?: boolean; producerModel?: string; reviewModel?: string };
   ledger: Array<{ at?: string; actor?: string; action?: string; entryId?: string; kind?: string }>;
+}
+
+/* P2 unified learning scheduler: cadence + last-run ledger for the
+ * background passes. Without this the refine/consolidation writers look dead
+ * between runs — the panel is the only surface that can say "it ran 3h ago
+ * and kept 2 notes". */
+interface SchedulerJob {
+  job: string;
+  intervalHours: number;
+  lastRunAt: string | null;
+  lastStatus: string;
+  lastDurationS: number | null;
+  nextDueAt: string | null;
+  summary?: {
+    observationsFiled?: number;
+    promotionsFiled?: number;
+    refine?: { status?: string; applied?: number };
+    error?: string;
+  };
+}
+interface SchedulerState {
+  jobs: SchedulerJob[];
+  runs: Array<{ job: string; finished_at?: string; status?: string }>;
+}
+
+const REFINE_PHRASE: Record<string, string> = {
+  kept: 'kept',
+  discarded: 'discarded by reviewer',
+  'no-edits': 'no edits proposed',
+  disabled: 'auto-refine off',
+  skipped: 'no evidence',
+  error: 'failed',
+};
+
+/** Compact relative time for ledger rows ("3h ago"); absolute fallback. */
+function agoLabel(iso: string | null): string {
+  if (!iso) return 'never';
+  const t = Date.parse(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(t)) return iso;
+  const mins = Math.max(0, Math.round((Date.now() - t) / 60_000));
+  if (mins < 2) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60 * 24) return `${Math.round(mins / 60)}h ago`;
+  return `${Math.round(mins / (60 * 24))}d ago`;
 }
 
 interface Report {
@@ -110,6 +155,7 @@ export function LearningPanel() {
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [running, setRunning] = useState(false);
+  const { models } = useModels();
 
   const reportQ = useQuery({
     queryKey: ['curator-report'],
@@ -132,6 +178,24 @@ export function LearningPanel() {
     queryKey: ['curator-refine'],
     queryFn: () => api.get<RefineState>('/api/curator/refine'),
     enabled: expanded,
+  });
+  const schedulerQ = useQuery({
+    queryKey: ['curator-scheduler'],
+    queryFn: () => api.get<SchedulerState>('/api/curator/scheduler'),
+    enabled: expanded,
+    refetchInterval: 60_000, // cadence is hours; a minute-level tick keeps "last run" honest
+  });
+
+  const runJobNow = useMutation({
+    mutationFn: (job: string) => api.post(`/api/curator/scheduler/run/${encodeURIComponent(job)}`),
+    onSuccess: () => {
+      toast.success('Job run finished — ledger updated');
+      void qc.invalidateQueries({ queryKey: ['curator-scheduler'] });
+      void qc.invalidateQueries({ queryKey: ['curator-refine'] });
+      void qc.invalidateQueries({ queryKey: ['curator-report'] });
+      invalidateReviewInboxCount(qc);
+    },
+    onError: (e: Error) => toast.error(e.message || 'Job run failed'),
   });
 
   const refresh = useCallback(() => {
@@ -170,6 +234,16 @@ export function LearningPanel() {
       void qc.invalidateQueries({ queryKey: ['curator-refine'] });
     },
     onError: (e: Error) => toast.error(e.message || 'Config update failed'),
+  });
+
+  const setRefineModels = useMutation({
+    mutationFn: (patch: { producerModel?: string; reviewModel?: string }) =>
+      api.post('/api/curator/refine/config', patch),
+    onSuccess: () => {
+      toast.success('Refine model pins updated');
+      void qc.invalidateQueries({ queryKey: ['curator-refine'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Model pin update failed'),
   });
 
   const decide = useMutation({
@@ -371,6 +445,64 @@ export function LearningPanel() {
             )}
           </div>
 
+          {/* P2: the unified scheduler's ledger — cadence + last-run per
+              background job, so a 24h writer never looks dead. Manual "run"
+              rides the same code path (and ledger) the cadence uses. */}
+          <div data-testid="learning-scheduler">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Background jobs
+            </p>
+            {!schedulerQ.data?.jobs?.length ? (
+              <p className="text-xs text-muted-foreground">
+                Scheduler status unavailable — the learning loop runs on its cadence anyway.
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {schedulerQ.data.jobs.map((j) => {
+                  const refine = j.summary?.refine;
+                  const filed =
+                    j.job === 'introspection'
+                      ? [
+                          j.summary?.observationsFiled ? `${j.summary.observationsFiled} observation(s) filed` : null,
+                          j.summary?.promotionsFiled ? `${j.summary.promotionsFiled} promotion(s) filed` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')
+                      : '';
+                  const outcome = refine
+                    ? `refine: ${REFINE_PHRASE[refine.status ?? ''] ?? refine.status}` +
+                      (refine.status === 'kept' && refine.applied ? ` (${refine.applied} applied)` : '')
+                    : filed || (j.summary?.error ? String(j.summary.error).slice(0, 80) : '');
+                  return (
+                    <li
+                      key={j.job}
+                      data-testid={`learning-scheduler-job-${j.job}`}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-card/60 px-3 py-1.5 text-xs"
+                    >
+                      <span className="min-w-0">
+                        <span className="font-medium text-foreground/90">{j.job}</span>
+                        <span className="ml-2 text-[10.5px] text-muted-foreground" title={j.lastRunAt ?? undefined}>
+                          every {j.intervalHours}h · last {agoLabel(j.lastRunAt)}
+                          {j.lastStatus === 'error' ? ' · errored' : ''}
+                          {outcome ? ` · ${outcome}` : ''}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        data-testid={`learning-scheduler-run-${j.job}`}
+                        onClick={() => runJobNow.mutate(j.job)}
+                        disabled={runJobNow.isPending}
+                        className="shrink-0 rounded-lg border border-border/60 bg-muted/30 px-2 py-0.5 text-[10.5px] text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+                      >
+                        {runJobNow.isPending && runJobNow.variables === j.job ? 'running…' : 'run now'}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
           {/* Refine store — the versioned harness-state notes that inject into
               every prompt. Written by gated auto-refine passes (independent
               reviewer, discard-default, rollback on reject); every row here is
@@ -391,6 +523,53 @@ export function LearningPanel() {
                 />
                 Auto-refine
               </label>
+            </div>
+            {/* UI suggestion 5: model pins for the gated pass. Producer writes
+                the batch, reviewer (a DIFFERENT model — the backend refuses
+                equal pairs when auto-refine is on) judges it discard-default.
+                Empty = provider default per pin. */}
+            <div className="mb-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10.5px] text-muted-foreground">
+              <label className="flex min-w-0 items-center gap-1.5" data-testid="learning-refine-producer-row">
+                <span className="shrink-0">producer</span>
+                <select
+                  data-testid="learning-refine-producer"
+                  className="max-w-[220px] truncate rounded-md border border-border/60 bg-muted/30 px-1.5 py-0.5 text-[10.5px] text-foreground focus:border-primary/40 focus:outline-none"
+                  value={refineQ.data?.config?.producerModel ?? ''}
+                  disabled={setRefineModels.isPending}
+                  onChange={(e) => setRefineModels.mutate({ producerModel: e.target.value })}
+                >
+                  <option value="">default</option>
+                  {models.map((m) => (
+                    <option key={`p-${m.provider}-${m.id}`} value={m.id}>
+                      {m.name || m.id} · {m.provider}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex min-w-0 items-center gap-1.5" data-testid="learning-refine-reviewer-row">
+                <span className="shrink-0">reviewer</span>
+                <select
+                  data-testid="learning-refine-reviewer"
+                  className="max-w-[220px] truncate rounded-md border border-border/60 bg-muted/30 px-1.5 py-0.5 text-[10.5px] text-foreground focus:border-primary/40 focus:outline-none"
+                  value={refineQ.data?.config?.reviewModel ?? ''}
+                  disabled={setRefineModels.isPending}
+                  onChange={(e) => setRefineModels.mutate({ reviewModel: e.target.value })}
+                >
+                  <option value="">default</option>
+                  {models.map((m) => (
+                    <option key={`r-${m.provider}-${m.id}`} value={m.id}>
+                      {m.name || m.id} · {m.provider}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {refineQ.data?.config?.autoRefine &&
+                refineQ.data?.config?.producerModel &&
+                refineQ.data?.config?.producerModel === refineQ.data?.config?.reviewModel && (
+                  <span data-testid="learning-refine-same-model" className="text-amber-600 dark:text-amber-400">
+                    producer and reviewer are the same model — passes will be discarded
+                  </span>
+                )}
             </div>
             {!refineQ.data?.entries?.length ? (
               <p className="text-xs text-muted-foreground">

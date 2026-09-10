@@ -2,6 +2,65 @@
 
 ## Unreleased (working tree)
 
+**P2 unified learning scheduler + LearningPanel job ledger** — closing the
+last architectural debt from the learning-loop audit:
+
+- **One scheduler, one ledger.** The two remaining clock-driven pollers
+  (`scheduled_introspection_loop` fixed 6h started in `main.lifespan`;
+  `consolidation_loop` config-cadence started in `cognitive_boot`) are now
+  jobs (`introspection`, `consolidation`) in
+  `app/services/learning_scheduler.py`: one `scheduler_loop()` task started
+  once from lifespan, one `learning_job_run` ledger (migration 041: job,
+  started/finished, status, duration, detail blob; pruned to 50 rows/job),
+  due-ness computed from the ledger so overdue state survives restarts (the
+  old introspection loop had no due bookkeeping at all — every boot
+  re-swept). Cadences re-read brain-config per tick; the introspection
+  interval is now config too (`introspectionIntervalHours`, default 6, was
+  hardcoded). In-turn ReviewGates deliberately stay in-turn — they react to
+  conversation, not the clock.
+- The old loop functions remain importable as one-release deprecation shims
+  that just run the unified loop; `consolidation:last_run` keeps being
+  written by the pass (MemorySection reads it) while due-ness moved to the
+  ledger. `cognitive_boot` no longer starts a poller.
+- New routes: `GET /api/curator/scheduler` (per-job cadence + last-run +
+  recent ledger), `POST /api/curator/scheduler/run/{job}` (manual pass,
+  same code path + same ledger rows the cadence uses).
+- **LearningPanel "Background jobs" section** (UI suggestion 6 folded in):
+  cadence, "last 3h ago", per-job outcome — observations/promotions filed
+  for introspection, and the last consolidation pass's refine verdict
+  (`refine: kept (3 applied)` / `discarded by reviewer` / `no edits
+  proposed` / `auto-refine off` / `no evidence`) — so a 24h background
+  writer can never look dead again. "run now" per job with 60s ledger poll.
+- Wiring guard: `tests/test_learning_scheduler_wiring.py` fails CI if a
+  production site starts a retired poller again (the new-cadence-job-gets-
+  its-own-loop class), if lifespan stops starting the scheduler, if the
+  routes vanish, and pins ledger round-trip semantics (ok row, error row
+  still resets due-ness — no hot-retry, unknown job = receipt).
+
+**Review Inbox evidence chips (UI suggestion 3)** — the detail card's
+Evidence row rendered the scheduled passes' output as a raw-text wall; the
+passes' actual shape is `"Header:" + "- bullet"` lines
+(`refine_store.build_scheduled_evidence`,
+`harness_self_improve._run_scheduled_pass`), so `parseEvidence` now folds it
+into titled chip groups. Conservative by design: prose evidence (memory
+queue reasons, hand-written observations) fails the bullet-dominance test
+and falls back to the old block — the parser never eats or reorders text a
+human is deciding on. `evidence-chips.test.ts` pins both directions (5
+tests).
+
+**Refine producer/reviewer model pins (UI suggestion 5)** — the backend
+routes already merged `producerModel`/`reviewModel` and refused same-model
+pairs when auto-refine is on; the panel only had the checkbox, so the pins
+were unreachable. LearningPanel now renders both pickers (options from the
+aggregated catalog via `useModels`; a model id resolves through the
+provider resolver's model-ids pass and becomes the request body's model —
+verified against `make_review_llm_client`), posting a single-field patch per
+change, plus a visible same-model warning if the stored pair is equal while
+auto-refine is on. `LearningPanel.refinePins.test.tsx` pins render + patch
+shape (2 tests).
+
+## Unreleased (working tree) — previous
+
 **Model dropdown completeness + lazy-crash + catalog invalidation fixes** —
 from the 2026-09-10 user reports:
 

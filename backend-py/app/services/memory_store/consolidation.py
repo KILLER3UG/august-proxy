@@ -573,36 +573,16 @@ def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
 
 
 async def consolidation_loop() -> None:
-    """The one scheduled job. Cadence comes from brain-config
-    ``consolidationIntervalHours`` (default 24h), re-read every cycle."""
-    while True:
-        intervalH = 24.0
-        try:
-            from app.services.brain_config_service import getRuntimeConfig
+    """DEPRECATED shim (P2): consolidation is one job in
+    ``learning_scheduler`` now (cadence key unchanged:
+    ``consolidationIntervalHours``); the scheduler is the only starter.
+    Kept importable for one release; running it runs the unified loop.
+    The pass body is ``run_consolidation``; due-ness/bookkeeping moved to
+    the ``learning_job_run`` ledger.
+    """
+    logger.warning(
+        'consolidation_loop is deprecated — learning_scheduler owns the cadence'
+    )
+    from app.services.learning_scheduler import scheduler_loop
 
-            intervalH = float(getRuntimeConfig().get('consolidationIntervalHours', 24) or 24)
-        except Exception:
-            pass
-        intervalH = min(max(intervalH, 1.0), 168.0)
-        # Run immediately when a pass is overdue (first boot included), then
-        # sleep the configured cadence.
-        try:
-            from app.services.memory_store import get_internal_state
-
-            lastRaw = str(get_internal_state(_STATE_KEY_LAST_RUN) or '')
-            due = True
-            if lastRaw:
-                try:
-                    lastAt = datetime.fromisoformat(lastRaw)
-                    if lastAt.tzinfo is None:
-                        lastAt = lastAt.replace(tzinfo=timezone.utc)
-                    due = (datetime.now(timezone.utc) - lastAt).total_seconds() >= intervalH * 3600
-                except ValueError:
-                    due = True
-            if due:
-                await asyncio.to_thread(run_consolidation)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.debug('consolidation loop pass failed', exc_info=True)
-        await asyncio.sleep(intervalH * 3600)
+    await scheduler_loop()

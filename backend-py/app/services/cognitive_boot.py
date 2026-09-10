@@ -104,19 +104,18 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
         errors.append(f'facts_expiry_sweep: {exc3}')
         services['facts_expiry_sweep'] = {'ok': False, 'error': str(exc3)}
 
-    # M4 consolidation v2: the one scheduled memory-maintenance
-    # job. Cadence comes from brain-config consolidationIntervalHours; state
-    # lives in internal_state. First pass runs when overdue (boot included).
+    # P2 unified learning scheduler: the consolidation poller is retired —
+    # consolidation is one job in learning_scheduler (cadence key unchanged),
+    # started once from main.lifespan. This boot step only checks the
+    # scheduler module is importable so a broken registry fails loudly here.
     try:
-        from app.services.memory_store.consolidation import consolidation_loop
+        from app.services import learning_scheduler  # noqa: F401
 
-        t = asyncio.create_task(consolidation_loop(), name='consolidation')
-        _tasks.append(t)
-        services['consolidation'] = {'ok': True}
+        services['learning_scheduler'] = {'ok': True}
     except Exception as exc4:
-        logger.exception('consolidation loop start failed')
-        errors.append(f'consolidation: {exc4}')
-        services['consolidation'] = {'ok': False, 'error': str(exc4)}
+        logger.exception('learning scheduler import failed')
+        errors.append(f'learning_scheduler: {exc4}')
+        services['learning_scheduler'] = {'ok': False, 'error': str(exc4)}
 
     _status['started'] = True
     _status['services'] = services

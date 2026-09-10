@@ -206,16 +206,28 @@ async def lifespan(app: FastAPI):
         logger.info('Subagent orchestrator ready')
     except Exception:
         logger.exception('Runtime services (orchestrator) failed to start')
-    # Harness self-improvement (0.17.0): scheduled off-hours introspection —
-    # auto-files observation proposals, never applies anything.
+    # P2 unified learning scheduler (0.17.x): one poller runs every
+    # cadence-driven learning job (introspection + promotion judge,
+    # consolidation chain incl. distiller + refine). Auto-files proposals,
+    # never applies anything. Replaces the two independent loops that used
+    # to start here and in cognitive_boot.
     try:
-        from app.services.harness_self_improve import scheduled_introspection_loop
+        from app.services.learning_scheduler import scheduler_loop
 
-        asyncio.create_task(scheduled_introspection_loop())
-        logger.info('Harness introspection loop started')
+        t = asyncio.create_task(scheduler_loop(), name='learning_scheduler')
+        # Keep a reference so the task is never GC'd mid-loop (asyncio docs
+        # require holding created tasks); shutdown cancels it below.
+        app.state.learning_scheduler = t
+        logger.info('Learning scheduler started')
     except Exception:
-        logger.exception('Harness introspection loop failed to start (continuing)')
+        logger.exception('Learning scheduler failed to start (continuing)')
     yield
+    try:
+        _ls = getattr(app.state, 'learning_scheduler', None)
+        if _ls is not None:
+            _ls.cancel()
+    except Exception:
+        pass
     # Tear down the log-stream hub and root handler on shutdown.
     try:
         logging.getLogger().removeHandler(wsHandler)

@@ -664,42 +664,29 @@ def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
 
 
 # ── Scheduled introspection ───────────────────────────────────────────────
-
-_INTERVAL_S = 6 * 3600
+# P2: the 6h poller is gone — the cadence lives in learning_scheduler
+# (config key `introspectionIntervalHours`), and the job body is the pair
+# of pass functions below.
 
 
 async def scheduled_introspection_loop() -> None:
-    """Off-hours harness introspection: auto-file observations, never apply.
+    """DEPRECATED shim (P2): the introspection cadence is one job in
+    ``learning_scheduler`` now; the scheduler is the only starter. Kept so
+    external imports keep resolving for one release — running it just runs
+    the unified loop.
 
-    Runs immediately once (post-boot sweep), then every 6h. Only files a
-    proposal when mechanical findings exist, and dedupes against open ones
-    via save_proposal's duplicate guard.
+    The pass body lives in ``_run_scheduled_pass`` /
+    ``_run_scheduled_promotion_pass`` (file observations + promote
+    proposals, never apply).
     """
-    import asyncio
+    import logging
 
-    while True:
-        try:
-            filed = await asyncio.to_thread(_run_scheduled_pass)
-            if filed:
-                import logging
+    logging.getLogger(__name__).warning(
+        'scheduled_introspection_loop is deprecated — learning_scheduler owns the cadence'
+    )
+    from app.services.learning_scheduler import scheduler_loop
 
-                logging.getLogger(__name__).info(
-                    'harness introspection filed %d observation proposal(s)', filed
-                )
-            # The cross-project promotion judge rides the
-            # same cadence — files `promote` proposals only (never applies).
-            import asyncio as _aio
-
-            promo = await _aio.to_thread(_run_scheduled_promotion_pass)
-            if promo:
-                logging.getLogger(__name__).info(
-                    'promotion judge filed %d promote proposal(s)', promo
-                )
-        except Exception:
-            import logging
-
-            logging.getLogger(__name__).exception('scheduled introspection pass failed')
-        await asyncio.sleep(_INTERVAL_S)
+    await scheduler_loop()
 
 
 def _run_scheduled_pass() -> int:
