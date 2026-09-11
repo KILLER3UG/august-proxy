@@ -59,6 +59,8 @@ _ALLCamelKeys = {
     # Per-project memory + workspace skills toggles.
     'projectMemory',
     'projectSkills',
+    # ZCode-parity file memory: one file per fact + generated MEMORY-INDEX.md.
+    'fileMemory',
     # Global subagent delegation limits (Settings → Subagents panel).
     'subagentMaxConcurrent',
     'subagentMaxIterations',

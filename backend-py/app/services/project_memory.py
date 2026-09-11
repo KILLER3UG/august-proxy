@@ -7,11 +7,22 @@ memory scopes memory to a workspace via hand-editable markdown files at
 files allowed), fulfilling the 2026-08-26 readability ruling: entries are
 titled ``## <title>`` sections a human can open, edit, and trust.
 
+File-memory mode (2026-09-12, the ZCode-parity upgrade, config
+``fileMemory`` default on): a fact written through the ``remember`` door
+with a description becomes its own ``<slug>.md`` file with YAML
+frontmatter (``name`` / ``description`` / ``type``: user|feedback|project|
+reference) and one ``## <title>`` section — one file per fact — and
+``MEMORY-INDEX.md`` is regenerated as a one-line-per-fact index
+(``- [Title](file.md) — description``) that the session-start boot block
+injects. The frontmatter lives in the file's preamble, so legacy parsing
+and byte-exact round-trips are untouched; ``MEMORY-INDEX.md`` itself is never
+parsed for entries. Legacy ``memory.md`` sections keep working unchanged.
+
 Format contract (tests/test_project_memory.py pins it):
   * Entry  = ``## <title>`` heading; entry key = the heading text.
   * Optional ``* updated: <iso>`` line inside the entry body.
-  * Content before the first ``##`` (preamble / template header) is
-    preserved VERBATIM on every rewrite.
+  * Content before the first ``##`` (preamble / template header, including
+    any YAML frontmatter) is preserved VERBATIM on every rewrite.
   * Everything the parser understands round-trips byte-exactly apart from
     the entries a caller deliberately changed.
 
@@ -37,16 +48,28 @@ log = logging.getLogger(__name__)
 _HEADING_RE = re.compile(r'^##\s+(.+?)\s*$', re.MULTILINE)
 _UPDATED_RE = re.compile(r'^\*updated:\s*([^*\s]+)\*\s*$|^\*\s*updated:\s*([^*\s]+)\*\s*$', re.MULTILINE)
 _ENTRY_BODY_CAP = 400  # per-entry read-back cap for prompt blocks
+_INDEX_NAME = 'MEMORY-INDEX.md'  # generated index file — never parsed for entries
+_KNOWN_KINDS = ('user', 'feedback', 'project', 'reference')
+
+# YAML frontmatter, flat keys only (name / description / type). Deliberately
+# a tiny parser rather than a yaml dependency: these files are machine-
+# written and human-edited, and the fields we consume are one line each.
+_FM_RE = re.compile(r'\A---[ \t]*\n(.*?)\n---[ \t]*\n', re.DOTALL)
+_FM_LINE_RE = re.compile(r'^(name|description|type)\s*:\s*(.+?)\s*$', re.MULTILINE)
 
 
 @dataclass
 class ProjectEntry:
-    """One `## <title>` section."""
+    """One `## <title>` section. description/kind come from the file's
+    frontmatter when present (file-memory mode); they stay empty for plain
+    legacy sections."""
 
     title: str
     body: str = ''
     updated: str = ''  # ISO date, optional
     file: str = 'memory.md'  # source file name (relative to the root)
+    description: str = ''  # frontmatter description (index hook + recall text)
+    kind: str = ''  # frontmatter type: user|feedback|project|reference
 
 
 @dataclass
@@ -60,6 +83,19 @@ class ProjectFile:
 def memory_root(workspace: str | Path) -> Path:
     """`<workspace>/.aug/memory` — the project memory root."""
     return Path(workspace) / '.aug' / 'memory'
+
+
+def _parse_fm(preamble: str) -> dict[str, str]:
+    """Flat frontmatter fields from a file preamble ('' when no block)."""
+    m = _FM_RE.match(preamble)
+    if not m:
+        return {}
+    return {k.lower(): v for k, v in _FM_LINE_RE.findall(m.group(1))}
+
+
+def _slugify(title: str) -> str:
+    s = re.sub(r'[^a-z0-9]+', '-', (title or '').lower()).strip('-')
+    return s[:48] or 'entry'
 
 
 def parse_memory_md(text: str) -> ProjectFile:
@@ -140,7 +176,10 @@ def _list_files(workspace: str | Path) -> list[Path]:
     root = memory_root(workspace)
     if not root.is_dir():
         return []
-    return sorted(p for p in root.glob('*.md') if p.is_file())
+    # MEMORY-INDEX.md is a generated index, not a memory file — it must never
+    # parse as entries (double-count) nor be searched/mutated as one.
+    return sorted(p for p in root.glob('*.md')
+                  if p.is_file() and p.name != _INDEX_NAME)
 
 
 def list_files(workspace: str | Path) -> list[dict[str, object]]:
@@ -154,17 +193,24 @@ def list_files(workspace: str | Path) -> list[dict[str, object]]:
 
 def read_entries(workspace: str | Path, *, title: str = '') -> list[ProjectEntry]:
     """All entries across the workspace's md files (ordered by file then
-    position). Optional exact-title filter."""
+    position). Optional exact-title filter. The generated ``MEMORY-INDEX.md``
+    index is skipped — its lines would otherwise double-count as entries.
+    File-level frontmatter (file-memory mode) attaches description/kind to
+    the file's entries; legacy files carry none."""
     wanted = (title or '').strip().lower()
     out: list[ProjectEntry] = []
     for p in _list_files(workspace):
+        if p.name == _INDEX_NAME:
+            continue
         pf = parse_memory_md(p.read_text('utf-8'))
+        fm = _parse_fm(pf.preamble)
         for e in pf.entries:
             if wanted and e.title.lower() != wanted:
                 continue
             out.append(
                 ProjectEntry(
-                    title=e.title, body=e.body, updated=e.updated, file=p.name
+                    title=e.title, body=e.body, updated=e.updated, file=p.name,
+                    description=fm.get('description', ''), kind=fm.get('type', ''),
                 )
             )
     return out
@@ -196,6 +242,9 @@ def upsert_entry(
     body: str,
     file: str = 'memory.md',
     touch_updated: bool = True,
+    description: str = '',
+    kind: str = '',
+    per_fact: bool = False,
 ) -> ProjectEntry:
     """Append or update one `## <title>` entry (write door for remember
     scope='project' and the UI). Title is the entry key; body replaces the
@@ -204,13 +253,44 @@ def upsert_entry(
     §9 F-4 format-contract guards: titles are flattened to one line and
     heading-looking body lines are escaped, so the entries written here
     always re-parse 1:1; a title that already exists in ANOTHER md file is
-    updated there (first match in file order) instead of duplicated."""
+    updated there (first match in file order) instead of duplicated.
+
+    File-memory mode (``per_fact``, the ZCode-parity shape): a NEW fact is
+    written as its own ``<slug>.md`` carrying one-line YAML frontmatter
+    (name/description/type) above its single `## <title>` section, and the
+    ``MEMORY-INDEX.md`` index is regenerated. Updating an existing entry keeps
+    the file it already lives in — no silent migration of legacy
+    ``memory.md`` sections."""
     root = ensure_root(workspace)
-    target = root / file
-    pf = parse_memory_md(target.read_text('utf-8')) if target.exists() else ProjectFile()
     title = _sanitizeTitle(title) or 'Untitled'
     body = _sanitizeBody(body)
     now = datetime.now().astimezone().strftime('%Y-%m-%d')
+    fmKind = (kind or 'project').strip().lower()
+    if fmKind not in _KNOWN_KINDS:
+        fmKind = 'project'
+    fmDesc = ' '.join((description or '').split())
+
+    if per_fact and not _find_entry_file(root, title):
+        file = f'{_slugify(title)}.md'
+        fm = ['---', f'name: {_slugify(title)}']
+        if fmDesc:
+            fm.append(f'description: {fmDesc}')
+        fm += [f'type: {fmKind}', '---']
+        # blank line between frontmatter and heading matches render_memory_md's
+        # parts join, so the file round-trips byte-exactly through the parser.
+        content = '\n'.join(fm) + '\n\n' + f'## {title}\n'
+        upd = _render_updated(ProjectEntry(title=title, updated=now))
+        if upd:
+            content += f'{upd}\n'
+        if body.strip():
+            content += f'{body.strip()}\n'
+        (root / file).write_text(content, 'utf-8')
+        _rebuild_index(workspace)
+        return ProjectEntry(title=title, body=body.strip(), updated=now, file=file,
+                            description=fmDesc, kind=fmKind)
+
+    target = root / file
+    pf = parse_memory_md(target.read_text('utf-8')) if target.exists() else ProjectFile()
     hit = False
     for e in pf.entries:
         if e.title.strip().lower() == title.lower():
@@ -225,7 +305,7 @@ def upsert_entry(
         # delete would only remove part of it. Update the first match
         # elsewhere instead of creating a duplicate.
         for p in _list_files(workspace):
-            if p == target:
+            if p == target or p.name == _INDEX_NAME:
                 continue
             pf_other = parse_memory_md(p.read_text('utf-8'))
             for e in pf_other.entries:
@@ -238,18 +318,34 @@ def upsert_entry(
                         'project_memory: title %r matched in %s; updated there instead of creating in %s',
                         title, p.name, file,
                     )
+                    _rebuild_index(workspace)
                     return ProjectEntry(title=title, body=body, updated=now if touch_updated else '', file=p.name)
         pf.entries.append(
             ProjectEntry(title=title, body=body.strip(), updated=now if touch_updated else '')
         )
     target.write_text(render_memory_md(pf), 'utf-8')
+    _rebuild_index(workspace)
     return ProjectEntry(title=title, body=body, updated=now, file=file)
+
+
+def _find_entry_file(root: Path, title: str) -> str:
+    """File name holding this exact title (case-insensitive), '' when new."""
+    t = title.strip().lower()
+    for p in sorted(root.glob('*.md')):
+        if p.name == _INDEX_NAME:
+            continue
+        for e in parse_memory_md(p.read_text('utf-8')).entries:
+            if e.title.strip().lower() == t:
+                return p.name
+    return ''
 
 
 def delete_entry(workspace: str | Path, title: str, *, file: str = '') -> bool:
     """Delete one entry by exact title (case-insensitive). When ``file`` is
     empty every md file is searched (title keys are unique per workspace by
-    convention). Returns True when an entry was removed.
+    convention). Returns True when an entry was removed. A per-fact file
+    emptied by the delete is unlinked (its frontmatter belongs to that one
+    fact), and the ``MEMORY-INDEX.md`` index is regenerated.
 
     §9 F-4: with ``file`` empty and the title matching more than one file,
     only the FIRST match (sorted file order) is deleted and the rest are
@@ -257,6 +353,8 @@ def delete_entry(workspace: str | Path, title: str, *, file: str = '') -> bool:
     removed = False
     rest: list[str] = []
     for p in _list_files(workspace):
+        if p.name == _INDEX_NAME:
+            continue
         pf = parse_memory_md(p.read_text('utf-8'))
         keep = [e for e in pf.entries if e.title.strip().lower() != (title or '').strip().lower()]
         if len(keep) == len(pf.entries):
@@ -265,26 +363,73 @@ def delete_entry(workspace: str | Path, title: str, *, file: str = '') -> bool:
             if p.name != file:
                 continue
             pf.entries = keep
-            p.write_text(render_memory_md(pf), 'utf-8')
-            return True
-        if not removed:
+        elif not removed:
             pf.entries = keep
-            p.write_text(render_memory_md(pf), 'utf-8')
-            removed = True
         else:
             rest.append(p.name)
+            continue
+        removed = True
+        if not pf.entries and _parse_fm(pf.preamble):
+            p.unlink(missing_ok=True)  # per-fact file: frontmatter is the file
+        elif not pf.entries and p.name != 'memory.md':
+            p.unlink(missing_ok=True)  # emptied non-index side file: remove it
+        else:
+            p.write_text(render_memory_md(pf), 'utf-8')
+        if file:
+            break
     if rest:
         log.warning(
             'project_memory: title %r also matched %s — deleted only the first match; '
             'pass file= to target a specific file',
             title, ', '.join(rest),
         )
+    if removed:
+        _rebuild_index(workspace)
     return removed
 
 
+_INDEX_TEMPLATE = (
+    '# Memory Index\n\n'
+    'One line per stored fact — `[title](file) — description`. Generated by\n'
+    'August on every project-memory write; safe to read, not to hand-edit\n'
+    '(edits are overwritten). Loaded at session start so the model knows\n'
+    'what it remembers and can open the file it needs.\n'
+)
+
+
+def _rebuild_index(workspace: str | Path) -> None:
+    """Regenerate MEMORY-INDEX.md from the workspace's entries. Only maintains the
+    file once file-memory is in play (a frontmatter fact exists, or the
+    index already exists) — purely-legacy workspaces keep their exact file
+    set, which the format-contract tests pin."""
+    root = memory_root(workspace)
+    if not root.is_dir():
+        return
+    idx_path = root / _INDEX_NAME
+    entries = read_entries(workspace)
+    has_fm = any(e.description or e.kind for e in entries)
+    if not has_fm and not idx_path.exists():
+        return
+    lines = [_INDEX_TEMPLATE.rstrip('\n'), '', '## Entries', '']
+    for e in sorted(entries, key=lambda x: (x.file, x.title.lower())):
+        hook = ' '.join((e.description or e.body).split())[:120]
+        lines.append(f'- [{e.title}]({e.file})' + (f' — {hook}' if hook else ''))
+    lines.append('')
+    lines.append(f'_{len(entries)} memories._')
+    idx_path.write_text('\n'.join(lines), 'utf-8')
+
+
+def read_index(workspace: str | Path) -> str:
+    """The MEMORY-INDEX.md text ('' when absent) — the session-start block."""
+    p = memory_root(workspace) / _INDEX_NAME
+    return p.read_text('utf-8') if p.exists() else ''
+
+
 def _entry_text(e: ProjectEntry) -> str:
-    """Indexing text: title words + body (titles carry the human phrasing)."""
-    return f"{e.title} {e.body}"
+    """Indexing text: title + description + body words (titles and
+    descriptions carry the human phrasing; the ZCode-parity description
+    line is what makes one-line hooks recallable)."""
+    return f"{e.title} {e.description} {e.body}"
 
 
 def search_entries(workspace: str | Path, query: str, k: int = 5) -> list[ProjectEntry]:
@@ -315,13 +460,21 @@ def search_entries(workspace: str | Path, query: str, k: int = 5) -> list[Projec
 
 
 def project_block(workspace: str | Path, cap: int = 1200) -> str:
-    """Frozen per-session boot block: title-only index of the project's
-    entries (≤ cap chars). Sits in the system prompt like the global memory
-    index — frozen per session so hand edits apply next session, and the
-    tail block carries fresh per-turn recall."""
+    """Frozen per-session boot block. File-memory mode: the generated
+    ``MEMORY-INDEX.md`` index verbatim (ZCode-parity — the model sees the
+    title+description lines at session start and opens the file it needs).
+    Legacy mode: the original title-only list. Either way it sits in the
+    system prompt frozen per session, so hand edits apply next session, and
+    the tail block carries fresh per-turn recall."""
+    idx = read_index(workspace)
     entries = read_entries(workspace)
     if not entries:
         return ''
+    if idx:
+        body = idx.strip('\n')
+        if len(body) > cap:
+            body = body[:cap].rsplit('\n', 1)[0] + '\n…(index truncated)'
+        return f'<project_memory>\n{body}\n</project_memory>'
     lines: list[str] = ['<project_memory>']
     budget = cap
     listed = 0

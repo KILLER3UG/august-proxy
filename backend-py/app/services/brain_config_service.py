@@ -52,6 +52,7 @@ boolKeys: tuple[str, ...] = (
     'preferenceRetireEnabled',
     'projectMemory',
     'projectSkills',
+    'fileMemory',
 )
 numKeys: tuple[str, ...] = (
     'maxAgentDepth',
@@ -164,6 +165,11 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # Off = session_tools' remember/forget stay global-only and workbench
     # stops injecting the <project_memory> block.
     ('projectMemory', 'project_memory', True, 'bool'),
+    # ZCode-parity file memory (2026-09-12): new project facts write as one
+    # file per fact with YAML frontmatter (name/description/type) and the
+    # workspace keeps a generated MEMORY-INDEX.md index injected at session start.
+    # Off = everything stays in memory.md sections (pre-0.18 behaviour).
+    ('fileMemory', 'file_memory', True, 'bool'),
     # Workspace-scoped skills root (.aug/skills shadowing
     # bundled + agent skills). Off = catalogue falls back to agent+bundled.
     ('projectSkills', 'project_skills', True, 'bool'),

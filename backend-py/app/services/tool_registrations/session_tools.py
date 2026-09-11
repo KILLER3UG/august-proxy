@@ -196,6 +196,7 @@ async def _remember(
     title: str = '',
     kind: str = '',
     scope: str = '',
+    description: str = '',
     **_extra: object,
 ) -> str:
     """Single model write door into durable memory (facts store).
@@ -208,12 +209,18 @@ async def _remember(
     ``kind`` (fact | lesson | preference | skill-note).
 
     Part 17 Phase A: ``scope='project'`` writes to the workspace's md-file
-    project memory (``<ws>/.aug/memory/memory.md``) instead of the global
-    facts store — same gates, same rollback snapshot, same per-turn budget.
-    Inside a session with a non-home workspace the default scope IS project
-    (the workspace's constraints and lessons belong to that project); the
-    global store is reached explicitly with ``scope='global'``.
-    """
+    project memory instead of the global facts store — same gates, same
+    rollback snapshot, same per-turn budget. Inside a session with a
+    non-home workspace the default scope IS project (the workspace's
+    constraints and lessons belong to that project); the global store is
+    reached explicitly with ``scope='global'``.
+
+    File-memory mode (2026-09-12, config ``fileMemory``, the ZCode-parity
+    shape): a new project fact becomes its own ``.aug/memory/<slug>.md``
+    with frontmatter (name/description/type) and joins the generated
+    ``MEMORY-INDEX.md`` index; ``description`` is the one-line recall hook (fall
+    back to the fact's first sentence). Legacy ``memory.md`` sections keep
+    working; updates land wherever the entry already lives."""
     import json as _json
 
     from app.services import brain_config_service, memory_store
@@ -302,6 +309,12 @@ async def _remember(
                 }
             )
         entryTitle = (title or '').strip() or memory_store.derive_fact_title(text)
+        # file-memory recall hook: explicit description > first sentence of
+        # the fact, one line (frontmatter stays valid — no embedded newlines)
+        fmDesc = ' '.join((description or '').split()) or text.split('.')[0][:120]
+        fmKind = {'user': 'user', 'feedback': 'feedback', 'project': 'project',
+                  'reference': 'reference'}.get((category or '').strip().lower(),
+                                                'project')
         before: dict[str, object] | None = None
         try:
             from app.services import project_memory as _pm
@@ -316,7 +329,9 @@ async def _remember(
                     'updated': existing[0].updated,
                 }
             body = f'{text}\n\n{detailsText}' if detailsText else text
-            _pm.upsert_entry(ws, entryTitle, body)
+            entry = _pm.upsert_entry(ws, entryTitle, body,
+                                     description=fmDesc, kind=fmKind,
+                                     per_fact=bool(cfgPj.get('fileMemory', True)))
         except Exception as exc:
             return _json.dumps({'ok': False, 'error': f'remember(project) failed: {exc}'})
         _rememberTurnCounts[sessKey] = used + 1
@@ -337,7 +352,7 @@ async def _remember(
                 'ok': True,
                 'scope': 'project',
                 'key': entryTitle,
-                'file': 'memory.md',
+                'file': entry.file,
                 'updated': before is not None,
             }
         )
@@ -1030,6 +1045,12 @@ def register() -> None:
                     'workspace session) or global (user-level facts store, the default without a workspace).',
                 },
                 'details': {'type': 'string', 'description': 'Optional extra context stored alongside the fact.'},
+                'description': {
+                    'type': 'string',
+                    'description': 'One-line summary of where this memory applies — used to decide '
+                    'relevance at recall (project scope: becomes the file frontmatter + MEMORY-INDEX.md hook). '
+                    'Derived from the fact when omitted.',
+                },
                 'expires_at': {
                     'type': 'string',
                     'description': 'Optional ISO-8601 expiry (e.g. 2026-12-31T00:00:00Z); purged after this.',
