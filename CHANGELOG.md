@@ -2,6 +2,26 @@
 
 ## Unreleased (working tree)
 
+**P3 loop-split slice 1 — turn_close.py.** First seam cut into
+`_sendWorkbenchMessageStreamImpl` (2,780 lines): the POST-loop bookkeeping —
+STOP lifecycle hook, M3 fact-use feedback + M5 turn telemetry (turn_outcomes
+row, turnTelemetry SSE, failure-lesson promotion), the persist/close block
+(strip tails, turnOpen=False, usage attach, status/turnCount,
+saveSessions(immediate), timeline + session-summary, record_usage) and the
+auto-title schedule — moved to `app/services/workbench/turn_close.py` as
+four functions + a `TurnTotals` bundle for the six loop counters. The
+`finally:` that resets the cancel ContextVar and emits `done` STAYS in
+workbench.py (syntactically bound to the loop's try — the terminal-event
+protocol is untouched). saveSessions/_emitSessionStatus/_toolDefName/
+queue_memory_habit_nudge resolve LAZILY through the workbench module object,
+so `monkeypatch.setattr(wb, 'saveSessions', boom)` still intercepts the
+persist path — test_workbench_tool_loop's boom test + 147 close-path tests
+green prove it. One source-shape pin followed the move
+(test_early_dispatch_telemetry's SSE-key check now inspects turn_close).
+workbench.py 6,780 → 6,565 lines; the remaining loop body (~1,700 lines of
+`while True` round machinery + ~690-line prologue) stays in workbench.py
+pending a TurnContext design pass — slice 1 was the safe seam.
+
 **P3 prompt-assembly split — prompt_build.py.** The second workbench.py
 seam after state_blocks.py: the git workspace probe (+ its TTL memo),
 model display name, harness-guide digest + memo, capabilities memo,

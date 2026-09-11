@@ -48,3 +48,20 @@ def test_skill_service_bust_path_targets_prompt_build() -> None:
 
     src = inspect.getsource(skill_service)
     assert 'from app.services.workbench.prompt_build import clear_skill_prompt_caches' in src
+
+
+def test_turn_close_slice1_reexports_and_lazy_wb() -> None:
+    """P3 loop-split slice 1 (post-loop turn close -> turn_close.py): the
+    old workbench name is a re-export of the same function, and the moved
+    persist path resolves saveSessions/_emitSessionStatus LAZILY through
+    the workbench module object — so monkeypatching wb.saveSessions still
+    intercepts it (test_workbench_tool_loop's boom test relies on this)."""
+    import inspect
+
+    from app.services.workbench import turn_close as tc
+    from app.services.workbench import workbench as wb
+
+    assert wb._lastUserMessageText is tc.lastUserMessageText
+    src = inspect.getsource(tc.persistAndClose)
+    assert '_wb().saveSessions(' in src
+    assert '_wb()._emitSessionStatus(' in src

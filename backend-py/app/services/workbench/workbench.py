@@ -1451,6 +1451,7 @@ def _is_failing_receipt(msg: dict[str, object]) -> bool:
 # reference site (tests via wb.*, skill_service's import, the prompt builder
 # itself) resolves to THE SAME function objects and THE SAME memo dicts —
 # clearing through either path clears the cache, no orphan second dict.
+from app.services.workbench import turn_close as _tc  # noqa: E402
 from app.services.workbench.prompt_build import (  # noqa: E402
     _HARNESS_GUIDE_DIGEST,  # noqa: F401 -- re-export: tests read wb._HARNESS_GUIDE_DIGEST
     _MEMORY_NUDGE_MIN_ROUNDS,  # noqa: F401 -- re-export: tests read wb._MEMORY_NUDGE_MIN_ROUNDS
@@ -1462,13 +1463,16 @@ from app.services.workbench.prompt_build import (  # noqa: E402
     _probe_workspace_git,
     clear_skill_prompt_caches,  # noqa: F401 -- re-export: old import path (skill_service fallback, tests)
     memory_nudge_block,
-    queue_memory_habit_nudge,
+    queue_memory_habit_nudge,  # noqa: F401 -- re-export: tests + turn_close resolve via wb
 )
 from app.services.workbench.state_blocks import (  # noqa: E402
     _injectPlanState,
     _planStateBlock,
     _session_cost_usd,
     _sessionStateBlock,
+)
+from app.services.workbench.turn_close import (  # noqa: E402
+    lastUserMessageText as _lastUserMessageText,  # noqa: F401 -- re-export: old name kept
 )
 
 
@@ -5013,242 +5017,45 @@ async def _sendWorkbenchMessageStreamImpl(
             break
         if clarifySubmittedThisRound:
             break
-    try:
-        from app.services.hooks.lifecycle import emit_lifecycle
-        from app.services.hooks.types import HookEvent as _StopEvent
-
-        await emit_lifecycle(
-            _StopEvent.STOP,
-            sessionId,
-            extra={'rounds': toolRound, 'error': turnError or ''},
-        )
-    except Exception:
-        logger.debug('STOP hook failed (non-fatal)', exc_info=True)
-    # M3 usage feedback + M5 turn telemetry. Runs after the
-    # loop on every completed turn (error turns included — turnError is final
-    # here); best-effort, never breaks the persist path below.
-    try:
-        from app.services import turn_outcomes
-        from app.services.memory_store import touch_fact_usage
-
-        # Usage feedback: an injected fact the assistant echoed back (title or
-        # key quoted in the reply) earns a use_count bump — the retrieval
-        # boost signal. Only facts injected THIS turn are eligible.
-        injectedFacts = getattr(session, '_injected_facts', None) or []
-        if injectedFacts:
-            session._injected_facts = []
-            lastAssistantText = ''
-            for m in reversed(currentMessages):
-                if isinstance(m, dict) and m.get('role') == 'assistant':
-                    contentVal = m.get('content', '')
-                    if isinstance(contentVal, str):
-                        lastAssistantText = contentVal
-                    elif isinstance(contentVal, list):
-                        lastAssistantText = ' '.join(
-                            str(b.get('text', ''))
-                            for b in contentVal
-                            if isinstance(b, dict) and b.get('type') == 'text'
-                        )
-                    break
-            replyLower = lastAssistantText.lower()
-            if replyLower:
-                usedKeys = [
-                    key
-                    for key, title in injectedFacts
-                    if key and (key.lower() in replyLower or (len(title) >= 8 and title.lower() in replyLower))
-                ]
-                if usedKeys:
-                    touch_fact_usage(usedKeys)
-        # Memory-habit nudge (2026-08-29): a substantial turn that saved no
-        # memory queues a one-shot <memory_nudge> tail hint for the NEXT turn
-        # — the model's chance to consolidate durable knowledge. Best-effort,
-        # never blocks the turn, never touches the system prompt.
-        try:
-            from app.services import brain_config_service as _nudgeBc
-
-            _nudgeWritesOn = bool(_nudgeBc.getRuntimeConfig().get('modelMemoryWrites', True))
-        except Exception:
-            _nudgeWritesOn = True
-        try:
-            queue_memory_habit_nudge(
-                session,
-                rounds=toolRound,
-                # On the OpenAI/Responses wire `tools` stays []
-                # (only `openaiTools` is built), so the remember-offered check
-                # was always False and the nudge never fired there.
-                rememberOffered=any(
-                    _toolDefName(t) == 'remember' for t in (tools or openaiTools or [])
-                ),
-                memWritesOn=_nudgeWritesOn,
-            )
-        except Exception:
-            logger.debug('memory habit nudge queue failed', exc_info=True)
-        # Telemetry: one structured row per turn, no model calls, never
-        # injected into prompts (diagnostics for Observability only).
-        _telemetryProvider = (
-            as_str(resolvedProvider.get('name') or resolvedProvider.get('id'), '')
-            if isinstance(resolvedProvider, dict)
-            else ''
-        )
-        turn_outcomes.record_turn_outcome(
-            model=resolvedModel or '',
-            provider=_telemetryProvider,
-            task_type=as_str(getattr(session, 'agent_mode', '') or 'agent'),
-            ok=turnError is None,
-            error_class=turn_outcomes.classify_error(turnError or ''),
-            duration_ms=max(0, int(time.time() * 1000) - _turnStartMs),
-            session_id=sessionId,
-            ttft_ms=int(_trace.ttft_ms or 0),
-            cache_hit_tokens=int(totalCacheHitTokens or 0),
-            cache_miss_tokens=int(totalCacheMissTokens or 0),
-            tool_args_ready_to_stream_end_ms=int(_toolArgsTailMs or 0),
-        )
-        # Surface the per-turn latency/cache numbers as one SSE event
-        # (Observability; the transcript can show a cache-hit chip) — turns
-        # the "feels slow" regression into visible numbers.
-        if emit:
-            emit(
-                {
-                    'type': 'turnTelemetry',
-                    'ttftMs': int(_trace.ttft_ms or 0),
-                    'durationMs': max(0, int(time.time() * 1000) - _turnStartMs),
-                    'cacheHitTokens': int(totalCacheHitTokens or 0),
-                    'cacheMissTokens': int(totalCacheMissTokens or 0),
-                    'inputTokens': int(totalInputTokens or 0),
-                    'outputTokens': int(totalOutputTokens or 0),
-                    # P3.1: the early-dispatch measurement rides the same
-                    # telemetry event (0 = no tool call this turn).
-                    'toolArgsReadyToStreamEndMs': int(_toolArgsTailMs or 0),
-                }
-            )
-        if turnError is not None:
-            # Rare promoted-lesson path (Q2): repeated failures of one
-            # signature may yield ONE reviewed, deduplicated lesson fact.
-            # Fire-and-forget — the review call must not delay the done event.
-            asyncio.create_task(
-                turn_outcomes.maybe_promote_failure_lesson(
-                    model=resolvedModel or '',
-                    provider=_telemetryProvider,
-                    error_class=turn_outcomes.classify_error(turnError),
-                    sample_error=turnError,
-                )
-            )
-    except Exception:
-        logger.debug('turn telemetry failed (non-fatal)', exc_info=True)
+    await _tc.emitStopHook(sessionId, toolRound, turnError)
+    # M3 usage feedback + M5 turn telemetry (turn_close.py). Runs after
+    # the loop on every completed turn (error turns included — turnError is
+    # final here); best-effort, never breaks the persist path below.
+    _totals = _tc.TurnTotals(
+        inputTokens=totalInputTokens,
+        outputTokens=totalOutputTokens,
+        contextTokens=finalContextTokens,
+        generationMs=totalGenerationMs,
+        cacheHitTokens=totalCacheHitTokens,
+        cacheMissTokens=totalCacheMissTokens,
+        toolArgsReadyMs=int(_toolArgsTailMs or 0),
+    )
+    await _tc.turnTelemetry(
+        session=session,
+        sessionId=sessionId,
+        currentMessages=currentMessages,
+        tools=tools,
+        openaiTools=openaiTools,
+        resolvedModel=resolvedModel,
+        resolvedProvider=resolvedProvider,
+        totals=_totals,
+        turnStartMs=_turnStartMs,
+        trace=_trace,
+        turnError=turnError,
+        emit=emit,
+        toolRound=toolRound,
+    )
     try:
         logger.debug('workbench turn complete: %d rounds, in=%d out=%d', toolRound, totalInputTokens, totalOutputTokens)
-        from app.services.workbench.durability import strip_tail_patches as _stripTails
-
-        # The tail-patched last-user message is request-scoped —
-        # persist the clean text (the barrier flushes already strip).
-        session.messages = _stripTails(list(currentMessages))
-        # Close the turn — the persist below records turnOpen=False so a
-        # later load does not mistake this session for an orphaned open turn.
-        session.turnOpen = False
-        # Persist per-turn usage on the last assistant message: the SSE done
-        # event is volatile, so without this the usage chip vanished after a
-        # restart (fresh load from the session blob) — audit fix.
-        try:
-            if totalInputTokens > 0 or totalOutputTokens > 0:
-                for m in reversed(session.messages):
-                    if isinstance(m, dict) and m.get('role') == 'assistant':
-                        m['usage'] = {
-                            'inputTokens': totalInputTokens,
-                            'outputTokens': totalOutputTokens,
-                            'contextTokens': finalContextTokens,
-                            'durationMs': int(totalGenerationMs),
-                            'cacheHitTokens': totalCacheHitTokens,
-                            'cacheMissTokens': totalCacheMissTokens,
-                        }
-                        break
-        except Exception:
-            logger.debug('per-turn usage attach failed', exc_info=True)
-        # Keep awaiting_approval if ask-mode left a pending mutation (ApprovalBanner).
-        if session.pendingMutations:
-            session.status = 'awaiting_approval'
-        else:
-            session.status = 'idle'
-        session.updatedAt = _now()
-        # Monotonic turn counter — drives the auto-compaction cooldown
-        # (messageCount shrinks on compaction and cannot serve this role).
-        session.turnCount = getattr(session, 'turnCount', 0) + 1
-        with _trace.span('persist'):
-            # Persist session to SQLite (primary); JSON export is best-effort.
-            # immediate=True: turnOpen=False was JUST set, and the debounced
-            # path leaves a ~150 ms window where a crash loses the final
-            # assistant message and recovery paints a phantom [interrupted]
-            # marker (audit batch 2026-09-09). The barrier saves are already
-            # synchronous; the turn-end close must be too.
-            try:
-                saveSessions(immediate=True, dirty=session.id)
-            except Exception as exc:
-                logger.exception('workbench session persist failed; still emitting done')
-                if emit:
-                    emit(
-                        {
-                            'type': 'error',
-                            'message': f'Session persist failed: {exc}',
-                            'code': 'session_persist_failed',
-                        }
-                    )
-            # Journey timeline: one entry per completed turn (last user ask).
-            try:
-                from app.services.memory_store.rest import write_timeline_event
-
-                lastAsk = _lastUserMessageText(session)[:240]
-                if lastAsk:
-                    from app.services.session_scope import resolve_scope
-
-                    write_timeline_event(
-                        session.id, lastAsk, category='workbench',
-                        scope=resolve_scope(session=session),
-                    )
-            except Exception:
-                logger.debug('workbench timeline write failed', exc_info=True)
-            # Session summary (D5): once per session, distill a free local
-            # summary into the metadata and the Journey timeline.
-            try:
-                if (
-                    session.messageCount >= 4
-                    and not (session.metadata or {}).get('summary')
-                    and getattr(session, 'metadata', None) is not None
-                ):
-                    from app.services.workbench.context_compressor import localSummarize
-
-                    summary = localSummarize(list(session.messages), maxSummaryChars=800)
-                    if summary.strip():
-                        session.metadata['summary'] = summary.strip()
-                        write_timeline_event(
-                            session.id,
-                            f'Session summary: {summary.strip()[:300]}',
-                            category='summary',
-                        )
-            except Exception:
-                logger.debug('session summary failed', exc_info=True)
-            _emitSessionStatus(sessionId)
-            if totalInputTokens > 0 or totalOutputTokens > 0:
-                try:
-                    from app.services.memory_store import record_usage
-
-                    record_usage(
-                        sessionId=session.id,
-                        model=resolvedModel,
-                        inputTokens=totalInputTokens,
-                        outputTokens=totalOutputTokens,
-                        contextTokens=finalContextTokens,
-                        cacheHitTokens=totalCacheHitTokens,
-                        cacheMissTokens=totalCacheMissTokens,
-                    )
-                    session.totalInputTokens += totalInputTokens
-                    session.totalOutputTokens += totalOutputTokens
-                    session.cacheHitTokens = as_int(
-                        getattr(session, 'cacheHitTokens', 0), 0
-                    ) + totalCacheHitTokens
-                    session.cacheMissTokens = as_int(
-                        getattr(session, 'cacheMissTokens', 0), 0
-                    ) + totalCacheMissTokens
-                except Exception:
-                    logger.exception('workbench record_usage failed')
+        _tc.persistAndClose(
+            session=session,
+            sessionId=sessionId,
+            currentMessages=currentMessages,
+            resolvedModel=resolvedModel,
+            totals=_totals,
+            trace=_trace,
+            emit=emit,
+        )
     finally:
         current_subprocess_cancel.reset(_cancel_token)
         if emit:
@@ -5273,33 +5080,14 @@ async def _sendWorkbenchMessageStreamImpl(
             if chainUsedAt:
                 doneEvent['usedFallback'] = chainUsedAt
             emit(doneEvent)
-    # LLM sidebar title after the first exchange (placeholder titles only).
-    # Runs even for headless sessions — automation runs still deserve a
-    # readable sidebar title.
-    try:
-        from app.services.workbench.title_generator import schedule_auto_title_after_turn
-
-        schedule_auto_title_after_turn(
-            sessionId,
-            list(currentMessages),
-            provider=resolvedProvider,
-            model=resolvedModel or '',
-        )
-    except Exception:
-        logger.debug('schedule auto-title failed for %s', sessionId, exc_info=True)
+    _tc.scheduleAutoTitle(
+        sessionId=sessionId,
+        currentMessages=currentMessages,
+        resolvedProvider=resolvedProvider,
+        resolvedModel=resolvedModel,
+    )
 
 
-def _lastUserMessageText(session: WorkbenchSession) -> str:
-    """Extract text content from the last user message in a session."""
-    for msg in reversed(session.messages):
-        if msg.get('role') == 'user':
-            content = msg.get('content', '')
-            if isinstance(content, str):
-                return content
-            elif isinstance(content, list):
-                texts = [b.get('text', '') for b in content if isinstance(b, dict) and b.get('type') == 'text']
-                return ' '.join(texts)
-    return ''
 
 
 async def _executeTool(

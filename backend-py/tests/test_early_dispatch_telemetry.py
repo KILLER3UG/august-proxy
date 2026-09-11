@@ -105,13 +105,15 @@ class TestSSEEvent:
     def test_turn_telemetry_event_carries_the_field(self):
         """The turnTelemetry payload includes toolArgsReadyToStreamEndMs
         when a marker exists (0 is a valid measurement; absent when not)."""
-        # Shape check against the emit-site construction (workbench.py) —
-        # the SSE payload must include the key for observability parity.
+        # Shape check against the emit-site construction — the SSE payload
+        # must include the key for observability parity. The emit moved to
+        # turn_close.py with the post-loop split (P3, 2026-09-11); workbench
+        # alone no longer contains the literal.
         import inspect
 
-        from app.services.workbench import workbench as wb
+        from app.services.workbench import turn_close
 
-        src = inspect.getsource(wb)
+        src = inspect.getsource(turn_close)
         assert 'toolArgsReadyToStreamEndMs' in src, (
             'turnTelemetry SSE event does not carry toolArgsReadyToStreamEndMs'
         )
