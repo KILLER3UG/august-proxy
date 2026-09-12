@@ -358,7 +358,8 @@ class DaemonManager:
         sid = as_str(info.get('session_id'))
         if not sid:
             return
-        r = info.get('result') if isinstance(info.get('result'), DaemonResult) else DaemonResult()
+        res = info.get('result')
+        r = res if isinstance(res, DaemonResult) else DaemonResult()
         cond = as_str(info.get('watch_condition') or '')
         tag = f'DAEMON_{event.upper()}'
         body = str(r.output or r.error or '')[:2000]

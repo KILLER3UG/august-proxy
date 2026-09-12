@@ -6073,7 +6073,7 @@ def submitClarify(session: WorkbenchSession, clarifyData: dict[str, object]) -> 
             else []
         )
         if str(question).strip() or choices:
-            item = {'question': str(question), 'choices': choices}
+            item: dict[str, object] = {'question': str(question), 'choices': choices}
             raw_previews = clarifyData.get('previews') or []
             if isinstance(raw_previews, list) and choices:
                 previews = [str(p) for p in raw_previews[:MAX_CLARIFY_CHOICES]]
