@@ -34,13 +34,21 @@ def _cmd(script: str) -> str:
 
 @pytest.fixture()
 def _cfg(tmp_path, monkeypatch):
-    """Point dataDir at tmp_path; register nothing at start; fully unwind."""
+    """Point dataDir at tmp_path and run against an EMPTY registry.
+
+    The full suite boots the app lifespan in some module, which registers
+    the built-in guards (blast_radius matches '*') on the global singleton —
+    asserting exact result lists would then depend on test order. Snapshot,
+    clear, and restore: hermetic in isolation AND in the full run.
+    """
     monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path / 'data'))
     user_hooks.reset_for_tests()
-    before = {h.name for h in registry._hooks}  # noqa: SLF001 — test teardown bookkeeping
+    saved = list(registry._hooks)  # noqa: SLF001 — test isolation, restored below
+    registry._hooks.clear()  # noqa: SLF001
     yield tmp_path
-    for h in [x for x in registry._hooks if x.name not in before]:
+    for h in list(registry._hooks):
         registry.unregister(h.name)
+    registry._hooks.extend(saved)  # noqa: SLF001
     user_hooks.reset_for_tests()
 
 

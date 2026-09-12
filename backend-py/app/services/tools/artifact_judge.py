@@ -151,7 +151,7 @@ def render_pages(path: str, workspace: str = '', pages: str = '', dpi: int = 110
     """
     from app.services.sandbox.paths import bind_path
 
-    target = (path or '').strip()
+    target = str(path or '').strip()
     if not target:
         raise ValueError('path is required (workspace document or PDF path).')
     bound, err = bind_path(target, workspace or None, for_write=False)
@@ -264,7 +264,7 @@ async def judge_artifact(
     receipt. The verdict drives the model's repair loop — it never
     blocks an answer.
     """
-    req = (request or '').strip()
+    req = str(request or '').strip()
     if not req:
         raise ValueError('request is required — what the user asked this artifact to be.')
     rendered = render_pages(path, workspace=workspace, pages=pages)

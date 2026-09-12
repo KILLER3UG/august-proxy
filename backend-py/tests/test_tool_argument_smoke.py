@@ -61,6 +61,10 @@ _IO_ALLOWLIST = frozenset({
     'desktop_click', 'desktop_list_windows', 'desktop_mouse_position',
     'desktop_open_url', 'desktop_press_key', 'desktop_screen_size',
     'desktop_screenshot', 'desktop_type', 'camera_snapshot',
+    'desktop_ui_tree', 'desktop_ui_act',
+    # Artifact judge — headless LibreOffice / PDF raster (external
+    # toolchain) + a vision provider call.
+    'render_pages', 'judge_artifact',
     # Network / provider I/O.
     'web_search', 'web_fetch', 'web_fetch_many', 'vision_analyze',
     'analyze_media', 'search',
