@@ -22,6 +22,7 @@ _PROMPT_READ = frozenset({
     'brain_query', 'browser_get_content', 'browser_open', 'browser_screenshot',
     'browser_wait', 'describe_environment', 'desktop_list_windows',
     'desktop_mouse_position', 'desktop_screen_size', 'desktop_screenshot',
+    'desktop_ui_tree',
     'diagnose_proxy', 'get_fallback', 'list_aliases',
     'list_directory', 'list_integrations', 'list_mcp_servers',
     # Read-only context capsule for a past session (title/plan/turn digests).
@@ -77,7 +78,8 @@ _PROMPT_READ = frozenset({
 _PROMPT_WRITE = frozenset({
     'browser_click', 'browser_evaluate', 'browser_scroll', 'browser_select',
     'browser_type', 'bulk', 'configure_fallback', 'create_alias', 'desktop_click',
-    'desktop_open_url', 'desktop_press_key', 'desktop_type', 'rename_session',
+    'desktop_open_url', 'desktop_press_key', 'desktop_type', 'desktop_ui_act',
+    'rename_session',
     'rename_sessions', 'setup_provider', 'connect_github', 'connect_google',
     'connect_slack', 'install_mcp_server', 'customize_ui', 'enter_plan_mode',
     'submit_plan', 'update_alias', 'update_state',

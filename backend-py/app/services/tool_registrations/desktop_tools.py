@@ -83,6 +83,56 @@ def register() -> None:
         },
     )
 
+    async def _desktopUiTree(window_hint: str = '', max_nodes: int = 200) -> dict[str, object]:
+        from app.services import desktop_uia
+
+        return desktop_uia.describe_tree(
+            window_hint=str(window_hint or ''), max_nodes=int(max_nodes or 200)
+        )
+
+    async def _desktopUiAct(ref: int = 0, action: str = 'click', text: str = '') -> dict[str, object]:
+        from app.services import desktop_uia
+
+        return desktop_uia.act(int(ref or 0), str(action or 'click'), str(text or ''))
+
+    tool_registry.register(
+        'desktop_ui_tree',
+        'Accessibility-first desktop read (Windows UIA): the foreground (or '
+        'title-matched) window\'s element tree as numbered lines '
+        '[ref] Type "name" id=… rect=…. Prefer this over screenshot+vision '
+        'for native apps — then act with desktop_ui_act(ref, action). '
+        'Non-Windows: returns a receipt; use pixel mode instead.',
+        cast(tool_registry.ToolHandler, _desktopUiTree),
+        {
+            'type': 'object',
+            'properties': {
+                'window_hint': {
+                    'type': 'string',
+                    'description': 'Case-insensitive window title substring; empty = foreground window.',
+                },
+                'max_nodes': {'type': 'integer', 'minimum': 20, 'maximum': 800},
+            },
+            'required': [],
+        },
+    )
+    tool_registry.register(
+        'desktop_ui_act',
+        'Act on an element from the last desktop_ui_tree walk by its [ref]: '
+        'click | double_click | right_click | type (needs text) | focus. '
+        'A stale ref (UI changed) fails with a re-read instruction — call '
+        'desktop_ui_tree again rather than guessing.',
+        cast(tool_registry.ToolHandler, _desktopUiAct),
+        {
+            'type': 'object',
+            'properties': {
+                'ref': {'type': 'integer', 'description': 'The [ref] number from desktop_ui_tree.'},
+                'action': {'type': 'string', 'enum': ['click', 'double_click', 'right_click', 'type', 'focus']},
+                'text': {'type': 'string', 'description': 'Text to type (action=type only).'},
+            },
+            'required': ['ref'],
+        },
+    )
+
     async def _cameraListDevices(**kwargs: object) -> dict[str, object]:
         from app.services.brain_config_service import getRuntimeConfig
 
