@@ -74,6 +74,7 @@ class DaemonManager:
         self._tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
         self._reaper: asyncio.Task | None = None
+        self._shutting_down: bool = False
 
     @staticmethod
     def _ttl_seconds() -> float:
@@ -334,6 +335,7 @@ class DaemonManager:
 
     async def shutdown(self) -> None:
         """Cancel all daemon tasks gracefully."""
+        self._shutting_down = True
         tasks = list(self._tasks.values())
         for t in tasks:
             t.cancel()
@@ -342,6 +344,42 @@ class DaemonManager:
         self._tasks.clear()
         self._daemons.clear()
         logger.info('All daemons shut down')
+
+    def _notifyParent(self, daemonId: str, event: str) -> None:
+        """Push one daemon event into the bound session's queue and schedule
+        a re-wake turn — the daemon path reuses the subagent auto-turn
+        (routers/workbench drains kind='daemon' there), so a triggered or
+        finished daemon reaches the model without polling."""
+        if self._shutting_down:
+            return
+        info = self._daemons.get(daemonId)
+        if not info:
+            return
+        sid = as_str(info.get('session_id'))
+        if not sid:
+            return
+        r = info.get('result') if isinstance(info.get('result'), DaemonResult) else DaemonResult()
+        cond = as_str(info.get('watch_condition') or '')
+        tag = f'DAEMON_{event.upper()}'
+        body = str(r.output or r.error or '')[:2000]
+        text = (
+            f'[{tag} id="{daemonId}" name="{info.get("name")}" status="{r.status}"]'
+            + (f'\nwatch: {cond[:160]}' if cond and event == 'triggered' else '')
+            + f'\n{body or "(no output)"}\n[/{tag}]'
+        )
+        try:
+            from app.services.workbench.workbench import enqueueUserMessage
+
+            enqueueUserMessage(sid, text, kind='daemon')
+        except Exception:
+            logger.debug('daemon notify enqueue failed', exc_info=True)
+            return
+        try:
+            from app.routers.workbench import scheduleSubagentAutoTurn
+
+            scheduleSubagentAutoTurn(sid)
+        except Exception:
+            logger.debug('daemon notify auto-turn failed', exc_info=True)
 
     async def _runLoop(self, daemonId: str) -> None:
         """Main daemon loop: poll on interval, evaluate watch condition."""
@@ -376,6 +414,7 @@ class DaemonManager:
                     result.triggered = True
                     result.turnsAlive = 0
                     logger.info('Daemon triggered: %s (condition: %s)', daemonId, info['watch_condition'])
+                    self._notifyParent(daemonId, 'triggered')
                 info['backoff_index'] = 0
                 await asyncio.sleep(POLL_INTERVAL)
             except asyncio.CancelledError:
@@ -395,6 +434,12 @@ class DaemonManager:
                 else:
                     logger.error('Daemon max retries reached: %s', daemonId)
                     break
+
+        # Natural loop end (completed / self-stop / retries exhausted). A
+        # kill() removed the entry (and user-stopped daemons must not wake
+        # the model), so notify only while still registered.
+        if daemonId in self._daemons:
+            self._notifyParent(daemonId, 'finished')
 
     async def _runOnce(self, daemonId: str) -> DaemonResult | None:
         """Execute one daemon poll cycle."""

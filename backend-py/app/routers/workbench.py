@@ -167,11 +167,12 @@ def _startTurnTask(
     return seq
 
 
-# ── Auto-turn for late subagent completions ─────────────────────────────
-# Background sub-agents settle after the parent turn may already have
-# ended. The spawn tool enqueues each completion (kind='subagent'); when
-# the session is idle we start a fresh turn so the parent model actually
-# receives the result instead of waiting for the user's next message.
+# ── Auto-turn for late subagent / daemon completions ───────────────────
+# Background sub-agents and daemons settle after the parent turn may
+# already have ended. The spawn tool / daemon manager enqueue each
+# completion (kind='subagent' | 'daemon'); when the session is idle we
+# start a fresh turn so the parent model actually receives the result
+# instead of waiting for the user's next message.
 # Coalesced (1.5 s), deduped per session, and capped so a model that keeps
 # spawning cannot drive the session forever.
 _AUTO_TURN_COALESCE_S = 1.5
@@ -194,7 +195,7 @@ async def _startSubagentAutoTurn(sessionId: str) -> None:
     entries = wb.drainQueuedMessages(
         sessionId,
         emit=_log_emit(sessionId),
-        kinds={'subagent'},
+        kinds={'subagent', 'daemon'},
     )
     if not entries:
         return

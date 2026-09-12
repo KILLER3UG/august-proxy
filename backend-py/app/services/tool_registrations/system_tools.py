@@ -339,6 +339,13 @@ _CLARIFY_SCHEMA: dict[str, object] = {
                         'type': 'boolean',
                         'description': 'True when the user may pick several choices.',
                     },
+                    'previews': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                        'description': 'Optional markdown shown under the matching choice while it '
+                        'is selected (same order as choices) — use to compare concrete artifacts '
+                        '(mockups, code variants, configs). Single-select questions only.',
+                    },
                 },
                 'required': ['question'],
             },

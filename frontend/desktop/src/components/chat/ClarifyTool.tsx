@@ -15,7 +15,8 @@
 /*   • Esc    → close (sends a "User skipped" stub to the model)         */
 
 import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react';
-import { ChevronLeft, ChevronRight, X, Send, SkipForward } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Send, SkipForward, Eye } from 'lucide-react';
+import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { cn } from '@/lib/utils';
 
 export interface ClarifyQuestion {
@@ -23,6 +24,10 @@ export interface ClarifyQuestion {
   choices?: string[];
   /** Allow selecting multiple choices (default: false = single-select). */
   multiSelect?: boolean;
+  /** Optional per-choice markdown (same order as choices) — selecting a
+   * choice focuses its preview instead of submitting; a confirm button
+   * then submits (AskUserQuestion-style comparison previews). */
+  previews?: string[];
 }
 
 export interface ClarifyPayload {
@@ -91,6 +96,8 @@ export function ClarifyTool({
   const isLast = currentIndex === totalQuestions - 1;
 
   const isMultiSelect = current?.multiSelect ?? false;
+  // Previews turn selection into focus-then-confirm (single-select only).
+  const hasPreviews = !isMultiSelect && Array.isArray(current?.previews) && current!.previews!.some((p) => !!p);
 
   useEffect(() => {
     // Focus freeform field when the card mounts / question changes
@@ -152,8 +159,10 @@ export function ClarifyTool({
         });
         return;
       }
-      // Single-select: pick and advance/submit
+      // Single-select: pick and advance/submit. With previews, the pick
+      // only focuses the preview — the "Use this" button submits.
       setSelectedChoice(choice);
+      if (hasPreviews) return;
       const next = { ...answers, [currentIndex]: choice };
       setAnswers(next);
       if (isLast) {
@@ -166,8 +175,21 @@ export function ClarifyTool({
         }, 200);
       }
     },
-    [answers, currentIndex, isLast, isMultiSelect, onSubmit, submitting, totalQuestions]
+    [answers, currentIndex, hasPreviews, isLast, isMultiSelect, onSubmit, submitting, totalQuestions]
   );
+
+  const confirmPreview = useCallback(() => {
+    if (!selectedChoice || submitting) return;
+    const next = { ...answers, [currentIndex]: selectedChoice };
+    setAnswers(next);
+    if (isLast) {
+      onSubmit(totalQuestions === 1 ? selectedChoice : JSON.stringify(next));
+    } else {
+      setCurrentIndex((i) => Math.min(totalQuestions - 1, i + 1));
+      setSelectedChoice(null);
+      setDraft('');
+    }
+  }, [answers, currentIndex, isLast, onSubmit, selectedChoice, submitting, totalQuestions]);
 
   const submitMultiSelect = useCallback(() => {
     if (submitting || multiSelections.size === 0) return;
@@ -327,6 +349,33 @@ export function ClarifyTool({
                 <Send className="size-3.5" />
                 Confirm ({multiSelections.size} selected)
               </button>
+            )}
+            {/* Focused preview (AskUserQuestion-style): rendered for the
+                selected choice; "Use this" submits the focused pick. */}
+            {hasPreviews && selectedChoice && (
+              <div data-testid="clarify-preview" className="mt-2">
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 text-sm wrap-anywhere">
+                  <Markdown
+                    content={
+                      current.previews?.[current.choices?.indexOf(selectedChoice) ?? -1] || ''
+                    }
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={confirmPreview}
+                  disabled={submitting}
+                  className={cn(
+                    'mt-2 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5',
+                    'bg-primary text-primary-foreground text-sm font-medium',
+                    'hover:bg-primary/90 transition-colors',
+                    'disabled:cursor-not-allowed disabled:opacity-50',
+                  )}
+                >
+                  <Eye className="size-3.5" />
+                  Use this
+                </button>
+              </div>
             )}
           </div>
         )}

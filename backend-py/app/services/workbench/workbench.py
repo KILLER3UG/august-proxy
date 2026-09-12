@@ -6049,6 +6049,14 @@ def submitClarify(session: WorkbenchSession, clarifyData: dict[str, object]) -> 
                 raw_choices = q.get('choices') or []
                 if isinstance(raw_choices, list):
                     item['choices'] = [str(c) for c in raw_choices[:MAX_CLARIFY_CHOICES]]
+                # Optional per-choice markdown previews (AskUserQuestion-style
+                # side-by-side comparison) — single-select only, same order
+                # as (and capped to) the choices list.
+                raw_previews = q.get('previews') or []
+                if isinstance(raw_previews, list) and not q.get('multiSelect'):
+                    previews = [str(p) for p in raw_previews[:MAX_CLARIFY_CHOICES]]
+                    if any(previews) and 'choices' in item:
+                        item['previews'] = previews
                 if q.get('multiSelect'):
                     item['multiSelect'] = True
                 out.append(item)
@@ -6065,7 +6073,13 @@ def submitClarify(session: WorkbenchSession, clarifyData: dict[str, object]) -> 
             else []
         )
         if str(question).strip() or choices:
-            incoming = [{'question': str(question), 'choices': choices}]
+            item = {'question': str(question), 'choices': choices}
+            raw_previews = clarifyData.get('previews') or []
+            if isinstance(raw_previews, list) and choices:
+                previews = [str(p) for p in raw_previews[:MAX_CLARIFY_CHOICES]]
+                if any(previews):
+                    item['previews'] = previews
+            incoming = [item]
 
     # Merge with any unanswered questions already on the session.
     existing_raw = as_dict(session.clarify) if session.clarify is not None else {}

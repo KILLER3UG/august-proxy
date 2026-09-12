@@ -724,9 +724,15 @@ async def _deleteSession(sessionId: str) -> str:
 _SESSION_CONTEXT_MAX_CHARS = 6000
 
 
-def _contextCapsule(blob: dict[str, object], maxChars: int) -> str:
+def _contextCapsule(blob: dict[str, object], maxChars: int, focus: str = '') -> str:
     """Render a past session as a compact handoff capsule (title, metadata,
-    plan, and one trimmed line per dialogue turn — never a raw dump)."""
+    plan, and one trimmed line per dialogue turn — never a raw dump).
+
+    ``focus`` (the tool's ``query``) selects relevance: word hits trim the
+    digest to matching turns plus the turn before each (context), like this
+    environment's focused session-context reads; empty = full digest."""
+    import re as _re
+
     title = str(blob.get('title') or '(untitled)')
     sid = str(blob.get('id') or '')
     updated = str(blob.get('updatedAt') or blob.get('startedAt') or '')
@@ -744,6 +750,7 @@ def _contextCapsule(blob: dict[str, object], maxChars: int) -> str:
     lines.append('')
 
     turnCount = 0
+    turns: list[tuple[str, str]] = []
     for msg in messages:
         if not isinstance(msg, dict):
             continue
@@ -758,6 +765,23 @@ def _contextCapsule(blob: dict[str, object], maxChars: int) -> str:
         if len(one) > 260:
             one = one[:257] + '…'
         prefix = 'USER' if role == 'user' else 'AUG'
+        turns.append((prefix, one))
+
+    focusWords = [w.lower() for w in _re.findall(r'\w{3,}', focus or '')]
+    if focusWords and turns:
+        scored = {
+            i for i, (_p, one) in enumerate(turns)
+            if any(w in one.lower() for w in focusWords)
+        }
+        if scored:
+            keep: set[int] = set()
+            for i in scored:
+                keep.add(i)
+                if i:
+                    keep.add(i - 1)  # one preceding turn for context
+            lines.append(f'focused digest: {len(scored)} of {turnCount} turn(s) match {focus.strip()!r}')
+            turns = [t for i, t in enumerate(turns) if i in keep]
+    for prefix, one in turns:
         lines.append(f'{prefix}: {one}')
 
     text = '\n'.join(lines)
@@ -803,7 +827,7 @@ async def _sessionContext(sessionId: str = '', query: str = '') -> str:
             return f'Error reading session {sid}: {exc}'
     if not blob:
         return f'Session {sid} not found. Check the id via brain_query(store=sessions).'
-    return _contextCapsule(blob, _SESSION_CONTEXT_MAX_CHARS)
+    return _contextCapsule(blob, _SESSION_CONTEXT_MAX_CHARS, focus=query)
 
 
 async def _deleteSessions(sessionIds: object = None, sessionId: str = '') -> str:
@@ -911,7 +935,8 @@ def register() -> None:
                 },
                 'query': {
                     'type': 'string',
-                    'description': 'Optional focus hint (reserved — currently unused by the renderer).',
+                    'description': 'Optional focus hint — trims the digest to turns matching it '
+                    '(plus one turn of context each); empty returns the full one-line-per-turn digest.',
                 },
             },
             'required': ['sessionId'],

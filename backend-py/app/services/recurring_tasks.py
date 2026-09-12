@@ -77,11 +77,58 @@ def delete_task(task_id: int) -> bool:
     try:
         conn = _conn()
         cur = conn.execute('DELETE FROM recurring_tasks WHERE id = ?', (task_id,))
+        conn.execute('DELETE FROM recurring_task_runs WHERE task_id = ?', (task_id,))
         conn.commit()
         return cur.rowcount > 0
     except Exception as exc:
         logger.debug('recurring task delete failed: %s', exc)
         return False
+
+
+def set_active(task_id: int, active: bool) -> bool:
+    """Pause (False) / resume (True) one task — parity with the automations
+    store's pause/resume; a paused task never fires."""
+    try:
+        conn = _conn()
+        cur = conn.execute(
+            'UPDATE recurring_tasks SET active = ? WHERE id = ?',
+            (1 if active else 0, task_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    except Exception as exc:
+        logger.debug('recurring task set_active failed: %s', exc)
+        return False
+
+
+def get_runs(task_id: int, limit: int = 20) -> list[dict]:
+    """Newest-first per-fire history (write-time capped to 20 rows)."""
+    try:
+        rows = _conn().execute(
+            'SELECT fired_at, message FROM recurring_task_runs '
+            'WHERE task_id = ? ORDER BY id DESC LIMIT ?',
+            (task_id, max(1, min(int(limit or 20), 20))),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as exc:
+        logger.debug('recurring task runs read failed: %s', exc)
+        return []
+
+
+def _record_run(conn, task_id: object, message: str) -> None:
+    """Insert one fire into the ledger and cap the per-task window."""
+    try:
+        conn.execute(
+            'INSERT INTO recurring_task_runs (task_id, fired_at, message) VALUES (?, ?, ?)',
+            (task_id, _now_iso(), message[:300]),
+        )
+        conn.execute(
+            'DELETE FROM recurring_task_runs WHERE task_id = ? AND id NOT IN '
+            '(SELECT id FROM recurring_task_runs WHERE task_id = ? ORDER BY id DESC LIMIT 20)',
+            (task_id, task_id),
+        )
+    except Exception:
+        pass  # history is diagnostic — never costs a fire
 
 
 def _interval_seconds(trigger: str) -> int | None:
@@ -176,6 +223,7 @@ def check_and_fire(session_id: str, workspace_path: str = '') -> list[tuple[str,
                     'UPDATE recurring_tasks SET last_fired_at = ? WHERE id = ?',
                     (_now_iso(), task['id']),
                 )
+                _record_run(conn, task['id'], message)
                 conn.commit()
             except Exception:
                 pass
