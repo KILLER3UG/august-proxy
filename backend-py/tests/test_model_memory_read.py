@@ -46,16 +46,19 @@ def _promptWithToggle(monkeypatch, autoInjectOn: bool) -> str:
 
     # Per-turn auto-injection is gated by memoryAutoInject (decoupled from
     # modelMemoryRead, which gates the read tool). modelMemoryRead stays on so
-    # the on-demand tools remain advertised in both cases.
+    # the on-demand tools remain advertised in both cases. The BOOT INDEX is
+    # not gated by memoryAutoInject (ZCode-parity 044) — it rides every
+    # session once the read door advertises memory tools.
     monkeypatch.setattr(
         _bcs, 'getRuntimeConfig',
         lambda: {'modelMemoryRead': True, 'memoryAutoInject': autoInjectOn},
     )
-    # Seed a fact so the boot index (names-only list) has content — the
-    # toggle must hide it, not an empty store.
+    # Seed a fact so the boot index has content — the toggle must not be
+    # what hides it, not an empty store.
     memory_store.save_fact(
         'model:dark-mode', 'The user prefers dark mode',
         category='general', source='model', title='Dark mode preference',
+        description='UI preference for every chat',
     )
     session = wb.createWorkbenchSession()
     return wb.buildSystemPrompt(
@@ -67,18 +70,21 @@ def testIntakeAdvertisesAutoInjectionWhenOn(monkeypatch):
     prompt = _promptWithToggle(monkeypatch, True)
     assert 'relevant stored facts auto-inject each turn' in prompt
     assert 'auto-injection is OFF' not in prompt
-    # Seeded fact shows up in the names-only boot index.
-    assert 'Memory index (names only' in prompt
+    # Seeded fact shows up in the boot index with its description hook.
+    assert 'Memory index (' in prompt
     assert 'Dark mode preference' in prompt
+    assert 'UI preference for every chat' in prompt
 
 
-def testIntakeDropsAutoInjectionAndIndexWhenOff(monkeypatch):
+def testIntakeDropsAutoInjectionButKeepsIndexWhenOff(monkeypatch):
     prompt = _promptWithToggle(monkeypatch, False)
     assert 'auto-injection is OFF (memoryAutoInject)' in prompt
     assert 'relevant stored facts auto-inject each turn' not in prompt
-    # The name-only fact index advertises readable facts — gone when off.
-    assert 'Memory index (names only' not in prompt
-    assert 'Dark mode preference' not in prompt
+    # ZCode-parity 044: the boot index is ALWAYS loaded (frozen per session)
+    # — the model knows what it remembers even when per-turn recall is off.
+    assert 'Memory index (' in prompt
+    assert 'Dark mode preference' in prompt
+    assert 'model:dark-mode' in prompt
     # On-demand lookups stay advertised (the read tool is gated by
     # modelMemoryRead, which is independent of auto-injection).
     assert 'brain_query' in prompt

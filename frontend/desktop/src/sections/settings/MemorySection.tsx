@@ -745,7 +745,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
           checked={Boolean(cfg?.modelMemoryRead ?? true)}
           onCheckedChange={(next) => configMut.mutate({ modelMemoryRead: next })}
           label="Model can read memories on demand"
-          description="Offers the memory lookup tools (brain_query / memory_search) so the model can pull stored facts when it needs them."
+          description="Offers the memory lookup tools (brain_query / list_facts) and loads the memory index — one line per fact with its recall hook — at the start of every session."
           disabled={configQ.isLoading || configMut.isPending}
           data-testid="memory-model-read-toggle"
         />
@@ -753,7 +753,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
           checked={Boolean(cfg?.memoryAutoInject ?? false)}
           onCheckedChange={(next) => configMut.mutate({ memoryAutoInject: next })}
           label="Auto-inject relevant memories each turn"
-          description="Off (recommended): memories surface only when the model calls them. On: a block of facts relevant to the latest turn is added to every message."
+          description="Off (recommended): the model sees the memory index at session start and pulls full facts when it calls them. On: a block of facts relevant to the latest turn is additionally added to every message."
           disabled={configQ.isLoading || configMut.isPending}
           data-testid="memory-auto-inject-toggle"
         />

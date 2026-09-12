@@ -42,11 +42,12 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _memAutoInjectOn():
-    """The boot mem-index (and its freeze) only renders when memoryAutoInject
-    is on — default OFF since the 2026-09-06 recall decoupling (memory reaches
-    the model via the read tool / per-turn tail, not the system prompt). These
-    tests pin the freeze contract, so they opt the flag in for the module;
-    the runtime default stays OFF."""
+    """Historical opt-in: before ZCode-parity 044 the boot mem-index only
+    rendered when memoryAutoInject was on. The index is now ALWAYS loaded at
+    session start (frozen per session — that freeze is what these tests pin),
+    so the flag no longer gates it; the fixture stays only to keep the
+    per-turn tail path representative of an on-config module. Runtime default
+    stays OFF."""
     from app.services import brain_config_service as bcs
     from app.services import config_service
 
@@ -92,7 +93,7 @@ def test_mem_index_frozen_across_timeline_writes(isolatedData):
     tools = [{'name': 'brain_query'}, {'name': 'remember'}]
 
     prompt1 = _build(session, tools=tools)
-    assert 'Memory index (names only' in prompt1
+    assert 'Memory index (one line per fact' in prompt1
 
     # Exactly what the turn loop does at turn end (workbench.py turn loop).
     write_timeline_event(
@@ -123,7 +124,7 @@ def test_mem_index_frozen_once_not_forever(isolatedData):
 
     session2 = wb.createWorkbenchSession()
     prompt = _build(session2, tools=tools)
-    assert 'Memory index (names only' in prompt
+    assert 'Memory index (one line per fact' in prompt
     assert 'later event' in prompt
 
 

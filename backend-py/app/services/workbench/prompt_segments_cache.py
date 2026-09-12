@@ -64,7 +64,8 @@ MEMORY_BLOCK = (
     'Shape: make the `fact` a description-first one-liner (scannable in an index); put depth in '
     '`details`; cross-reference related facts as [[key]] inside details.\n'
     'Do NOT save task steps, code structure, or anything git / the codebase already records.\n'
-    "Update, don't duplicate: `list_facts` shows current keys — revise an existing fact under the "
+    "Update, don't duplicate: your memory index (in context at session start) and `list_facts` "
+    "show current keys — revise an existing fact under the "
     'same key instead of saving a twin; `forget` deletes one that is wrong or outdated.\n'
     'Correct yourself too: when a stored memory proves wrong, update the SAME key and say what '
     'changed — stale memory is worse than none. If the user corrects you, save it as category '

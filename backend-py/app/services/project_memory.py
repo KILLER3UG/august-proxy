@@ -17,6 +17,10 @@ reference) and one ``## <title>`` section — one file per fact — and
 injects. The frontmatter lives in the file's preamble, so legacy parsing
 and byte-exact round-trips are untouched; ``MEMORY-INDEX.md`` itself is never
 parsed for entries. Legacy ``memory.md`` sections keep working unchanged.
+(The index deliberately keeps the ``-INDEX`` suffix rather than copying
+ZCode's ``MEMORY.md``: the legacy main file is ``memory.md``, and on
+case-insensitive filesystems (Windows, macOS) ``MEMORY.md`` would BE that
+file — the rebuild would clobber the workspace's memory.)
 
 Format contract (tests/test_project_memory.py pins it):
   * Entry  = ``## <title>`` heading; entry key = the heading text.
@@ -48,7 +52,10 @@ log = logging.getLogger(__name__)
 _HEADING_RE = re.compile(r'^##\s+(.+?)\s*$', re.MULTILINE)
 _UPDATED_RE = re.compile(r'^\*updated:\s*([^*\s]+)\*\s*$|^\*\s*updated:\s*([^*\s]+)\*\s*$', re.MULTILINE)
 _ENTRY_BODY_CAP = 400  # per-entry read-back cap for prompt blocks
-_INDEX_NAME = 'MEMORY-INDEX.md'  # generated index file — never parsed for entries
+_INDEX_NAME = 'MEMORY-INDEX.md'  # generated index — never parsed for entries.
+# NOT 'MEMORY.md' (the ZCode name): ensure_root creates memory.md as the
+# legacy main file, and Windows/macOS are case-insensitive — MEMORY.md would
+# collide with it and the rebuild would clobber real memories.
 _KNOWN_KINDS = ('user', 'feedback', 'project', 'reference')
 
 # YAML frontmatter, flat keys only (name / description / type). Deliberately

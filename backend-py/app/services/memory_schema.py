@@ -372,6 +372,8 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     ensure_column(conn, 'facts', 'use_count', 'INTEGER DEFAULT 0')
     ensure_column(conn, 'facts', 'last_used_at', 'TEXT')
     ensure_column(conn, 'facts', 'status', "TEXT DEFAULT 'active'")
+    # ZCode-parity (044): one-line recall hook — boot-index line + BM25 text.
+    ensure_column(conn, 'facts', 'description', "TEXT DEFAULT ''")
     ensure_column(conn, 'usage_events', 'context_tokens', 'INTEGER DEFAULT 0')
     ensure_column(conn, 'usage_events', 'cache_hit_tokens', 'INTEGER DEFAULT 0')
     ensure_column(conn, 'usage_events', 'cache_miss_tokens', 'INTEGER DEFAULT 0')
@@ -393,7 +395,8 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
 #      facts title/kind/use_count/last_used_at/status columns.
 # v12: turn latency telemetry (027) — turn_outcomes ttft_ms + cache hit/miss.
 # v13: early-dispatch telemetry (030) — turn_outcomes.tool_args_ready_to_stream_end_ms.
-_SCHEMA_USER_VERSION = 13
+# v14: facts.description column (044) — ZCode-parity recall hook.
+_SCHEMA_USER_VERSION = 14
 
 
 def _ensure_messages_fts(conn: sqlite3.Connection) -> None:
@@ -546,6 +549,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'facts', 'use_count', 'INTEGER DEFAULT 0')
             ensure_column(conn, 'facts', 'last_used_at', 'TEXT')
             ensure_column(conn, 'facts', 'status', "TEXT DEFAULT 'active'")
+            ensure_column(conn, 'facts', 'description', "TEXT DEFAULT ''")
             # M-2: scope axis. The ensure_column runs before
             # migration 032 on the fast path, so the migration's ALTER fails
             # (recorded, swallowed) — the index is created here to stay

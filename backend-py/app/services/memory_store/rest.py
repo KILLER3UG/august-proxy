@@ -38,14 +38,16 @@ def save_fact(
     kind: str = '',
     scope: str = 'global',
     allow_scope_override: bool = False,
+    description: str = '',
 ) -> None:
     """Save a structured fact. ``expires_at`` (ISO-8601 TEXT) is optional; the
     cognitive boot sweep purges facts whose expiry has passed.
 
     Upsert over the unique ``fact_key``: an update keeps the row id,
-    ``created_at`` and usage counters, and only overwrites ``title``/``kind``
-    when the caller actually supplies them (plan §3.3 — facts are titled,
-    typed entries).
+    ``created_at`` and usage counters, and only overwrites ``title``/``kind``/
+    ``description`` when the caller actually supplies them (plan §3.3 — facts
+    are titled, typed entries; 044 adds the ZCode-parity one-line recall
+    ``description`` hook).
 
     M-2 (Part 21): ``scope`` ('global' | 'bot:<agentId>' | 'project:<path>')
     stamps the row's memory home on INSERT. An update never rewrites scope —
@@ -82,12 +84,13 @@ def save_fact(
     kindParam = kind if kind in _FACT_KINDS else ''
     conn.execute(
         """
-        INSERT INTO facts (fact_key, fact_value, title, kind, category, source, confidence, expires_at, scope, updated_at)
-        VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), 'fact'), ?, ?, ?, ?, ?, datetime('now'))
+        INSERT INTO facts (fact_key, fact_value, title, kind, description, category, source, confidence, expires_at, scope, updated_at)
+        VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), 'fact'), ?, ?, ?, ?, ?, ?, datetime('now'))
         ON CONFLICT(fact_key) DO UPDATE SET
             fact_value = excluded.fact_value,
             title = CASE WHEN excluded.title != '' THEN excluded.title ELSE facts.title END,
             kind = CASE WHEN excluded.kind != '' THEN excluded.kind ELSE facts.kind END,
+            description = CASE WHEN excluded.description != '' THEN excluded.description ELSE facts.description END,
             category = excluded.category,
             source = excluded.source,
             confidence = excluded.confidence,
@@ -100,6 +103,7 @@ def save_fact(
             _json(factValue),
             (title or '').strip(),
             kindParam,
+            ' '.join((description or '').split())[:200],
             category,
             source,
             confidence,

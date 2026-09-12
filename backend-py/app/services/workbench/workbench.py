@@ -1094,9 +1094,12 @@ def buildSystemPrompt(
         try:
             from app.services import brain_config_service as _bc
 
-            # Auto-injection is its OWN flag (default off): memory is recalled
-            # only when the model calls the read tool. modelMemoryRead still
-            # gates the tool itself (session_tools), so the two are decoupled.
+            # Per-turn auto-injection is its OWN flag (default off): the
+            # relevance-matched <memory> tail rides the latest message only
+            # when set. The boot index below is NOT gated by it (ZCode-parity
+            # 044: the memory index is always in context at session start,
+            # like this environment's MEMORY.md); modelMemoryRead still gates
+            # the read tool itself, which is what advertises memoryTools.
             memReadOn = bool(_bc.getRuntimeConfig().get('memoryAutoInject', False))
         except Exception:
             memReadOn = False
@@ -1106,41 +1109,44 @@ def buildSystemPrompt(
                 'appended to the latest user message); pull deeper context on demand via '
                 + ', '.join(memoryTools) + '. ' + storeHint
             ]
-            # Boot index (B3): name-only list of the most recent facts/events so the
-            # model pulls relevant memory by name instead of blind-scanning tables.
-            # Frozen per session: this block sits near the TOP of the prompt, so a
-            # fresh read each turn (new timeline rows land after every completed
-            # turn) would change those bytes and invalidate the provider's
-            # entire prefix cache — the "chat feels slow" regression. Fresh
-            # memory still reaches the model two ways: the per-turn <memory>
-            # tail block (byte-stable system prompt, appended to the latest
-            # user message) and brain_query on demand.
-            frozen = getattr(session, '_frozen_mem_index', None)
-            if frozen is None:
-                try:
-                    from app.services import session_scope as _ss
-                    from app.services.memory_store import brain_index_snippet as _brain_index
-
-                    frozen = _brain_index(_ss.resolve_scope(session)).strip()
-                except Exception:
-                    frozen = ''
-                try:
-                    session._frozen_mem_index = frozen
-                except Exception:
-                    pass
-            memIdx = frozen
-            if memIdx:
-                memParts.append('  Memory index (names only — brain_query to read one):')
-                for ln in memIdx.splitlines():
-                    memParts.append('  ' + ln)
         else:
-            # memoryAutoInject off: no per-turn <memory> block and no fact
-            # index — the model pulls stored context on demand via the read
-            # tools (gated by modelMemoryRead, which stays independent).
+            # memoryAutoInject off: no per-turn <memory> block — the model
+            # pulls relevant facts on demand via the read tools (gated by
+            # modelMemoryRead, independent of auto-injection). The boot index
+            # still names what exists.
             memParts = [
                 '- Memory: auto-injection is OFF (memoryAutoInject); pull stored context '
                 'on demand via ' + ', '.join(memoryTools) + '. ' + storeHint
             ]
+        # Boot index (B3, ZCode-parity 044): one line per stored fact —
+        # title (key) — recall hook — so the model always knows what it
+        # remembers and can read/update/forget by key without a list_facts
+        # round-trip. Frozen per session: this block sits near the TOP of the
+        # prompt, so a fresh read each turn (new timeline rows land after every
+        # completed turn) would change those bytes and invalidate the
+        # provider's entire prefix cache — the "chat feels slow" regression.
+        # Fresh memory still reaches the model two ways: the per-turn <memory>
+        # tail block (byte-stable system prompt, appended to the latest user
+        # message) and brain_query on demand.
+        frozen = getattr(session, '_frozen_mem_index', None)
+        if frozen is None:
+            try:
+                from app.services import session_scope as _ss
+                from app.services.memory_store import brain_index_snippet as _brain_index
+
+                frozen = _brain_index(_ss.resolve_scope(session)).strip()
+            except Exception:
+                frozen = ''
+            try:
+                session._frozen_mem_index = frozen
+            except Exception:
+                pass
+        memIdx = frozen
+        if memIdx:
+            memParts.append('  Memory index (one line per fact — title (key) — recall hook; '
+                            'read via brain_query store=facts):')
+            for ln in memIdx.splitlines():
+                memParts.append('  ' + ln)
         # Frozen per-session project-memory index (titles
         # only) — same freeze discipline as the global index above so hand
         # edits to the md files don't bust the cached prefix mid-session;

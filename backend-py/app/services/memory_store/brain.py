@@ -631,16 +631,21 @@ def brain_browse(
 def brain_index_snippet(scope: str = 'global') -> str:
     """Compact boot index of durable memory for intake injection (B3).
 
-    Lists the top-15 facts (by ``updated_at``, skipping expired rows) as
-    ``fact_key (category)`` plus the last-5 episodic timeline summaries,
-    capped near 250 tokens. Injected at intake so the model can pull
-    relevant memory by name via ``brain_query`` instead of blind-scanning
-    raw tables. Returns '' when there is nothing worth injecting.
+    ZCode-parity (044): one line per stored fact — ``- title (key) — hook`` —
+    where the hook is the fact's ``description`` (its one-line recall
+    summary), falling back to the fact text's first clause. Lists up to 40
+    active, unexpired facts (newest first) plus the last-5 episodic timeline
+    summaries, capped near 600 tokens. Injected at session start (frozen per
+    session) so the model always knows what it remembers and can pull or
+    update an entry by key without a ``list_facts`` round-trip — the same
+    contract as this environment's ``MEMORY.md`` index.
 
     2.1 (Part 25): the facts selection is scope-filtered (global ∪ this-scope)
     — otherwise a Bot's private fact names ride into every other session's
     frozen boot index and vice versa.
     """
+    import json as _json
+
     from app.services.session_scope import GLOBAL_SCOPE, normalize_scope
 
     conn = _conn()
@@ -652,20 +657,46 @@ def brain_index_snippet(scope: str = 'global') -> str:
     else:
         scopeClause = "AND (scope IS NULL OR scope = 'global' OR scope = ?)"
         scopeParams = (s,)
+    _vis = (
+        "(expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
+        "AND (status IS NULL OR status = 'active')"
+    )
     try:
         factRows = conn.execute(
-            "SELECT fact_key, title, category FROM facts "
-            "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
-            "AND (status IS NULL OR status = 'active') "
-            f"{scopeClause} "
-            "ORDER BY updated_at DESC LIMIT 15",
+            "SELECT fact_key, title, category, description, fact_value FROM facts "
+            f"WHERE {_vis} {scopeClause} "
+            "ORDER BY updated_at DESC LIMIT 40",
             scopeParams,
         ).fetchall()
         if factRows:
             lines.append('Facts:')
             for r in factRows:
                 label = str(r['title'] or '').strip() or str(r['fact_key'])
-                lines.append(f"  {label} ({r['category'] or 'general'})")
+                hook = ' '.join(str(r['description'] or '').split())
+                if not hook:
+                    # No explicit description — first clause of the fact text.
+                    raw = str(r['fact_value'] or '')
+                    try:
+                        obj = _json.loads(raw)
+                        if isinstance(obj, dict):
+                            raw = str(obj.get('fact') or '')
+                        elif isinstance(obj, str):
+                            raw = obj
+                    except Exception:
+                        pass
+                    hook = ' '.join(raw.split())[:100]
+                line = f"  - {label} ({r['fact_key']})"
+                if hook:
+                    line += f' — {hook}'
+                lines.append(line)
+            try:
+                total = conn.execute(
+                    f'SELECT COUNT(*) FROM facts WHERE {_vis} {scopeClause}', scopeParams
+                ).fetchone()[0]
+                if total and total > len(factRows):
+                    lines.append(f'  … +{total - len(factRows)} more (brain_query store=facts)')
+            except Exception:
+                pass
     except Exception:
         pass
     try:
@@ -687,8 +718,8 @@ def brain_index_snippet(scope: str = 'global') -> str:
         pass
     if not lines:
         return ''
-    # ~250-token cap ≈ 1000 chars.
-    return '\n'.join(lines)[:1000]
+    # ~600-token cap ≈ 2400 chars (index lines are short by construction).
+    return '\n'.join(lines)[:2400]
 
 
 # Per-store writable field whitelists for brain_update_row (B5). Stores absent
@@ -696,7 +727,7 @@ def brain_index_snippet(scope: str = 'global') -> str:
 # store with no live writer — rows are deletable (see _ROW_DELETABLE) but not
 # editable.
 _ROW_EDIT_FIELDS: dict[str, frozenset[str]] = {
-    'facts': frozenset({'fact_value', 'title', 'kind', 'category', 'confidence', 'expires_at'}),
+    'facts': frozenset({'fact_value', 'title', 'kind', 'description', 'category', 'confidence', 'expires_at'}),
     'memory': frozenset({'value'}),
     'timeline': frozenset({'event_summary', 'category'}),
 }

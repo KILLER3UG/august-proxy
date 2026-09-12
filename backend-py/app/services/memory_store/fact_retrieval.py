@@ -124,7 +124,8 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
             scopeClause = "AND (scope IS NULL OR scope = 'global' OR scope = ?)"
             params = (scope,)
         factRows = conn.execute(
-            "SELECT fact_key, fact_value, title, kind, category, COALESCE(scope, 'global') AS scope FROM facts "
+            "SELECT fact_key, fact_value, title, kind, category, description, "
+            "COALESCE(scope, 'global') AS scope FROM facts "
             "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
             "AND (status IS NULL OR status = 'active') "
             f"{scopeClause}",
@@ -134,9 +135,11 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
             body = _fact_body_text(r['fact_value'])
             title = str(r['title'] or '').strip()
             key = str(r['fact_key'] or '')
-            # Title + key words + body: titles carry the human phrasing the
-            # model is most likely to echo back.
-            text = f"{title} {key.replace('-', ' ').replace(':', ' ')} {body}"
+            desc = ' '.join(str(r['description'] or '').split())
+            # Title + description + key words + body: titles and the
+            # ZCode-parity description hook carry the human phrasing the model
+            # is most likely to echo back.
+            text = f"{title} {desc} {key.replace('-', ' ').replace(':', ' ')} {body}"
             tokens = _tokenize(text)
             if not tokens:
                 continue
@@ -144,6 +147,7 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
                 {
                     'key': key,
                     'title': title,
+                    'description': desc,
                     'body': body,
                     'kind': str(r['kind'] or 'fact'),
                     'category': str(r['category'] or 'general'),

@@ -218,9 +218,11 @@ async def _remember(
     File-memory mode (2026-09-12, config ``fileMemory``, the ZCode-parity
     shape): a new project fact becomes its own ``.aug/memory/<slug>.md``
     with frontmatter (name/description/type) and joins the generated
-    ``MEMORY-INDEX.md`` index; ``description`` is the one-line recall hook (fall
-    back to the fact's first sentence). Legacy ``memory.md`` sections keep
-    working; updates land wherever the entry already lives."""
+    ``MEMORY-INDEX.md`` index; ``description`` is the one-line recall hook on BOTH
+    scopes (global: stored on the fact row, shown in the boot index and
+    ranked by BM25; fall back to the fact's first sentence). Legacy
+    ``memory.md`` sections keep working; updates land wherever the entry
+    already lives."""
     import json as _json
 
     from app.services import brain_config_service, memory_store
@@ -370,6 +372,10 @@ async def _remember(
     factKey = explicitKey or _deriveFactKey(text, factScope)
     factTitle = (title or '').strip() or memory_store.derive_fact_title(text)
     factKind = (kind or '').strip().lower()
+    # ZCode-parity recall hook (044): explicit description > first sentence of
+    # the fact — same rule as the project path above, now stored on the row
+    # and used by the boot index + BM25 recall text.
+    factDesc = ' '.join((description or '').split()) or text.split('.')[0][:120]
     value: JsonValue = text if not detailsText else {'fact': text, 'details': detailsText}
     exp = (expires_at or '').strip() or None
     before = memory_store.get_fact(factKey)  # type: ignore[assignment]
@@ -392,6 +398,7 @@ async def _remember(
         memory_store.save_fact(
             factKey, value, category=cat, source='model', confidence=0.7,
             expires_at=exp, title=factTitle, kind=factKind, scope=factScope,
+            description=factDesc,
         )
     except Exception as exc:
         return _json.dumps({'ok': False, 'error': f'remember failed: {exc}'})
@@ -408,7 +415,8 @@ async def _remember(
             type='restore_memory_item',
             target=factKey,
             before=before,
-            after={'key': factKey, 'value': value, 'category': cat, 'source': 'model'},
+            after={'key': factKey, 'value': value, 'category': cat, 'source': 'model',
+                   'title': factTitle, 'description': factDesc},
         )
     except Exception:
         pass
@@ -653,6 +661,7 @@ async def _list_facts(category: str = '', query: str = '', limit: int = 50) -> s
             {
                 'key': r.get('factKey'),
                 'title': title[:120],
+                'description': str(r.get('description') or '')[:200],
                 'category': r.get('category') or '',
                 'source': r.get('source') or '',
                 'kind': r.get('kind') or '',
@@ -1010,7 +1019,9 @@ def register() -> None:
         'remember',
         'Save one durable memory entry (the only model write door). Use for user-stated '
         'preferences, project constraints, and feedback that must outlive this session. Pass a stable '
-        'key to update an existing entry rather than duplicate (call list_facts to see current keys). '
+        'key to update an existing entry rather than duplicate (your boot index lists current '
+        'entries; call list_facts for the full set). Give every entry a one-line `description` — '
+        'it is the recall hook shown in the index. '
         'Sensitive topics are refused unless enabled. Scope: inside a workspace session the default is '
         "project (this workspace's md-file memory); use scope='global' for user-level facts that "
         "apply everywhere, or scope='project' to force the project store.",
@@ -1047,8 +1058,9 @@ def register() -> None:
                 'details': {'type': 'string', 'description': 'Optional extra context stored alongside the fact.'},
                 'description': {
                     'type': 'string',
-                    'description': 'One-line summary of where this memory applies — used to decide '
-                    'relevance at recall (project scope: becomes the file frontmatter + MEMORY-INDEX.md hook). '
+                    'description': 'One-line summary of where this memory applies — the recall hook: '
+                    'shown in the boot index and used for relevance at recall (project scope: file '
+                    'frontmatter + MEMORY-INDEX.md index line; global scope: stored on the fact row). '
                     'Derived from the fact when omitted.',
                 },
                 'expires_at': {
