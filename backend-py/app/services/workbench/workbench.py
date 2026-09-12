@@ -964,6 +964,16 @@ def buildSystemPrompt(
         if hasattr(session, 'workspacePath') and session.workspacePath
         else ''
     )
+    # User/workspace hooks (.aug/hooks.json) are (re)loaded here — mtime-gated
+    # so unchanged files cost two stats. The workbench is the only engine that
+    # emits tool events, so registering per prompt build covers every session
+    # kind (chat, bot, subagent) and picks up hand-edited configs by next turn.
+    try:
+        from app.services.hooks.user_hooks import ensure_hooks_loaded
+
+        ensure_hooks_loaded(workspacePath or None)
+    except Exception:
+        logger.debug('prompt: user hook load failed', exc_info=True)
     vcsInfo = ''
     whatsNew = ''
     if workspacePath:

@@ -41,6 +41,9 @@ class _HookEntry:
     matcher: str  # fnmatch pattern on tool_name ('*' = all)
     priority: int
     handler: Callable[[HookContext], Awaitable[HookResult]]
+    # Per-hook timeout (user-config hooks may ask for more than the
+    # built-in 5s; the registry default stays _HOOK_TIMEOUT_S).
+    timeout_s: float = _HOOK_TIMEOUT_S
     # Stats
     call_count: int = 0
     deny_count: int = 0
@@ -89,6 +92,7 @@ class HookRegistry:
         handler: Callable[[HookContext], Awaitable[HookResult]],
         matcher: str = '*',
         priority: int = 100,
+        timeout_s: float = _HOOK_TIMEOUT_S,
     ) -> None:
         """Register a hook. Lower priority runs first.
 
@@ -105,6 +109,7 @@ class HookRegistry:
             matcher=matcher,
             priority=priority,
             handler=handler,
+            timeout_s=max(0.5, float(timeout_s)),
         )
         self._hooks.append(entry)
         self._hooks.sort(key=lambda h: h.priority)
@@ -153,7 +158,7 @@ class HookRegistry:
         entry.call_count += 1
         start = time.monotonic()
         try:
-            result = await asyncio.wait_for(entry.handler(ctx), timeout=_HOOK_TIMEOUT_S)
+            result = await asyncio.wait_for(entry.handler(ctx), timeout=entry.timeout_s)
             elapsed_ms = (time.monotonic() - start) * 1000
             entry.record_duration(elapsed_ms)
             entry.consecutive_timeouts = 0
@@ -200,6 +205,7 @@ class HookRegistry:
                     'event': h.event.value,
                     'matcher': h.matcher,
                     'priority': h.priority,
+                    'timeout_s': h.timeout_s,
                     'calls': h.call_count,
                     'denies': h.deny_count,
                     'p95_ms': round(h.p95_ms, 1),

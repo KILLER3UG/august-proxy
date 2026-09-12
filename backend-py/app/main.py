@@ -114,6 +114,15 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning('Hook registration failed (non-fatal): %s', exc)
 
+    # User-level hooks (<dataDir>/hooks.json) load at boot; workspace
+    # (.aug/hooks.json) files load per session at prompt build.
+    try:
+        from app.services.hooks.user_hooks import ensure_hooks_loaded
+
+        ensure_hooks_loaded()
+    except Exception as exc:
+        logger.warning('User hook load failed (non-fatal): %s', exc)
+
     # Start background health monitor for configured providers.
     try:
         from app.services.health_monitor import health_monitor
@@ -355,6 +364,7 @@ from app.routers import gateway as gatewayRoutes  # noqa: E402
 from app.routers import git as gitRoutes  # noqa: E402
 from app.routers import harness_mcp as harnessMcpRoutes  # noqa: E402
 from app.routers import harness_proposals as harnessProposalsRoutes  # noqa: E402
+from app.routers import hooks as hooksRoutes  # noqa: E402
 from app.routers import live as liveRoutes  # noqa: E402
 from app.routers import manage as manageRoutes  # noqa: E402
 from app.routers import mcp as mcpRoutes  # noqa: E402
@@ -378,6 +388,7 @@ from app.routers import whats_new as whatsNewRoutes  # noqa: E402
 from app.routers import workbench as workbenchRoutes  # noqa: E402
 
 app.include_router(configRoutes.router)
+app.include_router(hooksRoutes.router)
 app.include_router(curatorRoutes.router)
 app.include_router(providersRoutes.router)
 app.include_router(privacyRoutes.router)

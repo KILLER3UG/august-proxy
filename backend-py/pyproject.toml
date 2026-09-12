@@ -23,6 +23,13 @@ dependencies = [
     # rendering works fully offline.
     "python-pptx>=1.0.0",
     "Pillow>=11.0.0",
+    # Artifact judge: PDF page rasterization (pypdfium2 ships its own
+    # libpdfium — no system poppler/ghostscript needed).
+    "pypdfium2>=4.30.0",
+    # Accessibility-first desktop control (desktop_ui_tree / element
+    # targeting). Windows-only; imports are guarded so non-Windows stays
+    # pixel-mode only.
+    "uiautomation>=2.0.20; sys_platform == 'win32'",
     "matplotlib>=3.9.0",
     "imageio>=2.36.0",
     "imageio-ffmpeg>=0.5.1",

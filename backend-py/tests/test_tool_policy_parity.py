@@ -59,6 +59,9 @@ _ORACLE_READ = frozenset({
     'vcd_parse',
     # Media analysis — the sanctioned reader for images/video/audio/docs.
     'analyze_media',
+    # Artifact judge — render cache PNGs + vision verdict; read-only over
+    # user files (writes go to the app data dir only).
+    'render_pages', 'judge_artifact',
     # Camera capture — read-only image acquisition; frames are transient
     # (the tool deletes the raw file before returning, and the result is a
     # vision description, not the bytes).

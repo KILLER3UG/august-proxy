@@ -108,6 +108,32 @@ async def _createHtmlArtifact(path: str = '', html: str = '', title: str = '') -
         return _err(exc)
 
 
+async def _renderPages(path: str = '', pages: str = '', dpi: int = 110) -> str:
+    if (bad := _bad_path(path)) is not None:
+        return bad
+    try:
+        from app.services.tools import artifact_judge
+
+        result = artifact_judge.render_pages(path, workspace=_workspace(), pages=pages, dpi=int(dpi or 110))
+        return json.dumps(result)
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _judgeArtifact(path: str = '', request: str = '', rubric: str = '', pages: str = '') -> str:
+    if (bad := _bad_path(path)) is not None:
+        return bad
+    try:
+        from app.services.tools import artifact_judge
+
+        result = await artifact_judge.judge_artifact(
+            path, request, rubric=rubric, pages=pages, workspace=_workspace()
+        )
+        return json.dumps(result)
+    except Exception as exc:
+        return _err(exc)
+
+
 _LIST_OF_OBJ = {
     'type': 'array',
     'items': {'type': 'object'},
@@ -222,5 +248,50 @@ def register() -> None:
                 'title': {'type': 'string', 'description': 'Document title if missing from html'},
             },
             'required': ['path', 'html'],
+        },
+    )
+    tool_registry.register(
+        'render_pages',
+        'Render a document (pdf/pptx/docx/xlsx or an image) to PNG page '
+        'images in the app render cache. Returns the PNG paths — feed them '
+        'to analyze_media for inspection or to judge_artifact for the '
+        'acceptance pass. pptx/docx/xlsx need headless LibreOffice; PDF and '
+        'images always work.',
+        _renderPages,
+        {
+            'type': 'object',
+            'properties': {
+                'path': {'type': 'string', 'description': 'Document path (workspace or absolute)'},
+                'pages': {
+                    'type': 'string',
+                    'description': 'Optional 1-based spec like "1-5,8"; default first 8 pages',
+                },
+                'dpi': {'type': 'integer', 'minimum': 72, 'maximum': 200},
+            },
+            'required': ['path'],
+        },
+    )
+    tool_registry.register(
+        'judge_artifact',
+        'Visual acceptance review of a produced document: renders its pages '
+        'and asks a vision model for a per-page pass/fail + concrete issues '
+        'against the user request (overlaps, cut-off text, empty charts, '
+        'off-topic content, placeholders). USE IT after create_pptx and any '
+        'pdf/docx/xlsx deliverable: fix what it flags, re-judge, ship only '
+        'on overall "pass". The verdict never blocks your answer — it is '
+        'your self-review checklist.',
+        _judgeArtifact,
+        {
+            'type': 'object',
+            'properties': {
+                'path': {'type': 'string', 'description': 'Document to judge (pptx/docx/xlsx/pdf/png)'},
+                'request': {
+                    'type': 'string',
+                    'description': 'What the user asked the artifact to be, verbatim as practical',
+                },
+                'rubric': {'type': 'string', 'description': 'Optional extra acceptance criteria'},
+                'pages': {'type': 'string', 'description': 'Optional page spec like "1-6"; default first 8'},
+            },
+            'required': ['path', 'request'],
         },
     )

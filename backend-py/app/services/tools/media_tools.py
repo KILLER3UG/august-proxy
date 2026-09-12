@@ -122,12 +122,31 @@ def _extract_video_frame(target: Path, tmpdir: Path) -> Path | None:
 # ── Vision through august's own provider stack ────────────────────────────
 
 
-async def _vision_describe(image_path: Path | str, question: str, url: str = '') -> str:
+def _image_data_part(image_path: Path | str) -> dict[str, object]:
+    """One OpenAI-style image_url part (data URL) from a local file."""
+    raw = Path(image_path).read_bytes()
+    ext = Path(image_path).suffix.lower()
+    media_type = _MIME.get(ext, 'image/png')
+    b64 = base64.b64encode(raw).decode('ascii')
+    return {
+        'type': 'image_url',
+        'image_url': {'url': f'data:{media_type};base64,{b64}'},
+    }
+
+
+async def _vision_describe(
+    image_path: Path | str,
+    question: str,
+    url: str = '',
+    extra_images: list[str] | None = None,
+) -> str:
     """Ask a vision-capable model to describe an image.
 
     Uses the session's chat model/provider by default (same resolution as
     BTW), sending an OpenAI-style image_url part. Works with any provider
-    whose gateway accepts multimodal chat input.
+    whose gateway accepts multimodal chat input. ``extra_images`` adds
+    further image parts to the SAME message (multi-page artifact judging
+    — see artifact_judge).
 
     ``chat_completions`` returns a raw ProviderResponse (status/body) — the
     old code read nonexistent ``.content``/``.text`` attributes and so EVERY
@@ -152,17 +171,16 @@ async def _vision_describe(image_path: Path | str, question: str, url: str = '')
             'model first (the analyzer reuses it), then retry.'
         )
 
+    image_parts: list[dict[str, object]] = []
     if url:
-        image_part: dict[str, object] = {'type': 'image_url', 'image_url': {'url': url}}
+        image_parts.append({'type': 'image_url', 'image_url': {'url': url}})
     else:
-        raw = Path(image_path).read_bytes()
-        ext = Path(image_path).suffix.lower()
-        media_type = _MIME.get(ext, 'image/png')
-        b64 = base64.b64encode(raw).decode('ascii')
-        image_part = {
-            'type': 'image_url',
-            'image_url': {'url': f'data:{media_type};base64,{b64}'},
-        }
+        image_parts.append(_image_data_part(image_path))
+    for extra in extra_images or []:
+        try:
+            image_parts.append(_image_data_part(extra))
+        except Exception as exc:
+            logger.debug('vision extra image %s skipped: %s', extra, exc)
 
     client = getClient(provider)
     if client is None:
@@ -174,7 +192,7 @@ async def _vision_describe(image_path: Path | str, question: str, url: str = '')
             {
                 'role': 'user',
                 'content': [
-                    image_part,
+                    *image_parts,
                     {
                         'type': 'text',
                         'text': question

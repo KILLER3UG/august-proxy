@@ -30,6 +30,9 @@ _PROMPT_READ = frozenset({
     # Media analysis — the sanctioned reader for images/video/audio/docs
     # (read_file refuses binary media and redirects here).
     'analyze_media',
+    # Artifact judge — renders pages into the app render cache (never the
+    # workspace) and returns a vision acceptance verdict over user files.
+    'render_pages', 'judge_artifact',
     # Camera capture — read-only image acquisition; frames are transient
     # (the tool deletes the raw file before returning, and the result is a
     # vision description, not the bytes).
