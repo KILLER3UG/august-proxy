@@ -126,11 +126,25 @@ export interface DiffViewProps {
   diff?: string;
   /** Old file content. Used with newContent to compute the diff. */
   oldContent?: string;
-  /** New file content. */
+  /** New file content. Used with oldContent to compute the diff. */
   newContent?: string;
   /** Maximum number of lines to render before showing the "─── N more lines ───" truncation. Default: 40. */
   maxLines?: number;
   className?: string;
+  /**
+   * Review findings painted onto their line (line = the rendered row
+   * number — oldLine for removed rows, newLine otherwise). When set, rows
+   * also carry a `data-diff-anchor` + scrollable id `<idPrefix>-<line>`.
+   */
+  anchors?: DiffAnchor[];
+  /** Id prefix for anchor scroll targets (unique per panel). */
+  idPrefix?: string;
+}
+
+export interface DiffAnchor {
+  line: number;
+  tag: string;   // severity chip, e.g. P0..P3
+  title: string; // one-line finding title
 }
 
 /** Tally added/removed lines from an already-parsed diff. */
@@ -165,7 +179,7 @@ export function diffStats(
   return countDiffLines(lines);
 }
 
-export function DiffView({ diff, oldContent, newContent, maxLines = 40, className }: DiffViewProps) {
+export function DiffView({ diff, oldContent, newContent, maxLines = 40, className, anchors, idPrefix }: DiffViewProps) {
   const lines = useMemo<DiffLine[]>(() => {
     if (diff) return parseUnifiedDiff(diff);
     if (oldContent !== undefined && newContent !== undefined) {
@@ -173,6 +187,17 @@ export function DiffView({ diff, oldContent, newContent, maxLines = 40, classNam
     }
     return [];
   }, [diff, oldContent, newContent]);
+
+  const anchorsByLine = useMemo(() => {
+    const m = new Map<number, DiffAnchor[]>();
+    for (const a of anchors ?? []) {
+      if (!a.line) continue;
+      const list = m.get(a.line) ?? [];
+      list.push(a);
+      m.set(a.line, list);
+    }
+    return m;
+  }, [anchors]);
 
   const counts = useMemo(() => countDiffLines(lines), [lines]);
 
@@ -194,7 +219,16 @@ export function DiffView({ diff, oldContent, newContent, maxLines = 40, classNam
       aria-label={`Diff: +${counts.added} -${counts.removed}`}
     >
       {visible.map((line, i) => (
-        <DiffLineRow key={i} line={line} />
+        <DiffLineRow
+          key={i}
+          line={line}
+          anchors={
+            anchorsByLine.size
+              ? anchorsByLine.get(line.kind === 'removed' ? line.oldLine ?? -1 : line.newLine ?? -1)
+              : undefined
+          }
+          idPrefix={idPrefix}
+        />
       ))}
       {hidden > 0 && (
         <button
@@ -218,12 +252,16 @@ export function DiffView({ diff, oldContent, newContent, maxLines = 40, classNam
   );
 }
 
-function DiffLineRow({ line }: { line: DiffLine }) {
+function DiffLineRow({ line, anchors, idPrefix }: { line: DiffLine; anchors?: DiffAnchor[]; idPrefix?: string }) {
   const lineNumber = line.kind === 'removed' ? line.oldLine : line.newLine;
   const prefix = line.kind === 'added' ? '+' : line.kind === 'removed' ? '-' : ' ';
 
   return (
-    <div className="flex hover:bg-white/[0.025]">
+    <div
+      className={cn('flex hover:bg-white/[0.025]', anchors?.length && 'bg-primary/[0.06]')}
+      id={anchors?.length && lineNumber ? `${idPrefix ?? 'diff-anchor'}-${lineNumber}` : undefined}
+      {...(anchors?.length ? { 'data-diff-anchor': lineNumber } : {})}
+    >
       <span
         className={cn(
           'text-zinc-500 text-right min-w-[2.25rem] pr-2 select-none tabular-nums shrink-0',
@@ -251,6 +289,16 @@ function DiffLineRow({ line }: { line: DiffLine }) {
       >
         <span className="opacity-50 select-none">{prefix}</span> {line.text || ' '}
       </span>
+      {anchors?.map((a, i) => (
+        <span
+          key={i}
+          title={a.title}
+          data-testid="diff-line-anchor"
+          className="shrink-0 self-center ml-2 mr-2 max-w-[14rem] truncate rounded border border-destructive/40 bg-destructive/15 px-1 py-0.5 text-[9px] font-semibold text-destructive/90"
+        >
+          {a.tag} {a.title}
+        </span>
+      ))}
     </div>
   );
 }

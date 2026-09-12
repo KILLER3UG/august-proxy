@@ -20,6 +20,11 @@ import {
 import { ReviewFindingsPanel } from './ReviewFindingsPanel';
 import { useRevertAllChanges } from '@/lib/git-revert';
 
+/** Stable DOM id prefix for a file's review anchors (DiffView scroll targets). */
+function diffAnchorPrefix(path: string) {
+  return `da-${path.replace(/[^a-zA-Z0-9]/g, '_')}`;
+}
+
 export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null }) {
   const qc = useQueryClient();
   const drawer = useRightDrawer();
@@ -154,7 +159,18 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
         <ReviewFindingsPanel
           result={review}
           onSelectFile={(path) => {
-            if (diff) setRightDrawerDiff(diff, path);
+            if (!diff) return;
+            setRightDrawerDiff(diff, path);
+            // Jump-to-line parity with the anchored findings: locate the
+            // first finding row once the selection has re-rendered.
+            const first = (review.findings ?? []).find((f) => f.file === path && f.line > 0);
+            if (first) {
+              window.setTimeout(() => {
+                document
+                  .getElementById(`${diffAnchorPrefix(path)}-${first.line}`)
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }, 120);
+            }
           }}
           onDismiss={() => setReview(null)}
         />
@@ -211,7 +227,18 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
               </div>
 
               {file.diff?.trim() ? (
-                <DiffView diff={file.diff} maxLines={240} />
+                <DiffView
+                  diff={file.diff}
+                  maxLines={240}
+                  anchors={
+                    review && !review.skipped
+                      ? (review.findings ?? [])
+                          .filter((f) => f.file === file.path && f.line > 0)
+                          .map((f) => ({ line: f.line, tag: f.tag, title: f.title }))
+                      : undefined
+                  }
+                  idPrefix={diffAnchorPrefix(file.path)}
+                />
               ) : (
                 <div className="p-3 text-center text-muted-foreground/60">No diff content available.</div>
               )}
