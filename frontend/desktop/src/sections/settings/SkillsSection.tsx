@@ -29,6 +29,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
 import { LearningPanel } from '@/sections/settings/LearningPanel';
+import { SkillPacksPanel } from '@/sections/settings/SkillPacksPanel';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { cn } from '@/lib/utils';
 
@@ -359,6 +360,9 @@ export function SkillsSection() {
           )}
         </div>
       )}
+
+      {/* ── Skill packs: install-from-remote ───────────────────────── */}
+      {mode === 'list' && <SkillPacksPanel />}
 
       {/* ── Part 16 Phase E: Learning (curator report + drafts) ─────── */}
       {mode === 'list' && <LearningPanel />}

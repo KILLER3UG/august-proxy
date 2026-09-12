@@ -380,6 +380,7 @@ from app.routers import recurring_tasks as recurringTasksRoutes  # noqa: E402
 from app.routers import security as securityRoutes  # noqa: E402
 from app.routers import service_connections as serviceConnectionsRoutes  # noqa: E402
 from app.routers import sessions as sessionsRoutes  # noqa: E402
+from app.routers import skill_packs as skillPacksRoutes  # noqa: E402
 from app.routers import skills as skillsRoutes  # noqa: E402
 from app.routers import subagent as subagentRoutes  # noqa: E402
 from app.routers import terminal_routes as terminalWsRoutes  # noqa: E402
@@ -389,10 +390,13 @@ from app.routers import workbench as workbenchRoutes  # noqa: E402
 
 app.include_router(configRoutes.router)
 app.include_router(hooksRoutes.router)
+# BEFORE skillsRoutes: /api/skills/packs must not be captured by
+# GET /api/skills/{name} (FastAPI matches in include order).
+app.include_router(skillPacksRoutes.router)
+app.include_router(skillsRoutes.router)
 app.include_router(curatorRoutes.router)
 app.include_router(providersRoutes.router)
 app.include_router(privacyRoutes.router)
-app.include_router(skillsRoutes.router)
 app.include_router(modelsRoutes.router)
 app.include_router(proxyRoutes.router)
 app.include_router(workbenchRoutes.router)
