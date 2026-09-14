@@ -29,12 +29,19 @@ class StubClient:
         cancelAfter: int | None = None,
         onceName: str = '',
         onceInput: str = '{}',
+        truncatedRounds: int = 1,
     ):
         self.mode = mode
         self.callCount = 0
         self.cancelAfter = cancelAfter
         self.onceName = onceName
         self.onceInput = onceInput
+        # How many rounds stop on the output token limit before one answers
+        # cleanly (0 = never truncated). Drives the finding-2026-09-15 #3 tests.
+        self.truncatedRounds = truncatedRounds
+        # Every request body the loop sent, so a test can assert what the
+        # model was actually shown on the next round (e.g. a self-heal nudge).
+        self.bodies: list[object] = []
         self._cancelEvent: asyncio.Event | None = None
 
     def resolveApiKey(self) -> str:
@@ -46,6 +53,7 @@ class StubClient:
     async def messages_stream(self, body) -> AsyncIterator[dict[str, object]]:
         self.callCount += 1
         roundN = self.callCount
+        self.bodies.append(body)
         await asyncio.sleep(0)
         if self.mode == 'tool_forever':
             yield {
@@ -65,6 +73,20 @@ class StubClient:
         elif self.mode == 'text_once':
             yield {'_event_type': 'content_block_start', 'content_block': {'type': 'text', 'text': 'Hello.'}}
             yield {'_event_type': 'message_delta', 'usage': {'input_tokens': 10, 'output_tokens': 5}}
+        elif self.mode == 'text_truncated':
+            # Prose that stops on the output token limit carrying NO tool call
+            # (finding 2026-09-15 #3 — the answer used to ship mid-word).
+            yield {
+                '_event_type': 'content_block_start',
+                'content_block': {
+                    'type': 'text',
+                    'text': 'the single UI fix in the composer: **Compose',
+                },
+            }
+            delta: dict[str, object] = {'usage': {'input_tokens': 10, 'output_tokens': 5}}
+            if roundN <= self.truncatedRounds:
+                delta['delta'] = {'stop_reason': 'max_tokens'}
+            yield {'_event_type': 'message_delta', **delta}
         elif self.mode == 'remember_once':
             if roundN == 1:
                 yield {
@@ -551,7 +573,10 @@ class TestPostEditVerificationInLoop:
         ]
         assert sseResults
         sseContent = str(sseResults[0].get('content'))
-        assert '[verification passed] lint + tests clean.' in sseContent
+        # Provenance suffix (cwd + config source) is asserted in
+        # test_edit_verification_t1.py; this test is about the receipt
+        # reaching BOTH surfaces, so it matches the stable prefix.
+        assert '[verification passed] lint + tests clean' in sseContent
         toolMsgs = [m for m in session.messages if m.get('role') == 'tool']
         assert toolMsgs
         assert '[verification passed]' in str(toolMsgs[-1].get('content'))
@@ -1040,3 +1065,80 @@ class TestP1Hotfixes:
         uses, results = _collect_ids(session.messages)
         orphans = results - uses
         assert not orphans, f'dangling tool_results with no tool_use: {orphans}'
+
+
+class TestLengthStoppedFinalText:
+    """Finding 2026-09-15 #3 — prose cut off by max_tokens shipped as the answer."""
+
+    @pytest.mark.asyncio
+    async def testTruncatedProseAsksForContinuation(self, _isolate):
+        stub = StubClient(mode='text_truncated', truncatedRounds=1)
+        _isolate['client'] = stub
+        events = _capturedEvents()
+        await wb.sendWorkbenchMessageStream(
+            sessionId='wb_test_len1', message='answer', model='stub-claude', emit=_emitTo(events)
+        )
+        # The loop must NOT end on the clipped round — it re-calls the model.
+        assert stub.callCount == 2, f'no continuation was requested: {stub.callCount} calls'
+        assert any(
+            e.get('type') == 'warning' and 'output token limit' in str(e.get('message'))
+            for e in events
+        ), [e.get('message') for e in events if e.get('type') == 'warning']
+        # The nudge reaches the model: round 2's request carries it.
+        assert 'cut off by the output token limit' in str(stub.bodies[1])
+        assert 'no preamble' in str(stub.bodies[1])
+
+    @pytest.mark.asyncio
+    async def testContinuationBudgetIsBounded(self, _isolate):
+        stub = StubClient(mode='text_truncated', truncatedRounds=99)
+        _isolate['client'] = stub
+        events = _capturedEvents()
+        await wb.sendWorkbenchMessageStream(
+            sessionId='wb_test_len2', message='answer', model='stub-claude', emit=_emitTo(events)
+        )
+        # One clipped answer + two continuations, then it stops asking.
+        assert stub.callCount == 3, f'continuation not bounded: {stub.callCount} calls'
+        assert any(
+            e.get('type') == 'warning' and 'still cut off' in str(e.get('message')) for e in events
+        ), [e.get('message') for e in events if e.get('type') == 'warning']
+        turnEnd = [e for e in events if e.get('type') == 'turn_end']
+        assert turnEnd and turnEnd[-1].get('reason') == 'length', turnEnd
+
+
+class TestTurnEndReason:
+    """Finding 2026-09-15 #8 — "it stopped after N commands" was unauditable."""
+
+    @pytest.mark.asyncio
+    async def testNormalTextTurnReportsFinished(self, _isolate):
+        stub = StubClient(mode='text_once')
+        _isolate['client'] = stub
+        events = _capturedEvents()
+        await wb.sendWorkbenchMessageStream(
+            sessionId='wb_test_te1', message='hi', model='stub-claude', emit=_emitTo(events)
+        )
+        turnEnd = [e for e in events if e.get('type') == 'turn_end']
+        assert len(turnEnd) == 1, turnEnd
+        assert turnEnd[0].get('reason') == 'finished'
+        assert turnEnd[0].get('error') is False
+        assert isinstance(turnEnd[0].get('rounds'), int)
+        # `done` stays the terminal event: turn_end must precede the last done.
+        types = [e['type'] for e in events]
+        assert types.index('turn_end') < len(types) - 1 - types[::-1].index('done')
+
+    @pytest.mark.asyncio
+    async def testCancelledTurnReportsInterrupted(self, _isolate):
+        cancel = asyncio.Event()
+        stub = StubClient(mode='tool_forever', cancelAfter=3)
+        stub.bindCancel(cancel)
+        _isolate['client'] = stub
+        events = _capturedEvents()
+        await wb.sendWorkbenchMessageStream(
+            sessionId='wb_test_te2',
+            message='loop',
+            model='stub-claude',
+            emit=_emitTo(events),
+            signal=cancel,
+        )
+        turnEnd = [e for e in events if e.get('type') == 'turn_end']
+        assert turnEnd, 'no turn_end on a cancelled turn'
+        assert turnEnd[-1].get('reason') == 'interrupted'

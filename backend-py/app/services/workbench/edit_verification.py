@@ -5,9 +5,16 @@ tools) the harness runs the workspace's configured lint + optional test
 command and appends the outcome to the tool result, so the model sees
 failures immediately instead of discovering them rounds later.
 
-- Config: ``<workspace>/.aug/verify.json`` (``lintCmd`` / ``testCmd`` /
-  ``enabled`` / ``maxFixIterations``); missing commands fall back to
-  auto-detection heuristics (ruff / eslint / pytest / npm test).
+- Scope: commands resolve from the **edited file's nearest package root**
+  (walking up to the first ``pyproject.toml`` / ``package.json`` / …), not the
+  workspace root. In a monorepo the root is rarely the right suite, and
+  running it there is how the gate timed out and paused itself (finding
+  2026-09-15 #2).
+- Config: ``.aug/verify.json`` at the workspace root, overridable per package
+  (``backend-py/.aug/verify.json`` wins for files under ``backend-py/``);
+  keys ``lintCmd`` / ``testCmd`` / ``enabled`` / ``maxFixIterations``. Missing
+  commands fall back to auto-detection heuristics (ruff / eslint / pytest /
+  npm test), file-scoped where the runner supports it.
 - Errors are reported with containing-function context — models mishandle
   bare line numbers, so each diagnostic site gets the enclosing ``def`` /
   ``class`` / ``function`` signature plus the offending source line. The
@@ -65,11 +72,55 @@ _MAX_CONTEXT_SITES = 4
 _NPM_NO_TEST_MARKER = 'no test specified'
 
 
-def detect_commands(workspace: Path) -> dict[str, str]:
-    """Auto-detect lint/test commands for a workspace (no config file).
+# Marker files that identify a package root inside a monorepo.
+_PKG_MARKERS = (
+    'pyproject.toml',
+    'package.json',
+    'go.mod',
+    'Cargo.toml',
+    'setup.py',
+    'pom.xml',
+    'build.gradle',
+    'build.gradle.kts',
+)
 
-    Returns a dict with optional ``lintCmd`` / ``testCmd`` keys. Heuristics
-    only look at marker files — they never execute anything.
+
+def package_root_for(workspace: Path, relpath: str) -> Path:
+    """Nearest package root at or above the edited file, floored at workspace.
+
+    The gate used to read only the workspace ROOT's markers, so in a monorepo
+    a one-line change under ``backend-py/`` ran the root ``npm test`` — the
+    entire repo's suite — hit the 180 s ceiling, and paused the test gate for
+    the rest of the session (audit finding 2026-09-15 #2). Walking up from the
+    edited file finds the package the file actually belongs to; a single-
+    package repo has no marker above the file's own directory chain other than
+    the root, so it behaves exactly as before.
+
+    ``relpath`` is workspace-relative and may use either separator.
+    """
+    if not relpath:
+        return workspace
+    parts = [p for p in relpath.replace('\\', '/').split('/') if p and p not in ('.', '..')]
+    if len(parts) < 2:
+        return workspace  # a file sitting in the workspace root has no parent package
+    for depth in range(len(parts) - 1, 0, -1):
+        candidate = workspace.joinpath(*parts[:depth])
+        try:
+            if any((candidate / marker).is_file() for marker in _PKG_MARKERS):
+                return candidate
+        except OSError:
+            continue
+    return workspace
+
+
+def detect_commands(workspace: Path) -> dict[str, str]:
+    """Auto-detect lint/test commands for one package directory.
+
+    Pass the edited file's :func:`package_root_for`, not the workspace root —
+    that resolution is the whole point of finding 2026-09-15 #2. Returns a
+    dict with optional ``lintCmd`` / ``testCmd`` keys whose ``{file}``
+    placeholders are relative to this directory. Heuristics only look at
+    marker files — they never execute anything.
     """
     cmds: dict[str, str] = {}
     try:
@@ -105,20 +156,45 @@ def detect_commands(workspace: Path) -> dict[str, str]:
             or '[tool:pytest]' in _readSmall(workspace / 'setup.cfg')
         )
         if hasPytest:
-            cmds['testCmd'] = 'python -m pytest -q -x'
+            # File-scoped by default: a gate that re-runs the whole suite after
+            # every edit either times out or teaches the model to ignore it.
+            # `uv run` when the package pins itself with uv.lock — that is how
+            # this repo's own AGENTS.md says to run it.
+            runner = 'uv run pytest' if (workspace / 'uv.lock').is_file() else 'python -m pytest'
+            cmds['testCmd'] = f'{runner} -q -x {{file}}'
         if not cmds.get('testCmd'):
             pkgJson = workspace / 'package.json'
             if pkgJson.is_file():
                 try:
                     pkg = json.loads(pkgJson.read_text(encoding='utf-8', errors='replace'))
                     testScript = as_str((pkg.get('scripts') or {}).get('test'), '')
-                    if testScript and _NPM_NO_TEST_MARKER not in testScript:
+                    if testScript and _NPM_NO_TEST_MARKER not in testScript and not _isAggregatorScript(
+                        pkg, testScript
+                    ):
                         cmds['testCmd'] = 'npm test --silent'
                 except Exception:
                     pass
     except OSError:
         pass
     return cmds
+
+
+def _isAggregatorScript(pkg: object, testScript: str) -> bool:
+    """True when a package.json ``test`` script fans out instead of running a suite.
+
+    A monorepo root whose test chains other scripts (``npm run test:verify``,
+    which here runs the whole backend pytest plus the whole frontend vitest)
+    is by definition "everything in the repo" — never the right thing to run
+    after one edit. Detecting it stops the gate from choosing a suite it then
+    times out on and pauses itself over (finding 2026-09-15 #2).
+    """
+    if isinstance(pkg, dict) and pkg.get('workspaces'):
+        return True
+    script = (testScript or '').lower()
+    return bool(
+        re.search(r'\b(npm|pnpm|yarn)\s+(--\S+\s+)*(run|test)\s', script + ' ')
+        or 'concurrently' in script
+    )
 
 
 def _readSmall(path: Path, limit: int = 64 * 1024) -> str:
@@ -131,36 +207,54 @@ def _readSmall(path: Path, limit: int = 64 * 1024) -> str:
     return ''
 
 
-def load_verify_config(workspace: Path) -> dict[str, object]:
-    """Merge ``.aug/verify.json`` over the auto-detect heuristics.
+def load_verify_config(workspace: Path, relpath: str = '') -> dict[str, object]:
+    """Resolve the gate plan for ONE edited file.
+
+    Layering, deepest wins: auto-detection at the edited file's package root,
+    then the workspace ``.aug/verify.json``, then a package-level
+    ``.aug/verify.json`` (a sub-package may legitimately verify differently
+    from the repo root).
 
     Result keys: ``enabled`` (bool), ``lintCmd`` / ``testCmd`` (str | ''),
-    ``maxFixIterations`` (int ≥ 1). A missing/invalid config file falls
-    back to pure auto-detection.
+    ``maxFixIterations`` (int ≥ 1), ``cwd`` (directory the commands run in —
+    the resolved package root) and ``source`` (provenance, for the receipt).
+    A missing/invalid config file falls back to pure auto-detection.
     """
-    detected = detect_commands(workspace)
+    package = package_root_for(workspace, relpath)
+    detected = detect_commands(package)
     lintCmd = detected.get('lintCmd', '')
     testCmd = detected.get('testCmd', '')
     enabled: bool | None = None  # None → derive from the merged commands
     maxFix = DEFAULT_MAX_FIX_ITERATIONS
-    raw = _readSmall(workspace / VERIFY_CONFIG_RELPATH)
-    if raw.strip():
+    source = 'auto-detected'
+    layers: list[tuple[Path, str]] = [(workspace, 'workspace .aug/verify.json')]
+    if package != workspace:
+        layers.append((package, 'package .aug/verify.json'))
+    for cfgDir, label in layers:
+        raw = _readSmall(cfgDir / VERIFY_CONFIG_RELPATH)
+        if not raw.strip():
+            continue
         try:
             cfg = json.loads(raw)
-            if isinstance(cfg, dict):
-                lintCmd = as_str(cfg.get('lintCmd'), lintCmd)
-                testCmd = as_str(cfg.get('testCmd'), testCmd)
-                if 'enabled' in cfg:
-                    enabled = as_bool(cfg.get('enabled'), False)
-                if 'maxFixIterations' in cfg:
-                    maxFix = max(1, as_int(cfg.get('maxFixIterations'), maxFix))
         except Exception:
-            logger.debug('verify.json parse failed for %s', workspace, exc_info=True)
+            logger.debug('verify.json parse failed for %s', cfgDir, exc_info=True)
+            continue
+        if not isinstance(cfg, dict):
+            continue
+        lintCmd = as_str(cfg.get('lintCmd'), lintCmd)
+        testCmd = as_str(cfg.get('testCmd'), testCmd)
+        if 'enabled' in cfg:
+            enabled = as_bool(cfg.get('enabled'), False)
+        if 'maxFixIterations' in cfg:
+            maxFix = max(1, as_int(cfg.get('maxFixIterations'), maxFix))
+        source = label
     return {
         'enabled': bool(lintCmd or testCmd) if enabled is None else (enabled and bool(lintCmd or testCmd)),
         'lintCmd': lintCmd,
         'testCmd': testCmd,
         'maxFixIterations': maxFix,
+        'cwd': str(package),
+        'source': source,
     }
 
 
@@ -373,6 +467,37 @@ def _edited_relpath(tool_input: dict[str, object], workspace: Path) -> str:
         return raw
 
 
+def _package_rel(workspace: Path, package: Path) -> str:
+    """Posix path of ``package`` relative to the workspace ('.' when equal)."""
+    try:
+        return package.relative_to(workspace).as_posix() or '.'
+    except ValueError:
+        return '.'
+
+
+def _cd_prefix(workspace: Path, package: Path) -> str:
+    """Shell prefix that scopes a workspace-rooted command to the package.
+
+    The sandbox forces the subprocess cwd to the workspace root, so the
+    package is entered with an explicit ``cd`` rather than a runner cwd.
+    """
+    rel = _package_rel(workspace, package)
+    return '' if rel == '.' else f'cd {rel} && '
+
+
+def _file_arg(workspace: Path, package: Path, relpath: str) -> str:
+    """The edited path rewritten relative to the package root ('.' if unknown)."""
+    if not relpath:
+        return '.'
+    rel = _package_rel(workspace, package)
+    if rel == '.':
+        return relpath
+    prefix = rel + '/'
+    if relpath.startswith(prefix):
+        return relpath[len(prefix) :] or '.'
+    return relpath
+
+
 async def verify_after_edit(
     session: 'WorkbenchSession',
     tool_name: str,
@@ -389,12 +514,20 @@ async def verify_after_edit(
     if not workspaceRaw:
         return ''
     workspace = Path(workspaceRaw)
-    config = load_verify_config(workspace)
+    relpath = _edited_relpath(tool_input, workspace)
+    config = load_verify_config(workspace, relpath)
     if not config['enabled']:
         return ''
     lintCmd = as_str(config.get('lintCmd'), '')
     testCmd = as_str(config.get('testCmd'), '')
     maxFix = as_int(config.get('maxFixIterations'), DEFAULT_MAX_FIX_ITERATIONS)
+    package = Path(as_str(config.get('cwd'), str(workspace)))
+    cdPrefix = _cd_prefix(workspace, package)
+    fileArg = _file_arg(workspace, package, relpath)
+    # Every receipt names where the gate ran and how the command was chosen,
+    # so a wrong-suite detection and a genuinely slow suite are tellable apart
+    # from the model's side (finding 2026-09-15 #2, "also" note).
+    gateCtx = f'cwd={_package_rel(workspace, package)}, {as_str(config.get("source"), "auto-detected")}'
 
     state = _verify_state(session)
     currentTurn = as_int(getattr(session, 'turnCount', 0), 0)
@@ -424,18 +557,17 @@ async def verify_after_edit(
             're-running the same gate cannot pass.'
         )
 
-    relpath = _edited_relpath(tool_input, workspace)
     ranParts: list[str] = []
 
     if lintCmd:
-        scoped = lintCmd.replace('{file}', relpath) if relpath else lintCmd.replace('{file}', '.')
+        scoped = cdPrefix + lintCmd.replace('{file}', fileArg)
         ok, text, timed_out = await _run_gate_command(scoped, workspace, session, LINT_TIMEOUT_S)
         if timed_out:
             return (
                 f'[verification inconclusive] lint ({scoped}) timed out after '
-                f'{int(LINT_TIMEOUT_S)}s and was killed — the check never completed, so this '
-                'is NOT a code failure. Do NOT "fix" anything for this receipt; keep working. '
-                'The edit itself already succeeded.'
+                f'{int(LINT_TIMEOUT_S)}s and was killed ({gateCtx}) — the check never '
+                'completed, so this is NOT a code failure. Do NOT "fix" anything for '
+                'this receipt; keep working. The edit itself already succeeded.'
             )
         ranParts.append('lint')
         if not ok:
@@ -443,23 +575,24 @@ async def verify_after_edit(
                 session, state, treeHash, maxFix, f'lint: {scoped}', text, workspace
             )
     if testCmd and not state.get('testPaused'):
-        scopedTest = (
-            testCmd.replace('{file}', relpath) if relpath else testCmd.replace('{file}', '.')
-        )
+        scopedTest = cdPrefix + testCmd.replace('{file}', fileArg)
         ok, text, timed_out = await _run_gate_command(scopedTest, workspace, session, TEST_TIMEOUT_S)
         if timed_out:
-            # A full-suite gate that can't finish in TEST_TIMEOUT_S would
-            # otherwise re-block every subsequent edit for minutes. Pause the
-            # test gate for the rest of the session; lint (fast, file-scoped)
-            # keeps running.
+            # A suite that can't finish in TEST_TIMEOUT_S would otherwise
+            # re-block every subsequent edit for minutes. Pause the test gate
+            # for the rest of the session; lint (fast, file-scoped) keeps
+            # running. The command is already file-scoped from the package
+            # root, so a timeout here now means genuinely slow — say so, and
+            # name the knob, instead of implying the detection was wrong.
             state['testPaused'] = True
             return (
                 f'[verification inconclusive] tests ({scopedTest}) timed out after '
-                f'{int(TEST_TIMEOUT_S)}s and were killed — the suite never finished, so this '
-                'is NOT a code failure and there is nothing to fix. The edit succeeded. '
-                'The test gate is now PAUSED for this session (lint still runs); run the '
-                'tests yourself via run_command when you actually need them, or scope the '
-                'gate per-workspace in .aug/verify.json (testCmd with {file}).'
+                f'{int(TEST_TIMEOUT_S)}s and were killed ({gateCtx}) — the suite never '
+                'finished, so this is NOT a code failure and there is nothing to fix. '
+                'The edit succeeded. The test gate is now PAUSED for this session (lint '
+                'still runs); run the tests yourself via run_command when you actually '
+                'need them, or narrow the gate by writing testCmd (with {file}) into '
+                f'{VERIFY_CONFIG_RELPATH} at the workspace or package root.'
             )
         ranParts.append('tests')
         if not ok:
@@ -472,7 +605,8 @@ async def verify_after_edit(
     state['failStreak'] = 0
     state['lastFailHash'] = None
     state['skippedAttempts'] = 0
-    return f"[verification passed] {' + '.join(ranParts)} clean."
+    pausedNote = ' (tests paused after an earlier timeout)' if state.get('testPaused') else ''
+    return f"[verification passed] {' + '.join(ranParts)} clean — {gateCtx}{pausedNote}."
 
 
 def _failure_receipt(

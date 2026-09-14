@@ -192,11 +192,14 @@ def is_null_sink(token: str) -> bool:
 def _one_points_outside(cleaned: str, root: Path, *, allow_app_logs: bool = False) -> bool:
     if not cleaned or cleaned.startswith('-'):
         return False
-    # Windows-style single-letter flags (`find /c`, `/s`, `/q`) are slash +
-    # one letter — the naive scan read `/c` as an outside path and blocked
-    # legitimate commands. Gated to Windows (B8): on POSIX `/c` IS a real
-    # absolute dir, so the exemption must not apply there.
-    if os.name == 'nt' and re.fullmatch(r'/[A-Za-z]', cleaned):
+    # Windows-style flags are slash + letter, optionally with an attached
+    # value: `find /c`, `/s`, `/q` and — the case that blocked `findstr
+    # /c:"ToolSearch" file` — `/c:"ToolSearch"` (audit finding 2026-09-15 #1;
+    # the old single-letter-only exemption read the switch's value as a path).
+    # Gated to Windows (B8): on POSIX `/c` IS a real absolute dir, so the
+    # exemption must not apply there. `/c:/Windows`-style MSYS paths keep their
+    # colon-free shape and are still scanned.
+    if os.name == 'nt' and re.fullmatch(r'/[A-Za-z](?::.*)?', cleaned):
         return False
     if is_null_sink(cleaned):
         return False

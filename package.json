@@ -28,6 +28,7 @@
     "test": "npm run test:verify",
     "doctor": "cd backend-py && uv run python scripts/doctor.py",
     "check:version": "node scripts/check-version-sync.mjs",
+    "check:docs": "node scripts/check-docs-sync.mjs",
     "check:naming": "node scripts/check-naming.mjs"
   },
   "dependencies": {

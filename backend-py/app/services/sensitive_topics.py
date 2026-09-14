@@ -13,7 +13,12 @@ import re
 
 _SENSITIVE_MEMORY_RE = re.compile(
     r'\b('
-    r'diagnos\w*|cancer|tumor|hiv\b|diabet\w*|medication|prescription|dosage|'
+    # `diagnos\w*` on its own was the false positive: it refused an ordinary
+    # engineering audit twice because the prose contained "diagnose_proxy" and
+    # "self-diagnosis". Diagnosis is routine technical vocabulary, so only the
+    # health-shaped forms count now.
+    r'diagnosed\s+with|(?:medical|clinical|health)\s+diagnos\w*|'
+    r'cancer|tumor|hiv\b|diabet\w*|medication|prescription|dosage|'
     r'antidepressant|psychotherap\w*|mental illness|'
     r'social security|ssn\b|passport|credit card|bank account|routing number|tax id|'
     r'religio\w*|political party|political affiliation|'
@@ -24,7 +29,20 @@ _SENSITIVE_MEMORY_RE = re.compile(
 )
 
 
+def sensitiveMemoryReason(*texts: str) -> str | None:
+    """The matched phrase that tripped the denylist, or None when clean.
+
+    The refusal used to be a bare "this looks like a sensitive topic", which
+    left the model unable to tell a genuine health fact from a technical
+    false positive — it could only retry and be refused again (audit finding
+    2026-09-15 #9). Naming the trigger makes the gate debuggable from the tool
+    result alone.
+    """
+    blob = ' '.join(str(t) for t in texts if t)
+    match = _SENSITIVE_MEMORY_RE.search(blob)
+    return match.group(0) if match else None
+
+
 def isSensitiveMemory(*texts: str) -> bool:
     """True when any text trips the denylist."""
-    blob = ' '.join(str(t) for t in texts if t)
-    return bool(_SENSITIVE_MEMORY_RE.search(blob))
+    return sensitiveMemoryReason(*texts) is not None

@@ -62,6 +62,18 @@ function run(command, args, opts = {}) {
   }
 }
 
+// Capture a short-lived command's stdout (git probes). Returns '' on ANY
+// failure — callers treat empty as "unknown", never as a build error.
+function runCapture(command, args, cwd) {
+  const result = spawnSync(command, args, {
+    cwd: cwd || root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    shell: false,
+  });
+  return result.status === 0 ? result.stdout || '' : '';
+}
+
 async function pathExists(p) {
   try {
     await access(p);
@@ -237,6 +249,23 @@ async function buildWheels(pythonExe) {
 }
 
 async function writeManifest(pythonExe) {
+  // Which commit this staged backend came from. The installed app runs the
+  // AppData copy, not the checkout, so without this line nothing on the
+  // running side identifies its own source — a prompt sentence that exists in
+  // no checkout can only be chased down by archaeology (audit finding
+  // 2026-09-15 #7). diagnose_proxy reports it as `Runtime code:`.
+  // Empty when git is unavailable (source-tarball build); the runtime then
+  // honestly reports "unknown" rather than a wrong SHA.
+  const sourceSha = runCapture('git', ['rev-parse', '--short', 'HEAD'], root).trim();
+  const sourceBranch = runCapture('git', ['rev-parse', '--abbrev-ref', 'HEAD'], root).trim();
+  // The app version travels with the staged backend so an installed build
+  // reports its real version instead of the 0.1.0 fallback.
+  let appVersion = '';
+  try {
+    appVersion = String(JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')).version || '');
+  } catch {
+    /* unreadable package.json — the backend keeps its fallback */
+  }
   const manifest = {
     pythonVersion: PYTHON_VERSION,
     pythonBuild: PYTHON_BUILD,
@@ -244,6 +273,9 @@ async function writeManifest(pythonExe) {
     pythonExe: 'python/python.exe',
     backendPath: 'backend-py',
     wheelsPath: 'wheels',
+    appVersion,
+    sourceSha,
+    sourceBranch,
   };
   await writeFile(join(resourcesDir, 'backend-runtime.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   if (release) {

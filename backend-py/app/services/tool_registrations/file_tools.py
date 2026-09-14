@@ -6,12 +6,15 @@ import asyncio
 import fnmatch
 import re
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from app.json_narrowing import as_int, as_str, coerce_json_list
 from app.services import tool_registry
 from app.services.execution_world import bind_path, run_sandboxed
 from app.services.sandbox import policy_from_session, unsandboxed_grant_key
+
+if TYPE_CHECKING:
+    from app.services.sandbox.policy import SandboxResult
 
 _MAXFileSize = 20 * 1024 * 1024
 _MAXSearchResults = 100
@@ -911,6 +914,64 @@ def _queue_sandbox_escape(session: object, command: str, denial: str) -> None:
         pass
 
 
+# Remote-operation failures that are really the sandbox refusing to carry the
+# connection. `git` is deliberately NOT in NETWORK_COMMAND_PREFIXES (only its
+# push/pull/fetch subcommands need egress, and a head-word match would deny
+# `git log` too), so a sandboxed `git push` runs, hits the egress proxy, and
+# comes back as an opaque `CONNECT tunnel failed, response 403` — the model
+# then spends rounds debugging credentials (audit finding 2026-09-15 #4).
+# Naming the actual cause and the per-command flag grants nothing; it only
+# makes an existing block explainable.
+# Deliberately narrow: only phrases that mean "the transport failed". The
+# generic git wording `unable to access` was dropped — it also covers local
+# failures (missing repo, bad config), and a wrong hint costs the model a
+# wrong round, which is the thing this hint exists to prevent.
+_NETWORK_FAILURE_RE = re.compile(
+    r'CONNECT tunnel failed|could not connect|failed to connect to'
+    r'|connection refused|network is unreachable|getaddrinfo failed'
+    r'|unable to resolve host|timed? ?out (?:while )?connect',
+    re.IGNORECASE,
+)
+
+
+def _network_hint(result: 'SandboxResult', network_on: bool) -> str:
+    """A sandbox-egress hint for a failed remote command, or '' if not applicable."""
+    if network_on or result.denial_reason or result.ok:
+        return ''
+    blob = f'{result.stdout or ""}\n{result.stderr or ""}'
+    if not _NETWORK_FAILURE_RE.search(blob):
+        return ''
+    return (
+        '\n[hint] The failure above is the sandbox blocking outbound traffic, not a '
+        'credential problem: this command ran with network off. Re-run it with '
+        'network: true (per-command flag) to allow the connection.'
+    )
+
+
+def _denial_tail(reason: str) -> str:
+    """Repair advice for a soft denial, matched to what the rule actually is.
+
+    The old copy suggested Full access for every denial, which for a
+    workspace-boundary block is the wrong repair — flipping to Full access to
+    make `dir` read a sibling folder is a posture change the model should not
+    be nudged into (audit finding 2026-09-15 #1).
+    """
+    if 'outside workspace' in reason:
+        return (
+            'The command names a path outside the bound workspace folder. Point it '
+            'inside the workspace, or use the file tools. Full access is only the '
+            'answer if you genuinely need to touch the rest of the machine.'
+        )
+    if 'network disabled' in reason:
+        return 'Re-run this one command with network: true to allow outbound traffic.'
+    if 'read-only' in reason:
+        return 'This session is in read-only sandbox mode; switch it to Workspace to allow writes.'
+    return (
+        'Sandbox policy blocked this command. Switch the sandbox control to '
+        'Full access (or enable network) if you need it to run unsandboxed.'
+    )
+
+
 async def _runCommand(
     command: str,
     timeout: float | int | None = None,
@@ -1011,11 +1072,12 @@ async def _runCommand(
         if guard_full:
             return (
                 f'[sandbox:{result.enforcement}] Blocked: {result.denial_reason}\n'
-                'Sandbox policy blocked this command. Switch the sandbox control to '
-                'Full access (or enable network) if you need it to run unsandboxed.'
+                f'{_denial_tail(result.denial_reason)}'
             )
         _queue_sandbox_escape(session, command, result.denial_reason)
-    return result.as_tool_text()
+    hint = _network_hint(result, network_on)
+    text = result.as_tool_text()
+    return f'{text}{hint}' if hint else text
 
 
 def register() -> None:

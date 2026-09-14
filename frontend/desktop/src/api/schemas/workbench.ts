@@ -149,6 +149,19 @@ export const WorkbenchDoneEventSchema = WorkbenchBaseSchema.extend({
     .optional(),
 });
 
+/** Terminal turn diagnostic, emitted just before `done`: why the tool loop
+ *  stopped. Lets "it froze after N commands" be answered from the event log
+ *  instead of a code read. UI-optional — nothing renders it today. */
+export const WorkbenchTurnEndEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('turn_end'),
+  sessionId: z.string().optional(),
+  reason: z
+    .enum(['finished', 'length', 'cap', 'stall-stop', 'error', 'interrupted', 'awaiting-input'])
+    .optional(),
+  rounds: z.number().optional(),
+  error: z.boolean().optional(),
+});
+
 export const WorkbenchErrorEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('error'),
   message: z.string(),
@@ -404,6 +417,7 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchBtwEventSchema,
   WorkbenchCompactionEventSchema,
   WorkbenchDoneEventSchema,
+  WorkbenchTurnEndEventSchema,
   WorkbenchErrorEventSchema,
   WorkbenchPlanProposedEventSchema,
   WorkbenchClarifyProposedEventSchema,

@@ -783,7 +783,7 @@ def _managedToolLoopCap() -> int:
     """Effective tool-round cap for this turn.
 
     brain-orchestrator ``maxWorkbenchToolLoops`` (Settings → Brain) overrides
-    the hardcoded default of 25; 0 disables the cap entirely.
+    the module default; 0 disables the cap entirely.
     """
     try:
         from app.services.brain_config_service import getRuntimeConfig
@@ -795,9 +795,9 @@ def _managedToolLoopCap() -> int:
                 return value
     except Exception:
         logger.debug('maxWorkbenchToolLoops read failed; using default', exc_info=True)
-    # Absent key → the documented default (25). The old shape
-    # (``as_int(..., 0)`` + ``>= 0``) made the hardcoded constant dead — the
-    # seeded config always carried 100, so "defaults to 25" was never true.
+    # Absent key → MAX_MANAGED_TOOL_ROUNDS, which has been 0 (uncapped) since
+    # 38944632. This line used to claim 25 in both the docstring and here,
+    # which is what AGENTS.md then repeated (audit finding 2026-09-15 #6).
     return MAX_MANAGED_TOOL_ROUNDS
 
 
@@ -3232,6 +3232,15 @@ async def _sendWorkbenchMessageStreamImpl(
     # loop cap instead of narrating forever.
     _SELFHEAL_EXEMPT_ROUNDS = 4
     _selfHealRetries = 0
+    # A prose answer cut off by the output token limit gets a bounded
+    # "continue exactly where you stopped" retry rather than being delivered
+    # mid-word as if it were complete (audit finding 2026-09-15 #3).
+    _MAX_LENGTH_CONTINUATIONS = 2
+    _lengthContinuations = 0
+    # Why the tool loop ended, reported on the turn_end event so a user report
+    # of "it stopped after N commands" is one query instead of a code audit
+    # (audit finding 2026-09-15 #8).
+    turnEndReason = 'finished'
     # Set when the turn ends on an error path — the done-event block below
     # still runs (to flush usage/evidence), and routing evidence must record
     # ok=False for error turns, not a hardcoded win.
@@ -3328,6 +3337,7 @@ async def _sendWorkbenchMessageStreamImpl(
             if emit:
                 emit({'type': 'error', 'message': msg})
             turnError = turnError or msg
+            turnEndReason = 'cap'
             break
         # Stall detection: a turn that never advances phase/step is a weak
         # model spinning on repeated tool calls. Inject a reflection prompt
@@ -3380,8 +3390,10 @@ async def _sendWorkbenchMessageStreamImpl(
                         if emit:
                             emit({'type': 'error', 'message': msg})
                         turnError = turnError or msg
+                        turnEndReason = 'stall-stop'
                         break
         if _isCancelled():
+            turnEndReason = 'interrupted'
             break
         if toolRound > 1:
             queued = drainQueuedMessages(sessionId, emit=emit)
@@ -4004,6 +4016,65 @@ async def _sendWorkbenchMessageStreamImpl(
                     'workbench model refused tool use %d times; accepting the text answer',
                     refusalCount,
                 )
+            if textContent and stop_reason in ('max_tokens', 'length'):
+                # Prose stopped on the output token limit with no tool call
+                # attached. The tool-carrying case is handled below (fail-all +
+                # retry receipt); until now this one just broke out and shipped
+                # the half-sentence as the final answer (finding 2026-09-15 #3).
+                if _lengthContinuations < _MAX_LENGTH_CONTINUATIONS:
+                    _lengthContinuations += 1
+                    logger.warning(
+                        'workbench final text hit the output limit (stop_reason=%s, chars=%d) '
+                        '— continuation %d/%d',
+                        stop_reason,
+                        len(textContent),
+                        _lengthContinuations,
+                        _MAX_LENGTH_CONTINUATIONS,
+                    )
+                    currentMessages.append(
+                        {
+                            'role': 'user',
+                            'content': (
+                                '[Proxy Self-Heal] Your last message was cut off by the '
+                                'output token limit mid-sentence. Continue EXACTLY where it '
+                                'stopped: output only the remaining text — no preamble, no '
+                                'restating what you already said, no apology. If the missing '
+                                'part was a tool call, emit that tool call now.'
+                            ),
+                        }
+                    )
+                    if emit:
+                        emit(
+                            {
+                                'type': 'warning',
+                                'message': (
+                                    f'Answer hit the output token limit — asking the model '
+                                    f'to continue ({_lengthContinuations}/'
+                                    f'{_MAX_LENGTH_CONTINUATIONS}).'
+                                ),
+                            }
+                        )
+                    continue
+                # Budget spent and still truncated: say so instead of letting
+                # the clipped text pass as a complete answer.
+                turnEndReason = 'length'
+                logger.warning(
+                    'workbench final text still truncated after %d continuations — '
+                    'delivering the partial answer (stop_reason=%s)',
+                    _MAX_LENGTH_CONTINUATIONS,
+                    stop_reason,
+                )
+                if emit:
+                    emit(
+                        {
+                            'type': 'warning',
+                            'message': (
+                                'The answer is still cut off at the output token limit after '
+                                f'{_MAX_LENGTH_CONTINUATIONS} continuations — ask for the rest '
+                                'in a follow-up message, or lower the thinking depth.'
+                            ),
+                        }
+                    )
             queued = drainQueuedMessages(sessionId, emit=emit)
             if queued:
                 logger.debug('workbench mid-response: injecting %d queued user message(s) after text turn', len(queued))
@@ -5030,8 +5101,10 @@ async def _sendWorkbenchMessageStreamImpl(
             except Exception:
                 logger.debug('shadow-git step snapshot failed', exc_info=True)
         if planSubmittedThisRound:
+            turnEndReason = 'awaiting-input'
             break
         if clarifySubmittedThisRound:
+            turnEndReason = 'awaiting-input'
             break
     await _tc.emitStopHook(sessionId, toolRound, turnError)
     # M3 usage feedback + M5 turn telemetry (turn_close.py). Runs after
@@ -5095,6 +5168,29 @@ async def _sendWorkbenchMessageStreamImpl(
             # fallback/promotion switch happened mid-turn.
             if chainUsedAt:
                 doneEvent['usedFallback'] = chainUsedAt
+            # turn_end: WHY the loop stopped, with the round count. A report of
+            # "it froze after 13 commands" used to take a code audit to answer;
+            # now it is one line in the session event log (finding 2026-09-15
+            # #8). A specific reason (cap / stall-stop / length / interrupted /
+            # awaiting-input) outranks the generic 'error' even though those
+            # paths also set turnError.
+            _endReason = turnEndReason
+            if _endReason == 'finished' and _isCancelled():
+                # A mid-round cancel drops the dangling tool calls and falls
+                # through the plain-text break, so the loop never reaches the
+                # top-of-round cancel check that would have tagged it.
+                _endReason = 'interrupted'
+            if turnError is not None and _endReason == 'finished':
+                _endReason = 'error'
+            emit(
+                {
+                    'type': 'turn_end',
+                    'sessionId': sessionId,
+                    'reason': _endReason,
+                    'rounds': toolRound,
+                    'error': turnError is not None,
+                }
+            )
             emit(doneEvent)
     _tc.scheduleAutoTitle(
         sessionId=sessionId,

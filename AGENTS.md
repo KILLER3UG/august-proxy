@@ -44,10 +44,15 @@ the `AUGUST_VERIFIER_REVIEWER` critic were removed by user request.
 `update_state(phase=…)` exists purely as progress tracking, and
 `run_command` still surfaces exit codes (zero included) in results.
 
-**Harness budgets & self-correction (0.12.55)** — `MAX_MANAGED_TOOL_ROUNDS`
-defaults to 25 (brain-config `maxWorkbenchToolLoops` overrides); a turn whose
-`update_state` phase/step never advances across 8+ rounds gets a reflection
-nudge, then hard-stops. Malformed tool JSON never executes as `{}` — the loop
+**Harness budgets & self-correction** — `MAX_MANAGED_TOOL_ROUNDS` defaults to
+**0 = uncapped** (a cap is opt-in via brain-config `maxWorkbenchToolLoops`;
+the "defaults to 25" claim was stale since `38944632`). A turn whose
+`update_state` phase/step never advances across 8+ stalled rounds gets a
+reflection nudge, then hard-stops. Every turn ends with a `turn_end
+{reason, rounds}` event in the session log (`finished | length | cap |
+stall-stop | error | interrupted | awaiting-input`) — read that before
+auditing code for "why did it stop". Numbers in this file that duplicate code
+constants are guarded by `npm run check:docs`. Malformed tool JSON never executes as `{}` — the loop
 returns a `[Validation Error] … Do NOT stop` self-heal and downgrades to the
 bare tool surface after 3 consecutive failures. Stream rules flag
 tool-call *narration* ("I'll use the X tool", code-fenced JSON) but defer

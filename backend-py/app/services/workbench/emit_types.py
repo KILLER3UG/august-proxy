@@ -15,6 +15,9 @@ WORKBENCH_EMIT_TYPES: frozenset[str] = frozenset(
         'toolCall',
         'toolResult',
         'done',
+        # Terminal turn diagnostic (reason + round count), emitted just before
+        # 'done' from the tool loop's finally block.
+        'turn_end',
         'error',
         'planProposed',
         'clarifyProposed',

@@ -233,6 +233,94 @@ _READ_ONLY_VIEWER_HEADS = frozenset({
     'wc', 'ls', 'dir', 'nl',
 })
 
+# Heads whose remaining arguments are literal TEXT, not filesystem operands.
+# The token scan read `echo before c:/d after` as an attempt to touch
+# `c:/d` (audit finding 2026-09-15 #1). Kept deliberately short: `set`/`export`
+# were dropped from it because `set /p x=<C:\outside\f` reads a file through an
+# input redirect, which the token scan used to catch and the redirect scan does
+# not (it only matches `>`/`tee`).
+_TEXT_EMITTER_HEADS = frozenset({'echo', 'printf', 'title'})
+
+# Command substitution or any redirect turns a "text emitter" into a file
+# reader (`echo $(cat /etc/passwd)`, `printf < /etc/passwd`), so such a segment
+# is scanned despite its head.
+_NOT_PURE_TEXT_RE = re.compile(r'\$\(|`|\$\{|[<>]')
+
+
+def _split_shell_segments(command: str) -> list[str]:
+    """Split a command line on ``;`` ``&`` ``&&`` ``|`` ``||`` outside quotes.
+
+    Quote-aware on purpose: a naive ``re.split`` cuts paths and payloads that
+    contain the separator (`python -c "a;b"`, `dir "x & y"`), which would
+    scatter tokens across fake segments and re-introduce the mis-detection
+    this function exists to remove.
+    """
+    segments: list[str] = []
+    buf: list[str] = []
+    quote = ''
+    idx = 0
+    text = command or ''
+    while idx < len(text):
+        ch = text[idx]
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = ''
+            idx += 1
+            continue
+        if ch in ('"', "'"):
+            quote = ch
+            buf.append(ch)
+            idx += 1
+            continue
+        if text[idx : idx + 2] in ('&&', '||'):
+            segments.append(''.join(buf))
+            buf = []
+            idx += 2
+            continue
+        if ch in ';&|':
+            segments.append(''.join(buf))
+            buf = []
+            idx += 1
+            continue
+        buf.append(ch)
+        idx += 1
+    segments.append(''.join(buf))
+    return [seg for seg in segments if seg.strip()]
+
+
+def _scan_path_tokens(command: str, rootStr: str) -> str | None:
+    """Containment scan over path-shaped tokens, scoped per command segment.
+
+    Two scoping rules the original whole-command scan lacked (audit finding
+    2026-09-15 #1):
+
+    - the read-only-viewer log exemption follows the **segment's** head, so
+      `cd /d X && dir "%APPDATA%\\…\\logs"` keeps it — the old scan keyed on
+      the command's first word and lost the exemption after any `&&`;
+    - segments headed by a pure text emitter (`echo`, `printf`) are skipped,
+      because their arguments are prose rather than filesystem operands —
+      unless the segment also substitutes or redirects, which makes even
+      `echo` a reader.
+
+    Interpreter payload literals are still scanned by the caller over the
+    whole command, so nothing that can actually open a file escapes here.
+    """
+    for segment in _split_shell_segments(command):
+        head = _first_word(segment)
+        if head in _TEXT_EMITTER_HEADS and not _NOT_PURE_TEXT_RE.search(segment):
+            continue
+        allowLogs = head in _READ_ONLY_VIEWER_HEADS
+        for tok in _shell_tokens_for_scan(segment):
+            if path_looks_outside_workspace(tok, rootStr, allow_app_logs=allowLogs):
+                return (
+                    f'path outside workspace blocked: {tok} '
+                    f'(workspace root: {rootStr}). Use a path inside the workspace, '
+                    'or the file tools. This is a workspace-boundary rule, not a '
+                    'permissions or network one — Full access is not the fix.'
+                )
+    return None
+
 
 def _is_read_only_powershell(command: str) -> bool:
     """True for a single powershell/pwsh -Command invocation that provably
@@ -295,7 +383,9 @@ def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
         # Scan EVERY chained segment's first word, not just the
         # command head — `true && curl …` / `foo; wget …` reached the network
         # while the UI reported network=False. _first_word strips wrappers.
-        for segment in re.split(r'[;&|]{1,2}', command):
+        # Quote-aware so text arguments cannot smuggle a denial either
+        # (`echo "a && curl b"` is one segment headed by echo).
+        for segment in _split_shell_segments(command):
             seg_first = _first_word(segment)
             if seg_first in NETWORK_COMMAND_PREFIXES:
                 return f'network disabled in sandbox (blocked: {seg_first})'
@@ -313,10 +403,9 @@ def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
     # cannot write outside the workspace, so its path arguments are reads —
     # exempt it from the token + payload-literal containment scans.
     if not _is_read_only_powershell(command):
-        viewerRead = first in _READ_ONLY_VIEWER_HEADS
-        for tok in _shell_tokens_for_scan(command):
-            if path_looks_outside_workspace(tok, rootStr, allow_app_logs=viewerRead):
-                return f'path outside workspace blocked: {tok}'
+        tokenDenial = _scan_path_tokens(command, rootStr)
+        if tokenDenial:
+            return tokenDenial
         # String literals inside interpreter payloads (`python -c "..."`,
         # `node -e "..."`, `powershell -Command "..."`) can name paths the
         # token scan never sees — scan them against the same containment rule.

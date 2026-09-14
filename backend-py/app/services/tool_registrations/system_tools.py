@@ -23,6 +23,16 @@ async def _diagnoseProxy() -> str:
         'Mode: python',
         f'Environment: {getattr(settings, "env", "production")}',
     ]
+    # Which code this process actually IS. The installed desktop app runs the
+    # AppData copy staged at build time, not the checkout being read — without
+    # this line, runtime-vs-repo drift could only be settled by searching git
+    # history for one prompt sentence (audit finding 2026-09-15 #7).
+    try:
+        from app.lib.build_info import runtimeBuildLine
+
+        parts.insert(0, runtimeBuildLine())
+    except Exception:
+        pass
     try:
         providers = as_dict(settings.config.get('providers'), {})
         if isinstance(providers, dict):
@@ -46,8 +56,16 @@ async def _describeEnvironment() -> str:
     """Describe the workspace environment: paths, VCS, available tools."""
     from app.config import settings
 
+    try:
+        from app.version import backend_version
+
+        _version = backend_version()
+    except Exception:
+        _version = 'unknown'
     parts = [
-        'Proxy version: 0.1.0',
+        # Was a literal '0.1.0' — the same doc-vs-code drift class as finding
+        # 2026-09-15 #6, reported to the model as if it were the real version.
+        f'Proxy version: {_version}',
         f'Data directory: {settings.dataDir}',
         f'Platform: {sys.platform}',
     ]

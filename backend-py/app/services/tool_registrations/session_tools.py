@@ -8,7 +8,7 @@ from pathlib import Path
 
 from app.json_narrowing import as_int, as_str
 from app.services import tool_registry
-from app.services.sensitive_topics import isSensitiveMemory as _isSensitiveMemory
+from app.services.sensitive_topics import sensitiveMemoryReason as _sensitiveMemoryReason
 
 
 def _emitMemoryInvalidate() -> None:
@@ -268,14 +268,22 @@ async def _remember(
                 "tell the user you can't save memories while this setting is off.",
             }
         )
-    if not bool(cfg.get('memorySensitiveTopics', False)) and _isSensitiveMemory(text, details):
-        return _json.dumps(
-            {
-                'ok': False,
-                'policy': 'refused: this looks like a sensitive topic (health, ID numbers, minors, '
-                'beliefs) and sensitive memory is disabled. Do not retry.',
-            }
-        )
+    if not bool(cfg.get('memorySensitiveTopics', False)):
+        # Name the trigger: a refusal that only says "sensitive topic" cannot
+        # be told apart from a false positive, so the model just retried and
+        # was refused again (audit finding 2026-09-15 #9).
+        _trip = _sensitiveMemoryReason(text, details)
+        if _trip:
+            return _json.dumps(
+                {
+                    'ok': False,
+                    'policy': f'refused: sensitive memory is disabled and the text matched '
+                    f'the "{_trip}" pattern (health, ID numbers, minors, beliefs). Do not '
+                    'retry the same text. If that match is a technical false positive — the '
+                    'word used in an engineering sense — rephrase without it and save again; '
+                    'otherwise tell the user you did not store it.',
+                }
+            )
     sessKey = _currentRememberSessionKey()
     used = _rememberTurnCounts.get(sessKey, 0)
     if used >= _REMEMBER_PER_TURN_LIMIT:

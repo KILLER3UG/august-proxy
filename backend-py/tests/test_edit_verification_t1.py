@@ -52,11 +52,11 @@ class TestDetectCommands:
 
     def testPytestFromPyproject(self, tmp_path: Path) -> None:
         (tmp_path / 'pyproject.toml').write_text('[tool.pytest.ini_options]\naddopts = "-q"\n')
-        assert ev.detect_commands(tmp_path)['testCmd'] == 'python -m pytest -q -x'
+        assert ev.detect_commands(tmp_path)['testCmd'] == 'python -m pytest -q -x {file}'
 
     def testPytestIni(self, tmp_path: Path) -> None:
         (tmp_path / 'pytest.ini').write_text('[pytest]\n')
-        assert ev.detect_commands(tmp_path)['testCmd'] == 'python -m pytest -q -x'
+        assert ev.detect_commands(tmp_path)['testCmd'] == 'python -m pytest -q -x {file}'
 
     def testNpmTestRealScript(self, tmp_path: Path) -> None:
         (tmp_path / 'package.json').write_text(
@@ -80,7 +80,7 @@ class TestLoadVerifyConfig:
         cfg = ev.load_verify_config(tmp_path)
         assert cfg['enabled'] is True
         assert cfg['lintCmd'] == 'ruff check {file}'
-        assert cfg['testCmd'] == 'python -m pytest -q -x'
+        assert cfg['testCmd'] == 'python -m pytest -q -x {file}'
         assert cfg['maxFixIterations'] == ev.DEFAULT_MAX_FIX_ITERATIONS
 
     def testConfigFileOverrides(self, tmp_path: Path) -> None:
@@ -272,7 +272,7 @@ class TestVerifyAfterEdit:
     async def testPassReceiptResetsState(self, workspace: Path, calls: object) -> None:
         s = _session(workspace)
         receipt = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
-        assert receipt == '[verification passed] lint + tests clean.'
+        assert receipt == '[verification passed] lint + tests clean — cwd=., workspace .aug/verify.json.'
         assert s._verify_state['failStreak'] == 0
 
     @pytest.mark.asyncio
@@ -294,7 +294,7 @@ class TestVerifyAfterEdit:
         receipt = await ev.verify_after_edit(s, 'edit_lines', {'path': 'foo.py'})
         commands = [c for c, _ in calls]  # type: ignore[attr-defined]
         assert commands == ['mytest foo.py']
-        assert receipt == '[verification passed] tests clean.'
+        assert receipt == '[verification passed] tests clean — cwd=., workspace .aug/verify.json.'
 
     @pytest.mark.asyncio
     async def testGateTimeoutIsInconclusiveAndPausesTests(
@@ -317,7 +317,7 @@ class TestVerifyAfterEdit:
         assert s._verify_state['testPaused'] is True
         # Second edit: lint runs, tests are skipped entirely.
         r2 = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
-        assert r2 == '[verification passed] lint clean.'
+        assert r2 == '[verification passed] lint clean — cwd=., workspace .aug/verify.json (tests paused after an earlier timeout).'
         commands = [c for c, _ in calls]  # type: ignore[attr-defined]
         assert commands == ['mylint foo.py', 'mytest', 'mylint foo.py']
 
@@ -378,7 +378,7 @@ class TestVerifyAfterEdit:
         # Re-arms on the next user turn.
         s.turnCount = 6
         r5 = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
-        assert r5 == '[verification passed] lint + tests clean.'
+        assert r5 == '[verification passed] lint + tests clean — cwd=., workspace .aug/verify.json.'
 
     @pytest.mark.asyncio
     async def testT14SkipsUnchangedWorktree(self, workspace: Path, calls: object) -> None:
@@ -400,7 +400,7 @@ class TestVerifyAfterEdit:
         self._script(calls)['hash'] = 'hash-B'
         self._script(calls)['results'] = [(True, 'ok')]
         r4 = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
-        assert r4 == '[verification passed] lint + tests clean.'
+        assert r4 == '[verification passed] lint + tests clean — cwd=., workspace .aug/verify.json.'
 
     @pytest.mark.asyncio
     async def testNotAnEditTool(self, workspace: Path, calls: object) -> None:
