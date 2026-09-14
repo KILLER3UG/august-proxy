@@ -412,12 +412,18 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           <ComposerVoiceListening />
         ) : (
           <>
-            <ComposerWorkspaceChips
-              sessionId={sessionId}
-              workbenchSessionId={workbenchSession?.id || activeWorkbenchSessionId || null}
-              workspacePath={workspacePath}
-              className="px-2 pt-1.5"
-            />
+            {/* Folder + branch context row — only on a fresh session (empty
+                transcript), where the workspace choice is still open. Once the
+                chat has messages the binding is fixed; the titlebar chips stay
+                as the read-only context. */}
+            {messages.length === 0 ? (
+              <ComposerWorkspaceChips
+                sessionId={sessionId}
+                workbenchSessionId={workbenchSession?.id || activeWorkbenchSessionId || null}
+                workspacePath={workspacePath}
+                className="px-2 pt-1.5"
+              />
+            ) : null}
             <ComposerAttachmentChips
               attachments={attachments}
               onRemove={removeAttachment}
