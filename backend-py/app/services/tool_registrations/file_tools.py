@@ -552,7 +552,7 @@ async def _editLines(
             # A near-miss deserves more than "re-read everything": show the
             # closest region so the model can retry correctly in ONE step.
             hint = ''
-            best, _second = _bestTwo(lines, oldText)
+            best, _second = await asyncio.to_thread(_bestTwo, lines, oldText)
             if best is not None and best[2] >= _SIMILAR_HINT:
                 preview = '\n'.join(lines[best[0] : best[1]])
                 if len(preview) > 400:

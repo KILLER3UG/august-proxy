@@ -137,3 +137,22 @@ class TestEditLinesLadder:
         f, _ = self._write(tmp_path, 'alpha\n')
         result = await ft._editLines(str(f), 'deadbeef', [{'line': 1, 'old': 'alpha', 'new': 'b'}])
         assert 'modified since read' in result
+
+    @pytest.mark.asyncio
+    async def testMismatchHintOffloadsSimilarityScan(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        import threading
+
+        main_thread = threading.get_ident()
+        seen: list[int] = []
+
+        def fake_best_two(lines: list[str], oldText: str) -> tuple[None, float]:
+            seen.append(threading.get_ident())
+            return None, 0.0
+
+        monkeypatch.setattr(ft, '_bestTwo', fake_best_two)
+        f, h = self._write(tmp_path, 'alpha\nbeta\ngamma\n')
+        result = await ft._editLines(
+            str(f), h, [{'line': 2, 'old': 'zeta', 'new': 'x'}]
+        )
+        assert result.startswith('Error: anchor mismatch')
+        assert seen and seen[-1] != main_thread, 'mismatch hint must run in a worker thread'
