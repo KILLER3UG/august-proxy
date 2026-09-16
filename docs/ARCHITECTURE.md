@@ -155,9 +155,8 @@ and emits SSE events.
 1. Get-or-create the session; append the user message.
 2. Resolve effort (low/medium/high/max) and provider/model.
 3. Optionally compress context if estimated tokens exceed half the budget.
-4. Enter the **tool loop** (default cap 25 rounds, overridable via the
-   Brain setting `maxWorkbenchToolLoops`; the proxy adapters use 0 =
-   unlimited):
+4. Enter the **tool loop** (default cap `0 = uncapped`, overridable via the
+   Brain setting `maxWorkbenchToolLoops`):
    - Stream `thinking` / `final_output` / tool events.
    - Execute tools through the registry (parallel for read-only allowlist).
 5. Persist conversation + token usage to SQLite.

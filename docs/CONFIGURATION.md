@@ -128,7 +128,7 @@ Defaults toward the session main provider when unset.
 Cognitive architecture tree (boot, features, fleet, orchestrator). Edited via
 Settings → Memory / Reliability / model fleet and `GET/PUT /api/config/cognitive`,
 `GET/PUT /api/config/model-fleet`, and `/api/brain/config*`.
-`maxWorkbenchToolLoops` here overrides the workbench tool-round cap (default 25).
+`maxWorkbenchToolLoops` here overrides the workbench tool-round cap (default `0 = uncapped`).
 
 ### Memory review (selected chat model)
 
