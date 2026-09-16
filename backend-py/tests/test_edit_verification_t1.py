@@ -421,3 +421,50 @@ class TestVerifyAfterEdit:
     @pytest.mark.asyncio
     async def testNoCommandsDetected(self, tmp_path: Path, calls: object) -> None:
         assert await ev.verify_after_edit(_session(tmp_path), 'write_file', {'path': 'a.py'}) == ''
+
+    @pytest.mark.asyncio
+    async def testTestPauseResetsOnNewTurn(self, workspace: Path, calls: object) -> None:
+        # After a test-timeout the gate stays paused for the rest of the
+        # turn. The next user turn must clear the pause and run the suite
+        # again — otherwise a single slow suite would permanently break the
+        # post-edit gate.
+        self._script(calls)['results'] = [
+            (True, 'lint ok', False),
+            (False, 'Error: Command timed out after 180s and was killed.', True),
+            (True, 'lint ok', False),
+            (True, 'tests ok', False),
+        ]
+        s = _session(workspace, turn=1)
+        r1 = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
+        assert r1.startswith('[verification inconclusive]')
+        assert s._verify_state['testPaused'] is True
+        s.turnCount = 2
+        r2 = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
+        assert 'tests paused' not in r2
+        assert s._verify_state['testPaused'] is False
+        commands = [c for c, _ in calls]  # type: ignore[attr-defined]
+        assert commands == ['mylint foo.py', 'mytest', 'mylint foo.py', 'mytest']
+
+    @pytest.mark.asyncio
+    async def testNoTestsCollectedIsInconclusive(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # pytest exit code 5 (no tests collected) must NOT register as a code
+        # failure — it is inconclusive and the test gate pauses for the
+        # session. The runner maps it via the same `timed_out` slot as the
+        # 60s/180s timeout case.
+        from app.services.execution_world import run_sandboxed as real_run
+        from app.services.sandbox.policy import SandboxResult
+
+        result = SandboxResult(ok=False, exit_code=5, stderr='No tests ran', stdout='')
+
+        async def fake(command, policy, *, timeout=300.0):  # noqa: ANN001
+            return result
+
+        monkeypatch.setattr('app.services.execution_world.run_sandboxed', fake)
+        try:
+            ok, text, timed_out = await ev._run_gate_command('pytest', tmp_path, None, 180)
+            assert ok is False
+            assert timed_out is True
+            assert 'No tests ran' in text
+        finally:
+            # Defensive restore so other tests in this file aren't affected.
+            monkeypatch.setattr('app.services.execution_world.run_sandboxed', real_run)

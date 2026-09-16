@@ -431,7 +431,12 @@ async def _run_gate_command(
     # The sandbox backends report a killed command as exit_code -1 with a
     # "Command timed out after Ns" header (fallback.py). That sentinel is
     # inconclusive, not a failure.
-    timed_out = result.exit_code == -1 and 'timed out' in (result.stderr or '').lower()
+    stderr_lower = (result.stderr or '').lower()
+    timed_out_marker = result.exit_code == -1 and 'timed out' in stderr_lower
+    no_tests_collected = result.exit_code == 5 and (
+        'no tests ran' in stderr_lower or 'collected' in stderr_lower
+    )
+    timed_out = timed_out_marker or no_tests_collected
     ok = result.exit_code == 0 if result.exit_code is not None else result.ok
     return ok, text, timed_out
 
@@ -444,6 +449,7 @@ def _verify_state(session: 'WorkbenchSession') -> dict[str, object]:
             'lastFailHash': None,
             'skippedAttempts': 0,
             'disarmedUntilTurn': 0,
+            'lastTurn': 0,
             # Set when the test gate times out once — a suite that cannot
             # finish inside TEST_TIMEOUT_S must not block every later edit.
             'testPaused': False,
@@ -531,10 +537,22 @@ async def verify_after_edit(
 
     state = _verify_state(session)
     currentTurn = as_int(getattr(session, 'turnCount', 0), 0)
-    if as_int(state.get('disarmedUntilTurn'), 0) and currentTurn >= as_int(
+    lastTurn = as_int(state.get('lastTurn'), 0)
+    if currentTurn != lastTurn:
+        # New user turn — fresh fix budget and test gate.
+        state.update(
+            {
+                'failStreak': 0,
+                'lastFailHash': None,
+                'skippedAttempts': 0,
+                'disarmedUntilTurn': 0,
+                'testPaused': False,
+                'lastTurn': currentTurn,
+            }
+        )
+    elif as_int(state.get('disarmedUntilTurn'), 0) and currentTurn >= as_int(
         state.get('disarmedUntilTurn'), 0
     ):
-        # New user turn — fresh fix budget.
         state.update(
             {'failStreak': 0, 'lastFailHash': None, 'skippedAttempts': 0, 'disarmedUntilTurn': 0}
         )
