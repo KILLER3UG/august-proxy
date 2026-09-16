@@ -141,8 +141,10 @@ async function stageBackendSources() {
   await mkdir(backendOut, { recursive: true });
 
   const src = resolve(root, 'backend-py');
-  // Copy package sources needed to run uvicorn app.main:app
-  for (const name of ['app', 'pyproject.toml', 'README.md']) {
+  // Copy package sources needed to run uvicorn app.main:app. `sidecar/` carries
+  // `firmware-runner.mjs` (used by the firmware_run tool); omitting it caused
+  // every packaged install to fail firmware invocations silently.
+  for (const name of ['app', 'sidecar', 'pyproject.toml', 'README.md']) {
     const from = join(src, name);
     if (!(await pathExists(from))) continue;
     await cp(from, join(backendOut, name), {
@@ -150,6 +152,7 @@ async function stageBackendSources() {
       filter: (p) => {
         const n = p.replace(/\\/g, '/');
         if (n.includes('/__pycache__/') || n.endsWith('.pyc')) return false;
+        if (n.includes('/node_modules/')) return false;
         if (n.includes('/.mypy_cache/') || n.includes('/.ruff_cache/')) return false;
         if (n.includes('/tests/')) return false;
         if (n.includes('/.venv/')) return false;
@@ -184,7 +187,7 @@ async function hashStagedBackendSources() {
   // only included the Python build and app version, so an installed desktop
   // app could keep running an older AppData backend after a source-only fix.
   const hash = createHash('sha256');
-  const includeRoots = ['app', 'pyproject.toml', 'README.md', 'skills'];
+  const includeRoots = ['app', 'sidecar', 'pyproject.toml', 'README.md', 'skills'];
   const ignoredDirs = new Set(['__pycache__', '.mypy_cache', '.ruff_cache', '.venv', 'tests']);
 
   async function visit(path, relative) {
@@ -203,15 +206,15 @@ async function hashStagedBackendSources() {
     }
   }
 
-  for (const root of includeRoots) {
+  for (const dirName of includeRoots) {
     const path =
-      root === 'skills'
-        ? resolve(root, 'skills')            // bundled skills live at repo root
-        : join(root, 'backend-py', root);
+      dirName === 'skills'
+        ? join(root, 'skills')               // bundled skills live at repo root
+        : join(root, 'backend-py', dirName);
     if (existsSync(path)) {
-      if ((await stat(path)).isDirectory()) await visit(path, root);
+      if ((await stat(path)).isDirectory()) await visit(path, dirName);
       else {
-        hash.update(root);
+        hash.update(dirName);
         hash.update(await readFile(path));
       }
     }
