@@ -244,8 +244,9 @@ def translateMessages(
                             }
                         )
                     elif blockType == 'thinking':
-                        reasoning += as_str(block.get('text'), '')
-                        reasoningContent += as_str(block.get('text'), '')
+                        th_text = as_str(block.get('thinking'), '') or as_str(block.get('text'), '')
+                        reasoning += th_text
+                        reasoningContent += th_text
                 # Only emit reasoning keys when a thinking block actually
                 # exists — empty-string keys survive exclude_none and are
                 # rejected by strict gateways (OpenCode Console Zod).
@@ -992,7 +993,9 @@ async def _streamOpenaiAsAnthropic(
     while True:
         st = OpenaiToAnthropicStreamState()
         roundBody = dict(openaiBody)
-        roundBody['messages'] = cast(JsonValue, currentMessages)
+        # Round 2+ re-uses Anthropic-format blocks (including tool_result
+        # user messages). Translate them before sending to an OpenAI upstream.
+        roundBody['messages'] = cast(JsonValue, translateMessages(currentMessages, systemBlocks))
         roundBodyJson = cast(
             dict[str, object], as_dict(camelToSnake(strip_none_deep(cast(JsonValue, roundBody))), {})
         )
@@ -1137,6 +1140,44 @@ async def handleCountTokens(body: dict[str, object], request: object = None) -> 
     return {'input_tokens': estimated, 'estimated': True}
 
 
+def _mergeUserContent(left: object, right: object) -> object:
+    """Merge two adjacent user contents without flattening Anthropic blocks."""
+    if left is None:
+        left = ''
+    if right is None:
+        right = ''
+    if isinstance(left, str) and isinstance(right, str):
+        if not left:
+            return right
+        if not right:
+            return left
+        return f'{left}\n\n{right}'
+    if isinstance(left, list) and isinstance(right, list):
+        return [*left, *right]
+    if isinstance(left, str):
+        blocks: list[object] = [{'type': 'text', 'text': left}] if left else []
+        blocks.extend(right if isinstance(right, list) else [right])
+        return blocks
+    if isinstance(right, str):
+        blocks = list(left) if isinstance(left, list) else [left]
+        if right:
+            blocks.append({'type': 'text', 'text': right})
+        return blocks
+    return [left, right]
+
+
+def _coalesceUserMessages(messages: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Merge adjacent user turns while preserving assistant/tool boundaries."""
+    merged: list[dict[str, object]] = []
+    for msg in messages:
+        if as_str(msg.get('role'), '') != 'user' or not merged or as_str(merged[-1].get('role'), '') != 'user':
+            merged.append(dict(msg))
+            continue
+        previous = merged[-1]
+        previous['content'] = _mergeUserContent(previous.get('content', ''), msg.get('content', ''))
+    return merged
+
+
 def translateMessagesToAnthropic(messages: list[dict[str, object]]) -> list[dict[str, object]]:
     """Convert session messages (OpenAI or mixed format) to Anthropic Messages format.
 
@@ -1215,4 +1256,4 @@ def translateMessagesToAnthropic(messages: list[dict[str, object]]) -> list[dict
             else:
                 translated.append(msg)
             i += 1
-    return translated
+    return _coalesceUserMessages(translated)

@@ -1,5 +1,7 @@
 """Adapter unit tests."""
 
+import typing
+
 import pytest
 from app.adapters import proxy_tool_defs
 from app.adapters.anthropic import (
@@ -325,6 +327,58 @@ class TestAnthropicAdapter:
         assert len(thinking) == 1
         assert thinking[0].get('signature') == 'sig_abc'
 
+    def testTranslateThinkingBlockReadsThinkingField(self):
+        msgs = [
+            {
+                'role': 'assistant',
+                'content': [
+                    {'type': 'thinking', 'thinking': 'hidden reasoning'},
+                    {'type': 'text', 'text': 'answer'},
+                ],
+            }
+        ]
+        out = translateMessages(msgs)
+        assert out[0]['reasoning'] == 'hidden reasoning'
+        assert out[0]['reasoning_content'] == 'hidden reasoning'
+        assert out[0]['content'] == 'answer'
+
+    def testTranslateToAnthropicCoalescesAdjacentUsers(self):
+        msgs = [
+            {'role': 'user', 'content': 'first question'},
+            {'role': 'user', 'content': 'second question'},
+        ]
+        out = translateMessagesToAnthropic(msgs)
+        assert len(out) == 1
+        assert out[0]['role'] == 'user'
+        assert out[0]['content'] == 'first question\n\nsecond question'
+
+    def testTranslateToAnthropicCoalescesToolResultAndUserText(self):
+        msgs = [
+            {'role': 'user', 'content': 'run the tool'},
+            {'role': 'assistant', 'content': [{'type': 'tool_use', 'id': 'tu_1', 'name': 'echo', 'input': {}}]},
+            {'role': 'tool', 'tool_use_id': 'tu_1', 'content': 'result'},
+            {'role': 'user', 'content': 'thanks'},
+        ]
+        out = translateMessagesToAnthropic(msgs)
+        # The leading user turn stays separate (assistant boundary is preserved);
+        # only the tool-result user and the following user text coalesce.
+        assert [msg['role'] for msg in out] == ['user', 'assistant', 'user']
+        assert out[0]['content'] == 'run the tool'
+        user = out[2]
+        assert [block['type'] for block in user['content']] == ['tool_result', 'text']
+        assert user['content'][0]['tool_use_id'] == 'tu_1'
+        assert user['content'][1]['text'] == 'thanks'
+        assert out[1]['role'] == 'assistant'
+
+    def testTranslateToAnthropicPreservesAssistantBoundary(self):
+        msgs = [
+            {'role': 'user', 'content': 'first'},
+            {'role': 'assistant', 'content': 'answer'},
+            {'role': 'user', 'content': 'second'},
+        ]
+        out = translateMessagesToAnthropic(msgs)
+        assert [msg['role'] for msg in out] == ['user', 'assistant', 'user']
+
     def testOpenaiRequestBuilder(self):
         req = buildOpenaiRequest({'messages': [{'role': 'user', 'content': 'Hello'}], 'max_tokens': 4096}, 'gpt-4o')
         assert req['model'] == 'gpt-4o'
@@ -494,6 +548,83 @@ class TestManagedToolRound2Body:
     """Round-2 tool_result messages must be role:'user'-wrapped per the
     Messages API — a bare tool_result block appended to messages 400s
     strict Anthropic gateways (regression for the managed web/bash tools)."""
+
+    @pytest.mark.asyncio
+    async def testOpenaiUpstreamStreamRound2TranslatesMessages(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """OpenAI-stream round 2 must translate Anthropic-format blocks to
+        OpenAI before dispatch.
+
+        Before the fix, ``roundBody['messages']`` was assigned the raw
+        Anthropic session list (with role:'user' containing type:'tool_result'
+        blocks) — OpenAI upstreams rejected that with HTTP 400. The
+        regression: assert the round-2 body carries the tool result as a
+        role:'tool' message with the original tool_call_id and that the
+        assistant tool_calls survive the round trip.
+        """
+        from app.adapters import anthropic as mod
+
+        captured: list[dict[str, object]] = []
+
+        async def fake_execute(toolName: str, args: dict[str, object], **_: object) -> str:
+            return f'output of {args.get("command", "")}'
+
+        monkeypatch.setattr(mod, 'execute_managed_proxy_tool', fake_execute)
+
+        class FakeClient:
+            async def streamSse(self, url: str, headers: dict[str, str], body: dict[str, object] | None = None) -> typing.AsyncIterator[dict[str, object]]:
+                captured.append(body or {})
+                idx = len(captured) - 1
+                if idx == 0:
+                    yield {
+                        'choices': [
+                            {
+                                'delta': {
+                                    'tool_calls': [
+                                        {
+                                            'index': 0,
+                                            'id': 'toolu_2',
+                                            'type': 'function',
+                                            'function': {
+                                                'name': 'bash',
+                                                'arguments': '{"command": "echo hi"}',
+                                            },
+                                        }
+                                    ],
+                                },
+                                'finish_reason': 'tool_calls',
+                            }
+                        ],
+                    }
+                else:
+                    yield {
+                        'choices': [
+                            {'delta': {'content': 'done'}, 'finish_reason': 'stop'},
+                        ],
+                    }
+
+        events: list[str] = []
+        async for ev in mod._streamOpenaiAsAnthropic(
+            'https://example.test/v1/chat/completions',
+            {},
+            {'messages': [{'role': 'user', 'content': 'run ls'}], 'model': 'gpt-x'},
+            'gpt-x',
+            [],
+            [],
+            {'bash'},
+            set(),
+            client=FakeClient(),
+        ):
+            events.append(ev)
+        assert len(captured) == 2
+        round2Messages = captured[1].get('messages', [])
+        assert isinstance(round2Messages, list) and round2Messages
+        toolMessages = [m for m in round2Messages if m.get('role') == 'tool']
+        assert toolMessages, f'no role:"tool" message in round-2 body: {round2Messages}'
+        assert toolMessages[0].get('tool_call_id') == 'toolu_2'
+        assistantCalls = [
+            m for m in round2Messages if m.get('role') == 'assistant' and m.get('tool_calls')
+        ]
+        assert assistantCalls, 'no assistant tool_calls in round-2 body'
 
     @staticmethod
     def _toolUseResponse(toolId: str) -> dict[str, object]:
