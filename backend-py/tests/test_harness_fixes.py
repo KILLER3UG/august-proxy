@@ -171,6 +171,30 @@ def test_models_endpoint_served_shape(isolatedData):
     assert isinstance(body.get('data'), list)
 
 
+def test_proxy_models_route_delegates(monkeypatch):
+    """The shadowed proxy ``/v1/models`` handler must delegate to model_service.
+
+    Previously the route re-rolled ``providerResolver.list_available()`` and
+    built its own shape — the gateway-key gate never applied and the field
+    names diverged from the served route (audit finding). It now delegates
+    so the two endpoints always agree.
+    """
+    import asyncio
+
+    from app.routers import proxy
+
+    called: dict[str, bool] = {}
+
+    async def fake(_auth: bool) -> dict[str, object]:
+        called['yes'] = True
+        return {'object': 'list', 'data': []}
+
+    monkeypatch.setattr('app.routers.models.openaiModels', fake)
+    result = asyncio.run(proxy.listModels(True))
+    assert called.get('yes') is True
+    assert result.get('object') == 'list'
+
+
 # ── 8. /api/providers/quota endpoint ─────────────────────────────────────
 
 

@@ -26,7 +26,6 @@ from app.adapters import anthropic as anthropicAdapter
 from app.adapters import openai as openaiAdapter
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.lib.gateway_auth import require_gateway_key
-from app.providers import resolver as providerResolver
 from app.services import config_service
 from app.services import logger as trafficLogger
 from app.services.feature_flow import emit_feature_flow
@@ -585,30 +584,7 @@ def _translateToResponsesFormat(chatCompletion: dict) -> dict:
 
 @router.get('/v1/models')
 async def listModels(_auth: bool = Depends(require_gateway_key)):
-    """List available models from all configured providers.
+    """Delegate model listing to the model-service-backed OpenAI route."""
+    from app.routers.models import openaiModels as _openaiModels
 
-    NOTE: this route is shadowed by ``app/routers/models.py`` (mounted first,
-    no gateway auth, model_service-backed aggregate). Kept for direct-import
-    callers; the served OpenAI-compatible endpoint is ``models.openaiModels``.
-    """
-    providers = providerResolver.list_available()
-    models = []
-    for p in providers:
-        name = as_str(p.get('name'), '')
-        # The resolver emits `modelProfiles`; older stores / snake_case dumps
-        # use `model_profiles` — read both so /v1/models is never empty.
-        modelProfiles = as_dict(p.get('modelProfiles') or p.get('model_profiles'), {})
-        for modelId, profile in modelProfiles.items():
-            if modelId == '*':
-                continue
-            profileDict = as_dict(profile, {})
-            models.append(
-                {
-                    'id': modelId,
-                    'provider': name,
-                    'object': 'model',
-                    'context_window': as_int(profileDict.get('contextWindow'), 0),
-                    'max_output_tokens': as_int(profileDict.get('maxOutputTokens'), 0),
-                }
-            )
-    return {'object': 'list', 'data': models}
+    return await _openaiModels(_auth=_auth)
