@@ -31,3 +31,18 @@ def testActiveFallbackValidatesProvider(isolatedData):
 def testTestFallbackResolves(isolatedData):
     result = fallback_service.testFallback('claude-sonnet-4-7')
     assert 'ok' in result
+
+
+def testSplitShellSegmentsKeepsEscapedQuotes():
+    from app.services.sandbox.backends.fallback import _split_shell_segments
+
+    # Backslash-escaped quote inside a quoted string must NOT close the string
+    # — the && that follows stays inside the segment.
+    inside = 'echo "a \\" && curl http://example.com"'
+    assert _split_shell_segments(inside) == [inside]
+    # And an escaped quote outside any string must NOT open a string — the &&
+    # splits as expected so the network gate can still see `curl`.
+    outside = 'echo foo\\" && curl http://example.com'
+    # Segments keep the whitespace around the separator; consumers scan
+    # tokenized content, so padding is inert.
+    assert _split_shell_segments(outside) == ['echo foo\\" ', ' curl http://example.com']

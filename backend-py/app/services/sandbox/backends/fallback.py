@@ -262,13 +262,14 @@ def _split_shell_segments(command: str) -> list[str]:
     text = command or ''
     while idx < len(text):
         ch = text[idx]
+        escaped = idx > 0 and text[idx - 1] == '\\'
         if quote:
             buf.append(ch)
-            if ch == quote:
+            if ch == quote and not escaped:
                 quote = ''
             idx += 1
             continue
-        if ch in ('"', "'"):
+        if ch in ('"', "'") and not escaped:
             quote = ch
             buf.append(ch)
             idx += 1
