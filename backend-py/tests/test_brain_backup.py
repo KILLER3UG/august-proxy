@@ -60,6 +60,53 @@ def test_restore_refuses_a_name_that_is_not_a_backup(isolatedData):
     assert brain_backup.pending_restore() is None
 
 
+def test_every_backup_the_writer_accepts_the_restorer_can_use(isolatedData):
+    """`create_backup` sanitizes the reason and `_BACKUP_NAME_RE` re-validates it
+    on the restore side — two independent expressions of one shape.
+
+    When they disagreed a digit-leading reason (`3d-print`, `2026-export`) wrote a
+    copy that `list_backups` reported healthy, so the settings UI offered
+    Restore, and the server then answered "not a valid backup name". A user
+    finds that out only while trying to recover their memory, so the round trip
+    is asserted for every slug shape rather than trusting either regex alone.
+    """
+    for reason in ('manual', '1', '3d-print', '2026-export'):
+        created = brain_backup.create_backup(reason=reason)
+        assert created['ok'] is True, reason
+        name = str(created['name'])
+
+        listed = [b for b in brain_backup.list_backups() if b['name'] == name]
+        assert listed and listed[0]['healthy'] is True, name
+        assert brain_backup.schedule_restore(name)['ok'] is True, name
+
+    assert brain_backup.pending_restore() is not None
+
+
+def test_the_legacy_recovery_hint_names_a_filename_the_restorer_accepts(isolatedData):
+    """``memory_conn``'s two-roots warning is the only place that tells a user
+    what to call a recovered legacy database, and it names the file inline.
+
+    That sentence and ``_BACKUP_NAME_RE`` are written in different files, so a
+    reword can produce an example the restore door rejects — the user then
+    follows the documented recovery path precisely and it fails, which is the
+    same shape of bug as the digit-slug one above. The template is spelled with
+    letters, so only the concrete examples are checked against the gate.
+    """
+    import inspect
+    import re
+
+    from app.services import memory_conn
+
+    examples = re.findall(r'brain-[0-9A-Za-z<>-]+\.sqlite', inspect.getsource(memory_conn))
+    assert examples, 'the two-roots hint no longer names a filename to copy to'
+    concrete = [e for e in examples if any(c.isdigit() for c in e)]
+    assert concrete, examples
+    for name in concrete:
+        assert brain_backup._BACKUP_NAME_RE.match(name), (
+            f'memory_conn tells the user to write {name!r}, which the restore gate '
+            'rejects — reword the hint or widen _BACKUP_NAME_RE, never neither'
+        )
+
 def test_restore_refuses_an_unhealthy_copy(isolatedData):
     brain_backup.create_backup()
     target = sorted(brain_backup.backups_dir().glob('brain-*.sqlite'))[-1]

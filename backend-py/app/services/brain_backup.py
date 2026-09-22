@@ -34,8 +34,10 @@ PENDING_FILE: Final = 'brain-restore.pending'
 PRE_RESTORE_SUFFIX: Final = '.pre-restore'
 # Reason is model/user input, so the accepted name is a strict shape: a restore
 # that could name an arbitrary path would be a file-write primitive wearing a
-# settings button.
-_BACKUP_NAME_RE: Final = re.compile(r'^brain-\d{8}T\d{6}Z-[a-z][a-z0-9-]{0,20}\.sqlite$')
+# settings button. The slug class below must accept every name ``create_backup``
+# can write — a copy whose name this rejects still lists as "verified" with
+# Restore enabled, and then fails, which is worse than refusing it at write time.
+_BACKUP_NAME_RE: Final = re.compile(r'^brain-\d{8}T\d{6}Z-[a-z0-9][a-z0-9-]{0,20}\.sqlite$')
 
 
 def _db_path() -> Path:
