@@ -10,7 +10,17 @@ from app.services.memory_conn import db_path as _db_path
 from app.services.memory_store.wire import _json, _row_as_wire
 from app.type_aliases import FactDict, JsonValue, ProposalDict
 
-_FACT_KINDS = frozenset({'fact', 'lesson', 'preference', 'skill-note'})
+# The one durable-entry-kind vocabulary (the write door validates against it;
+# retrieval reads from it). '' on a write means "unspecified" — see save_fact.
+#
+# 'profile' (2026-09-15) is the always-on "who the user is" lane: a fact about
+# the user must not compete with every other fact for a keyword-matched BM25
+# slot, so recall for this kind is never gated on lexical overlap — see
+# fact_retrieval.build_profile_block. The DB column is plain TEXT with no CHECK
+# constraint, so this frozenset (plus the `remember` tool's schema enum) is the
+# whole surface; no migration and no new store.
+PROFILE_FACT_KIND = 'profile'
+_FACT_KINDS = frozenset({'fact', 'lesson', 'preference', 'skill-note', PROFILE_FACT_KIND})
 
 
 def derive_fact_title(text: str) -> str:
@@ -67,6 +77,21 @@ def save_fact(
     believes it saved while retrieval keeps filtering the stale row out.
     """
     from app.services.session_scope import GLOBAL_SCOPE, normalize_scope
+
+    # 'project:<path>' is documented above as a legal home, but
+    # session_scope.resolve_scope() only ever returns 'global' or 'bot:<id>',
+    # and retrieval unions global ∪ resolved — so a project-scoped row is
+    # written, reported as saved, and can never be read back. Refuse it at the
+    # door until project scoping is actually implemented, rather than taking
+    # the user's memory and hiding it.
+    _written_scope = normalize_scope(scope)
+    if _written_scope.startswith('project:'):
+        raise ValueError(
+            f'unsupported fact scope "{_written_scope}": project-scoped memory '
+            'is not implemented — resolve_scope never produces it, so the row '
+            'would be unreadable. Use the caller\'s resolved scope, or write '
+            'the entry into workspace .aug/memory instead.'
+        )
 
     if not allow_scope_override:
         existing = get_fact(factKey)

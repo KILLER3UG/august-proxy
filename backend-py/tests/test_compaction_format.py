@@ -37,9 +37,9 @@ def _assistantToolUse(toolId: str = 'toolu_1', name: str = 'read_file') -> dict[
 
 
 class TestHandoffShape:
-    def test_all_five_sections_present(self):
+    def test_all_six_sections_present(self):
         out = cc.schemaSummarize([_userMsg('fix the login bug'), _assistantText('looking')], goalHint='Fix login')
-        for section in ('## Goal', '## State', '## Context', '## Next', '## Pitfalls'):
+        for section in ('## Goal', '## State', '## Context', '## Memory', '## Next', '## Pitfalls'):
             assert section in out, section
         # ledger tags stay (they are mechanics, not handoff prose)
         assert '<read-files>' in out and '<modified-files>' in out
@@ -179,3 +179,48 @@ class TestVerbatimUserReplay:
 
     def test_default_budget_within_8_16_kb(self):
         assert 8 * 1024 <= cc.REPLAY_USER_BUDGET_BYTES <= 16 * 1024
+
+
+def _assistantCall(name: str, callInput: dict[str, object], toolId: str = 'toolu_m') -> dict[str, object]:
+    return {
+        'role': 'assistant',
+        'content': [{'type': 'tool_use', 'id': toolId, 'name': name, 'input': callInput}],
+    }
+
+
+class TestMemorySection:
+    """A compaction throws the middle of the transcript away. Which memories
+    were saved there — and that nothing was — must survive, or the next turn
+    concludes the user never said it."""
+
+    def test_saved_fact_titles_survive_the_compaction(self):
+        msgs = [
+            _userMsg('I work on firmware, remember that'),
+            _assistantCall('remember', {'fact': 'User does firmware work', 'title': 'Firmware work'}),
+        ]
+        out = cc.schemaSummarize(msgs)
+        section = out.split('## Memory', 1)[1].split('## Next', 1)[0]
+        assert 'Firmware work' in section
+
+    def test_titleless_remember_falls_back_to_the_fact_text(self):
+        msgs = [_assistantCall('remember', {'fact': 'Prefers terse answers'})]
+        out = cc.schemaSummarize(msgs)
+        assert 'Prefers terse answers' in out.split('## Memory', 1)[1]
+
+    def test_duplicate_saves_are_listed_once(self):
+        msgs = [
+            _assistantCall('remember', {'fact': 'x', 'title': 'Same'}, toolId='a'),
+            _assistantCall('remember', {'fact': 'x', 'title': 'Same'}, toolId='b'),
+        ]
+        out = cc.schemaSummarize(msgs)
+        assert out.count('Same') == 1
+
+    def test_deletions_are_counted_not_silently_dropped(self):
+        out = cc.schemaSummarize([_assistantCall('forget', {'key': 'old'})])
+        assert '1 memory delete(s) applied' in out
+
+    def test_a_span_with_no_memory_write_says_so_without_asserting_absence(self):
+        out = cc.schemaSummarize([_userMsg('hello'), _assistantText('hi')])
+        section = out.split('## Memory', 1)[1].split('## Next', 1)[0]
+        assert 'Saved during this span' not in section
+        assert 'ask before acting as though none was given' in section

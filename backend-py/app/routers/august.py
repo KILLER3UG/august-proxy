@@ -218,10 +218,20 @@ async def manage_sessions(body: ActionBody):
         if not renamed:
             raise HTTPException(404, detail='Session not found')
         return {'ok': True, 'session': renamed.toDict()}
-    # Archive/restore/update are NOT implemented — 'archive' previously
-    # silently DELETED the session (data loss). Fail loudly instead.
-    if action in ('archive', 'restore', 'update'):
-        raise HTTPException(400, detail=f'action "{action}" is not implemented')
+    # 'archive' used to silently DELETE the session (data loss), so for a while
+    # it was refused outright. It is now the durable flag it always should have
+    # been: the sessions table column, not a client-side list.
+    if action in ('archive', 'restore'):
+        from app.services.memory_store import set_session_archived
+
+        if not body.id:
+            raise HTTPException(400, detail=f'action "{action}" needs an id')
+        updated = set_session_archived(str(body.id), action == 'archive')
+        if not updated:
+            raise HTTPException(404, detail='Session not found')
+        return {'ok': True, 'id': body.id, 'isArchived': updated.get('isArchived')}
+    if action == 'update':
+        raise HTTPException(400, detail='action "update" is not implemented')
     return {'ok': True, 'sessions': wb.listWorkbenchSessions()}
 
 

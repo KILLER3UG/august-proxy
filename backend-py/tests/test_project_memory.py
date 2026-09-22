@@ -24,7 +24,7 @@ from app.services.tool_registrations.session_tools import (
 )
 from app.services.workbench import workbench as wb
 from app.services.workbench.context import currentSessionId
-from app.services.workbench.subagent import SUBAGENT_BLOCKED_TOOLS
+from app.services.workbench.subagent import _SUBAGENT_NEVER_TOOLS, _blocked_tools
 
 # Session ids created by these tests (autouse fixture drops them after).
 _sessionsCreated: list[str] = []
@@ -478,12 +478,15 @@ class TestSubagentBlock:
     def test_all_memory_crud_tools_blocked(self) -> None:
         # No test pinned this set before Phase A — the Part 17 review found
         # only `remember` was blocked while forget/list_facts stayed open.
+        # Memory is blocked at EVERY depth, so it lives in the never-set.
         for t in ('remember', 'forget', 'list_facts'):
-            assert t in SUBAGENT_BLOCKED_TOOLS, f'{t} must be blocked for sub-agents'
+            assert t in _SUBAGENT_NEVER_TOOLS, f'{t} must be blocked for sub-agents'
+            assert t in _blocked_tools(depth=1), f'{t} must be blocked at depth 1'
 
     def test_spawn_tools_still_blocked(self) -> None:
-        assert 'spawn_subagent' in SUBAGENT_BLOCKED_TOOLS
-        assert 'set_agent_mode' in SUBAGENT_BLOCKED_TOOLS
+        """Default maxDepth=1: a first-level child may not spawn."""
+        assert 'spawn_subagent' in _blocked_tools(depth=1)
+        assert 'set_agent_mode' in _blocked_tools(depth=1)
 
 
 # ── shadow-git hygiene ────────────────────────────────────────────────

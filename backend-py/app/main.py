@@ -164,9 +164,17 @@ async def lifespan(app: FastAPI):
     from app.services import tool_definitions
 
     tool_definitions.registerAll()
-    from app.services import memory_store
+    # A staged brain-database restore must swap files while nothing has the
+    # database open — this is the only such moment in the process. No-op when
+    # nothing is pending, and a failure here never blocks startup.
+    from app.services import brain_backup, memory_store
 
+    brain_backup.apply_pending_restore()
     memory_store.init()
+    # One verified safety copy per 12 h, off the event loop and after migrations
+    # (the backup API needs a read lock, which a migration transaction holds).
+    # An upgrade must never boot without something restorable behind it.
+    asyncio.create_task(asyncio.to_thread(brain_backup.ensure_current_backup))
     from app.lib.paths import dataPath
 
     _dbPathVal = dataPath('august_brain.sqlite')
@@ -347,6 +355,18 @@ async def _request_id_middleware(request, call_next):
         return response
     finally:
         request_id_var.reset(token)
+
+
+# Binding 127.0.0.1 keeps other machines out, but not other *programs* on this
+# one: a webpage can POST at this port and CORS will only stop it from reading
+# the reply. Reject foreign origins on every route that can touch the machine
+# (desktop input, MCP registration, hook reload, purge, restart) before a
+# handler runs. Non-browser callers send no Origin, so curl, the SDKs that use
+# /v1/*, and the test suite are unaffected.
+from app.lib.local_api_guard import TrustedOriginGuard, resolve_origins  # noqa: E402
+
+app.add_middleware(TrustedOriginGuard, origins_provider=resolve_origins)
+
 from app.routers import agents as agentsRoutes  # noqa: E402
 from app.routers import audit as auditRoutes  # noqa: E402
 from app.routers import aug as augRoutes  # noqa: E402
@@ -365,6 +385,7 @@ from app.routers import git as gitRoutes  # noqa: E402
 from app.routers import harness_mcp as harnessMcpRoutes  # noqa: E402
 from app.routers import harness_proposals as harnessProposalsRoutes  # noqa: E402
 from app.routers import hooks as hooksRoutes  # noqa: E402
+from app.routers import kanban as kanbanRoutes  # noqa: E402
 from app.routers import live as liveRoutes  # noqa: E402
 from app.routers import manage as manageRoutes  # noqa: E402
 from app.routers import mcp as mcpRoutes  # noqa: E402
@@ -428,6 +449,7 @@ app.include_router(codeReviewRoutes.router)
 app.include_router(recurringTasksRoutes.router)
 app.include_router(serviceConnectionsRoutes.router)
 app.include_router(automationsRoutes.router)
+app.include_router(kanbanRoutes.router)
 app.include_router(previewRoutes.router)
 app.include_router(securityRoutes.router)
 app.include_router(realtimeRoutes.router)

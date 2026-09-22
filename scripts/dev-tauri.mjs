@@ -63,22 +63,40 @@ process.on('SIGTERM', () => shutdown(0));
 
 /** Poll until a TCP port is accepting connections. */
 function waitForPort(port, timeoutMs = 30_000) {
+    // Vite binds `localhost`, which resolves to ::1 on dual-stack Windows and
+    // to 127.0.0.1 elsewhere. Probing one family alone never sees the other and
+    // the wait always expires, so try both.
+    const probe = (host) => new Promise((done) => {
+        const socket = net.createConnection({ port, host });
+        let settled = false;
+        const finish = (ok) => {
+            if (settled) return;
+            settled = true;
+            socket.destroy();
+            done(ok);
+        };
+        socket.setTimeout(400, () => finish(false));
+        socket.on('connect', () => finish(true));
+        socket.on('error', () => finish(false));
+    });
+
     return new Promise((resolve, reject) => {
         const start = Date.now();
-        const interval = setInterval(() => {
-            const socket = net.createConnection({ port, host: '127.0.0.1' });
-            socket.on('connect', () => {
-                socket.destroy();
+        let checking = false;
+        const interval = setInterval(async () => {
+            if (checking) return;
+            checking = true;
+            const ready = (await probe('127.0.0.1')) || (await probe('::1'));
+            checking = false;
+            if (ready) {
                 clearInterval(interval);
                 resolve();
-            });
-            socket.on('error', () => {
-                socket.destroy();
-                if (Date.now() - start > timeoutMs) {
-                    clearInterval(interval);
-                    reject(new Error(`Port ${port} not ready within ${timeoutMs}ms`));
-                }
-            });
+                return;
+            }
+            if (Date.now() - start > timeoutMs) {
+                clearInterval(interval);
+                reject(new Error(`Port ${port} not ready within ${timeoutMs}ms`));
+            }
         }, 500);
     });
 }

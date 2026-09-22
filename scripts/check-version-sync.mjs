@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * check-version-sync.mjs — Verify all 7 version sources are in sync.
+ * check-version-sync.mjs — Verify all 8 version sources are in sync.
  *
  * Usage: node scripts/check-version-sync.mjs
  * Exit 0: all versions match.
@@ -55,9 +55,14 @@ const sources = [
     },
   },
   {
-    label: 'package-lock.json (root)',
+    label: 'package-lock.json (top-level version)',
     file: resolve(root, 'package-lock.json'),
     extract: (content) => JSON.parse(content).version,
+  },
+  {
+    label: 'package-lock.json (packages[\'\'])',
+    file: resolve(root, 'package-lock.json'),
+    extract: (content) => JSON.parse(content).packages?.['']?.version,
   },
   {
     label: 'package-lock.json (frontend/desktop)',

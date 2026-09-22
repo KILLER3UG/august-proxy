@@ -26,6 +26,8 @@ _ORACLE_READ = frozenset({
     'list_directory', 'list_integrations', 'list_mcp_servers',
     # Read-only context capsule for a past session (mirrors _PROMPT_READ).
     'session_context',
+    # Read-only bounded reading package for a file/directory (mirrors _PROMPT_READ).
+    'module_context',
     'pptx_list_elements',
     'read_blackboard', 'read_file', 'read_files', 'search_files', 'web_fetch',
     'web_fetch_many', 'web_search',
@@ -136,6 +138,9 @@ _ORACLE_AGENT = frozenset({
     # this bucketed; the oracle drifted until a full-suite order registered
     # dm tools and surfaced it — Part 26 wave fix).
     'message_agent',
+    # Durable agent board (shared work items). Added with the tool: the oracle
+    # mirrors the intended classification, so a new tool belongs in both lists.
+    'board',
 })
 _ORACLE_SKILL = frozenset({'list_skills', 'load_skill', 'load_skills'})
 _ORACLE_BRIDGE = frozenset({'tool_call', 'tool_describe', 'tool_search'})

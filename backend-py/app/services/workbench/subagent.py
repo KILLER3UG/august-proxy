@@ -41,19 +41,43 @@ SUBAGENT_MODEL_TIMEOUT_S = 240
 # filter allowed unbounded recursion + semaphore-slot deadlock. Agent-
 # management tools (create_agent / set_agent_mode) are also blocked: a
 # sub-agent must not mutate the agent registry or switch its own mode.
-SUBAGENT_BLOCKED_TOOLS = frozenset(
-    {'spawn_subagent', 'spawn_subagents', 'create_agent', 'set_agent_mode',
-     'interrupt_subagent', 'send_subagent_message',
-     # Sub-agents do not write durable memory — only the main model does.
-     # The whole memory write/read-CRUD surface is blocked, not
-     # just `remember` — a sub-agent flipping facts or project-memory
-     # entries bypasses the main model's stewardship (gap found in the
-     # Part 17 review: only `remember` was listed).
-     'remember', 'forget', 'list_facts'}
+# Tools a child may never use regardless of depth: spawning is depth-gated
+# below (see _blocked_tools), and `create_agent`/`set_agent_mode` would let a
+# child redefine its own permissions.
+_SUBAGENT_NEVER_TOOLS = frozenset(
+    {
+        'create_agent', 'set_agent_mode',
+        'interrupt_subagent', 'send_subagent_message',
+        # Sub-agents do not write durable memory — only the main model does.
+        # The whole memory write/read-CRUD surface is blocked, not
+        # just `remember` — a sub-agent flipping facts or project-memory
+        # entries bypasses the main model's stewardship (gap found in the
+        # Part 17 review: only `remember` was listed).
+        'remember', 'forget', 'list_facts',
+    }
 )
 
+# Offered only while the configured depth cap still allows another level.
+_SPAWN_TOOLS = frozenset({'spawn_subagent', 'spawn_subagents'})
+
+
+def _blocked_tools(session: object = None, depth: int | None = None) -> frozenset[str]:
+    """What this child may not touch — spawn gated by the configured maxDepth.
+
+    Subtracting the spawn tools unconditionally made `delegation.maxDepth` dead
+    configuration above 1: the child was never offered the tool, so the
+    orchestrator's own depth check could not run. `depth` is the child's own
+    runtime depth (defaults to the live ContextVar, which the caller sets
+    before building the surface).
+    """
+    from app.services.workbench.context import may_spawn_children
+
+    if may_spawn_children(session=session, depth=depth):
+        return _SUBAGENT_NEVER_TOOLS
+    return _SUBAGENT_NEVER_TOOLS | _SPAWN_TOOLS
+
 # Capability tiers for subagents — main model picks per-launch.
-SUBAGENT_CAPABILITY_READ_ONLY = {'read_file', 'read_files', 'list_directory', 'search_files', 'brain_query', 'web_search', 'web_fetch', 'web_fetch_many', 'read_blackboard', 'describe_environment', 'diagnose_proxy', 'list_agents', 'list_skills', 'load_skill', 'load_skills'}
+SUBAGENT_CAPABILITY_READ_ONLY = {'read_file', 'read_files', 'list_directory', 'search_files', 'module_context', 'brain_query', 'web_search', 'web_fetch', 'web_fetch_many', 'read_blackboard', 'describe_environment', 'diagnose_proxy', 'list_agents', 'list_skills', 'load_skill', 'load_skills'}
 SUBAGENT_CAPABILITY_FULL = None  # None means inherit all allowed (no extra filter)
 
 
@@ -179,6 +203,36 @@ def _toolAllowed(agent: dict[str, object], name: str) -> bool:
     if aid and (not as_bool(agent.get('_synthetic', False))) and getAgent(aid):
         return bool(as_bool(evaluateAgentTool(aid, name).get('allowed', False)))
     return True
+
+
+def subagent_memory_block(session: object, goal: str, workspace: str | None) -> str:
+    """Durable memory for a worker, or '' when there is nothing to say.
+
+    A sub-agent can run for twenty minutes knowing nothing about the person it
+    works for: the `<memory>` tail was parent-only, so identity-level facts had
+    to be re-typed into every goal string. Same corpus, same resolved scope and
+    same gate as the parent turn — `build_memory_block` already renders the
+    always-on profile lane first, and that lane ships even when keyword
+    auto-injection is off. Writes stay blocked in here on purpose: the parent
+    turn is the single door that mutates durable memory.
+    """
+    try:
+        from app.services import brain_config_service as bc
+        from app.services import session_scope as scope_mod
+        from app.services.memory_store.fact_retrieval import (
+            build_memory_block,
+            build_profile_memory_block,
+        )
+
+        resolved = scope_mod.resolve_scope(session)
+        if bool(bc.getRuntimeConfig().get('memoryAutoInject', False)):
+            block, _ = build_memory_block(goal, workspace=workspace or '', scope=resolved)
+        else:
+            block, _ = build_profile_memory_block(scope=resolved)
+        return block
+    except Exception:
+        logger.debug('subagent memory build failed', exc_info=True)
+        return ''
 
 
 async def executeSubAgent(
@@ -511,7 +565,8 @@ async def executeSubAgent(
     cap_filter = _capability_filter(capability)
     if cap_filter is not None and (capability or '').strip().lower() in ('read_only', 'readonly', 'read-only'):
         # Read-only: restrict to the explicit allowlist even if parent has 'all'.
-        allowedNames = {n for n in cap_filter if n not in SUBAGENT_BLOCKED_TOOLS}
+        blocked = _blocked_tools(session)
+        allowedNames = {n for n in cap_filter if n not in blocked}
         # Guard by guardMode — full is required for write/shell subagents; read_only is always allowed.
         if restricted_names:
             allowedNames -= set(restricted_names)
@@ -521,7 +576,7 @@ async def executeSubAgent(
         raw_allowed = {
             _toolName(t)
             for t in fullTools
-            if _toolAllowed(agent, _toolName(t)) and _toolName(t) not in SUBAGENT_BLOCKED_TOOLS
+            if _toolAllowed(agent, _toolName(t)) and _toolName(t) not in _blocked_tools(session)
         }
         if cap_filter is not None:
             raw_allowed &= cap_filter
@@ -562,6 +617,9 @@ async def executeSubAgent(
     )
     if contract:
         systemText += f'\n\n{contract}'
+    _memText = subagent_memory_block(session, as_str(goal, ''), _ws)
+    if _memText:
+        systemText += f'\n\n{_memText}'
     if skill_names:
         try:
             from app.services.skill_service import load_bodies
@@ -648,6 +706,7 @@ async def executeSubAgent(
         stallMessageSent = False
         lastExecSig: tuple[object, object] | None = None
         seenToolSigs: set[tuple[str, str]] = set()
+        targetUses: dict[tuple[str, str], int] = {}
         capReached = False
         # Worker-local execution state (update_state is intercepted below):
         # the parent session's _execution_state is shared by every concurrent
@@ -877,7 +936,7 @@ async def executeSubAgent(
                 if sig != lastExecSig:
                     lastExecSig = sig
                     stalledRounds = 0
-                elif _assistant_round_is_novel(messages, seenToolSigs):
+                elif _assistant_round_is_novel(messages, seenToolSigs, targetUses):
                     # Parent-loop parity: new files read/searched or prose
                     # emitted is real exploration, not spinning.
                     stalledRounds = 0
@@ -996,7 +1055,7 @@ async def executeSubAgent(
                         emit=emit,
                     )
                     status = 'done'
-                elif not _toolAllowed(agent, tName) or tName in SUBAGENT_BLOCKED_TOOLS:
+                elif not _toolAllowed(agent, tName) or tName in _blocked_tools(session):
                     result = f"[Blocked] Sub-agent not permitted to use '{tName}'."
                     status = 'blocked'
                 else:

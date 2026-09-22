@@ -14,12 +14,14 @@ def register_all() -> None:
     from app.services.tool_registrations import (
         agent_tools,
         artifact_tools,
+        board_tools,
         bulk_tools,
         circuit_tools,
         desktop_tools,
         file_tools,
         harness_tools,
         media_tools,
+        module_tools,
         office_tools,
         session_tools,
         skill_tools,
@@ -39,6 +41,10 @@ def register_all() -> None:
     # Media analysis — the sanctioned reader for images/video/audio/docs
     # (read_file's media guard redirects here).
     media_tools.register()
+    # module_context: bounded per-file/directory reading package, so the model
+    # can pick a file to read without paying for its body in context.
+    module_tools.register()
+    board_tools.register()
     session_tools.register()
     system_tools.register()
     agent_tools.register()

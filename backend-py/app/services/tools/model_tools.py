@@ -28,6 +28,13 @@ AUGUST_CORE_TOOLS: frozenset[str] = frozenset(
         'web_search',
         'brain_query',
         'remember',
+        # `remember` invites the model to update by key and to retire a wrong
+        # fact; both need a key, and progressive disclosure could defer the
+        # only two tools that supply one — leaving a deferred surface with a
+        # write door and no way to read or correct it. Core as a set, or not at
+        # all.
+        'list_facts',
+        'forget',
         'load_skill',
         'list_skills',
         'spawn_subagents',

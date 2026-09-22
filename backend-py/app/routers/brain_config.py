@@ -13,8 +13,15 @@ Mounts four routes under ``/api/brain``:
   PATCH  /api/brain/stores/{name}/{id}  — update whitelisted fields of one row
   GET  /api/brain/consolidation/log     — M4 consolidation + M5 lesson-promotion log
   POST /api/brain/consolidation/run     — trigger one consolidation pass now
-  GET  /api/brain/turn-outcomes         — M5 per-model error-rate telemetry
+  GET  /api/brain/turn-outcomes         — M5 telemetry: per-model error rates
+                                          + the turn verdict distribution and
+                                          self-correction counters (046)
   GET  /api/brain/state-lookup          — §5.5 raw internal_state/memory_store row by key
+  GET  /api/brain/backups               — offline brain-DB copies, each with its own health
+  POST /api/brain/backups               — take a verified copy now
+  POST /api/brain/backups/restore       — stage a verified restore (applies next launch)
+  DELETE /api/brain/backups/restore     — cancel a staged restore
+  GET  /api/brain/integrity             — PRAGMA integrity_check on the live DB
 
 The shared service is :mod:`app.services.brain_config_service`. Mutation
 endpoints record an audit row via ``memory_store.record_config_audit``.
@@ -36,6 +43,18 @@ from app.models.camel_base import CamelModel
 from app.services import brain_config_service
 
 router = APIRouter(prefix='/api/brain', tags=['brain-config'])
+
+
+class BackupCreate(CamelModel):
+    """Optional label recorded in the backup's filename."""
+
+    reason: str = 'manual'
+
+
+class BackupRestore(CamelModel):
+    """The exact backup name to stage, as reported by ``GET /api/brain/backups``."""
+
+    name: str
 
 
 @router.get('/config')
@@ -195,12 +214,21 @@ async def postConsolidationRun():
 
 @router.get('/turn-outcomes')
 async def getTurnOutcomes(days: int = Query(7, ge=1, le=30)):
-    """M5 telemetry: per-model/provider error rates for the
-    Observability hub. Diagnostics only — never injected into prompts and
-    never shown in the Memory UI."""
-    from app.services.turn_outcomes import error_rate_by_model
+    """M5 telemetry: per-model/provider error rates plus the per-turn verdict
+    distribution (046) for the Observability hub and the Learning panel.
+    Diagnostics only — never injected into prompts and never shown in the
+    Memory UI. A reason like ``cap`` or ``stall-stop`` names a turn that
+    ALREADY finished and whose answer reached the user; this endpoint reports
+    why the loop stopped, it never withholds anything."""
+    from app.services.turn_outcomes import error_rate_by_model, turn_verdict_stats
 
-    return {'days': days, 'models': error_rate_by_model(days=days)}
+    return {
+        'days': days,
+        'models': error_rate_by_model(days=days),
+        # end_reason distribution + rounds + the self-correction counters,
+        # each split into measured / unrecorded so NULL is never read as 0.
+        'verdicts': turn_verdict_stats(days=days),
+    }
 
 
 @router.get('/memory/metrics')
@@ -266,6 +294,61 @@ async def getMemoryMetrics(days: int = Query(7, ge=1, le=30)):
     except Exception:
         latency = {'turns': 0, 'error': 'turn_outcomes unavailable'}
     return {'days': days, 'recall': recall, 'latency': latency}
+
+
+@router.get('/backups')
+async def list_brain_backups():
+    """Every offline copy of the brain DB, each labelled with its own health."""
+    from app.services import brain_backup
+
+    return {
+        'backups': brain_backup.list_backups(),
+        'keep': brain_backup.KEEP_BACKUPS,
+        'pendingRestore': brain_backup.pending_restore(),
+        'directory': str(brain_backup.backups_dir()),
+    }
+
+
+@router.post('/backups')
+async def create_brain_backup(body: BackupCreate | None = None):
+    """Verify-and-copy the brain database without a write lock on the original."""
+    from app.services import brain_backup
+
+    result = brain_backup.create_backup(reason=(body.reason if body else None) or 'manual')
+    if not result.get('ok'):
+        raise HTTPException(500, detail=str(result.get('error') or 'backup failed'))
+    return result
+
+
+@router.post('/backups/restore')
+async def restore_brain_backup(body: BackupRestore):
+    """Stage a verified restore for the next launch.
+
+    Not immediate on purpose: the running app holds the database open on more
+    than one thread, so swapping the file underneath it yields a half-old
+    database. The caller restarts August (or lets the updater do it) to apply.
+    """
+    from app.services import brain_backup
+
+    result = brain_backup.schedule_restore(body.name)
+    if not result.get('ok'):
+        raise HTTPException(400, detail=str(result.get('error') or 'restore refused'))
+    return result
+
+
+@router.delete('/backups/restore')
+async def cancel_brain_restore():
+    from app.services import brain_backup
+
+    return brain_backup.cancel_restore()
+
+
+@router.get('/integrity')
+async def brain_integrity():
+    """``PRAGMA integrity_check`` on the live DB plus what could be recovered."""
+    from app.services import brain_backup
+
+    return brain_backup.quick_check()
 
 
 @router.get('/state-lookup')

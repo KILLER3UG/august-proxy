@@ -2,11 +2,9 @@
 //
 // Called automatically by the "version" npm script after `npm version <bump>`.
 // Reads the new version from package.json (via npm_package_version env var)
-// and writes it into the three other files that AGENTS.md requires to stay in
-// sync on desktop ship:
-//   - frontend/desktop/package.json
-//   - frontend/desktop/src-tauri/tauri.conf.json
-//   - frontend/desktop/src-tauri/Cargo.toml
+// and writes it into every version source that AGENTS.md requires on desktop
+// ship: the desktop package/Tauri/Cargo manifests, package-lock root and
+// workspace entries, and the august-desktop Cargo.lock entry.
 //
 // Mirrors the sync logic in scripts/release-desktop.mjs (syncPackageVersions)
 // so `npm version <bump>` and the formal release flow cannot drift apart.
@@ -62,6 +60,9 @@ const lockPath = join(root, 'package-lock.json');
 if (existsSync(lockPath)) {
   const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
   lock.version = newVersion;
+  if (lock.packages?.['']) {
+    lock.packages[''].version = newVersion;
+  }
   if (lock.packages?.['frontend/desktop']) {
     lock.packages['frontend/desktop'].version = newVersion;
   }

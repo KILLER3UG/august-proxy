@@ -91,6 +91,134 @@ def test_migration_failure_does_not_halt(conn, tmp_path, monkeypatch):
     assert 2 not in versions
 
 
+# ── Retry budget: one transient failure is not a permanent schema hole ───
+
+
+def _bad_dir(tmp_path, monkeypatch, body: str = 'INVALID SQL SYNTAX HERE;'):
+    import app.lib.migrations as mod
+
+    migrations = tmp_path / 'mig'
+    migrations.mkdir(parents=True, exist_ok=True)
+    (migrations / '001_broken.sql').write_text(body)
+    monkeypatch.setattr(mod, '_MIGRATIONS_DIR', migrations)
+    return migrations
+
+
+def _attempts(conn, version: int = 1):
+    row = conn.execute(
+        'SELECT attempts FROM schema_migration_failures WHERE version = ?', (version,)
+    ).fetchone()
+    return None if row is None else int(row[0])
+
+
+def test_a_fixed_migration_is_retried_and_then_recorded_as_applied(conn, tmp_path, monkeypatch):
+    """The old behaviour: one failure blacklisted the version forever."""
+    _bad_dir(tmp_path, monkeypatch)
+    assert run_migrations(conn) == 0
+    assert _attempts(conn) == 1
+
+    # Same version, now valid — the next boot must try it again, not skip it.
+    _bad_dir(tmp_path, monkeypatch, 'CREATE TABLE healed (x INTEGER);')
+    assert run_migrations(conn) == 1
+
+    versions = {v[0] for v in conn.execute('SELECT version FROM schema_migrations').fetchall()}
+    assert 1 in versions
+    # Nothing left to report: a version that applied is no longer a failure.
+    assert _attempts(conn) is None
+    assert conn.execute('SELECT * FROM healed').fetchall() == []
+
+
+def test_a_permanently_broken_migration_is_skipped_after_its_budget(
+    conn, tmp_path, monkeypatch, caplog
+):
+    import logging
+
+    _bad_dir(tmp_path, monkeypatch)
+    with caplog.at_level(logging.WARNING, logger='app.lib.migrations'):
+        for _ in range(5):
+            run_migrations(conn)
+
+    spent = [r for r in caplog.records if 'skipped for good' in r.getMessage()]
+    assert len(spent) == 1, 'the giving-up log must fire once, not on every boot'
+    assert spent[0].levelno == logging.ERROR
+    assert _attempts(conn) == 3
+
+
+def test_snapshot_never_waits_on_a_locked_database(tmp_path):
+    """The snapshot used to be sqlite's backup API, which takes a read lock on
+    the source and waits for it — on a busy brain database that stalls the boot
+    path that calls it. A recovery aid is not worth a hang."""
+    import time
+
+    from app.lib.migrations import _snapshot_before_migration
+
+    db = tmp_path / 'brain.sqlite'
+    holder = sqlite3.connect(str(db))
+    holder.execute('CREATE TABLE t (x INTEGER)')
+    holder.execute('INSERT INTO t VALUES (1)')  # write transaction left open
+
+    probe = sqlite3.connect(str(db))
+    started = time.monotonic()
+    try:
+        _snapshot_before_migration(probe, [1, 2])  # must not raise, must not wait
+        elapsed = time.monotonic() - started
+    finally:
+        holder.rollback()
+        holder.close()
+        probe.close()
+
+    assert elapsed < 2, f'the snapshot waited {elapsed:.1f}s for a lock'
+
+
+def test_schema_changes_are_snapshotted_first(conn, tmp_path, monkeypatch):
+    """A migration chain copies the DB aside before touching the schema."""
+    _bad_dir(tmp_path, monkeypatch, 'CREATE TABLE snapshot_me (x INTEGER);')
+    assert run_migrations(conn) == 1
+
+    snapshot = tmp_path / 'test_migrate.sqlite.pre-migration'
+    assert snapshot.exists()
+    probe = sqlite3.connect(str(snapshot))
+    try:
+        tables = {r[0] for r in probe.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    finally:
+        probe.close()
+    # Taken before the DDL ran, so the snapshot predates the new table.
+    assert 'snapshot_me' not in tables
+
+
+def test_legacy_failure_table_gets_a_retry_column(tmp_path, monkeypatch):
+    """Installs that recorded failures before the retry budget still upgrade."""
+    db = tmp_path / 'legacy.sqlite'
+    legacy = sqlite3.connect(str(db))
+    legacy.execute(
+        'CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL,'
+        " applied_at TEXT NOT NULL DEFAULT (datetime('now')))"
+    )
+    legacy.execute(
+        'CREATE TABLE schema_migration_failures (version INTEGER PRIMARY KEY, name TEXT NOT NULL,'
+        " error TEXT, failed_at TEXT NOT NULL DEFAULT (datetime('now')))"
+    )
+    legacy.execute(
+        "INSERT INTO schema_migration_failures (version, name, error) VALUES (9, 'old', 'boom')"
+    )
+    legacy.commit()
+    legacy.close()
+
+    conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
+    try:
+        _bad_dir(tmp_path, monkeypatch, 'SELECT 1;')
+        assert run_migrations(conn) == 1
+        cols = {
+            r[1] for r in conn.execute('PRAGMA table_info(schema_migration_failures)').fetchall()
+        }
+        assert 'attempts' in cols
+        # A historical failure is not treated as already having spent its budget.
+        assert _attempts(conn, 9) == 1
+    finally:
+        conn.close()
+
+
 def _tables(conn) -> set[str]:
     return {
         r[0]

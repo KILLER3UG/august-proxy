@@ -9,18 +9,26 @@
 //   node scripts/prepare-desktop-backend.mjs --release    # release: writes the real sha256 stamp
 //   node scripts/prepare-desktop-backend.mjs --skip-download   # reuse existing python/
 
-import { createWriteStream } from 'node:fs';
-import { mkdir, rm, cp, access, writeFile, readFile, readdir, stat } from 'node:fs/promises';
+import { createWriteStream, createReadStream } from 'node:fs';
+import { mkdir, rm, cp, access, writeFile, readFile, mkdtemp, rename, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
+// Payload staging/hashing lives in scripts/desktop-backend-payload.mjs so tests
+// can exercise it against a temporary fixture without downloading Python or
+// building wheels. `prepare-desktop-backend.mjs` keeps only Python/wheels/stamp.
+import {
+  stageBackendPayload as _stageBackendPayload,
+  hashStagedBackendPayload as _hashStagedBackendPayload,
+} from './desktop-backend-payload.mjs';
 
-const root = resolve(process.cwd());
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const resourcesDir = resolve(root, 'frontend/desktop/src-tauri/resources');
 const pythonDir = join(resourcesDir, 'python');
-const backendOut = join(resourcesDir, 'backend-py');
 const wheelsOut = join(resourcesDir, 'wheels');
 const skipDownload = process.argv.includes('--skip-download');
 // Release mode (real sha256 stamp) is opt-in via --release. A local dev
@@ -49,23 +57,67 @@ const PYTHON_BUILD = '20250317';
 const PYTHON_URL =
   `https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_BUILD}/` +
   `cpython-${PYTHON_VERSION}+${PYTHON_BUILD}-x86_64-pc-windows-msvc-install_only.tar.gz`;
+const PYTHON_SHA256 = 'd15361fd202dd74ae9c3eece1abdab7655f1eba90bf6255cad1d7c53d463ed4d';
+const BUILD_TOOLS_REQUIREMENTS = [
+  'setuptools==81.0.0 \\',
+  '    --hash=sha256:487b53915f52501f0a79ccfd0c02c165ffe06631443a886740b91af4b7a5845a \\',
+  '    --hash=sha256:fdd925d5c5d9f62e4b74b30d6dd7828ce236fd6ed998a08d81de62ce5a6310d6',
+  'wheel==0.48.0 \\',
+  '    --hash=sha256:94800765601e9171bf5d58d066e640662842bcedcbab982b2c90787a2c987322 \\',
+  '    --hash=sha256:3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab',
+  'packaging==26.2 \\',
+  '    --hash=sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e \\',
+  '    --hash=sha256:ff452ff5a3e828ce110190feff1178bb1f2ea2281fa2075aadb987c2fb221661',
+].join('\n');
+
+function quoteCmdArg(value) {
+  return /[\s"^&|<>]/.test(value) ? `"${value}"` : value;
+}
+
+function resolveCommand(command, args) {
+  if (process.platform !== 'win32' || command.includes('.')) {
+    return { command, args };
+  }
+  const pathEntries = (process.env.PATH || '').split(';');
+  for (const entry of pathEntries) {
+    for (const suffix of ['.exe', '.cmd']) {
+      const candidate = join(entry, `${command}${suffix}`);
+      if (existsSync(candidate)) {
+        if (suffix === '.cmd') {
+          // cmd's /s strips the leading quote, which truncates a PATH entry
+          // like C:\Program Files\nodejs\npm.cmd to 'C:\Program'.
+          return {
+            command: process.env.ComSpec || 'cmd.exe',
+            args: ['/d', '/c', [`"${candidate}"`, ...args.map(quoteCmdArg)].join(' ')],
+            verbatimArguments: true,
+          };
+        }
+        return { command: candidate, args };
+      }
+    }
+  }
+  return { command, args };
+}
 
 function run(command, args, opts = {}) {
-  const result = spawnSync(command, args, {
+  const resolved = resolveCommand(command, args);
+  const result = spawnSync(resolved.command, resolved.args, {
     stdio: 'inherit',
     cwd: opts.cwd || root,
     env: { ...process.env, ...(opts.env || {}) },
     shell: false,
   });
+  if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(' ')} exited with ${result.status}`);
   }
 }
 
-// Capture a short-lived command's stdout (git probes). Returns '' on ANY
-// failure — callers treat empty as "unknown", never as a build error.
+// Capture a short-lived command's stdout. Release callers fail closed when
+// provenance is unavailable; development builds may report unknown.
 function runCapture(command, args, cwd) {
-  const result = spawnSync(command, args, {
+  const resolved = resolveCommand(command, args);
+  const result = spawnSync(resolved.command, resolved.args, {
     cwd: cwd || root,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],
@@ -83,12 +135,35 @@ async function pathExists(p) {
   }
 }
 
-async function download(url, dest) {
+async function sha256File(path) {
+  const hash = createHash('sha256');
+  await pipeline(createReadStream(path), hash);
+  return hash.digest('hex');
+}
+
+async function verifySha256(path, expected) {
+  const actual = await sha256File(path);
+  if (actual !== expected) {
+    throw new Error(`SHA-256 mismatch for ${path}: expected ${expected}, got ${actual}`);
+  }
+}
+
+async function download(url, dest, expectedSha256) {
   console.log(`[prepare-backend] downloading ${url}`);
   const res = await fetch(url);
   if (!res.ok) throw new Error(`download failed ${res.status} ${url}`);
   await mkdir(dirname(dest), { recursive: true });
-  await pipeline(res.body, createWriteStream(dest));
+  const partial = `${dest}.part`;
+  await rm(partial, { force: true });
+  try {
+    await pipeline(res.body, createWriteStream(partial));
+    await verifySha256(partial, expectedSha256);
+    await rm(dest, { force: true });
+    await rename(partial, dest);
+  } catch (error) {
+    await rm(partial, { force: true });
+    throw error;
+  }
   console.log(`[prepare-backend] saved ${dest}`);
 }
 
@@ -98,20 +173,64 @@ async function extractTarGz(archive, dest) {
   run(cmd, [...extraArgs, '-xzf', archive, '-C', dest]);
 }
 
+async function hashTree(path) {
+  const hash = createHash('sha256');
+  async function visit(current) {
+    const info = await stat(current);
+    if (info.isDirectory()) {
+      const children = (await readdir(current)).sort();
+      for (const child of children) await visit(join(current, child));
+      return;
+    }
+    if (!info.isFile() || current.endsWith('python.sha256')) return;
+    const data = await readFile(current);
+    hash.update(JSON.stringify([relative(pythonDir, current), data.length]) + '\n');
+    hash.update(data);
+  }
+  await visit(path);
+  return hash.digest('hex');
+}
+
+async function writePythonIntegrityMarker() {
+  await writeFile(join(pythonDir, 'python.sha256'), `${await hashTree(pythonDir)}\n`);
+}
+
+async function verifyPythonIntegrity() {
+  const markerPath = join(pythonDir, 'python.sha256');
+  if (!(await pathExists(markerPath))) {
+    throw new Error(`--skip-download requires an integrity marker at ${markerPath}; rebuild the runtime once without --skip-download`);
+  }
+  const expected = (await readFile(markerPath, 'utf8')).trim();
+  const actual = await hashTree(pythonDir);
+  if (!expected || actual !== expected) {
+    throw new Error(`portable python integrity check failed (expected ${expected || 'marker'}, got ${actual})`);
+  }
+}
+
 async function ensurePython() {
   const pythonExe = join(pythonDir, 'python.exe');
+  const archive = join(resourcesDir, `cpython-${PYTHON_VERSION}-windows.tar.gz`);
   if (skipDownload && (await pathExists(pythonExe))) {
-    console.log('[prepare-backend] reusing existing portable python');
-    return pythonExe;
+    try {
+      await verifyPythonIntegrity();
+      console.log('[prepare-backend] reusing verified portable python');
+      return pythonExe;
+    } catch (error) {
+      if (!(await pathExists(archive))) throw error;
+      console.warn(`[prepare-backend] ${error.message}; rebuilding from the pinned archive`);
+    }
+  }
+
+  if (await pathExists(archive)) {
+    await verifySha256(archive, PYTHON_SHA256);
+  } else if (!skipDownload) {
+    await download(PYTHON_URL, archive, PYTHON_SHA256);
+  } else {
+    throw new Error(`--skip-download requires ${archive} or a verified python/ tree`);
   }
 
   await rm(pythonDir, { recursive: true, force: true });
   await mkdir(pythonDir, { recursive: true });
-
-  const archive = join(resourcesDir, `cpython-${PYTHON_VERSION}-windows.tar.gz`);
-  if (!(await pathExists(archive)) || !skipDownload) {
-    await download(PYTHON_URL, archive);
-  }
 
   const extractTmp = join(resourcesDir, '_python_extract');
   await rm(extractTmp, { recursive: true, force: true });
@@ -132,123 +251,107 @@ async function ensurePython() {
   if (!(await pathExists(pythonExe))) {
     throw new Error('portable python.exe missing after extract');
   }
+  await writePythonIntegrityMarker();
   console.log(`[prepare-backend] portable python ready: ${pythonExe}`);
   return pythonExe;
 }
 
 async function stageBackendSources() {
-  await rm(backendOut, { recursive: true, force: true });
-  await mkdir(backendOut, { recursive: true });
-
-  const src = resolve(root, 'backend-py');
-  // Copy package sources needed to run uvicorn app.main:app. `sidecar/` carries
-  // `firmware-runner.mjs` (used by the firmware_run tool); omitting it caused
-  // every packaged install to fail firmware invocations silently.
-  for (const name of ['app', 'sidecar', 'pyproject.toml', 'README.md']) {
-    const from = join(src, name);
-    if (!(await pathExists(from))) continue;
-    await cp(from, join(backendOut, name), {
-      recursive: true,
-      filter: (p) => {
-        const n = p.replace(/\\/g, '/');
-        if (n.includes('/__pycache__/') || n.endsWith('.pyc')) return false;
-        if (n.includes('/node_modules/')) return false;
-        if (n.includes('/.mypy_cache/') || n.includes('/.ruff_cache/')) return false;
-        if (n.includes('/tests/')) return false;
-        if (n.includes('/.venv/')) return false;
-        return true;
-      },
-    });
-  }
-  console.log(`[prepare-backend] staged backend sources → ${backendOut}`);
-
-  // Stage bundled skills → resources/skills (D16): installed builds resolve
-  // SKILLS_DIR to {appData}/backend-runtime/skills; without this, packaged
-  // apps ship ZERO built-in skills.
-  const skillsOut = join(resourcesDir, 'skills');
-  const skillsSrc = resolve(root, 'skills');
-  if (await pathExists(skillsSrc)) {
-    await rm(skillsOut, { recursive: true, force: true });
-    await mkdir(skillsOut, { recursive: true });
-    await cp(skillsSrc, skillsOut, {
-      recursive: true,
-      filter: (p) => {
-        const n = p.replace(/\\/g, '/');
-        if (n.includes('/__pycache__/') || n.endsWith('.pyc')) return false;
-        return true;
-      },
-    });
-    console.log(`[prepare-backend] staged bundled skills → ${skillsOut}`);
-  }
-}
-
-async function hashStagedBackendSources() {
-  // The runtime stamp must change when backend behavior changes. Previously it
-  // only included the Python build and app version, so an installed desktop
-  // app could keep running an older AppData backend after a source-only fix.
-  const hash = createHash('sha256');
-  const includeRoots = ['app', 'sidecar', 'pyproject.toml', 'README.md', 'skills'];
-  const ignoredDirs = new Set(['__pycache__', '.mypy_cache', '.ruff_cache', '.venv', 'tests']);
-
-  async function visit(path, relative) {
-    const entries = await readdir(path, { withFileTypes: true });
-    entries.sort((a, b) => a.name.localeCompare(b.name));
-    for (const entry of entries) {
-      const nextPath = join(path, entry.name);
-      const nextRelative = join(relative, entry.name).replaceAll('\\', '/');
-      if (entry.isDirectory()) {
-        if (!ignoredDirs.has(entry.name)) await visit(nextPath, nextRelative);
-        continue;
-      }
-      if (!entry.isFile() || entry.name.endsWith('.pyc')) continue;
-      hash.update(nextRelative);
-      hash.update(await readFile(nextPath));
-    }
-  }
-
-  for (const dirName of includeRoots) {
-    const path =
-      dirName === 'skills'
-        ? join(root, 'skills')               // bundled skills live at repo root
-        : join(root, 'backend-py', dirName);
-    if (existsSync(path)) {
-      if ((await stat(path)).isDirectory()) await visit(path, dirName);
-      else {
-        hash.update(dirName);
-        hash.update(await readFile(path));
-      }
-    }
-  }
-  return hash.digest('hex');
+  // Delegates to scripts/desktop-backend-payload.mjs:
+  //   - stages backend-py app/sidecar/pyproject/README into resources/backend-py
+  //   - runs a deterministic `npm ci --omit=dev --ignore-scripts` INSIDE the
+  //     staged sidecar (never reuses the developer node_modules, which the
+  //     exclusion filter leaves out of the payload anyway)
+  //   - stages bundled skills → resources/skills (D16): installed builds resolve
+  //     SKILLS_DIR to {appData}/backend-runtime/skills; without this, packaged
+  //     apps ship ZERO built-in skills
+  await _stageBackendPayload(root, resourcesDir);
+  console.log(`[prepare-backend] staged backend sources → ${join(resourcesDir, 'backend-py')}`);
+  console.log('[prepare-backend] sidecar deps installed (npm ci, production, deterministic lockfile)');
+  console.log(`[prepare-backend] staged bundled skills → ${join(resourcesDir, 'skills')}`);
 }
 
 async function buildWheels(pythonExe) {
   await rm(wheelsOut, { recursive: true, force: true });
   await mkdir(wheelsOut, { recursive: true });
 
-  // Ensure pip exists in the portable build
-  run(pythonExe, ['-m', 'ensurepip', '--upgrade']);
-  run(pythonExe, ['-m', 'pip', 'install', '--upgrade', 'pip', 'wheel', 'build']);
+  const backendSource = resolve(root, 'backend-py');
+  const buildTmp = await mkdtemp(join(tmpdir(), 'august-backend-wheels-'));
+  const isolatedBackend = join(buildTmp, 'backend-py');
+  const requirementsPath = join(buildTmp, 'requirements.txt');
+  const buildToolsRequirementsPath = join(buildTmp, 'build-tools-requirements.txt');
+  const buildVenv = join(buildTmp, 'build-venv');
+  const buildPython = process.platform === 'win32'
+    ? join(buildVenv, 'Scripts/python.exe')
+    : join(buildVenv, 'bin/python');
 
-  // Build wheels for backend-py + runtime deps (skip playwright browsers)
-  run(
-    pythonExe,
-    [
-      '-m',
-      'pip',
-      'wheel',
-      '--wheel-dir',
-      wheelsOut,
-      resolve(root, 'backend-py'),
-    ],
-    {
+  try {
+    // Copy the project before invoking setuptools so build metadata cannot
+    // mutate the developer checkout (egg-info, build/, or dist/).
+    await cp(backendSource, isolatedBackend, {
+      recursive: true,
+      filter: (path) => {
+        const name = path.split(/[\\/]/).at(-1);
+        return !['build', 'dist', 'august_proxy.egg-info', '.venv', '__pycache__', '.mypy_cache', '.ruff_cache', '.pytest_cache'].includes(name);
+      },
+    });
+
+    // Export the locked runtime graph, including hashes and platform markers.
+    run('uv', [
+      'export',
+      '--frozen',
+      '--no-dev',
+      '--no-emit-project',
+      '--format',
+      'requirements-txt',
+      '--output-file',
+      requirementsPath,
+    ], { cwd: backendSource });
+
+    // Build only wheels from the locked graph. --only-binary fails closed if a
+    // source build would introduce an unverified build dependency.
+    run(pythonExe, [
+      '-m', 'pip', 'wheel',
+      '--wheel-dir', wheelsOut,
+      '--require-hashes',
+      '--only-binary=:all:',
+      '--requirement', requirementsPath,
+      '--disable-pip-version-check',
+    ], {
       env: {
         PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
         PIP_DISABLE_PIP_VERSION_CHECK: '1',
       },
-    },
-  );
-  console.log(`[prepare-backend] wheels → ${wheelsOut}`);
+    });
+
+    // Build the August project wheel in an isolated, pinned build environment.
+    // The project is intentionally built separately because --no-emit-project
+    // keeps it out of the runtime requirements export.
+    run(pythonExe, ['-m', 'venv', buildVenv]);
+    await writeFile(buildToolsRequirementsPath, `${BUILD_TOOLS_REQUIREMENTS}\n`);
+    run(buildPython, [
+      '-m', 'pip', 'install',
+      '--require-hashes',
+      '--only-binary=:all:',
+      '--requirement', buildToolsRequirementsPath,
+      '--disable-pip-version-check',
+    ]);
+    run(buildPython, [
+      '-m', 'pip', 'wheel',
+      '--no-deps',
+      '--no-build-isolation',
+      '--wheel-dir', wheelsOut,
+      isolatedBackend,
+    ]);
+
+    const wheelNames = await readdir(wheelsOut);
+    if (!wheelNames.some((name) => name.startsWith('august_proxy-') && name.endsWith('.whl'))) {
+      throw new Error('backend project wheel was not produced');
+    }
+    console.log(`[prepare-backend] wheels → ${wheelsOut}`);
+  } finally {
+    await rm(buildTmp, { recursive: true, force: true });
+  }
 }
 
 async function writeManifest(pythonExe) {
@@ -261,6 +364,10 @@ async function writeManifest(pythonExe) {
   // honestly reports "unknown" rather than a wrong SHA.
   const sourceSha = runCapture('git', ['rev-parse', '--short', 'HEAD'], root).trim();
   const sourceBranch = runCapture('git', ['rev-parse', '--abbrev-ref', 'HEAD'], root).trim();
+  const sourceDirty = runCapture('git', ['status', '--porcelain'], root).trim() !== '';
+  if (release && (!sourceSha || !sourceBranch)) {
+    throw new Error('release runtime manifest requires Git source provenance');
+  }
   // The app version travels with the staged backend so an installed build
   // reports its real version instead of the 0.1.0 fallback.
   let appVersion = '';
@@ -279,14 +386,19 @@ async function writeManifest(pythonExe) {
     appVersion,
     sourceSha,
     sourceBranch,
+    sourceDirty,
   };
   await writeFile(join(resourcesDir, 'backend-runtime.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   if (release) {
-    // Real runtime stamp the Rust side can hash for rebuild detection.
+    // Real runtime stamp the Rust side can hash for rebuild detection. The
+    // payload hash covers every staged runtime root (backend, skills, wheels,
+    // portable Python, and canonical manifest data), including the npm
+    // ci-installed sidecar dependencies. Local caches, tests, and mtimes cannot
+    // move it, while any shipped-bit change does.
     const hash = createHash('sha256');
     hash.update(PYTHON_VERSION);
     hash.update(PYTHON_BUILD);
-    hash.update(await hashStagedBackendSources());
+    hash.update(await _hashStagedBackendPayload(resourcesDir));
     try {
       const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
       hash.update(String(pkg.version || ''));

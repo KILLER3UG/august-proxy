@@ -966,7 +966,10 @@ end rtl;
         vhd, name='andgolden', top='andgate',
         pins={'A': 'PIN_23', 'B': 'PIN_25', 'Y': 'PIN_99'},
         workspace=str(tmp_path)))
-    assert r.get('ok') is True, r.get('logTail', r)
+    log_tail = r.get('logTail', '')
+    if not r.get('ok') and 'Specified license file does not exist.' in log_tail:
+        pytest.skip('Quartus is installed but no usable license is available')
+    assert r.get('ok') is True, log_tail or r
     fit = r['fit']
     assert fit['status'].startswith('Successful')
     assert fit['logicElements'] == 1

@@ -117,7 +117,8 @@ def isolatedData(tmp_path, monkeypatch):
 def _reset_module_singletons():
     """Reset in-memory module singletons between tests so cross-file
     ordering cannot leak state (prompt cache, MCP servers, service-connections
-    config cache, prompt segments cache, model cache, tool registry)."""
+    config cache, prompt segments cache, model cache, tool registry, and the
+    RAM workbench-session registry)."""
     try:
         from app.services import tool_registry as _tr
 
@@ -125,6 +126,16 @@ def _reset_module_singletons():
         _generation_snapshot = _tr._generation
     except Exception:
         _registry_snapshot, _generation_snapshot = None, None
+    # `_sessions` is process-global RAM, and get_session() falls back to the
+    # most-recently-touched entry outside a tool dispatch — so any test that
+    # creates a real workbench session otherwise makes a later test resolve the
+    # WRONG session (observed as routeTodos storing on a leaked chat).
+    try:
+        from app.services.workbench import sessions as _sess
+
+        _sessions_snapshot = dict(_sess._sessions)
+    except Exception:
+        _sessions_snapshot = None
     yield
     try:
         from app.services.tools import mcp_client
@@ -155,6 +166,14 @@ def _reset_module_singletons():
         _wb._git_probe_cache.clear()
     except Exception:
         pass
+    if _sessions_snapshot is not None:
+        try:
+            from app.services.workbench import sessions as _sess2
+
+            _sess2._sessions.clear()
+            _sess2._sessions.update(_sessions_snapshot)
+        except Exception:
+            pass
 
 
 @pytest.fixture()

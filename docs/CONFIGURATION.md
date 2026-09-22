@@ -80,6 +80,61 @@ Managed by `app.services.alias_service` and exposed at
 `GET/PUT /api/config/model-aliases` and `POST /api/august/aliases/manage`.
 Changes go to the config audit log.
 
+### `modelParams.families`
+
+Per-model wire-capability families: which reasoning parameters a model id
+accepts, and what effort it should use by default. Replaces two hard-coded
+substring heuristics with data, so supporting a new gateway family is a config
+edit rather than a code change.
+
+**Settings → Model Families** (Agent Capabilities, Advanced) edits this section
+for you: it shows the built-in table, and *Override* copies a built-in row — with
+its tokens — into your list so narrowing it can't accidentally drop the models
+the built-in matched. Saving there writes this file section through
+`PUT /api/config/model-params`, which validates every entry and rejects the
+whole write if one is malformed (a partially saved table would leave a model
+silently sending no reasoning parameter). The change applies on the next
+request — no restart.
+
+```json
+{
+  "modelParams": {
+    "families": [
+      {
+        "id": "acme-reasoner",
+        "tokens": ["acme-r1", "acme-thinking"],
+        "reasoningEffort": true,
+        "extendedThinking": false,
+        "excludes": ["acme-r1-lite"],
+        "defaultEffort": "high"
+      }
+    ]
+  }
+}
+```
+
+| Field | Values | Meaning |
+|-------|--------|---------|
+| `id` | string | Family name; also the override key — a config family with a built-in's `id` replaces it |
+| `tokens` | string[] | Matched as substrings of the lowercased model id |
+| `reasoningEffort` | `bool` | May receive `reasoning_effort` (OpenAI-compatible / responses) |
+| `extendedThinking` | `bool` | May receive Anthropic `thinking.budget_tokens` |
+| `excludes` | string[] | Ids that reject the feature despite a `tokens` match |
+| `defaultEffort` | `low` \| `medium` \| `high` \| `max` | Effort when neither the request nor the session sets one |
+| `maxEffort` | same | Ceiling for this family |
+
+Precedence: the per-model toggle in Model settings → a config family → a
+built-in family → no reasoning parameter at all. Malformed entries are skipped
+individually, and an unreadable config file falls back to built-ins, so a typo
+cannot break chat. No built-in family sets `defaultEffort`, so adopting the
+table changes no existing request; only entries you add do.
+
+Owned by `app.providers.model_params`; consumed by
+`app.services.workbench.effort` and `app.services.workbench.providers`.
+Restart the backend after editing (or call `model_params.invalidate()`);
+parity against the retired heuristics is pinned by
+`backend-py/tests/test_model_params_parity.py`.
+
 ### `subAgentFallback`
 
 Automatic provider/model fallback when a sub-agent’s primary model is unavailable.

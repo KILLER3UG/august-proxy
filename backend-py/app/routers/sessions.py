@@ -26,6 +26,12 @@ class MessageCreate(CamelModel):
     content: str
 
 
+class SessionPatch(CamelModel):
+    """Partial session update. Absent fields are unchanged, not cleared."""
+
+    is_archived: bool | None = None
+
+
 @router.get('/search')
 async def search_sessions(q: str, limit: int = 20):
     """Full-text search across conversation messages (C8).
@@ -129,6 +135,21 @@ async def get_session(sessionId: str):
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
     return session
+
+
+@router.patch('/{sessionId}')
+async def patch_session(sessionId: str, body: SessionPatch):
+    """Update a session's durable flags.
+
+    ``isArchived`` is the only one today, and it is written through the single
+    store authority so the legacy action route and this one cannot diverge.
+    """
+    if body.is_archived is None:
+        raise HTTPException(400, detail='No supported fields provided')
+    updated = memory_store.set_session_archived(sessionId, bool(body.is_archived))
+    if not updated:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return updated
 
 
 @router.delete('/{sessionId}')

@@ -42,6 +42,46 @@ async def test_create_provider():
         assert data['baseUrl'] == 'https://test.api.com/v1'
 
 
+async def test_api_key_is_never_serialized_back_to_the_client(isolatedData):
+    """A stored key must not be readable over HTTP in any response shape.
+
+    `/api/*` is served on 127.0.0.1 with an origin guard
+    (app/lib/local_api_guard.py); the guard protects against a remote page, not
+    against anything else running as this user, so the secret stays server-side
+    and only `apiKeySet` / `apiKeyMasked` cross the wire.
+    """
+    secret = 'sk-super-secret-abcdef4321'
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url='http://test') as client:
+        created = await client.post(
+            '/api/providers',
+            json={
+                'name': 'Masked Provider',
+                'baseUrl': 'https://masked.api/v1',
+                'apiFormat': 'openaiChat',
+                'apiKey': secret,
+                'enabled': True,
+            },
+        )
+        assert created.status_code == 200
+        assert created.json().get('apiKey') is None
+        assert created.json()['apiKeySet'] is True
+        assert secret not in created.text
+
+        listed = await client.get('/api/providers')
+        assert listed.status_code == 200
+        assert secret not in listed.text
+        assert all('apiKey' not in item for item in listed.json())
+
+        provider_id = created.json()['id']
+        fetched = await client.get(f'/api/providers/{provider_id}')
+        assert fetched.status_code == 200
+        assert fetched.json().get('apiKey') is None
+        assert secret not in fetched.text
+        # The display hint exists so the UI can show *which* key is stored.
+        assert fetched.json()['apiKeyMasked'].endswith(secret[-4:])
+
+
 async def test_active_provider_returns_empty_when_none_configured(isolatedData):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as client:

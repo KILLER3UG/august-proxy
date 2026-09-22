@@ -61,6 +61,9 @@ _PROMPT_READ = frozenset({
     # engine spawn, no writes (protocol decode happens in-process).
     'vcd_parse',
     'read_blackboard', 'read_file', 'read_files', 'search_files', 'web_fetch',
+    # Bounded per-file/directory reading package (surface + dependencies).
+    # Read-only: scans workspace source, writes nothing, spawns nothing.
+    'module_context',
     'web_fetch_many', 'web_search',
     # Component datasheet/parts lookup — network read, no workspace mutation.
     'search_component',
@@ -141,6 +144,8 @@ _PROMPT_AGENT = frozenset({
             'create_routine', 'list_routines',
             # Bot Mode Phase C: the single agent-to-agent DM send path.
             'message_agent',
+            # Durable agent board: shared work items across agents, jobs and windows.
+            'board',
 })
 
 _PROMPT_SKILL = frozenset({'list_skills', 'load_skill', 'load_skills'})

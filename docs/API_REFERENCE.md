@@ -208,6 +208,8 @@ All paths below are relative to `/api/workbench`.
 | `GET/PUT /subagent-fallback` · `POST …/test` | Sub-agent fallback |
 | `GET/PUT /background-review` | Background review LLM |
 | `GET/PUT /model-fleet` | Cognitive model fleet |
+| `GET/PUT /model-params` | Per-model wire capability families (`modelParams.families`; the PUT validates every entry) |
+| `GET /model-params/resolve?modelId=` | Which family answers for a model id and what it permits on the wire |
 | `GET/PUT /cognitive` | Cognitive config tree |
 | `GET/PUT /session-export` | JSON session export toggle / status |
 | `GET/PUT /live` | Live / speech config |
@@ -297,8 +299,19 @@ Snapshot, alias CRUD, settings put — operator convenience surface.
 
 ### `/api/sessions`
 
-Separate session store API (list/create/get/delete/messages) used by some
+Separate session store API (list/create/get/patch/delete/messages) used by some
 desktop paths alongside workbench sessions.
+
+| Method & path | Purpose |
+|---------------|---------|
+| `GET /api/sessions` | List stored sessions (camelCase rows, incl. `isArchived`) |
+| `POST /api/sessions` | Create an empty session row |
+| `GET /api/sessions/{id}` | One session |
+| `PATCH /api/sessions/{id}` | `{ isArchived: bool }` — archive / restore; absent fields stay untouched, unknown id → 404 |
+| `DELETE /api/sessions/{id}` | Cascade-delete the session, its messages and timeline |
+| `GET /api/sessions/{id}/messages` | Transcript (`limit` / `offset` paging) |
+| `POST /api/sessions/{id}/messages` | Append `{ role, content }` |
+| `GET /api/sessions/search?q=` | FTS5 search across message content |
 
 ---
 
@@ -393,7 +406,8 @@ Enablement: `config.json → gateway` + platform bot tokens.
 
 | Prefix | Purpose |
 |--------|---------|
-| `/api/automations` | List/create/run/delete automation jobs |
+| `/api/automations` | List/create/run/delete automation jobs — a POST carrying an existing `id` updates only the fields in the body |
+| `/api/kanban` | The durable agent board (shared by the UI and the `board` tool): list, add, patch/move, delete, clear-done, import |
 | `/api/exam` | Generate exam, questions, answer, help |
 | `/api/calendar/internal` | Internal calendar helper |
 

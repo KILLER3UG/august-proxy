@@ -126,6 +126,23 @@ def test_skill_delete_applier_refuses_traversal_and_deletes_normally(hsi, tmp_pa
     assert victim.exists()
 
 
+def test_skill_delete_refuses_a_usage_only_husk(hsi, tmp_path, monkeypatch):
+    """Loading a bundled skill drops a usage sidecar into the agent root under
+    the skill's name. That folder is metadata, not a skill — rmtree on it would
+    report a successful delete of a skill that is still installed."""
+    agent_root = tmp_path / 'agent-skills'
+    husk = agent_root / 'bundled-one'
+    husk.mkdir(parents=True)
+    (husk / '.usage.json').write_text('{"count": 3}', 'utf-8')
+    monkeypatch.setattr('app.services.skill_service._agentSkillsDir', lambda: agent_root)
+
+    res = hsi._apply_approved({'kind': 'skill_delete', 'payload': {'name': 'bundled-one'}})
+
+    assert res['ok'] is False
+    assert 'not found' in str(res.get('error'))
+    assert husk.exists(), 'the sidecar was destroyed for a skill that was never deleted'
+
+
 def test_brain_config_requires_payload(hsi):
     row = hsi.save_proposal(
         problem='tweak loops', evidence='e', proposal='set 20 rounds',

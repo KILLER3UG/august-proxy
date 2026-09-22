@@ -246,6 +246,31 @@ class TestAnthropicAdapter:
         assert openaiMsgs[1]['role'] == 'assistant'
         assert len(openaiMsgs[1].get('tool_calls', [])) == 1
 
+    @pytest.mark.parametrize('text_first', [False, True])
+    def testMixedResultsPrecedeUserText(self, text_first):
+        results = [
+            {'type': 'tool_result', 'tool_use_id': 'tu_1', 'content': 'first'},
+            {'type': 'tool_result', 'tool_use_id': 'tu_2', 'content': [{'type': 'text', 'text': 'second'}]},
+        ]
+        text = {'type': 'text', 'text': 'continue'}
+        content = [text, *results] if text_first else [results[0], text, results[1]]
+        messages = [
+            {'role': 'assistant', 'content': [
+                {'type': 'tool_use', 'id': 'tu_1', 'name': 'read_file', 'input': {}},
+                {'type': 'tool_use', 'id': 'tu_2', 'name': 'read_file', 'input': {}},
+            ]},
+            {'role': 'user', 'content': content},
+        ]
+        out = translateMessages(messages)
+        assert [msg['role'] for msg in out] == ['assistant', 'tool', 'tool', 'user']
+        assert out[1:3] == [
+            {'role': 'tool', 'tool_call_id': 'tu_1', 'content': 'first'},
+            {'role': 'tool', 'tool_call_id': 'tu_2', 'content': 'second'},
+        ]
+        assert out[3]['content'] == [text]
+        assert [call['id'] for call in out[0]['tool_calls']] == ['tu_1', 'tu_2']
+        assert buildOpenaiRequest({'messages': messages}, 'test')['messages'] == out
+
     def testTranslatePreservesToolCallsWithStringContent(self):
         """Regression: OpenAI-path assistant turns are stored as
         {content: <str>, tool_calls: [...]}. translate_messages must keep

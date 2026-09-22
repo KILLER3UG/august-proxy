@@ -17,6 +17,8 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -25,49 +27,109 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Verify clean release provenance
+        shell: pwsh
+        run: |
+          git diff --quiet; if ($LASTEXITCODE -ne 0) { throw 'working tree has unstaged changes' }
+          git diff --cached --quiet; if ($LASTEXITCODE -ne 0) { throw 'working tree has staged changes' }
+          $untracked = git ls-files --others --exclude-standard
+          if ($untracked) { throw "working tree has untracked files:`n$untracked" }
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
 
+      - name: Setup uv and Python 3.12
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081
+        with:
+          python-version: '3.12'
+
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
         with:
           targets: x86_64-pc-windows-msvc
+          components: rustfmt
 
       - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
         with:
           workspaces: frontend/desktop/src-tauri -> target
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Download Node sidecars
-        run: npm run download:node-binaries
-
-      - name: Prepare portable Python + backend resources
-        # --release: write the real runtime stamp (default is dev-placeholder)
-        run: node scripts/prepare-desktop-backend.mjs --release
-
-      - name: Set release version
+      - name: Resolve and validate release version
+        id: version
+        env:
+          RELEASE_VERSION_INPUT: ${{ inputs.version }}
         shell: pwsh
         run: |
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $version = "${{ inputs.version }}" -replace '^v', ''
+            $candidate = $env:RELEASE_VERSION_INPUT
           } else {
-            $version = $env:GITHUB_REF_NAME -replace '^v', ''
+            $candidate = $env:GITHUB_REF_NAME
           }
+          $version = $candidate -replace '^v', ''
+          if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$') {
+            throw "Invalid release version: $candidate"
+          }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Releasing version $version"
 
+      - name: Check version, documentation, and naming gates
+        run: |
+          npm run check:version
+          npm run check:docs
+          npm run check:naming
+
+      - name: Verify release version against package sources
+        shell: pwsh
+        run: |
+          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:RELEASE_VERSION -ne $packageVersion) {
+            throw "Release version $env:RELEASE_VERSION does not match package.json version $packageVersion"
+          }
+          Write-Host "Verified release version $packageVersion"
+
+      - name: Frontend typecheck and tests
+        run: |
+          npm run typecheck -w frontend/desktop
+          npm run test -w frontend/desktop
+
+      - name: Download Node sidecars
+        run: npm run download:node-binaries
+
+      - name: Prepare portable Python and backend resources
+        run: node scripts/prepare-desktop-backend.mjs --release
+
+      - name: Backend lint, typecheck, and tests
+        working-directory: backend-py
+        run: |
+          uv lock --check --python 3.12
+          uv run ruff check .
+          uv run mypy app/
+          uv run pytest -q
+
+      - name: Payload integrity tests
+        run: node --test scripts/desktop-backend-payload.test.mjs
+
+      - name: Rust format and check
+        run: |
+          cargo fmt --manifest-path frontend/desktop/src-tauri/Cargo.toml --check
+          cargo check --manifest-path frontend/desktop/src-tauri/Cargo.toml --locked
+
       - name: Build and publish release assets
-        # Tag pushes publish immediately (in-app updater must see them); only
-        # workflow_dispatch keeps the draft flow (published by the job below).
-        run: node scripts/release-desktop.mjs --version=${{ env.RELEASE_VERSION }} --tauri --publish ${{ github.event_name == 'workflow_dispatch' && '--draft' || '' }}
+        if: github.event_name == 'push'
+        run: node scripts/release-desktop.mjs --tauri --publish
+
+      - name: Build draft release assets
+        if: github.event_name == 'workflow_dispatch'
+        run: node scripts/release-desktop.mjs --tauri --publish --draft
 
   publish:
     name: Publish release (flip draft → live)
@@ -80,4 +142,4 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Publish draft release
-        run: gh release edit v${{ inputs.version }} --draft=false --latest --repo ${{ github.repository }}
+        run: gh release edit v${{ needs.build.outputs.version }} --draft=false --latest --repo ${{ github.repository }}

@@ -32,6 +32,14 @@ PLANNER_ALLOWED_TOOLS = frozenset(
         'read_blackboard',
         'write_blackboard',
         'brain_query',
+        # Planning is where durable decisions get made, and an orchestrator runs
+        # the longest turns in the app. Read-only memory meant every "we chose X
+        # because Y" evaporated with the session, so the mode that most needs to
+        # remember could not. Writes still go through the same door, scope rules
+        # and sensitive-topic gate as any other mode — this only stops the tool
+        # surface from hiding the one tool that persists. `forget` stays out:
+        # destroying stored context is a human call.
+        'remember',
         'read_file',
         'read_files',
         'list_directory',

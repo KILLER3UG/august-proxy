@@ -27,7 +27,22 @@ from app.services.sandbox.policy import (
 )
 
 # Invocation wrappers that hide the real command from `_first_word`.
-_INVOCATION_WRAPPERS = frozenset({'sudo', 'env', 'command', 'nohup', 'xargs', 'time', 'exec'})
+_INVOCATION_WRAPPERS = frozenset({
+    'sudo', 'env', 'command', 'nohup', 'xargs', 'time', 'exec', 'start', 'runas'
+})
+
+# PowerShell execution cmdlets can run arbitrary nested code or egress. Treat
+# them as wrappers for preflight rather than as ordinary read-only verbs.
+_POWERSHELL_EXECUTION_COMMANDS = frozenset({
+    'invoke-expression', 'iex', 'invoke-command', 'icm', 'start-process', 'saps'
+})
+
+# PowerShell network cmdlets are not named after the Unix tools above, but
+# they provide the same egress and must be caught when network=False.
+_POWERSHELL_NETWORK_COMMANDS = frozenset({
+    'invoke-webrequest', 'iwr', 'invoke-restmethod', 'irm',
+    'start-bitstransfer', 'net', 'net.exe',
+}) | _POWERSHELL_EXECUTION_COMMANDS
 
 # Match redirects WITHOUT requiring a leading space (the old
 # `(?:^|[\s;|&])` anchor let `echo x>/etc/passwd` through) and cover `2>`/`&>`/
@@ -68,6 +83,26 @@ _VIEWER_REWRITE_PREFIXES = (
     'cmd /c dir /b',
 )
 
+# PowerShell accepts unambiguous parameter prefixes. These command-bearing
+# aliases are recognized consistently by payload extraction and read-only
+# classification; encoded payloads remain opaque and fail closed.
+_POWERSHELL_COMMAND_FLAGS = frozenset(
+    '-command'[:size] for size in range(2, len('-command') + 1)
+)
+_POWERSHELL_ENCODED_FLAGS = frozenset(
+    '-encodedcommand'[:size] for size in range(2, len('-encodedcommand') + 1)
+) | {'-ec'}
+
+
+def _powershell_payload_flag(token: str) -> str | None:
+    flag = token.lower()
+    if any(flag == prefix or flag.startswith(prefix + '=') for prefix in _POWERSHELL_COMMAND_FLAGS):
+        return 'command'
+    if any(flag == prefix or flag.startswith(prefix + '=') for prefix in _POWERSHELL_ENCODED_FLAGS):
+        return 'encoded'
+    return None
+
+
 # -c / -e / -Command / -EncodedCommand argument payloads hide path tokens
 # inside the payload string (`python -c "open(r'C:\\evil.txt','w')"`) — the
 # plain token scan cannot see them (audit finding).
@@ -76,7 +111,7 @@ _INTERPRETER_FLAG_PAYLOAD_RE = re.compile(
 )
 
 
-def _shell_tokens_for_scan(command: str) -> list[str]:
+def _shell_tokens_for_scan(command: str, *, platform: str | None = None) -> list[str]:
     """Tokens for the outside-workspace scan.
 
     Windows shlex with ``posix=False`` does NOT group quoted strings — a
@@ -85,13 +120,254 @@ def _shell_tokens_for_scan(command: str) -> list[str]:
     ``C:\\Program`` + ``Files\\x"``). Quoted spans are therefore captured
     whole and checked alongside the shlex tokens, closing the escape.
     """
+    posix = (platform or os.name) not in ('nt', 'windows', 'win32', 'cmd')
     try:
-        tokens = shlex.split(command, posix=os.name != 'nt')
+        tokens = shlex.split(command, posix=posix)
     except ValueError:
         tokens = command.split()
     for quoted in re.findall(r'"([^"]*)"|\'([^\']*)\'', command):
         tokens.append(quoted[0] or quoted[1])
     return tokens
+
+
+def _is_nt_platform(platform: str | None) -> bool:
+    return (platform or os.name) in ('nt', 'windows', 'win32', 'cmd')
+
+
+def _shell_tokens(command: str, *, platform: str | None = None) -> list[str]:
+    """Tokenize a segment using the shell that will execute it."""
+    posix = (platform or os.name) not in ('nt', 'windows', 'win32', 'cmd')
+    try:
+        return shlex.split(command, posix=posix)
+    except ValueError:
+        return command.split()
+
+
+def _is_env_assignment(token: str) -> bool:
+    if '=' not in token or token.startswith('-'):
+        return False
+    key = token.partition('=')[0]
+    return bool(key and (key.isidentifier() or key.replace('_', '').isalnum()))
+
+
+def _strip_outer_quotes(value: str) -> str:
+    value = (value or '').strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+        return value[1:-1]
+    return value
+
+
+# Wrapper options that consume a separate argument. Keeping this table narrow
+# prevents an option such as ``sudo -u`` from being mistaken for the command.
+_WRAPPER_VALUE_OPTIONS: dict[str, frozenset[str]] = {
+    'sudo': frozenset({'-u', '--user', '-g', '--group', '-h', '--host', '-p', '--prompt'}),
+    'env': frozenset({'-u', '--unset'}),
+    'xargs': frozenset({
+        '-n', '--max-args', '-s', '--max-chars', '-P', '--max-procs',
+        '-I', '--replace', '-E', '--eof', '-d', '--delimiter', '-L', '--max-lines',
+    }),
+    'exec': frozenset({'-a', '--argv0'}),
+    'runas': frozenset({'-u', '--user', '-p', '--password'}),
+}
+
+
+def _skip_wrapper_arguments(
+    tokens: list[str], idx: int, wrapper: str, *, platform: str | None = None
+) -> int:
+    """Move past wrapper options and return the index of the real command."""
+    idx += 1
+    nt = _is_nt_platform(platform)
+    skipped_title = False
+    while idx < len(tokens):
+        argument = tokens[idx]
+        if argument == '--':
+            return idx + 1
+        if _is_env_assignment(argument):
+            idx += 1
+            continue
+        is_option = argument.startswith('-') or (nt and argument.startswith('/'))
+        if is_option:
+            idx += 1
+            if argument in _WRAPPER_VALUE_OPTIONS.get(wrapper, frozenset()) and idx < len(tokens):
+                # Embedded values (``--user=name``) do not consume another
+                # token. Separate values are skipped unless they look like an
+                # option for the wrapped command.
+                if not tokens[idx].startswith('-') and not (nt and tokens[idx].startswith('/')):
+                    idx += 1
+            continue
+        if wrapper == 'start' and nt and not skipped_title:
+            # ``start`` consumes a window title before the executable. An
+            # empty quoted title is represented as an empty token by shlex.
+            skipped_title = True
+            idx += 1
+            continue
+        return idx
+    return idx
+
+
+def _shell_payload(
+    tokens: list[str], *, platform: str | None = None
+) -> tuple[str | None, str | None, bool]:
+    """Return a wrapped shell payload, its shell kind, and opaque-flag.
+
+    The return shape is ``(payload, platform, encoded)``. ``encoded`` is true
+    for PowerShell ``-EncodedCommand``, which cannot be inspected safely.
+    """
+    idx = 0
+    while idx < len(tokens):
+        token = tokens[idx]
+        if _is_env_assignment(token):
+            idx += 1
+            continue
+        base = Path(token).name.lower()
+        if base.endswith('.exe'):
+            base = base[:-4]
+        if base in _INVOCATION_WRAPPERS:
+            idx = _skip_wrapper_arguments(tokens, idx, base, platform=platform)
+            continue
+        if base in ('cmd', 'cmd.exe'):
+            for pos in range(idx + 1, len(tokens)):
+                flag = tokens[pos].lower()
+                if flag in ('/c', '/k', '/r'):
+                    payload = ' '.join(tokens[pos + 1 :])
+                    return _strip_outer_quotes(payload), 'nt', False
+            return None, None, False
+        if base in ('bash', 'sh', 'zsh', 'ksh', 'dash'):
+            for pos in range(idx + 1, len(tokens)):
+                flag = tokens[pos].lower()
+                if flag in ('-c', '--command') or (
+                    flag.startswith('-') and flag.endswith('c') and len(flag) > 2
+                ):
+                    payload = ' '.join(tokens[pos + 1 :])
+                    return _strip_outer_quotes(payload), 'posix', False
+            return None, None, False
+        if base in ('powershell', 'pwsh'):
+            for pos in range(idx + 1, len(tokens)):
+                flag = tokens[pos].lower()
+                payload_kind = _powershell_payload_flag(flag)
+                if payload_kind == 'encoded':
+                    return None, 'powershell', True
+                if payload_kind == 'command':
+                    payload = ' '.join(tokens[pos + 1 :])
+                    return _strip_outer_quotes(payload), 'powershell', False
+            return None, None, False
+        # A non-wrapper executable ends the search; its own flags are not a
+        # shell payload for preflight purposes.
+        return None, None, False
+    return None, None, False
+
+
+def _substitution_contents(command: str) -> list[str]:
+    """Extract shell/PowerShell command-substitution bodies."""
+    out: list[str] = []
+    idx = 0
+    while idx < len(command):
+        if command.startswith('$(', idx):
+            depth = 1
+            pos = idx + 2
+            while pos < len(command) and depth:
+                if command.startswith('$(', pos):
+                    depth += 1
+                    pos += 2
+                    continue
+                if command[pos] == ')':
+                    depth -= 1
+                    if depth == 0:
+                        out.append(command[idx + 2 : pos])
+                        idx = pos + 1
+                        break
+                pos += 1
+            else:
+                # Unterminated substitution is shell syntax error; treating it
+                # as opaque keeps the conservative preflight fail-closed.
+                out.append(command[idx + 2 :])
+                break
+            continue
+        if command[idx] == '`':
+            end = command.find('`', idx + 1)
+            if end < 0:
+                out.append(command[idx + 1 :])
+                break
+            out.append(command[idx + 1 : end])
+            idx = end + 1
+            continue
+        if command.startswith('${', idx):
+            end = command.find('}', idx + 2)
+            if end >= 0:
+                body = command[idx + 2 : end]
+                # Ordinary ${VAR} expansion is harmless; command-like bodies
+                # (whitespace or a known verb) are inspected conservatively.
+                if re.search(r'\s', body) or re.match(
+                    r'(?i)(?:curl|wget|cat|type|rm|bash|sh|cmd|powershell|pwsh|python|node)\b',
+                    body,
+                ):
+                    out.append(body)
+                idx = end + 1
+                continue
+        idx += 1
+    return out
+
+
+def _iter_command_fragments(
+    command: str, *, platform: str | None = None, _depth: int = 0
+):
+    """Yield outer and nested command text that preflight must inspect."""
+    yield command, platform, False
+    if _depth >= 4:
+        return
+    for segment in _split_shell_segments(command, platform=platform):
+        tokens = _shell_tokens(segment, platform=platform)
+        payload, payload_platform, encoded = _shell_payload(tokens, platform=platform)
+        if encoded:
+            yield '', payload_platform, True
+            continue
+        if payload:
+            yield payload, payload_platform, False
+            yield from _iter_command_fragments(
+                payload, platform=payload_platform, _depth=_depth + 1
+            )
+        for nested in _substitution_contents(segment):
+            yield nested, platform, False
+            yield from _iter_command_fragments(
+                nested, platform=platform, _depth=_depth + 1
+            )
+
+
+def _has_command_substitution(command: str) -> bool:
+    return bool(_substitution_contents(command))
+
+
+def _network_api_intent(command: str, platform: str | None) -> bool:
+    """Detect network APIs hidden inside interpreter payloads."""
+    first = _first_word(command, platform=platform)
+    if first not in ('python', 'python3', 'py', 'node', 'nodejs', 'bun', 'deno', 'powershell', 'pwsh'):
+        return False
+    text = command.lower()
+    return bool(
+        re.search(
+            r'(?i)(?:\b(?:requests|urllib|http\.client|aiohttp|httpx|socket|websocket|axios|fetch|'
+            r'https?\.get|https?\.request|net\.connect|tls\.connect|dgram|xmlhttprequest|'
+            r'invoke-webrequest|iwr|invoke-restmethod|irm|start-bitstransfer)\b|'
+            r'\brequire\s*\(\s*[\'\"]https?[\'\"])',
+            text,
+        )
+    )
+
+
+def _network_preflight(command: str, policy: SandboxPolicy, *, platform: str | None = None) -> str | None:
+    if policy.network:
+        return None
+    prefixes = NETWORK_COMMAND_PREFIXES | _POWERSHELL_NETWORK_COMMANDS
+    for fragment, fragment_platform, encoded in _iter_command_fragments(command, platform=platform):
+        if encoded:
+            return 'network disabled in sandbox (blocked: encoded command payload)'
+        for segment in _split_shell_segments(fragment, platform=fragment_platform):
+            seg_first = _first_word(segment, platform=fragment_platform)
+            if seg_first in prefixes:
+                return f'network disabled in sandbox (blocked: {seg_first})'
+            if _network_api_intent(segment, fragment_platform):
+                return f'network disabled in sandbox (blocked: {seg_first or "interpreter payload"})'
+    return None
 
 
 def _ps_literal(path: str) -> str:
@@ -182,32 +458,53 @@ def rewrite_command_for_platform(command: str) -> str:
     return command
 
 
-def _first_word(command: str) -> str:
+def _first_word(command: str, *, platform: str | None = None) -> str:
     text = command.strip()
     if not text:
         return ''
-    # Handle env prefixes: FOO=1 bar → bar
-    try:
-        parts = shlex.split(text, posix=os.name != 'nt')
-    except ValueError:
-        parts = text.split()
-    for part in parts:
-        if '=' in part and not part.startswith('-') and Path(part).suffix == '':
-            # likely KEY=value
-            key, _, _ = part.partition('=')
-            if key.isidentifier() or (key and key.replace('_', '').isalnum()):
-                continue
-        base = Path(part).name.lower()
+    parts = _shell_tokens(text, platform=platform)
+    idx = 0
+    while idx < len(parts):
+        part = parts[idx]
+        if _is_env_assignment(part):
+            idx += 1
+            continue
+        base = Path(part).name.lower().rstrip(';,')
         if base.endswith('.exe'):
             base = base[:-4]
+        # Strip grouping tokens used by PowerShell script blocks and cmd
+        # parentheses so the real verb is visible to the policy checks.
+        while base in ('{', '}', '(', ')', '&'):
+            idx += 1
+            if idx >= len(parts):
+                return ''
+            part = parts[idx]
+            base = Path(part).name.lower()
+            if base.endswith('.exe'):
+                base = base[:-4]
         # Skip invocation wrappers so `env rm x` / `sudo curl …` /
         # `command rm …` resolve to the REAL command. The hardline layer already
         # stripped these; the soft layer keyed on the literal wrapper word, so
         # read-only "no writes" and network=False were bypassed by one word.
         if base in _INVOCATION_WRAPPERS:
+            idx = _skip_wrapper_arguments(parts, idx, base, platform=platform)
             continue
+        if base in ('cmd', 'cmd.exe'):
+            payload, payload_platform, _ = _shell_payload(parts[idx:], platform=platform)
+            if payload:
+                nested = _first_word(payload, platform=payload_platform)
+                if nested:
+                    return nested
+            return base
+        if base in ('bash', 'sh', 'zsh', 'ksh', 'dash', 'powershell', 'pwsh'):
+            payload, payload_platform, _ = _shell_payload(parts[idx:], platform=platform)
+            if payload:
+                nested = _first_word(payload, platform=payload_platform)
+                if nested:
+                    return nested
+            return base
         return base
-    return parts[0].lower() if parts else ''
+    return ''
 
 
 # Cmdlets that only read: a powershell -Command payload whose every pipeline
@@ -216,11 +513,24 @@ def _first_word(command: str) -> str:
 _PS_READ_ONLY_CMDLETS = frozenset({
     'get-childitem', 'gci', 'ls', 'dir', 'get-content', 'gc', 'type',
     'select-string', 'sls', 'test-path', 'tp', 'get-item', 'gi',
-    'get-itemproperty', 'gip', 'get-member', 'gm', 'where-object', 'where',
-    'select-object', 'select', 'sort-object', 'sort', 'group-object', 'group',
-    'measure-object', 'measure', 'format-table', 'ft', 'format-list', 'fl',
-    'resolve-path', 'rp',
+    'get-itemproperty', 'gip', 'get-member', 'gm', 'resolve-path',
 })
+
+_PS_MUTATING_CMDLET_RE = re.compile(
+    r'\b(?:set-content|add-content|remove-item|rm|del|erase|new-item|ni|mkdir|md|'
+    r'copy-item|cp|move-item|mv|rename-item|rni|ren|set-item|clear-content|out-file|'
+    r'tee-object|invoke-expression|iex|invoke-command|icm|start-process|saps|'
+    r'invoke-webrequest|iwr|invoke-restmethod|irm|save-[a-z-]+|export-[a-z-]+)\b',
+    re.IGNORECASE,
+)
+
+
+def _powershell_payload(command: str) -> tuple[str | None, bool]:
+    """Return a PowerShell -Command payload and whether it is encoded."""
+    tokens = _shell_tokens(command, platform='powershell')
+    payload, _, encoded = _shell_payload(tokens, platform='powershell')
+    return payload, encoded
+
 
 # Shell commands whose path ARGUMENTS are provably reads (they cannot write a
 # file given only a path operand — `sort -o`, `find -delete`, interpreters and
@@ -247,14 +557,11 @@ _TEXT_EMITTER_HEADS = frozenset({'echo', 'printf', 'title'})
 _NOT_PURE_TEXT_RE = re.compile(r'\$\(|`|\$\{|[<>]')
 
 
-def _split_shell_segments(command: str) -> list[str]:
-    """Split a command line on ``;`` ``&`` ``&&`` ``|`` ``||`` outside quotes.
-
-    Quote-aware on purpose: a naive ``re.split`` cuts paths and payloads that
-    contain the separator (`python -c "a;b"`, `dir "x & y"`), which would
-    scatter tokens across fake segments and re-introduce the mis-detection
-    this function exists to remove.
-    """
+def _split_shell_segments(command: str, *, platform: str | None = None) -> list[str]:
+    """Split separators using the native shell quoting, preserving source text."""
+    kind = (platform or os.name).lower()
+    posix = kind not in ('nt', 'windows', 'win32', 'cmd')
+    powershell = kind == 'powershell'
     segments: list[str] = []
     buf: list[str] = []
     quote = ''
@@ -262,27 +569,32 @@ def _split_shell_segments(command: str) -> list[str]:
     text = command or ''
     while idx < len(text):
         ch = text[idx]
-        escaped = idx > 0 and text[idx - 1] == '\\'
-        if quote:
-            buf.append(ch)
-            if ch == quote and not escaped:
-                quote = ''
-            idx += 1
-            continue
-        if ch in ('"', "'") and not escaped:
-            quote = ch
-            buf.append(ch)
-            idx += 1
-            continue
-        if text[idx : idx + 2] in ('&&', '||'):
-            segments.append(''.join(buf))
-            buf = []
+        nxt = text[idx + 1 : idx + 2]
+        if powershell and ch == '`' and nxt:
+            # PowerShell's backtick escapes the next character even inside a
+            # quoted string. Keep both characters so later token scans see the
+            # literal payload rather than treating it as syntax.
+            buf.extend((ch, nxt))
             idx += 2
             continue
-        if ch in ';&|':
+        # Backslashes are literal in POSIX single quotes and everywhere in cmd.
+        escape = (
+            posix and ch == '\\'
+            and (not quote or (quote == '"' and nxt in ('"', '\\', '$', '`', '\n')))
+        ) or (not posix and not powershell and not quote and ch == '^')
+        if escape and nxt:
+            buf.extend((ch, nxt))
+            idx += 2
+            continue
+        if quote:
+            if ch == quote:
+                quote = ''
+        elif ch == '"' or ((posix or powershell) and ch == "'"):
+            quote = ch
+        elif ch in (';&|\n' if posix or powershell else '&|'):
             segments.append(''.join(buf))
             buf = []
-            idx += 1
+            idx += 2 if text[idx : idx + 2] in ('&&', '||') else 1
             continue
         buf.append(ch)
         idx += 1
@@ -290,7 +602,9 @@ def _split_shell_segments(command: str) -> list[str]:
     return [seg for seg in segments if seg.strip()]
 
 
-def _scan_path_tokens(command: str, rootStr: str) -> str | None:
+def _scan_path_tokens(
+    command: str, rootStr: str, *, platform: str | None = None
+) -> str | None:
     """Containment scan over path-shaped tokens, scoped per command segment.
 
     Two scoping rules the original whole-command scan lacked (audit finding
@@ -307,12 +621,12 @@ def _scan_path_tokens(command: str, rootStr: str) -> str | None:
     Interpreter payload literals are still scanned by the caller over the
     whole command, so nothing that can actually open a file escapes here.
     """
-    for segment in _split_shell_segments(command):
-        head = _first_word(segment)
+    for segment in _split_shell_segments(command, platform=platform):
+        head = _first_word(segment, platform=platform)
         if head in _TEXT_EMITTER_HEADS and not _NOT_PURE_TEXT_RE.search(segment):
             continue
         allowLogs = head in _READ_ONLY_VIEWER_HEADS
-        for tok in _shell_tokens_for_scan(segment):
+        for tok in _shell_tokens_for_scan(segment, platform=platform):
             if path_looks_outside_workspace(tok, rootStr, allow_app_logs=allowLogs):
                 return (
                     f'path outside workspace blocked: {tok} '
@@ -323,27 +637,42 @@ def _scan_path_tokens(command: str, rootStr: str) -> str | None:
     return None
 
 
-def _is_read_only_powershell(command: str) -> bool:
+def _is_read_only_powershell(
+    command: str, *, platform: str | None = None
+) -> bool:
     """True for a single powershell/pwsh -Command invocation that provably
     cannot write files: every pipeline segment in the payload starts with a
     read-only cmdlet, the payload has no redirect, and nothing is chained
     outside the quoted payload. Such commands are exempt from the
     outside-workspace path scans — reading e.g. %USERPROFILE%\\Pictures is
     the whole point of them (the scans punished exactly that)."""
-    first = _first_word(command)
-    if first not in ('powershell', 'pwsh'):
+    command_tokens = _shell_tokens(command, platform='powershell')
+    first_token = Path(command_tokens[0]).name.lower() if command_tokens else ''
+    if first_token.endswith('.exe'):
+        first_token = first_token[:-4]
+    if first_token not in ('powershell', 'pwsh'):
         return False
-    m = _INTERPRETER_FLAG_PAYLOAD_RE.search(command)
-    if not m:
+    tokens = command_tokens
+    payload: str | None = None
+    for idx, token in enumerate(tokens):
+        payload_kind = _powershell_payload_flag(token)
+        if payload_kind == 'encoded':
+            return False
+        if payload_kind == 'command':
+            payload = ' '.join(tokens[idx + 1 :])
+            break
+    if not payload:
         return False
-    payload = m.group(2)
-    if re.search(r'[><]', payload):
+    payload = _strip_outer_quotes(payload)
+    if re.search(r'[><`$]|\$\(|&&|\|\|', payload):
         return False
-    # Anything chained outside the payload rides along unchecked.
-    remainder = command[:m.start()] + command[m.end():]
-    if re.search(r'[;&|<>`$]', remainder):
-        return False
-    for seg in re.split(r';|\|', payload):
+    # Anything chained outside the -Command payload rides along unchecked.
+    payload_pos = command.find(payload)
+    if payload_pos >= 0:
+        remainder = command[:payload_pos] + command[payload_pos + len(payload) :]
+        if re.search(r'[;&|<>`$]', remainder):
+            return False
+    for seg in _split_shell_segments(payload, platform='powershell'):
         seg = seg.strip()
         if not seg:
             continue
@@ -352,24 +681,38 @@ def _is_read_only_powershell(command: str) -> bool:
         assign = re.match(r'^\$?\w+\s*=\s*(.+)$', seg)
         if assign:
             seg = assign.group(1).strip()
-        head = re.split(r'[\s(]', seg, maxsplit=1)[0].lower().lstrip('$&')
+        head = _first_word(seg, platform='powershell').lstrip('$')
         if head not in _PS_READ_ONLY_CMDLETS:
             return False
     return True
 
 
-def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
+def soft_preflight(
+    command: str, policy: SandboxPolicy, *, platform: str | None = None
+) -> str | None:
     """Return a denial reason, or None if soft policy allows the command."""
     if policy.is_full_access:
         return None
-    first = _first_word(command)
+    first = _first_word(command, platform=platform)
     if policy.is_read_only:
+        if _has_command_substitution(command):
+            return 'read-only sandbox blocks command substitution — it can execute mutating commands'
         if first in READ_ONLY_BLOCKED_PREFIXES:
             return f'read-only sandbox blocks mutating command: {first}'
+        shell_payload = _shell_payload(
+            _shell_tokens(command, platform=platform), platform=platform
+        )
         lowered = command.strip().lower()
-        if first in _INTERPRETER_PREFIXES and not lowered.startswith(_VIEWER_REWRITE_PREFIXES):
+        viewer_payload = bool(
+            shell_payload[1] is not None
+            and lowered.startswith(_VIEWER_REWRITE_PREFIXES)
+        )
+        if (shell_payload[1] is not None and not viewer_payload) or (
+            first in _INTERPRETER_PREFIXES and not viewer_payload
+        ):
+            blocked = shell_payload[1] if shell_payload[1] is not None else first
             return (
-                f'read-only sandbox blocks interpreters ({first}) — they can mutate files '
+                f'read-only sandbox blocks wrapped interpreters ({blocked}) — they can mutate files '
                 'regardless of the command; use the file tools or Full access instead.'
             )
         # Redirects to null sinks discard output — harmless even in read-only
@@ -380,16 +723,23 @@ def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
         ]
         if redirectTargets and not all(is_null_sink(t) for t in redirectTargets):
             return 'read-only sandbox blocks shell redirects / tee'
-    if not policy.network:
-        # Scan EVERY chained segment's first word, not just the
-        # command head — `true && curl …` / `foo; wget …` reached the network
-        # while the UI reported network=False. _first_word strips wrappers.
-        # Quote-aware so text arguments cannot smuggle a denial either
-        # (`echo "a && curl b"` is one segment headed by echo).
-        for segment in _split_shell_segments(command):
-            seg_first = _first_word(segment)
-            if seg_first in NETWORK_COMMAND_PREFIXES:
-                return f'network disabled in sandbox (blocked: {seg_first})'
+    powershell_tokens = _shell_tokens(command, platform='powershell')
+    outer_first = Path(powershell_tokens[0]).name.lower() if powershell_tokens else ''
+    if outer_first.endswith('.exe'):
+        outer_first = outer_first[:-4]
+    if outer_first in ('powershell', 'pwsh'):
+        payload, encoded = _powershell_payload(command)
+        if encoded or (
+            payload
+            and not _is_read_only_powershell(command, platform='powershell')
+            and (_PS_MUTATING_CMDLET_RE.search(payload) or re.search(r'\{[^}]*\}', payload))
+        ):
+            return (
+                'workspace-write sandbox blocks PowerShell payload that cannot be proven read-only'
+            )
+    networkDenial = _network_preflight(command, policy, platform=platform)
+    if networkDenial:
+        return networkDenial
     # Absolute path tokens / redirects outside workspace. Part 27 T2 (B6):
     # when no workspace_root is configured (scheduler/automation jobs with an
     # empty cwd), fall back to the process cwd — the directory the subprocess
@@ -403,10 +753,17 @@ def soft_preflight(command: str, policy: SandboxPolicy) -> str | None:
     # A provably read-only powershell payload (see _is_read_only_powershell)
     # cannot write outside the workspace, so its path arguments are reads —
     # exempt it from the token + payload-literal containment scans.
-    if not _is_read_only_powershell(command):
-        tokenDenial = _scan_path_tokens(command, rootStr)
-        if tokenDenial:
-            return tokenDenial
+    if not _is_read_only_powershell(command, platform=platform):
+        for fragment, fragment_platform, encoded in _iter_command_fragments(
+            command, platform=platform
+        ):
+            if encoded:
+                return 'path outside workspace blocked: encoded command payload cannot be inspected'
+            tokenDenial = _scan_path_tokens(
+                fragment, rootStr, platform=fragment_platform
+            )
+            if tokenDenial:
+                return tokenDenial
         # String literals inside interpreter payloads (`python -c "..."`,
         # `node -e "..."`, `powershell -Command "..."`) can name paths the
         # token scan never sees — scan them against the same containment rule.

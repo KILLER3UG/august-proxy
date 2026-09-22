@@ -52,6 +52,47 @@ def test_soft_preflight_blocks_network_and_readonly():
     assert soft_preflight('echo hi', ro) is None
 
 
+def test_soft_preflight_unwraps_command_options():
+    policy = SandboxPolicy(mode='workspace-write', workspace_root='', network=False)
+    assert soft_preflight('sudo -u root curl https://example.com', policy)
+    assert soft_preflight('sudo --user=root curl https://example.com', policy)
+    assert soft_preflight('env -i PATH=/usr/bin curl https://example.com', policy)
+    assert soft_preflight('command -p curl https://example.com', policy)
+    assert soft_preflight('nohup curl https://example.com', policy)
+    assert soft_preflight('xargs -n 1 curl https://example.com', policy)
+
+
+def test_soft_preflight_blocks_nested_network_payloads():
+    policy = SandboxPolicy(mode='workspace-write', workspace_root='', network=False)
+    assert soft_preflight("node -e \"fetch('https://example.com')\"", policy)
+    assert soft_preflight("node -e \"require('https').get('https://example.com')\"", policy)
+    assert soft_preflight("bash -c 'curl https://example.com'", policy, platform='posix')
+    assert soft_preflight('cmd /c curl https://example.com', policy, platform='nt')
+    assert soft_preflight('powershell -EncodedCommand ZQ==', policy)
+
+
+def test_soft_preflight_rejects_scriptable_powershell_pipeline():
+    policy = SandboxPolicy(mode='workspace-write', workspace_root='', network=False)
+    command = (
+        'powershell -Command "Get-ChildItem | Where-Object '
+        '{ Set-Content -Path out.txt -Value x }"'
+    )
+    assert soft_preflight(command, policy, platform='powershell')
+
+
+def test_soft_preflight_allows_proven_viewer_wrappers_in_read_only():
+    ro = SandboxPolicy(mode='read-only', workspace_root='', network=False)
+    assert soft_preflight('cmd /c dir /b', platform='nt', policy=ro) is None
+    assert (
+        soft_preflight(
+            'powershell -NoProfile -NonInteractive -Command Get-Content file.txt',
+            platform='powershell',
+            policy=ro,
+        )
+        is None
+    )
+
+
 def test_soft_preflight_blocks_outside_redirect(tmp_path: Path):
     root = tmp_path / 'ws'
     root.mkdir()

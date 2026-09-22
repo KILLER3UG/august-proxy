@@ -12,11 +12,15 @@ read by list_all/get so the model can load lessons as skills.
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
-from app.json_narrowing import as_str
+from app.json_narrowing import as_int, as_str
+
+logger = logging.getLogger('august.skills')
 
 SKILLS_DIR = Path(__file__).resolve().parent.parent.parent.parent / 'skills'
 
@@ -782,17 +786,27 @@ def _ensureAgentRoot() -> Path:
 def _copyOnWrite(name: str) -> Path:
     """If a skill only exists in the bundled root, copy it to the agent root
     so it can be patched/extended without mutating built-ins. Returns the
-    agent-root skill directory."""
+    agent-root skill directory.
+
+    ``SKILL.md`` — not directory existence — is what makes an agent-root entry
+    a skill: the usage sidecar resolver can create
+    ``<dataDir>/skills/<bundled-name>/.usage.json`` for a skill that has no
+    agent copy yet, and that must not read as "already patched".
+    """
     import shutil
 
     agent_dir = _agentSkillDir(name)
-    if agent_dir.exists():
+    if (agent_dir / 'SKILL.md').exists():
         return agent_dir
     bundled_md = SKILLS_DIR / name / 'SKILL.md'
     if not bundled_md.exists():
         raise SkillValidationError(f"Skill '{name}' not found; cannot patch a non-existent skill.")
     _ensureAgentRoot()
-    shutil.copytree(bundled_md.parent, agent_dir)
+    # Never mirror a stale install-tree sidecar into the copy: the resolver
+    # relocates the original on its own, once.
+    shutil.copytree(
+        bundled_md.parent, agent_dir, dirs_exist_ok=True, ignore=shutil.ignore_patterns(_USAGE_SIDECAR_NAME)
+    )
     return agent_dir
 
 
@@ -824,7 +838,13 @@ def createSkill(
         skill_dir = root / name
     else:
         skill_dir = _ensureAgentRoot() / name
-    skill_dir.mkdir(parents=True, exist_ok=False)
+    try:
+        skill_dir.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as exc:
+        if (skill_dir / 'SKILL.md').exists():
+            raise SkillValidationError(f"Skill '{name}' already exists.") from exc
+        # Usage-only leftover directory (the sidecar resolver always lands
+        # under the agent root) — authoring the skill reuses it.
     frontmatter = {
         'name': name,
         'description': description.strip(),
@@ -960,7 +980,10 @@ def deleteSkill(name: str, workspace: str | Path | None = None) -> dict[str, obj
                 'delete it from the global scope instead.'
             )
     agent_dir = _agentSkillDir(name)
-    if not agent_dir.exists():
+    if not (agent_dir / 'SKILL.md').exists():
+        # Same authority as _copyOnWrite: an agent-root directory holding only
+        # a usage sidecar is not a skill, so a bundled name must still be
+        # refused here rather than "deleted" down to its counters.
         bundled = SKILLS_DIR / name
         if bundled.exists():
             raise SkillValidationError(
@@ -972,32 +995,197 @@ def deleteSkill(name: str, workspace: str | Path | None = None) -> dict[str, obj
     return {'deleted': name, 'scope': 'global'}
 
 
+# ---------------------------------------------------------------------------
+# Usage sidecars — ONE resolver, always under the data dir
+# ---------------------------------------------------------------------------
+# The pre-fix writer dropped ``.usage.json`` next to the SKILL.md it had just
+# loaded, so a bundled skill's counters landed INSIDE the install tree (a
+# desktop update re-copies the bundle, deleting them) while the only reader
+# looked under ``<dataDir>/skills`` — written where nobody reads, and destroyed
+# by the next release. ``usage_sidecar_path`` is now the single authority: the
+# skill's root/scope never enter the answer, so writer, reader and the
+# disclosure ranking cannot drift apart again.
+
+_USAGE_SIDECAR_NAME = '.usage.json'
+
+
+def usage_sidecar_path(skill_name: str) -> Path:
+    """Where a skill's usage counters live: ``<dataDir>/skills/<name>/.usage.json``.
+
+    Always the agent (data-dir) root — whether the skill itself resolved from
+    the bundle, the agent root, a project ``.aug/skills`` override or a Bot's
+    private root. Durable user state must not live in the install tree, which
+    an update re-copies wholesale. Raises ``SkillValidationError`` for a name
+    that could escape the root.
+    """
+    name = str(skill_name or '').strip()
+    _validateName(name)
+    return _agentSkillsDir() / name / _USAGE_SIDECAR_NAME
+
+
+def _legacy_usage_files(
+    skill_name: str, extra_dirs: Iterable[str | Path] = ()
+) -> list[Path]:
+    """Sidecar files an older writer may have left *beside* a skill.
+
+    ``extra_dirs`` carries the directories only the caller knows (a workspace
+    or Bot skill root); the bundled install root is always checked.
+    """
+    dirs: list[Path] = []
+    seen: set[str] = set()
+
+    def _add(p: Path) -> None:
+        key = str(p).lower()
+        if key not in seen:
+            seen.add(key)
+            dirs.append(p)
+
+    for raw in extra_dirs or ():
+        s = str(raw or '').strip()
+        if not s:
+            continue
+        try:
+            _add(Path(s))
+        except Exception:
+            continue
+    name = str(skill_name or '').strip()
+    if name:
+        _add(SKILLS_DIR / name)
+    return [d / _USAGE_SIDECAR_NAME for d in dirs]
+
+
+def _read_usage_file(path: Path) -> dict[str, object]:
+    """Parse one sidecar. A corrupt file reads as empty AND says so out loud."""
+    try:
+        raw = json.loads(path.read_text('utf-8'))
+    except FileNotFoundError:
+        return {'count': 0, 'lastUsed': ''}
+    except Exception as exc:
+        logger.warning('skill usage: unreadable sidecar %s: %s', path, exc)
+        return {'count': 0, 'lastUsed': ''}
+    if not isinstance(raw, dict):
+        logger.warning(
+            'skill usage: sidecar %s holds %s, expected object', path, type(raw).__name__
+        )
+        return {'count': 0, 'lastUsed': ''}
+    try:
+        count = int(str(raw.get('count') or 0) or 0)
+    except (TypeError, ValueError):
+        logger.warning('skill usage: sidecar %s has a non-numeric count', path)
+        count = 0
+    return {'count': count, 'lastUsed': as_str(raw.get('lastUsed'), '')}
+
+
+def _migrate_legacy_usage(
+    dest: Path, skill_name: str, extra_dirs: Iterable[str | Path] = ()
+) -> None:
+    """Relocate a legacy beside-the-skill sidecar into ``dest`` — once, by MOVE.
+
+    A copy would leave user state in the install tree, which is the exact
+    situation being fixed, so the relocation unlinks the source. When several
+    stale copies exist (a bundled original plus its patched agent copy), the
+    one carrying the most loads wins and the rest are removed with a warning —
+    never a silent discard.
+    """
+    if dest.exists():
+        return  # already relocated (or freshly written) — nothing to move
+    legacy = [p for p in _legacy_usage_files(skill_name, extra_dirs) if p != dest and p.is_file()]
+    if not legacy:
+        return
+    chosen = max(legacy, key=lambda p: as_int(_read_usage_file(p).get('count'), 0))
+    for stale in legacy:
+        if stale == chosen:
+            continue
+        lost = _read_usage_file(stale)
+        try:
+            stale.unlink()
+            logger.warning(
+                'skill usage: discarded duplicate legacy sidecar %s (count=%s) in favour of %s',
+                stale,
+                lost['count'],
+                chosen,
+            )
+        except OSError as exc:
+            logger.warning('skill usage: could not remove duplicate sidecar %s: %s', stale, exc)
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            chosen.replace(dest)
+        except OSError:
+            import shutil as _shutil
+
+            _shutil.move(str(chosen), str(dest))  # cross-device install → data dir
+        logger.info('skill usage: relocated legacy sidecar %s -> %s', chosen, dest)
+    except Exception as exc:
+        logger.warning('skill usage: failed to relocate %s -> %s: %s', chosen, dest, exc)
+
+
+def read_skill_usage(
+    skill_name: str, *, skill_dirs: Iterable[str | Path] = ()
+) -> dict[str, object]:
+    """The one usage reader: ``{'count': int, 'lastUsed': str}`` (0/'' if none).
+
+    ``skill_dirs`` optionally names directories this call knows the skill also
+    lives in (a workspace/Bot root) so a pre-fix sidecar sitting there is
+    relocated on this first read. No module outside this one should build the
+    path itself.
+    """
+    try:
+        dest = usage_sidecar_path(skill_name)
+    except SkillValidationError as exc:
+        logger.warning('skill usage: %s (name=%r)', exc, skill_name)
+        return {'count': 0, 'lastUsed': ''}
+    try:
+        _migrate_legacy_usage(dest, skill_name, skill_dirs)
+    except Exception as exc:  # relocation is opportunistic; the read stands
+        logger.warning('skill usage: relocation check failed for %r: %s', skill_name, exc)
+    if not dest.exists():
+        return {'count': 0, 'lastUsed': ''}
+    return _read_usage_file(dest)
+
+
+def read_skill_load_count(skill_name: str) -> int:
+    """Convenience over ``read_skill_usage`` for callers that want the count."""
+    return as_int(read_skill_usage(skill_name).get('count'), 0)
+
+
 def record_skill_use(skillPath: str) -> None:
-    """Bump the per-skill usage sidecar (``<skillDir>/.usage.json``).
+    """Bump the per-skill usage sidecar, resolved through ``usage_sidecar_path``.
 
     Part 16 Phase E: without trigger-hit counts, "zero loads and no
     recurrence" is unknowable — which is why honest demotion suggestions
-    and the curator report could not exist before. Best-effort: a failed
-    sidecar write never blocks the load."""
+    and the curator report could not exist before. The write always lands in
+    the data dir (see the resolver's docstring for why the install tree is
+    wrong). It stays best-effort in OUTCOME — telemetry must never kill a turn —
+    but it is no longer silent: a failed write logs at warning with the path
+    and the exception.
+
+    Counters key on the skill DIRECTORY name, which is what the load door
+    hands us; bundled and agent skills carry a frontmatter ``name`` equal to
+    their directory name (``list_all`` validates it at discovery).
+    """
+    target: Optional[Path] = None
     try:
-        import json as _json
         from datetime import datetime
 
         d = Path(skillPath).parent
         if not d.is_dir():
+            logger.warning('skill usage: skill directory %s missing — nothing recorded', d)
             return
-        sidecar = d / '.usage.json'
-        data: dict[str, object] = {}
-        if sidecar.exists():
-            try:
-                data = _json.loads(sidecar.read_text('utf-8'))
-            except Exception:
-                data = {}
-        data['count'] = int(str(data.get('count') or 0) or 0) + 1
+        target = usage_sidecar_path(d.name)
+        _migrate_legacy_usage(target, d.name, [d])
+        data = _read_usage_file(target)
+        data['count'] = as_int(data.get('count'), 0) + 1
         data['lastUsed'] = datetime.now().astimezone().isoformat()
-        sidecar.write_text(_json.dumps(data), 'utf-8')
-    except Exception:
-        pass
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(data), 'utf-8')
+    except Exception as exc:
+        logger.warning(
+            'skill usage: failed to write sidecar %s (skill %r): %s',
+            target or '<unresolved>',
+            skillPath,
+            exc,
+        )
 
 
 def setEnabled(name: str, *, enabled: bool) -> dict[str, object]:
