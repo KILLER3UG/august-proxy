@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /**
- * check-docs-sync.mjs — Verify numeric claims in AGENTS.md match the code.
+ * check-docs-sync.mjs — Verify numeric claims in the docs match the code.
+ *
+ * Each assertion names the doc file it reads, so a claim in AGENTS.md and one in
+ * docs/API_REFERENCE.md are guarded the same way.
  *
  * AGENTS.md is a STANDING INSTRUCTION FILE: every agent session reads it and
  * plans against the limits it states. It asserted `MAX_MANAGED_TOOL_ROUNDS`
@@ -42,6 +45,29 @@ const assertions = [
     code: {
       file: 'backend-py/app/services/workbench/workbench.py',
       re: /^MIN_ROUNDS_BEFORE_STALL_CHECK\s*=\s*(\d+)/m,
+    },
+  },
+  {
+    label: 'brain backup retention',
+    doc: {
+      file: 'docs/API_REFERENCE.md',
+      re: /only the newest \*\*(\d+)\*\* copies survive/,
+    },
+    code: {
+      file: 'backend-py/app/services/brain_backup.py',
+      re: /^KEEP_BACKUPS: Final = (\d+)/m,
+    },
+  },
+  {
+    label: 'brain startup backup interval',
+    doc: {
+      file: 'docs/API_REFERENCE.md',
+      re: /takes one verified copy per (\d+) h at startup/,
+    },
+    code: {
+      file: 'backend-py/app/services/brain_backup.py',
+      // `max_age_hours: float = 12.0` — the doc states whole hours.
+      re: /max_age_hours: float = (\d+)(?:\.0+)?/,
     },
   },
 ];
@@ -107,7 +133,8 @@ for (const result of results) {
 if (failed > 0) {
   console.error(
     `\n${failed} documentation claim(s) disagree with the code. ` +
-      'Fix AGENTS.md to match the code (the code is the truth), then re-run: node scripts/check-docs-sync.mjs'
+      'Fix the doc file named in the FAIL line above to match the code (the code ' +
+      'is the truth), then re-run: node scripts/check-docs-sync.mjs'
   );
   process.exit(1);
 }

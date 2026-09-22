@@ -93,6 +93,23 @@ the usage counter all key on `SKILL.md`, never on directory existence — skill
 usage lives at `<dataDir>/skills/<name>/.usage.json` and the install tree must
 stay free of it.
 
+**Memory survives independently of recall** — `app/services/brain_backup.py`
+takes online copies through SQLite's backup API (read-only handle, no write lock
+on the live file), runs `PRAGMA integrity_check` on every copy before trusting
+it, and prunes to a verified rolling set; `GET /api/brain/integrity` is the
+health read and Settings → Memory shows it. **A restore is staged and applied at
+the next launch, never in place:** `memory_store.close()` closes only a
+thread-local connection while other threads still hold the live file, so an
+in-process swap yields a half-old database (and fails to rename on Windows).
+`apply_pending_restore()` therefore runs in `main.py` before the store
+initializes and keeps what it replaced as `.pre-restore`; the pending marker is
+a file, not a row, because the case needing a restore is one where the database
+may not open. A copy on a newer schema is refused using the migration runner's
+own version discovery. Do not add an in-process swap or a second version
+constant. The old "import a legacy DB via Settings → Memory" instruction was
+false and is now the real restore route (name the file exactly as
+`docs/API_REFERENCE.md` specifies, or it is not listed).
+
 **Model-managed memory (CRUD is a set)** — `remember` (write/update by key),
 `list_facts` (enumerate keys) and `forget` (retire) are all **core** tools: they
 are in `AUGUST_CORE_TOOLS` so progressive disclosure can never hide the key
