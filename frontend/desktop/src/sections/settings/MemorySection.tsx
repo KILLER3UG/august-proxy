@@ -26,8 +26,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Brain, ChevronLeft, ChevronRight, Download, FolderTree, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { Brain, ChevronLeft, ChevronRight, Download, FolderTree, HardDrive, MoreHorizontal, Pencil, Plus, RefreshCw, Search, ShieldAlert, ShieldCheck, Trash2, UserRoundCog } from 'lucide-react';
 import { api } from '@/api/client';
+import {
+  cancelBrainRestore,
+  createBrainBackup,
+  getBrainIntegrity,
+  listBrainBackups,
+  stageBrainRestore,
+  type BrainBackupEntry,
+  type BrainBackupList,
+  type BrainIntegrity,
+} from '@/api/api-client';
 import { useSessionsStore } from '@/store/sessions';
 import { PageLoader } from '@/components/PageLoader';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
@@ -35,7 +45,7 @@ import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
-import { cn, timeAgo } from '@/lib/utils';
+import { cn, formatBytes, timeAgo } from '@/lib/utils';
 import { ImportMemoryDialog } from './ImportMemoryDialog';
 
 type Row = Record<string, unknown>;
@@ -235,24 +245,35 @@ const STORE_META: Record<string, StoreMeta> = {
 
 /* ── §5.1 flat-list kinds ──────────────────────────────────────────── */
 
-type EntryKind = 'fact' | 'lesson' | 'pref' | 'note';
+type EntryKind = 'profile' | 'fact' | 'lesson' | 'pref' | 'note';
 
 const KIND_META: Record<EntryKind, { label: string; className: string }> = {
+  profile: { label: 'profile', className: 'border-violet-500/30 bg-violet-500/10 text-violet-400' },
   fact: { label: 'fact', className: 'border-sky-500/30 bg-sky-500/10 text-sky-400' },
   lesson: { label: 'lesson', className: 'border-amber-500/30 bg-amber-500/10 text-amber-400' },
   pref: { label: 'pref', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' },
   note: { label: 'note', className: 'border-border/60 bg-muted/30 text-muted-foreground' },
 };
 
-const KIND_ORDER: EntryKind[] = ['fact', 'lesson', 'pref', 'note'];
+const KIND_ORDER: EntryKind[] = ['profile', 'fact', 'lesson', 'pref', 'note'];
 
-/** Kind chip for a row: heuristics are lessons, user-category facts are
- *  prefs, everything in the KV/legacy note stores is a note. */
+/** Kind chip for a row: a fact whose own `kind` column reads `profile` is a
+ *  profile-lane entry whatever its category — that column, not the category,
+ *  is what makes the backend inject it every turn. Otherwise heuristics are
+ *  lessons, user-category facts are prefs, everything in the KV/legacy note
+ *  stores is a note. */
 function deriveKind(store: string, r: Row): EntryKind {
+  if (str(r.kind).trim().toLowerCase() === 'profile') return 'profile';
   if (store === 'heuristics') return 'lesson';
   if (store === 'facts') return str(r.category).toLowerCase() === 'user' ? 'pref' : 'fact';
   return 'note';
 }
+
+/** The store whose browsable rows can carry a `kind`, i.e. join / leave the
+ *  profile lane. Mirrors the PATCH whitelist in memory_store/brain.py
+ *  (`'facts': frozenset({…, 'kind', …})`) — no other browsable table has the
+ *  column, so the promote/demote action must not render for them. */
+const KIND_EDITABLE_STORE = 'facts';
 
 function hasExpiry(r: Row): boolean {
   return str(r.expiresAt).trim() !== '';
@@ -479,6 +500,22 @@ export function MemorySection({ active }: { active: { id: string } }) {
     },
     onError: (e: Error) => toast.error(e.message || 'Update failed'),
   });
+  /** Promote / demote a fact through the profile lane. Deliberately NOT an
+   *  optimistic write: this column is the model's always-in-context input, so
+   *  a local guess the server never accepted is worse than a spinner. The
+   *  row's kind comes back from the refetch (`invalidate`), not from here. */
+  const laneMut = useMutation({
+    mutationFn: (p: { store: string; id: string; kind: EntryKind }) =>
+      api.patch<{ row?: Row }>(
+        `/api/brain/stores/${encodeURIComponent(p.store)}/${encodeURIComponent(p.id)}`,
+        { kind: p.kind },
+      ),
+    onSuccess: (_res, p) => {
+      invalidate();
+      toast.success(p.kind === 'profile' ? 'Added to the profile lane' : 'Removed from the profile lane');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Update failed'),
+  });
   const consolidateMut = useMutation({
     mutationFn: () => api.post<{ ok: boolean; summary?: Record<string, unknown> }>('/api/brain/consolidation/run', {}),
     onSuccess: () => {
@@ -537,6 +574,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const kindCounts = useMemo(() => {
     const counts: Record<'all' | EntryKind | 'expiring', number> = {
       all: flatEntries.length,
+      profile: 0,
       fact: 0,
       lesson: 0,
       pref: 0,
@@ -1114,6 +1152,16 @@ export function MemorySection({ active }: { active: { id: string } }) {
                 )}
               </div>
 
+              {/* The profile lane would otherwise be an unexplained chip: these
+                  facts ride along on every turn instead of being recalled by
+                  keyword, so a row in it costs context continuously. */}
+              {kindCounts.profile > 0 && (
+                <p className="text-[10.5px] text-muted-foreground/70" data-testid="memory-profile-explainer">
+                  profile · always in the model’s context on every turn, not recalled by keyword.
+                  Use a row’s ⋯ menu to add or remove entries.
+                </p>
+              )}
+
               {unifiedLoading ? (
                 <PageLoader label="Loading entries…" variant="card" className="py-8" />
               ) : unifiedError ? (
@@ -1157,6 +1205,25 @@ export function MemorySection({ active }: { active: { id: string } }) {
                       }}
                       onDelete={() => requestDelete(e.row, e.store)}
                       onExport={() => exportEntry(e.row, e.store)}
+                      laneLabel={
+                        e.store === KIND_EDITABLE_STORE
+                          ? e.kind === 'profile'
+                            ? 'Remove from profile'
+                            : 'Add to profile'
+                          : null
+                      }
+                      laneBusy={
+                        laneMut.isPending &&
+                        laneMut.variables?.store === e.store &&
+                        laneMut.variables?.id === e.id
+                      }
+                      onToggleLane={() =>
+                        laneMut.mutate({
+                          store: e.store,
+                          id: e.id,
+                          kind: e.kind === 'profile' ? 'fact' : 'profile',
+                        })
+                      }
                     />
                   ))}
                   {filteredEntries.length > unifiedShown && (
@@ -1222,6 +1289,9 @@ export function MemorySection({ active }: { active: { id: string } }) {
           )}
         </>
       )}
+
+      {/* §5.6 brain-database backup + restore (backend: services/brain_backup.py). */}
+      <MemoryFilesCard />
 
       {/* §5.5 raw state lookup — the only surface where internal_state
           machine state is ever visible. */}
@@ -1290,19 +1360,27 @@ function KindChip({
 function FlatEntryRow({
   entry,
   checked,
+  laneLabel,
+  laneBusy,
   onCheck,
   onView,
   onEdit,
   onDelete,
   onExport,
+  onToggleLane,
 }: {
   entry: FlatEntry;
   checked: boolean;
+  /** Label for the profile-lane action, or null when this row has no `kind`
+   *  column (only `facts` rows do — see KIND_EDITABLE_STORE). */
+  laneLabel: string | null;
+  laneBusy: boolean;
   onCheck: (v: boolean) => void;
   onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onExport: () => void;
+  onToggleLane: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const meta = STORE_META[entry.store];
@@ -1398,6 +1476,12 @@ function FlatEntryRow({
           <RowMenu
             canEdit={canEdit}
             canDelete={canDelete}
+            laneLabel={laneLabel}
+            laneBusy={laneBusy}
+            onToggleLane={() => {
+              setMenuOpen(false);
+              onToggleLane();
+            }}
             onView={() => {
               setMenuOpen(false);
               onView();
@@ -1425,6 +1509,9 @@ function FlatEntryRow({
 function RowMenu({
   canEdit,
   canDelete,
+  laneLabel,
+  laneBusy,
+  onToggleLane,
   onView,
   onEdit,
   onDelete,
@@ -1433,6 +1520,10 @@ function RowMenu({
 }: {
   canEdit: boolean;
   canDelete: boolean;
+  /** Profile-lane action label, or null to hide the row (no `kind` column). */
+  laneLabel: string | null;
+  laneBusy: boolean;
+  onToggleLane: () => void;
   onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -1470,6 +1561,20 @@ function RowMenu({
       {canEdit && (
         <button type="button" role="menuitem" onClick={onEdit} className={item}>
           <Pencil className="size-3 text-muted-foreground" /> Edit
+        </button>
+      )}
+      {/* Profile lane: promote/demote through the same PATCH the Edit path
+          uses. Server-confirmed only — the refetch decides the new chip. */}
+      {laneLabel && (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={onToggleLane}
+          disabled={laneBusy}
+          className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-violet-400 transition disabled:opacity-40"
+          data-testid="memory-row-toggle-lane"
+        >
+          <UserRoundCog className="size-3" /> {laneBusy ? 'Saving…' : laneLabel}
         </button>
       )}
       <button type="button" role="menuitem" onClick={onExport} className={item}>
@@ -1545,6 +1650,297 @@ function HealthFooter({
       >
         {consolidating ? 'Running…' : 'Run now'}
       </button>
+    </div>
+  );
+}
+
+/* ── §5.6 brain-database backup + restore ──────────────────────────── */
+/* The server owns every judgement this card makes: `GET /api/brain/backups`
+ * health-checks each copy (`healthy`, `fromTheFuture`) and reports what is
+ * staged (`pendingRestore`), and `GET /api/brain/integrity` checks the live
+ * file. Nothing here is cached in component state except the one number that
+ * exists nowhere else — the names this POST pruned, which are gone from the
+ * list by the time it refetches. */
+
+function MemoryFilesCard() {
+  const qc = useQueryClient();
+  const { state: confirmState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
+  const [lastSaved, setLastSaved] = useState<{
+    name: string;
+    bytes: number | null;
+    pruned: number;
+  } | null>(null);
+
+  const integrityQ = useQuery<BrainIntegrity>({
+    queryKey: ['brain-integrity'],
+    queryFn: getBrainIntegrity,
+  });
+  const backupsQ = useQuery<BrainBackupList>({
+    queryKey: ['brain-backups'],
+    queryFn: listBrainBackups,
+  });
+
+  const refetchAll = () => {
+    void qc.invalidateQueries({ queryKey: ['brain-backups'] });
+    void qc.invalidateQueries({ queryKey: ['brain-integrity'] });
+  };
+
+  const createMut = useMutation({
+    mutationFn: () => createBrainBackup('manual'),
+    onSuccess: (res) => {
+      setLastSaved({
+        name: res.name ?? '(unnamed)',
+        bytes: typeof res.bytes === 'number' ? res.bytes : null,
+        pruned: res.pruned?.length ?? 0,
+      });
+      refetchAll();
+    },
+    // The backend raises 500 with `detail` on failure, which api-client turns
+    // into the Error message — so a failed backup never reads as a success.
+    onError: (e: Error) => toast.error(e.message || 'Backup failed'),
+  });
+  const restoreMut = useMutation({
+    mutationFn: (name: string) => stageBrainRestore(name),
+    onSuccess: () => {
+      // No local "staged" flag: the banner reads `pendingRestore` back from the
+      // server, which is the only thing that survives a restart or a remount.
+      refetchAll();
+      toast.success('Restore staged — restart August to apply');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Restore refused'),
+  });
+  const cancelMut = useMutation({
+    mutationFn: () => cancelBrainRestore(),
+    onSuccess: (res) => {
+      refetchAll();
+      if (!res.cancelled) toast.warning('Nothing was staged to cancel');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Could not cancel restore'),
+  });
+
+  const integrity = integrityQ.data;
+  const list = backupsQ.data?.backups ?? [];
+  const keep = backupsQ.data?.keep;
+  const pending = backupsQ.data?.pendingRestore ?? null;
+
+  const requestRestore = (b: BrainBackupEntry) => {
+    void confirm({
+      title: 'Restore this backup?',
+      message:
+        `Restoring “${b.name}” replaces your current memory database with that copy. ` +
+        'It takes effect on the NEXT LAUNCH — August keeps using the current database until you restart it. ' +
+        'The database it replaces is kept as a “.pre-restore” copy, so this is itself undoable.',
+      confirmLabel: 'Restore',
+      variant: 'destructive',
+    }).then((ok) => {
+      if (!ok) return;
+      restoreMut.mutate(b.name);
+    });
+  };
+
+  return (
+    <div className="space-y-2.5 border-t border-white/[0.06] pt-4" data-testid="memory-files-card">
+      <div className="flex items-center gap-2">
+        <HardDrive className="size-3.5 text-muted-foreground/70" />
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+          Memory files
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            setLastSaved(null);
+            createMut.mutate();
+          }}
+          disabled={createMut.isPending}
+          className="ml-auto rounded-md border border-border/60 px-2 py-0.5 text-[10.5px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
+          title="Verify the live database, then take an offline copy of it"
+          data-testid="memory-backup-now"
+        >
+          {createMut.isPending ? 'Backing up…' : 'Back up now'}
+        </button>
+      </div>
+
+      {/* 1 · live integrity — a bad verdict prints the server's reason. */}
+      {integrityQ.isLoading ? (
+        <p className="text-[11px] text-muted-foreground/70" data-testid="memory-integrity-loading">
+          Checking the memory database…
+        </p>
+      ) : integrityQ.isError ? (
+        <p
+          className="flex items-center gap-1.5 text-[11px] text-destructive"
+          data-testid="memory-integrity-error"
+        >
+          <ShieldAlert className="size-3 shrink-0" />
+          Could not check the database: {(integrityQ.error as Error | null)?.message ?? 'unknown error'}
+        </p>
+      ) : !integrity?.exists ? (
+        // `ok` is true when there is no file to check; calling that "healthy"
+        // would be a green pill over nothing.
+        <p className="text-[11px] text-muted-foreground/70" data-testid="memory-integrity-missing">
+          {integrity?.detail || 'no database yet'}
+        </p>
+      ) : integrity.ok ? (
+        <p
+          className="flex items-center gap-1.5 text-[11px] text-emerald-400"
+          data-testid="memory-integrity-ok"
+        >
+          <ShieldCheck className="size-3 shrink-0" /> memory database healthy
+        </p>
+      ) : (
+        <p
+          className="flex items-center gap-1.5 text-[11px] text-destructive"
+          data-testid="memory-integrity-bad"
+        >
+          <ShieldAlert className="size-3 shrink-0" />
+          <span data-testid="memory-integrity-detail">{integrity.detail || 'integrity check failed'}</span>
+        </p>
+      )}
+
+      {/* 4 · a staged restore is the server's state, so this shows on load. */}
+      {pending && (
+        <div
+          className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-[11px] text-warning"
+          data-testid="memory-restore-banner"
+        >
+          <span className="min-w-0 flex-1">
+            Restore staged — restart August to apply
+            <span className="ml-1 font-mono opacity-80">({pending})</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => cancelMut.mutate()}
+            disabled={cancelMut.isPending}
+            className="shrink-0 rounded-md border border-warning/50 px-2 py-0.5 text-[10.5px] font-medium transition hover:bg-warning/15 disabled:opacity-40"
+            data-testid="memory-restore-cancel"
+          >
+            {cancelMut.isPending ? 'Cancelling…' : 'Cancel'}
+          </button>
+        </div>
+      )}
+
+      {/* 2 · the copy this call just wrote, incl. what retention retired. */}
+      {lastSaved && (
+        <p className="text-[11px] text-muted-foreground" data-testid="memory-backup-created">
+          Saved <span className="font-mono text-foreground/80">{lastSaved.name}</span>
+          {lastSaved.bytes !== null ? ` · ${formatBytes(lastSaved.bytes)}` : ''}
+          {lastSaved.pruned > 0 &&
+            ` · retired ${lastSaved.pruned} older ${lastSaved.pruned === 1 ? 'copy' : 'copies'}`}
+          {lastSaved.pruned > 0 && keep !== undefined ? ` (this app keeps the newest ${keep})` : ''}
+        </p>
+      )}
+
+      {/* 3 · the copy list. */}
+      {backupsQ.isLoading ? (
+        <p className="text-[11px] text-muted-foreground/70" data-testid="memory-backups-loading">
+          Listing backups…
+        </p>
+      ) : backupsQ.isError ? (
+        <p className="text-[11px] text-destructive" data-testid="memory-backups-error">
+          Could not list backups: {(backupsQ.error as Error | null)?.message ?? 'unknown error'}
+        </p>
+      ) : list.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground/70" data-testid="memory-backups-empty">
+          No backups yet — “Back up now” takes the first one.
+        </p>
+      ) : (
+        <ul className="divide-y divide-white/[0.04]" data-testid="memory-backup-list">
+          {list.map((b) => {
+            const blocked = !b.healthy
+              ? `unhealthy${b.error ? ` · ${b.error}` : ''}`
+              : b.fromTheFuture
+                ? `from a newer version · schema ${b.appliedVersion}`
+                : '';
+            return (
+              <li
+                key={b.name}
+                className="flex items-center gap-2 py-1.5 text-[11px]"
+                data-testid="memory-backup-row"
+                data-healthy={b.healthy ? 'true' : 'false'}
+                data-future={b.fromTheFuture ? 'true' : 'false'}
+              >
+                <span
+                  className="min-w-0 flex-1 truncate font-mono text-foreground/80"
+                  title={b.name}
+                >
+                  {b.name}
+                </span>
+                <span className="shrink-0 tabular-nums text-muted-foreground/70">
+                  {formatBytes(b.bytes)}
+                </span>
+                <span className="shrink-0 tabular-nums text-muted-foreground/60" title={b.createdAt}>
+                  {timeAgo(b.createdAt) || 'unknown age'}
+                </span>
+                {pending === b.name ? (
+                  <span
+                    className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[9px] uppercase"
+                    data-testid="memory-backup-staged"
+                  >
+                    staged
+                  </span>
+                ) : (
+                  <>
+                    <span
+                      className={cn(
+                        'shrink-0 rounded border px-1.5 py-0.5 text-[9px] uppercase',
+                        blocked
+                          ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                          : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+                      )}
+                      data-testid="memory-backup-status"
+                    >
+                      {blocked || 'verified'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => requestRestore(b)}
+                      disabled={!!blocked || restoreMut.isPending}
+                      title={
+                        blocked
+                          ? `Cannot restore: ${blocked}`
+                          : 'Stage this copy to replace the memory database on next launch'
+                      }
+                      className="shrink-0 rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] transition enabled:hover:border-primary/30 enabled:hover:text-foreground disabled:opacity-40"
+                      data-testid="memory-backup-restore"
+                    >
+                      {restoreMut.isPending && restoreMut.variables === b.name ? 'Staging…' : 'Restore'}
+                    </button>
+                  </>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {/* 5 · where the copies physically live. */}
+      <p className="text-[10.5px] text-muted-foreground/70">
+        {keep !== undefined && `Keeps the newest ${keep} copies. `}
+        Restoring applies on the next launch and keeps the database it replaces as a{' '}
+        <code className="font-mono">.pre-restore</code> copy.
+      </p>
+      <div className="space-y-0.5 text-[10.5px] text-muted-foreground/60">
+        {backupsQ.data?.directory && (
+          <p className="truncate" title={backupsQ.data.directory} data-testid="memory-backup-dir">
+            backups · <span className="font-mono">{backupsQ.data.directory}</span>
+          </p>
+        )}
+        {integrity?.path && (
+          <p className="truncate" title={integrity.path} data-testid="memory-db-path">
+            database · <span className="font-mono">{integrity.path}</span>
+          </p>
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }
