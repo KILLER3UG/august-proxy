@@ -24,6 +24,8 @@ const skillsPayload = {
       createdBy: 'agent',
       scope: 'agent',
       overrides: '',
+      usageCount: 0,
+      lastUsed: '',
     },
     {
       name: 'quartus-flow',
@@ -34,6 +36,8 @@ const skillsPayload = {
       createdBy: 'agent',
       scope: 'project',
       overrides: 'agent',
+      usageCount: 4,
+      lastUsed: '2026-09-20T10:15:00Z',
     },
   ],
   total: 2,
@@ -49,6 +53,8 @@ const detailPayload = {
   instructions: '## When to Use\n\nFPGA synthesis.',
   scope: 'project',
   overrides: 'agent',
+  usageCount: 4,
+  lastUsed: '2026-09-20T10:15:00Z',
 };
 
 vi.mock('@tanstack/react-query', async (importOriginal) => {
@@ -198,5 +204,62 @@ describe('SkillsSection — scope selector + badges', () => {
       const urls = (api.delete as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
       expect(urls.some((u) => u.includes('/api/skills/quartus-flow') && u.includes('workspace='))).toBe(true);
     });
+  });
+});
+
+/* Usage chip: the sidecar counters (trigger hits) were written and read by the
+ * backend for ranking but never shown, so "does anyone use this skill?" had no
+ * answer in the catalogue. */
+describe('SkillsSection — usage chip', () => {
+  const withUsage = (name: string, patch: Record<string, unknown>, fn: () => void) => {
+    const row = skillsPayload.skills.find((s) => s.name === name) as Record<string, unknown>;
+    const saved = { ...row };
+    Object.assign(row, patch);
+    try {
+      fn();
+    } finally {
+      for (const k of Object.keys(patch)) if (!(k in saved)) delete row[k];
+      Object.assign(row, saved);
+    }
+  };
+
+  it('shows a count on a used skill and no chip on one never triggered', () => {
+    renderSection();
+    expect(within(screen.getByTestId('skill-card-quartus-flow')).getByTestId('skill-usage-badge')).toHaveTextContent('4 uses');
+    expect(within(screen.getByTestId('skill-card-circuit-helper')).queryByTestId('skill-usage-badge')).toBeNull();
+  });
+
+  it('names the hit count and last-used time in the tooltip', () => {
+    renderSection();
+    const title = within(screen.getByTestId('skill-card-quartus-flow'))
+      .getByTestId('skill-usage-badge')
+      .getAttribute('title');
+    expect(title).toContain('used 4×');
+    expect(title).toContain('last');
+  });
+
+  it('reads a single hit as "1 use"', () => {
+    withUsage('quartus-flow', { usageCount: 1 }, () => {
+      renderSection();
+      const badge = within(screen.getByTestId('skill-card-quartus-flow')).getByTestId('skill-usage-badge');
+      expect(badge).toHaveTextContent('1 use');
+      expect(badge.textContent).not.toContain('1 uses');
+    });
+  });
+
+  it('renders no chip for a row that carries no usage field at all', () => {
+    // A `skills-list` response cached before this shipped has no such key —
+    // that must read as "nothing shown", not as "0 uses" or NaN.
+    withUsage('quartus-flow', { usageCount: undefined, lastUsed: undefined }, () => {
+      renderSection();
+      expect(within(screen.getByTestId('skill-card-quartus-flow')).queryByTestId('skill-usage-badge')).toBeNull();
+    });
+  });
+
+  it('the detail header carries the same chip as the card', () => {
+    renderSection();
+    fireEvent.click(screen.getByTestId('skill-card-quartus-flow'));
+    const detail = screen.getByTestId('skill-detail');
+    expect(within(detail).getByTestId('skill-usage-badge')).toHaveTextContent('4 uses');
   });
 });

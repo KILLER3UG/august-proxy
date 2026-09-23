@@ -37,6 +37,21 @@ class SkillFileWrite(CamelModel):
     content: str
 
 
+def _usage_fields(skill_name: str) -> dict[str, object]:
+    """``usageCount``/``lastUsed`` for a response row, read through the one
+    sidecar resolver. A skill nobody has triggered reads as 0/'' rather than
+    being omitted, so the UI never has to guess which of "unused" and "the
+    server forgot to look" it is rendering.
+    """
+    usage = skill_service.read_skill_usage(skill_name)
+    count = usage.get('count')
+    last = usage.get('lastUsed')
+    return {
+        'usageCount': count if isinstance(count, int) else 0,
+        'lastUsed': last if isinstance(last, str) else '',
+    }
+
+
 @router.get('')
 async def listSkills(
     q: str = Query('', description='Search query (name/description/trigger)'),
@@ -62,6 +77,7 @@ async def listSkills(
                 'createdBy': s.get('created_by', ''),
                 'scope': s.get('scope', ''),
                 'overrides': s.get('overrides', ''),
+                **_usage_fields(str(s.get('name') or '')),
             }
             for s in results
         ],
@@ -75,7 +91,7 @@ async def getSkill(name: str, workspace: str = Query('')):
     skill = skill_service.get(name, workspace or None)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
-    return skill
+    return {**skill, **_usage_fields(str(skill.get('name') or name))}
 
 
 @router.post('')

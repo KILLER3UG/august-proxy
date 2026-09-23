@@ -42,6 +42,11 @@ interface SkillSummary {
   createdBy: string;
   scope?: string;
   overrides?: string;
+  /** Trigger hits from the per-skill usage sidecar. The server always sends
+   *  both fields for a listed skill; optional here only because a cached
+   *  `skills-list` response from before this shipped has no such key. */
+  usageCount?: number;
+  lastUsed?: string;
 }
 
 interface SkillDetail extends SkillSummary {
@@ -432,6 +437,7 @@ export function SkillsSection() {
                         overrides {selected.overrides}
                       </span>
                     )}
+                    <UsageChip skill={selected} />
                   </div>
                   <p className={cn('mt-1 text-[12.5px] leading-relaxed text-muted-foreground', !seeMore && 'line-clamp-2')}>
                     {selected.description || 'No description.'}
@@ -620,6 +626,29 @@ export function SkillsSection() {
   );
 }
 
+/** Trigger hits, read from the per-skill usage sidecar. A zero count renders
+ *  no chip on purpose: most of a catalogue is never-triggered skills, so a
+ *  "0 uses" tag on every card would state nothing and bury the scope and
+ *  overrides chips that do carry information. */
+function UsageChip({ skill }: { skill: SkillSummary }) {
+  const count = skill.usageCount ?? 0;
+  if (!count) return null;
+  const lastMs = skill.lastUsed ? Date.parse(skill.lastUsed) : NaN;
+  return (
+    <span
+      className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground"
+      data-testid="skill-usage-badge"
+      title={
+        Number.isFinite(lastMs)
+          ? `used ${count}× — last ${new Date(lastMs).toLocaleString()}`
+          : `used ${count}×`
+      }
+    >
+      {count} use{count === 1 ? '' : 's'}
+    </span>
+  );
+}
+
 function SkillCard({ skill, onOpen }: { skill: SkillSummary; onOpen: () => void }) {
   return (
     <button
@@ -667,6 +696,7 @@ function SkillCard({ skill, onOpen }: { skill: SkillSummary; onOpen: () => void 
                 disabled
               </span>
             )}
+            <UsageChip skill={skill} />
           </div>
         </div>
       </div>

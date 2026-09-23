@@ -294,3 +294,51 @@ def _bump(name: str, count: int) -> None:
     dest.write_text(json.dumps({'count': count, 'lastUsed': 'recent'}), 'utf-8')
     skill_service._bust_catalogue_cache()
     capabilities_prompt._skills_bm25_cache.clear()
+
+
+class TestUsageIsVisibleToTheClient:
+    """The counters existed only for ranking: neither skill endpoint serialized
+    them, so the catalogue could not answer "does anyone use this skill" and
+    the UI had nothing to render.
+
+    An untouched skill reports ``0`` rather than omitting the key. That
+    distinction is the whole contract for the client: a missing field forces
+    the renderer to guess between "nobody has used this" and "the server never
+    looked", and a guess there is how a used skill ends up looking unused.
+    """
+
+    @staticmethod
+    def _client():
+        from app.main import app
+        from httpx import ASGITransport, AsyncClient
+
+        return AsyncClient(transport=ASGITransport(app=app), base_url='http://test')
+
+    async def test_a_recorded_hit_shows_up_in_the_list(self, roots):
+        agentRoot, _bundledRoot = roots
+        md = _writeSkill(agentRoot, 'used-twice', 'Align the zebra prism lattice')
+        skill_service.record_skill_use(md)
+        skill_service.record_skill_use(md)
+        async with self._client() as ac:
+            body = (await ac.get('/api/skills')).json()
+        row = next(r for r in body['skills'] if r['name'] == 'used-twice')
+        assert row['usageCount'] == 2
+        assert row['lastUsed'], 'a counted hit must also carry when it happened'
+
+    async def test_an_untouched_skill_reports_zero_rather_than_omitting(self, roots):
+        agentRoot, _bundledRoot = roots
+        _writeSkill(agentRoot, 'never-used', 'Realign the zebra prism lattice')
+        async with self._client() as ac:
+            body = (await ac.get('/api/skills')).json()
+        row = next(r for r in body['skills'] if r['name'] == 'never-used')
+        assert row['usageCount'] == 0
+        assert row['lastUsed'] == ''
+
+    async def test_the_detail_endpoint_carries_the_same_counters(self, roots):
+        agentRoot, _bundledRoot = roots
+        md = _writeSkill(agentRoot, 'detail-used', 'Realign the zebra prism prism lattice')
+        skill_service.record_skill_use(md)
+        async with self._client() as ac:
+            body = (await ac.get('/api/skills/detail-used')).json()
+        assert body['usageCount'] == 1
+        assert body['lastUsed']
