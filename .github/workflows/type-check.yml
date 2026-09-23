@@ -46,6 +46,22 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: node scripts/check-version-sync.mjs
 
+      # Previously release-workflow only, so a doc that restates a code constant
+      # could drift for weeks and only surface at ship time. It costs one node
+      # process here.
+      - name: Doc constants match the code
+        working-directory: ${{ github.workspace }}
+        run: npm run check:docs
+
+      # Packaging is otherwise invisible to CI, which is how the `sidecar/`
+      # staging bug shipped ~50 releases: every other gate passes because the
+      # backend runs fine from a checkout, and only an installer payload shows
+      # that AppData got a tree with no dependencies. This stages the real
+      # payload in temp output and requires it to boot from that path alone.
+      - name: Desktop backend payload (installer staging)
+        working-directory: ${{ github.workspace }}
+        run: npm run test:packaging
+
       # Full suite includes Phase 7 inventory E2E, feature_flow live-backend
       # emission during tool stages, proxy inject HTTP, SSRF gates, gateway
       # normalize paths (no live bot credentials required).

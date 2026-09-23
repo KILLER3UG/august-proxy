@@ -13,8 +13,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Globe, Search } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { ChevronDown, ChevronRight, Globe } from 'lucide-react';
+import { safeExternalHref } from '@/lib/safe-href';
 import {
   Task,
   TaskContent,
@@ -61,34 +61,33 @@ export function SearchResultsList({ hits }: { hits: SearchHit[] }) {
   const visible = showAll ? hits : hits.slice(0, INLINE_HITS);
   const hidden = hits.length - visible.length;
   return (
-    <div
-      className={cn(
-        'min-w-0 rounded-lg border border-border bg-popover px-2.5 py-2',
-      )}
-    >
-      <ol className="m-0 grid list-none gap-1.5 p-0">
+    <div className="min-w-0 py-1">
+      <ol className="m-0 grid list-none gap-2 p-0">
         {visible.map((hit, i) => {
           const host = hit.url ? hostFromUrl(hit.url) : null;
+          // Search hits come from the tool's upstream results, so the scheme
+          // is not ours to trust — an unsafe one renders as plain text.
+          const href = safeExternalHref(hit.url);
           return (
-            <li key={`${hit.url || hit.title}-${i}`} className="flex min-w-0 items-center gap-2">
+            <li key={`${hit.url || hit.title}-${i}`} className="flex min-w-0 items-center gap-2.5">
               {hit.url ? <SiteFavicon url={hit.url} /> : null}
-              {hit.url ? (
+              {href ? (
                 <a
-                  href={hit.url}
+                  href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="min-w-0 flex-1 truncate text-sm font-medium text-primary hover:underline"
+                  className="min-w-0 flex-1 truncate text-xs font-medium text-foreground/90 hover:text-foreground hover:underline transition-colors"
                   title={hit.title || hit.url}
                 >
                   {hit.title || host || hit.url}
                 </a>
               ) : (
-                <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                  {hit.title}
+                <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground/90">
+                  {hit.title || hit.url}
                 </span>
               )}
               {host ? (
-                <span className="shrink-0 text-xs text-muted-foreground">{host}</span>
+                <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground/60">{host}</span>
               ) : null}
             </li>
           );
@@ -98,7 +97,7 @@ export function SearchResultsList({ hits }: { hits: SearchHit[] }) {
         <button
           type="button"
           onClick={() => setShowAll(true)}
-          className="mt-1.5 w-full border-t border-border/50 pt-1.5 text-left text-xs text-muted-foreground hover:text-primary"
+          className="mt-2 w-full border-t border-border/20 pt-1.5 text-left text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
           data-testid="search-results-show-more"
         >
           Show {hidden} more result{hidden === 1 ? '' : 's'}
@@ -142,24 +141,29 @@ export function SearchResultsTask({
         <TaskTrigger title={query}>
           <button
             type="button"
-            className="flex min-h-[24px] w-full items-center gap-2 rounded-xs px-1 py-0.5 text-left text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="flex min-h-[32px] w-full items-center justify-between px-3.5 py-2.5 text-left text-xs text-muted-foreground transition-colors hover:text-foreground group cursor-pointer"
           >
-            <span className="process-step-gutter" aria-hidden>
-              <Search className="process-step-icon" />
+            <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
+              <span className="shrink-0 font-normal">Searched the web</span>
+              {query && query !== 'Search' ? (
+                <span className="truncate font-medium text-foreground/90" title={query}>
+                  {query}
+                </span>
+              ) : null}
             </span>
-            <span className="process-tool-label flex-1" title={query}>
-              {query}
+            <span className="ml-2 flex shrink-0 items-center gap-2">
+              <span className="font-mono text-[10.5px] text-muted-foreground/60">
+                {count} result{count === 1 ? '' : 's'}
+              </span>
+              {open ? (
+                <ChevronDown className="size-3 text-muted-foreground/60 group-hover:text-foreground transition-colors" aria-hidden />
+              ) : (
+                <ChevronRight className="size-3 text-muted-foreground/60 group-hover:text-foreground transition-colors" aria-hidden />
+              )}
             </span>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {count} result{count === 1 ? '' : 's'}
-            </span>
-            <ChevronDown
-              className="process-tool-chevron group-data-[state=open]:rotate-180"
-              aria-hidden
-            />
           </button>
         </TaskTrigger>
-        <TaskContent className="mb-1 ml-[26px]">
+        <TaskContent className="border-t border-border/20 px-3.5 py-2">
           <SearchResultsList hits={hits} />
         </TaskContent>
       </Task>

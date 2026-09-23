@@ -51,6 +51,7 @@ import { setSubagentProposal } from './subagent-proposals-store';
 import { pushNotification } from '@/store/notifications';
 import { publishExecutionState, publishTodos } from '@/store/liveActivity';
 import { setPromptCacheLive } from '@/store/promptCacheLive';
+import { setContextSectionsLive } from '@/store/contextSectionsLive';
 import {
   addRightDrawerSection,
   closeRightDrawerSection,
@@ -58,10 +59,7 @@ import {
 import { toast } from 'sonner';
 import { useArenaStore } from './arena/arena-store';
 import { isDebateSession, debateTurnDone } from './debate/debate-store';
-import {
-  applySubagentEvent,
-  makeSubagentEventHandlers,
-} from './stream/apply-subagent-event';
+import { makeSubagentEventHandlers } from './stream/apply-subagent-event';
 
 export interface MakeStreamHandlersOptions {
   sessionId: string;
@@ -532,7 +530,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         parsedRecord.actionNeeded &&
         typeof parsedRecord.actionNeeded === 'object'
       ) {
-        actionNeededResult = parsedRecord.actionNeeded as ActionNeededPayload;
+        actionNeededResult = parsedRecord.actionNeeded;
       }
 
       toolResults = toolResults.map(t => t.id === id ? {
@@ -816,6 +814,11 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         queued: true,
       };
       setMessages(prev => {
+        // Replayed event: an SSE reconnect after a wiped `chat_last_seq_*`
+        // cursor re-delivers this frame from seq 0 — keying the append on the
+        // queue message id keeps the same turn from landing twice (the
+        // in-memory copy plus the replayed one).
+        if (prev.some(m => m.id === injected.id)) return prev;
         // Drop stale "Your message is queued…" placeholder bubbles from a
         // previous queued turn — the message now runs for real.
         const cleaned = prev.filter(msg =>
@@ -827,10 +830,13 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       });
       scheduleUpdate();
     },
-    onCompaction: (info) => {
+    onCompaction: (info, seq) => {
       // Dedicated animated card — don't dump a text blob into the assistant reply.
-      const notice = buildCompactionNoticeMessage(info);
+      // `seq` (frame id) is stable across a cursor replay, so a re-delivered
+      // frame maps to the same notice id and the guard drops the twin.
+      const notice = buildCompactionNoticeMessage(info, seq);
       setMessages((prev) => {
+        if (prev.some((m) => m.id === notice.id)) return prev;
         const idx = prev.findIndex((m) => m.id === assistantMsgId);
         if (idx >= 0) {
           return [...prev.slice(0, idx), notice, ...prev.slice(idx)];
@@ -846,12 +852,15 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'system', content: warning });
       scheduleUpdate();
     },
-    onContextPressure: ({ contextUsedPct, attentionPressure, totalTokens, maxContext, remainingTokens, promptCache }) => {
+    onContextPressure: ({ contextUsedPct, attentionPressure, totalTokens, maxContext, remainingTokens, promptCache, contextSections }) => {
       // Live-meter event — the backend emits one per turn, not only when the
       // window is nearly full. The prompt-cache split always feeds the
       // ContextRing live store (before the pressure gate — low pressure is
       // the common case and still carries fresh cache stats).
       setPromptCacheLive(sessionId, promptCache);
+      // Byte sizes of the blocks this turn actually injected, so the context
+      // breakdown can report a measurement instead of guessing zero.
+      setContextSectionsLive(sessionId, contextSections);
       // Only surface the warning when the budget is actually stressed (see
       // isContextPressured); low/medium pressure is a silent no-op and the
       // composer's ContextRing shows the gauge instead.

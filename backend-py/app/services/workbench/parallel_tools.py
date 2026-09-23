@@ -24,6 +24,9 @@ PARALLEL_SAFE_TOOLS: frozenset[str] = frozenset(
         'read_file',
         'read_files',
         'search_files',
+        # Read-only workspace scan; excluded from the parallel set it would
+        # serialize every batch of reads it joined.
+        'module_context',
         'brain_query',
         'web_search',
         'web_fetch',

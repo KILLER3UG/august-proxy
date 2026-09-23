@@ -66,7 +66,10 @@ MEMORY_BLOCK = (
     'Do NOT save task steps, code structure, or anything git / the codebase already records.\n'
     "Update, don't duplicate: your memory index (in context at session start) and `list_facts` "
     "show current keys — revise an existing fact under the "
-    'same key instead of saving a twin; `forget` deletes one that is wrong or outdated.\n'
+    'same key instead of saving a twin; `forget` deletes one that is wrong or outdated. '
+    'That index is frozen when the session opened (a live one would rewrite cached prompt bytes '
+    'every turn), so anything you saved this session is NOT in it — re-read `list_facts` before '
+    'writing again, and the key `remember` returned you is the key to update.\n'
     'Correct yourself too: when a stored memory proves wrong, update the SAME key and say what '
     'changed — stale memory is worse than none. If the user corrects you, save it as category '
     '"feedback" under a stable key like `feedback:<short-topic>`.\n'

@@ -1,6 +1,6 @@
 /* ── RightDrawer ─ multi-section Workbench sidebar ────────────────── */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -43,6 +43,7 @@ import { RightDrawerFileSection } from './RightDrawerFileSection';
 import { RightDrawerSubagentsSection } from './RightDrawerSubagentsSection';
 import { RightDrawerArtifactsSection } from './RightDrawerArtifactsSection';
 import { RightDrawerCircuitSection } from './RightDrawerCircuitSection';
+import { RightDrawerJobsSection } from './RightDrawerJobsSection';
 import { RoutinesPane } from '@/components/sidebar/RoutinesPane';
 import { getBot } from '@/api/api-client';
 import type { WorkbenchSession } from '@/types/workbench';
@@ -155,6 +156,10 @@ export function RightDrawer({
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  const resizeByKeyboard = (delta: number) => {
+    setWidth(clampWidth(width + delta));
+  };
+
   const startResize = (clientX: number) => {
     const startX = clientX;
     const startW = width;
@@ -207,6 +212,26 @@ export function RightDrawer({
               role="separator"
               aria-orientation="vertical"
               aria-label="Resize workbench sidebar"
+              aria-valuemin={MIN_WIDTH}
+              aria-valuemax={Math.max(MIN_WIDTH, Math.floor(window.innerWidth * MAX_VIEWPORT_FRACTION))}
+              aria-valuenow={Math.round(width)}
+              aria-valuetext={`${Math.round(width)} pixels`}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowLeft') {
+                  e.preventDefault();
+                  resizeByKeyboard(e.shiftKey ? 50 : 10);
+                } else if (e.key === 'ArrowRight') {
+                  e.preventDefault();
+                  resizeByKeyboard(e.shiftKey ? -50 : -10);
+                } else if (e.key === 'Home') {
+                  e.preventDefault();
+                  setWidth(MIN_WIDTH);
+                } else if (e.key === 'End') {
+                  e.preventDefault();
+                  setWidth(Math.max(MIN_WIDTH, Math.floor(window.innerWidth * MAX_VIEWPORT_FRACTION)));
+                }
+              }}
               onMouseDown={(e) => {
                 e.preventDefault();
                 startResize(e.clientX);
@@ -214,7 +239,7 @@ export function RightDrawer({
               onTouchStart={(e) => {
                 if (e.touches.length) startResize(e.touches[0].clientX);
               }}
-              className={`absolute top-0 left-0 z-20 h-full w-1 cursor-col-resize select-none touch-none transition-colors hover:bg-primary/40 ${isDragging ? 'bg-primary/50' : 'bg-transparent'}`}
+              className={`absolute top-0 left-0 z-20 h-full w-1 cursor-col-resize select-none touch-none transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/60 hover:bg-primary/40 ${isDragging ? 'bg-primary/50' : 'bg-transparent'}`}
             />
 
             <div className="august-right-drawer-header flex h-10 shrink-0 items-center justify-between border-b border-border/60 bg-transparent px-3">
@@ -311,6 +336,7 @@ const TAB_META: Record<RightDrawerSectionId, { label: string; Icon: typeof FileD
   circuit: { label: 'Circuit', Icon: Cpu },
   file: { label: 'File', Icon: FileDiff },
   routines: { label: 'Routines', Icon: CalendarClock },
+  jobs: { label: 'Jobs', Icon: Activity },
 };
 
 /** Menu order for the "+" picker (workbench-first, mirrors launcher). */
@@ -326,6 +352,7 @@ const SECTION_ADD_ORDER: RightDrawerSectionId[] = [
   'artifacts',
   'circuit',
   'routines',
+  'jobs',
 ];
 
 function DrawerTab({ sectionId, active }: { sectionId: RightDrawerSectionId; active: boolean }) {
@@ -363,7 +390,7 @@ function DrawerTab({ sectionId, active }: { sectionId: RightDrawerSectionId; act
           e.stopPropagation();
           closeRightDrawerSection(sectionId);
         }}
-        className="ml-0.5 rounded p-0.5 opacity-40 transition hover:bg-muted/60 hover:opacity-100"
+        className="ml-0.5 rounded p-0.5 opacity-40 transition hover:bg-muted/60 hover:opacity-100 focus-visible:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60"
       >
         <X className="size-2.5" />
       </button>
@@ -512,6 +539,8 @@ function renderSection(
         );
       }
       return <RoutinesDrawerSection agentId={ctx.workbenchSession.agentId} />;
+    case 'jobs':
+      return <RightDrawerJobsSection sessionId={ctx.sessionId} />;
   }
 }
 
@@ -530,25 +559,3 @@ function RoutinesDrawerSection({ agentId }: { agentId: string }) {
     </div>
   );
 }
-
-function DrawerSectionCard({
-  sectionId,
-  ctx,
-}: {
-  sectionId: RightDrawerSectionId;
-  ctx: {
-    sessionId: string | null;
-    workspacePath: string | null;
-    workbenchSession: WorkbenchSession | null;
-    onApprovePlan: () => Promise<void>;
-    onRejectPlan?: () => Promise<void>;
-    onRevisePlan?: (feedback: string) => void | Promise<void>;
-  };
-}) {
-  return (
-    <section className="august-drawer-card relative flex h-full min-h-0 overflow-hidden rounded-lg border border-border/50 shadow-sm">
-      <div className="min-h-0 flex-1 overflow-y-auto">{renderSection(sectionId, ctx)}</div>
-    </section>
-  );
-}
-

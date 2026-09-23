@@ -771,16 +771,15 @@ def _fingerprintSkillMap() -> dict[str, str]:
 
 
 def _skillLoadCount(skillName: str) -> int:
+    """Loads recorded for a skill — read through the ONE sidecar resolver
+    (``skill_service.usage_sidecar_path``). Building the path here is what
+    made bundled-skill counters unwritable-from-the-data-dir and unreadable
+    from the install tree at the same time; proposal logic and thresholds are
+    unchanged."""
     try:
-        import json as _json
+        from app.services.skill_service import read_skill_usage
 
-        from app.services.skill_service import _agentSkillsDir
-
-        sidecar = _agentSkillsDir() / skillName / '.usage.json'
-        if not sidecar.exists():
-            return 0
-        data = _json.loads(sidecar.read_text('utf-8'))
-        return int(data.get('count') or 0)
+        return as_int(read_skill_usage(skillName).get('count'), 0)
     except Exception:
         return 0
 

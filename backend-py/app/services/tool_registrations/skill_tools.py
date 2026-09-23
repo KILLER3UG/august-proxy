@@ -53,11 +53,64 @@ async def _loadSkill(name: str) -> str:
                 f"Skill '{name}' is disabled. It cannot be loaded — "
                 'enable it in Settings → Skills first.'
             )
+        trigger_path = as_str(skill.get('path'), '')
         # Trigger-hit telemetry (per-skill usage sidecar).
-        skill_service.record_skill_use(as_str(skill.get('path'), ''))
-        return f'# {skill["name"]}\n\n{as_str(skill.get("description"), "")}\n\n{as_str(skill.get("instructions"), "")}'
+        skill_service.record_skill_use(trigger_path)
+        body = (
+            f'# {skill["name"]}\n\n'
+            f'{as_str(skill.get("description"), "")}\n\n'
+            f'{as_str(skill.get("instructions"), "")}'
+        )
+        # A skill may ship sidecar documents next to SKILL.md. Naming them is
+        # what makes them usable: the body stays the entry point and the model
+        # opens only the one file it needs, instead of the whole directory
+        # being invisible because nothing told it the files exist.
+        listing = _siblingFiles(trigger_path)
+        return f'{body}\n{listing}' if listing else body
     except Exception as exc:
         return f"Error loading skill '{name}': {exc}"
+
+
+_MAX_SKILL_FILES = 25
+
+
+def _siblingFiles(skill_path: str) -> str:
+    """List the other files in a skill's directory, with sizes."""
+    from pathlib import Path
+
+    if not skill_path:
+        return ''
+    try:
+        directory = Path(skill_path).parent
+        if not directory.is_dir():
+            return ''
+        entries = sorted(
+            (p for p in directory.rglob('*') if p.is_file() and p.name != 'SKILL.md'),
+            key=lambda p: str(p.relative_to(directory)).replace('\\', '/'),
+        )
+    except OSError:
+        return ''
+    lines: list[str] = []
+    for entry in entries[:_MAX_SKILL_FILES]:
+        try:
+            rel = str(entry.relative_to(directory)).replace('\\', '/')
+            size = entry.stat().st_size
+        except (OSError, ValueError):
+            continue
+        if rel.split('/')[0].startswith('.'):
+            continue
+        lines.append(f'- {rel} ({size} bytes)')
+    if not lines:
+        return ''
+    note = ''
+    if len(entries) > _MAX_SKILL_FILES:
+        note = f'\n(_{len(entries) - _MAX_SKILL_FILES} more not listed — list the directory for the full set_)'
+    return (
+        '\n\n## Files in this skill\n'
+        'Read one with read_file, relative to the skill directory:\n'
+        + '\n'.join(lines)
+        + note
+    )
 
 
 async def _listSkills(query: str = '') -> str:

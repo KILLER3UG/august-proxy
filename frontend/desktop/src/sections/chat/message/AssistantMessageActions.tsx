@@ -6,7 +6,6 @@ export function AssistantMessageActions({
   showActions,
   copied,
   speaking,
-  isLast,
   streaming,
   isRegenerating,
   onSpeak,
@@ -35,37 +34,37 @@ export function AssistantMessageActions({
 }) {
   return (
     <div className={cn(
-      "flex items-center gap-0.5 mt-1 transition-opacity duration-150 self-start",
+      "flex items-center gap-1 mt-1 transition-opacity duration-150 self-start",
       showActions ? "opacity-100" : "opacity-0 group-focus-within:opacity-100"
     )}>
       <button
         onClick={onSpeak}
         aria-label={speaking ? "Pause reading" : "Read aloud"}
         className={cn(
-          "p-1 rounded transition",
+          "p-1.5 rounded-md transition-colors",
           speaking
             ? "bg-primary/10 text-primary hover:bg-primary/20"
-            : "hover:bg-muted text-muted-foreground hover:text-foreground"
+            : "hover:bg-accent/50 text-muted-foreground hover:text-foreground"
         )}
         title={speaking ? "Pause reading" : "Read aloud"}
       >
         {speaking ? (
-          <Pause className="size-3" />
+          <Pause className="size-3.5" />
         ) : (
-          <Play className="size-3" />
+          <Play className="size-3.5" />
         )}
       </button>
       <button
         onClick={onCopy}
-        className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition relative"
+        className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors relative"
         title="Copy"
         aria-label="Copy"
       >
         <div className={cn("transition-transform duration-200", copied ? "scale-110 text-success" : "scale-100")}>
           {copied ? (
-            <Check className="size-3" />
+            <Check className="size-3.5" />
           ) : (
-            <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
             </svg>
           )}
@@ -76,7 +75,7 @@ export function AssistantMessageActions({
           onClick={onReanswer}
           disabled={streaming}
           className={cn(
-            "p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50",
+            "p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50",
             reanswerOpen && "text-primary",
           )}
           title="Answer this with another model"
@@ -84,41 +83,41 @@ export function AssistantMessageActions({
           aria-expanded={reanswerOpen}
           data-testid="reanswer-open"
         >
-          <ArrowLeftRight className="size-3" />
+          <ArrowLeftRight className="size-3.5" />
         </button>
       )}
       {onCompare && (
         <button
           onClick={onCompare}
           disabled={streaming}
-          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
+          className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
           title="Compare models — re-run this prompt on 2–3 models side by side"
           aria-label="Compare models side by side"
           data-testid="compare-open"
         >
-          <GitCompare className="size-3" />
+          <GitCompare className="size-3.5" />
         </button>
       )}
       <button
         onClick={onRegen}
         disabled={streaming || isRegenerating}
-        className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
+        className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
         title="Retry / Regenerate"
         aria-label="Retry / Regenerate"
       >
         <RefreshCw
-          className={cn("size-3", isRegenerating && "animate-spin")}
+          className={cn("size-3.5", isRegenerating && "animate-spin")}
         />
       </button>
       {onFork && (
         <button
           onClick={onFork}
           disabled={streaming}
-          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
+          className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
           title="Fork conversation from here"
           aria-label="Fork conversation from here"
         >
-          <GitBranch className="size-3" />
+          <GitBranch className="size-3.5" />
         </button>
       )}
     </div>

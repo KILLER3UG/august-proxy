@@ -2,6 +2,7 @@
  * Reads named SSE frames and dispatches them via streamEvents. */
 
 import type { WorkbenchEventHandlers, WorkbenchGuardMode, WorkbenchTurnUsage } from '@/types/workbench';
+import { clearStreamReconnecting, markStreamReconnecting } from '@/store/streamLink';
 import { dispatchWorkbenchEvent } from './streamEvents';
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -160,11 +161,9 @@ async function readSseStream(
       if (frameEvent === 'done' || frameEvent === 'error' || frameEvent === 'aborted') {
         receivedTerminalEvent = true;
       }
-      dispatchWorkbenchEvent(frameEvent, payload, handlers);
-      if (frameId !== null) {
-        const n = Number(frameId);
-        if (Number.isFinite(n)) handlers.onSeq?.(n, frameEvent);
-      }
+      const frameSeq = frameId !== null && Number.isFinite(Number(frameId)) ? Number(frameId) : undefined;
+      dispatchWorkbenchEvent(frameEvent, payload, handlers, frameSeq);
+      if (frameSeq !== undefined) handlers.onSeq?.(frameSeq, frameEvent);
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === 'AbortError') throw e;
       // Ignore non-JSON data lines
@@ -261,6 +260,8 @@ export async function streamWorkbenchReconnect(
     ...handlers,
     onSeq: (seq: number, eventType?: string) => {
       currentSeq = seq;
+      // Events are flowing again — the link is live, however it got back.
+      clearStreamReconnecting(sessionId);
       originalOnSeq?.(seq, eventType);
     }
   };
@@ -278,6 +279,10 @@ export async function streamWorkbenchReconnect(
   const maxBackoffMs = 15000;
   let retryCount = 0;
   const baseDelayMs = 1000;
+
+  // Aborted mid-backoff would otherwise leave the banner up: the loop exits
+  // through the throw paths, and the caller has stopped listening.
+  signal?.addEventListener('abort', () => clearStreamReconnecting(sessionId), { once: true });
 
   while (true) {
     if (signal?.aborted) {
@@ -311,6 +316,11 @@ export async function streamWorkbenchReconnect(
 
       // Reset retry count on successful connection establishment
       retryCount = 0;
+      // The link is back, so the "Stream interrupted — reconnecting" banner is
+      // already stale. It is otherwise cleared only by `onSeq` or loop exit,
+      // and a session that reconnects while idle produces no events — the
+      // banner would sit there until the next turn happened to start.
+      clearStreamReconnecting(sessionId);
 
       // Intercept terminal handlers so reconnect stops when the turn ends.
       let terminalSeen = false;
@@ -390,6 +400,7 @@ export async function streamWorkbenchReconnect(
             ? String((e as Record<string, unknown>).message)
             : String(e);
       console.warn(`[streamWorkbenchReconnect] Connection lost. Retrying in ${Math.round(delay)}ms (${budgetLabel}). Error:`, errMsg);
+      markStreamReconnecting(sessionId, retryCount);
 
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(resolve, delay);
@@ -400,6 +411,8 @@ export async function streamWorkbenchReconnect(
       });
     }
   }
+  // Loop exited (terminal event or exhausted budget): the banner must go with it.
+  clearStreamReconnecting(sessionId);
 }
 
 /**

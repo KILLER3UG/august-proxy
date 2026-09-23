@@ -1,7 +1,9 @@
 """Automations API — durable jobs in data/automations.json.
 
   GET    /api/automations
-  POST   /api/automations                 — create/upsert (mints triggerToken on create)
+  POST   /api/automations                 — create (mints triggerToken), or with a
+                                            matching `id` a partial update: fields
+                                            the body omits are kept as stored
   PATCH  /api/automations/{id}            — pause/resume/enable
   POST   /api/automations/run             — run now
   POST   /api/automations/{id}/trigger    — webhook; Bearer triggerToken
@@ -31,38 +33,44 @@ class RunBody(CamelModel):
 
 
 class UpsertBody(CamelModel):
+    """Partial upsert: every field is optional, and a field the client did not
+    send is left as the stored job has it. Defaults therefore live in the
+    runner (`as_str(job.get('guardMode'), 'ask')` and friends), not here —
+    filling these with type defaults made an upsert from a form that only
+    edits one field erase the job's model, guard mode and timeout."""
+
     id: str | None = None
-    name: str = ''
-    schedule: str = ''
-    job_type: str = 'workbench'
-    prompt: str = ''
-    command: str = ''
-    task: str = ''
-    cwd: str = ''
-    workspace_path: str = ''
-    timezone: str = ''
-    model: str = ''
-    model_provider: str = ''
-    provider: str = ''
-    agent_id: str = ''
-    guard_mode: str = 'ask'
-    sandbox_mode: str = ''
-    enabled: bool = True
-    paused: bool = False
-    approval_required: bool = False
-    timeout_ms: int = 60000
-    url: str = ''
-    method: str = 'GET'
-    body: str = ''
-    max_runs: int = 0
+    name: str | None = None
+    schedule: str | None = None
+    job_type: str | None = None
+    prompt: str | None = None
+    command: str | None = None
+    task: str | None = None
+    cwd: str | None = None
+    workspace_path: str | None = None
+    timezone: str | None = None
+    model: str | None = None
+    model_provider: str | None = None
+    provider: str | None = None
+    agent_id: str | None = None
+    guard_mode: str | None = None
+    sandbox_mode: str | None = None
+    enabled: bool | None = None
+    paused: bool | None = None
+    approval_required: bool | None = None
+    timeout_ms: int | None = None
+    url: str | None = None
+    method: str | None = None
+    body: str | None = None
+    max_runs: int | None = None
     # Part 19 Phase B (routines): delivery + memory knobs. The runner path
     # already honors these (automations_store._run_workbench_stream +
     # automation_memory) — surfaced here so the RoutinesPane (and any API
     # client) can create routine jobs that land their output in the Bot's
     # canonical chat. Empty deliver = a plain automation (no chat routing).
-    deliver: str = ''
-    respond: bool = True
-    continuity: bool = False
+    deliver: str | None = None
+    respond: bool | None = None
+    continuity: bool | None = None
 
 
 class PatchBody(CamelModel):
@@ -146,15 +154,19 @@ async def upsert_automation(body: UpsertBody):
     creating = not (body.id and store.get_job(body.id))
     payload: dict[str, object] = {
         'id': body.id or '',
-        'name': body.name or body.prompt or body.command or body.task or 'Automation',
+        # A rename must not be a side effect of editing something else: the
+        # prompt/command fallbacks only apply when the job is being created.
+        'name': body.name
+        or (body.prompt or body.command or body.task or 'Automation' if creating else None),
         'schedule': body.schedule,
-        'jobType': body.job_type or 'workbench',
+        'jobType': body.job_type,
         'prompt': body.prompt or body.task or body.command,
         'command': body.command or body.task,
         'task': body.task or body.command or body.prompt,
         'cwd': body.cwd or body.workspace_path,
         'workspacePath': body.workspace_path or body.cwd,
-        'timezone': body.timezone or system_local_timezone(),
+        # The store keeps the job's own timezone when the body has none.
+        'timezone': body.timezone,
         'model': body.model,
         'modelProvider': body.model_provider or body.provider,
         'provider': body.provider or body.model_provider,
@@ -168,12 +180,16 @@ async def upsert_automation(body: UpsertBody):
         'url': body.url,
         'method': body.method,
         'body': body.body,
-        'maxRuns': body.max_runs or 0,
+        'maxRuns': body.max_runs,
         # Part 19 Phase B routine fields (pass through to the runner).
         'deliver': body.deliver,
         'respond': body.respond,
         'continuity': body.continuity,
     }
+    # An omitted field is left exactly as stored — the merge in
+    # `automations_store._merge_upsert` keys off presence, so the None entries
+    # (client sent nothing) have to go rather than overwrite.
+    payload = {k: v for k, v in payload.items() if v is not None}
     try:
         job = await store.upsert_job_async(payload)
     except ValueError as exc:

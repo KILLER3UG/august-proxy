@@ -13,6 +13,16 @@ export const messagesStorageKey = (sessionId: string | null) =>
 export const composerDraftStorageKey = (sessionId: string | null) =>
   sessionId ? `${COMPOSER_DRAFT_PREFIX}${sessionId}` : null;
 
+/** A saved [] is an intentional empty transcript, not missing history. */
+export function hasStoredMessages(sessionId: string): boolean {
+  try {
+    const saved = localStorage.getItem(messagesStorageKey(sessionId)!);
+    return saved !== null && Array.isArray(JSON.parse(saved));
+  } catch {
+    return false;
+  }
+}
+
 export function loadMessagesForSession(sessionId: string | null): ChatMessage[] {
   const key = messagesStorageKey(sessionId);
   if (!key) return [];

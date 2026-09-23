@@ -17,6 +17,17 @@ object — patching wb.saveSessions still intercepts the persist path
 (test_workbench_tool_loop's boom test depends on exactly that). Code moved
 verbatim; the only rewrites are the six loop counters bundled into
 ``TurnTotals`` and ``_trace``/``_turnStartMs`` becoming parameters.
+
+046: ``turnTelemetry`` also persists the turn verdict — the loop's
+``turnEndReason`` / ``parseFailures`` / ``surfaceDowngraded`` become the
+``end_reason`` / ``malformed_tool_args`` / ``surface_downgraded`` columns (the
+same words the ``turn_end`` SSE event carries), and the two failure sources
+the loop never reported through telemetry — the edit-verification gate
+(read back off the session's own verify state) and this session's guardrail
+blocks (read back off ``tool_guardrail_log``, which has no model column) —
+become ``edit_verify_fails`` / ``guardrail_classes`` and feed the widened
+failure-lesson path. Missing values are written NULL, never 0: the loop stays
+the single authority on WHY it stopped, and turn_close does not guess.
 """
 
 from __future__ import annotations
@@ -25,6 +36,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable
 
 from app.json_narrowing import as_int, as_str
@@ -36,6 +48,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger('workbench')
 
 Emit = Callable[[dict[str, object]], None]
+
+# The edit-verification failure receipt marker (edit_verification
+# ._failure_receipt). Read only to QUOTE a repeated gate miss in a candidate
+# lesson — it never decides anything.
+_VERIFY_FAIL_MARKER = '[verification FAILED'
+_VERIFY_SCAN_MESSAGES = 12
 
 
 @dataclass
@@ -60,6 +78,76 @@ def _wb():
     import app.services.workbench.workbench as workbench
 
     return workbench
+
+
+def _alias(extra: dict[str, object], names: tuple[str, ...]) -> object:
+    """First non-None value among the ``**extra`` aliases (see turnTelemetry)."""
+    for name in names:
+        value = extra.get(name)
+        if value is not None:
+            return value
+    return None
+
+
+def _counterValue(value: object) -> int | None:
+    """Normalise a handed-in loop counter; None stays None (not recorded).
+
+    ``as_int`` deliberately rejects ``bool``, and ``surfaceDowngraded`` IS a
+    bool in the loop, so the narrow here has to accept it as 1/0 instead of
+    turning a real downgrade into a measured zero.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if isinstance(value, int):
+        return value
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _utcStamp(epochMs: int) -> str:
+    """Epoch ms → the ``datetime('now')`` text space tool_guardrail_log uses."""
+    try:
+        return datetime.fromtimestamp(epochMs / 1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    except (OverflowError, OSError, ValueError, TypeError):
+        return ''
+
+
+def _edit_verify_streak(session: WorkbenchSession) -> int | None:
+    """The turn's trailing edit-verification fail streak, NULL when unmeasured.
+
+    Reads the state edit_verification already owns for this session. A session
+    with no state never ran the gate, which must NOT be recorded as 0 — the
+    panel distinguishes "the last gate passed" (0) from "there was no gate"
+    (NULL).
+    """
+    state = getattr(session, '_verify_state', None)
+    if not isinstance(state, dict):
+        return None
+    return as_int(state.get('failStreak'), 0)
+
+
+def _edit_verify_sample(currentMessages: list[dict[str, Any]]) -> str:
+    """Quote the newest verification receipt in the turn tail, if there is one."""
+    for m in reversed(currentMessages[-_VERIFY_SCAN_MESSAGES:]):
+        if not isinstance(m, dict):
+            continue
+        content = m.get('content')
+        parts: list[str] = []
+        if isinstance(content, str):
+            parts = [content]
+        elif isinstance(content, list):
+            parts = [
+                as_str(b.get('text') or b.get('content'), '') for b in content if isinstance(b, dict)
+            ]
+        for part in parts:
+            idx = part.find(_VERIFY_FAIL_MARKER)
+            if idx >= 0:
+                return ' '.join(part[idx : idx + 300].split())
+    return ''
 
 
 def lastUserMessageText(session: WorkbenchSession) -> str:
@@ -104,9 +192,25 @@ async def turnTelemetry(
     turnError: str | None,
     emit: Emit | None,
     toolRound: int,
+    turnEndReason: str | None = None,
+    parseFailures: int | None = None,
+    surfaceDowngraded: bool | int | None = None,
+    **extra: object,
 ) -> None:
     """M3 usage feedback + M5 turn telemetry (moved verbatim from
-    _sendWorkbenchMessageStreamImpl)."""
+    _sendWorkbenchMessageStreamImpl).
+
+    046 adds the durable turn verdict. ``turnEndReason`` / ``parseFailures`` /
+    ``surfaceDowngraded`` are the loop's own words for WHY it stopped and how
+    much it had to self-correct on the way; they are named exactly like the
+    loop's locals so the call site passes them straight through. The in-turn
+    counters stay authoritative for in-turn behaviour — this only records the
+    outcome. Anything not handed in is written NULL ("not recorded") and the
+    panel labels it; guessing a reason from ``turnError`` text would put words
+    in the loop's mouth, so it is deliberately not done here. ``**extra``
+    swallows snake_case aliases (and any further kwargs) rather than raising:
+    a TypeError on this await would break every turn over a telemetry field.
+    """
     try:
         from app.services import turn_outcomes
         from app.services.memory_store import touch_fact_usage
@@ -170,6 +274,30 @@ async def turnTelemetry(
             if isinstance(resolvedProvider, dict)
             else ''
         )
+        # ── the persisted turn verdict, 046 ─────────────────────────────
+        # The loop's own words, handed in as kwargs. Nothing is inferred from
+        # turnError text here: a reason turn_close guessed would be a second
+        # authority over why the turn ended, and a wrong one.
+        _reason = as_str(
+            turnEndReason if turnEndReason is not None else _alias(
+                extra, ('turn_reason', 'turnReason', 'end_reason', 'endReason', 'reason')
+            ),
+            '',
+        ).strip()
+        _malformed = parseFailures if parseFailures is not None else _alias(
+            extra, ('parse_failures', 'malformedToolArgs', 'malformed_tool_args')
+        )
+        _downgraded = surfaceDowngraded if surfaceDowngraded is not None else _alias(
+            extra, ('surface_downgraded', 'surfaceDowngraded')
+        )
+        # Guardrail blocks are read back out of tool_guardrail_log: that table
+        # stays the authority for the per-block detail, but it records no
+        # model/provider, so nothing could tie a repeated block to the model
+        # that keeps causing it until this roll-up landed on the turn's row.
+        _guardrailDigest, _guardrailSamples = turn_outcomes.guardrail_class_digest(
+            sessionId, _utcStamp(turnStartMs)
+        )
+        _editVerifyFails = _edit_verify_streak(session)
         turn_outcomes.record_turn_outcome(
             model=resolvedModel or '',
             provider=_telemetryProvider,
@@ -182,6 +310,14 @@ async def turnTelemetry(
             cache_hit_tokens=int(totals.cacheHitTokens or 0),
             cache_miss_tokens=int(totals.cacheMissTokens or 0),
             tool_args_ready_to_stream_end_ms=totals.toolArgsReadyMs,
+            # None on every one of these → SQL NULL → "not recorded". A
+            # zero-measured turn and an unmeasured one stay distinguishable.
+            end_reason=_reason or None,
+            rounds=None if toolRound is None else int(toolRound),
+            malformed_tool_args=_counterValue(_malformed),
+            surface_downgraded=_counterValue(_downgraded),
+            edit_verify_fails=_editVerifyFails,
+            guardrail_classes=_guardrailDigest,
         )
         # Surface the per-turn latency/cache numbers as one SSE event
         # (Observability; the transcript can show a cache-hit chip) — turns
@@ -201,16 +337,40 @@ async def turnTelemetry(
                     'toolArgsReadyToStreamEndMs': totals.toolArgsReadyMs,
                 }
             )
-        if turnError is not None:
-            # Rare promoted-lesson path (Q2): repeated failures of one
-            # signature may yield ONE reviewed, deduplicated lesson fact.
-            # Fire-and-forget — the review call must not delay the done event.
+        # Rare promoted-lesson path (Q2): repeated failures of ONE signature
+        # may yield ONE reviewed, deduplicated lesson fact. 046 widens the
+        # inputs beyond the upstream error text — a turn whose edit-verification
+        # gate kept rejecting the fix, or whose tool calls kept hitting a
+        # guardrail, now carries those classes too, each in its own signature
+        # space (an `edit_file` guardrail block and an `edit_file` error class
+        # are two different lessons). The threshold, the review gate and the
+        # `lesson` fact kind are unchanged; nothing here can withhold an
+        # answer. Fire-and-forget — the review call must not delay the done
+        # event.
+        _lessonClasses: list[turn_outcomes.FailureClass] = []
+        if _editVerifyFails:
+            _lessonClasses.append(
+                turn_outcomes.FailureClass(
+                    turn_outcomes.KIND_EDIT_VERIFY,
+                    '',
+                    _edit_verify_sample(currentMessages)
+                    or 'the edit-verification gate rejected the last fix attempts',
+                )
+            )
+        for _tool, _sample in _guardrailSamples.items():
+            _lessonClasses.append(
+                turn_outcomes.FailureClass(
+                    turn_outcomes.KIND_GUARDRAIL, _tool, _sample or 'identical-call / loop guardrail'
+                )
+            )
+        if turnError is not None or _lessonClasses:
             asyncio.create_task(
                 turn_outcomes.maybe_promote_failure_lesson(
                     model=resolvedModel or '',
                     provider=_telemetryProvider,
-                    error_class=turn_outcomes.classify_error(turnError),
-                    sample_error=turnError,
+                    error_class=turn_outcomes.classify_error(turnError or ''),
+                    sample_error=turnError or '',
+                    failure_classes=_lessonClasses,
                 )
             )
     except Exception:

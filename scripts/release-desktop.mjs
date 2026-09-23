@@ -1,66 +1,85 @@
 // scripts/release-desktop.mjs
 //
-// Builds the desktop release assets and writes a GitHub-release manifest used
-// by the desktop auto-updater.
+// Builds the desktop release assets. `latest.json` is the Tauri updater feed;
+// `august-desktop-manifest.json` is legacy web checksum metadata.
 //
 // Usage:
 //   node scripts/release-desktop.mjs patch
 //   node scripts/release-desktop.mjs minor
-//   node scripts/release-desktop.mjs --publish
-//   node scripts/release-desktop.mjs patch --dry-run   (preview only, no changes)
+//   node scripts/release-desktop.mjs --version=0.18.12 --tauri --publish
+//   node scripts/release-desktop.mjs patch --dry-run
 //
-// The script:
-//   1) builds the web UI
-//   2) stages backend code and node_modules
-//   3) zips web and backend assets
-//   4) computes sha256 checksums
-//   5) writes august-desktop-manifest.json
-//   6) optionally publishes to GitHub Releases via gh
-//
-// Note (2026-07-25): the manifest this script writes is no longer consumed by
-// a custom sidecar updater. Desktop 0.12.x on Windows now downloads the full
-// GitHub-release NSIS setup via the Rust `download_release_installer` command
-// (see frontend/desktop/src/hooks/useAppUpdate.ts and src-tauri/src/backend.rs).
-// The manifest + checksums are retained for non-Windows / fallback paths.
+// The script builds the web UI, stages backend code and node_modules, zips web
+// and backend assets, computes checksums, writes the release manifest, and
+// optionally publishes an explicit asset allowlist to GitHub Releases.
 
-import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, rm, readdir, stat, rename } from 'node:fs/promises';
 import { existsSync, createReadStream, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
-const root = resolve(process.cwd());
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const releaseDir = resolve(root, 'releases/desktop');
 const webDist = resolve(root, 'web-dist');
 const backendDir = resolve(root, 'backend');
 const nodeModules = resolve(root, 'node_modules');
 const packageJsonPath = resolve(root, 'package.json');
 const manifestPath = join(releaseDir, 'august-desktop-manifest.json');
+const latestPath = join(releaseDir, 'latest.json');
+const tauriBundleDir = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
+const repository = process.env.GITHUB_REPOSITORY || 'KILLER3UG/august-proxy';
 
-const args = new Set(process.argv.slice(2));
-const publish = args.has('--publish');
-const buildTauri = args.has('--tauri');
-const dryRun = args.has('--dry-run');
-const draft = args.has('--draft');
-const bump = getBumpFromArgs();
-const version = getVersionFromArgs() || (bump ? bumpVersion(await readVersion(), bump) : await readVersion());
-
-function getVersionFromArgs() {
-    for (const arg of process.argv.slice(2)) {
-        if (arg.startsWith('--version=')) return arg.slice('--version='.length);
+const rawArgs = process.argv.slice(2);
+const knownFlags = new Set(['--publish', '--tauri', '--dry-run', '--draft']);
+let versionArg = null;
+let bumpArg = null;
+const flags = new Set();
+for (const arg of rawArgs) {
+    if (arg === 'patch' || arg === 'minor' || arg === 'major') {
+        if (bumpArg) throw new Error(`multiple bump selectors: ${bumpArg}, ${arg}`);
+        bumpArg = arg;
+        continue;
     }
-    return null;
+    if (arg.startsWith('--version=')) {
+        if (versionArg !== null) throw new Error('multiple --version selectors');
+        versionArg = arg.slice('--version='.length);
+        continue;
+    }
+    if (arg === '--version') throw new Error('--version requires a value using --version=<semver>');
+    if (knownFlags.has(arg)) {
+        flags.add(arg);
+        continue;
+    }
+    throw new Error(`unknown release argument: ${arg}`);
+}
+if (versionArg !== null && bumpArg) {
+    throw new Error('choose either --version=<semver> or a bump selector, not both');
 }
 
-function getBumpFromArgs() {
-    for (const arg of process.argv.slice(2)) {
-        if (arg === 'patch' || arg === 'minor' || arg === 'major') return arg;
+const publish = flags.has('--publish');
+const buildTauri = flags.has('--tauri');
+const dryRun = flags.has('--dry-run');
+const draft = flags.has('--draft');
+const currentVersion = await readVersion();
+const version = normalizeVersion(
+    versionArg !== null
+        ? versionArg
+        : (bumpArg ? bumpVersion(currentVersion, bumpArg) : currentVersion),
+);
+
+function normalizeVersion(value) {
+    const normalized = String(value).trim().replace(/^v(?=\d)/i, '');
+    if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(normalized)) {
+        throw new Error(`invalid release version: ${value}`);
     }
-    return null;
+    return normalized;
 }
 
 function bumpVersion(current, bump) {
-    const parts = current.split('.').map(Number);
+    const normalized = normalizeVersion(current);
+    const parts = normalized.split('.').slice(0, 3).map(Number);
     if (bump === 'major') return [parts[0] + 1, 0, 0].join('.');
     if (bump === 'minor') return [parts[0], parts[1] + 1, 0].join('.');
     return [parts[0], parts[1], parts[2] + 1].join('.');
@@ -68,29 +87,65 @@ function bumpVersion(current, bump) {
 
 async function readVersion() {
     const pkg = JSON.parse(await readFile(packageJsonPath, 'utf8'));
-    return pkg.version;
+    return normalizeVersion(pkg.version);
+}
+
+function quoteCmdArg(value) {
+    return /[\s"^&|<>]/.test(value) ? `"${value}"` : value;
+}
+
+function resolveCommand(command, args) {
+    if (process.platform !== 'win32' || command.includes('.')) {
+        return { command, args };
+    }
+    const pathEntries = (process.env.PATH || '').split(process.platform === 'win32' ? ';' : ':');
+    for (const entry of pathEntries) {
+        for (const suffix of ['.exe', '.cmd']) {
+            const candidate = join(entry, `${command}${suffix}`);
+            if (existsSync(candidate)) {
+                if (suffix === '.cmd') {
+                    // cmd's /s strips the leading quote, which truncates a PATH entry
+                    // like C:\Program Files\nodejs\npm.cmd to 'C:\Program'. Pass one
+                    // verbatim command line with the program quoted instead.
+                    return {
+                        command: process.env.ComSpec || 'cmd.exe',
+                        args: ['/d', '/c', [`"${candidate}"`, ...args.map(quoteCmdArg)].join(' ')],
+                        verbatimArguments: true,
+                    };
+                }
+                return { command: candidate, args };
+            }
+        }
+    }
+    return { command, args };
 }
 
 function run(command, args, options = {}) {
-    // Use shell only when the command has no file extension (e.g. npm, gh).
-    // Commands with an extension like powershell.exe must NOT go through cmd.exe
-    // as that mangles complex argument strings (long PowerShell scripts).
-    const useShell = process.platform === 'win32' && !command.includes('.');
-
-    const result = spawnSync(command, args, {
+    const resolved = resolveCommand(command, args);
+    const result = spawnSync(resolved.command, resolved.args, {
         stdio: 'inherit',
         cwd: options.cwd || root,
         env: { ...process.env, ...(options.env || {}) },
-        shell: useShell
+        shell: false,
+        ...(resolved.verbatimArguments ? { windowsVerbatimArguments: true } : {}),
     });
+    if (result.error) throw result.error;
     if (result.status !== 0) {
         const exit = result.signal || result.status || 'unknown';
         throw new Error(`${command} ${args.join(' ')} exited with ${exit}`);
     }
 }
 
-function dirname(path) {
-    return path.split(/[\\/]/).slice(0, -1).join('/') || '.';
+function runCapture(command, args, cwd) {
+    const resolved = resolveCommand(command, args);
+    const result = spawnSync(resolved.command, resolved.args, {
+        cwd: cwd || root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        shell: false,
+        ...(resolved.verbatimArguments ? { windowsVerbatimArguments: true } : {}),
+    });
+    return result.status === 0 ? result.stdout || '' : '';
 }
 
 function powershellZip(script, env = {}) {
@@ -111,6 +166,18 @@ function sha256(filePath) {
         stream.on('error', reject);
         stream.on('end', () => resolve(hash.digest('hex')));
     });
+}
+
+async function assertNonEmptyFile(path) {
+    let info;
+    try {
+        info = await stat(path);
+    } catch {
+        throw new Error(`release file is missing: ${path}`);
+    }
+    if (!info.isFile() || info.size === 0) {
+        throw new Error(`release file is empty or not a regular file: ${path}`);
+    }
 }
 
 async function zipFolder(inputDir, outputFile, prefix = '') {
@@ -189,123 +256,116 @@ try {
     return true;
 }
 
-function publicUrl(filename) {
-    return `https://github.com/KILLER3UG/august-proxy/releases/download/v${version}/${filename}`;
+function publicUrl(filename, releaseVersion = version) {
+    return `https://github.com/${repository}/releases/download/v${releaseVersion}/${filename}`;
 }
 
 async function buildWeb() {
     run('npm', ['run', 'build:web']);
 }
 
+async function checkVersionSources() {
+    run('node', ['scripts/check-version-sync.mjs']);
+}
+
 async function syncPackageVersions(nextVersion) {
-    // Root package.json
+    await checkVersionSources();
+
     const pkg = JSON.parse(await readFile(packageJsonPath, 'utf8'));
     pkg.version = nextVersion;
     await writeFile(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
 
-    // Desktop package.json
     const desktopPkgPath = resolve(root, 'frontend/desktop/package.json');
-    if (existsSync(desktopPkgPath)) {
-        const desktopPkg = JSON.parse(await readFile(desktopPkgPath, 'utf8'));
-        desktopPkg.version = nextVersion;
-        await writeFile(desktopPkgPath, `${JSON.stringify(desktopPkg, null, 2)}\n`);
-    }
+    const desktopPkg = JSON.parse(await readFile(desktopPkgPath, 'utf8'));
+    desktopPkg.version = nextVersion;
+    await writeFile(desktopPkgPath, `${JSON.stringify(desktopPkg, null, 2)}\n`);
 
-    // Tauri config (source of truth for updater version compare)
     const tauriConfPath = resolve(root, 'frontend/desktop/src-tauri/tauri.conf.json');
-    if (existsSync(tauriConfPath)) {
-        const conf = JSON.parse(await readFile(tauriConfPath, 'utf8'));
-        conf.version = nextVersion;
-        await writeFile(tauriConfPath, `${JSON.stringify(conf, null, 2)}\n`);
-    }
+    const conf = JSON.parse(await readFile(tauriConfPath, 'utf8'));
+    conf.version = nextVersion;
+    await writeFile(tauriConfPath, `${JSON.stringify(conf, null, 2)}\n`);
 
-    // Cargo.toml crate version
     const cargoPath = resolve(root, 'frontend/desktop/src-tauri/Cargo.toml');
-    if (existsSync(cargoPath)) {
-        let cargo = await readFile(cargoPath, 'utf8');
-        cargo = cargo.replace(/^version\s*=\s*"[^"]+"/m, `version = "${nextVersion}"`);
-        await writeFile(cargoPath, cargo);
-    }
+    let cargo = await readFile(cargoPath, 'utf8');
+    const cargoUpdated = cargo.replace(/^version\s*=\s*"[^"]+"/m, `version = "${nextVersion}"`);
+    if (cargoUpdated === cargo) throw new Error('could not update august-desktop crate version');
+    await writeFile(cargoPath, cargoUpdated);
 
-    // package-lock.json (root + frontend/desktop workspace entry) — keeps
-    // check-version-sync.mjs green after the bump without a manual
-    // `npm install --package-lock-only`.
     const lockPath = resolve(root, 'package-lock.json');
-    if (existsSync(lockPath)) {
-        const lock = JSON.parse(await readFile(lockPath, 'utf8'));
-        lock.version = nextVersion;
-        if (lock.packages?.['frontend/desktop']) {
-            lock.packages['frontend/desktop'].version = nextVersion;
-        }
-        await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
-    }
+    const lock = JSON.parse(await readFile(lockPath, 'utf8'));
+    lock.version = nextVersion;
+    if (lock.packages?.['']) lock.packages[''].version = nextVersion;
+    if (lock.packages?.['frontend/desktop']) lock.packages['frontend/desktop'].version = nextVersion;
+    await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
 
-    // Cargo.lock crate version (august-desktop entry)
     const cargoLockPath = resolve(root, 'frontend/desktop/src-tauri/Cargo.lock');
-    if (existsSync(cargoLockPath)) {
-        let cargoLock = await readFile(cargoLockPath, 'utf8');
-        cargoLock = cargoLock.replace(
-            /(^name = "august-desktop"[\s\S]*?^version = ")[^"]+(")/m,
-            `$1${nextVersion}$2`,
-        );
-        await writeFile(cargoLockPath, cargoLock);
-    }
+    let cargoLock = await readFile(cargoLockPath, 'utf8');
+    const cargoLockUpdated = cargoLock.replace(
+        /(^name = "august-desktop"[\s\S]*?^version = ")[^"]+(")/m,
+        `$1${nextVersion}$2`,
+    );
+    if (cargoLockUpdated === cargoLock) throw new Error('could not update august-desktop Cargo.lock version');
+    await writeFile(cargoLockPath, cargoLockUpdated);
 
+    await checkVersionSources();
     console.log(`[release] synced package versions to ${nextVersion}`);
 }
 
-function findLatestJson(tauriBundleDir) {
-    const candidates = [
-        join(tauriBundleDir, 'latest.json'),
-        join(tauriBundleDir, 'nsis', 'latest.json'),
-        join(tauriBundleDir, 'msi', 'latest.json'),
-    ];
-    for (const p of candidates) {
-        if (existsSync(p)) return p;
+function exactNsisArtifact(nextVersion) {
+    const dir = join(tauriBundleDir, 'nsis');
+    const expected = `August_${nextVersion}_x64-setup.exe`;
+    if (!existsSync(dir)) throw new Error(`Tauri NSIS bundle directory is missing: ${dir}`);
+    const matches = readdirSync(dir).filter((name) => name === expected);
+    if (matches.length !== 1) {
+        throw new Error(`expected exactly one ${expected}, found ${matches.length}`);
     }
-    try {
-        for (const name of readdirSync(tauriBundleDir)) {
-            const nested = join(tauriBundleDir, name, 'latest.json');
-            if (existsSync(nested)) return nested;
-        }
-    } catch { /* ignore */ }
-    return null;
+    const path = join(dir, expected);
+    const sigPath = `${path}.sig`;
+    if (!existsSync(sigPath)) throw new Error(`signed NSIS artifact is missing: ${sigPath}`);
+    return { artifact: expected, path, sigPath };
 }
 
-async function buildLatestJsonFromSignatures(tauriBundleDir, nextVersion) {
-    const nsisDir = join(tauriBundleDir, 'nsis');
-    const msiDir = join(tauriBundleDir, 'msi');
+function exactMsiArtifact(nextVersion) {
+    const dir = join(tauriBundleDir, 'msi');
+    const expected = `August_${nextVersion}_x64_en-US.msi`;
+    if (!existsSync(dir)) throw new Error(`Tauri MSI bundle directory is missing: ${dir}`);
+    const matches = readdirSync(dir).filter((name) => name === expected);
+    if (matches.length !== 1) {
+        throw new Error(`expected exactly one ${expected}, found ${matches.length}`);
+    }
+    const path = join(dir, expected);
+    const sigPath = `${path}.sig`;
+    if (!existsSync(sigPath)) throw new Error(`signed MSI artifact is missing: ${sigPath}`);
+    return { artifact: expected, path, sigPath };
+}
 
-    let artifact = null;
-    let sigPath = null;
-    if (existsSync(nsisDir)) {
-        // Tauri names the NSIS bundle August_<version>_x64-setup.exe — match
-        // any <platform>-setup.exe form, but PREFER the file for the version
-        // being released (stale bundles from older builds may share the dir
-        // and must never land in the updater manifest).
-        const setups = readdirSync(nsisDir).filter(
-            (f) => f.endsWith('-setup.exe') || /setup\.exe$/i.test(f),
-        );
-        const exe = setups.find((f) => f.includes(nextVersion)) ?? setups[0];
-        if (exe && existsSync(join(nsisDir, `${exe}.sig`))) {
-            artifact = exe;
-            sigPath = join(nsisDir, `${exe}.sig`);
-        }
-    }
-    if (!artifact && existsSync(msiDir)) {
-        const msies = readdirSync(msiDir).filter((f) => f.endsWith('.msi'));
-        const msi = msies.find((f) => f.includes(nextVersion)) ?? msies[0];
-        if (msi && existsSync(join(msiDir, `${msi}.sig`))) {
-            artifact = msi;
-            sigPath = join(msiDir, `${msi}.sig`);
-        }
-    }
-    if (!artifact || !sigPath) {
-        console.warn('[release] no signed NSIS/MSI updater artifacts found');
-        return null;
-    }
+export async function readUpdaterSignature(signaturePath) {
+    const signature = (await readFile(signaturePath, 'utf8')).trim();
+    if (!signature) throw new Error(`Updater signature is empty: ${signaturePath}`);
+    return signature;
+}
 
-    const signature = (await readFile(sigPath, 'utf8')).trim();
+async function validateLatestManifest(path, nextVersion, nsis) {
+    await assertNonEmptyFile(path);
+    const latest = JSON.parse(await readFile(path, 'utf8'));
+    if (latest.version !== nextVersion) {
+        throw new Error(`updater manifest version ${latest.version} does not match ${nextVersion}`);
+    }
+    const platform = latest.platforms?.['windows-x86_64'];
+    if (!platform) throw new Error('updater manifest has no windows-x86_64 platform');
+    const expectedUrl = publicUrl(nsis.artifact, nextVersion);
+    if (platform.url !== expectedUrl) {
+        throw new Error(`updater manifest URL ${platform.url} does not match ${expectedUrl}`);
+    }
+    const expectedSignature = await readUpdaterSignature(nsis.sigPath);
+    if (platform.signature !== expectedSignature) {
+        throw new Error('updater manifest signature does not match the base64-encoded NSIS signature file');
+    }
+}
+
+async function buildLatestJsonFromSignatures(nextVersion) {
+    const nsis = exactNsisArtifact(nextVersion);
+    const signature = await readUpdaterSignature(nsis.sigPath);
     const latest = {
         version: nextVersion,
         notes: `August desktop ${nextVersion}`,
@@ -313,107 +373,233 @@ async function buildLatestJsonFromSignatures(tauriBundleDir, nextVersion) {
         platforms: {
             'windows-x86_64': {
                 signature,
-                url: publicUrl(artifact),
+                url: publicUrl(nsis.artifact, nextVersion),
             },
         },
     };
-    const out = join(releaseDir, 'latest.json');
-    await writeFile(out, `${JSON.stringify(latest, null, 2)}\n`);
-    console.log(`[release] generated updater manifest ${out} → ${artifact}`);
-    return out;
+    await mkdir(releaseDir, { recursive: true });
+    await writeFile(latestPath, `${JSON.stringify(latest, null, 2)}\n`);
+    await validateLatestManifest(latestPath, nextVersion, nsis);
+    console.log(`[release] generated updater manifest ${latestPath} → ${nsis.artifact}`);
+    return latestPath;
 }
 
 async function prepareTauriUpdaterManifest(nextVersion) {
-    const tauriBundleDir = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
-    const found = findLatestJson(tauriBundleDir);
-    if (!found) {
-        return buildLatestJsonFromSignatures(tauriBundleDir, nextVersion);
-    }
+    return buildLatestJsonFromSignatures(nextVersion);
+}
 
-    const latest = JSON.parse(await readFile(found, 'utf8'));
-    latest.version = nextVersion;
-
-    const nsisDir = join(tauriBundleDir, 'nsis');
-    const msiDir = join(tauriBundleDir, 'msi');
-    let windowsUrl = null;
-    if (existsSync(nsisDir)) {
-        const exe = readdirSync(nsisDir).find((f) => f.endsWith('-setup.exe'));
-        if (exe) windowsUrl = publicUrl(exe);
-    }
-    if (!windowsUrl && existsSync(msiDir)) {
-        const msi = readdirSync(msiDir).find((f) => f.endsWith('.msi'));
-        if (msi) windowsUrl = publicUrl(msi);
-    }
-
-    if (windowsUrl && latest.platforms) {
-        for (const key of Object.keys(latest.platforms)) {
-            if (key.startsWith('windows')) {
-                latest.platforms[key].url = windowsUrl;
+async function cleanTauriBundle() {
+    const backupDir = join(tauriBundleDir, '.prev');
+    const moved = [];
+    await rm(backupDir, { recursive: true, force: true });
+    for (const sub of ['msi', 'nsis']) {
+        const dir = join(tauriBundleDir, sub);
+        if (!existsSync(dir)) continue;
+        for (const name of readdirSync(dir)) {
+            if (name === 'latest.json' || name.endsWith('.msi') || name.endsWith('.exe') || name.endsWith('.sig')) {
+                const from = join(dir, name);
+                const to = join(backupDir, sub, name);
+                await mkdir(join(backupDir, sub), { recursive: true });
+                await rename(from, to);
+                moved.push({ from, to });
             }
         }
     }
+    // Nothing under releases/ is version controlled, so a build that fails
+    // halfway must not be left holding neither a new nor a last-good signed
+    // installer pair — restore() puts the previous release back on failure.
+    return {
+        async restore() {
+            for (const { from, to } of moved) {
+                if (!existsSync(to)) continue;
+                await mkdir(dirname(from), { recursive: true });
+                await rename(to, from).catch(() => {});
+            }
+        },
+        async discard() {
+            await rm(backupDir, { recursive: true, force: true });
+        },
+    };
+}
 
-    const out = join(releaseDir, 'latest.json');
-    await writeFile(out, `${JSON.stringify(latest, null, 2)}\n`);
-    console.log(`[release] wrote updater manifest ${out}`);
-    return out;
+async function cleanReleaseOutputs() {
+    await mkdir(releaseDir, { recursive: true });
+    for (const name of await readdir(releaseDir)) {
+        if (/^(web|backend)-.*\.zip$/.test(name)) {
+            await rm(join(releaseDir, name), { force: true });
+        }
+    }
+    await rm(manifestPath, { force: true });
+    // Only a --tauri run regenerates the updater manifest. Without the flag
+    // deleting it here would take the published updater offline for nothing.
+    if (buildTauri) await rm(latestPath, { force: true });
+}
+
+// PowerShell deletes an env var assigned an empty string, so a wrapper cannot
+// hand Tauri the key's empty password; setting it deleted is exactly what makes
+// `tauri build` block on an interactive prompt. Apply it here instead.
+function signingEnv() {
+    if (process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD !== undefined) return {};
+    return { TAURI_SIGNING_PRIVATE_KEY_PASSWORD: '' };
 }
 
 async function buildTauriApp() {
     if (!buildTauri) return;
-    // Stale installers from older builds can linger in the bundle dirs and
-    // would otherwise be swept into the release upload + updater manifest.
-    // Remove anything that is not for the version being released.
-    const bundleRoot = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
-    for (const sub of ['msi', 'nsis']) {
-        const dir = join(bundleRoot, sub);
-        if (!existsSync(dir)) continue;
-        for (const f of readdirSync(dir)) {
-            if (f.endsWith('.msi') || f.endsWith('.exe') || f.endsWith('.sig') || f === 'latest.json') {
-                if (!f.includes(version)) {
-                    rm(join(dir, f), { force: true });
-                }
-            }
+    const backup = await cleanTauriBundle();
+    try {
+        run('npm', ['run', 'download:node-binaries']);
+        run('node', ['scripts/prepare-desktop-backend.mjs', '--release']);
+        run('npm', ['run', 'tauri', '-w', 'frontend/desktop', 'build'], { env: signingEnv() });
+        const generated = await prepareTauriUpdaterManifest(version);
+        await assertNonEmptyFile(generated);
+    } catch (error) {
+        await backup.restore();
+        console.error('[release] build failed — restored the previous signed installer pair');
+        throw error;
+    }
+    await backup.discard();
+}
+
+async function releaseAssets({ webZip, backendZip, didBackendZip }) {
+    const assets = [webZip];
+    if (didBackendZip) assets.push(backendZip);
+    assets.push(manifestPath, latestPath);
+
+    const nsis = exactNsisArtifact(version);
+    assets.push(nsis.path, nsis.sigPath);
+
+    const msi = exactMsiArtifact(version);
+    assets.push(msi.path, msi.sigPath);
+
+    for (const path of assets) await assertNonEmptyFile(path);
+    return assets;
+}
+
+function gh(args, capture = false) {
+    const resolved = resolveCommand('gh', args);
+    const result = spawnSync(resolved.command, resolved.args, {
+        cwd: root,
+        encoding: 'utf8',
+        shell: false,
+        stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+        env: process.env,
+        ...(resolved.verbatimArguments ? { windowsVerbatimArguments: true } : {}),
+    });
+    if (result.error) throw result.error;
+    if (result.status !== 0) {
+        const detail = capture
+            ? `${result.stdout || ''}${result.stderr || ''}`.trim()
+            : `exit ${result.signal || result.status || 'unknown'}`;
+        throw new Error(`gh ${args.join(' ')} failed: ${detail}`);
+    }
+    return capture ? { stdout: result.stdout || '', stderr: result.stderr || '' } : null;
+}
+
+function currentCommit() {
+    const commit = runCapture('git', ['rev-parse', 'HEAD'], root).trim();
+    if (!commit) throw new Error('could not determine the current commit');
+    return commit;
+}
+
+function releaseTagCommit(tag) {
+    const ref = gh(['api', `repos/${repository}/git/ref/tags/${tag}`], true);
+    let releaseRef;
+    try {
+        releaseRef = JSON.parse(ref.stdout);
+    } catch (error) {
+        throw new Error(`could not parse GitHub tag response for ${tag}: ${error.message}`);
+    }
+    let object = releaseRef.object;
+    if (!object || typeof object.sha !== 'string') {
+        throw new Error(`GitHub tag ${tag} has no object`);
+    }
+    if (object.type === 'tag') {
+        const tagObject = gh(['api', `repos/${repository}/git/tag/${object.sha}`], true);
+        try {
+            object = JSON.parse(tagObject.stdout).object;
+        } catch (error) {
+            throw new Error(`could not parse annotated tag ${tag}: ${error.message}`);
         }
     }
-    run('npm', ['run', 'download:node-binaries']);
-    // --release: the installer bundle needs the REAL runtime stamp. Without it
-    // the prepare script writes "dev-placeholder" (dev mode) and packaged
-    // installs would not pin the AppData runtime to this build.
-    run('node', ['scripts/prepare-desktop-backend.mjs', '--release']);
-    run('npm', ['run', 'tauri', '-w', 'frontend/desktop', 'build']);
-    await prepareTauriUpdaterManifest(version);
+    if (!object || typeof object.sha !== 'string') {
+        throw new Error(`GitHub tag ${tag} does not resolve to a commit`);
+    }
+    return object.sha;
+}
+
+function assertReleaseTagMatchesCurrentCommit(tag) {
+    const expected = currentCommit();
+    const actual = releaseTagCommit(tag);
+    if (actual !== expected) {
+        throw new Error(`release tag ${tag} points to ${actual}, not current commit ${expected}`);
+    }
+}
+
+function releaseTagCommitIfExists(tag) {
+    try {
+        return releaseTagCommit(tag);
+    } catch (error) {
+        if (/not found|404/i.test(error.message)) return null;
+        throw error;
+    }
+}
+
+async function publishRelease(assets) {
+    if (!process.env.GH_TOKEN) throw new Error('GH_TOKEN is required for --publish');
+    if (!assets.length) throw new Error('release asset list is empty');
+    const tag = `v${version}`;
+    const expectedCommit = currentCommit();
+    const tagCommit = releaseTagCommitIfExists(tag);
+    if (tagCommit && tagCommit !== expectedCommit) {
+        throw new Error(`release tag ${tag} points to ${tagCommit}, not current commit ${expectedCommit}`);
+    }
+
+    let releaseExists = false;
+    try {
+        gh(['release', 'view', tag, '--repo', repository], true);
+        releaseExists = true;
+    } catch (error) {
+        if (!/not found|404/i.test(error.message)) throw error;
+    }
+
+    if (releaseExists) {
+        run('gh', ['release', 'upload', tag, '--clobber', '--repo', repository, ...assets], { shell: false });
+    } else {
+        const title = `August ${version}`;
+        const notes = `August desktop release ${version}`;
+        run('gh', [
+            'release',
+            'create',
+            tag,
+            '--title',
+            title,
+            '--notes',
+            notes,
+            '--repo',
+            repository,
+            ...(draft ? ['--draft'] : []),
+            ...assets,
+        ], { shell: false });
+    }
+    console.log(`[release] published GitHub release ${tag}`);
 }
 
 async function main() {
     if (dryRun) {
         console.log('[release] DRY RUN — no files will be modified, no builds executed.\n');
-        console.log(`  Version:        ${version}${bump ? ` (${bump} bump from ${await readVersion()})` : ''}`);
-        console.log(`  Publish:        ${publish ? 'yes (gh release create/upload)' : 'no'}`);
+        console.log(`  Version:        ${version}${bumpArg ? ` (${bumpArg} bump from ${currentVersion})` : ''}`);
+        console.log(`  Publish:        ${publish ? 'yes (explicit asset allowlist)' : 'no'}`);
         console.log(`  Tauri build:    ${buildTauri ? 'yes' : 'no'}`);
-        console.log(`  Release dir:   ${releaseDir}`);
+        console.log(`  Release dir:    ${releaseDir}`);
         console.log(`  Web zip:        ${join(releaseDir, `web-${version}.zip`)}`);
         console.log(`  Manifest:       ${manifestPath}`);
-        if (existsSync(backendDir)) console.log(`  Backend zip:    ${join(releaseDir, `backend-${version}.zip`)}`);
-        console.log('\n  Steps that would run:');
-        if (bump || args.has('--version') || [...args].some((a) => a.startsWith('--version='))) {
-            console.log('    1. Sync version across package.json, desktop pkg, tauri.conf.json, Cargo.toml');
-        }
-        console.log('    2. npm run build:web (Vite production build)');
-        if (buildTauri) console.log('    3. Download node binaries + prepare backend + tauri build');
-        console.log('    4. Zip web-dist and compute sha256');
-        if (existsSync(backendDir)) console.log('    5. Zip legacy backend');
-        console.log('    6. Write august-desktop-manifest.json');
-        if (publish) console.log('    7. gh release create/upload with assets');
+        console.log(`  Updater:        ${latestPath}`);
         console.log('\n[release] DRY RUN complete. Remove --dry-run to execute.');
         return;
     }
 
-    if (bump || args.has('--version') || [...args].some((a) => a.startsWith('--version='))) {
-        await syncPackageVersions(version);
-    }
-
-    await mkdir(releaseDir, { recursive: true });
+    if ((versionArg !== null && versionArg !== currentVersion) || bumpArg) await syncPackageVersions(version);
+    await cleanReleaseOutputs();
 
     const webZip = join(releaseDir, `web-${version}.zip`);
     const backendZip = join(releaseDir, `backend-${version}.zip`);
@@ -421,7 +607,6 @@ async function main() {
     await buildWeb();
     await buildTauriApp();
     const didBackendZip = await zipBackend(backendZip);
-
     await zipFolder(webDist, webZip);
 
     const webSha = await sha256(webZip);
@@ -442,6 +627,9 @@ async function main() {
     }
 
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    // Only a --tauri run produces the updater manifest, so only that run can
+    // be expected to have one.
+    if (buildTauri) await assertNonEmptyFile(latestPath);
 
     console.log(`[release] version ${version}`);
     console.log(`[release] web ${webZip}`);
@@ -449,42 +637,8 @@ async function main() {
     console.log(`[release] manifest ${manifestPath}`);
 
     if (publish) {
-        const title = `August ${version}`;
-        const notes = `August desktop release ${version}`;
-        // When shell: true is active (Windows, extensionless commands), cmd.exe
-        // splits unquoted spaces into separate arguments, so we quote them.
-        const tag = `v${version}`;
-        const assets = [];
-        if (existsSync(webZip)) assets.push(webZip);
-        if (didBackendZip && existsSync(backendZip)) assets.push(backendZip);
-        if (existsSync(manifestPath)) assets.push(manifestPath);
-        const tauriLatest = join(releaseDir, 'latest.json');
-        if (existsSync(tauriLatest)) assets.push(tauriLatest);
-
-        const tauriBundleDir = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
-        const msiDir = join(tauriBundleDir, 'msi');
-        const nsisDir = join(tauriBundleDir, 'nsis');
-        if (existsSync(msiDir)) {
-            for (const f of readdirSync(msiDir)) assets.push(join(msiDir, f));
-        }
-        if (existsSync(nsisDir)) {
-            for (const f of readdirSync(nsisDir)) assets.push(join(nsisDir, f));
-        }
-
-        // Create release if missing; otherwise upload/replace assets on the existing tag.
-        const view = spawnSync('gh', ['release', 'view', tag], {
-            cwd: root,
-            encoding: 'utf8',
-            shell: process.platform === 'win32',
-        });
-        if (view.status === 0) {
-            console.log(`[release] release ${tag} exists — uploading assets`);
-            run('gh', ['release', 'upload', tag, '--clobber', ...assets]);
-        } else {
-            const ghArgs = ['release', 'create', tag, '--title', `"${title}"`, '--notes', `"${notes}"`, ...(draft ? ['--draft'] : []), ...assets];
-            run('gh', ghArgs);
-        }
-        console.log(`[release] published GitHub release ${tag} (includes latest.json for in-app update notices)`);
+        const assets = await releaseAssets({ webZip, backendZip, didBackendZip });
+        await publishRelease(assets);
     }
 }
 

@@ -37,4 +37,6 @@ export {
   registerStreamResync,
   resolveUiSessionId,
   resolveWorkbenchSessionId,
+  ensureSessionHistory,
+  injectSessionMessage,
 } from './stream';

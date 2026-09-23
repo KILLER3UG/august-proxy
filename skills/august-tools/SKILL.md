@@ -18,6 +18,9 @@ stdin, bulk cap 40, web_search snippets-only). This file is only the residue.
   write_file for a one-line change just pays the full-file read cost.
 - After an edit, the next result carries the NEW sha256 — diff it against the
   old one to prove the change landed.
+- module_context(path) answers "what is this file, who imports it" inside a
+  fixed budget; read_file answers "what does it say". Choose in that order —
+  surveying a directory by reading files pays for bodies you did not need.
 
 ## Shell
 - On Windows, PowerShell/cmd semantics; common Unix head/tail/cat/ls are

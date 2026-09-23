@@ -44,12 +44,23 @@ def resolve_effective_effort(
     session: EffortSession,
     model_entry: dict[str, object] | None = None,
 ) -> str:
-    """Resolve the effort level from incoming param, session, or model default."""
-    _ = model_entry  # reserved for future model-default overrides
+    """Resolve the effort level: explicit param, then session, then model.
+
+    The model tier consults the family table's ``defaultEffort``. No built-in
+    family declares one, so until an operator adds a family this returns
+    exactly what it returned before; a config family can now say "this model
+    thinks at high by default" without a per-model UI toggle.
+    """
     if incoming and incoming in _VALID_EFFORTS:
         return incoming
     if session.metadata.get('effort') in _VALID_EFFORTS:
         return as_str(session.metadata.get('effort'))
+    if model_entry:
+        from app.providers.model_params import family_for
+
+        family = family_for(as_str(model_entry.get('id') or model_entry.get('model')))
+        if family is not None and family.default_effort in _VALID_EFFORTS:
+            return str(family.default_effort)
     return 'medium'
 
 
@@ -144,29 +155,15 @@ def cap_reasoning_effort(mapped: str, max_effort: str | None) -> str:
 
 
 def model_likely_accepts_reasoning_effort(model: str) -> bool:
-    """Model-id heuristic mirroring the desktop Effort UI families."""
-    mid = (model or '').lower()
-    return any(
-        token in mid
-        for token in (
-            'o1',
-            'o3',
-            'o4',
-            'reasoner',
-            'thinking',
-            'reasoning',
-            'deepseek',
-            'gpt-5',
-            'qwen3',
-            'qwq',
-            'glm-4',
-            'glm-5',
-            'kimi-k2',
-            'grok-3',
-            'grok-4',
-            'nemotron',
-        )
-    )
+    """Model-id heuristic, now answered by the family table.
+
+    Kept as a named function because call sites read better than a raw
+    `accepts_reasoning_effort`, and so the id-only half of
+    :func:`provider_accepts_reasoning_effort` has one implementation.
+    """
+    from app.providers.model_params import accepts_reasoning_effort
+
+    return accepts_reasoning_effort(model)
 
 
 def provider_accepts_reasoning_effort(

@@ -4,7 +4,7 @@ import { RightDrawerFileSection } from '../RightDrawerFileSection';
 import type { FileAttachment } from '@/types/chat';
 
 const TEXT_FILE: FileAttachment = {
-  name: 'notes.md',
+  name: 'notes.txt',
   size: '12 KB',
   type: 'text',
   content: 'hello world\nsecond line',
@@ -133,7 +133,7 @@ describe('RightDrawerFileSection fullscreen preview', () => {
   });
 
   it('disables the Eye toggle for non-HTML text with an explanatory tooltip', () => {
-    setup(); // notes.md
+    setup(); // notes.txt
     const eye = document.querySelector(
       '[data-testid="html-preview-tab-render"]',
     ) as HTMLButtonElement;
@@ -145,6 +145,24 @@ describe('RightDrawerFileSection fullscreen preview', () => {
     expect(code.disabled).toBe(false);
     // Source view stays the rendered text preview.
     expect(screen.getByText('hello world')).toBeTruthy();
+  });
+
+  it('enables the Eye toggle for markdown files with rich rendered preview', () => {
+    setup({
+      name: 'notes.md',
+      size: '12 KB',
+      type: 'text',
+      content: '# Hello\nMarkdown preview content',
+    });
+    const eye = document.querySelector(
+      '[data-testid="html-preview-tab-render"]',
+    ) as HTMLButtonElement;
+    const code = document.querySelector(
+      '[data-testid="html-preview-tab-source"]',
+    ) as HTMLButtonElement;
+    expect(eye.disabled).toBe(false);
+    expect(code.disabled).toBe(false);
+    expect(document.querySelector('[data-testid="file-preview-markdown"]')).toBeTruthy();
   });
 
   it('names the disabled-preview tooltip for PPT/PPTX files', () => {

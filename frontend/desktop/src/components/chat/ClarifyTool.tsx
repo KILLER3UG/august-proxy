@@ -97,7 +97,7 @@ export function ClarifyTool({
 
   const isMultiSelect = current?.multiSelect ?? false;
   // Previews turn selection into focus-then-confirm (single-select only).
-  const hasPreviews = !isMultiSelect && Array.isArray(current?.previews) && current!.previews!.some((p) => !!p);
+  const hasPreviews = !isMultiSelect && Array.isArray(current?.previews) && current.previews.some((p) => !!p);
 
   useEffect(() => {
     // Focus freeform field when the card mounts / question changes

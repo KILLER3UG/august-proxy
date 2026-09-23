@@ -206,7 +206,8 @@ async def _remember(
     ``source='model'`` (upsert over the key = update-over-duplicate) and
     records a rollback entry so the write is undoable. Every entry gets a
     short human ``title`` (derived from the text when not supplied) and a
-    ``kind`` (fact | lesson | preference | skill-note).
+    ``kind`` (fact | lesson | preference | skill-note | profile, where profile
+    entries are the always-in-context lane rather than keyword-recalled ones).
 
     Part 17 Phase A: ``scope='project'`` writes to the workspace's md-file
     project memory instead of the global facts store — same gates, same
@@ -1057,7 +1058,10 @@ def register() -> None:
         'it is the recall hook shown in the index. '
         'Sensitive topics are refused unless enabled. Scope: inside a workspace session the default is '
         "project (this workspace's md-file memory); use scope='global' for user-level facts that "
-        "apply everywhere, or scope='project' to force the project store.",
+        "apply everywhere, or scope='project' to force the project store. "
+        'Before saving, ask: will a future session act better because of this? Runtime reminders, '
+        'one-off task details and your own narration are not memories — user-stated identity, '
+        'preferences, corrections and constraints are.',
         _remember,
         {
             'type': 'object',
@@ -1070,8 +1074,10 @@ def register() -> None:
                 },
                 'kind': {
                     'type': 'string',
-                    'enum': ['fact', 'lesson', 'preference', 'skill-note'],
-                    'description': 'Entry type. Default fact.',
+                    'enum': ['fact', 'lesson', 'preference', 'skill-note', 'profile'],
+                    'description': 'Entry type. Default fact. `profile` is who the user IS '
+                    '(name, role, expertise, standing constraints) and is always in context '
+                    'instead of waiting for a keyword match — use it sparingly and precisely.',
                 },
                 'key': {
                     'type': 'string',

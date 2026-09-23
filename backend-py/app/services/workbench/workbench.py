@@ -123,8 +123,154 @@ MAX_STALLED_ROUNDS = 8
 MIN_ROUNDS_BEFORE_STALL_CHECK = 8
 
 
+# A round that keeps hammering one (tool, target) past this many calls is not
+# progress however its arguments are spelled — re-reading one file at shifting
+# offsets, or re-running one probe with a jittered flag, is a polling loop.
+_POLL_TARGET_REPEATS = 6
+
+# Error families: six different commands failing for one reason is one problem,
+# but full-argument novelty alone calls it progress and never intervenes. The
+# table is deliberately first-match-wins and coarse — it steers the nudge, it
+# never decides whether the turn continues.
+_ERROR_FAMILY_RULES: tuple[tuple[str, str], ...] = (
+    ('timeout', r'\btime[d]? ?out\b|deadline exceeded|timed out'),
+    ('rate_limit', r'rate[ _-]?limit|\b429\b|too many requests|quota'),
+    ('auth', r'\b401\b|unauthorized|invalid api key|authentication'),
+    ('permission', r'\b403\b|permission denied|\beacces\b|not allowed'),
+    ('not_found', r'\b404\b|no such file|not found|cannot find'),
+    ('network', r'connection (refused|reset|closed|aborted)|\beconn|getaddrinfo|unreachable'),
+    ('invalid_argument', r'\b400\b|validation error|invalid (input|argument|json)|required field'),
+    ('process_exit', r'exit code: [1-9]|exited with code|traceback \(most recent call last\)'),
+)
+_ERROR_FAMILY_WINDOW = 6
+_ERROR_FAMILY_STREAK = 3
+_ERROR_FAMILY_ADVICE = {
+    'timeout': 'run a smaller unit of work, or raise the timeout deliberately',
+    'rate_limit': 'stop issuing calls — wait, or answer from what you already have',
+    'auth': 'the credential is wrong or missing; re-asking the same call cannot fix it',
+    'permission': 'pick a path/approach the policy allows instead of retrying this one',
+    'not_found': 'verify the path or name exists before relying on it',
+    'network': 'the endpoint is unreachable; say so instead of retrying silently',
+    'invalid_argument': 're-read the tool signature and fix the arguments, not the retry',
+    'process_exit': 'read the failing output; the same invocation fails the same way',
+}
+# Every injected reminder is runtime-only. Without this line a model files the
+# nudge itself as a durable "lesson" and the memory store fills with the harness
+# talking to itself.
+_REMINDER_FOOTER = (
+    'This is a runtime reminder for the current turn only — do not save it into '
+    'memory, skills, or any persistent instruction file.'
+)
+
+
+def _error_family(text: str) -> str:
+    """Classify one tool failure into a family, or '' when it is not a failure."""
+    if not text:
+        return ''
+    low = text[:4000].lower()
+    for family, pattern in _ERROR_FAMILY_RULES:
+        if re.search(pattern, low):
+            return family
+    return ''
+
+
+def _toolResultText(msg: dict[str, object]) -> str:
+    content = msg.get('content')
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return '\n'.join(
+            as_str(b.get('text'), '')
+            for b in content
+            if isinstance(b, dict) and as_str(b.get('type'), '') == 'text'
+        )
+    return ''
+
+
+def _recent_error_families(
+    messages: list[dict[str, object]], window: int = _ERROR_FAMILY_WINDOW
+) -> dict[str, int]:
+    """Family tally over the last ``window`` tool results of this turn."""
+    counts: dict[str, int] = {}
+    for msg in [m for m in messages if as_str(m.get('role'), '') == 'tool'][-window:]:
+        family = _error_family(_toolResultText(as_dict(msg, {})))
+        if family:
+            counts[family] = counts.get(family, 0) + 1
+    return counts
+
+
+def _finalTurnEndReason(reason: str, *, errored: bool, cancelledNow: bool) -> str:
+    """The one rule that turns a loop reason into the verdict a turn ends with.
+
+    Shared by the ``turn_end`` event and the telemetry row, which is written a
+    few statements earlier: duplicating the two overrides there would let the
+    transcript and the ledger disagree about how a turn ended.
+    """
+    if reason == 'finished' and cancelledNow:
+        # A mid-round cancel drops the dangling tool calls and falls through the
+        # plain-text break, so the loop never reaches the top-of-round cancel
+        # check that would have tagged it.
+        return 'interrupted'
+    if errored and reason == 'finished':
+        return 'error'
+    return reason
+
+
+def _canonicalArgs(args: dict[str, object]) -> str:
+    """Order-insensitive identity for one call's arguments.
+
+    Key insertion order is a transport accident: the same command spelled
+    ``{command, timeout}`` once and ``{timeout, command}`` the next used to look
+    like two different actions, so a model re-running one failing command with
+    reordered keys reset the stall counter forever.
+    """
+    try:
+        return json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)[:200]
+    except (TypeError, ValueError):
+        return str(sorted(args.items(), key=lambda kv: str(kv[0])))[:200]
+
+
+def _toolSig(name: str, args: dict[str, object]) -> tuple[str, str]:
+    return (name, _canonicalArgs(args))
+
+
+def _toolTarget(name: str, args: dict[str, object]) -> tuple[str, str]:
+    """(tool, its first argument) — the "same target" key for polling loops.
+
+    Full-argument identity alone would call it progress when a model re-reads
+    one file at shifting offsets or re-runs one probe 20 times with a jittered
+    flag. The target key catches that the *subject* never changed.
+    """
+    primary = next(iter(args.values()), None) if args else None
+    return (name, str(primary)[:120])
+
+
+def _pollingTarget(
+    targetUses: dict[tuple[str, str], int] | None,
+    sig: tuple[str, str],
+    args: dict[str, object],
+) -> bool:
+    """True once this (tool, target) has been hammered past the poll budget."""
+    if targetUses is None:
+        return False
+    return targetUses.get(_toolTarget(sig[0], args), 0) >= _POLL_TARGET_REPEATS
+
+
+def _countTarget(
+    targetUses: dict[tuple[str, str], int] | None,
+    sig: tuple[str, str],
+    args: dict[str, object],
+) -> None:
+    if targetUses is None:
+        return
+    key = _toolTarget(sig[0], args)
+    targetUses[key] = targetUses.get(key, 0) + 1
+
+
 def _assistant_round_is_novel(
-    messages: list[dict[str, object]], seenToolSigs: set[tuple[str, str]]
+    messages: list[dict[str, object]],
+    seenToolSigs: set[tuple[str, str]],
+    targetUses: dict[tuple[str, str], int] | None = None,
 ) -> bool:
     """Did the most recent assistant round do genuinely new work?
 
@@ -132,8 +278,11 @@ def _assistant_round_is_novel(
     hard as real spinning: many ``search_files``/``read_file`` calls on
     *different* files never advance phase/step. Treat a round as progress
     when it emitted user-visible text or called a tool with a
-    (name, primary-arg) signature not already seen this turn — the nudge
-    then fires only on genuine repetition (same command re-run, no prose).
+    canonical (name, arguments) signature not already seen this turn — the
+    nudge then fires only on genuine repetition (same command re-run, no
+    prose). When ``targetUses`` is supplied, a round that keeps hammering the
+    same (tool, target) past ``_POLL_TARGET_REPEATS`` is not progress either,
+    however its arguments are spelled.
     Handles both wire shapes: Anthropic content blocks and OpenAI
     ``tool_calls``.
     """
@@ -156,11 +305,11 @@ def _assistant_round_is_novel(
                 novel = True
             elif btype == 'tool_use':
                 args = as_dict(block.get('input'), {})
-                primary = next(iter(args.values()), None) if args else None
-                sig = (as_str(block.get('name'), ''), str(primary)[:200])
-                if sig not in seenToolSigs:
+                sig = _toolSig(as_str(block.get('name'), ''), args)
+                if sig not in seenToolSigs and not _pollingTarget(targetUses, sig, args):
                     novel = True
                 seenToolSigs.add(sig)
+                _countTarget(targetUses, sig, args)
     toolCalls = as_list(last.get('tool_calls'), [])
     for call in toolCalls:
         fn = as_dict(as_dict(call).get('function'), {})
@@ -169,11 +318,11 @@ def _assistant_round_is_novel(
             args = as_dict(json.loads(argsRaw), {}) if argsRaw else {}
         except (json.JSONDecodeError, TypeError):
             args = {}
-        primary = next(iter(args.values()), None) if args else None
-        sig = (as_str(fn.get('name'), ''), str(primary)[:200])
-        if sig not in seenToolSigs:
+        sig = _toolSig(as_str(fn.get('name'), ''), args)
+        if sig not in seenToolSigs and not _pollingTarget(targetUses, sig, args):
             novel = True
         seenToolSigs.add(sig)
+        _countTarget(targetUses, sig, args)
     return novel
 
 
@@ -194,10 +343,41 @@ _TOOL_EXEC_TIMEOUT_S = _envTimeoutSeconds()
 # Clean rounds on the bare surface before the full tool set is restored
 # (reversible downgrade — A6).
 _DOWNGRADE_RECOVERY_ROUNDS = 3
-# Legacy fallback only — auto-compact keys off the model's real contextWindow.
-WORKBENCH_TOKEN_BUDGET = 2000000
 # Auto-compact when estimated history reaches this fraction of the model window.
-AUTO_COMPACT_RATIO = 0.80
+# Fallback window when a model's real contextWindow cannot be resolved.
+# Three sites hardcoded this value independently; one constant now.
+DEFAULT_CONTEXT_WINDOW = 128000
+
+
+def tailSectionSizes(
+    memory: str | None,
+    skills: str | None,
+    state: str | None,
+    nudge: str | None,
+    skillsByName: dict[str, int] | None = None,
+) -> dict[str, object]:
+    """Byte size of each volatile per-turn tail block, for the context meter.
+
+    Measured in UTF-8 bytes rather than characters, because that is what the
+    meter calls them and a prompt with non-ASCII content would otherwise
+    under-report its own size.
+
+    A zero here means the block was genuinely not injected this turn — which is
+    accurate, not an unknown. The distinction the UI has to get right (measured
+    zero vs never measured) is made at the display layer; the producer only
+    reports what it built.
+    """
+    return {
+        'memoryBytes': len((memory or '').encode('utf-8')),
+        'skillsBytes': len((skills or '').encode('utf-8')),
+        'stateBytes': len((state or '').encode('utf-8')),
+        'nudgeBytes': len((nudge or '').encode('utf-8')),
+        # Which skill cost what — same pass that built the block, so the two
+        # can never disagree about what was injected.
+        'skillsByName': {
+            name: size for name, size in (skillsByName or {}).items() if name and size > 0
+        },
+    }
 # Cap tool results stored in the transcript (SSE already truncates separately).
 MAX_TOOL_RESULT_CHARS = 64 * 1024
 
@@ -534,6 +714,11 @@ def _truncateToolOutput(text: str, cap: int) -> tuple[str, bool]:
 # the 30 KB / 2000-line model-facing budget. Stage B runs on FRESH results
 # only; historical results are pruned at compaction time (stage A, #2).
 _SPILL_THRESHOLD_CHARS = 50 * 1024
+# Tools that can still get the full bytes back after a spill. A spilled file is
+# only worth spilling when the model holding the receipt can open it (or hand
+# off to something that can), so this is the checklist for stage B — kept here,
+# next to the threshold it conditions, rather than as a second copy elsewhere.
+_SPILL_RETRIEVAL_TOOLS = frozenset({'read_file', 'read_files', 'list_directory', 'spawn_subagents'})
 _SPILL_HEAD_CHARS = 15 * 1024
 _SPILL_TAIL_CHARS = 15 * 1024
 _SPILL_HEAD_LINES = 1000
@@ -571,14 +756,24 @@ def _splitSpillPreview(text: str) -> tuple[str, str, int]:
     return head, tail, omitted
 
 
-def _spillToolResult(session: WorkbenchSession, toolName: str, result: str) -> str | None:
+def _spillToolResult(
+    session: WorkbenchSession, toolName: str, result: str, retrievable: bool = True
+) -> str | None:
     """Stage B: spill an oversized fresh result to a session-scoped file.
 
     Returns the inline replacement (head/tail preview + one notice line with
     the omitted byte count, the storage locator, and a retrieval hint), or
     None when spilling is not possible (no workspace, write failure) so the
     caller falls through to ordinary truncation.
+
+    ``retrievable`` is the caller's answer to "can this model still read the
+    file back?" A receipt that names a path is a trap when the offered tool
+    surface has no reader and no subagent: the model spends a round trying to
+    obey it, then concludes the output is gone. Without a retrieval route there
+    is nothing to spill *for*, so the caller truncates honestly instead.
     """
+    if not retrievable:
+        return None
     workspace = as_str(getattr(session, 'workspacePath', None) or '').strip()
     if not workspace:
         return None
@@ -599,7 +794,9 @@ def _spillToolResult(session: WorkbenchSession, toolName: str, result: str) -> s
     head, tail, omitted = _splitSpillPreview(result)
     notice = (
         f'[... {omitted} characters omitted — full output stored at {relPath}. '
-        'Retrieve it with read_file on that path, or delegate scanning it to an explore subagent.]'
+        'Retrieve it with read_file on that path, or delegate scanning it to an explore subagent. '
+        'Until you do, this preview is the only part you have seen: do not report the omitted '
+        'portion as evidence.]'
     )
     return f'{head}\n{notice}\n{tail}'
 
@@ -1387,7 +1584,7 @@ def _resolveModelContextWindow(
             return max(8192, window)
     except Exception:
         logger.debug('resolveModelContextWindow failed', exc_info=True)
-    return 128000
+    return DEFAULT_CONTEXT_WINDOW
 
 
 def _shouldAutoCompact(
@@ -1578,7 +1775,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         contextMsgs = list(messages) if isinstance(messages, list) else []
         # Budget the tool set against the session model's REAL window — a
         # 32k model must not be offered the same tool budget as a 200k one.
-        contextWindow = 128000
+        contextWindow = DEFAULT_CONTEXT_WINDOW
         try:
             modelId = as_str(getattr(session, 'model', ''), '')
             provider = as_dict(getattr(session, 'provider', None), {})
@@ -1643,6 +1840,14 @@ _BARE_TOOL_ALLOW = frozenset(
         'update_todos',
         'write_scratchpad',
         'diagnose_proxy',
+        # Memory CRUD has to arrive as a set. The `<memory_policy>` block tells
+        # even the weakest model to "revise an existing fact under the same
+        # key" and to "forget one that is wrong" — with only `remember`
+        # offered, that instruction is unreachable and the store can only grow.
+        # These three are the whole door: write, enumerate keys, retire.
+        'remember',
+        'list_facts',
+        'forget',
     }
 )
 
@@ -1792,7 +1997,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         contextMsgs = list(messages) if isinstance(messages, list) else []
         # Budget against the session model's REAL window (same as the
         # Anthropic builder) — a 32k model must not be offered a 200k budget.
-        contextWindow = 128000
+        contextWindow = DEFAULT_CONTEXT_WINDOW
         try:
             modelId = as_str(getattr(session, 'model', ''), '')
             providerCfg = as_dict(getattr(session, 'provider', None), {})
@@ -2911,6 +3116,7 @@ async def _sendWorkbenchMessageStreamImpl(
     try:
         from app.providers.clients.base import estimateTokens
         from app.services.workbench.context_compressor import (
+            COMPACT_TRIGGER_RATIO,
             REPLAY_USER_BUDGET_BYTES,
             acquireCompactionLock,
             compressMessages,
@@ -2926,7 +3132,7 @@ async def _sendWorkbenchMessageStreamImpl(
             ratio = originalTokens / contextWindow if contextWindow else 0.0
             if ratio >= 0.9:
                 attentionPressure = 'critical'
-            elif ratio >= AUTO_COMPACT_RATIO:
+            elif ratio >= COMPACT_TRIGGER_RATIO:
                 attentionPressure = 'high'
             elif ratio >= 0.5:
                 attentionPressure = 'medium'
@@ -3035,10 +3241,21 @@ async def _sendWorkbenchMessageStreamImpl(
     # past turn's <session_state>/<memory> is stale context the model should
     # not trust. Trimming it at persist is the follow-up; the comment here used
     # to claim "never persisted", which was wrong.
+    #
+    # Sizes of these volatile tail blocks, reported on the contextPressure
+    # event so the composer's context breakdown can show a measurement instead
+    # of a guess. Initialized to zero BEFORE the best-effort injection below:
+    # that block is wrapped in try/except, so a partial failure leaves some
+    # names never bound, and reading them at emit time would raise into the
+    # emit's own except and silently drop the whole meter.
+    _contextSections = tailSectionSizes(None, None, None, None)
     try:
         from app.services import session_scope as _session_scope
-        from app.services.capabilities_prompt import build_relevant_skills_block
-        from app.services.memory_store.fact_retrieval import build_memory_block
+        from app.services.capabilities_prompt import render_relevant_skills
+        from app.services.memory_store.fact_retrieval import (
+            build_memory_block,
+            build_profile_memory_block,
+        )
 
         try:
             from app.services import brain_config_service as _bc
@@ -3143,12 +3360,33 @@ async def _sendWorkbenchMessageStreamImpl(
                     except Exception:
                         logger.debug('recalledMemories emit failed', exc_info=True)
             else:
-                _memoryBlock, _injectedFacts = '', []
+                # The identity lane is not keyword recall, so it is not this
+                # gate's decision: `memoryAutoInject` controls whether to fish
+                # for facts matching this message, not whether August knows who
+                # it is talking to. Emptying the block here is what made the
+                # app read as amnesiac while the user's profile sat stored and
+                # active. Same corpus, same scope rule, its own bounded budget;
+                # no metrics row and no recall chip, because nothing was
+                # retrieved by relevance.
+                try:
+                    _memoryBlock, _laneRows = build_profile_memory_block(scope=_turnScope)
+                    # ``session._injected_facts`` is a list of (key, title)
+                    # pairs, unpacked as such by the turn-end usage bump
+                    # (turn_close.py). The lane returns full rows for the recall
+                    # chip, so narrow them here rather than teach the consumer
+                    # a second shape.
+                    _injectedFacts = [
+                        (str(r.get('key') or ''), str(r.get('title') or ''))
+                        for r in _laneRows
+                    ]
+                except Exception:
+                    logger.debug('profile lane failed', exc_info=True)
+                    _memoryBlock, _injectedFacts = '', []
             try:
                 _memWritesOn = bool(_bc.getRuntimeConfig().get('modelMemoryWrites', True))
             except Exception:
                 _memWritesOn = True
-            _skillsBlock = build_relevant_skills_block(
+            _skillsBlock, _skillsDetail = render_relevant_skills(
                 _userText, _wsForTail or None, _session_scope.bot_agent_id(_turnScope)
             )
             _nudgeBlock = memory_nudge_block(session, _memWritesOn)
@@ -3159,6 +3397,9 @@ async def _sendWorkbenchMessageStreamImpl(
                 b
                 for b in (_memoryBlock, _skillsBlock, _stateBlock, _nudgeBlock)
                 if b
+            )
+            _contextSections = tailSectionSizes(
+                _memoryBlock, _skillsBlock, _stateBlock, _nudgeBlock, _skillsDetail
             )
             if _tailBlocks:
                 _patched = dict(_userMsg)
@@ -3208,6 +3449,11 @@ async def _sendWorkbenchMessageStreamImpl(
                             'missTokens': _cMiss,
                             'hitRate': round(_cHit / (_cHit + _cMiss), 3) if (_cHit + _cMiss) else 0.0,
                         },
+                        # Byte sizes of the per-turn tail blocks, so the ring
+                        # can show what skills/memory/state actually cost rather
+                        # than a client-side guess (0 was previously reported as
+                        # if the contributor had been measured and found empty).
+                        'contextSections': _contextSections,
                     }
                 )
         except Exception:
@@ -3216,9 +3462,14 @@ async def _sendWorkbenchMessageStreamImpl(
     lastExecSig: tuple[str, int] | None = None
     stalledRounds = 0
     stallMessageSent = False
-    # (name, primary-arg) signatures already called this turn — feeds the
-    # novelty exemption in the stall check below.
+    # Canonical (name, arguments) signatures already called this turn — feeds
+    # the novelty exemption in the stall check below.
     seenToolSigs: set[tuple[str, str]] = set()
+    # (tool, target) call counts, so a polling loop on one subject is not
+    # mistaken for progress just because it re-spells its arguments.
+    targetUses: dict[tuple[str, str], int] = {}
+    # Families already nudged about this turn — one warning per failure mode.
+    familyNudged: set[str] = set()
     # Turn-scoped malformed-tool counter: accumulates ACROSS rounds (a reset
     # per round meant repeated malformed calls never triggered the downgrade).
     parseFailures = 0
@@ -3357,7 +3608,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     # finding: stallMessageSent was never reset, so the first
                     # nudge suppressed all later warnings until hard-stop).
                     stallMessageSent = False
-                elif _assistant_round_is_novel(currentMessages, seenToolSigs):
+                elif _assistant_round_is_novel(currentMessages, seenToolSigs, targetUses):
                     # Real exploration — new files read/searched or prose
                     # emitted — is progress even though phase/step is flat.
                     # Only repeated identical calls keep counting.
@@ -3373,7 +3624,8 @@ async def _sendWorkbenchMessageStreamImpl(
                                     f'[Proxy Self-Heal] {stalledRounds} tool rounds have elapsed without '
                                     'advancing your execution phase/step. Reflect on what is blocking '
                                     'you, record where you are with update_state(phase=..., step=...), '
-                                    'then either take a different approach or finish with a final answer.'
+                                    'then either take a different approach or finish with a final answer. '
+                                    + _REMINDER_FOOTER
                                 ),
                             }
                         )
@@ -3392,6 +3644,36 @@ async def _sendWorkbenchMessageStreamImpl(
                         turnError = turnError or msg
                         turnEndReason = 'stall-stop'
                         break
+            # Error-family steer: independent of the novelty check above, because
+            # six *different* commands failing the same way are one problem and
+            # would otherwise read as progress until the round cap eats the turn.
+            # Advisory only — it never ends the turn and never gates an answer.
+            for family, hits in _recent_error_families(currentMessages).items():
+                if hits < _ERROR_FAMILY_STREAK or family in familyNudged:
+                    continue
+                familyNudged.add(family)
+                currentMessages.append(
+                    {
+                        'role': 'user',
+                        'content': (
+                            f'[Proxy Self-Heal] The last {hits} tool results all failed as '
+                            f'"{family}". Repeating the call unchanged will fail unchanged: '
+                            f'{_ERROR_FAMILY_ADVICE.get(family, "change one variable or switch approach")}. '
+                            + _REMINDER_FOOTER
+                        ),
+                    }
+                )
+                if emit:
+                    emit(
+                        {
+                            'type': 'warning',
+                            'message': (
+                                f'{hits} tool rounds failed as {family} — steered the model to '
+                                'change approach.'
+                            ),
+                        }
+                    )
+                break
         if _isCancelled():
             turnEndReason = 'interrupted'
             break
@@ -4937,7 +5219,17 @@ async def _sendWorkbenchMessageStreamImpl(
             # inside the 30 KB / 2000-line budget; the ordinary cap then
             # applies to whatever stage B left (or to smaller results).
             if isinstance(historyContent, str) and len(historyContent) > _SPILL_THRESHOLD_CHARS:
-                spilled = _spillToolResult(session, toolName, historyContent)
+                # `tools` is the live surface for this round — a mid-turn
+                # downgrade to the bare set rebinds it — and the text tool
+                # protocol offers nothing natively while still parsing every
+                # registered tool, so it can always read back.
+                offeredNames = {_toolDefName(t) for t in tools}
+                canRetrieve = bool(offeredNames & _SPILL_RETRIEVAL_TOOLS) or bool(
+                    getattr(session, '_text_tool_protocol', False)
+                )
+                spilled = _spillToolResult(
+                    session, toolName, historyContent, retrievable=canRetrieve
+                )
                 if spilled is not None:
                     historyContent = spilled
             resultCap = _toolResultCap(session)
@@ -5133,6 +5425,11 @@ async def _sendWorkbenchMessageStreamImpl(
         turnError=turnError,
         emit=emit,
         toolRound=toolRound,
+        turnEndReason=_finalTurnEndReason(
+            turnEndReason, errored=turnError is not None, cancelledNow=_isCancelled()
+        ),
+        parseFailures=parseFailures,
+        surfaceDowngraded=surfaceDowngraded,
     )
     try:
         logger.debug('workbench turn complete: %d rounds, in=%d out=%d', toolRound, totalInputTokens, totalOutputTokens)
@@ -5174,14 +5471,9 @@ async def _sendWorkbenchMessageStreamImpl(
             # #8). A specific reason (cap / stall-stop / length / interrupted /
             # awaiting-input) outranks the generic 'error' even though those
             # paths also set turnError.
-            _endReason = turnEndReason
-            if _endReason == 'finished' and _isCancelled():
-                # A mid-round cancel drops the dangling tool calls and falls
-                # through the plain-text break, so the loop never reaches the
-                # top-of-round cancel check that would have tagged it.
-                _endReason = 'interrupted'
-            if turnError is not None and _endReason == 'finished':
-                _endReason = 'error'
+            _endReason = _finalTurnEndReason(
+                turnEndReason, errored=turnError is not None, cancelledNow=_isCancelled()
+            )
             emit(
                 {
                     'type': 'turn_end',
@@ -5675,12 +5967,19 @@ def add_tool_grant(
     toolName: str,
     args: dict[str, object] | None,
     scope: str = 'once',
-) -> None:
-    """Record a user grant. scope: once | session | always."""
+) -> tuple[str, str]:
+    """Record a user grant. scope: once | session | always.
+
+    Returns the scope actually stored plus a note when the request was
+    clamped, so the caller reports what happened instead of echoing what was
+    asked (see app/services/workbench/grant_policy.py).
+    """
+    from app.services.workbench.grant_policy import effective_scope
+
     key = _mutation_grant_key(toolName, args)
-    scope_n = (scope or 'once').strip().lower()
-    if scope_n not in ('once', 'session', 'always'):
-        scope_n = 'once'
+    scope_n, clamp_note = effective_scope(key, scope)
+    if clamp_note:
+        logger.warning('grant clamped for %s: %s', toolName, clamp_note)
     grants = _get_tool_grants(session)
     bucket = list(grants.get(scope_n) or [])
     if key not in bucket:
@@ -5689,6 +5988,7 @@ def add_tool_grant(
     _set_tool_grants(session, grants)
     if scope_n == 'always' and session.workspacePath:
         _save_always_grant(session.workspacePath, key)
+    return scope_n, clamp_note
 
 
 def _loadApprovalPolicy(session: WorkbenchSession) -> _ApprovalPolicy:
@@ -6382,19 +6682,22 @@ def consumePendingMutation(
                     'preview': preview,
                     'remainingPending': len(session.pendingMutations),
                 }
-            add_tool_grant(session, tool_name, args, scope=scope)
+            stored_scope, scope_note = add_tool_grant(session, tool_name, args, scope=scope)
             saveSessions()
             _emitSessionStatus(session.id)
-            return {
+            result = {
                 'status': 'approved',
                 'sessionId': session.id,
                 'toolName': tool_name,
                 'args': args,
                 'preview': preview,
-                'scope': (scope or 'once').strip().lower(),
+                'scope': stored_scope,
                 'grantKey': _mutation_grant_key(tool_name, args),
                 'remainingPending': len(session.pendingMutations),
             }
+            if scope_note:
+                result['scopeNote'] = scope_note
+            return result
     return None
 
 

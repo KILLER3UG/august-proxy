@@ -30,6 +30,56 @@ def _session(workspace: Path | None, turn: int = 1) -> SimpleNamespace:
     )
 
 
+class TestRunGateCommandPolicy:
+    @pytest.mark.asyncio
+    async def testGuardModeDoesNotEnableUnsandboxedExecution(self, tmp_path: Path, monkeypatch):
+        from app.services.sandbox.policy import SandboxPolicy
+
+        captured: list[SandboxPolicy] = []
+
+        async def fake_run(command, policy, *, timeout):  # noqa: ANN001
+            captured.append(policy)
+            return type('Result', (), {'ok': True, 'stdout': 'ok', 'stderr': '', 'exit_code': 0, 'denial_reason': None})()
+
+        monkeypatch.setattr('app.services.execution_world.run_sandboxed', fake_run)
+        session = SimpleNamespace(
+            workspacePath=str(tmp_path),
+            turnCount=1,
+            guardMode='full',
+            sandboxMode='workspace-write',
+        )
+        ok, text, status = await ev._run_gate_command('pytest', tmp_path, session, 180)
+        assert ok is True
+        assert 'ok' in text
+        assert status is False
+        assert len(captured) == 1
+        assert captured[0].mode == 'workspace-write'
+        assert captured[0].allow_unsandboxed is False
+        assert captured[0].network is False
+
+    @pytest.mark.asyncio
+    async def testExplicitFullAccessRemainsOptIn(self, tmp_path: Path, monkeypatch):
+        from app.services.sandbox.policy import SandboxPolicy
+
+        captured: list[SandboxPolicy] = []
+
+        async def fake_run(command, policy, *, timeout):  # noqa: ANN001
+            captured.append(policy)
+            return type('Result', (), {'ok': True, 'stdout': 'ok', 'stderr': '', 'exit_code': 0, 'denial_reason': None})()
+
+        monkeypatch.setattr('app.services.execution_world.run_sandboxed', fake_run)
+        session = SimpleNamespace(
+            workspacePath=str(tmp_path),
+            turnCount=1,
+            guardMode='full',
+            sandboxMode='danger-full-access',
+        )
+        await ev._run_gate_command('pytest', tmp_path, session, 180)
+        assert captured[0].mode == 'danger-full-access'
+        assert captured[0].allow_unsandboxed is True
+        assert captured[0].network is True
+
+
 class TestDetectCommands:
     def testRuffFromPyproject(self, tmp_path: Path) -> None:
         (tmp_path / 'pyproject.toml').write_text('[tool.ruff]\nline-length = 100\n')
@@ -312,7 +362,8 @@ class TestVerifyAfterEdit:
         r1 = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
         assert r1.startswith('[verification inconclusive]')
         assert 'NOT a code failure' in r1
-        assert 'PAUSED' in r1
+        assert 'PAUSED for the rest of this turn' in r1
+        assert 'for this session' not in r1
         assert s._verify_state['failStreak'] == 0
         assert s._verify_state['testPaused'] is True
         # Second edit: lint runs, tests are skipped entirely.
@@ -407,8 +458,83 @@ class TestVerifyAfterEdit:
         assert await ev.verify_after_edit(_session(workspace), 'read_file', {'path': 'foo.py'}) == ''
 
     @pytest.mark.asyncio
-    async def testNoWorkspace(self, calls: object) -> None:
-        assert await ev.verify_after_edit(_session(None), 'write_file', {'path': 'foo.py'}) == ''
+    async def testNoCommandsDetected(self, tmp_path: Path, calls: object) -> None:
+        assert await ev.verify_after_edit(_session(tmp_path), 'write_file', {'path': 'a.py'}) == ''
+
+    def testBulkEditRelpathsRejectAmbiguousTargets(self, workspace: Path) -> None:
+        assert ev._bulk_edit_relpaths(
+            'bulk',
+            {'operation': 'write_files', 'files': [{'path': 'foo.py'}, {'path': 'foo.py'}]},
+            workspace,
+        ) is None
+        assert ev._bulk_edit_relpaths(
+            'bulk',
+            {'operation': 'write_files', 'files': [{'path': '../outside.py'}]},
+            workspace,
+        ) is None
+        assert ev._bulk_edit_relpaths(
+            'bulk',
+            {'operation': 'write_files', 'files': [{'path': 'foo.py'}, {'path': ''}]},
+            workspace,
+        ) is None
+
+    @pytest.mark.asyncio
+    async def testBulkEditDoesNotClaimPassWithoutGateForEveryTarget(
+        self, workspace: Path, calls: object
+    ) -> None:
+        (workspace / 'sub').mkdir()
+        (workspace / 'sub' / 'package.json').write_text('{}')
+        (workspace / 'sub' / '.aug').mkdir()
+        (workspace / 'sub' / '.aug' / 'verify.json').write_text(json.dumps({'enabled': False}))
+        self._script(calls)['results'] = [(True, 'ok', False)]
+        s = _session(workspace)
+        receipt = await ev.verify_after_edit(
+            s,
+            'bulk',
+            {
+                'operation': 'write_files',
+                'files': [{'path': 'foo.py'}, {'path': 'sub/other.py'}],
+            },
+        )
+        assert receipt.startswith('[verification blocked]')
+        assert 'no enabled lint/test gate' in receipt
+
+    @pytest.mark.asyncio
+    async def testBulkEditUsesEnabledPackageGateWhenRootIsDisabled(
+        self, workspace: Path, calls: object
+    ) -> None:
+        (workspace / '.aug' / 'verify.json').write_text(json.dumps({'enabled': False}))
+        package = workspace / 'sub'
+        package.mkdir()
+        (package / 'package.json').write_text('{}')
+        (package / '.aug').mkdir()
+        (package / '.aug' / 'verify.json').write_text(
+            json.dumps(
+                {
+                    'enabled': True,
+                    'lintCmd': 'package-lint {file}',
+                    'testCmd': 'package-test {file}',
+                }
+            )
+        )
+        self._script(calls)['results'] = [
+            (True, 'package lint ok', False),
+            (True, 'package tests ok', False),
+        ]
+        s = _session(workspace)
+        receipt = await ev.verify_after_edit(
+            s,
+            'bulk',
+            {'operation': 'write_files', 'files': [{'path': 'sub/other.py'}]},
+        )
+        assert receipt == (
+            '[verification passed] bulk edit verification clean — '
+            '1 target(s): sub/other.py.'
+        )
+        assert [command for command, _ in calls] == [  # type: ignore[attr-defined]
+            'cd sub && package-lint other.py',
+            'cd sub && package-test other.py',
+        ]
 
     @pytest.mark.asyncio
     async def testDisabledGate(self, tmp_path: Path, calls: object) -> None:
@@ -416,10 +542,6 @@ class TestVerifyAfterEdit:
         (tmp_path / '.aug' / 'verify.json').write_text(
             json.dumps({'enabled': False, 'lintCmd': 'mylint'})
         )
-        assert await ev.verify_after_edit(_session(tmp_path), 'write_file', {'path': 'a.py'}) == ''
-
-    @pytest.mark.asyncio
-    async def testNoCommandsDetected(self, tmp_path: Path, calls: object) -> None:
         assert await ev.verify_after_edit(_session(tmp_path), 'write_file', {'path': 'a.py'}) == ''
 
     @pytest.mark.asyncio
@@ -448,23 +570,95 @@ class TestVerifyAfterEdit:
     @pytest.mark.asyncio
     async def testNoTestsCollectedIsInconclusive(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # pytest exit code 5 (no tests collected) must NOT register as a code
-        # failure — it is inconclusive and the test gate pauses for the
-        # session. The runner maps it via the same `timed_out` slot as the
-        # 60s/180s timeout case.
+        # failure — it is a distinct "no-tests" status, not a timeout and not
+        # a failure, so the receipt says nothing was verified without pausing
+        # the test gate for the session.
         from app.services.execution_world import run_sandboxed as real_run
         from app.services.sandbox.policy import SandboxResult
 
-        result = SandboxResult(ok=False, exit_code=5, stderr='No tests ran', stdout='')
+        result = SandboxResult(ok=False, exit_code=5, stderr='', stdout='no tests ran')
 
         async def fake(command, policy, *, timeout=300.0):  # noqa: ANN001
             return result
 
         monkeypatch.setattr('app.services.execution_world.run_sandboxed', fake)
         try:
-            ok, text, timed_out = await ev._run_gate_command('pytest', tmp_path, None, 180)
+            ok, text, status = await ev._run_gate_command('pytest', tmp_path, None, 180)
             assert ok is False
-            assert timed_out is True
-            assert 'No tests ran' in text
+            assert status == 'no-tests'
+            assert 'no tests ran' in text
         finally:
             # Defensive restore so other tests in this file aren't affected.
             monkeypatch.setattr('app.services.execution_world.run_sandboxed', real_run)
+
+    @pytest.mark.asyncio
+    async def testNoTestsCollectedOnStderrIsNoTests(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Detection checks BOTH streams: `collected 0 items` on stderr (pytest
+        # writes its summary to stderr) must map to the no-tests status too.
+        from app.services.execution_world import run_sandboxed as real_run
+        from app.services.sandbox.policy import SandboxResult
+
+        result = SandboxResult(ok=False, exit_code=5, stderr='collected 0 items', stdout='')
+
+        async def fake(command, policy, *, timeout=300.0):  # noqa: ANN001
+            return result
+
+        monkeypatch.setattr('app.services.execution_world.run_sandboxed', fake)
+        try:
+            ok, _, status = await ev._run_gate_command('pytest', tmp_path, None, 180)
+            assert ok is False
+            assert status == 'no-tests'
+        finally:
+            monkeypatch.setattr('app.services.execution_world.run_sandboxed', real_run)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('exit_code, output', [(1, 'no tests ran'), (5, 'collected 3 items')])
+    async def testCollectionTextDoesNotHideFailures(self, tmp_path, monkeypatch, exit_code, output):
+        from app.services.sandbox.policy import SandboxResult
+
+        async def fake(command, policy, *, timeout):
+            return SandboxResult(ok=False, exit_code=exit_code, stdout=output)
+
+        monkeypatch.setattr('app.services.execution_world.run_sandboxed', fake)
+        ok, _, status = await ev._run_gate_command('pytest', tmp_path, None, 180)
+        assert ok is False
+        assert status is False
+
+    @pytest.mark.asyncio
+    async def testTimeoutStaysDistinctFromNoTests(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.services.execution_world import run_sandboxed as real_run
+        from app.services.sandbox.policy import SandboxResult
+
+        result = SandboxResult(
+            ok=False, exit_code=-1, stderr='Error: Command timed out after 180s and was killed.'
+        )
+
+        async def fake(command, policy, *, timeout=300.0):  # noqa: ANN001
+            return result
+
+        monkeypatch.setattr('app.services.execution_world.run_sandboxed', fake)
+        try:
+            _, _, status = await ev._run_gate_command('pytest', tmp_path, None, 180)
+            assert status is True  # timeout keeps the legacy truthy slot
+        finally:
+            monkeypatch.setattr('app.services.execution_world.run_sandboxed', real_run)
+
+    @pytest.mark.asyncio
+    async def testNoTestsReceiptDoesNotPauseTests(self, workspace: Path, calls: object) -> None:
+        self._script(calls)['results'] = [
+            (True, 'lint ok', False),
+            (False, 'no tests ran', 'no-tests'),
+        ]
+        s = _session(workspace)
+        r1 = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
+        assert r1.startswith('[verification inconclusive]')
+        assert 'No tests collected' in r1
+        assert 'timed out' not in r1 and 'killed' not in r1
+        assert 'no tests verified it' in r1
+        assert s._verify_state['testPaused'] is False
+        assert s._verify_state['failStreak'] == 0
+        r2 = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
+        assert '[verification passed]' in r2
+        assert [command for command, _ in calls] == [
+            'mylint foo.py', 'mytest', 'mylint foo.py', 'mytest',
+        ]

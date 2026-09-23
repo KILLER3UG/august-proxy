@@ -214,9 +214,10 @@ def translateMessages(
                                 'content': _toolResultContentToText(block),
                             }
                         )
+                # All pending tool calls must be answered before another user message.
+                openaiMessages.extend(toolResults)
                 if parts:
                     openaiMessages.append({'role': 'user', 'content': cast(JsonValue, parts)})
-                openaiMessages.extend(toolResults)
         elif role == 'assistant':
             asstMsg: dict[str, object] = {'role': 'assistant'}
             if isinstance(content, str):

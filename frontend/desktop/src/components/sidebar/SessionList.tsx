@@ -5,11 +5,13 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import { ChevronUp, Search, X } from "lucide-react";
+import { ArrowDownToLine, ChevronUp, Search, X } from "lucide-react";
+import { openConversationSearch } from "@/store/conversation-search";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { openFolderViaTauri, folderNameFromPath } from "@/api/folder";
 import { isTauri } from "@/lib/tauri-detect";
 import { t } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 import { useAppUpdate } from "@/hooks/useAppUpdate";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { useDefaultWorkspace } from "@/hooks/useDefaultWorkspace";
@@ -478,7 +480,7 @@ export function SessionList({
   // render body, which was O(n×folders) on every render.
   const { othersByFolder, unfiledSessions } = useMemo(() => {
     const byFolder = new Map<string, Session[]>();
-    let unfiled: Session[] = [];
+    const unfiled: Session[] = [];
     for (const s of others) {
       if (searching && !matchesSearch(s)) continue;
       if (s.folderId) {
@@ -508,12 +510,16 @@ export function SessionList({
           onNavigate={onNavigate}
           onToggleCollapsed={onToggleCollapsed}
           activePath={typeof window !== 'undefined' ? window.location.pathname : ''}
+          workspaceName={(() => {
+            const s = sessions.find((x) => x.id === activeId || x.workbenchSessionId === activeId);
+            return s?.workspacePath ? folderNameFromPath(s.workspacePath) : null;
+          })()}
         />
 
         {/* Session search — filters titles across Pinned / folders / task */}
         <div className="px-1.5 pt-1.5">
           <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-sidebar-foreground/30 pointer-events-none" />
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-tier-3 pointer-events-none" />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -522,13 +528,13 @@ export function SessionList({
               }}
               placeholder="Search sessions…"
               aria-label="Search sessions"
-              className="w-full rounded-md bg-white/[0.04] border border-sidebar-border/50 pl-7 pr-7 py-1 text-xs text-sidebar-foreground/80 placeholder:text-sidebar-foreground/25 outline-none focus:border-sidebar-ring/70 transition-colors"
+              className="w-full rounded-md bg-white/[0.04] border border-sidebar-border/50 pl-7 pr-7 py-1 text-xs text-tier-1 placeholder:text-tier-3 outline-none focus:border-sidebar-ring/70 transition-colors"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-sidebar-foreground/30 hover:text-sidebar-foreground/60 transition-colors"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-tier-2 hover:text-tier-1 transition-colors"
                 title="Clear search"
               >
                 <X className="size-3" />
@@ -540,7 +546,7 @@ export function SessionList({
         {/* Scrollable sessions area — denser, drawer-only simplicity */}
         <div className="flex-1 overflow-y-auto px-1.5 pb-2 space-y-2">
           {searching && searchMatchCount === 0 && (
-            <p className="py-4 text-center text-xs text-sidebar-foreground/30 italic">
+            <p className="py-4 text-center text-xs text-tier-3 italic">
               No sessions match “{searchQuery.trim()}”
             </p>
           )}
@@ -584,7 +590,7 @@ export function SessionList({
           )}
 
           <Section
-            title="Projects"
+            title="Chats and tasks"
             count={searching ? searchMatchCount - visiblePinned.length : others.length}
             onNewFolder={handleCreateFolder}
             onUploadFolder={(e) => { void handleFolderUploadClick(e); }}
@@ -693,6 +699,17 @@ export function SessionList({
                   </div>
                 );
               })()}
+              {!searching && (
+                <div className="pt-2 pl-2 pb-1">
+                  <button
+                    type="button"
+                    onClick={() => openConversationSearch()}
+                    className="text-[11.5px] text-sidebar-foreground/50 hover:text-sidebar-foreground transition"
+                  >
+                    View all
+                  </button>
+                </div>
+              )}
             </div>
           </Section>
         </div>
@@ -700,59 +717,68 @@ export function SessionList({
         {/* Bottom: user identity row — Claude-style username + avatar icon
             that opens the selection list (profile / settings / notifications /
             what's-new / account). Falls back to Guest when signed out. */}
-        <div className="px-2 pb-2 pt-1.5 border-t border-sidebar-border/40">
-          <UserDropdown
-            selectedStatus={dropdownUser.status}
-            onStatusChange={(status) => {
-              if (signedIn) setAccountStatus(status as UserStatus);
-            }}
-            onAction={handleUserAction}
-            signedIn={signedIn}
-            accounts={accounts.map((a) => ({
-              id: a.id,
-              name: a.displayName,
-              avatar: a.avatar,
-              initials: a.initials,
-            }))}
-            align="start"
-            side="top"
-            alignOffset={-8}
-            contentWidth={sidebarWidth}
-            user={dropdownUser}
-            updateAvailable={updateAvailable}
-            trigger={
-              <motion.button
-                type="button"
-                initial="rest"
-                whileHover="hover"
-                whileTap="tap"
-                variants={settingsRowMotion}
-                className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/40 hover:bg-white/[0.03]"
-                title={dropdownUser.name}
-                aria-label={`Account menu — ${dropdownUser.name}`}
-                data-testid="user-menu-trigger"
-              >
-                <Avatar className="size-6 shrink-0 border border-white/20">
-                  {dropdownUser.avatar ? (
-                    <AvatarImage src={dropdownUser.avatar} alt={dropdownUser.name} />
-                  ) : null}
-                  <AvatarFallback className="text-[10px]">{dropdownUser.initials}</AvatarFallback>
-                </Avatar>
-                <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-sidebar-foreground/80">
-                  {dropdownUser.name}
-                </span>
-                {updateAvailable && (
-                  <span
-                    className="shrink-0 rounded-sm bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-400"
-                    title={`Update available: v${updateAvailable.version}`}
-                  >
-                    Update
-                  </span>
-                )}
-                <ChevronUp className="size-3 shrink-0 text-muted-foreground/50" />
-              </motion.button>
-            }
-          />
+        <div className="px-2 pb-2 pt-1.5 border-t border-sidebar-border/40 flex items-center justify-between">
+          <div className="flex-1 min-w-0 mr-1">
+            <UserDropdown
+              selectedStatus={dropdownUser.status}
+              onStatusChange={(status) => {
+                if (signedIn) setAccountStatus(status as UserStatus);
+              }}
+              onAction={handleUserAction}
+              signedIn={signedIn}
+              accounts={accounts.map((a) => ({
+                id: a.id,
+                name: a.displayName,
+                avatar: a.avatar,
+                initials: a.initials,
+              }))}
+              align="start"
+              side="top"
+              alignOffset={-8}
+              contentWidth={sidebarWidth}
+              user={dropdownUser}
+              updateAvailable={updateAvailable}
+              trigger={
+                <motion.button
+                  type="button"
+                  initial="rest"
+                  whileHover="hover"
+                  whileTap="tap"
+                  variants={settingsRowMotion}
+                  className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/40 hover:bg-white/[0.04]"
+                  title={dropdownUser.name}
+                  aria-label={`Account menu — ${dropdownUser.name}`}
+                  data-testid="user-menu-trigger"
+                >
+                  <Avatar className="size-6 shrink-0 border border-white/20">
+                    {dropdownUser.avatar ? (
+                      <AvatarImage src={dropdownUser.avatar} alt={dropdownUser.name} />
+                    ) : null}
+                    <AvatarFallback className="text-[10px]">{dropdownUser.initials}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1 truncate text-[12.5px]">
+                    <span className="font-medium text-sidebar-foreground">{dropdownUser.name}</span>
+                    <span className="text-muted-foreground/60 ml-1">· Free</span>
+                  </div>
+                  <ChevronUp className="size-3 shrink-0 text-muted-foreground/50" />
+                </motion.button>
+              }
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => openSettingsSection("app-updates")}
+            className={cn(
+              "size-7 shrink-0 rounded-md flex items-center justify-center transition-colors",
+              updateAvailable
+                ? "text-emerald-400 hover:bg-emerald-500/15"
+                : "text-muted-foreground/60 hover:text-sidebar-foreground hover:bg-white/[0.05]",
+            )}
+            title={updateAvailable ? `Update available: v${updateAvailable.version}` : "Check for updates"}
+            aria-label="Check for updates"
+          >
+            <ArrowDownToLine className="size-3.5" />
+          </button>
         </div>
       </div>
 

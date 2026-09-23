@@ -77,13 +77,20 @@ async def resolve_ghdl() -> str | None:
     env_exe = os.environ.get('AUGUST_GHDL', '').strip()
     if env_exe and os.path.isfile(env_exe):
         return env_exe
-    winget = os.path.expandvars(
-        r'%LOCALAPPDATA%\Microsoft\WinGet\Packages')
+    # Read LOCALAPPDATA directly: posix os.path.expandvars does not
+    # understand %VAR% syntax, so the winget tree was only ever found on a
+    # Windows host — and never by tests. Same intent, portable.
+    local_appdata = os.environ.get('LOCALAPPDATA', '').strip()
+    winget = (
+        os.path.join(local_appdata, 'Microsoft', 'WinGet', 'Packages')
+        if local_appdata
+        else ''
+    )
     extra: list[str] = [
         r'C:\ghdl\bin', r'C:\Program Files\GHDL\bin',
         r'C:\msys64\mingw64\bin', r'C:\msys64\ucrt64\bin',
     ]
-    if os.path.isdir(winget):
+    if winget and os.path.isdir(winget):
         # winget installs land in <Packages>\<pkg-id>_<source>\bin
         for entry in os.listdir(winget):
             if 'ghdl' in entry.lower():
@@ -92,6 +99,12 @@ async def resolve_ghdl() -> str | None:
         ('ghdl',), ('--version',), r'GHDL\s+([0-9][^\s(]*)',
         extra_dirs=tuple(extra))
     return str(r.get('path', '')) if r.get('installed') else None
+
+
+# Quartus/ModelSim kit roots probed for versioned modelsim_ase trees.
+# Module-level so tests can repoint discovery at a fixture tree — the real
+# kit only exists on Quartus-kit machines.
+_MODELSIM_KIT_ROOTS = (r'C:\intelFPGA', r'C:\intelFPGA_lite', r'C:\altera')
 
 
 async def resolve_modelsim() -> str | None:
@@ -105,7 +118,7 @@ async def resolve_modelsim() -> str | None:
     if env_exe and os.path.isfile(env_exe):
         return env_exe
     roots: list[str] = []
-    for root in (r'C:\intelFPGA', r'C:\intelFPGA_lite', r'C:\altera'):
+    for root in _MODELSIM_KIT_ROOTS:
         try:
             versions = os.listdir(root)
         except OSError:

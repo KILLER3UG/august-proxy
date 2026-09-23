@@ -1,7 +1,7 @@
 /* Merge local sidebar sessions with workbench SoT (`GET /api/workbench/sessions`). */
 
 import { getWorkbenchSessions } from '@/api/workbench';
-import { dedupeSessions, preferSessionTitle, sessionIsEmpty } from './helpers';
+import { dedupeSessions, preferSessionRow, preferSessionTitle, sessionIsEmpty } from './helpers';
 import { saveSessionsToStorage } from './storage';
 import { isSessionIdTombstoned } from './tombstone';
 import type { Session } from './types';
@@ -25,6 +25,10 @@ export type SessionsSnapshot = {
  *   second session (or looked like the new chat was deleted).
  * - Local-only drafts (no workbenchSessionId yet) are kept even when the
  *   backend list is empty.
+ * - `isArchived` is the single manage-plane truth read here: the sessions
+ *   table owns the flag and the list endpoint carries it, so an archived chat
+ *   stays archived after a localStorage wipe. No other field is taken from the
+ *   server beyond the ones already merged below.
  * - Locals whose workbenchSessionId is gone from the backend are dropped
  *   (true server-side delete), unless tombstoned already.
  *
@@ -44,6 +48,34 @@ export async function reconcileSessionsFromBackend(
     const claimed = new Set<string>();
     const now = new Date().toISOString();
 
+    // Key every append on the stable ids a row already carries (UI id +
+    // workbench id) so replaying the same conversation merges instead of
+    // stacking a second copy. A reconnect racing a wiped localStorage (or a
+    // backend list that repeats a row) must be idempotent at the append
+    // itself — not only at the trailing dedupeSessions pass.
+    const identityIndex = new Map<string, number>();
+    const indexRow = (row: Session, at: number): void => {
+      if (row.id) identityIndex.set(row.id, at);
+      if (row.workbenchSessionId) identityIndex.set(row.workbenchSessionId, at);
+    };
+    const findMerged = (row: Session): number | undefined => {
+      const byId = row.id ? identityIndex.get(row.id) : undefined;
+      if (byId !== undefined) return byId;
+      return row.workbenchSessionId ? identityIndex.get(row.workbenchSessionId) : undefined;
+    };
+    const appendRow = (row: Session): void => {
+      const at = findMerged(row);
+      if (at !== undefined) {
+        // Same identity already landed — merge this copy into it (same
+        // orientation dedupeSessions uses: existing row first).
+        merged[at] = preferSessionRow(merged[at], row);
+        indexRow(row, at);
+        return;
+      }
+      indexRow(row, merged.length);
+      merged.push(row);
+    };
+
     for (const local of current) {
       if (isSessionIdTombstoned(local.id) || isSessionIdTombstoned(local.workbenchSessionId)) {
         continue;
@@ -53,7 +85,7 @@ export async function reconcileSessionsFromBackend(
       if (backend) {
         claimed.add(backend.id);
         // Keep stable UI id — only attach / refresh workbench metadata.
-        merged.push({
+        appendRow({
           ...local,
           id: local.id,
           workbenchSessionId: backend.id,
@@ -69,6 +101,12 @@ export async function reconcileSessionsFromBackend(
           // session never loses its true path (the task-home backfill would
           // otherwise reassign it to ~).
           workspacePath: local.workspacePath || backend.workspacePath || null,
+          // The server owns the archive column now; an absent flag means the
+          // backend has no opinion, so the local value stands. This is the ONE
+          // field read from the manage plane — everything else below (id,
+          // title, folder, path) stays local-owned because merging it here has
+          // repeatedly destroyed live sessions.
+          isArchived: backend.isArchived ?? local.isArchived,
         });
         continue;
       }
@@ -76,7 +114,7 @@ export async function reconcileSessionsFromBackend(
       // No backend match.
       if (!local.workbenchSessionId) {
         // Pure local draft (new empty chat before first message) — keep.
-        merged.push(local);
+        appendRow(local);
         continue;
       }
       // Linked to a workbench row that no longer exists → server deleted it.
@@ -110,7 +148,7 @@ export async function reconcileSessionsFromBackend(
         const pathMismatch = !!pendingWs && !!backendWs && pendingWs !== backendWs;
         if (!pathMismatch) {
           claimed.add(bs.id);
-          merged[pendingIdx] = {
+          const nextRow = {
             ...pending,
             workbenchSessionId: bs.id,
             title: preferSessionTitle(pending.title, bs.title),
@@ -122,10 +160,14 @@ export async function reconcileSessionsFromBackend(
             // the row reflects where its turns actually run.
             workspacePath: pending.workspacePath || bs.workspacePath || null,
           };
+          merged[pendingIdx] = nextRow;
+          // Register the newly attached workbench id so a later backend row
+          // with the same id merges into this draft instead of appending a twin.
+          indexRow(nextRow, pendingIdx);
           continue;
         }
       }
-      merged.push({
+      appendRow({
         id: bs.id,
         title: (bs.title) || 'New Session',
         startedAt: (bs.updatedAt) || now,
@@ -138,6 +180,7 @@ export async function reconcileSessionsFromBackend(
         // Carry the backend workspace across so a restored project session
         // keeps its path (and the task-home backfill does not claim it).
         workspacePath: bs.workspacePath || null,
+        isArchived: !!bs.isArchived,
       });
     }
 

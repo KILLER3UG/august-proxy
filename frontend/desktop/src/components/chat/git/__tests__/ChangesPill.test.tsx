@@ -109,8 +109,8 @@ describe('ChangesPill', () => {
     fireEvent.click(await screen.findByTestId('git-tools-commit'));
     const modal = await screen.findByTestId('commit-modal');
     expect(modal).toBeTruthy();
-    const checkbox = screen.getByTestId('include-unstaged') as HTMLInputElement;
-    expect(checkbox.checked).toBe(true);
+    const checkbox = screen.getByTestId('include-unstaged');
+    expect(checkbox).toBeChecked();
     fireEvent.change(screen.getByTestId('commit-message-input'), {
       target: { value: 'feat: test commit' },
     });

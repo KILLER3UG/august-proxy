@@ -54,7 +54,8 @@ export interface Provider {
   apiFormat: ApiFormat;
   enabled: boolean;
   apiKeySet: boolean;
-  apiKey?: string;
+  /** Last-4 display only. The key itself is never returned over HTTP. */
+  apiKeyMasked?: string | null;
   autoFetch?: boolean;
   models: ProviderModel[];
   createdAt?: string;

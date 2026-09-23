@@ -18,6 +18,8 @@ import {
 import { dequeueWorkbenchMessage, queueWorkbenchMessage } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
 import type { ChatMessage, FileAttachment } from '@/types/chat';
+import { ensureSessionHistory } from '../stream/session-history';
+import { getOrInitSessionStreamState } from '../stream/session-stream-store';
 import { ChatAttachmentService } from '../services/ChatAttachmentService';
 import { updateSessionModel, renameSession, isPlaceholderTitle, deriveSnippetTitle, useSessionsStore } from '@/store/sessions';
 import { buildGitContextBlock } from '@/lib/git-context';
@@ -518,11 +520,6 @@ export function useChatSend(opts: UseChatSendOptions) {
         return;
       }
 
-      const currentMessages =
-        sessionId === loadedSessionId
-          ? messages
-          : loadMessagesForSession(sessionId);
-
       // Offline compose (C9): if the backend is unreachable, park the
       // message in the offline queue instead of failing silently — it
       // flushes automatically when the backend returns.
@@ -567,6 +564,15 @@ export function useChatSend(opts: UseChatSendOptions) {
         releaseSendLatch();
         return;
       }
+
+      // Wait for the backend transcript before appending the local bubble. A
+      // fast double-Enter send can otherwise mark missing history as ready and
+      // permanently veto the hydration response.
+      await ensureSessionHistory(sessionId);
+      const currentMessages =
+        sessionId === loadedSessionId
+          ? getOrInitSessionStreamState(sessionId).messages
+          : loadMessagesForSession(sessionId);
 
       // Title immediately from the first real message — the snippet
       // shows in the sidebar at send time; the backend LLM titler refines it
@@ -672,6 +678,8 @@ export function useChatSend(opts: UseChatSendOptions) {
       setShowToolsDropdown,
       setShowCommandsDropdown,
       loadMessagesForSession,
+      ensureSessionHistory,
+      getOrInitSessionStreamState,
       generateAIResponse,
     ],
   );

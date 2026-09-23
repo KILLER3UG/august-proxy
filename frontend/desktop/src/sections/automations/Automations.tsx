@@ -15,6 +15,8 @@ import {
   Bot,
   Inbox,
   Plus,
+  Pencil,
+  ShieldCheck,
   Copy,
   RefreshCw,
   ChevronDown,
@@ -30,10 +32,23 @@ import {
   runAutomation,
   deleteAutomation,
   rotateAutomationToken,
+  listBots,
+  type AggregatedModel,
   type AutomationJob,
   type AutomationUpsertInput,
 } from '@/api/api-client';
+import { useModels } from '@/hooks/useModels';
 import { PageLoader } from '@/components/PageLoader';
+import {
+  WORKBENCH_GUARD_MODES,
+  WORKBENCH_GUARD_MODE_ORDER,
+  type WorkbenchGuardMode,
+} from '@/components/chat/WorkbenchModeSelector';
+import {
+  WORKBENCH_SANDBOX_MODES,
+  getWorkbenchSandboxMode,
+  type WorkbenchSandboxMode,
+} from '@/components/chat/SandboxModeSelector';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { useNavigate } from 'react-router-dom';
@@ -68,6 +83,24 @@ function scheduleLabel(schedule?: string | null): string {
   return preset?.label || schedule;
 }
 
+/** Select value for one catalog entry — the same model id can exist under two
+ *  providers, so the provider is part of the key (and of the saved job). */
+const modelKeyOf = (m: { provider: string; id: string }) => `${m.provider}\n${m.id}`;
+
+/** How this unattended run is gated and scoped. Defaults stay unlabelled, so a
+ *  card only says something when its policy differs from the harness default. */
+function policyLabel(job: AutomationJob): string {
+  const parts: string[] = [];
+  const guard = job.guardMode;
+  if (guard && guard !== 'ask') {
+    parts.push(WORKBENCH_GUARD_MODES[guard as WorkbenchGuardMode]?.label ?? guard);
+  }
+  if (job.sandboxMode) {
+    parts.push(getWorkbenchSandboxMode(job.sandboxMode as WorkbenchSandboxMode).shortLabel);
+  }
+  return parts.join(' · ');
+}
+
 export function Automations() {
   const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
     useConfirmDialog();
@@ -82,7 +115,10 @@ export function Automations() {
     refetchInterval: 5_000,
   });
 
-  const jobs = data?.jobs ?? [];
+  // Stable identity: `data?.jobs ?? []` produced a fresh array on every render
+  // while the list query was still loading, which re-ran the settle-toast
+  // effect (and the enabled count) each time for no reason.
+  const jobs = useMemo(() => data?.jobs ?? [], [data]);
 
   // Toast + optional OS notify when a running job settles.
   useEffect(() => {
@@ -110,11 +146,21 @@ export function Automations() {
 
   const invalidate = () => void qc.invalidateQueries({ queryKey: ['automations'] });
 
+  // Editing reuses the create form and the same upsert route; the job's id in
+  // the body is what makes it an update. Until now the form was create-only,
+  // so changing a prompt meant deleting the automation and rebuilding it —
+  // which also threw away its run history and trigger token.
+  const [editing, setEditing] = useState<AutomationJob | null>(null);
+  const closeForm = () => {
+    setShowCreate(false);
+    setEditing(null);
+  };
+
   const create = useMutation({
     mutationFn: upsertAutomation,
     onSuccess: (job) => {
       invalidate();
-      setShowCreate(false);
+      closeForm();
       if (job.triggerToken) {
         setTokenFlash((m) => ({ ...m, [job.id]: job.triggerToken! }));
       }
@@ -125,15 +171,25 @@ export function Automations() {
   });
 
   const run = useMutation({
-    mutationFn: (job: AutomationJob) =>
-      runAutomation(job.id, job.approvalRequired === false) as Promise<{ status?: string }>,
-    onSuccess: (res: { status?: string }) => {
+    mutationFn: ({ job, approved }: { job: AutomationJob; approved: boolean }) =>
+      runAutomation(job.id, approved) as Promise<{ status?: string }>,
+    onSuccess: (res: { status?: string }, { job }) => {
       invalidate();
       if (res?.status === 'approval_required') {
-        toast.info('Automation requires approval');
-      } else {
-        toast.success('Automation triggered');
+        // The gate exists because the job can touch the machine, so the answer
+        // is an explicit decision — not a dead-end toast that leaves "Run"
+        // looking broken.
+        void confirmStyled({
+          title: 'Run this automation anyway?',
+          message: `"${job.name || job.id}" is marked as requiring approval before it runs.`,
+          confirmLabel: 'Run once',
+          variant: 'destructive',
+        }).then((ok) => {
+          if (ok) run.mutate({ job, approved: true });
+        });
+        return;
       }
+      toast.success('Automation triggered');
     },
     onError: (e: unknown) =>
       toast.error('Could not run automation', { description: String((e as Error).message) }),
@@ -182,16 +238,26 @@ export function Automations() {
             : `${jobs.length} job${jobs.length === 1 ? '' : 's'} · ${enabledCount} active`
         }
         actions={
-          <Button size="sm" onClick={() => setShowCreate((v) => !v)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditing(null);
+              setShowCreate((v) => !v);
+            }}
+          >
             <Plus className="size-3.5" /> New
           </Button>
         }
       />
 
-      {showCreate && (
-        <CreateAutomationForm
+      {(showCreate || editing) && (
+        // Seeded fields are useState initializers, so switching between two
+        // jobs (or create → edit) needs a fresh mount, not just new props.
+        <AutomationForm
+          key={editing?.id ?? 'new'}
           busy={create.isPending}
-          onCancel={() => setShowCreate(false)}
+          initial={editing ?? undefined}
+          onCancel={closeForm}
           onSave={(body) => create.mutate(body)}
         />
       )}
@@ -219,7 +285,11 @@ export function Automations() {
               key={job.id}
               job={job}
               token={tokenFlash[job.id]}
-              onRun={() => run.mutate(job)}
+              onRun={() => run.mutate({ job, approved: job.approvalRequired !== true })}
+              onEdit={() => {
+                setShowCreate(false);
+                setEditing(job);
+              }}
               onDelete={() => {
                 void confirmStyled({
                   title: 'Delete automation?',
@@ -251,25 +321,94 @@ export function Automations() {
   );
 }
 
-function CreateAutomationForm({
+function AutomationForm({
   busy,
+  initial,
   onCancel,
   onSave,
 }: {
   busy: boolean;
+  /** When set, the form edits that job instead of creating one. */
+  initial?: AutomationJob;
   onCancel: () => void;
   onSave: (body: AutomationUpsertInput) => void;
 }) {
-  const [name, setName] = useState('');
-  const [jobType, setJobType] = useState<'workbench' | 'shell' | 'http'>('workbench');
-  const [prompt, setPrompt] = useState('');
-  const [command, setCommand] = useState('');
-  const [url, setUrl] = useState('');
-  const [method, setMethod] = useState('GET');
-  const [httpBody, setHttpBody] = useState('');
-  const [preset, setPreset] = useState(SCHEDULE_PRESETS[0].value);
-  const [customSchedule, setCustomSchedule] = useState('');
-  const [workspacePath, setWorkspacePath] = useState('');
+  const editingId = initial?.id ?? '';
+  const [name, setName] = useState(initial?.name ?? '');
+  const [jobType, setJobType] = useState<'workbench' | 'shell' | 'http'>(
+    initial?.jobType === 'shell' || initial?.jobType === 'http' ? initial.jobType : 'workbench',
+  );
+  const [prompt, setPrompt] = useState(initial?.prompt ?? '');
+  const [command, setCommand] = useState(initial?.command ?? '');
+  const [url, setUrl] = useState(initial?.url ?? '');
+  const [method, setMethod] = useState(initial?.method || 'GET');
+  const [httpBody, setHttpBody] = useState(initial?.body ?? '');
+  // A stored schedule that isn't one of the presets (a hand-written cron) has
+  // to land in the custom field, or editing a job would silently rewrite its
+  // schedule to the default preset. An empty schedule (create mode) is the
+  // default preset, not "custom".
+  const seededSchedule = initial?.schedule ?? '';
+  const seededIsCustom =
+    !!seededSchedule && !SCHEDULE_PRESETS.some((p) => p.value === seededSchedule);
+  const [preset, setPreset] = useState(
+    seededIsCustom ? '' : seededSchedule || SCHEDULE_PRESETS[0].value,
+  );
+  const [customSchedule, setCustomSchedule] = useState(
+    seededIsCustom ? seededSchedule : '',
+  );
+  // The server's own vocabulary: 0 terminal runs means no cap. Sent as a
+  // number so the field always says what the job does.
+  const [maxRuns, setMaxRuns] = useState(String(initial?.maxRuns ?? 0));
+  // What an unattended run is allowed to do. Seeded from the job and always
+  // sent, so 'Server default' is a real choice rather than an ambiguity
+  // between "default" and "leave what is stored".
+  const [guardMode, setGuardMode] = useState<WorkbenchGuardMode>(
+    initial?.guardMode === 'plan' ||
+    initial?.guardMode === 'full' ||
+    initial?.guardMode === 'edit' ||
+    initial?.guardMode === 'ask'
+      ? initial.guardMode
+      : 'ask',
+  );
+  const [sandboxMode, setSandboxMode] = useState<WorkbenchSandboxMode | ''>(
+    initial?.sandboxMode === 'read-only' ||
+    initial?.sandboxMode === 'workspace-write' ||
+    initial?.sandboxMode === 'danger-full-access'
+      ? initial.sandboxMode
+      : '',
+  );
+  const [workspacePath, setWorkspacePath] = useState(
+    initial?.workspacePath || initial?.cwd || '',
+  );
+  // Which model and agent a workbench automation runs as. The card displays
+  // both, so the form has to edit them too — until now a pinned model could
+  // only be set from a Bot's routines pane.
+  const { models } = useModels();
+  const { data: botsData } = useQuery({ queryKey: ['bots'], queryFn: () => listBots() });
+  const seededModelKey = initial?.model
+    ? `${initial.modelProvider ?? initial.provider ?? ''}\n${initial.model}`
+    : '';
+  const [modelKey, setModelKey] = useState(seededModelKey);
+  const [agentId, setAgentId] = useState(initial?.agentId ?? '');
+  const modelsByProvider = useMemo(() => {
+    const byProvider = new Map<string, AggregatedModel[]>();
+    for (const m of models) {
+      const list = byProvider.get(m.provider);
+      if (list) list.push(m);
+      else byProvider.set(m.provider, [m]);
+    }
+    return [...byProvider.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [models]);
+  // A stored model whose provider has since been removed must still appear,
+  // or the form reads "Auto" and saving drops the pin.
+  const orphanModel =
+    !!seededModelKey && !models.some((m) => modelKeyOf(m) === seededModelKey)
+      ? { value: seededModelKey, label: `${initial?.model} (not in catalog)` }
+      : null;
+  const orphanAgent =
+    !!initial?.agentId && !(botsData?.bots ?? []).some((b) => b.id === initial.agentId)
+      ? { value: initial.agentId, label: `${initial.agentId} (not in roster)` }
+      : null;
   const [pickingWorkspace, setPickingWorkspace] = useState(false);
 
   const chooseWorkspace = async () => {
@@ -289,6 +428,13 @@ function CreateAutomationForm({
   };
 
   const schedule = preset || customSchedule.trim();
+  // Hidden fields for shell/http jobs must not travel with the job: switching
+  // type means the old pick no longer applies.
+  const selectedModel = useMemo(() => {
+    if (jobType !== 'workbench' || !modelKey) return { id: '', provider: '' };
+    const split = modelKey.indexOf('\n');
+    return { provider: modelKey.slice(0, split), id: modelKey.slice(split + 1) };
+  }, [jobType, modelKey]);
   const canSave =
     !!schedule &&
     ((jobType === 'workbench' && !!prompt.trim()) ||
@@ -298,7 +444,9 @@ function CreateAutomationForm({
   return (
     <Card>
       <CardContent className="p-4 space-y-3">
-        <div className="text-sm font-medium">New automation</div>
+        <div className="text-sm font-medium">
+          {editingId ? 'Edit automation' : 'New automation'}
+        </div>
         <label className="block space-y-1">
           <span className="text-xs text-muted-foreground">Name</span>
           <input
@@ -306,6 +454,9 @@ function CreateAutomationForm({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Morning standup brief"
+            // The form renders above the list, so focusing it also scrolls an
+            // "Edit" click on a far-down card into view.
+            autoFocus
           />
         </label>
 
@@ -343,6 +494,91 @@ function CreateAutomationForm({
               placeholder="What should the agent do each run?"
             />
           </label>
+        )}
+
+        {jobType === 'workbench' && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block space-y-1">
+              <span className="text-xs text-muted-foreground">Model (optional)</span>
+              <select
+                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+                value={modelKey}
+                onChange={(e) => setModelKey(e.target.value)}
+              >
+                <option value="">Automatic — router picks</option>
+                {orphanModel && (
+                  <option value={orphanModel.value}>{orphanModel.label}</option>
+                )}
+                {modelsByProvider.map(([provider, list]) => (
+                  <optgroup key={provider || 'default'} label={provider || 'Default'}>
+                    {list.map((m) => (
+                      <option key={modelKeyOf(m)} value={modelKeyOf(m)}>
+                        {m.name || m.id}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-muted-foreground">Agent (optional)</span>
+              <select
+                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+                value={agentId}
+                onChange={(e) => setAgentId(e.target.value)}
+              >
+                <option value="">Default agent</option>
+                {orphanAgent && <option value={orphanAgent.value}>{orphanAgent.label}</option>}
+                {(botsData?.bots ?? [])
+                  .filter((b) => !b.uiMeta?.hidden)
+                  .map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name || b.id}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          </div>
+        )}
+
+        {jobType === 'workbench' && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block space-y-1">
+              <span className="text-xs text-muted-foreground">Approvals</span>
+              <select
+                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+                value={guardMode}
+                onChange={(e) => setGuardMode(e.target.value as WorkbenchGuardMode)}
+                aria-label="Approval mode for this run"
+              >
+                {WORKBENCH_GUARD_MODE_ORDER.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {WORKBENCH_GUARD_MODES[mode].label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-muted-foreground">Tool reach</span>
+              <select
+                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+                value={sandboxMode}
+                onChange={(e) => setSandboxMode(e.target.value as WorkbenchSandboxMode | '')}
+                aria-label="Tool reach for this run"
+              >
+                <option value="">Server default (project)</option>
+                {Object.values(WORKBENCH_SANDBOX_MODES).map((m) => (
+                  <option key={m.id} value={m.id} title={m.description}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="text-[11px] text-muted-foreground sm:col-span-2">
+              This job runs with nobody watching: a mode that asks will park the run rather than
+              finish it, and “Whole machine” lets the scheduled command touch anything the app can.
+            </p>
+          </div>
         )}
 
         {jobType === 'shell' && (
@@ -422,6 +658,17 @@ function CreateAutomationForm({
               />
             </label>
           )}
+          <label className="block space-y-1">
+            <span className="text-xs text-muted-foreground">Stop after N runs (0 = never)</span>
+            <input
+              type="number"
+              min={0}
+              className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+              value={maxRuns}
+              onChange={(e) => setMaxRuns(e.target.value)}
+              placeholder="0 = keep running"
+            />
+          </label>
           <div className="block space-y-1 sm:col-span-2">
             <span className="text-xs text-muted-foreground">
               {jobType === 'shell' ? 'Working directory (optional)' : 'Workspace path (optional)'}
@@ -459,10 +706,21 @@ function CreateAutomationForm({
             disabled={busy || !canSave}
             onClick={() =>
               onSave({
+                ...(editingId ? { id: editingId } : {}),
                 name: name.trim() || 'Automation',
                 schedule,
+                // 0 is the server's "no cap", so send the number rather than
+                // omitting it — an omitted field is left as stored.
+                maxRuns: Math.max(0, Math.floor(Number(maxRuns) || 0)),
                 jobType,
                 prompt: jobType === 'workbench' ? prompt.trim() : undefined,
+                // '' clears the pin; undefined leaves a field the type hides
+                // untouched, because the upsert only writes what the body sends.
+                model: jobType === 'workbench' ? selectedModel.id : undefined,
+                modelProvider: jobType === 'workbench' ? selectedModel.provider : undefined,
+                agentId: jobType === 'workbench' ? agentId : undefined,
+                guardMode: jobType === 'workbench' ? guardMode : undefined,
+                sandboxMode: jobType === 'workbench' ? sandboxMode : undefined,
                 command: jobType === 'shell' ? command.trim() : undefined,
                 url: jobType === 'http' ? url.trim() : undefined,
                 method: jobType === 'http' ? method : undefined,
@@ -484,6 +742,7 @@ function AutomationCard({
   job,
   token,
   onRun,
+  onEdit,
   onDelete,
   onPause,
   onRotate,
@@ -492,6 +751,7 @@ function AutomationCard({
   job: AutomationJob;
   token?: string;
   onRun: () => void;
+  onEdit: () => void;
   onDelete: () => void;
   onPause: () => void;
   onRotate: () => void;
@@ -523,6 +783,26 @@ function AutomationCard({
               {job.paused && (
                 <Badge variant="outline" className="text-[9px]">
                   paused
+                </Badge>
+              )}
+              {/* The runner disables the job itself when the cap is spent; say
+                  so, or it just looks like the user turned it off. */}
+              {job.limitReached && (
+                <Badge
+                  variant="outline"
+                  className="text-[9px] border-warning/50 text-warning"
+                  title={`Stopped after ${job.maxRuns} runs`}
+                >
+                  limit reached
+                </Badge>
+              )}
+              {job.approvalRequired && (
+                <Badge
+                  variant="outline"
+                  className="text-[9px] border-info/50 text-info"
+                  title="A human confirms each run of this job"
+                >
+                  needs approval
                 </Badge>
               )}
               {job.status === 'running' && (
@@ -559,6 +839,14 @@ function AutomationCard({
                 </span>
               )}
               {job.lastRunAt && <span>last: {shortDate(job.lastRunAt)}</span>}
+              {policyLabel(job) && (
+                <span
+                  className="inline-flex items-center gap-1"
+                  title="Execution policy for this unattended run"
+                >
+                  <ShieldCheck className="size-2.5" /> {policyLabel(job)}
+                </span>
+              )}
               {job.nextRunAt && !job.paused && (
                 <span className="text-warning">next: {shortDate(job.nextRunAt)}</span>
               )}
@@ -577,6 +865,16 @@ function AutomationCard({
             </Button>
             <Button size="sm" variant="outline" onClick={onRun} disabled={busy} title="Run now">
               <Play className="size-3" /> Run
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="outline"
+              onClick={onEdit}
+              disabled={busy}
+              title="Edit"
+              aria-label="Edit automation"
+            >
+              <Pencil className="size-3" />
             </Button>
             <Button size="icon-sm" variant="outline" onClick={onDelete} disabled={busy} title="Delete">
               <Trash2 className="size-3 text-destructive" />

@@ -114,6 +114,32 @@ def test_relevant_skills_block_matches_query(freshSkillState, monkeypatch):
     assert block.rstrip().endswith('</relevant_skills>')
 
 
+def test_relevant_skills_detail_names_what_the_block_carried(freshSkillState):
+    """The context meter answers "which skill cost this" from the same pass that
+    rendered the block, so the two can never disagree about what went in."""
+    from app.services.capabilities_prompt import render_relevant_skills
+
+    _writeAgentSkill('hy-quartus-vhdl', body='FPGA synthesis steps.')
+    _writeAgentSkill('hy-timber-frame', body='Woodwork joinery notes.')
+
+    block, detail = render_relevant_skills('please run the quartus vhdl synthesis flow')
+    assert 'hy-quartus-vhdl' in detail
+    assert 'hy-timber-frame' not in detail, 'only rendered skills are accounted for'
+    for name, size in detail.items():
+        line = next(line for line in block.splitlines() if line.startswith(f'- {name}'))
+        assert size == len(line.encode('utf-8')), (name, size, line)
+    assert sum(detail.values()) <= len(block.encode('utf-8')), 'sub-rows fit the parent row'
+
+
+def test_relevant_skills_detail_is_empty_when_the_block_is(freshSkillState, monkeypatch):
+    from app.services.capabilities_prompt import render_relevant_skills
+
+    _writeAgentSkill('hy-gated-skill')
+    assert render_relevant_skills('hi') == ('', {})
+    monkeypatch.setenv('AUGUST_SKILL_RELEVANCE', '0')
+    assert render_relevant_skills('run the hy gated skill now please') == ('', {})
+
+
 def test_relevant_skills_block_short_query_empty(freshSkillState):
     from app.services.capabilities_prompt import build_relevant_skills_block
 

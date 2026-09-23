@@ -8,8 +8,8 @@
    No debug furniture: no harness config bar, no goal cards, no api-call /
    iteration counters, no raw event dumps, no "Persisted final response" labels. */
 
-import { CheckCircle2, CircleAlert, Check, Circle, ArrowRight, ListTodo, Loader2, Square, Search, ChevronDown } from 'lucide-react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { CheckCircle2, CircleAlert, Circle, ArrowRight, ListTodo, Loader2, Square, Search, ChevronDown } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import {

@@ -36,7 +36,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from app.json_narrowing import as_bool, as_int, as_str
 
@@ -56,6 +56,11 @@ EDIT_TOOLS = frozenset(
         'str_replace_editor',
         'apply_patch',
         'patch_file',
+        # Homogeneous multi-file edits use the same post-mutation gate. The
+        # meta tool and its named variant are kept here so a bulk write cannot
+        # silently skip verification.
+        'bulk',
+        'write_files',
     }
 )
 
@@ -393,10 +398,10 @@ def _cap_output(text: str) -> str:
 
 async def _run_gate_command(
     command: str, workspace: Path, session: 'WorkbenchSession | None', timeout: float
-) -> tuple[bool, str, bool]:
+) -> tuple[bool, str, bool | Literal['no-tests']]:
     """Run one gate command through the same sandbox path as run_command.
 
-    Returns ``(ok, text, timed_out)``. A sandbox denial reports as not-ok
+    Returns ``(ok, text, status)``: status is a timeout bool or ``no-tests``. A sandbox denial reports as not-ok
     with the reason so the receipt can tell the model (or suggest disabling
     the gate). A KILLED gate (timeout) is NOT a code failure — ``timed_out``
     lets the caller report it as inconclusive instead of sending the model
@@ -405,19 +410,14 @@ async def _run_gate_command(
     from app.services.execution_world import run_sandboxed
     from app.services.sandbox.runner import policy_from_session
 
-    guard_full = False
-    if session is not None:
-        try:
-            from app.services.workbench.workbench import normalizeGuardMode
-
-            guard_full = normalizeGuardMode(getattr(session, 'guardMode', None) or 'full') == 'full'
-        except Exception:
-            guard_full = False
+    # guardMode controls approval prompts, not sandbox containment. Never
+    # translate ``guardMode=full`` into an unsandboxed command: the session's
+    # explicit sandbox mode (including danger-full-access) is authoritative.
     policy = policy_from_session(
         sandbox_mode=getattr(session, 'sandboxMode', None) if session is not None else None,
         workspace_path=str(workspace),
         sandbox_network=False,
-        allow_unsandboxed=guard_full,
+        allow_unsandboxed=False,
     )
     result = await run_sandboxed(command, policy, timeout=timeout)
     if result.denial_reason:
@@ -432,13 +432,19 @@ async def _run_gate_command(
     # "Command timed out after Ns" header (fallback.py). That sentinel is
     # inconclusive, not a failure.
     stderr_lower = (result.stderr or '').lower()
+    stdout_lower = (result.stdout or '').lower()
     timed_out_marker = result.exit_code == -1 and 'timed out' in stderr_lower
-    no_tests_collected = result.exit_code == 5 and (
-        'no tests ran' in stderr_lower or 'collected' in stderr_lower
+    no_tests = result.exit_code == 5 and any(
+        marker in output
+        for output in (stdout_lower, stderr_lower)
+        for marker in ('no tests ran', 'no tests collected', 'collected 0 items')
     )
-    timed_out = timed_out_marker or no_tests_collected
     ok = result.exit_code == 0 if result.exit_code is not None else result.ok
-    return ok, text, timed_out
+    if timed_out_marker:
+        return ok, text, True
+    if no_tests:
+        return False, text, 'no-tests'
+    return ok, text, False
 
 
 def _verify_state(session: 'WorkbenchSession') -> dict[str, object]:
@@ -471,6 +477,56 @@ def _edited_relpath(tool_input: dict[str, object], workspace: Path) -> str:
         return resolved.relative_to(workspace).as_posix()
     except (ValueError, OSError):
         return raw
+
+
+def _bulk_edit_relpaths(
+    tool_name: str, tool_input: dict[str, object], workspace: Path
+) -> list[str] | None:
+    """Resolve bulk write targets in input order, matching bulk tool shapes.
+
+    Returns ``None`` when the input is not a supported write shape (the caller
+    emits an explicit fail-closed receipt), or an empty list when the shape is
+    write-like but contains no usable paths.
+    """
+    operation = as_str(tool_input.get('operation'), '').strip().lower().replace('-', '_')
+    if tool_name == 'bulk':
+        if operation not in ('write_files', 'write_file', 'write'):
+            return None
+        raw = tool_input.get('files')
+        if raw is None:
+            raw = tool_input.get('items')
+    elif tool_name == 'write_files':
+        raw = tool_input.get('files')
+    else:
+        return None
+    if not isinstance(raw, list):
+        return None
+    relpaths: list[str] = []
+    seen: set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            return None
+        path = (
+            as_str(entry.get('path'), '')
+            or as_str(entry.get('filePath'), '')
+            or as_str(entry.get('file_path'), '')
+            or as_str(entry.get('file'), '')
+            or as_str(entry.get('target'), '')
+        )
+        if not path:
+            return None
+        try:
+            resolved = Path(path)
+            if not resolved.is_absolute():
+                resolved = workspace / resolved
+            relpath = resolved.resolve(strict=False).relative_to(workspace.resolve(strict=False)).as_posix()
+        except (OSError, ValueError):
+            return None
+        if not relpath or relpath in seen:
+            return None
+        seen.add(relpath)
+        relpaths.append(relpath)
+    return relpaths
 
 
 def _package_rel(workspace: Path, package: Path) -> str:
@@ -508,6 +564,8 @@ async def verify_after_edit(
     session: 'WorkbenchSession',
     tool_name: str,
     tool_input: dict[str, object],
+    *,
+    _target_relpath: str | None = None,
 ) -> str:
     """Post-mutation hook: run the lint/test gate after a successful edit.
 
@@ -520,10 +578,56 @@ async def verify_after_edit(
     if not workspaceRaw:
         return ''
     workspace = Path(workspaceRaw)
-    relpath = _edited_relpath(tool_input, workspace)
+
+    # Resolve bulk targets before reading any single root-level config. A
+    # workspace-root ``.aug/verify.json`` may be disabled while a package below
+    # it enables its own gate; resolving targets first keeps that package gate
+    # from being hidden by the root early return.
+    bulk_targets: list[str] | None = None
+    if _target_relpath is None and tool_name in ('bulk', 'write_files'):
+        bulk_targets = _bulk_edit_relpaths(tool_name, tool_input, workspace)
+        if bulk_targets is None:
+            return (
+                '[verification blocked] Bulk edit verification could not resolve the '
+                f'{tool_name} input shape (operation={as_str(tool_input.get("operation"), "") or "write_files"}). '
+                'No lint/test gate was run; verify the edited files explicitly.'
+            )
+        if not bulk_targets:
+            return (
+                '[verification blocked] Bulk edit verification received no usable file '
+                'targets. No lint/test gate was run; verify the edited files explicitly.'
+            )
+
+    if bulk_targets is not None:
+        receipts: list[tuple[str, str]] = []
+        for target in bulk_targets:
+            receipt = await verify_after_edit(
+                session, 'write_file', {'path': target}, _target_relpath=target
+            )
+            receipts.append((target, receipt))
+            if not receipt:
+                return (
+                    '[verification blocked] Bulk edit verification found no enabled lint/test '
+                    f'gate for target {target}. No claim of correctness is made for that file.'
+                )
+            if not receipt.startswith('[verification passed'):
+                label = (
+                    '[verification FAILED — bulk edit verification]'
+                    if receipt.startswith('[verification FAILED')
+                    else '[verification inconclusive — bulk edit verification]'
+                )
+                return f'{label}\nTarget: {target}\n{receipt}'
+        target_list = ', '.join(bulk_targets)
+        return (
+            '[verification passed] bulk edit verification clean — '
+            f'{len(bulk_targets)} target(s): {target_list}.'
+        )
+
+    relpath = _target_relpath if _target_relpath is not None else _edited_relpath(tool_input, workspace)
     config = load_verify_config(workspace, relpath)
     if not config['enabled']:
         return ''
+
     lintCmd = as_str(config.get('lintCmd'), '')
     testCmd = as_str(config.get('testCmd'), '')
     maxFix = as_int(config.get('maxFixIterations'), DEFAULT_MAX_FIX_ITERATIONS)
@@ -580,6 +684,13 @@ async def verify_after_edit(
     if lintCmd:
         scoped = cdPrefix + lintCmd.replace('{file}', fileArg)
         ok, text, timed_out = await _run_gate_command(scoped, workspace, session, LINT_TIMEOUT_S)
+        if timed_out == 'no-tests':
+            return (
+                f'[verification inconclusive] No tests collected ({scoped}, {gateCtx}). '
+                'The edit succeeded, but this check did not verify it. '
+                'Select a test target that collects tests; the gate remains enabled.'
+                f'\n{_cap_output(text)}'
+            )
         if timed_out:
             return (
                 f'[verification inconclusive] lint ({scoped}) timed out after '
@@ -595,10 +706,18 @@ async def verify_after_edit(
     if testCmd and not state.get('testPaused'):
         scopedTest = cdPrefix + testCmd.replace('{file}', fileArg)
         ok, text, timed_out = await _run_gate_command(scopedTest, workspace, session, TEST_TIMEOUT_S)
+        if timed_out == 'no-tests':
+            return (
+                f'[verification inconclusive] No tests collected ({scopedTest}, {gateCtx}). '
+                'The edit succeeded, but no tests verified it. '
+                'Select a test target that collects tests or configure testCmd in '
+                f'{VERIFY_CONFIG_RELPATH}. The test gate remains enabled.'
+                f'\n{_cap_output(text)}'
+            )
         if timed_out:
             # A suite that can't finish in TEST_TIMEOUT_S would otherwise
             # re-block every subsequent edit for minutes. Pause the test gate
-            # for the rest of the session; lint (fast, file-scoped) keeps
+            # for the rest of the turn; lint (fast, file-scoped) keeps
             # running. The command is already file-scoped from the package
             # root, so a timeout here now means genuinely slow — say so, and
             # name the knob, instead of implying the detection was wrong.
@@ -607,7 +726,7 @@ async def verify_after_edit(
                 f'[verification inconclusive] tests ({scopedTest}) timed out after '
                 f'{int(TEST_TIMEOUT_S)}s and were killed ({gateCtx}) — the suite never '
                 'finished, so this is NOT a code failure and there is nothing to fix. '
-                'The edit succeeded. The test gate is now PAUSED for this session (lint '
+                'The edit succeeded. The test gate is now PAUSED for the rest of this turn (lint '
                 'still runs); run the tests yourself via run_command when you actually '
                 'need them, or narrow the gate by writing testCmd (with {file}) into '
                 f'{VERIFY_CONFIG_RELPATH} at the workspace or package root.'

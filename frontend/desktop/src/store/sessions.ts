@@ -1,7 +1,7 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import { deleteWorkbenchSession, stopWorkbenchChat } from '@/api/workbench';
-import { deleteManageSession } from '@/api/api-client';
-import { clearActiveChatStream } from '@/store/chat-active-streams';
+import { deleteManageSession, setManageSessionArchived } from '@/api/api-client';
 import { chatRuntime } from '@/sections/chat/chat-runtime';
 import { activeStreamControllers } from '@/sections/chat/stream/active-stream-controllers';
 import {
@@ -9,7 +9,6 @@ import {
   dedupeSessions,
   folderNameFromPath,
   isPlaceholderTitle,
-  isUiSessionId,
   makeSessionId,
   normalizePath,
   pathsMatch,
@@ -505,6 +504,7 @@ export function archiveSession(id: string) {
     .sessions.map((s) => (s.id === id ? { ...s, isArchived: true } : s));
   useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
+  pushArchiveFlag(id, true);
 }
 
 export function restoreSession(id: string) {
@@ -525,6 +525,54 @@ export function restoreSession(id: string) {
     .sessions.map((s) => (s.id === id ? { ...s, isArchived: false } : s));
   useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
+  pushArchiveFlag(id, false);
+}
+
+/**
+ * Mirror the archive flag to the backend sessions table.
+ *
+ * Fire-and-forget — never await on the UI path. Both the sidebar id and the
+ * workbench handle are sent because either can be the server's key (see
+ * purgeBackendSession); a 404 for the one that isn't is expected. Only when
+ * EVERY candidate rejects did the write really fail — swallowing that silently
+ * left the sidebar lying about the archive state, so we tell the user and
+ * revert the optimistic flag instead.
+ */
+function pushArchiveFlag(id: string, archived: boolean): void {
+  const sess = useSessionsStore.getState().sessions.find((s) => sessionMatchesId(s, id));
+  const candidates = [sess?.id ?? id, sess?.workbenchSessionId ?? ''];
+  const unique = [...new Set(candidates.map((raw) => (raw || '').trim()).filter(Boolean))];
+  void Promise.allSettled(unique.map((c) => setManageSessionArchived(c, archived))).then(
+    (results) => {
+      // One candidate landing means the server key took the write — a 404 on
+      // the other id is the expected miss, not a failure.
+      if (results.some((r) => r.status === 'fulfilled')) return;
+      revertArchiveFlag(id, archived, unique);
+    },
+  );
+}
+
+/**
+ * Undo an optimistic archive flip after every backend write for that click
+ * failed. Guarded so a second click that already re-flipped the flag (or an
+ * archive arriving from reconcile) is never overwritten by the stale revert.
+ */
+function revertArchiveFlag(id: string, archived: boolean, attempted: string[]): void {
+  const { sessions } = useSessionsStore.getState();
+  const updated = sessions.map((s) =>
+    sessionMatchesId(s, id) && s.isArchived === archived ? { ...s, isArchived: !archived } : s,
+  );
+  // `.map` allocates unconditionally — compare by identity per row instead of
+  // the array reference to know whether the guard actually changed anything.
+  const changed = updated.some((s, i) => s !== sessions[i]);
+  console.warn(`[sessions] archive flag push failed for ${attempted.join(', ')}`);
+  if (changed) {
+    useSessionsStore.setState({ sessions: updated });
+    saveSessionsToStorage(updated);
+    // Only claim a revert when one happened — if the flag already moved on
+    // (user re-toggled, reconcile arrived), there is nothing to report.
+    toast.warning('Could not reach the server — archive change reverted.');
+  }
 }
 
 function sessionMatchesId(s: Session, id: string): boolean {

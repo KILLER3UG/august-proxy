@@ -12,7 +12,6 @@ import {
   createTerminalSession,
   submitTerminalCommand,
   approveTerminalRequest,
-  type TerminalSession,
 } from '@/api/api-client';
 import { PageLoader } from '@/components/PageLoader';
 

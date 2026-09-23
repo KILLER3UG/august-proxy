@@ -10,7 +10,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, ensureTaskHomeWorkspace, toggleFolderCollapse, ensureFolderForWorkspacePath, resolveActiveSession } from "@/store/sessions";
 import { startRealtimeBridge } from "@/realtime/bridge";
 import { addWorkspace, useWorkspacesStore } from "@/store/workspaces";
-import { openShortcutsModal } from "@/store/shortcuts-modal";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
@@ -568,23 +567,6 @@ export function ChatLayout() {
 
   return (
     <div className="august-shell h-full min-h-0 flex flex-col overflow-hidden bg-background text-foreground">
-      {/* DeepSeek/Hermes simplicity: no IDE-style File/View/Help menubar — header is already in ChatTitlebar. Keep only a 1px drag strip. */}
-      <div
-        className="august-app-chrome flex h-7 shrink-0 items-center justify-between select-none"
-        data-tauri-drag-region
-      >
-        <span className="px-3 text-[10px] tracking-[0.07em] text-muted-foreground/35">AUGUST</span>
-        <div className="pr-2 flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => openShortcutsModal()}
-            className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/70"
-            title="Shortcuts (?)"
-          >
-            ?
-          </button>
-        </div>
-      </div>
       <div className="august-shell-body flex-1 flex min-h-0 overflow-hidden">
         {!isSettings && (
           <SessionSidebar

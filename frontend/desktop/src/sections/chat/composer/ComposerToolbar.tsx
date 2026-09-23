@@ -337,7 +337,7 @@ export function ComposerToolbar({
               onClick={stop}
               title="Stop"
               aria-label="Stop"
-              className="h-8 w-8 rounded-lg flex items-center justify-center bg-foreground text-background hover:bg-foreground/90 transition"
+              className="h-8 w-8 rounded-lg flex items-center justify-center bg-primary text-primary-foreground hover:bg-primary/90 transition"
             >
               <Square className="size-3 fill-current" />
             </button>
@@ -375,7 +375,7 @@ export function ComposerToolbar({
             }
             className={cn(
               'h-8 w-8 justify-center rounded-lg p-0 text-xs font-medium flex items-center gap-1.5 transition',
-              'bg-foreground text-background hover:bg-foreground/90',
+              'bg-primary text-primary-foreground hover:bg-primary/90',
               'disabled:opacity-40 disabled:pointer-events-none',
             )}
           >

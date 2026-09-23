@@ -59,7 +59,7 @@ export function UpdateSection() {
       </div>
 
       {/* Updates card */}
-      <div className="mt-6 rounded-xl border border-white/[0.06] bg-card/60 p-5">
+      <div className="mt-6 rounded-2xl border border-border/50 bg-card/60 p-5 shadow-xs">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <RefreshCw className={checking ? 'size-4 animate-spin' : 'size-4'} />
           Updates

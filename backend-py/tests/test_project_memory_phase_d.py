@@ -283,14 +283,17 @@ class TestRecallMetrics:
 
 class TestHygiene:
     def test_subagent_blocked_tools_parity(self) -> None:
-        """SUBAGENT_BLOCKED_TOOLS pins the memory CRUD surface — the parity
+        """_SUBAGENT_NEVER_TOOLS pins the memory CRUD surface — the parity
         oracle (test_tool_policy_parity) mirrors tool_policy buckets; this
         pins the subagent door directly (plan: update oracle + policy
         together — both already carried remember/forget/list_facts)."""
-        from app.services.workbench.subagent import SUBAGENT_BLOCKED_TOOLS
+        from app.services.workbench.subagent import _SUBAGENT_NEVER_TOOLS, _blocked_tools
 
         for t in ('remember', 'forget', 'list_facts'):
-            assert t in SUBAGENT_BLOCKED_TOOLS
+            assert t in _SUBAGENT_NEVER_TOOLS
+            # Blocked regardless of how deep the child is allowed to spawn.
+            for depth in (0, 1, 3):
+                assert t in _blocked_tools(depth=depth)
 
     def test_rollback_restore_keeps_fact_metadata(self) -> None:
         """Phase D hygiene: restoring a forgotten fact must not degrade it

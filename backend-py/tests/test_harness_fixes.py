@@ -9,6 +9,7 @@ rejection, stream rules, and the per-model capability profile.
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 from app.adapters import anthropic as anthropic_adapter
@@ -115,7 +116,12 @@ def test_path_looks_outside_workspace_catches_relative_escape(tmp_path):
 
     ws = str(tmp_path)
     assert path_looks_outside_workspace('../../etc/passwd', ws) is True
-    assert path_looks_outside_workspace('..\\..\\evil.txt', ws) is True
+    if os.name == 'nt':
+        assert path_looks_outside_workspace('..\\..\\evil.txt', ws) is True
+    else:
+        # Backslashes separate paths only on Windows; on POSIX the token is
+        # one literal filename INSIDE the workspace, so it is not an escape.
+        assert path_looks_outside_workspace('..\\..\\evil.txt', ws) is False
     assert path_looks_outside_workspace('cat', ws) is False
     assert path_looks_outside_workspace('src/main.py', ws) is False
 

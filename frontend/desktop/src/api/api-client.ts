@@ -1,7 +1,7 @@
-/* ── Backend API helpers ───────────────────────────────────────────── */
+/* ââ Backend API helpers âââââââââââââââââââââââââââââââââââââââââââââ */
 /* Typed wrappers for Python FastAPI routes under /api/* (and /v1/* via
  * other modules). Secrets are redacted server-side; we never display raw keys.
- * Do not use legacy Node /ui/* paths — they are not served.
+ * Do not use legacy Node /ui/* paths â they are not served.
  * Public import path `@/api/api-client` resolves here. */
 
 export * from './api-client/traffic';
@@ -19,3 +19,4 @@ export * from './api-client/external-access';
 export * from './api-client/feature-flow';
 export * from './api-client/ui-customization';
 export * from './api-client/bots';
+export * from './api-client/brain-backup';

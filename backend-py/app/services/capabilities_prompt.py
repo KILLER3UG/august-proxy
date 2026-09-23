@@ -15,7 +15,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
 
-from app.json_narrowing import as_str
+from app.json_narrowing import as_int, as_str
 
 logger = logging.getLogger(__name__)
 
@@ -295,6 +295,17 @@ _SKILL_RELEVANCE_LIMIT = 8
 # (greeting / very short text) and the caller falls back to the full
 # descriptive catalogue instead of an arbitrary top-K.
 _MIN_RELEVANCE_SCORE = 1.5
+# Usage tie-break on the Tier-3 disclosure ranking, mirroring the fact-scoring
+# bonus in ``memory_store/fact_retrieval.py`` (``0.05 * min(use_count, 20)``):
+# a bounded nudge of at most _SKILL_USAGE_BOOST_PER_USE *
+# _SKILL_USAGE_BOOST_MAX_USES = +1.0 BM25 point, so a frequently-loaded skill
+# can beat an EQUALLY relevant never-loaded one but never a clearly better
+# match (a single rare-token hit already scores ~1, a real multi-token match
+# several points more). Disclosure only: it adds no skill, enables or disables
+# nothing, and +0.0 for an unused skill keeps the pure-BM25 order identical
+# when nothing has been loaded yet.
+_SKILL_USAGE_BOOST_PER_USE = 0.05
+_SKILL_USAGE_BOOST_MAX_USES = 20
 
 _SKILL_STOP_TOKENS = frozenset(
     {
@@ -444,9 +455,31 @@ def skill_relevance_enabled() -> bool:
         return True
 
 
-def build_relevant_skills_block(
+def _skill_usage_boost(skill_name: str) -> float:
+    """Bounded BM25 bonus for one skill's recorded load count.
+
+    Delegates the path to ``skill_service.usage_sidecar_path`` (one authority);
+    a lookup that cannot be answered degrades to 0.0 — i.e. pure relevance —
+    with a warning, never by dropping the whole block.
+    """
+    name = (skill_name or '').strip()
+    if not name:
+        return 0.0
+    try:
+        from app.services import skill_service
+
+        count = as_int(skill_service.read_skill_usage(name).get('count'), 0)
+    except Exception as exc:
+        logger.warning(
+            'skills relevance: usage lookup failed for %r (%s) — ranking without it', name, exc
+        )
+        return 0.0
+    return _SKILL_USAGE_BOOST_PER_USE * min(max(count, 0), _SKILL_USAGE_BOOST_MAX_USES)
+
+
+def render_relevant_skills(
     query: str, workspace: str | Path | None = None, agent_id: str = ''
-) -> str:
+) -> tuple[str, dict[str, int]]:
     """Render the per-turn ``<relevant_skills>`` block (M6 item 6).
 
     The Tier-1 ``<skills>`` index is name-only and cacheable; this block
@@ -462,20 +495,26 @@ def build_relevant_skills_block(
 
     M-2 (Part 21): ``agent_id`` adds the Bot's private skill root for bot
     home sessions (empty = global catalogue, the pre-M-2 behavior).
+
+    Returns the block and the UTF-8 byte size each included skill line added
+    to it, measured in the same pass: the context meter can answer "which
+    skill cost me this" only from what was actually rendered, and re-ranking
+    to find out would be a second, possibly disagreeing answer.
     """
+    detail: dict[str, int] = {}
     q = (query or '').strip()
     if len(q) < _RELEVANT_SKILLS_MIN_QUERY or not skill_relevance_enabled():
-        return ''
+        return '', detail
     try:
         from app.services import skill_service
         from app.services.tools.retrieval import BM25, _tokenize
 
         catalogue = skill_service.catalogue(workspace, agent_id)
         if not catalogue:
-            return ''
+            return '', detail
         queryTokens = _tokenize(q)
         if not queryTokens:
-            return ''
+            return '', detail
         # The tokenize+BM25-index build is cached per (workspace, agent_id)
         # and keyed on the catalogue list's IDENTITY — skill_service's
         # mtime memo returns the same list object between edits, so a new
@@ -502,7 +541,7 @@ def build_relevant_skills_block(
                 build_entries.append(s)
             if not corpus:
                 _skills_bm25_cache.pop(cacheKey, None)
-                return ''
+                return '', detail
             bm25 = BM25(corpus)
             entries = build_entries
             _skills_bm25_cache[cacheKey] = (catalogue, bm25, entries)
@@ -512,11 +551,19 @@ def build_relevant_skills_block(
             if score > 0:
                 scored.append((score, s))
         if not scored:
-            return ''
-        scored.sort(key=lambda pair: pair[0], reverse=True)
+            return '', detail
+        # Relevance first, usage second: the bonus is applied AFTER BM25 and
+        # only over the scored>0 candidates, so the cached index stays
+        # usage-free (a load never invalidates it) and an all-zero usage
+        # profile reproduces the pure-BM25 order exactly (+0.0 for every
+        # skill, stable sort, same input order).
+        ranked: list[tuple[float, dict[str, object]]] = [
+            (score + _skill_usage_boost(as_str(s.get('name'), '')), s) for score, s in scored
+        ]
+        ranked.sort(key=lambda pair: pair[0], reverse=True)
         lines: list[str] = ['<relevant_skills>']
         budget = _RELEVANT_SKILLS_CHAR_CAP
-        for _score, s in scored[:_RELEVANT_SKILLS_TOP_K]:
+        for _score, s in ranked[:_RELEVANT_SKILLS_TOP_K]:
             name = as_str(s.get('name'), '')
             desc = as_str(s.get('description'), '')
             line = f'- {name}: {desc}' if desc else f'- {name}'
@@ -524,10 +571,19 @@ def build_relevant_skills_block(
                 break
             budget -= len(line)
             lines.append(line)
+            if name:
+                detail[name] = len(line.encode('utf-8'))
         if len(lines) == 1:
-            return ''
+            return '', detail
         lines.append('Load one with load_skill(name) if it fits the request.')
         lines.append('</relevant_skills>')
-        return '\n'.join(lines)
+        return '\n'.join(lines), detail
     except Exception:
-        return ''
+        return '', detail
+
+
+def build_relevant_skills_block(
+    query: str, workspace: str | Path | None = None, agent_id: str = ''
+) -> str:
+    """The ``<relevant_skills>`` text alone, for callers that don't meter it."""
+    return render_relevant_skills(query, workspace, agent_id)[0]

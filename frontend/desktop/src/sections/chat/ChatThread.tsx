@@ -26,6 +26,11 @@ import {
   resolveActiveSession,
 } from '@/store/sessions';
 import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
+import {
+  useContextSectionsStore,
+  selectSkillsMemoryBytes,
+  selectSkillsByName,
+} from '@/store/contextSectionsLive';
 import { AnimatePresence } from 'framer-motion';
 import { SCROLL_TO_TOP_THRESHOLD } from '@/components/chat/ScrollToTopButton';
 import { ModelVisibilityModal } from '@/components/overlays/ModelVisibilityModal';
@@ -38,7 +43,6 @@ import { listWorkbenchSessionAgents } from '@/api/workbench';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import { chatRuntime, type ChatTurnRecord } from './chat-runtime';
 import {
-  startChatStream,
   stopChatStream,
   syncActiveStreams,
 } from './chat-stream-manager';
@@ -53,6 +57,7 @@ import { buildHandoffSummary, markHandoffPending } from './handoff-summary';
 import { ComposerDecisionStack } from './ComposerDecisionStack';
 import { ChatCheckpoints } from './ChatCheckpoints';
 import { useSessionStream } from './hooks/useSessionStream';
+import { useSessionHistory } from './hooks/useSessionHistory';
 import { useStickToBottomScroll } from './hooks/useStickToBottomScroll';
 import { useChatModels } from './hooks/useChatModels';
 import { useChatUsage } from './hooks/useChatUsage';
@@ -193,7 +198,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     handleComposerPaste,
     removeAttachment,
     clearAttachments,
-    composeText,
     isReading: attachmentsReading,
     readyAttachments,
   } = useChatAttachments();
@@ -823,55 +827,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }
   }, [sessionId]);
 
-  // Reconnect hydration (bugfix): a turn that finished while the client was
-  // disconnected has no SSE replay, so an empty local transcript stays blank.
-  // Hydrate once per session from the backend transcript when local storage
-  // has nothing — never clobbers a live or locally-restored conversation.
-  const hydratedForRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!sessionId || hydratedForRef.current === sessionId) return;
-    if (messages.length > 0) return;
-    hydratedForRef.current = sessionId;
-    let cancelled = false;
-    void api
-      .get<{ messages: unknown[] }>(
-        `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
-      )
-      .then((res) => {
-        if (cancelled) return;
-        const remote = Array.isArray(res?.messages) ? res.messages : [];
-        const mapped: ChatMessage[] = [];
-        for (const raw of remote) {
-          const r = raw as Record<string, unknown>;
-          if (!r || typeof r !== 'object') continue;
-          const role = String(r.role ?? 'user');
-          let content: unknown = r.content;
-          // Tool/assistant payloads are stored as dicts {content, tool_calls}.
-          if (content && typeof content === 'object') {
-            const c = content as Record<string, unknown>;
-            content = typeof c.content === 'string' ? c.content : JSON.stringify(c);
-          }
-          if (!content || String(content).trim() === '') continue;
-          mapped.push({
-            id: String(r.id ?? `m_remote_${mapped.length}`),
-            role: role === 'tool' ? 'assistant' : role,
-            content: String(content),
-            timestamp: String(r.created_at ?? new Date().toISOString()),
-            remote: true,
-          } as ChatMessage);
-        }
-        if (mapped.length === 0) return;
-        setMessages((prev) => (prev.length > 0 ? prev : mapped));
-        persistMessages(sessionId, mapped);
-      })
-      .catch(() => {
-        /* offline — local storage is the fallback */
-      });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  useSessionHistory(sessionId);
 
   useEffect(() => {
     persistComposerDraft(sessionId, input);
@@ -1201,6 +1157,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     : fallbackEstimate;
   const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
 
+  // Byte size of the memory + skills blocks the backend injected on the
+  // current turn. Null until it has reported, which the ring renders as
+  // "not measured" — the previous behaviour was to report a confident 0 for
+  // a contributor nothing ever measured.
+  const coreMemoryBytes = useContextSectionsStore((s) => selectSkillsMemoryBytes(s, sessionId));
+  const skillsByName = useContextSectionsStore((s) => selectSkillsByName(s, sessionId));
+
   const contextBreakdown: ContextBreakdown = useMemo(
     () =>
       estimateContextBreakdown({
@@ -1209,6 +1172,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         toolCount: toolCountForBreakdown,
         toolTokenEstimate: toolTokenEstimate ?? undefined,
         mcpToolTokens: workbenchMcpTokens ?? undefined,
+        coreMemoryBytes: coreMemoryBytes ?? undefined,
+        skillsByName,
         scaleToTotal: hasServerTruth
           ? estTokens
           : hasContentToSend
@@ -1221,6 +1186,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       toolCountForBreakdown,
       toolTokenEstimate,
       workbenchMcpTokens,
+      coreMemoryBytes,
+      skillsByName,
       hasServerTruth,
       estTokens,
       hasContentToSend,

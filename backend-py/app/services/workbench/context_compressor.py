@@ -396,7 +396,7 @@ def schemaSummarize(
     """Fixed-handoff markdown summary (deterministic, no LLM).
 
     Part 18 P2.2: the shape is a handoff contract — Goal / State / Context /
-    Next / Pitfalls — so a compacted session hands the next agent (or the
+    Memory / Next / Pitfalls — so a compacted session hands the next agent (or the
     next LLM call) enough to act without re-asking the user, with the file
     ledger carried forward as trailing tags across repeated compactions.
     Mapping from the pre-P2.2 schema: Progress → State, Key Decisions /
@@ -472,6 +472,19 @@ def schemaSummarize(
             priorRead.append(p)
 
     inProgress = f'phase={lastPhase} step={lastStep}' if lastPhase else '(not recorded)'
+    # Memory: the durable writes made inside the span about to be thrown away.
+    # Saved facts live in the brain DB and are re-recalled, but *that* they were
+    # saved — and, worse, what the user volunteered here and nobody stored — is
+    # exactly what a compaction erases with no trace. Name both.
+    savedTitles: list[str] = []
+    forgotten = 0
+    for name, inp in _iterToolCalls(messages):
+        if name == 'remember':
+            label = as_str(inp.get('title')).strip() or ' '.join(as_str(inp.get('fact')).split())[:80]
+            if label and label not in savedTitles:
+                savedTitles.append(label)
+        elif name == 'forget':
+            forgotten += 1
     lines: list[str] = [
         '## Goal',
         goal,
@@ -482,18 +495,40 @@ def schemaSummarize(
         '- Blocked: ' + ('; '.join(blockers[:10]) if blockers else '(none)'),
         '',
         '## Context',
-        '- Key decisions: (not recorded)',
-        '- Constraints: (not recorded)',
+        '- Key decisions: (uncaptured)',
+        '- Constraints: (uncaptured)',
     ]
     if earlier:
         lines.append(f'- Earlier context: {earlier}')
+    memoryLines = ['', '## Memory']
+    if savedTitles:
+        memoryLines.append('- Saved during this span: ' + '; '.join(savedTitles[:12]))
+    if forgotten:
+        memoryLines.append(f'- {forgotten} memory delete(s) applied')
+    if not savedTitles and not forgotten:
+        memoryLines.append(
+            '- No memory write occurred in the compacted span, so anything the user '
+            'stated there that was never saved is gone from this summary. If a '
+            'durable preference, constraint or project fact seems to be missing, '
+            'ask before acting as though none was given.'
+        )
+    lines += memoryLines
     lines += [
         '',
         '## Next',
-        '(not recorded)',
+        '(uncaptured)',
         '',
         '## Pitfalls',
         f'- Latest failure: {critical}' if critical else '(none recorded)',
+        # This block is assembled by string extraction, not by a model. Saying
+        # "(not recorded)" for a whole field read to the next turn as *proof of
+        # absence*, so a constraint stated 40 messages back would be dropped
+        # with confidence. Name the limitation instead of asserting a negative.
+        '',
+        '_Produced by the deterministic compactor: decisions, constraints and '
+        'next steps were not analyzed. A field reading (uncaptured) or (none) '
+        'means "not extracted here", not "never stated" — re-read recent '
+        'messages before concluding such an item does not exist._',
         '',
         '<read-files>',
         *priorRead[:100],

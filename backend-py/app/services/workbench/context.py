@@ -35,3 +35,58 @@ currentSubagentTaskId: ContextVar[str] = ContextVar('workbench_subagent_task_id'
 # mutation, which raced across workers sharing one parent session and leaked
 # the value to later root spawns. The orchestrator reads this (default 0 = root).
 currentSubagentDepth: ContextVar[int] = ContextVar('workbench_subagent_depth', default=0)
+
+# ---------------------------------------------------------------------------
+# One authority for the spawn-depth cap.
+#
+# `delegation.maxDepth` is a user-facing setting (Settings -> Subagents), and
+# the sub-agent tool surface and the orchestrator both need the same answer.
+# When the surface subtracted `spawn_subagents` unconditionally, a raised
+# maxDepth was dead configuration: the child was never offered the tool, so the
+# orchestrator's depth machinery could not fire above the first level. Both
+# sides now call this.
+# ---------------------------------------------------------------------------
+
+MAX_SPAWN_DEPTH_DEFAULT = 1
+MAX_SPAWN_DEPTH_LIMIT = 5
+
+
+def resolve_max_spawn_depth(
+    delegation: dict[str, object] | None = None,
+    session: object = None,
+) -> int:
+    """Clamped maxDepth: explicit dict, then session metadata, then brain config.
+
+    Accepts an already-resolved `delegation` mapping so the orchestrator can
+    reuse the dict it built for the other limits instead of re-deriving it.
+    """
+    from app.json_narrowing import as_dict, as_int
+
+    source = as_dict(delegation)
+    if not source and session is not None:
+        source = as_dict(as_dict(getattr(session, 'metadata', None)).get('delegation'))
+    if 'maxDepth' not in source:
+        try:
+            from app.services.brain_config_service import getDelegationLimits
+
+            for key, value in as_dict(getDelegationLimits()).items():
+                source.setdefault(key, value)
+        except Exception:
+            pass
+    configured = as_int(source.get('maxDepth', MAX_SPAWN_DEPTH_DEFAULT), MAX_SPAWN_DEPTH_DEFAULT)
+    return max(1, min(MAX_SPAWN_DEPTH_LIMIT, configured or MAX_SPAWN_DEPTH_DEFAULT))
+
+
+def may_spawn_children(
+    delegation: dict[str, object] | None = None,
+    session: object = None,
+    depth: int | None = None,
+) -> bool:
+    """Can the loop at `depth` (default: the current one) legally go one deeper?
+
+    A root turn is depth 0, so with maxDepth=1 (the default) children at depth 1
+    are not offered a spawn tool — the behavior before this existed. maxDepth=3
+    offers it to depth 1 and 2 and stops at 3.
+    """
+    current = currentSubagentDepth.get() if depth is None else depth
+    return current + 1 <= resolve_max_spawn_depth(delegation, session)

@@ -29,6 +29,10 @@ type DecisionResult = {
   executed?: boolean;
   continued?: boolean;
   sinceSeq?: number;
+  /** The scope actually stored — may differ from the one sent. */
+  scope?: string;
+  /** Set when the backend refused to make an "always" grant permanent. */
+  scopeNote?: string;
 };
 
 function pathFromMutation(m: PendingMutationItem): string {
@@ -226,6 +230,12 @@ function MutationCard({
         toast.message(`Denied ${shortPath}`);
       } else {
         toast.success(res?.executed ? `Applied ${shortPath}` : `Allowed ${shortPath}`);
+      }
+      if (res?.scopeNote) {
+        // "Always" was refused because the grant key covers more than what was
+        // approved (a wildcard or a sandbox-escape grant). Showing only the
+        // success toast would report a scope the backend did not store.
+        toast.message(res.scopeNote);
       }
       if (res?.continued && Number.isFinite(res.sinceSeq)) {
         onContinued?.(res.sinceSeq as number);

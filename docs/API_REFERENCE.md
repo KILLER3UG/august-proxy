@@ -208,6 +208,8 @@ All paths below are relative to `/api/workbench`.
 | `GET/PUT /subagent-fallback` · `POST …/test` | Sub-agent fallback |
 | `GET/PUT /background-review` | Background review LLM |
 | `GET/PUT /model-fleet` | Cognitive model fleet |
+| `GET/PUT /model-params` | Per-model wire capability families (`modelParams.families`; the PUT validates every entry) |
+| `GET /model-params/resolve?modelId=` | Which family answers for a model id and what it permits on the wire |
 | `GET/PUT /cognitive` | Cognitive config tree |
 | `GET/PUT /session-export` | JSON session export toggle / status |
 | `GET/PUT /live` | Live / speech config |
@@ -297,33 +299,85 @@ Snapshot, alias CRUD, settings put — operator convenience surface.
 
 ### `/api/sessions`
 
-Separate session store API (list/create/get/delete/messages) used by some
+Separate session store API (list/create/get/patch/delete/messages) used by some
 desktop paths alongside workbench sessions.
+
+| Method & path | Purpose |
+|---------------|---------|
+| `GET /api/sessions` | List stored sessions (camelCase rows, incl. `isArchived`) |
+| `POST /api/sessions` | Create an empty session row |
+| `GET /api/sessions/{id}` | One session |
+| `PATCH /api/sessions/{id}` | `{ isArchived: bool }` — archive / restore; absent fields stay untouched, unknown id → 404 |
+| `DELETE /api/sessions/{id}` | Cascade-delete the session, its messages and timeline |
+| `GET /api/sessions/{id}/messages` | Transcript (`limit` / `offset` paging) |
+| `POST /api/sessions/{id}/messages` | Append `{ role, content }` |
+| `GET /api/sessions/search?q=` | FTS5 search across message content |
 
 ---
 
 ## Memory & brain
 
-### `/api/memory`
-
-KV, facts, search, proposals, lifecycle, stats — see `routers/memory.py`.
-
-| Method & path | Purpose |
-|---------------|---------|
-| `POST /api/memory/auto` | Save a memory (`source: user` from `/remember`) |
-| `PUT /api/memory/auto/{id}` | Pin / update (`pinned: true` = always-include) |
-| `POST /api/memory/review` | Selected-model plan: improve / remove / enhance (no writes) |
-| `POST /api/memory/review/apply` | Apply user-accepted `{ kind, id?, rewritten?, content? }` |
-
 ### `/api/brain`
 
-| Area | Paths (representative) |
-|------|------------------------|
-| Status / search | `GET /status`, `/items`, `/vectors`, `/learning`, `/prompt`, `/search`, `/guidelines`, `/graph`, `/diagnostics` |
-| Harness | `GET /harness/trends`, `GET /harness/evals`, `POST /harness/evals/run` |
-| Config | `GET/PUT /config`, `POST /config/reset`, `GET /config/from-session` |
-| Activity | `GET /events`, `GET /events/stream` |
-| Lifecycle | `GET/PUT /delta-consent`, heuristics patch/delete, skill approve/reject, `POST /run-consolidation`, `GET /sync-status`, `POST /backfill-workbench`, `GET /health` |
+Served entirely by `routers/brain_config.py`. There is no `/api/memory` API and
+no `routers/memory.py`: the old memory routes (`/memory/auto`, `/memory/review`)
+and the deleted `brain` / `brain_dashboard` routers (`/status`, `/vectors`,
+`/graph`, `/guidelines`, `/events`, `/harness/evals`, `/health`,
+`/delta-consent`, `/backfill-workbench`) answer nothing. `remember`,
+`list_facts` and `forget` are agent **tools**, not HTTP endpoints.
+
+Reads return rows in a camelCase wire shape, but `PATCH` keys are validated
+against the store's **snake_case column names** — send `fact_value`, not
+`factValue`. A key that is not a real column is ignored, and a patch of nothing
+but ignored keys is a `400`, not a silent no-op.
+
+| Area | Method & path | Purpose |
+|------|---------------|---------|
+| Config | `GET /config` · `PUT /config` | Effective brain config + defaults + source tag; partial update |
+| | `POST /config/reset` · `GET /config/from-session?sessionId=` | Restore defaults; read the config one session used |
+| Browse | `GET /stores` | Store summary (name, label, row count) |
+| | `GET /stores/{name}?limit&offset&query&sort&category&source&confidence` | Paginated rows (`limit` ≤ 200); filters are server-side so they hold past the cap |
+| Edit | `PATCH /stores/{name}/{row_id}` | Whitelisted columns only. `facts`: `fact_value, title, kind, description, category, confidence, expires_at`; `memory`: `value`; `timeline`: `event_summary, category`. `heuristics` → 403 |
+| | `DELETE /stores/{name}/{row_id}` | Remove one row (unknown id → 404) |
+| Profile lane | `PATCH /stores/facts/{id}` `{ "kind": "profile" }` | `kind='profile'` facts ride into **every** turn's context regardless of `memoryAutoInject`; set `kind` back to `fact` to retire one. Drops the cached recall index so it takes effect at once |
+| Consolidation | `GET /consolidation/log` · `POST /consolidation/run` | M4 pass log + M5 lesson-promotion decisions; run one pass now |
+| Telemetry | `GET /turn-outcomes?days=` | Per-model/provider error rates + the turn verdict distribution. Diagnostics only — never injected into prompts |
+| | `GET /memory/metrics?days=` | Recall and latency metrics |
+| Routing | `POST /routing/arena` · `GET /routing/arena` · `GET /routing/suggestions` | Record an Arena/Debate verdict, read the archive, rank models by win rate. There is no automatic per-turn rerouting |
+| Raw state | `GET /state-lookup?key=` | One `internal_state` / `memory_store` row by key |
+| Memory files | `GET /integrity` | `PRAGMA integrity_check` on the live DB, its path, healthy-copy count and any staged restore |
+| | `GET /backups` | Every copy, each with its own verdict, plus `keep`, `pendingRestore` and the folder |
+| | `POST /backups` `{reason}` | Take a verified copy now → `{ name, bytes, appliedVersion, pruned }` |
+| | `POST /backups/restore` `{name}` | Verify and stage a restore (see below) |
+| | `DELETE /backups/restore` | Cancel a staged restore |
+
+### Memory files: verify, back up, restore
+
+`app/services/brain_backup.py`. The brain database *is* the user's memory, so a
+copy is checked with `PRAGMA integrity_check` **and must actually hold pages and
+brain tables** before anything is allowed to trust it — a zero-byte file is a
+well-formed SQLite image that `integrity_check` answers `ok` for. After that
+gate, only the newest **5** copies survive retention. `POST /backups` copies
+through SQLite's backup API on a read-only handle, so the live file is never
+write-locked; the app also takes one verified copy per 12 h at startup.
+
+A restore is **staged, never applied in place**: the running process holds the
+database open on more than one thread, so swapping the file underneath it yields
+a half-old database. `POST /backups/restore` verifies the copy and writes
+`backups/brain-restore.pending`; `main.py` performs the swap before the memory
+store initializes, and keeps the database it replaced as `<db>.pre-restore`. The
+response says `appliesOn: "next-launch"` for that reason — restart August to
+apply, or `DELETE /backups/restore` to abandon it.
+
+A copy is refused as a restore target when it fails `integrity_check`, when it
+holds no pages or no `schema_migrations`/`facts` table (an empty copy restores
+as an amnesic database), or when its schema version is newer than this build
+knows (so an older app cannot boot a
+newer database and report it as up to date). Backup names are matched strictly:
+`brain-YYYYMMDDTHHMMSSZ-<reason>.sqlite`, stamp with **no dashes**, e.g.
+`brain-20260922T090000Z-legacy.sqlite`. To recover a legacy database file, copy
+it into the backups folder under exactly such a name — anything else is not
+listed, so it cannot be chosen.
 
 ---
 
@@ -393,7 +447,8 @@ Enablement: `config.json → gateway` + platform bot tokens.
 
 | Prefix | Purpose |
 |--------|---------|
-| `/api/automations` | List/create/run/delete automation jobs |
+| `/api/automations` | List/create/run/delete automation jobs — a POST carrying an existing `id` updates only the fields in the body |
+| `/api/kanban` | The durable agent board (shared by the UI and the `board` tool): list, add, patch/move, delete, clear-done, import |
 | `/api/exam` | Generate exam, questions, answer, help |
 | `/api/calendar/internal` | Internal calendar helper |
 

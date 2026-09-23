@@ -16,7 +16,6 @@ import {
   ChevronDown,
   MessagesSquare,
   Plus,
-  Send,
   Settings2,
   Trash2,
   TriangleAlert,
@@ -241,7 +240,7 @@ export function RoomView() {
       byThread.set(tid, arr);
     }
     return Array.from(byThread.entries())
-      .map(([tid, msgs]) => {
+      .map(([, msgs]) => {
         const sorted = msgs.sort((a, b) => a.id - b.id);
         return { root: sorted[0], replies: sorted.slice(1), last: sorted[sorted.length - 1] };
       })

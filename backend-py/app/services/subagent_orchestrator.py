@@ -385,7 +385,12 @@ class SubagentOrchestrator:
             pass
         max_concurrent = max(1, min(30, as_int(delegation.get('maxConcurrent', 5), 5) or 5))  # Hermes default 3, August default 5
         default_max_iter = max(5, min(200, as_int(delegation.get('maxIterations', 50), 50) or 50))
-        max_depth = max(1, min(5, as_int(delegation.get('maxDepth', 1), 1) or 1))
+        # One resolver for the cap, shared with the sub-agent tool surface:
+        # when both computed it separately, the surface could block spawning
+        # unconditionally and a raised maxDepth was unreachable.
+        from app.services.workbench.context import resolve_max_spawn_depth
+
+        max_depth = resolve_max_spawn_depth(delegation)
         # Enforce per-call concurrency cap (Hermes max_concurrent_children)
         work_items = request.workItems
         if len(work_items) > max_concurrent:

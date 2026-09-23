@@ -94,7 +94,9 @@ async def providerDetails(provider: str = ''):
         raise HTTPException(status_code=404, detail='Provider not found')
     pd = providerResolver.entry_to_provider_dict(entry)
     configOverrides = {
-        'apiKey': entry.get('apiKey', ''),
+        # Never the key itself — see routers/providers.py::_public. Nothing in
+        # the frontend reads this field, so there is no prefill to preserve.
+        'apiKeySet': bool(entry.get('apiKey')),
         'baseUrl': entry.get('baseUrl', ''),
     }
     isAvailable = bool(entry.get('enabled')) and bool(entry.get('apiKey'))
@@ -316,6 +318,94 @@ async def putModelFleet(body: dict[str, object]):
     if not ok:
         raise HTTPException(status_code=400, detail={'code': 'validation', 'message': err})
     return fleet
+
+
+@router.get('/model-params')
+async def getModelParams():
+    """Per-model wire capability families — operator-declared and built-in.
+
+    Both lists share one shape (the keys config.json:modelParams.families
+    takes), so the UI can show what August assumes and let an operator
+    override a family by id instead of guessing at the file format.
+    """
+    return _modelParamsView()
+
+
+@router.put('/model-params')
+async def putModelParams(body: dict[str, object]):
+    """Replace config.json:modelParams.families, validated entry by entry.
+
+    One bad entry rejects the whole write. Saving the good ones and skipping
+    the rest would leave a model sending no reasoning_effort (or none of its
+    thinking budget) with nothing in the file to point at.
+    """
+    from app.providers import model_params
+
+    entries = body.get('families')
+    if not isinstance(entries, list):
+        raise HTTPException(
+            status_code=400,
+            detail={'code': 'validation', 'message': f'families must be a list — {model_params.FAMILY_RULES}'},
+        )
+    stored: list[dict[str, object]] = []
+    for index, entry in enumerate(entries):
+        spec = model_params.parse_family(entry)
+        if spec is None:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    'code': 'validation',
+                    'message': f'family #{index} is not valid — {model_params.FAMILY_RULES}',
+                },
+            )
+        stored.append({k: v for k, v in model_params.to_public(spec).items() if k != 'source'})
+
+    cfg = config_service.getConfig()
+    section = cfg.get('modelParams')
+    block = section if isinstance(section, dict) else {}
+    # An empty list is a real write: "drop the overrides, use the built-ins".
+    block['families'] = stored
+    cfg['modelParams'] = block
+    config_service.saveConfig(cfg)
+    # reload() swaps in the dict saveConfig just wrote, and model_params keys
+    # its parse on that identity — so the families apply on the next request
+    # rather than at the next launch.
+    settings.reload()
+    return _modelParamsView()
+
+
+@router.get('/model-params/resolve')
+async def resolveModelParams(modelId: str = ''):
+    """Which family answers for one model id, and what that permits on the wire.
+
+    The question the table exists to answer is "why did this model get no
+    thinking budget" — so the answer names the family it matched rather than
+    leaving it to be inferred from the table. A per-model toggle in Model
+    settings still outranks everything here.
+    """
+    from app.providers import model_params
+
+    mid = (modelId or '').strip()
+    spec = model_params.family_for(mid) if mid else None
+    return {
+        'modelId': mid,
+        'family': None if spec is None else model_params.to_public(spec),
+        'reasoningEffort': model_params.accepts_reasoning_effort(mid) if mid else False,
+        'extendedThinking': model_params.supports_extended_thinking(mid) if mid else False,
+        'defaultEffort': spec.default_effort if spec else None,
+        'maxEffort': spec.max_effort if spec else None,
+    }
+
+
+def _modelParamsView() -> dict[str, object]:
+    from app.providers import model_params
+
+    families = [model_params.to_public(spec) for spec in model_params.all_families()]
+    return {
+        'operator': [f for f in families if f['source'] == 'config'],
+        'builtin': [f for f in families if f['source'] != 'config'],
+        'rules': model_params.FAMILY_RULES,
+    }
 
 
 @router.get('/cognitive')

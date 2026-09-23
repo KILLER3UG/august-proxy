@@ -21,7 +21,7 @@ import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
 import { useModels } from '@/hooks/useModels';
-import { loadLastModel, type ModelItem } from '@/sections/chat/model-display';
+import { loadLastModel } from '@/sections/chat/model-display';
 
 interface ParsedEntry {
   /** Stable id used by the React list (file basename + line index). */

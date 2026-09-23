@@ -171,6 +171,102 @@ export function ModelEffortMenu({
   const effortPanelRef = useRef<HTMLDivElement>(null);
   const flyoutRef = useRef<HTMLDivElement>(null);
 
+  // ── Keyboard: roving focus through the open panel ──────────────────────
+  // Every row here was mouse-only: ArrowDown did nothing and Tab walked out
+  // of the menu entirely, which made the highest-frequency picker in the
+  // composer unusable without a pointer. Provider rows already reveal their
+  // models on focus, so moving focus is enough to drive the flyout too.
+  const lastPaneRef = useRef<PaneKind | null>(null);
+
+  // Visibility check is style-based, not layout-based, on purpose. Neither of
+  // the usual shortcuts works here: these panels are fixed-position portals,
+  // so `offsetParent` is null for every row, and jsdom returns an empty
+  // `getClientRects()` for everything, which would make roving focus silently
+  // dead in tests while looking correct in a browser.
+  const isNavigateTarget = (el: HTMLElement): boolean => {
+    if (el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return false;
+    const style = getComputedStyle(el);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  };
+
+  const focusItem = (container: HTMLElement | null, mode: 'next' | 'prev' | 'first' | 'last') => {
+    if (!container) return;
+    const found = new Set<HTMLElement>();
+    for (const el of container.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex="0"]')) {
+      if (isNavigateTarget(el)) found.add(el);
+    }
+    const items = [...found];
+    if (!items.length) return;
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    let index: number;
+    if (mode === 'first') index = 0;
+    else if (mode === 'last') index = items.length - 1;
+    else if (current === -1) index = mode === 'next' ? 0 : items.length - 1;
+    else index = (current + (mode === 'next' ? 1 : -1) + items.length) % items.length;
+    items[index]?.focus();
+  };
+
+  const onPanelKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const inFlyout = e.currentTarget === flyoutRef.current;
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        focusItem(e.currentTarget, 'next');
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        focusItem(e.currentTarget, 'prev');
+        break;
+      case 'Home':
+        e.preventDefault();
+        focusItem(e.currentTarget, 'first');
+        break;
+      case 'End':
+        e.preventDefault();
+        focusItem(e.currentTarget, 'last');
+        break;
+      case 'ArrowRight':
+        // Provider list → its models. The flyout is already positioned by the
+        // row's focus handler, so focusing it is enough.
+        if (!inFlyout && flyoutRef.current) {
+          e.preventDefault();
+          flyoutRef.current.focus();
+          focusItem(flyoutRef.current, 'first');
+        }
+        break;
+      case 'ArrowLeft':
+        if (inFlyout) {
+          e.preventDefault();
+          modelsPanelRef.current?.focus();
+        }
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Move focus into the panel that just opened, and back to the chip that
+  // opened it when it closes. Keyed on the position state as well: the panels
+  // render into a portal and only exist once their coordinates are computed.
+  // `hasOpenedRef` stops the mount run: with `pane === null` on first render
+  // the "restore" branch would fire and yank initial focus into the model
+  // chip, leaving the composer textarea without focus.
+  const hasOpenedRef = useRef(false);
+  useEffect(() => {
+    if (pane) {
+      hasOpenedRef.current = true;
+      lastPaneRef.current = pane;
+      const panel = pane === 'models' ? modelsPanelRef.current : effortPanelRef.current;
+      panel?.focus();
+      return;
+    }
+    if (!hasOpenedRef.current) return;
+    hasOpenedRef.current = false;
+    const chip = lastPaneRef.current === 'effort' ? effortChipRef.current : modelChipRef.current;
+    lastPaneRef.current = null;
+    chip?.focus();
+  }, [pane, modelsPos, effortPos]);
+
   useEffect(() => {
     if (openSignal) setPane('models');
   }, [openSignal]);
@@ -406,9 +502,9 @@ export function ModelEffortMenu({
         {...chipTrigger}
         onClick={() => (pane === 'models' ? closeAll() : setPane('models'))}
         className={cn(
-          'relative inline-flex items-center gap-1 text-[13px] outline-none cursor-pointer h-8 max-w-[260px]',
+          'relative inline-flex items-center gap-1 text-[12px] outline-none cursor-pointer h-7 max-w-[240px]',
           'text-muted-foreground hover:text-foreground transition-colors duration-200',
-          'bg-muted/40 hover:bg-muted/60 rounded-full px-2.5 py-1',
+          'bg-muted/30 hover:bg-muted/50 rounded-lg px-2 py-0.5',
         )}
         title={selected ? `${selected.provider}/${selected.id}` : 'Select model'}
         aria-expanded={pane === 'models'}
@@ -433,9 +529,9 @@ export function ModelEffortMenu({
         {...chipTrigger}
         onClick={() => (pane === 'effort' ? closeAll() : setPane('effort'))}
         className={cn(
-          'relative inline-flex items-center gap-1 text-xs outline-none cursor-pointer h-8',
+          'relative inline-flex items-center gap-1 text-[12px] outline-none cursor-pointer h-7',
           'text-muted-foreground hover:text-foreground transition-colors duration-200',
-          'bg-muted/40 hover:bg-muted/60 rounded-full px-2.5 py-1',
+          'bg-muted/30 hover:bg-muted/50 rounded-lg px-2 py-0.5',
         )}
         title={`Effort: ${effortOpt.label} · extended thinking ${thinkingEnabled ? 'on' : 'off'}`}
         aria-expanded={pane === 'effort'}
@@ -457,8 +553,11 @@ export function ModelEffortMenu({
           <AnimatePresence>
             {modelsOpen && modelsPos && (
               <motion.div
+                key="models-panel"
                 ref={modelsPanelRef}
                 {...menuPanel}
+                tabIndex={-1}
+                onKeyDown={onPanelKeyDown}
                 className="fixed z-50 flex flex-col bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden"
                 style={{
                   bottom: modelsPos.bottom,
@@ -560,8 +659,11 @@ export function ModelEffortMenu({
             )}
             {modelsOpen && flyoutPos && activeGroup && (
               <motion.div
+                key="models-flyout"
                 ref={flyoutRef}
                 {...menuPanel}
+                tabIndex={-1}
+                onKeyDown={onPanelKeyDown}
                 className="fixed z-50 bg-popover border border-border/60 rounded-xl shadow-2xl overflow-y-auto py-1 chat-scroll"
                 style={{ top: flyoutPos.top, left: flyoutPos.left, width: FLYOUT_W, maxHeight: FLYOUT_H }}
                 data-testid="provider-models-flyout"
@@ -575,8 +677,11 @@ export function ModelEffortMenu({
             )}
             {effortOpen && effortPos && (
               <motion.div
+                key="effort-panel"
                 ref={effortPanelRef}
                 {...menuPanel}
+                tabIndex={-1}
+                onKeyDown={onPanelKeyDown}
                 className="fixed z-50 flex flex-col bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden"
                 style={{
                   bottom: effortPos.bottom,

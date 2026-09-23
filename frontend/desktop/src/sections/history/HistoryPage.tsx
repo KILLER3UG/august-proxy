@@ -6,6 +6,8 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, MessageSquare, Plus, Trash2, History } from 'lucide-react';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { deleteSession, useSessionsStore, type Session } from '@/store/sessions';
 
 function dayKey(iso: string): string {
@@ -23,6 +25,21 @@ export function HistoryPage() {
   const sessions = useSessionsStore((s) => s.sessions);
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
+  const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
+    useConfirmDialog();
+
+  // Deletion here is unrecoverable — the session and its transcript are gone
+  // from the local store with no trash. It used to fire on a single click of
+  // the trash icon, one row below the click that opens a chat.
+  async function requestDelete(session: Session) {
+    const ok = await confirmStyled({
+      title: 'Delete this conversation?',
+      message: `"${session.title || 'Untitled chat'}" and its ${session.messageCount ?? 0} message(s) will be removed. This cannot be undone.`,
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    });
+    if (ok) deleteSession(session.id);
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -59,7 +76,7 @@ export function HistoryPage() {
         <button
           type="button"
           onClick={() => void navigate('/')}
-          className="ml-auto inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-[11px] font-medium text-primary-foreground"
+          className="ml-auto inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground"
           data-testid="history-new-chat"
         >
           <Plus className="size-3" />
@@ -87,7 +104,7 @@ export function HistoryPage() {
       ) : (
         groups.map(([day, items]) => (
           <section key={day}>
-            <h2 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+            <h2 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">
               {day} · {items.length}
             </h2>
             <ul className="space-y-1">
@@ -105,20 +122,21 @@ export function HistoryPage() {
                         <span className="block truncate text-xs font-medium text-foreground">
                           {s.title || 'Untitled chat'}
                         </span>
-                        <span className="block truncate text-[11px] text-muted-foreground/80">
+                        <span className="block truncate text-xs text-muted-foreground/80">
                           {s.lastMessage || 'No messages yet'}
                         </span>
                       </span>
-                      <span className="ml-auto shrink-0 text-right text-[10px] text-muted-foreground/60">
+                      <span className="ml-auto shrink-0 text-right text-xs text-muted-foreground/60">
                         <span className="block">{s.model || s.provider || '—'}</span>
-                        <span className="block">{s.messageCount ?? 0} msgs</span>
+                        <span className="block">{`${s.messageCount ?? 0} ${s.messageCount === 1 ? 'msg' : 'msgs'}`}</span>
                       </span>
                     </button>
                     <button
                       type="button"
+                      aria-label={`Delete ${s.title || 'Untitled chat'} conversation`}
                       title="Delete conversation"
-                      className="p-1 rounded text-muted-foreground/50 opacity-0 group-hover:opacity-100 hover:text-danger transition"
-                      onClick={() => deleteSession(s.id)}
+                      className="rounded p-1 text-tier-2 opacity-100 transition hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/60"
+                      onClick={() => void requestDelete(s)}
                       data-testid={`history-delete-${s.id}`}
                     >
                       <Trash2 className="size-3.5" />
@@ -130,6 +148,16 @@ export function HistoryPage() {
           </section>
         ))
       )}
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

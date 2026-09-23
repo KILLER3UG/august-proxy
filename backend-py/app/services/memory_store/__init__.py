@@ -21,6 +21,10 @@ from app.services.memory_store.brain import (
     brain_store_summary,
     brain_update_row,
 )
+from app.services.memory_store.fact_retrieval import (
+    build_memory_block,
+    build_profile_block,
+)
 from app.services.memory_store.kv import (
     _fts_match_query,
     get_internal_state,
@@ -37,6 +41,7 @@ from app.services.memory_store.messages import (
     save_message,
 )
 from app.services.memory_store.rest import (
+    PROFILE_FACT_KIND,
     decide_proposal,
     delete_fact,
     derive_fact_title,
@@ -72,6 +77,8 @@ from app.services.memory_store.sessions import (
     list_workbench_blobs,
     save_session,
     save_workbench_session_sot,
+    session_archive_flags,
+    set_session_archived,
 )
 from app.services.memory_store.wire import _row_as_wire, _session_field
 
@@ -89,6 +96,9 @@ __all__ = [
     'list_facts',
     'delete_fact',
     'touch_fact_usage',
+    'PROFILE_FACT_KIND',
+    'build_memory_block',
+    'build_profile_block',
     'save_proposal',
     'get_proposal',
     'list_proposals',
@@ -107,6 +117,8 @@ __all__ = [
     'get_workbench_blob',
     'list_sessions',
     'get_session',
+    'set_session_archived',
+    'session_archive_flags',
     'delete_session_cascade',
     'delete_session_record',
     'save_message',

@@ -119,7 +119,7 @@ export function AssistantMessageContent({
             character reveal is the in-flight feedback now. */}
         {isLast && !streaming && message.usage && message.usage.outputTokens > 0 && message.usage.durationMs && message.usage.durationMs > 0 ? (
           <div
-            className="text-[10px] tabular-nums text-muted-foreground/60"
+            className="text-[11px] tabular-nums text-tier-2"
             title={`${message.usage.outputTokens.toLocaleString()} output tokens in ${(message.usage.durationMs / 1000).toFixed(1)}s of model generation`}
             data-testid="final-rate-chip"
           >

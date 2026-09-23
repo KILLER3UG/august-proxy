@@ -26,15 +26,23 @@ def save_session(session: SessionRecord) -> None:
     blob = session.get('workbenchBlob') or session.get('workbench_blob')
     updated_at = _session_field(session, 'updatedAt') or started_at
     # Preserve existing blob if caller only updates metadata
-    if blob is None:
+    if blob is None or is_archived is None:
+        # ... and the same for the archive flag: an unrelated metadata write used
+        # to reset it to 0, silently un-archiving a session the user parked.
         row = conn.execute(
-            'SELECT workbench_blob FROM sessions WHERE id = ?', (sid,)
+            'SELECT workbench_blob, is_archived FROM sessions WHERE id = ?', (sid,)
         ).fetchone()
         if row is not None:
             try:
-                blob = row['workbench_blob']
+                stored_blob = row['workbench_blob']
+                stored_archived = row['is_archived']
             except (KeyError, IndexError, TypeError):
-                blob = row[0] if row else None
+                stored_blob = row[0] if row else None
+                stored_archived = row[1] if row and len(row) > 1 else 0
+            if blob is None:
+                blob = stored_blob
+            if is_archived is None:
+                is_archived = bool(as_int(stored_archived, 0))
     # UPSERT (not INSERT OR REPLACE): REPLACE is DELETE+INSERT and trips the
     # messages.session_id foreign key when child rows already exist.
     conn.execute(
@@ -93,8 +101,25 @@ def save_workbench_session_sot(
     if not isinstance(msgs, list):
         msgs = []
     blob = json.dumps(session_dict, ensure_ascii=False, default=str)
+    # The workbench session object carries no archive flag — the UI owns it —
+    # so writing the dict back used to reset `is_archived` to 0 on the next
+    # autosave. Keep the stored value unless this caller states it explicitly.
+    explicit_archived = 'isArchived' in session_dict or 'is_archived' in session_dict
     try:
         conn.execute('BEGIN')
+        if explicit_archived:
+            archived = 1 if (
+                session_dict.get('isArchived') or session_dict.get('is_archived')
+            ) else 0
+        else:
+            stored = conn.execute(
+                'SELECT is_archived FROM sessions WHERE id = ?', (sid,)
+            ).fetchone()
+            try:
+                stored_value = stored['is_archived'] if stored is not None else 0
+            except (KeyError, IndexError, TypeError):
+                stored_value = stored[0] if stored else 0
+            archived = as_int(stored_value, 0)
         # UPSERT (not INSERT OR REPLACE): REPLACE is DELETE+INSERT and trips the
         # messages.session_id foreign key when child rows already exist.
         conn.execute(
@@ -121,7 +146,7 @@ def save_workbench_session_sot(
                 as_str(session_dict.get('provider'), ''),
                 as_str(session_dict.get('model'), ''),
                 session_dict.get('folderId'),
-                1 if session_dict.get('isArchived') else 0,
+                archived,
                 as_str(session_dict.get('workspacePath'), ''),
                 blob,
                 updated,
@@ -229,11 +254,48 @@ def list_workbench_blobs(limit: int = 200) -> list[dict[str, object]]:
     return out
 
 
+def session_archive_flags() -> dict[str, bool]:
+    """Ids of archived sessions — the cheap read the sidebar needs.
+
+    Deliberately NOT part of ``list_workbench_blobs``: that query drags the
+    whole transcript blob for up to 500 sessions, and the only thing the caller
+    wants here is a boolean. Only archived rows are returned, so the payload
+    stays tiny and an absent id means "not archived" rather than "unknown".
+    """
+    conn = _conn()
+    rows = conn.execute('SELECT id FROM sessions WHERE is_archived = 1').fetchall()
+    flags: dict[str, bool] = {}
+    for row in rows:
+        try:
+            sid = row['id'] if hasattr(row, 'keys') else row[0]
+        except (KeyError, IndexError, TypeError):
+            sid = row[0] if row else None
+        if sid:
+            flags[str(sid)] = True
+    return flags
+
+
 def list_sessions() -> list[SessionRecord]:
     """List all sessions, most recent first."""
     conn = _conn()
     rows = conn.execute('SELECT * FROM sessions ORDER BY started_at DESC').fetchall()
     return [cast(SessionRecord, _row_as_wire(r)) for r in rows]
+
+
+def set_session_archived(sessionId: str, archived: bool) -> SessionRecord | None:
+    """The single authority for parking a session; None when it does not exist.
+
+    Both the REST surface (``PATCH /api/sessions/{id}``) and the legacy
+    ``/api/august/sessions/manage`` action route call this, so the flag cannot
+    be written two different ways.
+    """
+    session = get_session(sessionId)
+    if not session:
+        return None
+    updated = dict(session)
+    updated['isArchived'] = bool(archived)
+    save_session(cast(SessionRecord, updated))
+    return get_session(sessionId)
 
 
 def get_session(sessionId: str) -> SessionRecord | None:

@@ -281,7 +281,13 @@ def _brain_query_facts_ranked(query: str, filters: dict | None, limit: int) -> s
     try:
         from app.services.memory_store.fact_retrieval import retrieve_relevant_facts
 
-        facts = retrieve_relevant_facts(q, k=cap, scope=turnScope)
+        # An explicit tool call is a deliberate lookup, so it must not be
+        # silenced by the auto-inject floor: a model searching "my gpu" used to
+        # fall through to the LIKE scan (rows, but unranked). The caller below
+        # still falls back to LIKE when nothing scores.
+        facts = retrieve_relevant_facts(
+            q, k=cap, scope=turnScope, min_query_chars=1
+        )
     except Exception as exc:
         return json.dumps({'error': f'brain_query(facts): ranked retrieval failed: {exc}'})
     if not facts:

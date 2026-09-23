@@ -129,7 +129,7 @@ export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string |
               key={k}
               type="button"
               onClick={() => setActiveKind(k)}
-              className={`flex-1 rounded-md px-2 py-1 text-[11px] font-medium capitalize transition ${activeKind === k ? 'bg-foreground text-background' : 'bg-muted/40 text-muted-foreground hover:bg-muted'}`}
+              className={`flex-1 rounded-md px-2 py-1 text-[11px] font-medium capitalize transition ${activeKind === k ? 'bg-primary text-primary-foreground' : 'bg-muted/40 text-muted-foreground hover:bg-muted'}`}
             >
               {k === 'all' ? 'All' : k === 'file' ? 'Files' : k === 'image' ? 'Images' : 'Links'} <span className="opacity-60">· {counts[k] ?? 0}</span>
             </button>

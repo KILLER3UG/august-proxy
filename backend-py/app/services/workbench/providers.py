@@ -414,22 +414,16 @@ def supports_thinking(provider: dict[str, object], model: str) -> bool:
 
 
 def _claude_supports_extended_thinking_by_id(model_l: str) -> bool:
-    """Heuristic for Anthropic extended thinking when modelProfiles are empty."""
-    if 'claude' not in model_l:
-        return False
-    # Known generations that reject thinking / budget_tokens.
-    legacy = (
-        'claude-3-5',
-        'claude-3.5',
-        'claude-3-haiku',
-        'claude-3-opus',
-        'claude-3-sonnet',
-        'claude-instant',
-        'claude-2',
-    )
-    if any(token in model_l for token in legacy):
-        return False
-    return True
+    """Id-only fallback, answered by the model family table.
+
+    The legacy-generation exclusions (Claude 3.5 / Haiku / Opus / Sonnet,
+    instant, claude-2) live as `excludes` on the claude family in
+    app/providers/model_params.py, so they are one list with the rest of the
+    families rather than a second place that must be remembered.
+    """
+    from app.providers.model_params import supports_extended_thinking
+
+    return supports_extended_thinking(model_l)
 
 
 async def call_anthropic_workbench(

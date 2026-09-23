@@ -1142,3 +1142,79 @@ class TestTurnEndReason:
         turnEnd = [e for e in events if e.get('type') == 'turn_end']
         assert turnEnd, 'no turn_end on a cancelled turn'
         assert turnEnd[-1].get('reason') == 'interrupted'
+
+
+class TestContextPressureSections:
+    """The meter must report what the tail blocks actually cost.
+
+    The composer's breakdown used to show "Skills 0" because no backend field
+    existed for it — an absent measurement rendered as a confident zero. The
+    producer now sends byte sizes on every contextPressure event.
+    """
+
+    @pytest.mark.asyncio
+    async def test_pressure_event_carries_measured_sizes(self, _isolate):
+        stub = StubClient(mode='text_once')
+        _isolate['client'] = stub
+        session = wb.createWorkbenchSession(provider='stub-anthropic')
+        events = _capturedEvents()
+        await wb.sendWorkbenchMessageStream(
+            sessionId=session.id,
+            message='hi',
+            model='stub-claude',
+            emit=_emitTo(events),
+        )
+        pressure = [e for e in events if e.get('type') == 'contextPressure']
+        assert pressure, 'contextPressure must still be emitted once per turn'
+        sections = pressure[-1].get('contextSections')
+        assert isinstance(sections, dict), f'contextSections missing/garbled: {sections!r}'
+        assert set(sections) == {
+            'memoryBytes',
+            'skillsBytes',
+            'stateBytes',
+            'nudgeBytes',
+            'skillsByName',
+        }
+        numbers = {k: v for k, v in sections.items() if k != 'skillsByName'}
+        assert all(isinstance(v, int) and v >= 0 for v in numbers.values()), sections
+        assert isinstance(sections['skillsByName'], dict)
+        assert all(
+            isinstance(name, str) and isinstance(size, int) and size > 0
+            for name, size in sections['skillsByName'].items()
+        ), sections
+        # The per-skill map can only ever describe part of the skills row.
+        assert sum(sections['skillsByName'].values()) <= sections['skillsBytes'], sections
+        # The per-turn <session_state> tail is always built, so the event must
+        # carry at least one non-zero measurement — all-zero would mean the
+        # sizes were initialized and never filled in.
+        assert sum(numbers.values()) > 0, sections
+
+    @pytest.mark.asyncio
+    async def test_sections_survive_a_failed_memory_injection(self, _isolate, monkeypatch):
+        """A partial failure inside the best-effort injection must not drop the
+        meter: that is why the sizes are initialized before the try."""
+
+        def _boom(*_a, **_k):
+            raise RuntimeError('recall failed')
+
+        monkeypatch.setattr(
+            'app.services.memory_store.fact_retrieval.build_memory_block', _boom
+        )
+        stub = StubClient(mode='text_once')
+        _isolate['client'] = stub
+        session = wb.createWorkbenchSession(provider='stub-anthropic')
+        events = _capturedEvents()
+        await wb.sendWorkbenchMessageStream(
+            sessionId=session.id, message='hi', model='stub-claude', emit=_emitTo(events)
+        )
+        pressure = [e for e in events if e.get('type') == 'contextPressure']
+        assert pressure, 'a failing recall killed the context meter'
+        sections = pressure[-1].get('contextSections')
+        assert isinstance(sections, dict)
+        # The patch really engaged: recall died, so the memory tail was not
+        # built and reports a measured zero — while the rest of the tail is
+        # still accounted for. Without the pre-try initialization the whole
+        # event would have raised a NameError into the emit's own except and
+        # the gauge would have silently disappeared.
+        assert sections['memoryBytes'] == 0, sections
+        assert sections['stateBytes'] > 0, sections

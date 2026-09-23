@@ -134,7 +134,9 @@ export function HarnessImprovementsSection() {
   }, [queryClient]);
 
   const rows = useMemo<Proposal[]>(() => {
-    const harness = (harnessQ.data?.proposals ?? []).map((p) => ({ ...p, queue: 'harness' as Queue }));
+    const harness = (harnessQ.data?.proposals ?? []).map(
+      (p): Proposal => ({ ...p, queue: 'harness' }),
+    );
     let memory: Proposal[] = [];
     try {
       memory = (memoryQ.data?.proposals ?? []).map(memoryToProposal);

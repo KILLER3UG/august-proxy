@@ -3,7 +3,7 @@
  * parallel chat-side workspace panel.
  *
  * 3 header groups (Settings / Agent Capabilities / Data & Statistics),
- * 38 sections. The headers are the rail; each header expands its related
+ * 44 sections. The headers are the rail; each header expands its related
  * sections as an inline tree (see `docs/settings-audit.md`).
  *
  * See `docs/settings-audit.md` for the rationale + section movement
@@ -25,6 +25,7 @@ import {
   Activity,
   Gauge,
   Boxes,
+  Blocks,
   BookOpen,
   Bot,
   BrainCircuit,
@@ -289,6 +290,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       'memory',
       'vector-db',
       'recalled-memory',
+      // RAIL_PARENT lists this as a split-view of this hub, so it must resolve
+      // here too — otherwise the deep link silently lands on General.
+      'added-memory',
       'auto-memories',
       'project-memories',
       'memory-timeline',
@@ -379,7 +383,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Turn hooks, tool execution intercepts, and custom event listeners.',
     icon: ArrowRightLeft,
     category: 'capabilities',
-    tier: 'basic',
+    tier: 'hidden',
     keywords: ['hooks', 'hook', 'tool intercepts', 'intercept', 'listeners'],
     legacyAliases: ['hooks-tab', 'event-hooks'],
   },
@@ -550,7 +554,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Workspace codebase indexing, vector search, and semantic knowledge cache.',
     icon: ShieldCheck,
     category: 'data',
-    tier: 'basic',
+    tier: 'hidden',
     keywords: ['indexing', 'indexer', 'codebase index', 'vector search', 'semantic cache'],
     legacyAliases: ['index', 'workspace-index', 'vector-index'],
   },
@@ -616,6 +620,24 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     tier: 'basic',
     keywords: ['harness', 'proposal', 'self-improvement', 'introspect', 'review queue', 'approve', 'retirement', 'inbox'],
     legacyAliases: ['reliability', 'harness-proposals'],
+  },
+  {
+    id: 'model-families',
+    label: 'Model Families',
+    description: 'Which wire parameters August may send per model — reasoning effort, thinking budget, default tier — and the family table that decides it.',
+    icon: Blocks,
+    category: 'capabilities',
+    tier: 'advanced',
+    keywords: [
+      'model families',
+      'family',
+      'model params',
+      'modelparams',
+      'reasoning_effort',
+      'thinking budget',
+      'extended thinking',
+      'wire parameters',
+    ],
   },
   {
     id: 'backend-monitor',

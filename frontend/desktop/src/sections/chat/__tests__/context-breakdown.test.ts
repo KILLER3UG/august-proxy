@@ -134,9 +134,26 @@ describe('estimateContextBreakdown — fixed estimates', () => {
     expect(r.skills).toBe(100);
   });
 
-  it('returns 0 skills when no coreMemoryBytes is provided', () => {
+  it('reports skills as unmeasured when coreMemoryBytes is absent', () => {
+    // The backend has no producer for coreMemoryBytes yet, so this is the
+    // normal path. 0 would be a claim that skills cost nothing; null keeps
+    // "unknown" distinct from "measured zero".
     const r = estimateContextBreakdown({ messages: [], input: '', toolCount: 0 });
-    expect(r.skills).toBe(0);
+    expect(r.skills).toBeNull();
+  });
+
+  it('keeps skills unmeasured after scaling to server ground truth', () => {
+    const r = estimateContextBreakdown({
+      messages: [{ role: 'user', content: 'a'.repeat(400) }],
+      input: '',
+      toolCount: 4,
+      scaleToTotal: 9000,
+    });
+    expect(r.skills).toBeNull();
+    // The unmeasured row must not steal or fake share of the total.
+    const sum =
+      r.messages + r.thinking + r.systemTools + r.systemPrompt + (r.skills ?? 0) + r.meta;
+    expect(sum).toBe(9000);
   });
 });
 
@@ -149,7 +166,7 @@ describe('estimateContextBreakdown — scaleToTotal (server ground truth)', () =
       scaleToTotal: 10000,
     });
     const sum =
-      r.messages + r.thinking + r.systemTools + r.systemPrompt + r.skills + r.meta;
+      r.messages + r.thinking + r.systemTools + r.systemPrompt + (r.skills ?? 0) + r.meta;
     expect(sum).toBe(10000);
   });
 
@@ -161,7 +178,7 @@ describe('estimateContextBreakdown — scaleToTotal (server ground truth)', () =
       scaleToTotal: 5000, // much smaller than raw 11600
     });
     const sum =
-      r.messages + r.thinking + r.systemTools + r.systemPrompt + r.skills + r.meta;
+      r.messages + r.thinking + r.systemTools + r.systemPrompt + (r.skills ?? 0) + r.meta;
     expect(sum).toBe(5000);
   });
 
@@ -176,7 +193,7 @@ describe('estimateContextBreakdown — scaleToTotal (server ground truth)', () =
     expect(r.thinking).toBe(0);
     expect(r.systemTools).toBe(0);
     expect(r.systemPrompt).toBe(0);
-    expect(r.skills).toBe(0);
+    expect(r.skills).toBeNull();
     expect(r.meta).toBe(0);
   });
 
@@ -204,9 +221,55 @@ describe('estimateContextBreakdown — scaleToTotal (server ground truth)', () =
       coreMemoryBytes: 500,
       scaleToTotal: 45000,
     });
-    for (const v of Object.values(r)) {
+    for (const [key, v] of Object.entries(r)) {
+      if (key === 'skillsByName') {
+        expect(v).toEqual({});
+        continue;
+      }
       expect(v).toBeGreaterThanOrEqual(0);
       expect(Number.isFinite(v)).toBe(true);
     }
+  });
+});
+
+describe('estimateContextBreakdown — per-skill detail', () => {
+  it('converts the reported bytes with the same heuristic as the parent row', () => {
+    const r = estimateContextBreakdown({
+      messages: [],
+      input: '',
+      toolCount: 0,
+      coreMemoryBytes: 400,
+      skillsByName: { canvas: 200, 'unicode-µ': 2 },
+    });
+    expect(r.skills).toBe(100); // 400 bytes / 4
+    expect(r.skillsByName).toEqual({ canvas: 50, 'unicode-µ': 1 });
+  });
+
+  it('scales the detail by the ground-truth factor too, so sub-rows stay a share', () => {
+    // raw: messages 100 + skills 100 + meta 100 = 300 → factor 1000/300
+    const r = estimateContextBreakdown({
+      messages: [{ role: 'user', content: 'a'.repeat(400) }],
+      input: '',
+      toolCount: 0,
+      coreMemoryBytes: 400,
+      skillsByName: { canvas: 200, review: 200 },
+      scaleToTotal: 1000,
+    });
+    expect(r.skills).toBe(333);
+    expect(r.skillsByName).toEqual({ canvas: 167, review: 167 });
+    // Unscaled sub-rows would read as a bigger share than the row they belong
+    // to once the totals are anchored to the provider's real context fill.
+    const detail = r.skillsByName ?? {};
+    expect(Object.values(detail).reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(r.skills! + 1);
+  });
+
+  it('leaves the map empty when the backend never reported one', () => {
+    const r = estimateContextBreakdown({
+      messages: [{ role: 'user', content: 'hi' }],
+      input: '',
+      toolCount: 0,
+    });
+    expect(r.skills).toBeNull();
+    expect(r.skillsByName).toEqual({});
   });
 });

@@ -636,7 +636,11 @@ def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
 
             _validateName(name)  # §9 F-2: same guard as create/patch — no traversal past the agent root
             skill_dir = _agentSkillsDir() / name
-            if not skill_dir.is_dir():
+            # SKILL.md, not the directory, is the skill. A bundled skill that
+            # has simply been loaded leaves a usage-only folder in the agent
+            # root; rmtree on that "succeeds" a delete of a skill that is still
+            # installed, which is the worst kind of green proposal.
+            if not (skill_dir / 'SKILL.md').is_file():
                 return {'ok': False, 'error': f'skill {name!r} not found in agent skills'}
             shutil.rmtree(skill_dir)
             try:

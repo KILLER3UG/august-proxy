@@ -43,11 +43,11 @@ export function coalesceAdjacentThinking(blocks: MessageBlock[]): MessageBlock[]
  *  normalize those rows to `type: 'system'` on load. */
 export function normalizeSystemBlocks(blocks: MessageBlock[]): MessageBlock[] {
   let changed = false;
-  const out = blocks.map((b) => {
+  const out = blocks.map((b): MessageBlock => {
     if (b.type === 'thinking' && b.system) {
       changed = true;
       const { system: _system, ...rest } = b;
-      return { ...rest, type: 'system' } as MessageBlock;
+      return { ...rest, type: 'system' };
     }
     return b;
   });

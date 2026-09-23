@@ -4,7 +4,6 @@
  * subagentWarning). */
 import { describe, it, expect, vi } from 'vitest';
 import { dispatchWorkbenchEvent } from './streamEvents';
-import type { WorkbenchEventHandlers } from '@/types/workbench';
 
 describe('toolResult error mapping', () => {
   it('treats status !== "done" as an error (backend sends status, never isError)', () => {
@@ -118,6 +117,20 @@ describe('previously-undispatched backend events', () => {
     const onNarrationReclassify = vi.fn();
     dispatchWorkbenchEvent('narrationReclassify', {}, { onNarrationReclassify });
     expect(onNarrationReclassify).toHaveBeenCalledTimes(1);
+  });
+
+  it('forwards the SSE frame id to onCompaction (stable replay identity)', () => {
+    const onCompaction = vi.fn();
+    dispatchWorkbenchEvent(
+      'compaction',
+      { headCount: 4, tailCount: 2, compressedCount: 1, originalTokens: 400, compressedTokens: 90 },
+      { onCompaction },
+      42,
+    );
+    expect(onCompaction).toHaveBeenCalledWith(
+      expect.objectContaining({ headCount: 4, compressedTokens: 90 }),
+      42,
+    );
   });
 
 });

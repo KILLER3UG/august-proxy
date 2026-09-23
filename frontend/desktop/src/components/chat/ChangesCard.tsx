@@ -116,12 +116,12 @@ export function ChangesCard({
   return (
     <div
       className={cn(
-        'mt-3 overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.025] shadow-sm',
+        'mt-3 overflow-hidden rounded-2xl border border-border/40 bg-card/30 shadow-xs',
         className,
       )}
       data-slot="changes-card"
     >
-      <div className="flex items-center gap-2 px-3 py-2">
+      <div className="flex items-center gap-2 px-3.5 py-2.5">
         <button
           type="button"
           onClick={() => setExpandedOverride(!expanded)}
@@ -163,7 +163,7 @@ export function ChangesCard({
           }}
           disabled={reverting}
           title="Revert all changes from this turn"
-          className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] text-muted-foreground transition-colors hover:bg-white/[0.05] hover:text-foreground disabled:opacity-50"
+          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/40 bg-background/50 px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground disabled:opacity-50"
           data-testid="changes-card-undo"
         >
           {reverting ? (
@@ -239,13 +239,13 @@ function CodeFileRow({
 }) {
   const hasDiff = Boolean(file.diff && file.diff.trim());
   return (
-    <div className="min-w-0" data-testid="changes-card-row" data-style="code" data-kind="code">
+    <div className="min-w-0 rounded-xl border border-border/30 bg-card/20 p-2 transition-all hover:border-border/60" data-testid="changes-card-row" data-style="code" data-kind="code">
       <div className="flex items-center gap-1.5">
         <DisclosureRow
           open={diffOpen && hasDiff}
           onToggle={hasDiff ? onToggleDiff : undefined}
           trailing={
-            <span className="font-mono text-[10px] tabular-nums">
+            <span className="font-mono text-[10.5px] tabular-nums">
               {file.added > 0 && <span className="text-success">+{file.added}</span>}{' '}
               {file.removed > 0 && <span className="text-rose-400">-{file.removed}</span>}
               {file.added === 0 && file.removed === 0 && (
@@ -256,7 +256,7 @@ function CodeFileRow({
         >
           <span className="flex min-w-0 items-center gap-2">
             <FileIcon name={path} size={13} className="shrink-0" />
-            <span className="truncate font-mono text-[10.5px] text-foreground/85" title={path}>
+            <span className="truncate font-mono text-[11px] text-foreground/85" title={path}>
               {path}
             </span>
           </span>
@@ -265,7 +265,7 @@ function CodeFileRow({
           <button
             type="button"
             onClick={onReview}
-            className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground transition hover:bg-white/[0.05] hover:text-foreground"
+            className="shrink-0 rounded-md border border-border/50 bg-background/50 px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground"
             title="Open full diff in drawer"
             data-testid="changes-card-review"
           >
@@ -276,7 +276,7 @@ function CodeFileRow({
           type="button"
           onClick={onOpen}
           disabled={busy}
-          className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground transition hover:bg-white/[0.05] hover:text-foreground disabled:opacity-50"
+          className="shrink-0 rounded-md border border-border/50 bg-background/50 px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground disabled:opacity-50"
           title="Open file in side panel"
           data-testid="changes-card-open"
         >
@@ -284,7 +284,7 @@ function CodeFileRow({
         </button>
       </div>
       {diffOpen && hasDiff && (
-        <div className="pl-4 pr-1 pt-0.5" data-testid="changes-card-inline-diff">
+        <div className="pl-4 pr-1 pt-1.5" data-testid="changes-card-inline-diff">
           <DiffView diff={file.diff} maxLines={32} />
         </div>
       )}
@@ -308,34 +308,34 @@ function DocumentFileRow({
 }) {
   return (
     <div
-      className="flex items-center gap-2.5"
+      className="flex items-center gap-3 rounded-xl border border-border/40 bg-card/40 p-2.5 hover:border-border/70 hover:bg-card/70 transition-all duration-150"
       data-testid="changes-card-row"
       data-style="document"
       data-kind={info.kind}
     >
-      <DocumentBadge text={info.badgeText} tone={info.badgeTone} />
+      <DocumentBadge text={info.badgeText} tone={info.badgeTone} size={40} className="rounded-lg shadow-2xs" />
       <button
         type="button"
         onClick={onOpen}
         disabled={busy}
         title={`Open in side panel — ${path}`}
-        className="min-w-0 flex-1 text-left disabled:opacity-50"
+        className="min-w-0 flex-1 text-left disabled:opacity-50 cursor-pointer"
       >
-        <span className="block truncate text-[12.5px] font-medium text-foreground">
+        <span className="block truncate text-[13px] font-medium text-foreground">
           {producedFileLabel(path)}
         </span>
-        <span className="block truncate text-[10.5px] text-muted-foreground">{info.label}</span>
+        <span className="block truncate text-[11px] text-muted-foreground/80">{info.label}</span>
       </button>
       <button
         type="button"
         onClick={onOpen}
         disabled={busy}
-        className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border/60 px-2 py-1 text-[10.5px] text-muted-foreground transition hover:bg-white/[0.05] hover:text-foreground disabled:opacity-50"
+        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border/60 bg-background/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground disabled:opacity-50 cursor-pointer"
         title="Open file in side panel"
         data-testid="changes-card-open"
       >
-        Open
-        <ChevronDown className="size-3" />
+        Download
+        <ChevronDown className="size-3 text-muted-foreground/70" />
       </button>
     </div>
   );

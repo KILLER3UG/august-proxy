@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Pencil,
   Pin,
@@ -76,6 +76,24 @@ export function ModelRow({
   const [maxToolResultChars, setMaxToolResultChars] = useState<string>(
     (model.maxToolResultChars ?? 0).toString(),
   );
+  // "Auto (heuristic)" is decided by the capability family table. Asking the
+  // same endpoint the harness uses keeps this a report, not a second guess.
+  const { data: familyAnswer } = useQuery({
+    queryKey: ['model-params', 'resolve', model.id],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/config/model-params/resolve?modelId=${encodeURIComponent(model.id)}`,
+      );
+      if (!res.ok) throw new Error('Could not resolve the capability family');
+      return (await res.json()) as {
+        family?: { id: string; source: string } | null;
+        reasoningEffort?: boolean;
+        extendedThinking?: boolean;
+      };
+    },
+    enabled: editing && reasoningEffortSupport === '',
+    staleTime: 60_000,
+  });
   const [testResult, setTestResult] = useState<null | {
     ok: boolean;
     error?: string;
@@ -339,6 +357,17 @@ if (editing) {
                       <option value="no">No — never send</option>
                     </select>
                   </label>
+                  {editing && reasoningEffortSupport === '' && familyAnswer ? (
+                    <p className="text-[10px] text-muted-foreground" data-testid="model-family-hint">
+                      {familyAnswer.family
+                        ? `Auto resolves to the “${familyAnswer.family.id}” family (${
+                            familyAnswer.family.source === 'config' ? 'your table' : 'built-in'
+                          }): reasoning_effort ${familyAnswer.reasoningEffort ? 'sent' : 'never sent'}, thinking budget ${
+                            familyAnswer.extendedThinking ? 'sent' : 'never sent'
+                          }.`
+                        : `Auto: no capability family matches “${model.id}”, so August sends neither reasoning_effort nor a thinking budget. Add one in Settings → Model Families.`}
+                    </p>
+                  ) : null}
                   <label className="flex items-center gap-2 text-xs">
                     <span className="w-36 shrink-0">Tool surface</span>
                     <select

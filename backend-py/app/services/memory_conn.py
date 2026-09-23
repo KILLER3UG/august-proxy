@@ -94,8 +94,12 @@ def _warn_dual_data_roots(path: Path) -> None:
         if repoStale.resolve() != path.resolve() and repoStale.exists():
             logger.warning(
                 'Two brain data roots exist: active=%s and legacy=%s '
-                '(%d bytes, %s). The legacy file is ignored — import it via '
-                'Settings → Memory if it holds memories you still want.',
+                '(%d bytes, %s). The legacy file is ignored — to recover it, '
+                'copy it into the brain backups folder named exactly '
+                'brain-YYYYMMDDTHHMMSSZ-legacy.sqlite (stamp with no dashes, e.g. '
+                'brain-20260922T090000Z-legacy.sqlite; the restore door rejects '
+                'any other name) and use Settings → Memory → Restore. The current '
+                'database is kept as a .pre-restore copy.',
                 path,
                 repoStale,
                 repoStale.stat().st_size,

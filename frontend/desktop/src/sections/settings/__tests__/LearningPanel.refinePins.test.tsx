@@ -56,20 +56,23 @@ const renderExpanded = () => {
 describe('refine model pins', () => {
   it('shows both pickers with the stored producer selected', async () => {
     renderExpanded();
-    const producer = (await screen.findByTestId('learning-refine-producer')) as HTMLSelectElement;
-    const reviewer = (await screen.findByTestId('learning-refine-reviewer')) as HTMLSelectElement;
-    expect(producer.value).toBe('kilo/gpt-5-mini');
-    expect(reviewer.value).toBe('');
-    // Catalog options come from the aggregated models list.
-    expect(Array.from(producer.options).map((o) => o.value)).toContain('anthropic/claude-sonnet-5');
+    const producer = await screen.findByTestId('learning-refine-producer');
+    const reviewer = await screen.findByTestId('learning-refine-reviewer');
+    expect(producer).toHaveValue('kilo/gpt-5-mini');
+    expect(reviewer).toHaveValue('');
+    // Catalog options come from the aggregated models list. The tag selector
+    // narrows each node to HTMLOptionElement, so `.value` needs no cast.
+    expect(
+      Array.from(producer.querySelectorAll('option')).map((o) => o.value),
+    ).toContain('anthropic/claude-sonnet-5');
   });
 
   it('choosing a reviewer posts a config patch with just that field', async () => {
     renderExpanded();
-    const reviewer = (await screen.findByTestId('learning-refine-reviewer')) as HTMLSelectElement;
+    const reviewer = await screen.findByTestId('learning-refine-reviewer');
     // The catalog query resolves independently of the refine query — wait
     // for the options to land before changing the select.
-    await waitFor(() => expect(reviewer.options.length).toBeGreaterThan(1));
+    await waitFor(() => expect(reviewer.querySelectorAll('option').length).toBeGreaterThan(1));
     fireEvent.change(reviewer, { target: { value: 'anthropic/claude-sonnet-5' } });
     await waitFor(() =>
       expect(postMock).toHaveBeenCalledWith('/api/curator/refine/config', {

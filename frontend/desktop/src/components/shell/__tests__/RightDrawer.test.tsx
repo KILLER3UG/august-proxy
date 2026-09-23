@@ -152,9 +152,12 @@ describe('RightDrawer tab-strip header (Zed-style)', () => {
       document.querySelector('[data-testid="drawer-tab-artifacts"]'),
     ).toBeTruthy();
     // Per-tab close affordance…
-    expect(
-      document.querySelector('[data-testid="drawer-tab-close-artifacts"]'),
-    ).toBeTruthy();
+    const close = document.querySelector(
+      '[data-testid="drawer-tab-close-artifacts"]',
+    ) as HTMLElement;
+    expect(close).toBeTruthy();
+    expect(close.className).toContain('focus-visible:opacity-100');
+    expect(close.className).toContain('focus-visible:ring-2');
     // …and the plain "Workbench" title is replaced by the tabs.
     expect(screen.queryByText('Workbench')).toBeNull();
   });
@@ -308,6 +311,23 @@ describe('RightDrawer tab-strip header (Zed-style)', () => {
     const inner = document.querySelector<HTMLElement>('[data-testid="drawer-inner"]');
     expect(inner).toBeTruthy();
     expect(Number.parseInt(inner!.style.width, 10)).toBeGreaterThanOrEqual(400);
+  });
+
+  it('resizes from the keyboard with separator ARIA values', () => {
+    act(() => {
+      toggleRightDrawerSection('tasks');
+    });
+    setupDrawer();
+    const separator = document.querySelector<HTMLElement>('[role="separator"]')!;
+    expect(separator.tabIndex).toBe(0);
+    expect(separator.getAttribute('aria-valuemin')).toBe('200');
+    expect(separator.getAttribute('aria-valuenow')).toBe('420');
+    fireEvent.keyDown(separator, { key: 'ArrowLeft' });
+    expect(separator.getAttribute('aria-valuenow')).toBe('430');
+    fireEvent.keyDown(separator, { key: 'Home' });
+    expect(separator.getAttribute('aria-valuenow')).toBe('200');
+    fireEvent.keyDown(separator, { key: 'End' });
+    expect(separator.getAttribute('aria-valuenow')).toBe(String(Math.floor(window.innerWidth * 0.6)));
   });
 });
 

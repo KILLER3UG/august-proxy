@@ -94,3 +94,39 @@ class TestSpillToolResult:
         spillDir = tmp_path / '.aug' / 'spill' / session.id
         names = sorted(p.name for p in spillDir.iterdir())
         assert names == ['0001-read_file.txt', '0002-run_command.txt']
+
+    def testUnretrievableResultIsNotSpilledAtAll(self, tmp_path):
+        """A locator the model cannot open is a trap, not a receipt: it burns a
+        round trying to obey the hint and then concludes the output never
+        existed. Refuse the spill so the caller truncates honestly — and leave
+        no orphan file in the user's workspace."""
+        session = self._session(tmp_path)
+        big = 'z' * 60000
+        assert wb._spillToolResult(session, 'run_command', big, retrievable=False) is None
+        assert list((tmp_path / '.aug').rglob('*.txt')) == []
+
+    def testOmittingTheFlagStillSpills(self, tmp_path):
+        """The code-runner bridge calls this without the new argument, and its
+        workspace tool API always has read_file, so the default stays generous."""
+        session = self._session(tmp_path)
+        assert wb._spillToolResult(session, 'run_command', 'q' * 60000) is not None
+
+    def testReceiptWarnsThatThePreviewIsNotEvidence(self, tmp_path):
+        session = self._session(tmp_path)
+        inline = wb._spillToolResult(session, 'run_command', 'w' * 60000)
+        assert inline is not None
+        assert 'do not report the omitted' in inline
+
+    def testRetrievalToolSetNamesRealTools(self):
+        """Same guard as the bare-surface allowlist: a stale name here silently
+        disables spilling for a whole surface."""
+        from app.services.tool_definitions import registerAll
+        from app.services.tool_registry import listTools
+
+        registerAll()
+        # The registry stores OpenAI-format defs — the name is at
+        # t['function']['name'] (same trap the bare-allowlist guard documents).
+        registered = {str(t['function']['name']) for t in listTools()}
+        assert wb._SPILL_RETRIEVAL_TOOLS <= registered, (
+            wb._SPILL_RETRIEVAL_TOOLS - registered
+        )

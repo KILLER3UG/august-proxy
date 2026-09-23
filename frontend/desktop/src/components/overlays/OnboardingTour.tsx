@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Bot, Check, Gavel, Rocket, Sparkles, X } from 'lucide-react';
 import { useSessionsStore } from '@/store/sessions';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 const DONE_KEY = 'august_onboarding_done';
 
@@ -45,8 +46,8 @@ const STEPS: TourStep[] = [
   {
     icon: Gavel,
     title: 'See what it knows',
-    body: 'The Brain → You tab shows your profile, learned rules, friction, and each model’s track record. Everything is editable — this is your harness.',
-    action: { label: 'Open the Brain', to: '/brain?tab=you' },
+    body: 'Memory settings show your profile, learned rules, friction, and each model’s track record. Everything is editable — this is your harness.',
+    action: { label: 'Open Memory settings', to: '/settings/memory-knowledge' },
   },
 ] as const;
 
@@ -55,6 +56,7 @@ export function OnboardingTour() {
   const [step, setStep] = useState(0);
   const navigate = useNavigate();
   const sessionCount = useSessionsStore((s) => s.sessions.length);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
 
   useEffect(() => {
     // Show when the app is truly fresh: no sessions yet and not dismissed.
@@ -87,6 +89,7 @@ export function OnboardingTour() {
       aria-modal="true"
       aria-label="Welcome"
       data-testid="onboarding-tour"
+      ref={trapRef}
     >
       <div className="w-full max-w-md rounded-xl border border-border bg-popover p-5 shadow-xl space-y-4">
         <div className="flex items-center gap-2">
@@ -98,7 +101,7 @@ export function OnboardingTour() {
           <button
             type="button"
             onClick={finish}
-            className="p-1 text-muted-foreground hover:text-foreground"
+            className="p-1 text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
             aria-label="Skip onboarding"
           >
             <X className="size-4" />
@@ -121,7 +124,7 @@ export function OnboardingTour() {
               <button
                 type="button"
                 onClick={() => setStep((s) => s - 1)}
-                className="text-xs px-3 py-1.5 rounded bg-muted text-muted-foreground"
+                className="rounded bg-muted px-3 py-1.5 text-xs text-muted-foreground transition hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
               >
                 Back
               </button>
@@ -138,7 +141,7 @@ export function OnboardingTour() {
                   setStep((s) => s + 1);
                 }
               }}
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground"
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-foreground/70"
               data-testid="onboarding-next"
             >
               {last ? (

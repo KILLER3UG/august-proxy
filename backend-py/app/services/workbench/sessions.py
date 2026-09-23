@@ -1074,8 +1074,26 @@ def list_workbench_sessions() -> list[dict[str, object]]:
                 merged[session.id] = session
     except Exception:
         logger.debug('SQLite session list failed; memory only', exc_info=True)
-    sorted_sessions = sorted(merged.values(), key=lambda s: s.updatedAt, reverse=True)
-    return [summarize_session(s) for s in sorted_sessions]
+    summaries = [
+        summarize_session(s)
+        for s in sorted(merged.values(), key=lambda s: s.updatedAt, reverse=True)
+    ]
+    # The archive flag is a column, not part of the transcript blob, so the
+    # summaries cannot carry it on their own. Overlay it from the one cheap
+    # query that reads it — this is the surface the sidebar reconciles from, so
+    # without this an archived chat reappears after a localStorage wipe even
+    # though the server has always known it was archived.
+    try:
+        from app.services import memory_store
+
+        archived = memory_store.session_archive_flags()
+        if archived:
+            for item in summaries:
+                if archived.get(str(item.get('id') or '')):
+                    item['isArchived'] = True
+    except Exception:
+        logger.debug('archive flag overlay failed', exc_info=True)
+    return summaries
 
 
 def cancel_session_work(session_id: str) -> None:

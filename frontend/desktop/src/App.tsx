@@ -104,10 +104,14 @@ export default function App() {
         <ConversationSearchModal />
         <OnboardingTour />
         <ProviderOnboardingModal />
-        <QuitConfirmModal />
         {/* First launch after a version bump: animated "what's new" chat. */}
         <UpdateConversation />
       </BackendBootstrapGate>
+      {/* Outside the gate: the native close handler defers to the webview, so a
+          quit prompt rendered inside it could not be reached when the backend
+          failed to start — the window had no way to close. Same reason as
+          UpdateRelaunchOverlay below. */}
+      <QuitConfirmModal />
       {/* Outside the gate so a stopped backend during update can't hide it. */}
       <UpdateRelaunchOverlay />
     </>

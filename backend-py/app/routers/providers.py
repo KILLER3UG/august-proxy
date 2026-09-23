@@ -19,7 +19,15 @@ router = APIRouter(prefix='/api/providers')
 
 
 def _provider_to_dict(p: object) -> dict:
-    """Convert a ProviderConfig or raw dict to the API response shape."""
+    """Convert a ProviderConfig or raw dict to the API response shape.
+
+    The key itself is never serialized. This shape is returned by the list,
+    get and update routes, all of which are reachable over plain HTTP on
+    127.0.0.1 — see app/lib/local_api_guard.py for the origin gate, and note
+    that an origin gate protects against a remote page, not against anything
+    else running as this user. Consumers use `apiKeySet` / `apiKeyMasked`.
+    """
+    from app.lib.secrets import mask
     from app.providers.api_format import normalize_api_format
 
     if isinstance(p, ProviderConfig):
@@ -28,9 +36,9 @@ def _provider_to_dict(p: object) -> dict:
             'name': p.name,
             'baseUrl': p.base_url,
             'apiFormat': normalize_api_format(p.api_format, default='openaiChat'),
-            'apiKey': p.api_key,
             'enabled': p.enabled,
             'apiKeySet': bool(p.api_key),
+            'apiKeyMasked': mask(p.api_key),
             'autoFetch': p.auto_fetch,
             'models': [
                 {
@@ -56,17 +64,34 @@ def _provider_to_dict(p: object) -> dict:
         }
     # Fallback for raw dicts
     pd = dict(p) if isinstance(p, dict) else {}
+    raw_key = as_str(pd.get('apiKey', ''))
     return {
         'id': as_str(pd.get('id', '')),
         'name': as_str(pd.get('name', '')),
         'baseUrl': as_str(pd.get('baseUrl', '')),
         'apiFormat': normalize_api_format(pd.get('apiFormat'), default='openaiChat'),
-        'apiKey': as_str(pd.get('apiKey', '')),
         'enabled': as_bool(pd.get('enabled', False)),
-        'apiKeySet': bool(pd.get('apiKey')),
+        'apiKeySet': bool(raw_key),
+        'apiKeyMasked': mask(raw_key),
         'autoFetch': as_bool(pd.get('autoFetch', False)),
         'models': as_list(pd.get('models', [])),
     }
+
+
+def _public(entry: dict) -> dict:
+    """Strip the secret from a raw store entry destined for a response.
+
+    Mutating routes returned `{**entry, 'apiKeySet': ...}` straight from the
+    providers store, which echoed the key back on every create, update and
+    model add. `**entry` makes that leak invisible to a reader — serialize
+    through here instead.
+    """
+    from app.lib.secrets import mask
+
+    public = {k: v for k, v in entry.items() if k != 'apiKey'}
+    public['apiKeySet'] = bool(entry.get('apiKey'))
+    public['apiKeyMasked'] = mask(str(entry.get('apiKey') or ''))
+    return public
 
 
 @router.get('')
@@ -292,7 +317,7 @@ async def createProvider(body: ProviderCreate):
         emit_invalidate('aggregated-models', 'ws-providers', 'provider-availability', 'providers')
     except Exception:
         pass
-    return {**entry, 'apiKeySet': bool(body.api_key)}
+    return _public(entry)
 
 
 @router.post('/import-config')
@@ -324,7 +349,7 @@ async def importProviderConfig(body: dict):
         emit_invalidate('aggregated-models', 'ws-providers', 'provider-availability', 'providers')
     except Exception:
         pass
-    return {**entry, 'apiKeySet': bool(entry.get('apiKey'))}
+    return _public(entry)
 
 
 @router.get('/{providerId}')
@@ -367,7 +392,7 @@ async def updateProvider(providerId: str, body: ProviderUpdate):
                 emit_invalidate('aggregated-models', 'ws-providers', 'provider-availability', 'providers')
             except Exception:
                 pass
-            return {**p, 'apiKeySet': bool(p.get('apiKey'))}
+            return _public(p)
     raise HTTPException(status_code=404, detail='Provider not found')
 
 
@@ -573,7 +598,7 @@ async def addModel(providerId: str, body: ModelCreate):
             p_models.append(entry)
             config_service.saveProvidersStore(store)
             model_service.invalidate_cache()
-            return {**p, 'apiKeySet': bool(p.get('apiKey'))}
+            return _public(p)
     raise HTTPException(status_code=404, detail='Provider not found')
 
 

@@ -16,7 +16,8 @@ export type RightDrawerSectionId =
   | 'artifacts'
   | 'circuit'
   | 'file'
-  | 'routines';
+  | 'routines'
+  | 'jobs';
 
 export interface RightDrawerState {
   open: boolean;

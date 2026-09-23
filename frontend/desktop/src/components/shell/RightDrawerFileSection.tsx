@@ -1,9 +1,11 @@
 /* ── RightDrawerFileSection ─ focused attachment/document preview ───── */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  Check,
   Code2,
+  Copy,
   Eye,
   FileWarning,
   Image as ImageIcon,
@@ -16,6 +18,7 @@ import {
 import { getFileIcon } from '@/lib/file-icon';
 import { cn } from '@/lib/utils';
 import { closeRightDrawer } from './RightDrawerState';
+import { Markdown } from '@/sections/chat/ChatMarkdown';
 import type { FileAttachment } from '@/types/chat';
 
 const MAX_PREVIEW_LINES = 5000;
@@ -53,13 +56,16 @@ function describePreview(file: FileAttachment): {
   isImage: boolean;
   hasText: boolean;
   isHtml: boolean;
+  isMarkdown: boolean;
 } {
   const hasText = file.type === 'text' && typeof file.content === 'string';
   const isHtml =
     hasText && /\.(html?|xhtml)$/i.test(file.name || '') &&
     /<\/html|<!doctype html|<body/i.test(file.content ?? '');
+  const isMarkdown =
+    hasText && /\.(md|markdown|mdown|mkdn|mdx)$/i.test(file.name || '');
   const isImage = file.type === 'image' && !!(file.dataUrl || file.previewUrl);
-  return { isImage, hasText, isHtml };
+  return { isImage, hasText, isHtml, isMarkdown };
 }
 
 /** The zoom-scaled preview body — rendered identically in the drawer pane
@@ -67,7 +73,7 @@ function describePreview(file: FileAttachment): {
  *  source choice comes from the header toggle (`showSource`). */
 function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom: number; showSource: boolean }) {
   const imageSrc = file.dataUrl || file.previewUrl;
-  const { isImage, isHtml } = describePreview(file);
+  const { isImage, isHtml, isMarkdown } = describePreview(file);
   // Live HTML documents render in a sandboxed iframe (scripts allowed —
   // these are the model's interactive explainers); "source" shows the code.
   const liveSrcDoc = isHtml ? file.content ?? '' : '';
@@ -100,6 +106,18 @@ function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom:
             />
           )}
         </div>
+      ) : isMarkdown ? (
+        <div className="flex h-full min-h-full flex-col bg-background" data-testid="file-preview-markdown">
+          {showSource ? (
+            <TextPreview content={file.content ?? ''} />
+          ) : (
+            <div className="flex-1 overflow-y-auto px-6 py-5 chat-scroll select-text">
+              <div className="markdown-content max-w-none">
+                <Markdown content={file.content ?? ''} />
+              </div>
+            </div>
+          )}
+        </div>
       ) : hasText ? (
         <TextPreview content={file.content ?? ''} />
       ) : file.dataUrl || file.previewUrl ? (
@@ -128,19 +146,21 @@ function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom:
 }
 
 /** Header preview/source toggle (Eye = rendered preview, Code2 = source).
- *  Shown for text-ish files only; the Eye side is disabled for non-HTML
- *  text, which has no live viewer (e.g. PPT/PPTX). */
+ *  Supports both HTML interactive previews and Markdown rich document rendering. */
 function ViewModeToggle({
   file,
   isHtml,
+  isMarkdown,
   showSource,
   setShowSource,
 }: {
   file: FileAttachment;
   isHtml: boolean;
+  isMarkdown: boolean;
   showSource: boolean;
   setShowSource: (v: boolean) => void;
 }) {
+  const hasRenderable = isHtml || isMarkdown;
   const ext = file.name.split('.').pop()?.toUpperCase() ?? '';
   const noPreviewTip =
     ext === 'PPT' || ext === 'PPTX'
@@ -151,17 +171,17 @@ function ViewModeToggle({
       <button
         type="button"
         onClick={() => setShowSource(false)}
-        disabled={!isHtml}
-        aria-pressed={isHtml && !showSource}
+        disabled={!hasRenderable}
+        aria-pressed={hasRenderable && !showSource}
         aria-label="Show rendered preview"
-        title={isHtml ? 'Rendered preview' : noPreviewTip}
+        title={hasRenderable ? 'Rendered preview' : noPreviewTip}
         data-testid="html-preview-tab-render"
         className={cn(
           'rounded-md p-1.5 transition',
-          isHtml
-            ? 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+          hasRenderable
+            ? 'text-muted-foreground hover:bg-muted/50 hover:text-foreground cursor-pointer'
             : 'cursor-not-allowed text-muted-foreground/35',
-          isHtml && !showSource && 'bg-muted/60 text-foreground',
+          hasRenderable && !showSource && 'bg-muted/60 text-foreground',
         )}
       >
         <Eye size={14} />
@@ -174,13 +194,50 @@ function ViewModeToggle({
         title="Source code"
         data-testid="html-preview-tab-source"
         className={cn(
-          'rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground',
+          'rounded-md p-1.5 transition text-muted-foreground hover:bg-muted/50 hover:text-foreground cursor-pointer',
           showSource && 'bg-muted/60 text-foreground',
         )}
       >
         <Code2 size={14} />
       </button>
     </div>
+  );
+}
+
+function CopyFileButton({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
+    },
+    [],
+  );
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+    } catch {
+      return; // a rejected write must not report success
+    }
+    setCopied(true);
+    if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
+    resetTimer.current = window.setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => { void copy(); }}
+      title={copied ? 'Copied to clipboard' : 'Copy content'}
+      aria-label="Copy content"
+      data-testid="file-preview-copy"
+      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition hover:bg-muted/50 hover:text-foreground cursor-pointer"
+    >
+      {copied ? <Check size={14} className="text-success" /> : <Copy size={14} />}
+      <span className="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
+    </button>
   );
 }
 
@@ -224,7 +281,7 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
   const [fullscreen, setFullscreen] = useState(false);
   // Preview-vs-source choice, lifted here so the header toggle and the
   // canvas (drawer + fullscreen) share one state.
-  const { hasText, isHtml } = describePreview(file);
+  const { hasText, isHtml, isMarkdown } = describePreview(file);
   const [showSource, setShowSource] = useState(false);
   useEffect(() => {
     setShowSource(false);
@@ -245,7 +302,7 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
   return (
     <>
       <div className="flex h-full min-h-0 flex-col bg-background" data-testid="right-drawer-file-preview">
-        <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border/70 bg-card/70 px-4">
+        <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border/70 bg-card/70 px-4">
           <Icon size={17} color={fileIcon.color} className="shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-foreground">{file.name}</div>
@@ -259,7 +316,10 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
             </span>
           )}
           {hasText && (
-            <ViewModeToggle file={file} isHtml={isHtml} showSource={showSource} setShowSource={setShowSource} />
+            <ViewModeToggle file={file} isHtml={isHtml} isMarkdown={isMarkdown} showSource={showSource} setShowSource={setShowSource} />
+          )}
+          {hasText && file.content && (
+            <CopyFileButton content={file.content} />
           )}
           <ZoomControls zoom={zoom} setZoom={setZoom} />
           <button
@@ -268,7 +328,7 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
             title="Fullscreen preview"
             aria-label="Fullscreen preview"
             data-testid="file-preview-fullscreen"
-            className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
+            className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground cursor-pointer"
           >
             <Maximize2 size={14} />
           </button>
@@ -277,7 +337,7 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
             onClick={closeRightDrawer}
             title="Close preview"
             data-testid="file-preview-close"
-            className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
+            className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground cursor-pointer"
           >
             <X size={15} />
           </button>
@@ -297,7 +357,7 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
             aria-label={`Fullscreen preview of ${file.name}`}
             data-testid="file-preview-overlay"
           >
-            <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border/70 bg-card/70 px-4">
+            <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border/70 bg-card/70 px-4">
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold text-foreground">{file.name}</div>
                 <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70">
@@ -305,7 +365,10 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
                 </div>
               </div>
               {hasText && (
-                <ViewModeToggle file={file} isHtml={isHtml} showSource={showSource} setShowSource={setShowSource} />
+                <ViewModeToggle file={file} isHtml={isHtml} isMarkdown={isMarkdown} showSource={showSource} setShowSource={setShowSource} />
+              )}
+              {hasText && file.content && (
+                <CopyFileButton content={file.content} />
               )}
               <ZoomControls zoom={zoom} setZoom={setZoom} />
               <button

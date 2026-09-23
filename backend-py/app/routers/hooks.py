@@ -32,14 +32,29 @@ async def list_hooks(request: Request) -> dict:
 
 @router.post('/reload')
 async def reload_hooks(request: Request) -> dict:
-    """Force an immediate mtime re-check of every hook config."""
+    """Force an immediate mtime re-check of every hook config.
+
+    Takes a `sessionId`, never a path. Hooks execute with `shell=True` outside
+    the sandbox, so the directory that supplies `<dir>/.aug/hooks.json` is a
+    trust boundary: accepting an arbitrary workspace here would let any local
+    caller register commands from a directory it chose. The session lookup
+    keeps the set of loadable workspaces to the ones August already opened,
+    matching how the GET above resolves it.
+    """
     from app.services.hooks.user_hooks import ensure_hooks_loaded
 
     workspace = ''
+    session_id = ''
     try:
         body = await request.json()
-        workspace = str(body.get('workspace') or '') if isinstance(body, dict) else ''
+        if isinstance(body, dict):
+            session_id = str(body.get('sessionId') or '')
     except Exception:
         pass
+    if session_id:
+        from app.services.workbench import workbench as wb
+
+        sess = wb.getWorkbenchSession(session_id)
+        workspace = str(getattr(sess, 'workspacePath', '') or '') if sess else ''
     loaded = ensure_hooks_loaded(workspace or None)
     return {'ok': True, 'reloaded': loaded}

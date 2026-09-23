@@ -93,14 +93,17 @@ export function ContextRing({
     ? (() => {
         const total = Math.max(
           1,
-          breakdown.messages + breakdown.thinking + breakdown.systemTools + breakdown.systemPrompt + breakdown.skills + breakdown.meta
+          // `skills` may be null (never measured) — it adds nothing to the
+          // denominator rather than pretending to be zero-sized.
+          breakdown.messages + breakdown.thinking + breakdown.systemTools + breakdown.systemPrompt + (breakdown.skills ?? 0) + breakdown.meta
         );
         // MCP tools are a SUBSET of system tools — shown as an indented sub-row
         // (share of *used* context; the indent keeps the sum from reading >100%).
         const mcpTokens = breakdown.mcpTools ?? 0;
         const items: Array<{
           label: string;
-          tokens: number;
+          /** null = never measured; rendered as "not measured", not 0%. */
+          tokens: number | null;
           pct: number;
           opacity: number;
           indent?: boolean;
@@ -122,9 +125,30 @@ export function ContextRing({
         }
         items.push(
           { label: 'System prompt', tokens: breakdown.systemPrompt, pct: (breakdown.systemPrompt / total) * 100, opacity: 0.45 },
-          { label: 'Skills',        tokens: breakdown.skills,       pct: (breakdown.skills / total) * 100,       opacity: 0.30 },
-          { label: 'Meta context',  tokens: breakdown.meta,         pct: (breakdown.meta / total) * 100,         opacity: 0    },
+          {
+            // Label says what the value measures; null means the backend never
+            // reported it, and the row renders "not measured" instead of 0.0%.
+            label: 'Skills & memory',
+            tokens: breakdown.skills,
+            pct: breakdown.skills == null ? 0 : (breakdown.skills / total) * 100,
+            opacity: 0.30,
+          },
         );
+        // The total can't answer "which skill is eating my context" — the
+        // backend measured each one, so name the three biggest.
+        for (const [name, tokens] of Object.entries(breakdown.skillsByName ?? {})
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 3)) {
+          items.push({
+            label: name,
+            tokens,
+            pct: (tokens / total) * 100,
+            opacity: 0.22,
+            indent: true,
+            sub: true,
+          });
+        }
+        items.push({ label: 'Meta context',  tokens: breakdown.meta,         pct: (breakdown.meta / total) * 100,         opacity: 0    });
         return items;
       })()
     : null;
@@ -139,7 +163,7 @@ export function ContextRing({
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="inline-flex items-center cursor-pointer"
+        className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-md hover:bg-muted/40 transition-colors cursor-pointer text-muted-foreground/75 hover:text-foreground"
         aria-label={`${clamped}% of context used${cacheTotal > 0 ? `, ${Math.round(cacheRate * 100)}% avg cache hit` : ''}. Click for breakdown.`}
       >
         <svg width={size} height={size} className="-rotate-90 shrink-0">
@@ -156,6 +180,7 @@ export function ContextRing({
             style={{ transition: 'stroke-dasharray 0.3s ease, stroke 0.3s ease' }}
           />
         </svg>
+        <span className="font-mono text-[10.5px] tabular-nums">{clamped}%</span>
       </button>
 
       {tooltipPos && createPortal(
@@ -209,7 +234,7 @@ export function ContextRing({
                     {r.sub && <span className="opacity-60"> ↳</span>}
                   </span>
                   <span className="ml-auto font-mono tabular-nums text-[12px]" style={{ color: 'var(--dt-muted-foreground)' }}>
-                    {r.pct.toFixed(1)}%
+                    {r.tokens == null ? 'not measured' : `${r.pct.toFixed(1)}%`}
                   </span>
                 </div>
               ))}

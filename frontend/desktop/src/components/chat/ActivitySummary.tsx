@@ -196,6 +196,12 @@ export function ActivitySummary({
   // so the transcript always reads as active the moment the assistant
   // placeholder appears.
   const showLiveOnly = !isCompletion && !hasProse && segments.length === 0 && !!liveLine;
+  // The header label answers "what is the model doing" whenever the turn is
+  // live — collapsed OR expanded, counts or not — and only falls back to the
+  // empty-band case (showLiveOnly) once the turn settles. It used to hide on
+  // expand while a second animated row reappeared below the header, which
+  // made "Working…" jump down on open.
+  const showLiveLabel = !isCompletion && !!liveLine && (live || showLiveOnly);
 
   return (
     <div
@@ -226,7 +232,12 @@ export function ActivitySummary({
               aria-hidden
             />
             <span className="activity-summary-counts flex min-w-0 items-center gap-1.5">
-              <span className="shrink-0 font-semibold text-foreground">
+              <span
+                className={cn(
+                  'shrink-0 font-semibold text-foreground',
+                  live && 'activity-working-text',
+                )}
+              >
                 {live ? 'Working…' : 'Task completed'}
               </span>
               {!live && errors > 0 ? (
@@ -267,41 +278,48 @@ export function ActivitySummary({
           </>
         ) : (
           <>
-            <span className="activity-summary-counts">
-              {/* Collapsed-only: when expanded, the inline live line below
-                  already carries the working state — a bold header label on
-                  top of it read as noise. */}
-              {showLiveOnly && !open ? (
+            <span className="activity-summary-counts flex min-w-0 flex-1 items-center gap-2">
+              {/* The live label stays in the header in BOTH states: collapsed
+                  it surfaces what the model is doing even when counts exist;
+                  expanded it anchors in place instead of jumping down to a
+                  second "Working…" row below the header. */}
+              {showLiveLabel ? (
                 <span
-                  className="shrink-0 font-semibold text-foreground"
+                  className={cn(
+                    'activity-summary-live-label font-semibold text-foreground',
+                    live && 'activity-working-text',
+                  )}
                   data-testid="activity-summary-live-label"
+                  aria-live="polite"
+                  title={liveLine || undefined}
                 >
                   {liveLine || 'Working…'}
                 </span>
               ) : null}
-              {durationLabel && !showLiveOnly ? (
-                <span className="activity-summary-duration" aria-hidden>
-                  {durationLabel}
-                  {hasProse || segments.length > 0 ? ' · ' : ''}
-                </span>
-              ) : null}
               {hasProse ? (
-                <span className="activity-summary-prose" title={prose}>
+                <span className="activity-summary-prose min-w-0 flex-1" title={prose}>
                   {prose}
                 </span>
               ) : (
-                segments.map((s, i) => (
-                  <span key={s.key}>
-                    {i > 0 && (
-                      <span className="activity-summary-sep" aria-hidden>
-                        {' '}
-                        ·{' '}
-                      </span>
-                    )}
-                    {s.text}
-                  </span>
-                ))
+                <span className="min-w-0 flex-1 truncate">
+                  {segments.map((s, i) => (
+                    <span key={s.key}>
+                      {i > 0 && (
+                        <span className="activity-summary-sep" aria-hidden>
+                          {' '}
+                          ·{' '}
+                        </span>
+                      )}
+                      {s.text}
+                    </span>
+                  ))}
+                </span>
               )}
+              {durationLabel && !showLiveOnly ? (
+                <span className="activity-summary-duration shrink-0 font-mono text-[11px] opacity-70" aria-hidden>
+                  {durationLabel}
+                </span>
+              ) : null}
             </span>
             {/* Collapsed + live: pulse beside the chevron so the row still reads as working. */}
             {live && !open ? (
@@ -324,16 +342,6 @@ export function ActivitySummary({
         )}
       </button>
 
-      {live && open && liveLine ? (
-        <div className="activity-summary-live" aria-live="polite">
-          <span className="activity-summary-live-dot" aria-hidden />
-          <span className="truncate">{liveLine}</span>
-        </div>
-      ) : null}
-      {/* Collapsed pending state is carried by the bold header label above
-          (activity-summary-live-label) — rendering an inline live line here
-          too duplicated "Working…" as two stacked rows. */}
-
       <AnimatePresence initial={false}>
         {open && (
           <motion.div
@@ -352,7 +360,11 @@ export function ActivitySummary({
             onAnimationStart={() => setBodyClip(true)}
             onAnimationComplete={() => setBodyClip(false)}
           >
-            <div className="activity-summary-body">{children}</div>
+            <div className="activity-summary-body">
+              <div className="activity-card-box rounded-xl border border-border/40 bg-card/30 divide-y divide-border/20 text-xs overflow-hidden" data-slot="activity-card">
+                {children}
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -35,8 +35,7 @@ import {
 } from '@/store/liveActivity';
 import { getToolLabel } from '@/lib/tool-labels';
 import { useVerboseMode } from '@/lib/verbose-mode';
-import { resolveUiSessionId, resolveWorkbenchSessionId } from '../stream/session-id-map';
-import { api } from '@/api/client';
+import { resolveUiSessionId } from '../stream/session-id-map';
 
 type DisplayBlock = MessageBlock;
 
