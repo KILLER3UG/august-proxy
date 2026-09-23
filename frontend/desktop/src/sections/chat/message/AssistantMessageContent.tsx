@@ -9,6 +9,7 @@ import {
   type ToolProgressMap,
 } from './AssistantBlockTimeline';
 import { AssistantMessageActions } from './AssistantMessageActions';
+import { turnEndPhrase } from '@/lib/turn-end';
 
 type DisplayBlock = MessageBlock;
 
@@ -148,6 +149,38 @@ export function AssistantMessageContent({
             data-testid="fallback-chip"
           >
             answered via {message.usedFallback}
+          </div>
+        ) : null}
+        {/* turn_end badge: why the tool loop stopped + round count. A clean
+            `finished` stop stays quiet (the rate chip already caps that
+            turn); anything else — stalled, cap, error, interrupted — shows
+            in amber with the raw token + round count in the tooltip. */}
+        {!(isLast && streaming) &&
+          message.turnEnd &&
+          message.turnEnd.reason !== 'finished' ? (
+          <div
+            className={`text-[10px] ${
+              message.turnEnd.error
+                ? 'text-rose-400/90'
+                : 'text-warning/90'
+            }`}
+            title={
+              message.turnEnd.reason
+                ? `turn_end: ${message.turnEnd.reason}${
+                    typeof message.turnEnd.rounds === 'number'
+                      ? ` · ${message.turnEnd.rounds} round${message.turnEnd.rounds === 1 ? '' : 's'}`
+                      : ''
+                  }`
+                : 'turn_end (no reason recorded)'
+            }
+            data-testid="turn-end-badge"
+          >
+            {message.turnEnd.reason
+              ? turnEndPhrase(message.turnEnd.reason)
+              : 'stopped'}
+            {typeof message.turnEnd.rounds === 'number'
+              ? ` · ${message.turnEnd.rounds} round${message.turnEnd.rounds === 1 ? '' : 's'}`
+              : ''}
           </div>
         ) : null}
       </div>

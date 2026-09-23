@@ -229,6 +229,34 @@ export function ensureSessionSubscriber(sessionOrWorkbenchId: string): void {
         { transcriptUpdate: 'stream' },
       );
     },
+    onTurnEnd: (data) => {
+      // Same anchor as clarify: a turn that ended while nobody was attached
+      // (reconnect / missed `started`) still gets its stop-reason badge on
+      // the last assistant message. Deliberately NOT in
+      // RENDERED_EVENT_TYPES — advancing lastSeq past the turn-content
+      // frames that preceded it would make the per-turn replay skip them
+      // (see the comment on that set); turn_end is idempotent on replay.
+      updateSessionStreamState(
+        uiSessionId,
+        (prev) => {
+          const msgs = prev.messages ?? [];
+          if (msgs.length === 0) return prev;
+          let lastAssistantIdx = -1;
+          for (let i = msgs.length - 1; i >= 0; i--) {
+            if (msgs[i].role === 'assistant') {
+              lastAssistantIdx = i;
+              break;
+            }
+          }
+          if (lastAssistantIdx === -1) return prev;
+          return {
+            ...prev,
+            messages: msgs.map((m, i) => (i === lastAssistantIdx ? { ...m, turnEnd: data } : m)),
+          };
+        },
+        { transcriptUpdate: 'stream' },
+      );
+    },
   };
 
   streamWorkbenchReconnect(wbId, handlers, controller.signal, sinceSeq, {

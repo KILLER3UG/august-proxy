@@ -8,7 +8,10 @@
  *
  * Phase 3.2: `retrying` fires inside the per-round retry loop, so it must
  * roll back ONLY the failed attempt's partial stream — not every prior
- * round's committed prose. */
+ * round's committed prose.
+ *
+ * turn_end: the terminal stop diagnostic must land on the assistant message
+ * and survive finalize()'s message rebuild (the badge renders post-stream). */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -273,5 +276,41 @@ describe('makeStreamHandlers — onRetrying rolls back only the failed attempt (
     const s = getState();
     expect(s.assistantContent).toBe('');
     expect(s.thinkingContent).toBe('');
+  });
+});
+
+describe('makeStreamHandlers — turn_end anchoring (stop-reason badge)', () => {
+  it('stamps turnEnd on the assistant message and survives finalize', async () => {
+    // turn_end is emitted just BEFORE done: the anchor happens mid-stream,
+    // then finalize() rebuilds the message from its own field list. A rebuild
+    // that stops spreading `...msg` would silently erase the badge — this
+    // pins the survival across both paths.
+    const { handlers, getMessages } = makeHarness(async () => DIFF);
+    handlers.onText?.({ content: 'Looping…' });
+
+    handlers.onTurnEnd?.({ reason: 'stall-stop', rounds: 12, error: false });
+    expect(getMessages().find((m) => m.id === 'a1')?.turnEnd).toEqual({
+      reason: 'stall-stop',
+      rounds: 12,
+      error: false,
+    });
+
+    handlers.onDone?.({});
+    await vi.waitFor(() => {
+      expect(getMessages().find((m) => m.id === 'a1')?.turnEnd).toEqual({
+        reason: 'stall-stop',
+        rounds: 12,
+        error: false,
+      });
+    });
+  });
+
+  it('leaves turnEnd undefined when the turn ends without a turn_end frame', async () => {
+    const { handlers, getMessages } = makeHarness(async () => DIFF);
+    handlers.onText?.({ content: 'Short answer.' });
+    handlers.onDone?.({});
+    await vi.waitFor(() => {
+      expect(getMessages().find((m) => m.id === 'a1')?.turnEnd).toBeUndefined();
+    });
   });
 });

@@ -151,7 +151,8 @@ export const WorkbenchDoneEventSchema = WorkbenchBaseSchema.extend({
 
 /** Terminal turn diagnostic, emitted just before `done`: why the tool loop
  *  stopped. Lets "it froze after N commands" be answered from the event log
- *  instead of a code read. UI-optional — nothing renders it today. */
+ *  instead of a code read. Rendered as the transcript's stop-reason badge
+ *  (`AssistantMessageContent`) for non-'finished' stops. */
 export const WorkbenchTurnEndEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('turn_end'),
   sessionId: z.string().optional(),

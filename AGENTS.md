@@ -56,9 +56,11 @@ rate_limit | auth | permission | not_found | network | invalid_argument |
 process_exit`) that steers once per family even when each call differs. Every
 `[Proxy Self-Heal]` reminder is runtime-only and says so, so it does not get
 filed back as a durable memory. Every turn ends with a `turn_end
-{reason, rounds}` event in the session log (`finished | length | cap |
+{reason, rounds, error}` event in the session log (`finished | length | cap |
 stall-stop | error | interrupted | awaiting-input`) — read that before
-auditing code for "why did it stop"; the same reason plus round/malformed/
+auditing code for "why did it stop"; the transcript also renders it as an
+amber stop-reason badge for any non-`finished` stop, so a stalled turn says so
+in the chat itself. The same reason plus round/malformed/
 downgrade/edit-verify/guardrail counters are persisted on the `turn_outcomes`
 row (migration 046), where NULL means unrecorded, not zero. Numbers in this file that duplicate code
 constants are guarded by `npm run check:docs`. Malformed tool JSON never executes as `{}` — the loop

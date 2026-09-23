@@ -5,7 +5,7 @@
  * orthogonal to the WorkbenchEvent SSE union.
  */
 
-import type { WorkbenchTurnUsage } from './workbench';
+import type { WorkbenchTurnUsage, WorkbenchTurnEnd } from './workbench';
 
 /** Structured provider-setup config carried by `setup_provider`-style tool
  *  results so the UI can render an inline config/API-key form. Shape inferred
@@ -258,6 +258,10 @@ export interface ChatMessage {
   usage?: WorkbenchTurnUsage;
   /** When a fallback-chain/promotion switch answered this turn (D8). */
   usedFallback?: string;
+  /** Why the tool loop stopped + round count (from the `turn_end` SSE event,
+   *  emitted just before `done`). Rendered as the stop-reason badge in the
+   *  assistant footer; persists with the message like `usage`/`clarify`. */
+  turnEnd?: WorkbenchTurnEnd;
   /** Transient "retrying after rate limit" notice while the backend backs
    *  off (from `retrying` SSE events). Cleared when the turn finalizes. */
   retryNotice?: string;

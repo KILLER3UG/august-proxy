@@ -412,6 +412,23 @@ export function dispatchWorkbenchEvent(
       });
       break;
     }
+    case 'turn_end': {
+      // Terminal stop diagnostic, emitted just before `done`. Coerced the
+      // same soft way as its siblings so schema drift degrades to absent
+      // fields rather than a wrong badge.
+      const reason = p?.reason;
+      handlers.onTurnEnd?.({
+        reason:
+          reason === 'finished' || reason === 'length' || reason === 'cap' ||
+          reason === 'stall-stop' || reason === 'error' ||
+          reason === 'interrupted' || reason === 'awaiting-input'
+            ? reason
+            : undefined,
+        rounds: typeof p?.rounds === 'number' ? p.rounds : undefined,
+        error: p?.error === true,
+      });
+      break;
+    }
     case 'error':
       handlers.onError?.({ message: typeof p?.message === 'string' ? p.message : JSON.stringify(p?.message ?? 'Unknown error') });
       break;

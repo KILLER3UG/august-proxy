@@ -785,6 +785,15 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       ));
       scheduleUpdate();
     },
+    onTurnEnd: (data) => {
+      // Anchor the terminal stop reason to this turn's assistant message —
+      // emitted just before `done`, so the badge lands ahead of finalize.
+      // update()/finalize() both spread `...msg`, so the field survives.
+      setMessages(prev => prev.map(msg =>
+        msg.id === assistantMsgId ? { ...msg, turnEnd: data } : msg
+      ));
+      scheduleUpdate();
+    },
     onUserMessageQueued: (data) => {
       // A follow-up was parked behind the running turn — surface the pill.
       if (!data?.messageId || !data?.sessionId) return;

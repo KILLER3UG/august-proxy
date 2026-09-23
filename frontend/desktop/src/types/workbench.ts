@@ -180,6 +180,25 @@ export interface WorkbenchTurnUsage {
   durationMs?: number;
 }
 
+/** Why the tool loop stopped — `turn_end.reason` (backend
+ *  `_finalTurnEndReason`). Single source for the event payload, the
+ *  message field, and the dispatch guard. */
+export type WorkbenchTurnEndReason =
+  | 'finished'
+  | 'length'
+  | 'cap'
+  | 'stall-stop'
+  | 'error'
+  | 'interrupted'
+  | 'awaiting-input';
+
+/** Terminal turn diagnostic, emitted just before `done`. */
+export interface WorkbenchTurnEnd {
+  reason?: WorkbenchTurnEndReason;
+  rounds?: number;
+  error?: boolean;
+}
+
 export type WorkbenchEvent =
   | { type: 'thinking'; data: { content: string } }
   | { type: 'text'; data: { content: string } }
@@ -468,6 +487,10 @@ export interface WorkbenchEventHandlers {
     currentIndex?: number;
     contextSummary?: string;
   }) => void;
+  /** Terminal diagnostic emitted just before `done`: why the tool loop
+   *  stopped and after how many rounds. Anchored to the assistant message so
+   *  the transcript badge answers "it froze after N commands" at a glance. */
+  onTurnEnd?: (data: WorkbenchTurnEnd) => void;
   /** Model submitted a plan via submit_plan — show the proposal banner. */
   onPlanProposed?: (data: { plan: unknown }) => void;
   /** Model switched the session into plan mode itself (enter_plan_mode) —

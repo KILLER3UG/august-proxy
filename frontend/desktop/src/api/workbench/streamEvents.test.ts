@@ -133,4 +133,32 @@ describe('previously-undispatched backend events', () => {
     );
   });
 
+  it('turn_end dispatches onTurnEnd with reason, rounds, and error flag', () => {
+    const onTurnEnd = vi.fn();
+    dispatchWorkbenchEvent(
+      'turn_end',
+      { reason: 'stall-stop', rounds: 12, error: false },
+      { onTurnEnd },
+    );
+    expect(onTurnEnd).toHaveBeenCalledWith({
+      reason: 'stall-stop',
+      rounds: 12,
+      error: false,
+    });
+  });
+
+  it('turn_end degrades drifted fields instead of stamping garbage on the badge', () => {
+    const onTurnEnd = vi.fn();
+    dispatchWorkbenchEvent(
+      'turn_end',
+      { reason: 'quantum-lock', rounds: 'many', error: 'yes' },
+      { onTurnEnd },
+    );
+    expect(onTurnEnd).toHaveBeenCalledWith({
+      reason: undefined,
+      rounds: undefined,
+      error: false,
+    });
+  });
+
 });

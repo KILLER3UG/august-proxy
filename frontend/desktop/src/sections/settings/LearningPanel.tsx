@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { useModels } from '@/hooks/useModels';
 import { invalidateReviewInboxCount } from '@/lib/useReviewInboxCount';
+import { turnEndPhrase } from '@/lib/turn-end';
 import { CuratorSuggestionBar } from '@/sections/chat/CuratorSuggestionBar';
 
 interface Rubric {
@@ -124,17 +125,6 @@ interface TurnOutcomeResponse {
   days?: number;
   verdicts?: TurnVerdicts;
 }
-
-/** `turn_end.reason` in plain words. The raw token stays in the tooltip. */
-const REASON_PHRASE: Record<string, string> = {
-  finished: 'answered',
-  length: 'hit output limit',
-  cap: 'tool-round cap',
-  'stall-stop': 'stalled then stopped',
-  error: 'errored',
-  interrupted: 'you stopped it',
-  'awaiting-input': 'waiting on your input',
-};
 
 /** A counter line, or the honest "not recorded" when the window held no
  *  measured row. A measured zero must never render as this. */
@@ -519,7 +509,7 @@ export function LearningPanel() {
                       title={`end_reason = ${r.reason}`}
                       className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground"
                     >
-                      {REASON_PHRASE[r.reason] ?? r.reason} {r.turns}
+                      {turnEndPhrase(r.reason)} {r.turns}
                     </span>
                   ))}
                   {!!verdicts.reasonUnrecorded && (
