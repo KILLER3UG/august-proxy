@@ -13,7 +13,7 @@ import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { getAgentRoleLabel, pathBasename } from '@/lib/tool-labels';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { ActionNeededCard, parseActionNeeded } from '@/components/chat/ActionNeededCard';
-import { extractDiffData, extractFilename, extractAgentId } from './extractors';
+import { extractDiffData, extractAgentId } from './extractors';
 import type { ToolEntry } from './types';
 import {
   Section,

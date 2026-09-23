@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatMessage } from '@/types/chat';
 
 vi.mock('../chat-runtime', () => ({
   chatRuntime: { finishTurn: vi.fn() },

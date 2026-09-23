@@ -1,6 +1,6 @@
 /* ── RightDrawer ─ multi-section Workbench sidebar ────────────────── */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -559,25 +559,3 @@ function RoutinesDrawerSection({ agentId }: { agentId: string }) {
     </div>
   );
 }
-
-function DrawerSectionCard({
-  sectionId,
-  ctx,
-}: {
-  sectionId: RightDrawerSectionId;
-  ctx: {
-    sessionId: string | null;
-    workspacePath: string | null;
-    workbenchSession: WorkbenchSession | null;
-    onApprovePlan: () => Promise<void>;
-    onRejectPlan?: () => Promise<void>;
-    onRevisePlan?: (feedback: string) => void | Promise<void>;
-  };
-}) {
-  return (
-    <section className="august-drawer-card relative flex h-full min-h-0 overflow-hidden rounded-lg border border-border/50 shadow-sm">
-      <div className="min-h-0 flex-1 overflow-y-auto">{renderSection(sectionId, ctx)}</div>
-    </section>
-  );
-}
-

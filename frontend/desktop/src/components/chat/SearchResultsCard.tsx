@@ -13,8 +13,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Globe, Search } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { ChevronDown, ChevronRight, Globe } from 'lucide-react';
 import { safeExternalHref } from '@/lib/safe-href';
 import {
   Task,

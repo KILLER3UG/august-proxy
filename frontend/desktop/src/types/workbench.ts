@@ -232,6 +232,8 @@ export interface WorkbenchEventHandlers {
    *  provisional narration; demote current finalOutput blocks to thinking. */
   onNarrationReclassify?: () => void;
   onBtw?: (data: WorkbenchBtwResult) => void;
+  /** `seq` is the SSE frame id (`id:` line) — stable across a cursor
+   *  replay, so replay-sensitive consumers can derive a durable identity. */
   onCompaction?: (data: {
     headCount: number;
     tailCount: number;
@@ -241,7 +243,7 @@ export interface WorkbenchEventHandlers {
     underThreshold?: boolean;
     threshold?: number;
     contextWindow?: number;
-  }) => void;
+  }, seq?: number) => void;
   onBrowserAction?: (data: {
     id: string;
     name: string;

@@ -166,6 +166,12 @@ export default tseslint.config(
             'skill_manage', 'spawn_daemon', 'spawn_subagent', 'spawn_subagents', 'submit_plan', 'system_info',
             'to_model', 'update_state', 'update_todos', 'view_file', 'write_blackboard', 'write_scratchpad',
             'write_to_file',
+            // Rooms send payload (`RoomSend` model), backend setup-phase
+            // literal, and learning scheduler outcome summary — field names
+            // the backend emits/expects verbatim over the wire, same class
+            // as needs_you/room_id/sender_agent above.
+            'thread_id', 'max_rounds', 'max_messages', 'creating_venv',
+            'v_improved', 'v_flat', 'v_insufficient',
           ],
         },
       ],

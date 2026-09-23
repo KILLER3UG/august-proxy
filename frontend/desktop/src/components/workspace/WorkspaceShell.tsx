@@ -24,7 +24,6 @@ import { cn } from '@/lib/utils';
 import {
   SETTINGS_SECTIONS,
   SETTINGS_CATEGORIES,
-  RAIL_CHILDREN,
   railCanonicalId,
   getSection,
   type SettingsSection,
@@ -67,9 +66,6 @@ export function WorkspaceShell({
   const inbox = useReviewInboxCount();
 
   const railActive = railCanonicalId(active);
-  // Header IA: active can be a section id OR a category id (e.g. /settings/capabilities). Resolve category for highlight.
-  const activeSection = getSection(active);
-  const activeCategoryId = activeSection?.category ?? (SETTINGS_CATEGORIES.find((c) => c.id === active)?.id ?? null);
 
   // Resolve each section's category label, icon, tier, description, and
   // keywords. Falls back to the raw `category` string if a section isn't

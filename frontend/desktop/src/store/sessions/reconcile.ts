@@ -1,7 +1,7 @@
 /* Merge local sidebar sessions with workbench SoT (`GET /api/workbench/sessions`). */
 
 import { getWorkbenchSessions } from '@/api/workbench';
-import { dedupeSessions, preferSessionTitle, sessionIsEmpty } from './helpers';
+import { dedupeSessions, preferSessionRow, preferSessionTitle, sessionIsEmpty } from './helpers';
 import { saveSessionsToStorage } from './storage';
 import { isSessionIdTombstoned } from './tombstone';
 import type { Session } from './types';
@@ -48,6 +48,34 @@ export async function reconcileSessionsFromBackend(
     const claimed = new Set<string>();
     const now = new Date().toISOString();
 
+    // Key every append on the stable ids a row already carries (UI id +
+    // workbench id) so replaying the same conversation merges instead of
+    // stacking a second copy. A reconnect racing a wiped localStorage (or a
+    // backend list that repeats a row) must be idempotent at the append
+    // itself — not only at the trailing dedupeSessions pass.
+    const identityIndex = new Map<string, number>();
+    const indexRow = (row: Session, at: number): void => {
+      if (row.id) identityIndex.set(row.id, at);
+      if (row.workbenchSessionId) identityIndex.set(row.workbenchSessionId, at);
+    };
+    const findMerged = (row: Session): number | undefined => {
+      const byId = row.id ? identityIndex.get(row.id) : undefined;
+      if (byId !== undefined) return byId;
+      return row.workbenchSessionId ? identityIndex.get(row.workbenchSessionId) : undefined;
+    };
+    const appendRow = (row: Session): void => {
+      const at = findMerged(row);
+      if (at !== undefined) {
+        // Same identity already landed — merge this copy into it (same
+        // orientation dedupeSessions uses: existing row first).
+        merged[at] = preferSessionRow(merged[at], row);
+        indexRow(row, at);
+        return;
+      }
+      indexRow(row, merged.length);
+      merged.push(row);
+    };
+
     for (const local of current) {
       if (isSessionIdTombstoned(local.id) || isSessionIdTombstoned(local.workbenchSessionId)) {
         continue;
@@ -57,7 +85,7 @@ export async function reconcileSessionsFromBackend(
       if (backend) {
         claimed.add(backend.id);
         // Keep stable UI id — only attach / refresh workbench metadata.
-        merged.push({
+        appendRow({
           ...local,
           id: local.id,
           workbenchSessionId: backend.id,
@@ -86,7 +114,7 @@ export async function reconcileSessionsFromBackend(
       // No backend match.
       if (!local.workbenchSessionId) {
         // Pure local draft (new empty chat before first message) — keep.
-        merged.push(local);
+        appendRow(local);
         continue;
       }
       // Linked to a workbench row that no longer exists → server deleted it.
@@ -120,7 +148,7 @@ export async function reconcileSessionsFromBackend(
         const pathMismatch = !!pendingWs && !!backendWs && pendingWs !== backendWs;
         if (!pathMismatch) {
           claimed.add(bs.id);
-          merged[pendingIdx] = {
+          const nextRow = {
             ...pending,
             workbenchSessionId: bs.id,
             title: preferSessionTitle(pending.title, bs.title),
@@ -132,10 +160,14 @@ export async function reconcileSessionsFromBackend(
             // the row reflects where its turns actually run.
             workspacePath: pending.workspacePath || bs.workspacePath || null,
           };
+          merged[pendingIdx] = nextRow;
+          // Register the newly attached workbench id so a later backend row
+          // with the same id merges into this draft instead of appending a twin.
+          indexRow(nextRow, pendingIdx);
           continue;
         }
       }
-      merged.push({
+      appendRow({
         id: bs.id,
         title: (bs.title) || 'New Session',
         startedAt: (bs.updatedAt) || now,

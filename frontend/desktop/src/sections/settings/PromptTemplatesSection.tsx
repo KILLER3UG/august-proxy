@@ -3,7 +3,6 @@
 
 import { useState, useCallback } from 'react';
 import { Plus, Pencil, Trash2, Copy, X, Check } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import {

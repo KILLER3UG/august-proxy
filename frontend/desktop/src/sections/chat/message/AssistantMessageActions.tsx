@@ -6,7 +6,6 @@ export function AssistantMessageActions({
   showActions,
   copied,
   speaking,
-  isLast,
   streaming,
   isRegenerating,
   onSpeak,

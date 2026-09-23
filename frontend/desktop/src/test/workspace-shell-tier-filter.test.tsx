@@ -17,7 +17,7 @@ vi.mock('@/hooks/useAppUpdate', () => ({
 }));
 
 import { WorkspaceShell, type WorkspaceSectionMeta } from '@/components/workspace/WorkspaceShell';
-import { SETTINGS_SECTIONS, SETTINGS_CATEGORIES } from '@/settings/settings-registry';
+import { SETTINGS_SECTIONS } from '@/settings/settings-registry';
 
 function renderShell(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

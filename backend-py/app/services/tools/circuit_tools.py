@@ -564,6 +564,53 @@ _MEASURE_RE = re.compile(
     r'(?:\s+[a-zA-Z_]+=\s*[-+0-9.eE]+)*\s*$'
 )
 
+# Batch (``ngspice_con -b -o out.txt``) prints the operating point as a
+# space-ALIGNED table — ``mid   5.000000e+00``, no ``=`` — which _MEASURE_RE
+# cannot see, while server mode's injected ``print all`` writes
+# ``name = value``. Without the table scan below a control-less deck reports
+# zero measures in batch mode and full ones in server mode: the two
+# invocation modes must agree, or the golden numbers depend on whether
+# ngspice happened to complain about its temp file.
+_OP_HEADER_RE = re.compile(r'^\s*(?:Node\s+Voltage|Source\s+Current)\s*$', re.I)
+_OP_SEP_RE = re.compile(r'^\s*-{2,}[\s-]*$')
+_OP_ROW_RE = re.compile(
+    r'^\s*([A-Za-z_][\w().#\-]*)\s+([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*$'
+)
+
+
+def _op_table_measures(log: str) -> dict[str, float]:
+    """Node voltages and branch currents from the batch op-point table.
+
+    Scoped to the ``Node Voltage`` / ``Source Current`` sections: the device
+    listings printed right after them use the same two-column shape
+    (``rsh 0``, ``dc 10``, ``freq 0``) but are parameters, not measures — so
+    the first non-table line after a row closes the section. Returns bare
+    keys (``mid``, ``v1#branch``); `_alias_op_measures` adds the
+    ``v(...)`` / ``i(...)`` forms.
+    """
+    out: dict[str, float] = {}
+    armed = False
+    seen_row = False
+    for line in log.splitlines():
+        if _OP_HEADER_RE.match(line):
+            armed, seen_row = True, False
+            continue
+        if not armed:
+            continue
+        if not line.strip() or _OP_SEP_RE.match(line):
+            continue
+        m = _OP_ROW_RE.match(line)
+        if not m:
+            if seen_row:
+                break  # first non-table line (device listing) ends it
+            continue  # preamble between header and first row
+        try:
+            out[m.group(1)] = float(m.group(2))
+        except ValueError:
+            continue
+        seen_row = True
+    return out
+
 # SPICE scale factors (ngspice manual Table 2.1): M = MILLI, Meg = MEGA.
 # This asymmetry is the single most common "worked in sim, fried on the
 # bench" bug — 1M ohm parses as 1 milliohm.
@@ -924,19 +971,41 @@ def _with_trace_block(deck_body: str, wrdata_lines: list[str]) -> str:
     if not wrdata_lines:
         return deck_body
     lines = deck_body.rstrip().splitlines()
+
+    # ngspice's BATCH mode skips its automatic run as soon as a .control
+    # section exists, so wrdata would sample an empty plot and every trace
+    # reports "no such vector". Server mode never showed this because its
+    # injected `print all` block always carries `run` — inject it here too,
+    # unless the deck's own control content already runs the analysis.
+    in_control = False
+    has_run = False
+    for ln in lines:
+        low = ln.strip().lower()
+        if low.startswith('.control'):
+            in_control = True
+            continue
+        if low.startswith('.endc'):
+            in_control = False
+            continue
+        if in_control and low.split()[:1] == ['run']:
+            has_run = True
+            break
+
+    block = ['.control']
+    if not has_run:
+        block.append('run')
+    block.extend(wrdata_lines)
+    block.append('.endc')
+
     out: list[str] = []
     inserted = False
     for ln in lines:
         if not inserted and ln.strip().lower() == '.end':
-            out.append('.control')
-            out.extend(wrdata_lines)
-            out.append('.endc')
+            out.extend(block)
             inserted = True
         out.append(ln)
     if not inserted:
-        out.append('.control')
-        out.extend(wrdata_lines)
-        out.append('.endc')
+        out.extend(block)
     return '\n'.join(out) + '\n'
 
 
@@ -1316,6 +1385,10 @@ async def simulate_circuit(
                         measures[m.group(1)] = float(m.group(2))
                     except ValueError:
                         pass
+            # Batch mode's aligned op table carries no `=` — fold it in, but
+            # never shadow a real measure line parsed above.
+            for k, v in _op_table_measures(log).items():
+                measures.setdefault(k, v)
             # Bare op-point keys (mid = 5.0, v1#branch = ...) get v()/i()
             # aliases so the contract holds in every invocation mode.
             _alias_op_measures(measures, deck_text)
@@ -2304,7 +2377,9 @@ async def circuit_annotate(
             )
             _ = rc
 
-        # Parse node voltages + branch currents from print-all output.
+        # Parse node voltages + branch currents from print-all output — plus
+        # the batch op table, which spells them without `=` (see
+        # _op_table_measures) so circuit_test agrees in both invocation modes.
         measures: dict[str, float] = {}
         for line in log.splitlines():
             m = _MEASURE_RE.match(line)
@@ -2313,6 +2388,8 @@ async def circuit_annotate(
                     measures[m.group(1)] = float(m.group(2))
                 except ValueError:
                     pass
+        for k, v in _op_table_measures(log).items():
+            measures.setdefault(k, v)
         _alias_op_measures(measures, op_deck)
         voltages: dict[str, float] = {}
         currents: dict[str, float] = {}

@@ -7,7 +7,6 @@ import {
   PanelLeftClose,
   Minimize2,
   Folder,
-  MoreHorizontal,
   Pencil,
   Copy,
   ExternalLink,
@@ -28,7 +27,6 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { RightDrawerDropdown } from "./RightDrawerLauncher";
 import { MarqueeTitle } from "@/components/ui/MarqueeTitle";

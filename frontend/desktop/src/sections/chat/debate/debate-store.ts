@@ -9,7 +9,6 @@
  * manual).
  */
 import { create } from 'zustand';
-import type { ModelItem } from '../model-display';
 
 export interface DebateLane {
   modelId: string;

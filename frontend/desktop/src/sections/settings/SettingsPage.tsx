@@ -17,7 +17,6 @@ import {
   resolveLegacyTab,
   SETTINGS_SECTIONS,
   SETTINGS_CATEGORIES,
-  railCanonicalId,
   getSection,
   sectionsForCategory,
   type SettingsSection,

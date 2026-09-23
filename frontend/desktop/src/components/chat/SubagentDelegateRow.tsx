@@ -41,7 +41,6 @@ export function SubagentDelegateRow({
   task,
   status,
   startedAt,
-  finishedAt,
   workstream,
 }: SubagentDelegateRowProps) {
   const running = status === 'running' || status === 'pending';

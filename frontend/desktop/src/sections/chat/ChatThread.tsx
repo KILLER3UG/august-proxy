@@ -43,7 +43,6 @@ import { listWorkbenchSessionAgents } from '@/api/workbench';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import { chatRuntime, type ChatTurnRecord } from './chat-runtime';
 import {
-  startChatStream,
   stopChatStream,
   syncActiveStreams,
 } from './chat-stream-manager';
@@ -199,7 +198,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     handleComposerPaste,
     removeAttachment,
     clearAttachments,
-    composeText,
     isReading: attachmentsReading,
     readyAttachments,
   } = useChatAttachments();

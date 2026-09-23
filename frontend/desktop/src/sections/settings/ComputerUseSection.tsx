@@ -1,7 +1,6 @@
 /* ── Computer Use — Desktop automation settings ────────────────────── */
 /* Manages computer use backend, health diagnostics, and approval workflows. */
 
-import { useState } from 'react';
 import {
   Monitor,
   RefreshCw,
@@ -15,7 +14,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { PageLoader } from '@/components/PageLoader';
 import { useComputerUseHealth, useComputerUseConfig } from '@/hooks/useComputerUse';
-import type { HealthCheck, HealthReport, ComputerUseConfig } from '@/hooks/useComputerUse';
 
 export function ComputerUseSection() {
   const { data: health, isLoading: healthLoading, refetch: refetchHealth, error: healthError } = useComputerUseHealth();

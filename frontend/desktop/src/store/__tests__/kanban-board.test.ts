@@ -130,6 +130,47 @@ describe('kanban-board store — one shared, server-backed board', () => {
     expect(useKanbanStore.getState().cards[0].column).toBe('review');
   });
 
+  it('waits for the create to land before patching a move made on the placeholder', async () => {
+    const calls = stubFetch({
+      'POST ': SERVER_CARD,
+      'PATCH /kb_server1': { ...SERVER_CARD, column: 'review' },
+      'GET ': { cards: [] },
+    });
+    useKanbanStore.setState({ hydrated: true });
+
+    const card = useKanbanStore.getState().addCard('New idea', 'backlog');
+    // Moved in the same tick — before the POST has produced a server id.
+    useKanbanStore.getState().moveCard(card.id, 'review');
+    await settle();
+
+    // Never PATCH the placeholder key; the move rides the create's real id.
+    expect(calls.map((c) => c.key)).toEqual(['POST ', 'PATCH /kb_server1']);
+    expect(calls.some((c) => c.key.includes('tmp_'))).toBe(false);
+    expect(calls[1].body).toEqual({ column: 'review' });
+    // The create's swap returns the create-time column — the in-flight move
+    // must survive it, not be clobbered back.
+    expect(useKanbanStore.getState().cards[0]).toEqual(
+      expect.objectContaining({ id: 'kb_server1', column: 'review' }),
+    );
+  });
+
+  it('sends no PATCH at all when the create failed', async () => {
+    const calls = stubFetch({ 'POST ': 'fail', 'GET ': { cards: [SERVER_CARD] } });
+    useKanbanStore.setState({ hydrated: true });
+
+    const card = useKanbanStore.getState().addCard('Nowhere to go');
+    useKanbanStore.getState().moveCard(card.id, 'review');
+    useKanbanStore.getState().updateCard(card.id, { title: 'Renamed' });
+    useKanbanStore.getState().assignCard(card.id, 'agent-9');
+    useKanbanStore.getState().removeCard(card.id);
+    await settle();
+    await settle();
+
+    expect(calls.some((c) => c.key.startsWith('PATCH'))).toBe(false);
+    expect(calls.some((c) => c.key.startsWith('DELETE'))).toBe(false);
+    expect(calls.some((c) => c.key.includes('tmp_'))).toBe(false);
+  });
+
   it('refuses a column the server does not know about', () => {
     const calls = stubFetch({ 'GET ': { cards: [] } });
     useKanbanStore.setState({ hydrated: true, cards: [SERVER_CARD] });

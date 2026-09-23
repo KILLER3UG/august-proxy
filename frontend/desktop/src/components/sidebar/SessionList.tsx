@@ -480,7 +480,7 @@ export function SessionList({
   // render body, which was O(n×folders) on every render.
   const { othersByFolder, unfiledSessions } = useMemo(() => {
     const byFolder = new Map<string, Session[]>();
-    let unfiled: Session[] = [];
+    const unfiled: Session[] = [];
     for (const s of others) {
       if (searching && !matchesSearch(s)) continue;
       if (s.folderId) {

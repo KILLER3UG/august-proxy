@@ -85,10 +85,15 @@ export function CompactionNoticeCard({ info }: { info: CompactionNoticeInfo }) {
   );
 }
 
-/** Build a transcript card for a compaction event. */
-export function buildCompactionNoticeMessage(info: CompactionNoticeInfo) {
+/** Build a transcript card for a compaction event.
+ *  `seq` (the SSE frame id) makes the message id deterministic across a
+ *  cursor replay — same frame → same id → the append guard drops the twin.
+ *  Callers without a frame id keep a unique id (nothing to dedupe against). */
+export function buildCompactionNoticeMessage(info: CompactionNoticeInfo, seq?: number) {
   return {
-    id: `compaction-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: seq !== undefined
+      ? `compaction-${seq}`
+      : `compaction-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     role: 'assistant' as const,
     content: '',
     timestamp: new Date().toISOString(),

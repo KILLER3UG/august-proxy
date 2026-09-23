@@ -31,7 +31,9 @@ export function validateWorkbenchEvent(
 export function dispatchWorkbenchEvent(
   event: string,
   payload: Record<string, unknown>,
-  handlers: WorkbenchEventHandlers
+  handlers: WorkbenchEventHandlers,
+  /** Frame id from the SSE `id:` line — stable across a cursor replay. */
+  seq?: number
 ): void {
   validateWorkbenchEvent(event, payload);
   const p = payload;
@@ -127,7 +129,7 @@ export function dispatchWorkbenchEvent(
         underThreshold: p?.underThreshold === true,
         threshold: Number(p?.threshold) || undefined,
         contextWindow: Number(p?.contextWindow) || undefined,
-      });
+      }, seq);
       break;
     case 'prompt':
       handlers.onPrompt?.({

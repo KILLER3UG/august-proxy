@@ -161,11 +161,9 @@ async function readSseStream(
       if (frameEvent === 'done' || frameEvent === 'error' || frameEvent === 'aborted') {
         receivedTerminalEvent = true;
       }
-      dispatchWorkbenchEvent(frameEvent, payload, handlers);
-      if (frameId !== null) {
-        const n = Number(frameId);
-        if (Number.isFinite(n)) handlers.onSeq?.(n, frameEvent);
-      }
+      const frameSeq = frameId !== null && Number.isFinite(Number(frameId)) ? Number(frameId) : undefined;
+      dispatchWorkbenchEvent(frameEvent, payload, handlers, frameSeq);
+      if (frameSeq !== undefined) handlers.onSeq?.(frameSeq, frameEvent);
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === 'AbortError') throw e;
       // Ignore non-JSON data lines

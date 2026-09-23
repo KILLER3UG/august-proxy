@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronDown, Circle, FileText, GitBranch, Loader2, Minus } from 'lucide-react';
+import { Check, ChevronDown, Circle, Loader2, Minus } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useLiveActivityStore } from '@/store/liveActivity';
 import { resolveUiSessionId } from '@/sections/chat/stream/session-id-map';
@@ -28,11 +28,24 @@ export function TaskProgressPill({ sessionId, className }: TaskProgressPillProps
   const todosDone = todoList.filter((t) => t.status === 'completed').length;
   const totalTodos = todoList.length;
 
+  // Poll git only while the turn can still change files. Terminal-ness is
+  // read from the live-activity store events this component already receives
+  // (`todosUpdated`, and the timeline's `clearLiveActivity` when the stream
+  // ends), so the settle case is decided by that event instead of waiting
+  // for a timer tick to discover an idle session: the render after the flip
+  // hands `false` to React Query, which drops its single interval (it never
+  // overlaps one) — and unmount tears the same interval down. Steps still
+  // pending/in progress keep the unchanged 25s cadence.
+  const stepActive = todoList.some(
+    (t) => t.status === 'pending' || t.status === 'in_progress',
+  );
+  const turnSettled = !entry || (todoList.length > 0 && !stepActive);
+
   const gitStatus = useQuery({
     queryKey: ['git', 'status', sessionId ?? null, null],
     queryFn: () => gitApi.status(sessionId ?? undefined, undefined),
     enabled: Boolean(sessionId),
-    refetchInterval: 25_000,
+    refetchInterval: turnSettled ? false : 25_000,
     staleTime: 8_000,
     retry: false,
   });

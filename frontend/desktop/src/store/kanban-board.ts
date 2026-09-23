@@ -48,6 +48,22 @@ const IMPORTED_KEY = 'august-kanban-board-v1.imported';
 
 const COLUMNS: KanbanColumnId[] = ['backlog', 'doing', 'review', 'done'];
 
+/** In-flight `addCard` creates, keyed by the `tmp_` placeholder id. A move or
+ *  edit issued before the create lands only knows the placeholder — waiting on
+ *  this promise is what lets it target the server's real id instead of PATCHing
+ *  a `tmp_` key that does not exist server-side (that 404s, and the write is
+ *  silently lost while the UI shows it as done). */
+const pendingCreates = new Map<string, Promise<string | null>>();
+
+/** The server id to push a mutation at: passthrough for real ids, the awaited
+ *  create result for a `tmp_` placeholder, or null when there is nothing to
+ *  push (the create failed — or never existed). */
+async function resolveServerId(id: string): Promise<string | null> {
+  if (!id.startsWith('tmp_')) return id;
+  const pending = pendingCreates.get(id);
+  return pending ? await pending : null;
+}
+
 function text(raw: unknown): string {
   if (typeof raw === 'string') return raw;
   if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);
@@ -149,6 +165,29 @@ export const useKanbanStore = create<KanbanState>((set, get) => {
   const replace = (card: KanbanCard): void =>
     set((s) => ({ cards: s.cards.map((c) => (c.id === card.id ? card : c)) }));
 
+  /** PATCH `payload` at the SERVER id. `reapply` restores the optimistic
+   *  change once a placeholder resolves: the create's swap rebuilds the row
+   *  from the create-time response, which would otherwise clobber a move the
+   *  user made while the create was still in flight. */
+  const pushPatch = async (
+    id: string,
+    what: string,
+    payload: Record<string, unknown>,
+    reapply: (target: string) => void,
+  ): Promise<void> => {
+    const target = await resolveServerId(id);
+    // Create failed / placeholder unresolved — no server row to patch, and a
+    // `tmp_` id must never go over the wire.
+    if (target === null) return;
+    if (target !== id) reapply(target);
+    const res = await call(`/${encodeURIComponent(target)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    if (!res) return lost(what);
+    replace(toCard(res));
+  };
+
   return {
     cards: [],
     hydrated: false,
@@ -180,79 +219,80 @@ export const useKanbanStore = create<KanbanState>((set, get) => {
         updatedAt: ts,
       };
       set((s) => ({ cards: [card, ...s.cards] }));
-      void (async () => {
-        const res = await call('', {
-          method: 'POST',
-          body: JSON.stringify({
-            title: card.title,
-            column,
-            body: card.body ?? '',
-            agentId: card.agentId ?? '',
-            sessionId: card.sessionId ?? '',
-            taskId: card.taskId ?? '',
-          }),
-        });
-        if (!res) {
-          // Drop the placeholder rather than leave a card that exists nowhere.
-          set((s) => ({ cards: s.cards.filter((c) => c.id !== card.id) }));
-          lost('card');
-          return;
+      const create = (async (): Promise<string | null> => {
+        try {
+          const res = await call('', {
+            method: 'POST',
+            body: JSON.stringify({
+              title: card.title,
+              column,
+              body: card.body ?? '',
+              agentId: card.agentId ?? '',
+              sessionId: card.sessionId ?? '',
+              taskId: card.taskId ?? '',
+            }),
+          });
+          if (!res) {
+            // Drop the placeholder rather than leave a card that exists nowhere.
+            set((s) => ({ cards: s.cards.filter((c) => c.id !== card.id) }));
+            lost('card');
+            return null;
+          }
+          const saved = toCard(res);
+          // Swap by the placeholder's id: `saved.id` isn't in the list yet, so
+          // matching on it would leave the placeholder on screen forever.
+          set((s) => ({ cards: s.cards.map((c) => (c.id === card.id ? saved : c)) }));
+          return saved.id;
+        } finally {
+          // Resolve-or-fail is now known — later mutations fall back to the
+          // passthrough path instead of waiting on a promise that never ends.
+          pendingCreates.delete(card.id);
         }
-        const saved = toCard(res);
-        // Swap by the placeholder's id: `saved.id` isn't in the list yet, so
-        // matching on it would leave the placeholder on screen forever.
-        set((s) => ({ cards: s.cards.map((c) => (c.id === card.id ? saved : c)) }));
       })();
+      // Registered synchronously so a move fired in the same tick (before the
+      // POST even settles) still finds the pending create.
+      pendingCreates.set(card.id, create);
       return card;
     },
 
     moveCard: (id, column) => {
       if (!COLUMNS.includes(column)) return;
-      set((s) => ({
-        cards: s.cards.map((c) => (c.id === id ? { ...c, column, updatedAt: Date.now() } : c)),
-      }));
-      void (async () => {
-        const res = await call(`/${encodeURIComponent(id)}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ column }),
-        });
-        if (!res) return lost('move');
-        replace(toCard(res));
-      })();
+      const applyLocal = (target: string): void =>
+        set((s) => ({
+          cards: s.cards.map((c) => (c.id === target ? { ...c, column, updatedAt: Date.now() } : c)),
+        }));
+      applyLocal(id);
+      void pushPatch(id, 'move', { column }, applyLocal);
     },
 
     updateCard: (id, patch) => {
-      set((s) => ({
-        cards: s.cards.map((c) => (c.id === id ? { ...c, ...patch, updatedAt: Date.now() } : c)),
-      }));
-      void (async () => {
-        const res = await call(`/${encodeURIComponent(id)}`, {
-          method: 'PATCH',
-          body: JSON.stringify(patch),
-        });
-        if (!res) return lost('edit');
-        replace(toCard(res));
-      })();
+      const applyLocal = (target: string): void =>
+        set((s) => ({
+          cards: s.cards.map((c) =>
+            c.id === target ? { ...c, ...patch, updatedAt: Date.now() } : c,
+          ),
+        }));
+      applyLocal(id);
+      void pushPatch(id, 'edit', { ...patch }, applyLocal);
     },
 
     assignCard: (id, agentId) => {
-      set((s) => ({
-        cards: s.cards.map((c) => (c.id === id ? { ...c, agentId, updatedAt: Date.now() } : c)),
-      }));
-      void (async () => {
-        const res = await call(`/${encodeURIComponent(id)}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ agentId }),
-        });
-        if (!res) return lost('assignment');
-        replace(toCard(res));
-      })();
+      const applyLocal = (target: string): void =>
+        set((s) => ({
+          cards: s.cards.map((c) => (c.id === target ? { ...c, agentId, updatedAt: Date.now() } : c)),
+        }));
+      applyLocal(id);
+      void pushPatch(id, 'assignment', { agentId }, applyLocal);
     },
 
     removeCard: (id) => {
       set((s) => ({ cards: s.cards.filter((c) => c.id !== id) }));
       void (async () => {
-        const res = await call(`/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        // The optimistic removal above already took the placeholder off screen;
+        // only the DELETE needs the server id (and must skip a failed create).
+        const target = await resolveServerId(id);
+        if (target === null) return;
+        const res = await call(`/${encodeURIComponent(target)}`, { method: 'DELETE' });
         if (!res) lost('delete');
       })();
     },

@@ -11,7 +11,6 @@ import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowUp,
-  Check,
   ChevronDown,
   ChevronRight,
   Circle,

@@ -4,7 +4,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Search, ChevronUp, ChevronDown, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 export interface InThreadSearchProps {
   /** Total number of messages in the thread. */

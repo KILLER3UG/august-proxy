@@ -1,7 +1,7 @@
 /* ── Empty chat state ──────────────────────────────────────────────────── */
 
 import { motion } from 'framer-motion';
-import { GitBranch, Send, Clock, Bug, FileText, Code2 } from 'lucide-react';
+import { GitBranch, Send, Bug, FileText, Code2 } from 'lucide-react';
 import { workspaceBaseName } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import { normalizeHarnessMode } from '@/components/chat/HarnessModeChip';

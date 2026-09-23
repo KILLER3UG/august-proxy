@@ -162,6 +162,71 @@ describe('makeStreamHandlers — changedFiles from edit-class tools (3.1)', () =
   });
 });
 
+describe('makeStreamHandlers — user-message injection is idempotent (replay)', () => {
+  it('appends the same injected message once when the SSE frame is replayed', () => {
+    // A wiped `chat_last_seq_*` cursor makes the reconnect replay from seq 0,
+    // so the same injected-user frame can arrive twice mid-turn. The bubble is
+    // keyed on the queue message id — a second delivery must not stack a twin.
+    const { handlers, getMessages } = makeHarness(async () => DIFF);
+    const frame = { messageId: 'q42', sessionId: 'sess-1', text: 'Hello', queuedAt: '2026-01-01T00:00:00.000Z' };
+
+    handlers.onUserMessageInjected?.(frame);
+    handlers.onUserMessageInjected?.(frame);
+
+    const bubbles = getMessages().filter((m) => m.id === 'qm-q42');
+    expect(bubbles).toHaveLength(1);
+    expect(bubbles[0]).toMatchObject({ role: 'user', content: 'Hello', queued: true });
+  });
+
+  it('still injects a different queued message', () => {
+    const { handlers, getMessages } = makeHarness(async () => DIFF);
+
+    handlers.onUserMessageInjected?.({ messageId: 'q42', sessionId: 'sess-1', text: 'First', queuedAt: '2026-01-01T00:00:00.000Z' });
+    handlers.onUserMessageInjected?.({ messageId: 'q43', sessionId: 'sess-1', text: 'Second', queuedAt: '2026-01-01T00:00:01.000Z' });
+
+    expect(getMessages().filter((m) => m.id.startsWith('qm-')).map((m) => m.id)).toEqual([
+      'qm-q42',
+      'qm-q43',
+    ]);
+  });
+});
+
+describe('makeStreamHandlers — compaction notice is idempotent (replay)', () => {
+  const INFO = {
+    headCount: 10,
+    tailCount: 2,
+    compressedCount: 3,
+    originalTokens: 5000,
+    compressedTokens: 1500,
+  };
+
+  it('renders one notice when the same compaction frame is replayed', () => {
+    // A wiped `chat_last_seq_*` cursor replays from seq 0, so the SAME frame
+    // id can arrive twice. The card id keys on the frame id — a second
+    // delivery must not stack a twin (the old Date.now()+random id did).
+    const { handlers, getMessages } = makeHarness(async () => DIFF);
+
+    handlers.onCompaction?.(INFO, 7);
+    handlers.onCompaction?.(INFO, 7);
+
+    const notices = getMessages().filter((m) => m.kind === 'compaction-notice');
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ id: 'compaction-7', role: 'assistant' });
+  });
+
+  it('still renders distinct compactions with different frame ids', () => {
+    const { handlers, getMessages } = makeHarness(async () => DIFF);
+
+    handlers.onCompaction?.(INFO, 7);
+    handlers.onCompaction?.(INFO, 8);
+
+    expect(getMessages().filter((m) => m.kind === 'compaction-notice').map((m) => m.id)).toEqual([
+      'compaction-7',
+      'compaction-8',
+    ]);
+  });
+});
+
 describe('makeStreamHandlers — onRetrying rolls back only the failed attempt (3.2)', () => {
   it('preserves prior rounds prose + tool cards, drops the failed round partial text', () => {
     const { handlers, getState } = makeHarness(async () => DIFF);

@@ -19,7 +19,6 @@ import {
   createBot,
   deleteBot,
   ensureBotChat,
-  getBot,
   listBots,
   listRooms,
   updateBotUiMeta,
@@ -282,7 +281,7 @@ interface BotRowProps {
   summary?: { lastPreview?: string; updatedAt?: string | null };
 }
 
-function BotRow({ bot, sessionId, active, onOpenChat, onOpenProfile, summary }: BotRowProps) {
+function BotRow({ bot, sessionId, active, onOpenProfile, summary }: BotRowProps) {
   const streaming = useActiveChatStreamsStore((s) => (sessionId ? s.active[sessionId] : undefined));
   const title = bot.uiMeta?.title || bot.name;
   const recent = isRecent(summary?.updatedAt);

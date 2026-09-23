@@ -12,7 +12,8 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use minisign_verify::{PublicKey, Signature};
 use std::env;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
@@ -516,6 +517,91 @@ fn runPythonSilent(
     Ok(())
 }
 
+/// Outcome of wiping a stale bootstrap tree. A wipe that cannot finish is
+/// never fatal on its own: `Degraded` carries the warning to surface while
+/// boot continues.
+enum WipeOutcome {
+    /// Tree removed (or already absent): boot continues onto a fresh copy.
+    Clean,
+    /// Removal stayed blocked; the message says what was left behind.
+    Degraded(String),
+}
+
+/// Windows locks (an antivirus scan, a lingering python.exe) make deletion
+/// fail transiently, so retry a few times with a short pause before falling
+/// back — the stale tree only needs the lock to drop for a moment.
+const WIPE_RETRIES: u32 = 3;
+const WIPE_RETRY_DELAY_MS: u64 = 300;
+
+/// Best-effort wipe of a stale runtime tree (backend sources + `.venv`, or
+/// skills): retry, then rename to a `.old` sibling, then leave it in place.
+/// Only a genuinely blocked removal reaches the fallbacks — a normal wipe
+/// still returns `Clean`, so a fresh tree (and rebuilt venv) is the rule.
+fn wipeStaleTree(path: &Path) -> WipeOutcome {
+    wipeStaleTreeWith(
+        path,
+        |p| std::fs::remove_dir_all(p),
+        |from, to| std::fs::rename(from, to),
+        WIPE_RETRIES,
+        WIPE_RETRY_DELAY_MS,
+    )
+}
+
+/// `wipeStaleTree` with the filesystem operations injected, so tests can
+/// simulate a locked directory without locking one.
+fn wipeStaleTreeWith(
+    path: &Path,
+    mut remove: impl FnMut(&Path) -> std::io::Result<()>,
+    mut rename: impl FnMut(&Path, &Path) -> std::io::Result<()>,
+    retries: u32,
+    retry_delay_ms: u64,
+) -> WipeOutcome {
+    if !path.exists() {
+        return WipeOutcome::Clean;
+    }
+    let mut remove_err: Option<String> = None;
+    for attempt in 0..=retries {
+        if attempt > 0 && retry_delay_ms > 0 {
+            std::thread::sleep(Duration::from_millis(retry_delay_ms));
+        }
+        match remove(path) {
+            Ok(()) => return WipeOutcome::Clean,
+            // A failed pass already deleted everything it reached, so a
+            // retry continues where the last one stopped instead of
+            // starting over.
+            Err(e) => remove_err = Some(e.to_string()),
+        }
+    }
+    let remove_err = remove_err.unwrap_or_else(|| "unknown error".into());
+
+    // Deletion is what Windows locks block; renaming the directory usually
+    // still succeeds with files inside it open, and moving it aside gives the
+    // fresh copy (and its rebuilt venv) a clean path to land on.
+    let stale_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "stale".into());
+    let aside = path.with_file_name(format!("{stale_name}.old"));
+    if aside.exists() {
+        // A leftover `.old` from an earlier blocked boot would make the
+        // rename fail (destination exists) — clear it best-effort first.
+        let _ = std::fs::remove_dir_all(&aside);
+    }
+    let warning = match rename(path, &aside) {
+        Ok(()) => format!(
+            "stale {} could not be removed ({remove_err}) — renamed it to {} instead; boot continues",
+            path.display(),
+            aside.display()
+        ),
+        Err(rename_err) => format!(
+            "stale {} could not be removed ({remove_err}) or renamed aside ({rename_err}) — left in place; boot continues with a possibly stale tree",
+            path.display()
+        ),
+    };
+    log::warn!("[backend] WARNING: {warning}");
+    WipeOutcome::Degraded(warning)
+}
+
 /// First-launch (or stamp mismatch): copy bundled backend-py into AppData,
 /// create a venv with the portable Python, install offline from wheels.
 fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
@@ -592,14 +678,16 @@ fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
 
     // Replace the complete runtime trees. Partial cleanup leaves stale skills,
     // metadata, or virtualenv files after an update and can mask a bad payload.
-    if runtime_backend.exists() {
-        std::fs::remove_dir_all(&runtime_backend)
-            .map_err(|e| format!("remove stale runtime backend: {e}"))?;
+    // But a wipe blocked by a Windows lock degrades to a warning instead of an
+    // error: the stale tree is harmless, while aborting here traps packaged
+    // installs on the Retry gate over a tree that did nothing wrong.
+    let mut wipe_warnings: Vec<String> = Vec::new();
+    if let WipeOutcome::Degraded(warning) = wipeStaleTree(&runtime_backend) {
+        wipe_warnings.push(warning);
     }
     let runtime_skills = runtime.join("skills");
-    if runtime_skills.exists() {
-        std::fs::remove_dir_all(&runtime_skills)
-            .map_err(|e| format!("remove stale runtime skills: {e}"))?;
+    if let WipeOutcome::Degraded(warning) = wipeStaleTree(&runtime_skills) {
+        wipe_warnings.push(warning);
     }
     std::fs::create_dir_all(&runtime_backend).map_err(|e| format!("mkdir runtime: {e}"))?;
     copyDirRecursive(&bundled_py_root, &runtime_backend, true)?;
@@ -655,6 +743,21 @@ fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
         &runtime_backend,
         &bootstrap_log,
     )?;
+
+    // runPythonSilent recreates the bootstrap log on every invocation, so the
+    // wipe warnings are only appended once the last of those runs has finished
+    // — earlier they would be truncated away by the next venv/pip step.
+    if !wipe_warnings.is_empty() {
+        if let Ok(mut log_file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&bootstrap_log)
+        {
+            for warning in &wipe_warnings {
+                let _ = writeln!(log_file, "WARNING: {warning}");
+            }
+        }
+    }
 
     // NOTE: the runtime stamp is deliberately NOT written here. It is written
     // only after the first successful identity-checked health probe (see
@@ -2261,6 +2364,174 @@ mod copy_payload_tests {
 
         let _ = fs::remove_dir_all(&src);
         let _ = fs::remove_dir_all(&dst);
+    }
+}
+
+#[cfg(test)]
+mod wipe_stale_tree_tests {
+    use super::{copyDirRecursive, wipeStaleTreeWith, WipeOutcome};
+    use std::cell::Cell;
+    use std::fs;
+    use std::io;
+    use std::path::{Path, PathBuf};
+
+    /// Each test gets its own scratch tree so it never touches a real payload.
+    fn scratch(tag: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SEQ: AtomicUsize = AtomicUsize::new(0);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!(
+            "august-wipe-test-{}-{}-{}-{}",
+            std::process::id(),
+            tag,
+            nanos,
+            SEQ.fetch_add(1, Ordering::SeqCst),
+        ));
+        fs::create_dir_all(&dir).expect("create scratch");
+        dir
+    }
+
+    fn touch(root: &Path, rel: &str) {
+        let path = root.join(rel);
+        fs::create_dir_all(path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&path, "x").expect("write");
+    }
+
+    /// The Windows lock this whole path exists for: deletion of a tree with a
+    /// file held open (AV scan, lingering python.exe) raises PermissionError
+    /// on every attempt.
+    fn permission_denied(_: &Path) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "file locked by another process",
+        ))
+    }
+
+    /// Sibling path that `wipeStaleTree` renames a blocked tree into.
+    fn asidePath(tree: &Path) -> PathBuf {
+        tree.with_file_name(format!(
+            "{}.old",
+            tree.file_name().unwrap().to_string_lossy()
+        ))
+    }
+
+    /// Regression: a removal that keeps failing must degrade to a warning and
+    /// let bootstrap continue — never raise into the hard Retry error gate.
+    /// Rename is the fallback that usually succeeds (Windows blocks deletion,
+    /// not directory renames), so this covers the clean-path outcome too: the
+    /// stale venv moves aside and the fresh tree carries none, i.e. it is
+    /// rebuilt exactly as a normal wipe would rebuild it.
+    #[test]
+    fn blocked_removal_renames_aside_with_warning_and_boot_continues() {
+        let stale = scratch("stale");
+        touch(&stale, ".venv/Scripts/python.exe");
+        touch(&stale, "app/main.py");
+        let fresh = scratch("fresh");
+        touch(&fresh, "app/main.py");
+
+        let attempts = Cell::new(0u32);
+        let outcome = wipeStaleTreeWith(
+            &stale,
+            |p| {
+                attempts.set(attempts.get() + 1);
+                permission_denied(p)
+            },
+            |from, to| fs::rename(from, to),
+            3,
+            0, // no sleeping in tests
+        );
+
+        let warning = match outcome {
+            WipeOutcome::Degraded(w) => w,
+            WipeOutcome::Clean => panic!("a blocked wipe must not report Clean"),
+        };
+        assert!(
+            warning.contains(".old"),
+            "warning names the leftover: {warning}"
+        );
+        assert_eq!(attempts.get(), 4, "retries before any fallback");
+
+        assert!(!stale.exists(), "stale tree moved aside");
+        assert!(asidePath(&stale).join(".venv/Scripts/python.exe").is_file());
+        // What bootstrapBundledBackend does next: mkdir + copy over a clean
+        // path, with no stale venv left to be reused.
+        fs::create_dir_all(&stale).expect("recreate runtime dir");
+        copyDirRecursive(&fresh, &stale, true).expect("boot continues");
+        assert!(stale.join("app/main.py").is_file());
+        assert!(!stale.join(".venv").exists(), "venv gets rebuilt");
+
+        let _ = fs::remove_dir_all(&stale);
+        let _ = fs::remove_dir_all(&asidePath(&stale));
+        let _ = fs::remove_dir_all(&fresh);
+    }
+
+    /// When even the rename is blocked, the stale tree stays where it is and
+    /// boot still continues over it — degraded, but running.
+    #[test]
+    fn blocked_removal_and_rename_leave_tree_in_place_and_boot_continues() {
+        let stale = scratch("locked");
+        touch(&stale, ".venv/Scripts/python.exe");
+        touch(&stale, "app/old.py");
+        let fresh = scratch("fresh2");
+        touch(&fresh, "app/main.py");
+
+        let outcome = wipeStaleTreeWith(
+            &stale,
+            |_| -> io::Result<()> { permission_denied(&stale) },
+            |_, _| -> io::Result<()> { permission_denied(&stale) },
+            3,
+            0,
+        );
+
+        let warning = match outcome {
+            WipeOutcome::Degraded(w) => w,
+            WipeOutcome::Clean => panic!("a blocked wipe must not report Clean"),
+        };
+        assert!(
+            warning.contains("left in place"),
+            "warning states the tree survives: {warning}"
+        );
+        assert!(stale.join(".venv/Scripts/python.exe").is_file());
+        // Bootstrap's copy merges the fresh sources over the stale tree and
+        // the pip --upgrade step then repairs the venv in place.
+        copyDirRecursive(&fresh, &stale, true).expect("boot continues");
+        assert!(stale.join("app/main.py").is_file());
+        assert!(stale.join("app/old.py").is_file());
+
+        let _ = fs::remove_dir_all(&stale);
+        let _ = fs::remove_dir_all(&fresh);
+    }
+
+    /// The semantics the fallback must NOT weaken: as long as removal works,
+    /// the wipe is a plain clean wipe and no rename ever runs.
+    #[test]
+    fn healthy_removal_still_yields_a_clean_tree() {
+        let tree = scratch("healthy");
+        touch(&tree, ".venv/Scripts/python.exe");
+
+        let outcome = wipeStaleTreeWith(
+            &tree,
+            |p| fs::remove_dir_all(p),
+            |_, _| -> io::Result<()> { panic!("rename must not run when removal works") },
+            3,
+            0,
+        );
+        assert!(matches!(outcome, WipeOutcome::Clean));
+        assert!(!tree.exists(), "normal run still ends with a fresh tree");
+
+        // An absent tree is trivially clean and never touches the fs ops.
+        let missing = tree.join("never-created");
+        let outcome = wipeStaleTreeWith(
+            &missing,
+            |_| -> io::Result<()> { panic!("no removal attempt on an absent tree") },
+            |_, _| -> io::Result<()> { panic!("no rename on an absent tree") },
+            3,
+            0,
+        );
+        assert!(matches!(outcome, WipeOutcome::Clean));
     }
 }
 

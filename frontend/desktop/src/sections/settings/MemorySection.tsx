@@ -527,13 +527,6 @@ export function MemorySection({ active }: { active: { id: string } }) {
   });
 
   const meta = STORE_META[activeStore];
-  const stores = useMemo(() => {
-    const all = storesQ.data?.stores ?? [];
-    if (!scope) return all;
-    return all
-      .filter((s) => scope.stores.includes(s.name))
-      .sort((a, b) => scope.stores.indexOf(a.name) - scope.stores.indexOf(b.name));
-  }, [storesQ.data, scope]);
 
   /* Merge both scope stores into one flat chronological list. */
   const flatEntries = useMemo<FlatEntry[]>(() => {
