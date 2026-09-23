@@ -258,17 +258,6 @@ describe('ModelEffortMenu dropdown anchoring (bottom-edge-hugs-chip)', () => {
     window.localStorage.clear();
   });
 
-  /** jsdom rects are all-zero; give the chips a realistic place to sit. */
-  function placeChips(top: number, right: number) {
-    for (const sel of ['[data-testid="model-chip"]', '[data-testid="effort-chip"]']) {
-      const el = document.querySelector<HTMLElement>(sel);
-      if (!el) throw new Error(`missing chip ${sel}`);
-      el.getBoundingClientRect = () =>
-        ({ top, bottom: top + 32, left: right - 180, right, width: 180, height: 32,
-           x: right - 180, y: top, toJSON: () => ({}) });
-    }
-  }
-
   it('models panel anchors by bottom edge just above the chip, not by reserving full height', () => {
     setup();
     placeChips(700, 900);
@@ -304,5 +293,123 @@ describe('ModelEffortMenu dropdown anchoring (bottom-edge-hugs-chip)', () => {
     expect(panel.style.top).toBe('');
     // Panel bottom edge at y = 592 (chip top 600 − gap 8) → bottom = 768 − 592.
     expect(panel.style.bottom).toBe('176px');
+  });
+});
+
+/** jsdom rects are all-zero; give the chips a realistic place to sit. */
+function placeChips(top: number, right: number) {
+  for (const sel of ['[data-testid="model-chip"]', '[data-testid="effort-chip"]']) {
+    const el = document.querySelector<HTMLElement>(sel);
+    if (!el) throw new Error(`missing chip ${sel}`);
+    el.getBoundingClientRect = () =>
+      ({ top, bottom: top + 32, left: right - 180, right, width: 180, height: 32,
+         x: right - 180, y: top, toJSON: () => ({}) });
+  }
+}
+
+describe('ModelEffortMenu — keyboard navigation', () => {
+  const openModels = () => {
+    setup();
+    placeChips(600, 900);
+    fireEvent.click(document.querySelector('[data-testid="model-chip"]')!);
+    return document.querySelector<HTMLElement>('[data-testid="model-effort-menu"]')!;
+  };
+
+  it('focuses the panel when it opens, so arrow keys have a target', () => {
+    const panel = openModels();
+    expect(document.activeElement).toBe(panel);
+  });
+
+  it('mounting does not yank focus out of the composer', () => {
+    // Regression: the focus effect also runs on mount with `pane === null`,
+    // where its "restore" branch put focus on the model chip — leaving the
+    // textarea without initial focus on every fresh composer.
+    const composer = document.createElement('textarea');
+    document.body.append(composer);
+    composer.focus();
+    expect(document.activeElement).toBe(composer);
+
+    setup();
+
+    expect(document.activeElement).toBe(composer);
+    composer.remove();
+  });
+
+  /** Mirrors the component's own visibility rule: style-based, because these
+   *  panels are fixed-position portals and jsdom reports no client rects. */
+  const focusables = (panel: HTMLElement) =>
+    [...panel.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex="0"]')].filter((el) => {
+      if (el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return false;
+      const style = getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden';
+    });
+
+  it('ArrowDown/ArrowUp move a roving focus between the panel controls', () => {
+    const panel = openModels();
+    const items = focusables(panel);
+    expect(items.length).toBeGreaterThan(2);
+
+    fireEvent.keyDown(panel, { key: 'ArrowDown' });
+    const first = document.activeElement as HTMLElement;
+    expect(panel.contains(first)).toBe(true);
+    expect(first).toBe(items[0]);
+
+    fireEvent.keyDown(panel, { key: 'ArrowDown' });
+    const second = document.activeElement as HTMLElement;
+    expect(second).not.toBe(first);
+    expect(panel.contains(second)).toBe(true);
+
+    fireEvent.keyDown(panel, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(first);
+  });
+
+  it('wraps at both ends instead of dropping focus to the body', () => {
+    const panel = openModels();
+    const items = focusables(panel);
+
+    fireEvent.keyDown(panel, { key: 'End' });
+    expect(document.activeElement).toBe(items[items.length - 1]);
+    fireEvent.keyDown(panel, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(items[0]);
+    expect(document.body).not.toBe(document.activeElement);
+    fireEvent.keyDown(panel, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(items[items.length - 1]);
+  });
+
+  it('skips controls that are hidden', () => {
+    const panel = openModels();
+    const items = focusables(panel);
+    const hidden = items[0];
+    hidden.setAttribute('hidden', '');
+
+    fireEvent.keyDown(panel, { key: 'ArrowDown' });
+    expect(document.activeElement).not.toBe(hidden);
+    expect(panel.contains(document.activeElement)).toBe(true);
+  });
+
+  it('Escape closes the menu and returns focus to the chip that opened it', () => {
+    const panel = openModels();
+    const chip = document.querySelector<HTMLElement>('[data-testid="model-chip"]')!;
+    fireEvent.keyDown(panel, { key: 'Escape' });
+    // Nodes can survive the exit animation, so assert collapsed state, not
+    // DOM absence.
+    expect(chip.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(chip);
+  });
+
+  it('the effort pane is navigable too', () => {
+    setup();
+    placeChips(600, 900);
+    fireEvent.click(document.querySelector('[data-testid="effort-chip"]')!);
+    // The effort panel carries no test id of its own, so locate it the same
+    // way the component does: the container holding the effort options.
+    const option = document.querySelector<HTMLElement>('[role="menuitemradio"]')!;
+    expect(option).toBeTruthy();
+    const panel = option.closest('div[tabindex="-1"]') as HTMLElement;
+    expect(panel).toBeTruthy();
+    expect(document.activeElement).toBe(panel);
+    fireEvent.keyDown(panel, { key: 'ArrowDown' });
+    expect(panel.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement?.getAttribute('role')).toBe('menuitemradio');
   });
 });

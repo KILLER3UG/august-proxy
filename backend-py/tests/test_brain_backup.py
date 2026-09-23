@@ -217,3 +217,189 @@ def test_a_restore_from_a_newer_schema_is_refused(isolatedData):
 
     assert result['ok'] is False and 'this build' in str(result.get('error'))
     assert brain_backup.pending_restore() is None
+
+
+# ── Regressions: an empty copy is not a backup ─────────────────────────────
+# `PRAGMA integrity_check` answers 'ok' for a zero-byte file (page_count 0, no
+# tables), so verification alone could certify a husk that then restored as an
+# amnesic database. These pin the content gate that closes that.
+
+def _seedBrainCopy(path: Path, *, facts: int = 1) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)')
+        conn.execute('INSERT OR REPLACE INTO schema_migrations VALUES (46)')
+        conn.execute('CREATE TABLE IF NOT EXISTS facts (key TEXT PRIMARY KEY, body TEXT)')
+        conn.executemany(
+            'INSERT OR REPLACE INTO facts VALUES (?, ?)',
+            [(f'fact:{i}', f'body {i}') for i in range(facts)],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return path
+
+
+def _emptyBackupCopy(name: str) -> Path:
+    directory = brain_backup.backups_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / name
+    path.write_bytes(b'')
+    return path
+
+
+def test_zero_byte_copy_is_listed_unhealthy(isolatedData):
+    copy = _emptyBackupCopy('brain-20260101T000000Z-empty.sqlite')
+
+    entry = next(e for e in brain_backup.list_backups() if e['name'] == copy.name)
+    assert entry['healthy'] is False, 'an empty file must not be offered as a way out'
+    assert entry.get('error')
+
+
+def test_zero_byte_copy_cannot_be_staged_for_restore(isolatedData):
+    copy = _emptyBackupCopy('brain-20260101T000001Z-empty.sqlite')
+
+    staged = brain_backup.schedule_restore(copy.name)
+
+    assert staged['ok'] is False, staged
+    assert not (brain_backup.backups_dir() / brain_backup.PENDING_FILE).exists()
+
+
+def test_copy_without_brain_tables_is_refused(isolatedData):
+    """Well-formed SQLite, but not a brain database."""
+    path = brain_backup.backups_dir() / 'brain-20260101T000002Z-other.sqlite'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path))
+    conn.execute('CREATE TABLE unrelated (id INTEGER)')
+    conn.execute('INSERT INTO unrelated VALUES (1)')
+    conn.commit()
+    conn.close()
+
+    assert brain_backup.schedule_restore(path.name)['ok'] is False
+
+
+def test_a_real_backup_still_passes_the_content_gate(isolatedData):
+    """Guards against "fixing" the hole by refusing everything."""
+    _save('fact:keep', 'Must survive the gate')
+    result = brain_backup.create_backup(reason='content-gate')
+
+    assert result['ok'] is True, result
+    entry = next(e for e in brain_backup.list_backups() if e['name'] == result['name'])
+    assert entry['healthy'] is True, entry
+    assert brain_backup.schedule_restore(result['name'])['ok'] is True
+
+
+# ── Regressions: a restore must not cost the memory it replaces ────────────
+
+def test_restore_keeps_the_wal_of_the_database_it_replaced(isolatedData):
+    """Uncheckpointed commits live only in -wal; a main-only .pre-restore
+    cannot put them back, and the sidecars used to be deleted before the new
+    main file had even landed."""
+    _save('fact:live1', 'Memory that must not be lost to a restore')
+    _save('fact:live2', 'Second live memory')
+    live = brain_backup._db_path()
+    assert live.is_file()
+    wal = live.with_name(live.name + '-wal')
+    wal.write_bytes(b'uncheckpointed memory' * 64)
+    walBytes = wal.stat().st_size
+
+    backup = _seedBrainCopy(
+        brain_backup.backups_dir() / 'brain-20260101T000003Z-good.sqlite', facts=1,
+    )
+    assert brain_backup.schedule_restore(backup.name)['ok'] is True
+
+    # The swap publishes with os.replace, which Windows refuses over an open
+    # handle — matching the module's own rule that a restore is applied at
+    # startup before any brain connection exists.
+    memory_store.close()
+
+    applied = brain_backup.apply_pending_restore()
+
+    assert applied['applied'] is True, applied
+    preserved = Path(f'{live}{brain_backup.PRE_RESTORE_SUFFIX}-wal')
+    assert preserved.is_file(), '.pre-restore must keep the WAL it replaced'
+    assert preserved.stat().st_size == walBytes
+    assert not wal.exists(), 'the swapped-in main must not be replayed on the old WAL'
+    assert _fact_count(live) == 1
+
+
+def test_failed_swap_leaves_the_live_database_untouched(isolatedData, monkeypatch):
+    _save('fact:keepme', 'Must survive a restore that fails mid-copy')
+    live = brain_backup._db_path()
+    assert live.is_file()
+    before = _fact_count(live)
+    backup = _seedBrainCopy(
+        brain_backup.backups_dir() / 'brain-20260101T000004Z-good.sqlite', facts=1,
+    )
+    assert brain_backup.schedule_restore(backup.name)['ok'] is True
+
+    def explode(src, dst, *a, **kw):
+        if str(dst).endswith('.restoring'):
+            raise OSError('disk vanished mid-copy')
+        return dst
+
+    monkeypatch.setattr(brain_backup.shutil, 'copy2', explode)
+
+    applied = brain_backup.apply_pending_restore()
+
+    assert applied['applied'] is False, applied
+    assert _fact_count(live) == before, 'a failed restore must not truncate the memory'
+    assert (brain_backup.backups_dir() / brain_backup.PENDING_FILE).exists(), \
+        'the marker stays so the retry is still possible'
+    assert not live.with_name(live.name + '.restoring').exists(), 'staging file cleaned up'
+
+
+def test_a_late_failure_never_deletes_a_verified_copy(isolatedData, monkeypatch):
+    """`verified` flips the moment the content gate passes.
+
+    `_prune` and the version read run after that gate; if either raises, the
+    cleanup must leave a copy verification already called good on disk rather
+    than delete it as if it were a husk.
+    """
+    _save('fact:survive', 'A verified backup must not be deleted by a later failure')
+
+    def refusePrune(directory: Path) -> list[str]:
+        raise OSError('disk full while pruning')
+
+    monkeypatch.setattr(brain_backup, '_prune', refusePrune)
+    result = brain_backup.create_backup(reason='prune-fail')
+
+    assert result['ok'] is False, result
+    healthy = [entry for entry in brain_backup.list_backups() if entry['healthy']]
+    assert healthy, 'the copy passed the content gate, so a later failure must not remove it'
+
+
+def test_a_swap_that_landed_is_never_reported_as_failed(isolatedData, monkeypatch):
+    """After os.replace the restore IS applied — cleanup cannot undo that.
+
+    Reporting `applied: False` with the marker still in place would re-run the
+    whole restore on the next boot and copy the *restored* database over
+    `.pre-restore`, destroying the only copy of what was replaced.
+    """
+    _save('fact:landed', 'The restored database is already in place')
+    live = brain_backup._db_path()
+    # A live sidecar exists so the post-swap cleanup has something to fail on.
+    live.with_name(live.name + '-wal').write_bytes(b'uncheckpointed' * 32)
+    backup = _seedBrainCopy(
+        brain_backup.backups_dir() / 'brain-20260101T000005Z-good.sqlite', facts=1,
+    )
+    assert brain_backup.schedule_restore(backup.name)['ok'] is True
+    memory_store.close()
+
+    realUnlink = Path.unlink
+
+    def lockedSidecar(self: Path, missing_ok: bool = False):
+        if self.name.endswith('-wal') and not self.name.startswith(live.name + '.pre-restore'):
+            raise OSError('sidecar handle still open')
+        return realUnlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, 'unlink', lockedSidecar)
+    applied = brain_backup.apply_pending_restore()
+
+    assert applied['applied'] is True, applied
+    assert applied['ok'] is True, applied
+    assert 'warning' in applied and '-wal' in str(applied['warning']), applied
+    assert not (brain_backup.backups_dir() / brain_backup.PENDING_FILE).exists(), \
+        'the marker is cleared so the next boot cannot re-run a restore that landed'
+    assert live.is_file(), 'the restored database is in place'

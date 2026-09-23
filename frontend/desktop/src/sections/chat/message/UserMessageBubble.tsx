@@ -63,7 +63,7 @@ export function UserMessageBubble({
         ) : null}
 
         {(editing || displayContent || message.queued) && (
-          <div className="rounded-2xl bg-user-bubble px-3.5 py-2 w-full border border-transparent hover:bg-muted/45 transition-colors duration-150">
+          <div className="rounded-2xl bg-user-bubble px-4 py-2.5 w-full border border-border/20 shadow-2xs hover:border-border/40 transition-colors duration-150 text-[13.5px] leading-relaxed">
             {message.queued && (
               <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-warning">
                 <span className="size-1.5 rounded-full bg-warning" />

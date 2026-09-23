@@ -354,10 +354,12 @@ but ignored keys is a `400`, not a silent no-op.
 ### Memory files: verify, back up, restore
 
 `app/services/brain_backup.py`. The brain database *is* the user's memory, so a
-copy is checked with `PRAGMA integrity_check` before anything is allowed to
-trust it, and only the newest **5** copies survive retention. `POST /backups`
-copies through SQLite's backup API on a read-only handle, so the live file is
-never write-locked; the app also takes one verified copy per 12 h at startup.
+copy is checked with `PRAGMA integrity_check` **and must actually hold pages and
+brain tables** before anything is allowed to trust it — a zero-byte file is a
+well-formed SQLite image that `integrity_check` answers `ok` for. After that
+gate, only the newest **5** copies survive retention. `POST /backups` copies
+through SQLite's backup API on a read-only handle, so the live file is never
+write-locked; the app also takes one verified copy per 12 h at startup.
 
 A restore is **staged, never applied in place**: the running process holds the
 database open on more than one thread, so swapping the file underneath it yields
@@ -367,8 +369,10 @@ store initializes, and keeps the database it replaced as `<db>.pre-restore`. The
 response says `appliesOn: "next-launch"` for that reason — restart August to
 apply, or `DELETE /backups/restore` to abandon it.
 
-A copy is refused as a restore target when it fails `integrity_check` or when
-its schema version is newer than this build knows (so an older app cannot boot a
+A copy is refused as a restore target when it fails `integrity_check`, when it
+holds no pages or no `schema_migrations`/`facts` table (an empty copy restores
+as an amnesic database), or when its schema version is newer than this build
+knows (so an older app cannot boot a
 newer database and report it as up to date). Backup names are matched strictly:
 `brain-YYYYMMDDTHHMMSSZ-<reason>.sqlite`, stamp with **no dashes**, e.g.
 `brain-20260922T090000Z-legacy.sqlite`. To recover a legacy database file, copy

@@ -283,6 +283,7 @@ version = "0.18.11"
 dependencies = [
  "base64 0.22.1",
  "log",
+ "minisign-verify",
  "reqwest 0.12.28",
  "rfd 0.14.1",
  "serde",

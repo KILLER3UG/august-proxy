@@ -359,3 +359,67 @@ def test_worker_submit_todos_routes_to_handle(isolatedData, monkeypatch):
     assert handle.todos == [{'content': 'step', 'status': 'in_progress'}]
     assert parent.todos == []
     assert any(e['type'] == 'subagentTodos' for e in events)
+
+
+def test_tool_call_bridge_blocks_subagent_memory_write(isolatedData, monkeypatch):
+    """`tool_call` is a core tool, so progressive disclosure can never hide it.
+
+    The sub-agent loop refuses _blocked_tools at its own dispatch site, but a
+    worker reaching `remember` through the bridge skipped that check entirely —
+    which breaks the invariant that the parent turn is the single memory write
+    door.
+    """
+    from app.services.tool_registrations import register_all
+    from app.services.tools.tool_bridges import handleToolCall
+    from app.services.workbench import workbench as wb
+    from app.services.workbench.context import currentSessionId, currentSubagentDepth
+
+    register_all()
+    session = types.SimpleNamespace(
+        id='sessW', guardMode='full', planApproved=True, sandboxMode='workspace-write',
+        plan=None, planRisk='', metadata={},
+    )
+    monkeypatch.setitem(wb._sessions, 'sessW', session)
+
+    sTok = currentSessionId.set('sessW')
+    dTok = currentSubagentDepth.set(1)
+    try:
+        for name, payload in (
+            ('remember', {'key': 'fact:note', 'body': 'written by a worker'}),
+            ('forget', {'key': 'fact:note'}),
+            ('create_agent', {'name': 'rogue'}),
+            ('set_agent_mode', {'mode': 'code'}),
+        ):
+            out = asyncio.run(handleToolCall(name, json.dumps(payload)))
+            assert out.startswith('[Blocked]'), f'{name} reached the bridge: {out}'
+            assert 'Sub-agent' in out, f'{name} blocked for the wrong reason: {out}'
+    finally:
+        currentSubagentDepth.reset(dTok)
+        currentSessionId.reset(sTok)
+
+
+def test_tool_call_bridge_still_serves_the_root_turn(isolatedData, monkeypatch, tmp_path):
+    """The sub-agent rule must not become a blanket bridge refusal."""
+    from app.services.tool_registrations import register_all
+    from app.services.tools.tool_bridges import handleToolCall
+    from app.services.workbench import workbench as wb
+    from app.services.workbench.context import currentSessionId, currentSubagentDepth
+
+    register_all()
+    session = types.SimpleNamespace(
+        id='sessP', guardMode='full', planApproved=True, sandboxMode='workspace-write',
+        plan=None, planRisk='', metadata={},
+    )
+    monkeypatch.setitem(wb._sessions, 'sessP', session)
+    f = tmp_path / 'root.txt'
+    f.write_text('root-visible', encoding='utf8')
+
+    sTok = currentSessionId.set('sessP')
+    dTok = currentSubagentDepth.set(0)
+    try:
+        out = asyncio.run(handleToolCall('read_file', json.dumps({'path': str(f)})))
+    finally:
+        currentSubagentDepth.reset(dTok)
+        currentSessionId.reset(sTok)
+    assert 'root-visible' in out, out
+    assert 'Sub-agent not permitted' not in out

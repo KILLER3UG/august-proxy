@@ -49,6 +49,12 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // `tauri dev` has cargo writing .dll/.exe into src-tauri/target at the
+    // same time; watching those makes the dev server exit on EBUSY when the
+    // linker holds a lock on them.
+    watch: {
+      ignored: ['**/src-tauri/target/**'],
+    },
 	    proxy: {
 	      '/api': {
 	        target: process.env.AUGUST_PROXY_URL || 'http://127.0.0.1:8085',

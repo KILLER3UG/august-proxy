@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { deleteWorkbenchSession, stopWorkbenchChat } from '@/api/workbench';
-import { deleteManageSession } from '@/api/api-client';
+import { deleteManageSession, setManageSessionArchived } from '@/api/api-client';
 import { clearActiveChatStream } from '@/store/chat-active-streams';
 import { chatRuntime } from '@/sections/chat/chat-runtime';
 import { activeStreamControllers } from '@/sections/chat/stream/active-stream-controllers';
@@ -505,6 +505,7 @@ export function archiveSession(id: string) {
     .sessions.map((s) => (s.id === id ? { ...s, isArchived: true } : s));
   useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
+  pushArchiveFlag(id, true);
 }
 
 export function restoreSession(id: string) {
@@ -525,6 +526,25 @@ export function restoreSession(id: string) {
     .sessions.map((s) => (s.id === id ? { ...s, isArchived: false } : s));
   useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
+  pushArchiveFlag(id, false);
+}
+
+/**
+ * Mirror the archive flag to the backend sessions table.
+ *
+ * Fire-and-forget — never await on the UI path. Both the sidebar id and the
+ * workbench handle are sent because either can be the server's key (see
+ * purgeBackendSession); a 404 for the one that isn't is expected and ignored.
+ */
+function pushArchiveFlag(id: string, archived: boolean): void {
+  const sess = useSessionsStore.getState().sessions.find((s) => sessionMatchesId(s, id));
+  const candidates = [sess?.id ?? id, sess?.workbenchSessionId ?? ''];
+  const unique = [...new Set(candidates.map((raw) => (raw || '').trim()).filter(Boolean))];
+  for (const candidate of unique) {
+    void setManageSessionArchived(candidate, archived).catch(() => {
+      /* local state is authoritative for this session already */
+    });
+  }
 }
 
 function sessionMatchesId(s: Session, id: string): boolean {

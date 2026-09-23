@@ -19,6 +19,7 @@ Two constraints shape the design:
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shutil
 import sqlite3
@@ -63,6 +64,36 @@ def _check(conn: sqlite3.Connection) -> str:
         return str(row[0]) if row else 'no result'
     except sqlite3.Error as exc:
         return f'check failed: {exc}'
+
+
+def _content_reason(conn: sqlite3.Connection) -> str | None:
+    """Why this copy cannot hold memory, or None when it provably can.
+
+    ``PRAGMA integrity_check`` is not proof of content: a zero-byte file is a
+    well-formed SQLite image (it reports ``ok`` with ``page_count`` 0 and no
+    tables), so without this gate an empty copy is written by a failed backup,
+    listed as healthy, offered in Settings, and restores as an amnesic
+    database. One predicate, shared by create/list/restore so they cannot drift.
+    """
+    try:
+        row = conn.execute('PRAGMA page_count').fetchone()
+        pages = int(row[0]) if row and row[0] is not None else 0
+    except sqlite3.Error:
+        return 'copy is unreadable'
+    if pages < 1:
+        return 'copy holds no pages'
+    try:
+        tables = {
+            str(t[0])
+            for t in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+    except sqlite3.Error:
+        return 'copy has no readable schema'
+    if not tables:
+        return 'copy has no tables'
+    if 'schema_migrations' not in tables and 'facts' not in tables:
+        return 'copy has no brain tables'
+    return None
 
 
 def _applied_version(conn: sqlite3.Connection) -> int:
@@ -119,6 +150,7 @@ def create_backup(reason: str = 'manual') -> dict[str, object]:
     directory = backups_dir()
     if not source.exists():
         return {'ok': False, 'error': f'no brain database at {source}'}
+    verified = False
     try:
         directory.mkdir(parents=True, exist_ok=True)
         target = directory / name
@@ -134,11 +166,21 @@ def create_backup(reason: str = 'manual') -> dict[str, object]:
         check_conn = _open_read_only(target)
         try:
             check = _check(check_conn)
+            empty = None if check != 'ok' else _content_reason(check_conn)
         finally:
             check_conn.close()
         if check != 'ok':
             target.unlink(missing_ok=True)
             return {'ok': False, 'error': f'backup failed verification: {check}'}
+        if empty is not None:
+            # Refusing here also stops the next prune/ensure cycle mistaking a
+            # husk for the newest good copy.
+            target.unlink(missing_ok=True)
+            return {'ok': False, 'error': f'backup failed verification: {empty}'}
+        # Past this line the copy is proven good, so the cleanup in the except
+        # must leave it alone: `_prune` or the version read failing afterwards
+        # is not a reason to delete a backup that verification already passed.
+        verified = True
         removed = _prune(directory)
         verify_conn = _open_read_only(target)
         try:
@@ -154,6 +196,14 @@ def create_backup(reason: str = 'manual') -> dict[str, object]:
         }
     except (sqlite3.Error, OSError) as exc:
         logger.warning('Brain backup failed: %s', exc)
+        # ``sqlite3.connect`` creates the file before anything is written to it,
+        # so a failure here leaves a zero-byte husk that integrity_check calls
+        # "ok". Only an unverified copy is removed — never a good backup.
+        if not verified:
+            try:
+                (directory / name).unlink(missing_ok=True)
+            except OSError as cleanup_exc:
+                logger.warning('Could not remove unfinished backup %s: %s', name, cleanup_exc)
         return {'ok': False, 'error': str(exc)}
 
 
@@ -176,7 +226,13 @@ def list_backups() -> list[dict[str, object]]:
         try:
             conn = _open_read_only(path)
             try:
-                entry['healthy'] = _check(conn) == 'ok'
+                check = _check(conn)
+                empty = None if check != 'ok' else _content_reason(conn)
+                entry['healthy'] = check == 'ok' and empty is None
+                if check != 'ok':
+                    entry['error'] = check
+                elif empty is not None:
+                    entry['error'] = empty
                 version = _applied_version(conn)
                 entry['appliedVersion'] = version
                 entry['fromTheFuture'] = version > _code_version()
@@ -205,6 +261,9 @@ def _validate_restore_target(name: str) -> tuple[Path | None, str | None]:
         check = _check(conn)
         if check != 'ok':
             return None, f'backup is not healthy: {check}'
+        empty = _content_reason(conn)
+        if empty is not None:
+            return None, f'backup is not healthy: {empty}'
         version = _applied_version(conn)
         limit = _code_version()
         if version > limit:
@@ -260,9 +319,12 @@ def apply_pending_restore() -> dict[str, object]:
     """Swap a staged backup into place. Call before any brain connection exists.
 
     Keeps one ``.pre-restore`` copy of the database it replaced, so a restore
-    that turns out to be the wrong backup is itself undoable. Any failure leaves
-    the marker in place and the current database untouched — a failed restore
-    must never cost the memory that still exists.
+    that turns out to be the wrong backup is itself undoable. Any failure *up
+    to the swap* leaves the marker in place and the current database untouched
+    — a failed restore must never cost the memory that still exists. Once the
+    swap has landed the restore is reported as applied whatever cleanup does,
+    because re-running it on the next boot would copy the restored database
+    over ``.pre-restore`` and destroy the only copy of what was replaced.
     """
     name = pending_restore()
     if not name:
@@ -272,20 +334,58 @@ def apply_pending_restore() -> dict[str, object]:
     if error or target is None:
         logger.error('Staged brain restore "%s" refused: %s — keeping the current database', name, error)
         return {'ok': False, 'applied': False, 'error': error}
+    staging = source.with_name(f'{source.name}.restoring')
     try:
         if source.exists():
+            # Keep the pre-restore database *with* its WAL. Uncheckpointed
+            # commits live only in -wal, so a main-only .pre-restore cannot put
+            # that memory back — and the sidecars used to be deleted here,
+            # before the new main file had even landed.
             shutil.copy2(source, f'{source}{PRE_RESTORE_SUFFIX}')
             for suffix in ('-wal', '-shm'):
                 side = Path(f'{source}{suffix}')
                 if side.exists():
-                    side.unlink()
-        shutil.copy2(target, source)
-        (backups_dir() / PENDING_FILE).unlink()
-        logger.info('Brain database restored from %s (previous copy at %s%s)', name, source.name, PRE_RESTORE_SUFFIX)
-        return {'ok': True, 'applied': True, 'name': name}
+                    shutil.copy2(side, f'{source}{PRE_RESTORE_SUFFIX}{suffix}')
+        # Copy beside the live file and publish it with os.replace. A failure
+        # part-way through then leaves the current database untouched, where
+        # writing it in place could truncate the only copy of the user's memory.
+        shutil.copy2(target, staging)
+        os.replace(staging, source)
     except OSError as exc:
         logger.error('Brain restore failed for %s: %s', name, exc)
+        try:
+            staging.unlink(missing_ok=True)
+        except OSError as cleanup_exc:
+            logger.warning('Could not remove staging file for %s: %s', name, cleanup_exc)
         return {'ok': False, 'applied': False, 'error': str(exc)}
+
+    # The swap has landed — from here every step is cleanup, and none of it may
+    # turn the result back into a failure (see the docstring).
+    warnings: list[str] = []
+    try:
+        (backups_dir() / PENDING_FILE).unlink(missing_ok=True)
+    except OSError as cleanup_exc:
+        # The staged restore is already in place; a marker that survives means
+        # the next boot repeats a restore that already happened.
+        logger.warning('Brain restore applied but marker for %s could not be cleared: %s', name, cleanup_exc)
+        warnings.append(f'marker not cleared: {cleanup_exc}')
+    for suffix in ('-wal', '-shm'):
+        # A swapped-in main must not be replayed against the *previous*
+        # database's WAL, so the old sidecars go only now that it landed.
+        try:
+            Path(f'{source}{suffix}').unlink(missing_ok=True)
+        except OSError as cleanup_exc:
+            logger.error(
+                'Brain restore applied but stale %s%s survived: %s — remove it '
+                'before the next open or the restored database can be corrupted',
+                source.name, suffix, cleanup_exc,
+            )
+            warnings.append(f'stale {suffix} not removed: {cleanup_exc}')
+    logger.info('Brain database restored from %s (previous copy at %s%s)', name, source.name, PRE_RESTORE_SUFFIX)
+    result: dict[str, object] = {'ok': True, 'applied': True, 'name': name}
+    if warnings:
+        result['warning'] = '; '.join(warnings)
+    return result
 
 
 def ensure_current_backup(max_age_hours: float = 12.0, reason: str = 'startup') -> dict[str, object]:

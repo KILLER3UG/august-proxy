@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Pencil, Trash2, Plus, Eye, EyeOff, Search } from 'lucide-react';
+import { Pencil, Trash2, Plus, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { providersApi, type Provider, type ApiFormat } from '@/api/providers';
 import { WorkspaceField } from '@/components/workspace/WorkspaceField';
@@ -36,8 +36,9 @@ export function ProviderDetailForm({
   const [name, setName] = useState(provider.name);
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl);
   const [apiFormat, setApiFormat] = useState<ApiFormat>(provider.apiFormat);
-  const [apiKey, setApiKey] = useState(provider.apiKey ?? '');
-  const [showKey, setShowKey] = useState(false);
+  // The stored key is never sent to the renderer, so this field is always a
+  // fresh replacement rather than an editable copy of the secret.
+  const [apiKey, setApiKey] = useState('');
   const [autoFetch, setAutoFetch] = useState(!!provider.autoFetch);
   const [editingName, setEditingName] = useState(false);
   const [modelQuery, setModelQuery] = useState('');
@@ -47,11 +48,11 @@ export function ProviderDetailForm({
     setName(provider.name);
     setBaseUrl(provider.baseUrl);
     setApiFormat(provider.apiFormat);
-    setApiKey(provider.apiKey ?? '');
+    setApiKey('');
     setAutoFetch(!!provider.autoFetch);
     setShowAddModel(false);
     setModelQuery('');
-  }, [provider.id, provider.name, provider.baseUrl, provider.apiFormat, provider.apiKey, provider.autoFetch, setShowAddModel]);
+  }, [provider.id, provider.name, provider.baseUrl, provider.apiFormat, provider.apiKeySet, provider.autoFetch, setShowAddModel]);
 
   // Model list: search by id/name, ranked pinned → free → name so the most
   // relevant models sit at the top for editing.
@@ -113,9 +114,15 @@ export function ProviderDetailForm({
   }, [autoFetch]);
 
   function flushField<K extends 'name' | 'baseUrl' | 'apiKey'>(field: K, value: string) {
+    if (field === 'apiKey') {
+      // The backend treats any non-null apiKey as authoritative, so an empty
+      // blur would erase a working key. Never send one.
+      if (!value.trim()) return;
+      update.mutate({ apiKey: value }, { onSuccess: () => setApiKey('') });
+      return;
+    }
     if (field === 'name') setName(value);
     if (field === 'baseUrl') setBaseUrl(value);
-    if (field === 'apiKey') setApiKey(value);
     update.mutate({ [field]: value });
   }
 
@@ -219,37 +226,21 @@ export function ProviderDetailForm({
           hint={provider.apiKeySet ? 'A key is set. Enter a new one to replace it. Stored keys take precedence over environment variables.' : undefined}
         >
           <div className="space-y-2">
-            <div className="relative">
-              <Input
-                type={showKey ? 'text' : 'password'}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                onBlur={() => apiKey !== provider.apiKey && flushField('apiKey', apiKey)}
-                placeholder={provider.apiKeySet ? '••••••••••••••••' : 'sk-…'}
-                autoComplete="off"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  void (async () => {
-                    // If the key isn't loaded yet (e.g. stale cache), fetch it
-                    if (!apiKey && provider.apiKeySet) {
-                      try {
-                        const full = await providersApi.get(provider.id);
-                        if (full.apiKey) setApiKey(full.apiKey);
-                      } catch {
-                        // Best-effort; key stays empty
-                      }
-                    }
-                    setShowKey((v) => !v);
-                  })();
-                }}
-                aria-label={showKey ? 'Hide API key' : 'Show API key'}
-                className="absolute right-2 top-1/2 -translate-y-1/2 grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground transition"
-              >
-                {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-              </button>
-            </div>
+            <Input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              onBlur={() => flushField('apiKey', apiKey)}
+              placeholder={provider.apiKeyMasked ?? 'sk-…'}
+              autoComplete="new-password"
+            />
+            {provider.apiKeySet && (
+              // Read-only proof of what is stored: the secret itself never
+              // crosses the HTTP boundary, so there is nothing to reveal.
+              <p className="text-xs text-muted-foreground">
+                Stored: <span className="font-mono">{provider.apiKeyMasked}</span>
+              </p>
+            )}
           </div>
         </WorkspaceField>
 

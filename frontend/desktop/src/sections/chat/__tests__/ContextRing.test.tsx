@@ -37,6 +37,45 @@ describe('ContextRing tooltip regression', () => {
     expect(style?.willChange).not.toMatch(/opacity/);
   });
 
+  it('names the skills that cost context, biggest first, under the shared row', () => {
+    const breakdown = estimateContextBreakdown({
+      messages: [{ role: 'user', content: 'hello world' }],
+      input: 'test',
+      toolCount: 1,
+      coreMemoryBytes: 4000,
+      skillsByName: { 'small-skill': 400, 'canvas-skill': 2000, 'review-skill': 1200 },
+    });
+    render(<ContextRing pct={42} estTokens={1000} maxContext={4000} breakdown={breakdown} />);
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /context used/i }));
+
+    // Sub-rows carry a trailing ↳ marker, so match the label prefix rather
+    // than the whole text content.
+    const order = ['canvas-skill', 'review-skill', 'small-skill'].map((name) =>
+      screen.getByText(new RegExp(`^${name}`)),
+    );
+    // Order is the point of the sub-rows: the largest contributor has to be
+    // first, or the list answers the wrong question.
+    for (let i = 0; i + 1 < order.length; i += 1) {
+      expect(
+        order[i].compareDocumentPosition(order[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+    // The skills total stays the parent; the names are indented beneath it.
+    expect(screen.getByText('Skills & memory')).toBeInTheDocument();
+    expect(order[0].textContent).toContain('↳');
+  });
+
+  it('says nothing about skills the backend never measured', () => {
+    render(
+      <ContextRing pct={42} estTokens={1000} maxContext={4000} breakdown={mockBreakdown} />
+    );
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /context used/i }));
+
+    expect(screen.getByText('Skills & memory')).toBeInTheDocument();
+    // "not measured" for the row, and no invented per-skill breakdown under it.
+    expect(document.body.textContent).toContain('not measured');
+  });
+
   it('positions the tooltip inside the viewport with finite width', () => {
     render(
       <ContextRing
@@ -129,7 +168,7 @@ describe('ContextRing gauge percentage from server ground truth', () => {
       breakdown.thinking +
       breakdown.systemTools +
       breakdown.systemPrompt +
-      breakdown.skills +
+      (breakdown.skills ?? 0) +
       breakdown.meta;
     expect(sum).toBe(contextTokens);
 
@@ -147,6 +186,55 @@ describe('ContextRing gauge percentage from server ground truth', () => {
     const tooltip = document.querySelector('[data-composer-popover]');
     expect(tooltip).toBeInTheDocument();
     expect(tooltip?.textContent).toContain('20%');
+  });
+
+  it('labels an unmeasured contributor as "not measured" instead of 0.0%', () => {
+    // coreMemoryBytes has no backend producer, so this is the live path:
+    // a "Skills 0.0%" row would assert a measurement that never happened.
+    const breakdown = estimateContextBreakdown({
+      messages: [{ role: 'user', content: 'a'.repeat(2000) }],
+      input: 'a'.repeat(500),
+      toolCount: 8,
+      scaleToTotal: 25600,
+    });
+    expect(breakdown.skills).toBeNull();
+
+    render(
+      <ContextRing
+        pct={20}
+        estTokens={25600}
+        maxContext={128000}
+        breakdown={breakdown}
+      />
+    );
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /context used/i }));
+    const tooltip = document.querySelector('[data-composer-popover]');
+    expect(tooltip?.textContent).toContain('Skills & memory');
+    expect(tooltip?.textContent).toContain('not measured');
+  });
+
+  it('shows a real percentage once the backend reports the size', () => {
+    const breakdown = estimateContextBreakdown({
+      messages: [{ role: 'user', content: 'a'.repeat(2000) }],
+      input: 'a'.repeat(500),
+      toolCount: 8,
+      coreMemoryBytes: 8000,
+      scaleToTotal: 25600,
+    });
+    expect(breakdown.skills).not.toBeNull();
+
+    render(
+      <ContextRing
+        pct={20}
+        estTokens={25600}
+        maxContext={128000}
+        breakdown={breakdown}
+      />
+    );
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /context used/i }));
+    const tooltip = document.querySelector('[data-composer-popover]');
+    expect(tooltip?.textContent).toContain('Skills & memory');
+    expect(tooltip?.textContent).not.toContain('not measured');
   });
 });
 

@@ -1,6 +1,6 @@
 /* ── Session row — title, status pulse, pin, and kebab actions ─────── */
 
-import { useState, useEffect, useRef, memo } from "react";
+import { useState, useEffect, useRef, memo, useId } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -68,12 +68,20 @@ function SessionRowInner({
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const kebabRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+
+  const closeMenu = () => {
+    setShowMenu(false);
+    kebabRef.current?.focus();
+  };
 
   useEffect(() => {
     if (!showMenu) {
       setFolderOpen(false);
       return;
     }
+
+    const previouslyFocused = document.activeElement;
     const place = () => {
       const el = kebabRef.current;
       if (!el) return;
@@ -86,19 +94,47 @@ function SessionRowInner({
       setMenuPos({ top: r.bottom + 4, left });
     };
     place();
+    const focusTimer = window.setTimeout(() => {
+      menuRef.current
+        ?.querySelector<HTMLElement>('[role="menuitem"]')
+        ?.focus();
+    }, 0);
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (menuRef.current?.contains(t) || kebabRef.current?.contains(t)) return;
-      setShowMenu(false);
+      closeMenu();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setShowMenu(false);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowMenu(false);
+        if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+        return;
+      }
+      if (e.key === "ArrowDown" && document.activeElement === kebabRef.current) {
+        e.preventDefault();
+        setShowMenu(true);
+        return;
+      }
+      if (!menuRef.current?.contains(e.target as Node)) return;
+      if (!["ArrowDown", "ArrowUp"].includes(e.key)) return;
+      e.preventDefault();
+      const items = Array.from(
+        menuRef.current.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+      );
+      if (items.length === 0) return;
+      const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+      const nextIndex = e.key === "ArrowDown"
+        ? (currentIndex + 1 + items.length) % items.length
+        : (currentIndex - 1 + items.length) % items.length;
+      items[nextIndex]?.focus();
     };
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     return () => {
+      window.clearTimeout(focusTimer);
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
       document.removeEventListener("mousedown", onDown);
@@ -136,7 +172,7 @@ function SessionRowInner({
           }}
           onBlur={handleSaveRename}
           onClick={(e) => e.stopPropagation()}
-          className="bg-white/[0.04] border border-white/[0.08] px-1.5 py-0.5 rounded text-[12.5px] w-full outline-none text-sidebar-foreground"
+          className="bg-white/[0.04] border border-white/[0.08] px-1.5 py-0.5 rounded text-xs w-full outline-none text-sidebar-foreground"
         />
       </motion.div>
     );
@@ -151,6 +187,7 @@ function SessionRowInner({
       <div
         ref={menuRef}
         role="menu"
+        id={menuId}
         className="fixed z-[100] w-36 bg-popover rounded-md shadow-2xl border border-border/50 py-1 text-xs animate-in fade-in zoom-in-95 duration-100"
         style={{ top: menuPos.top, left: menuPos.left }}
         onClick={(e) => e.stopPropagation()}
@@ -160,7 +197,7 @@ function SessionRowInner({
           role="menuitem"
           onClick={() => {
             onTogglePin();
-            setShowMenu(false);
+            closeMenu();
           }}
           className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-foreground/90 transition"
         >
@@ -173,7 +210,7 @@ function SessionRowInner({
           role="menuitem"
           onClick={() => {
             setIsEditing(true);
-            setShowMenu(false);
+            closeMenu();
           }}
           className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-foreground/90 transition"
         >
@@ -205,7 +242,7 @@ function SessionRowInner({
                 type="button"
                 onClick={() => {
                   onMoveToFolder(null);
-                  setShowMenu(false);
+                  closeMenu();
                 }}
                 className={cn(
                   "w-full text-left px-2.5 py-1 hover:bg-white/5 truncate transition",
@@ -222,7 +259,7 @@ function SessionRowInner({
                   type="button"
                   onClick={() => {
                     onMoveToFolder(f.id);
-                    setShowMenu(false);
+                    closeMenu();
                   }}
                   className={cn(
                     "w-full text-left px-2.5 py-1 hover:bg-white/5 truncate transition",
@@ -244,7 +281,7 @@ function SessionRowInner({
           role="menuitem"
           onClick={() => {
             onArchive();
-            setShowMenu(false);
+            closeMenu();
           }}
           className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-warning hover:text-warning/80 transition"
         >
@@ -259,7 +296,7 @@ function SessionRowInner({
           role="menuitem"
           onClick={() => {
             onDelete();
-            setShowMenu(false);
+            closeMenu();
           }}
           className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-destructive hover:text-destructive/90 transition"
         >
@@ -291,11 +328,11 @@ function SessionRowInner({
           e.preventDefault();
           onTogglePin();
         }}
-        className="relative w-full text-left px-2 py-1 flex flex-col gap-0.5 pr-10 min-w-0"
+        className="relative w-full text-left px-2.5 py-1.5 flex flex-col gap-0.5 pr-8 min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         title="Right click or use three-dots menu to pin"
       >
-        <div className="flex items-center gap-1.5 min-w-0">
-          {hasStatus && (
+        <div className="flex items-center gap-2 min-w-0">
+          {hasStatus ? (
             <span
               className={cn(
                 "inline-block size-1.5 rounded-full shrink-0 transition-colors",
@@ -306,16 +343,20 @@ function SessionRowInner({
                 status === "error" && "bg-danger",
               )}
             />
+          ) : active ? (
+            <span className="inline-block size-1.5 rounded-full bg-sidebar-foreground shrink-0" />
+          ) : (
+            <span className="inline-block size-1.5 rounded-full border border-sidebar-foreground/35 shrink-0" />
           )}
           {session.workspacePath && (
-            <FolderIcon className="size-3 text-sidebar-foreground/30 shrink-0" />
+            <FolderIcon className="size-3 text-tier-3 shrink-0" />
           )}
           <div
             className={cn(
-              "flex-1 min-w-0 session-list-title",
+              "flex-1 min-w-0 session-list-title text-[12.5px]",
               active
-                ? "text-sidebar-foreground"
-                : "text-sidebar-foreground/65",
+                ? "font-medium text-sidebar-foreground"
+                : "text-sidebar-foreground/70 group-hover:text-sidebar-foreground",
             )}
           >
             <MarqueeTitle
@@ -327,7 +368,7 @@ function SessionRowInner({
           {/* Plan §5.2: relative date in the list, absolute on hover. */}
           {session.startedAt && (
             <span
-              className="shrink-0 text-[9.5px] tabular-nums text-sidebar-foreground/30 transition-colors group-hover:text-sidebar-foreground/55"
+              className="shrink-0 text-xs tabular-nums text-tier-2 transition-colors group-hover:text-tier-1"
               title={absoluteDate(session.startedAt)}
               data-testid="session-row-date"
             >
@@ -407,8 +448,7 @@ function SessionRowInner({
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "absolute right-1 top-1/2 -translate-y-1/2 transition-opacity flex items-center gap-px z-40",
-          active || showMenu ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          "absolute right-1 top-1/2 -translate-y-1/2 z-40 flex items-center gap-px opacity-100 transition-opacity focus-within:opacity-100",
         )}
       >
         <motion.button
@@ -418,14 +458,21 @@ function SessionRowInner({
             e.stopPropagation();
             setShowMenu((v) => !v);
           }}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setShowMenu(true);
+            }
+          }}
           whileHover={hoverScale.whileHover}
           whileTap={hoverScale.whileTap}
-          className="p-0.5 hover:bg-white/[0.06] rounded"
+          className="rounded p-0.5 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
           aria-label="More options"
           aria-expanded={showMenu}
           aria-haspopup="menu"
+          aria-controls={menuId}
         >
-          <EllipsisVertical className="size-2.5 text-sidebar-foreground/40 hover:text-sidebar-foreground/70" />
+          <EllipsisVertical className="size-2.5 text-tier-2 transition hover:text-tier-1" />
         </motion.button>
       </div>
 

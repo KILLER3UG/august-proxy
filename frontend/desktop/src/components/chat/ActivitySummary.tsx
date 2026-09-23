@@ -267,7 +267,7 @@ export function ActivitySummary({
           </>
         ) : (
           <>
-            <span className="activity-summary-counts">
+            <span className="activity-summary-counts flex min-w-0 flex-1 items-center gap-2">
               {/* Collapsed-only: when expanded, the inline live line below
                   already carries the working state — a bold header label on
                   top of it read as noise. */}
@@ -279,29 +279,30 @@ export function ActivitySummary({
                   {liveLine || 'Working…'}
                 </span>
               ) : null}
-              {durationLabel && !showLiveOnly ? (
-                <span className="activity-summary-duration" aria-hidden>
-                  {durationLabel}
-                  {hasProse || segments.length > 0 ? ' · ' : ''}
-                </span>
-              ) : null}
               {hasProse ? (
-                <span className="activity-summary-prose" title={prose}>
+                <span className="activity-summary-prose min-w-0 flex-1" title={prose}>
                   {prose}
                 </span>
               ) : (
-                segments.map((s, i) => (
-                  <span key={s.key}>
-                    {i > 0 && (
-                      <span className="activity-summary-sep" aria-hidden>
-                        {' '}
-                        ·{' '}
-                      </span>
-                    )}
-                    {s.text}
-                  </span>
-                ))
+                <span className="min-w-0 flex-1 truncate">
+                  {segments.map((s, i) => (
+                    <span key={s.key}>
+                      {i > 0 && (
+                        <span className="activity-summary-sep" aria-hidden>
+                          {' '}
+                          ·{' '}
+                        </span>
+                      )}
+                      {s.text}
+                    </span>
+                  ))}
+                </span>
               )}
+              {durationLabel && !showLiveOnly ? (
+                <span className="activity-summary-duration shrink-0 font-mono text-[11px] opacity-70" aria-hidden>
+                  {durationLabel}
+                </span>
+              ) : null}
             </span>
             {/* Collapsed + live: pulse beside the chevron so the row still reads as working. */}
             {live && !open ? (
@@ -324,15 +325,15 @@ export function ActivitySummary({
         )}
       </button>
 
-      {live && open && liveLine ? (
+      {live && open && liveLine && !hasProse && segments.length === 0 && !isCompletion ? (
         <div className="activity-summary-live" aria-live="polite">
           <span className="activity-summary-live-dot" aria-hidden />
           <span className="truncate">{liveLine}</span>
         </div>
       ) : null}
-      {/* Collapsed pending state is carried by the bold header label above
-          (activity-summary-live-label) — rendering an inline live line here
-          too duplicated "Working…" as two stacked rows. */}
+      {/* When steps exist (segments.length > 0 or hasProse), the individual rows
+          inside the divided card already show active states and spinners, so
+          the redundant outer banner is suppressed to prevent duplication. */}
 
       <AnimatePresence initial={false}>
         {open && (
@@ -352,7 +353,11 @@ export function ActivitySummary({
             onAnimationStart={() => setBodyClip(true)}
             onAnimationComplete={() => setBodyClip(false)}
           >
-            <div className="activity-summary-body">{children}</div>
+            <div className="activity-summary-body">
+              <div className="activity-card-box rounded-xl border border-border/40 bg-card/30 divide-y divide-border/20 text-xs overflow-hidden" data-slot="activity-card">
+                {children}
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

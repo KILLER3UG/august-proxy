@@ -11,11 +11,18 @@
  * for compactness); expand/collapse of the prose is driven solely by the
  * Show more/less control. The turn-level "Done" marker lives on the rail
  * (RailDoneRow), not on the thought.
+ *
+ * Claude-parity rendering (2026-09-22): with the collapsed default on (now
+ * the out-of-box behaviour), a thought renders as a ONE-LINE distilled
+ * "what the model is doing" header (summarizeThoughtHeader) — the raw
+ * chain-of-thought prose never shows unless the user clicks
+ * "Show full reasoning".
  */
 
-import { useId, useLayoutEffect, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Clock, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { summarizeThoughtHeader } from '@/lib/process-summary';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 
 /** Lines of prose visible before the clamp + fade kick in (Claude-parity:
@@ -73,6 +80,24 @@ export function ThoughtStep({
     return () => ro.disconnect();
   }, [text, showFull]);
 
+  // Distilled step header (participle form: "Loading the skill…",
+  // "Comparing benchmark results…"). While generating, distill the LATEST
+  // sentence so the header rotates with the model's progress; once settled
+  // it rests on the first informative sentence of the whole thought.
+  // (Lives above the `!text && !isGenerating` early return — rules-of-hooks.)
+  const summaryLine = useMemo(() => {
+    if (isGenerating) {
+      const sentences = text
+        .replace(/```[\s\S]*?```/g, ' ')
+        .split(/(?<=[.!?]["')\]]?)\s+|\n+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const tail = sentences[sentences.length - 1] ?? '';
+      return summarizeThoughtHeader(tail, true);
+    }
+    return summarizeThoughtHeader(text, false);
+  }, [text, isGenerating]);
+
   if (!text && !isGenerating) return null;
 
   // Clamp long thoughts whether streaming or settled: once the reasoning passes
@@ -84,18 +109,16 @@ export function ThoughtStep({
   const longThought = overflowing || text.length > CLAMP_CHARS;
   const clamped = longThought && !showFull;
 
-  // dsh-style think row: while the thought is generating — or settled and
-  // clamped — collapse to a one-line summary. While running the line follows
-  // the latest non-blank line (fast tokens move fast); once settled it rests
-  // on the first line. "Show full reasoning" expands mid-stream (even for
-  // short live thoughts).
-  const summaryCollapsed = collapsedDefault && !showFull && (isGenerating || clamped);
-  const canReveal = (longThought || isGenerating) && typeof onToggle === 'function';
-
-  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-  const summaryLine = isGenerating
-    ? lines[lines.length - 1] ?? ''
-    : lines[0] ?? '';
+  // Claude-style think row (2026-09-22): when the collapsed default is on,
+  // a thought renders ONLY as its one-line distilled "what the model is
+  // doing" header — the raw chain-of-thought prose stays behind the
+  // "Show full reasoning" expander. `showFull` (user expansion) reveals it.
+  const summaryCollapsed = collapsedDefault && !showFull;
+  // Every collapsed row is expandable — even a short settled thought is a
+  // summary row first, matching the reference UI where each step reads as
+  // "Comparing two lesser-known language models." until clicked open.
+  // The empty pending placeholder (no reasoning yet) has nothing to reveal.
+  const canReveal = !!text && typeof onToggle === 'function';
 
   const clockIcon = isGenerating ? (
     <Loader2 className="process-thought-clock animate-spin" aria-hidden />

@@ -52,6 +52,12 @@ export interface AutomationJob {
   deliver?: string;
   respond?: boolean;
   continuity?: boolean;
+  /** Optional cap on terminal runs; the job auto-disables once reached. */
+  maxRuns?: number;
+  limitReached?: boolean;
+  /** Execution policy the unattended run uses (set by the Automations form). */
+  guardMode?: string | null;
+  sandboxMode?: string | null;
 }
 
 export interface AutomationListResponse {
@@ -84,6 +90,12 @@ export type AutomationUpsertInput = {
   deliver?: string;
   respond?: boolean;
   continuity?: boolean;
+  /** 0 / omitted = unlimited. */
+  maxRuns?: number;
+  /** Approval mode the unattended run uses; omitted = the runner's 'ask'. */
+  guardMode?: string;
+  /** Tool reach for the run; '' / omitted = the harness default. */
+  sandboxMode?: string;
 };
 
 export function getAutomations(): Promise<AutomationListResponse> {

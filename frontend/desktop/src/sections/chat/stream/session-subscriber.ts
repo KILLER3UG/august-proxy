@@ -26,6 +26,7 @@ import { streamWorkbenchReconnect } from '@/api/workbench';
 import { pushBrowserAction } from '@/lib/browser-store';
 import { upsertQueuedMessage, removeQueuedMessage } from '../queue-store';
 import { updateSessionStreamState, useSessionStreamStore } from './session-stream-store';
+import { injectSessionMessage } from './session-history';
 import { makeSubagentEventHandlers } from './apply-subagent-event';
 import { activeStreamControllers } from './active-stream-controllers';
 import {
@@ -204,28 +205,29 @@ export function ensureSessionSubscriber(sessionOrWorkbenchId: string): void {
         timestamp: data.queuedAt ?? new Date().toISOString(),
         queued: true,
       };
-      updateSessionStreamState(queueUiId, (prev) => ({
-        ...prev,
-        messages: [...(prev.messages ?? []), injected],
-      }));
+      injectSessionMessage(queueUiId, injected);
     },
     onClarifyProposed: (data) => {
-      updateSessionStreamState(uiSessionId, (prev) => {
-        const msgs = prev.messages ?? [];
-        if (msgs.length === 0) return prev;
-        let lastAssistantIdx = -1;
-        for (let i = msgs.length - 1; i >= 0; i--) {
-          if (msgs[i].role === 'assistant') {
-            lastAssistantIdx = i;
-            break;
+      updateSessionStreamState(
+        uiSessionId,
+        (prev) => {
+          const msgs = prev.messages ?? [];
+          if (msgs.length === 0) return prev;
+          let lastAssistantIdx = -1;
+          for (let i = msgs.length - 1; i >= 0; i--) {
+            if (msgs[i].role === 'assistant') {
+              lastAssistantIdx = i;
+              break;
+            }
           }
-        }
-        if (lastAssistantIdx === -1) return prev;
-        return {
-          ...prev,
-          messages: msgs.map((m, i) => (i === lastAssistantIdx ? { ...m, clarify: data } : m)),
-        };
-      });
+          if (lastAssistantIdx === -1) return prev;
+          return {
+            ...prev,
+            messages: msgs.map((m, i) => (i === lastAssistantIdx ? { ...m, clarify: data } : m)),
+          };
+        },
+        { transcriptUpdate: 'stream' },
+      );
     },
   };
 

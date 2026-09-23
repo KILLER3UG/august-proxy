@@ -66,6 +66,33 @@ describe('SessionList — delete-active fallback (Bug 1)', () => {
     localStorage.setItem('august-uncategorized-collapsed', '0');
   });
 
+  it('opens the row menu from the keyboard and restores focus on Escape', async () => {
+    const s = seedSession('sess_keyboard', 'Keyboard chat');
+    useSessionsStore.setState({ sessions: [s] });
+    render(
+      <SessionList
+        activeId={s.id}
+        collapsed={false}
+        onToggleCollapsed={vi.fn()}
+        onSelect={vi.fn()}
+        onNew={vi.fn()}
+        onNavigate={vi.fn()}
+      />,
+      { wrapper },
+    );
+    const trigger = screen.getByLabelText('More options');
+    expect(trigger.className).toContain('focus-visible:ring-2');
+    expect(trigger.parentElement?.className).toContain('opacity-100');
+    expect(trigger.parentElement?.className).not.toContain('group-hover:opacity-100');
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    const firstItem = (await screen.findAllByRole('menuitem'))[0];
+    expect(firstItem).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('navigates home when the only (active) chat is deleted', async () => {
     const s = seedSession('sess_only', 'Solo chat');
     useSessionsStore.setState({ sessions: [s] });

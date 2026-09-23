@@ -183,6 +183,42 @@ describe('legacy alias resolution', () => {
   it('falls back to first section for unknown keys', () => {
     expect(resolveLegacyTab('definitely-not-a-key')).toBe(SETTINGS_SECTIONS[0].id);
   });
+
+  /* RAIL_PARENT declares split-views that have an id for deep links but are
+   * rendered under a hub in the rail. 'added-memory' was declared there with no
+   * matching alias and is not a section id, so /settings/added-memory silently
+   * landed on General — a deep link that resolves to the wrong page is worse
+   * than a 404. A split-view may legitimately resolve either to itself (it is
+   * a real section) or to its hub (it is an alias); what it must never do is
+   * fall through to the default section. */
+  const SPLIT_VIEWS: Array<[string, string]> = [
+    ['recalled-memory', 'memory-knowledge'],
+    ['added-memory', 'memory-knowledge'],
+    ['project-memories', 'memory-knowledge'],
+    ['ui-designer', 'appearance'],
+    ['tool-grants', 'agent-sandbox'],
+    ['python-sandbox', 'agent-sandbox'],
+    ['backend-monitor', 'observability'],
+    ['health-simulator', 'system-health'],
+  ];
+
+  for (const [splitView, hub] of SPLIT_VIEWS) {
+    it(`deep link "${splitView}" resolves to the hub or to itself`, () => {
+      expect(railCanonicalId(splitView), `${splitView} missing from RAIL_PARENT`).toBe(hub);
+      expect([hub, splitView], `${splitView} resolves to neither ${hub} nor itself`).toContain(
+        resolveLegacyTab(splitView),
+      );
+    });
+  }
+
+  it('no declared split-view falls through to the default section', () => {
+    const fallback = SETTINGS_SECTIONS[0].id;
+    for (const [splitView, hub] of SPLIT_VIEWS) {
+      const resolved = resolveLegacyTab(splitView);
+      if (hub === fallback || splitView === fallback) continue;
+      expect(resolved, `${splitView} silently lands on ${fallback}`).not.toBe(fallback);
+    }
+  });
 });
 
 describe('section getters', () => {

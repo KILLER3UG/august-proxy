@@ -12,6 +12,10 @@ import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 
 const startChatStream = vi.fn();
+const historyGate = vi.hoisted(() => ({
+  ensureSessionHistory: vi.fn(),
+  getOrInitSessionStreamState: vi.fn(),
+}));
 
 vi.mock('../../chat-runtime', () => ({
   chatRuntime: { canStartTurn: () => true, abortSession: vi.fn() },
@@ -19,6 +23,12 @@ vi.mock('../../chat-runtime', () => ({
 vi.mock('../../chat-stream-manager', () => ({
   startChatStream: (...args: unknown[]) => startChatStream(...args),
   activeStreamControllers: new Map(),
+}));
+vi.mock('../../stream/session-history', () => ({
+  ensureSessionHistory: historyGate.ensureSessionHistory,
+}));
+vi.mock('../../stream/session-stream-store', () => ({
+  getOrInitSessionStreamState: historyGate.getOrInitSessionStreamState,
 }));
 vi.mock('@/api/workbench', () => ({
   queueWorkbenchMessage: vi.fn().mockResolvedValue({ id: 'q1', text: '' }),
@@ -113,6 +123,8 @@ const gitCount = (msg: unknown): number => {
 beforeEach(() => {
   startChatStream.mockReset();
   toastError.mockReset();
+  historyGate.ensureSessionHistory.mockReset().mockResolvedValue(undefined);
+  historyGate.getOrInitSessionStreamState.mockReset().mockReturnValue({ messages: [] });
 });
 
 describe('useChatSend — retry re-sends clean text (3.3)', () => {
@@ -147,5 +159,42 @@ describe('useChatSend — retry re-sends clean text (3.3)', () => {
     // requestText (which would have produced two).
     expect(startChatStream).toHaveBeenCalledTimes(2);
     expect(gitCount(startChatStream.mock.calls[1][1])).toBe(1);
+  });
+
+  it('waits for pending backend history before appending the local send', async () => {
+    const backendMessage = userMsg('backend-only');
+    let resolveHistory!: () => void;
+    const history = new Promise<void>((done) => {
+      resolveHistory = done;
+    });
+    historyGate.ensureSessionHistory.mockReturnValue(history);
+    historyGate.getOrInitSessionStreamState.mockReturnValue({
+      messages: [backendMessage],
+    });
+    startChatStream.mockResolvedValue('done');
+
+    const { result } = renderHook(() => useChatSend(makeOpts('new prompt')), {
+      wrapper,
+    });
+
+    let sending!: Promise<void>;
+    await act(async () => {
+      sending = result.current.send();
+      await Promise.resolve();
+    });
+    expect(historyGate.ensureSessionHistory).toHaveBeenCalledWith('sess_1');
+    expect(startChatStream).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveHistory();
+      await sending;
+    });
+
+    expect(startChatStream).toHaveBeenCalledTimes(1);
+    const params = startChatStream.mock.calls[0][1] as { chatHistory: ChatMessage[] };
+    expect(params.chatHistory).toEqual([
+      backendMessage,
+      expect.objectContaining({ content: 'new prompt' }),
+    ]);
   });
 });

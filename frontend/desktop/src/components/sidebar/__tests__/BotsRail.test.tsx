@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { botAvatarSvg } from '@/lib/bot-avatar';
 
@@ -114,7 +114,11 @@ function withProviders(ui: React.ReactElement) {
 }
 
 describe('BotsRail', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    vi.clearAllTimers();
+  });
 
   it('renders every roster Bot with its display title', async () => {
     withProviders(<BotsRail onOpenSession={vi.fn()} />);
@@ -168,6 +172,29 @@ describe('BotsRail', () => {
         }),
       ),
     );
+  });
+
+  it('opens Bot actions from the keyboard and restores focus on Escape', async () => {
+    withProviders(<BotsRail onOpenSession={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('Research Buddy')).toBeTruthy());
+    const trigger = screen.getAllByLabelText('Bot actions')[0];
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    const firstItem = (await screen.findAllByRole('menuitem'))[0];
+    await waitFor(() => expect(firstItem).toHaveFocus());
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('keeps Bot actions discoverable without hover and uses readable metadata', async () => {
+    withProviders(<BotsRail onOpenSession={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('Research Buddy')).toBeTruthy());
+    const trigger = screen.getAllByLabelText('Bot actions')[0];
+    expect(trigger.className).toContain('opacity-100');
+    expect(trigger.className).not.toContain('group-hover:opacity-100');
+    const title = screen.getByText('Research Buddy');
+    expect(title.className).toContain('text-xs');
   });
 
   it('duplicate passes cloneFrom so the copy inherits role/model/toolsets', async () => {

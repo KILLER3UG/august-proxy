@@ -12,6 +12,7 @@ import { motion } from 'framer-motion';
 import { Check, ChevronDown, Circle, Loader2, Minus } from 'lucide-react';
 import { useLiveActivityStore } from '@/store/liveActivity';
 import { resolveUiSessionId } from '@/sections/chat/stream/session-id-map';
+import { summarizeThoughtHeader } from '@/lib/process-summary';
 import { cn } from '@/lib/utils';
 
 interface WorkingIndicatorProps {
@@ -63,12 +64,6 @@ function Dots({ tone = 'text-muted-foreground/70' }: { tone?: string }) {
   );
 }
 
-function cleanThinkingText(s: string): string {
-  let cleaned = s.replace(/^Thinking(?:\.{1,3}|:|\s*·|\s+)/i, '').trim();
-  cleaned = cleaned.replace(/^\.+|\.+$/g, '').trim();
-  return cleaned;
-}
-
 export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps) {
   // The activity store is keyed by UI session id; the pane may hand us a
   // wb_* route id, so normalize before subscribing.
@@ -85,9 +80,17 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
     for (const item of items) {
       let line = '';
       if (item.kind === 'thinking') {
+        // Claude-style: the stack shows a distilled "what the model is
+        // doing" header per thinking step, never a raw chain-of-thought
+        // sentence. The in-flight tail distills with the live participle
+        // form ("Loading the skill…"); settled steps keep their header.
         const rawDetail = (item.detail || '').split('\n')[0];
-        const cleaned = cleanThinkingText(rawDetail || item.label);
-        line = trimLine(cleaned);
+        const source = rawDetail || item.label;
+        const distilled = summarizeThoughtHeader(
+          source,
+          item.status === 'running',
+        );
+        line = trimLine(distilled);
       } else {
         const base = item.status === 'error' ? `${item.label} — failed` : item.label;
         const detail = (item.detail || '').split('\n')[0];

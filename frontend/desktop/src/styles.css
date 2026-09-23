@@ -13,6 +13,14 @@
     --dt-background-hsl: 60 11.11% 98.24%;
     --dt-foreground: #1c1c1e;
     --dt-foreground-hsl: 240 3.45% 11.37%;
+    /* Three sanctioned contrast tiers (2026-09-16 UI scan §3.2):
+     * - tier-1: primary body text (~15:1 on dt-background)
+     * - tier-2: secondary (timestamps, metadata, ≥11.5px) (~7:1)
+     * - tier-3: tertiary (placeholders, ≥13px OR ≥18px only) (~4.5:1)
+     * The dark theme tokens below mirror these targets. */
+    --dt-fg-1: #1c1c1e;
+    --dt-fg-2: #4a4a52;
+    --dt-fg-3: #6b6b70;
     --dt-card: #ffffff;
     --dt-card-hsl: 0 0% 100%;
     --dt-card-foreground: #1c1c1e;
@@ -100,6 +108,9 @@
     --dt-background-hsl: 0 0% 5.9%;
     --dt-foreground: #f0f0f0;
     --dt-foreground-hsl: 0 0% 94.1%;
+    --dt-fg-1: #f0f0f0;
+    --dt-fg-2: #c8c8cc;
+    --dt-fg-3: #a6a6a6;
     --dt-card: #171717;
     --dt-card-hsl: 0 0% 9%;
     --dt-card-foreground: #f0f0f0;
@@ -232,6 +243,17 @@
   .text-muted-foreground         { color: var(--dt-muted-foreground); }
   .text-popover-foreground       { color: var(--dt-popover-foreground); }
   .text-primary                  { color: var(--dt-primary); }
+
+  /* Sanctioned contrast tiers — 2026-09-16 UI scan §3.2.
+   * tier-1: primary body (≥15:1), tier-2: metadata ≥11.5px (~7:1),
+   * tier-3: placeholders + decorative only at ≥13px (~4.5:1). */
+  .text-tier-1                  { color: var(--dt-fg-1); }
+  .text-tier-2                  { color: var(--dt-fg-2); }
+  .text-tier-3                  { color: var(--dt-fg-3); }
+  [data-tier='1']               { color: var(--dt-fg-1); }
+  [data-tier='2']               { color: var(--dt-fg-2); }
+  [data-tier='3']               { color: var(--dt-fg-3); }
+
   .text-primary-foreground       { color: var(--dt-primary-foreground); }
   .text-secondary-foreground     { color: var(--dt-secondary-foreground); }
   .text-accent-foreground        { color: var(--dt-accent-foreground); }
@@ -545,6 +567,7 @@
 .chat-scroll-chrome {
   overflow-anchor: none;
 }
+
 .chat-scroll-anchor {
   overflow-anchor: auto;
   height: 1px;
@@ -1123,9 +1146,13 @@ input::placeholder {
 
 .august-composer {
   background: var(--dt-card) !important;
-  border-color: color-mix(in srgb, var(--dt-border) 75%, transparent) !important;
-  border-radius: 0.9rem !important;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06) !important;
+  border-color: color-mix(in srgb, var(--dt-border) 60%, transparent) !important;
+  border-radius: 1rem !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 8px 24px rgba(0,0,0,0.06) !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.august-composer:focus-within {
+  border-color: color-mix(in srgb, var(--dt-border) 90%, transparent) !important;
 }
 
 .august-composer textarea {
@@ -1286,33 +1313,39 @@ input::placeholder {
 /* Whole-turn activity summary (Thought + Tools collapsed after final output) */
 .activity-summary {
   margin: 6px 0;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--dt-foreground) 2.5%, transparent);
+  border-radius: 12px;
+  border: 1px solid transparent;
   min-width: 0;
   max-width: 100%;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 .activity-summary[data-expanded="true"] {
-  background: color-mix(in srgb, var(--dt-foreground) 3.5%, transparent);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 .activity-summary-header {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 30px;
-  padding: 5px 10px;
-  font-size: 12px;
+  min-height: 28px;
+  padding: 4px 4px;
+  font-size: 13px;
   color: var(--dt-muted-foreground);
   cursor: pointer;
   user-select: none;
   border: none;
   background: transparent;
   text-align: left;
-  border-radius: 6px;
+  border-radius: 8px;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 .activity-summary-header:hover {
-  background: color-mix(in srgb, var(--dt-foreground) 5%, transparent);
-  color: color-mix(in srgb, var(--dt-foreground) 85%, transparent);
+  color: var(--dt-foreground);
+}
+.activity-summary[data-expanded="true"] .activity-summary-header {
+  border-bottom: none;
 }
 .activity-summary-header:focus-visible {
   outline: 2px solid var(--dt-border);
@@ -1321,30 +1354,33 @@ input::placeholder {
 .activity-summary-counts {
   flex: 1;
   min-width: 0;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
 }
 .activity-summary-prose {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  font-style: italic;
-  color: color-mix(in srgb, var(--dt-muted-foreground) 85%, transparent);
-  line-height: 1.35;
+  font-style: normal;
+  font-weight: 450;
+  color: color-mix(in srgb, var(--dt-foreground) 85%, transparent);
+  line-height: 1.4;
 }
 .activity-summary-duration {
-  opacity: 0.7;
+  opacity: 0.75;
   font-style: normal;
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
   white-space: nowrap;
 }
 .activity-summary-sep {
   opacity: 0.55;
 }
 .activity-summary-body {
-  padding: 4px 4px 8px 2px;
+  padding: 4px 0 6px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0;
   /* Long nowrap command lines must not widen the row past the card: every
      flex-column level needs its min-width floor removed or the browser
      sizes the column to min-content (the longest unbreakable line). The
@@ -1596,6 +1632,18 @@ input::placeholder {
 }
 .process-tool-label--live {
   color: color-mix(in srgb, var(--dt-foreground) 78%, transparent);
+}
+.activity-card-box .process-tool-toggle {
+  padding: 10px 14px;
+  min-height: 34px;
+  border-radius: 0;
+}
+.activity-card-box .process-tool-toggle--command {
+  padding: 10px 14px;
+}
+.activity-card-box .edit-rail-trigger {
+  padding: 10px 14px;
+  min-height: 34px;
 }
 .process-tool-chevron {
   width: 12px;
@@ -1939,9 +1987,45 @@ input::placeholder {
   border-radius: 0.5rem;
 }
 
-.markdown-code-block > pre {
-  margin-top: 0;
-  padding-right: 4rem; /* leave room for the copy button */
+.markdown-content .markdown-code-block {
+  border-radius: 0.75rem;
+  border: 1px solid var(--dt-border);
+  overflow: hidden;
+  margin-top: 0.875rem;
+  margin-bottom: 0.875rem;
+  background-color: var(--dt-code-surface-bg, #1e1e1e);
+}
+.markdown-content .markdown-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.875rem;
+  background-color: color-mix(in srgb, var(--dt-foreground) 4%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 60%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.markdown-content .markdown-code-block > pre {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  padding: 0.75rem 1rem;
+}
+.markdown-content .markdown-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.375rem;
+  font-size: 11px;
+  color: var(--dt-muted-foreground);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.markdown-content .markdown-copy-btn:hover {
+  color: var(--dt-foreground);
+  background: color-mix(in srgb, var(--dt-foreground) 8%, transparent);
 }
 .markdown-content pre code {
   background-color: transparent;
@@ -1967,18 +2051,29 @@ input::placeholder {
   display: block;
   width: 100%;
   overflow-x: auto;
-  border-collapse: collapse;
-  margin-top: 0.75rem;
-  margin-bottom: 0.75rem;
-  font-size: 0.9rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 0.875rem;
+  margin-bottom: 0.875rem;
+  font-size: 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--dt-border) 70%, transparent);
+  border-radius: 0.5rem;
 }
 .markdown-content th,
 .markdown-content td {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--dt-border);
+  padding: 0.5rem 0.875rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 50%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--dt-border) 40%, transparent);
+}
+.markdown-content th:last-child,
+.markdown-content td:last-child {
+  border-right: none;
+}
+.markdown-content tr:last-child td {
+  border-bottom: none;
 }
 .markdown-content th {
-  background-color: var(--dt-muted);
+  background-color: color-mix(in srgb, var(--dt-muted) 50%, transparent);
   font-weight: 600;
   text-align: left;
 }

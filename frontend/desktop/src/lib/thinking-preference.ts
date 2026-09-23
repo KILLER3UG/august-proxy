@@ -1,8 +1,9 @@
 /* ── Thinking collapse preference ─────────────────────────────────────── */
-/* When enabled, settled long thoughts render as a one-line summary with a  */
-/* "Show full reasoning" affordance (dsh-style think row) instead of the    */
-/* 9-line clamp. Persisted to localStorage; default OFF so reasoning        */
-/* renders Claude-style (multi-line clamp + "Show more") out of the box.    */
+/* When enabled (the DEFAULT), settled thoughts render as a one-line        */
+/* distilled "what the model is doing" header with a "Show full reasoning"  */
+/* affordance (Claude-style step rows) instead of clamped raw prose.        */
+/* Persisted to localStorage; an explicit opt-out ('0') restores the old    */
+/* multi-line clamp + "Show more" raw-prose rendering.                      */
 
 const KEY = 'august.collapseThinking';
 
@@ -12,12 +13,14 @@ export function isCollapseThinkingEnabled(): boolean {
   if (cached === null && typeof window !== 'undefined') {
     try {
       const raw = window.localStorage.getItem(KEY);
-      cached = raw === '1';
+      // Default ON: Claude-style summary rows out of the box. An explicit
+      // '0' is the only way back to raw prose rendering.
+      cached = raw !== '0';
     } catch {
-      cached = false;
+      cached = true;
     }
   }
-  return cached ?? false;
+  return cached ?? true;
 }
 
 export function setCollapseThinkingEnabled(value: boolean): void {

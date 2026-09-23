@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ToolStepRow } from '../ToolStepRow';
 import type { ToolEntry } from '@/components/chat/ToolCallItem';
 
@@ -342,6 +342,136 @@ describe('ToolStepRow — command status pill (plan 15.1)', () => {
     const cmd = screen.getByTestId('command-inline-cmd');
     expect(cmd.textContent).toContain('ls -la');
     expect(cmd.className).toContain('font-mono');
+  });
+});
+
+describe('ToolStepRow — live running timer', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function runningCommand(startedAgoMs: number) {
+    return makeTool({
+      name: 'run_command',
+      status: 'running',
+      context: JSON.stringify({ command: 'pytest -q' }),
+      startedAt: Date.now() - startedAgoMs,
+    });
+  }
+
+  it('counts elapsed seconds on a running command', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+    render(
+      <ToolStepRow
+        tool={runningCommand(12_000)}
+        label="Running: pytest -q"
+        isCommand
+        expanded
+        onToggle={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('tool-live-timer').textContent).toBe('· 12s');
+  });
+
+  it('keeps ticking while the tool runs', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+    render(
+      <ToolStepRow
+        tool={runningCommand(73_000)}
+        label="Running: build"
+        isCommand
+        expanded
+        onToggle={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('tool-live-timer').textContent).toBe('· 1m 13s');
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(screen.getByTestId('tool-live-timer').textContent).toBe('· 1m 18s');
+  });
+
+  it('stays silent for sub-second runs where it would only jitter', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+    render(
+      <ToolStepRow
+        tool={runningCommand(400)}
+        label="Running: ls"
+        isCommand
+        expanded
+        onToggle={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId('tool-live-timer')).toBeNull();
+  });
+
+  it('drops the live timer once the tool settles', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+    const { rerender } = render(
+      <ToolStepRow
+        tool={runningCommand(9_000)}
+        label="Running: pytest -q"
+        isCommand
+        expanded
+        onToggle={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('tool-live-timer')).toBeInTheDocument();
+    rerender(
+      <ToolStepRow
+        tool={{ ...runningCommand(9_000), status: 'done', duration: 9_000 }}
+        label="Ran: pytest -q"
+        isCommand
+        expanded
+        onToggle={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId('tool-live-timer')).toBeNull();
+  });
+
+  it('times non-command running tools too', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+    render(
+      <ToolStepRow
+        tool={makeTool({
+          name: 'web_search',
+          status: 'running',
+          startedAt: Date.now() - 4_000,
+        })}
+        label="Searching"
+        expanded
+        onToggle={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('tool-live-timer').textContent).toBe('· 4.0s');
+  });
+
+  it('falls back to mount time when the entry carries no start stamp', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+    render(
+      <ToolStepRow
+        tool={makeTool({
+          name: 'run_command',
+          status: 'running',
+          context: JSON.stringify({ command: 'make' }),
+        })}
+        label="Running: make"
+        isCommand
+        expanded
+        onToggle={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId('tool-live-timer')).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(2_500);
+    });
+    expect(screen.getByTestId('tool-live-timer').textContent).toBe('· 2.5s');
   });
 });
 

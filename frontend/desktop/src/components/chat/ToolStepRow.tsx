@@ -7,9 +7,9 @@
  * on (re-)entering running; closing is purely user-driven.
  */
 
-import { Children, useEffect, useId, useState, type ReactNode } from 'react';
-import { AlertCircle, Check, ChevronDown, Loader2, Pencil, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Children, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { AlertCircle, Check, ChevronDown, ChevronRight, Loader2, Pencil, X } from 'lucide-react';
+import { cn, fmtElapsed } from '@/lib/utils';
 import {
   Task,
   TaskContent,
@@ -171,6 +171,38 @@ export function ToolStepRow({
     if (expanded) setOpen(true);
   }, [expanded]);
 
+  // Live "Running · 12s" counter, mirroring ToolCallItem. Ticks only while the
+  // tool runs so settled rows cost nothing to re-render.
+  const [now, setNow] = useState(() => Date.now());
+  const mountedAt = useRef(Date.now());
+  useEffect(() => {
+    if (!running) return;
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(() => Date.now()), 500);
+    return () => window.clearInterval(id);
+  }, [running]);
+
+  const startedAtRaw = tool.startedAt;
+  const startedAtMs =
+    typeof startedAtRaw === 'number'
+      ? startedAtRaw
+      : typeof startedAtRaw === 'string'
+        ? Number(startedAtRaw) || new Date(startedAtRaw).getTime()
+        : undefined;
+  const elapsedMs = running
+    ? now - (startedAtMs && !Number.isNaN(startedAtMs) ? startedAtMs : mountedAt.current)
+    : undefined;
+  // Sub-second jitter reads as noise; the reference shows whole seconds.
+  const showLiveTimer = running && elapsedMs !== undefined && elapsedMs >= 1000;
+  const liveTimer = showLiveTimer ? (
+    <span
+      className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/60"
+      data-testid="tool-live-timer"
+    >
+      · {fmtElapsed(elapsedMs)}
+    </span>
+  ) : null;
+
   const childNodes = Children.toArray(children);
   const hasChildren = childNodes.length > 0;
   const hasProgress = progress ? visibleProgress(progress).length > 0 : false;
@@ -282,6 +314,7 @@ export function ToolStepRow({
                 >
                   {running ? 'Running' : 'Terminal'}
                 </span>
+                {liveTimer}
                 {commandText ? (
                   <span
                     className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground/65"
@@ -293,15 +326,18 @@ export function ToolStepRow({
                 ) : null}
               </>
             ) : (
-              <span
-                className={cn(
-                  'process-tool-label',
-                  running && 'shimmer process-tool-label--live',
-                )}
-                title={filename ?? undefined}
-              >
-                {label}
-              </span>
+              <>
+                <span
+                  className={cn(
+                    'process-tool-label',
+                    running && 'shimmer process-tool-label--live',
+                  )}
+                  title={filename ?? undefined}
+                >
+                  {label}
+                </span>
+                {liveTimer}
+              </>
             )}
             {isCommand && !running && (
               <span
@@ -338,9 +374,14 @@ export function ToolStepRow({
                 {commandErrorLine}
               </span>
             )}
-            {canExpand && (
+            {canExpand ? (
               <ChevronDown
-                className="process-tool-chevron group-data-[state=open]:rotate-180"
+                className="process-tool-chevron group-data-[state=open]:rotate-180 size-3 text-muted-foreground/60 transition-transform"
+                aria-hidden
+              />
+            ) : (
+              <ChevronRight
+                className="size-3 text-muted-foreground/60 transition-colors"
                 aria-hidden
               />
             )}

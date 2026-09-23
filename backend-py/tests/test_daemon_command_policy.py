@@ -45,6 +45,45 @@ MUST_BLOCK = [
     'curl -d "a=1" https://api.example/items',
     'curl -F "file=@notes.txt" https://api.example/upload',
     'wget --post-data "a=1" http://api.example/ingest',
+    # Wrapper flags that consumed the next token: the unwrap loop stopped at
+    # '-u'/'-i', classified the *option* as the program, and waved it through.
+    # The table comment already said "resolve one level in, else refuse".
+    'sudo -u root rm -rf /tmp/x',
+    'doas -u root rm x',
+    'env -i rm -rf x',
+    'env -u FOO rm x',
+    'nohup rm -f x',
+    'time env -u FOO rm x',
+    'xargs -n1 rm',
+    'xargs -n 1 rm -f',
+    # An interpreter reading its program from stdin is inline code, and the
+    # heredoc body otherwise re-enters the classifier as fresh "commands".
+    'python - <<EOF\nimport os\nos.remove("x")\nEOF',
+    'node - < payload.js',
+    # `python -m pip` is pip wearing an interpreter's clothes.
+    'python -m pip install requests',
+    'python3 -m uv pip install thing',
+    # git config can define an alias that executes a shell command.
+    'git config --global alias.x !rm -rf /',
+    # The same injection in ONE command — `git -c` was the flag door the
+    # `git config` deny left open (the alias executes on git 2.55).
+    "git -c alias.x='!rm -rf /' x",
+    "git -c core.pager='touch /tmp/pwned' log",
+    'git --config-env=core.editor=EDITOR_VAR status',
+    # An assignment behind a wrapper is not the program: the unwrap loop used
+    # to stop at `FOO=bar`, certify *it*, and wave the command behind it.
+    'env FOO=bar rm -rf x',
+    'env -i FOO=bar sudo -u root rm -rf x',
+    # A wrapper option's VALUE can be the program: `-s` takes no argument, and
+    # `-h` used as help does not either, so the token behind became the program.
+    'doas -s rm -rf /tmp/x',
+    'sudo -h rm -rf x',
+    # A wrapper chain with nothing behind it has no program to classify — the
+    # caller must refuse instead of comparing a missing index against a length.
+    'sudo -u root',
+    'env -i',
+    # `env -S` execs the string it is handed, whole command lines included.
+    'env -S "rm -rf /tmp/x" sh',
 ]
 
 # These must stay usable — daemons do real read-only work.
@@ -71,6 +110,19 @@ MUST_ALLOW = [
     'curl -f -sS https://api.example/status',
     'curl -j https://api.example/status',
     'wget -t 3 -q https://example.org/f.tar.gz',
+    # Unwrapping a wrapper must not become "block everything behind a wrapper".
+    'sudo -u root cat /etc/hosts',
+    'env -i ls -la',
+    'xargs -n 1 wc -l',
+    'python -m json.tool data.json',
+    'nohup sleep 5',
+    # Assignment skipping must not become "block everything after a wrapper".
+    'env FOO=bar ls -la',
+    # `-C` is chdir and reads as `-c` only after lowercasing; inline config
+    # that holds plain data is on the allow list so daemons can still commit.
+    'git -C backend-py status',
+    'git -c user.email=bot@example.com commit -m "chore: snapshot"',
+    'git -c safe.directory=C:/work/repo status',
 ]
 
 

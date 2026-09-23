@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Edit3,
   Trash2,
+  ArrowUpDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Folder } from "@/store/sessions";
@@ -20,6 +21,7 @@ export function Section({
   empty,
   onNewFolder,
   onUploadFolder,
+  onToggleSort,
   children,
 }: {
   title: string;
@@ -27,40 +29,55 @@ export function Section({
   empty?: string;
   onNewFolder?: () => void;
   onUploadFolder?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  onToggleSort?: () => void;
   children?: React.ReactNode;
 }) {
   return (
     <div className="august-sidebar-section">
       <div className="august-sidebar-section-header flex items-center justify-between mb-1 px-2">
         <div className="flex items-center gap-1">
-          <h3 className="text-[11px] text-sidebar-foreground/40 font-normal">
+          <h3 className="text-[11px] text-sidebar-foreground/45 font-medium tracking-wide uppercase">
             {title}
           </h3>
           {count > 0 && (
-            <span className="text-[10px] text-sidebar-foreground/25 tabular-nums">
+            <span className="text-[10px] text-sidebar-foreground/30 tabular-nums">
               {count}
             </span>
           )}
         </div>
-        {(title === "Sessions" || title === "Recents" || title === "Projects") && onNewFolder && onUploadFolder && (
+        {(title === "Sessions" || title === "Recents" || title === "Projects" || title === "Chats and tasks") && (
           <div className="flex items-center gap-0.5">
-            <button
-              onClick={onUploadFolder}
-              className="text-sidebar-foreground/30 hover:text-sidebar-foreground/55 p-0.5 rounded transition-colors hover:bg-white/[0.03]"
-              title="Open Workspace Folder"
-            >
-              <FolderPlus className="size-3" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onNewFolder();
-              }}
-              className="text-sidebar-foreground/30 hover:text-sidebar-foreground/55 p-0.5 rounded transition-colors hover:bg-white/[0.03]"
-              title="Create Sidebar Folder"
-            >
-              <Plus className="size-3" />
-            </button>
+            {onToggleSort && (
+              <button
+                type="button"
+                onClick={onToggleSort}
+                className="text-sidebar-foreground/40 hover:text-sidebar-foreground p-0.5 rounded transition-colors hover:bg-white/[0.04]"
+                title="Sort chats"
+              >
+                <ArrowUpDown className="size-3" />
+              </button>
+            )}
+            {onUploadFolder && (
+              <button
+                onClick={onUploadFolder}
+                className="text-sidebar-foreground/30 hover:text-sidebar-foreground/55 p-0.5 rounded transition-colors hover:bg-white/[0.03]"
+                title="Open Workspace Folder"
+              >
+                <FolderPlus className="size-3" />
+              </button>
+            )}
+            {onNewFolder && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNewFolder();
+                }}
+                className="text-sidebar-foreground/30 hover:text-sidebar-foreground/55 p-0.5 rounded transition-colors hover:bg-white/[0.03]"
+                title="Create Sidebar Folder"
+              >
+                <Plus className="size-3" />
+              </button>
+            )}
           </div>
         )}
       </div>

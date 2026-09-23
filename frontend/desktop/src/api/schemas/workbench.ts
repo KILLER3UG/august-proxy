@@ -366,6 +366,7 @@ export const WorkbenchContextPressureEventSchema = WorkbenchBaseSchema.extend({
   maxContext: z.number().optional(),
   remainingTokens: z.number().optional(),
   promptCache: z.unknown().optional(),
+  contextSections: z.unknown().optional(),
 });
 
 /** The model switched the session into plan mode itself (enter_plan_mode). */

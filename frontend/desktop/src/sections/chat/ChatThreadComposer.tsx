@@ -8,6 +8,7 @@ import type { WorkbenchSession } from '@/types/workbench';
 import type { ChatMessage, FileAttachment } from '@/types/chat';
 import type { WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
 import { QueuePills } from './QueuePills';
+import { StreamLinkBanner } from './StreamLinkBanner';
 import { ArenaLaunchModal } from './composer/ArenaLaunchModal';
 import { DebateLaunchModal } from './debate/DebateLaunchModal';
 import type { DebateRun } from './debate/debate-store';
@@ -15,6 +16,7 @@ import { WifiOff } from 'lucide-react';
 import type { QueuedUserMessage } from './queue-store';
 import { type ContextBreakdown } from './ChatComposer';
 import { Markdown } from './ChatMarkdown';
+import { TaskProgressPill } from '@/components/chat/TaskProgressPill';
 import type { ModelItem } from './model-display';
 import type { SessionUsageState } from './hooks/useChatUsage';
 import type { EffortLevel } from './hooks/useChatSend';
@@ -370,6 +372,14 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
         }}
       />
 
+      {/* SSE link dropped while the backend is otherwise fine. When messages
+          are parked offline, the offline banner already explains the outage. */}
+      {offlineCount === 0 ? (
+        <StreamLinkBanner
+          sessionId={workbenchSession?.id || activeWorkbenchSessionId || sessionId}
+        />
+      ) : null}
+
       {/* Offline compose banner (C9) */}
       {offlineCount > 0 ? (
         <div
@@ -401,6 +411,10 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           items={queuedMessages}
         />
       )}
+
+      <div className="flex justify-center mb-1.5">
+        <TaskProgressPill sessionId={sessionId} />
+      </div>
 
       <div
         className={cn(
@@ -544,6 +558,10 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           onAskParallel={() => setArenaOpen(true)}
           onStartDebate={() => setDebateOpen(true)}
         />
+      </div>
+
+      <div className="mt-2 text-center text-[11px] text-muted-foreground/60 select-none">
+        August is an AI assistant and can make mistakes. Please double-check responses.
       </div>
 
       {debateOpen ? (

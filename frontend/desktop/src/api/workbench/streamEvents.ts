@@ -374,6 +374,9 @@ export function dispatchWorkbenchEvent(
       const pressureLevel =
         typeof p?.attentionPressure === 'string' ? p.attentionPressure : '';
       const pc = p?.promptCache as { hitTokens?: number; missTokens?: number; hitRate?: number } | undefined;
+      const sections = p?.contextSections as
+        | { memoryBytes?: number; skillsBytes?: number; stateBytes?: number; nudgeBytes?: number }
+        | undefined;
       handlers.onContextPressure?.({
         contextUsedPct: typeof p?.contextUsedPct === 'number' ? p.contextUsedPct : undefined,
         attentionPressure: ['low', 'medium', 'high', 'critical'].includes(pressureLevel)
@@ -384,6 +387,7 @@ export function dispatchWorkbenchEvent(
         remainingTokens:
           typeof p?.remainingTokens === 'number' ? p.remainingTokens : undefined,
         promptCache: pc && typeof pc === 'object' ? { hitTokens: Number((pc as Record<string, unknown>).hitTokens) || 0, missTokens: Number((pc as Record<string, unknown>).missTokens) || 0, hitRate: typeof (pc as Record<string, unknown>).hitRate === 'number' ? (pc as Record<string, unknown>).hitRate as number : undefined } : undefined,
+        contextSections: sections && typeof sections === 'object' ? sections : undefined,
       });
       break;
     }

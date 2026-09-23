@@ -9,6 +9,8 @@
 //      port is taken or the backend never comes up healthy
 //   4) Kill the process on app drop
 
+use base64::{engine::general_purpose::STANDARD, Engine};
+use minisign_verify::{PublicKey, Signature};
 use std::env;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -22,6 +24,9 @@ use tauri::{AppHandle, Emitter, Manager};
 use std::os::windows::process::CommandExt;
 
 const DEFAULT_PROXY_PORT: u16 = 8085;
+const UPDATER_PUBLIC_KEY_B64: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVFRjVGM0E1RTlDMkUzNTAKUldSUTQ4THBwZlAxWHFoMTRFVXUvNldiaC9vTGVHRFlNdGxXZkpSZk5zN3Y4ckY1VkFidlp5ZDEK";
+const RELEASE_REPOSITORY: &str = "KILLER3UG/august-proxy";
+static VERIFIED_INSTALLER: Mutex<Option<(PathBuf, String)>> = Mutex::new(None);
 
 /// Last port of the spawn fallback range (8085..=8095 inclusive). Tried in
 /// order when `AUGUST_PROXY_PORT` is not set: if the backend cannot bind (the
@@ -35,6 +40,12 @@ static ACTIVE_PROXY_PORT: AtomicU16 = AtomicU16::new(DEFAULT_PROXY_PORT);
 
 /// When true, the watchdog must not respawn the backend (update/install in progress).
 static UPDATE_HOLDOFF: AtomicBool = AtomicBool::new(false);
+
+/// True only for the process that actually owns the single-instance lock.
+/// A launch that was refused by the guard must never run backend teardown: its
+/// exit fires `ExitRequested`, and the orphan sweep would kill the *first*
+/// instance's uvicorn mid-request — the exact failure the guard exists to stop.
+static INSTANCE_LOCK_OWNED: AtomicBool = AtomicBool::new(false);
 /// Set by the UI when the user cancels the visible installer download.
 static UPDATE_DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
 
@@ -184,12 +195,21 @@ fn instanceLockPath(app: &AppHandle) -> PathBuf {
     runtimeRoot(app).join(INSTANCE_LOCK_NAME)
 }
 
+/// True only when `pid` is a live *August* process. A bare liveness check is
+/// not enough: after a force-kill the recorded PID can be recycled by an
+/// unrelated program, which would lock every later launch out of the app.
 #[cfg(windows)]
 fn processAlive(pid: u32) -> bool {
     use std::process::Command;
     let filter = format!("PID eq {}", pid);
-    match Command::new("tasklist").args(["/FI", &filter, "/NH"]).output() {
-        Ok(out) => String::from_utf8_lossy(&out.stdout).contains(&pid.to_string()),
+    let mut cmd = Command::new("tasklist");
+    cmd.args(["/FI", &filter, "/NH", "/FO", "CSV"]);
+    applyNoWindow(&mut cmd);
+    match cmd.output() {
+        Ok(out) => isAugustRow(&String::from_utf8_lossy(&out.stdout), pid),
+        // Unanswerable is treated as "not alive": refusing to launch at all is
+        // the worse failure, and a second instance still falls back down the
+        // probe port range rather than corrupting the first one's state.
         Err(_) => false,
     }
 }
@@ -197,17 +217,41 @@ fn processAlive(pid: u32) -> bool {
 #[cfg(not(windows))]
 fn processAlive(pid: u32) -> bool {
     use std::process::Command;
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .status()
-        .map(|s| s.success())
+    // `ps -p <pid> -o comm=` already scopes to the PID, so only the image name
+    // needs checking here.
+    Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .trim()
+                .to_ascii_lowercase()
+                .contains("august")
+        })
         .unwrap_or(false)
+}
+
+/// Parse a `tasklist /FO CSV` row — `"image.exe","20528",…` — requiring both an
+/// exact PID match and an August image name.
+#[cfg(windows)]
+fn isAugustRow(output: &str, pid: u32) -> bool {
+    output.lines().any(|line| {
+        let mut cols = line.split("\",\"");
+        let image = cols.next().unwrap_or("").trim_matches('"');
+        let row_pid = cols.next().unwrap_or("").trim();
+        row_pid == pid.to_string() && image.to_ascii_lowercase().contains("august")
+    })
 }
 
 /// Try to acquire the single-instance lock. Returns true when THIS process
 /// owns it (lock free, stale from a crashed instance, or just created).
 pub fn acquireInstanceLock(app: &AppHandle) -> bool {
     let path = instanceLockPath(app);
+    if let Some(parent) = path.parent() {
+        // A fresh install has no runtime dir yet. Without this the write below
+        // fails and the guard silently no-ops for the whole session.
+        let _ = std::fs::create_dir_all(parent);
+    }
     if let Ok(existing) = std::fs::read_to_string(&path) {
         if let Ok(pid) = existing.trim().parse::<u32>() {
             if pid != std::process::id() && processAlive(pid) {
@@ -220,6 +264,7 @@ pub fn acquireInstanceLock(app: &AppHandle) -> bool {
         }
     }
     let _ = std::fs::write(&path, std::process::id().to_string());
+    INSTANCE_LOCK_OWNED.store(true, Ordering::SeqCst);
     true
 }
 
@@ -241,10 +286,100 @@ fn bundledStamp(app: &AppHandle) -> Option<String> {
         .filter(|s| !s.is_empty() && s != "dev-placeholder")
 }
 
+fn directoryHasFiles(path: &Path) -> bool {
+    fn contains_file(path: &Path) -> bool {
+        let Ok(entries) = std::fs::read_dir(path) else {
+            return false;
+        };
+        entries.into_iter().any(|entry| {
+            let Ok(entry) = entry else {
+                return false;
+            };
+            let child = entry.path();
+            if child.is_dir() {
+                contains_file(&child)
+            } else {
+                child.is_file()
+            }
+        })
+    }
+    path.is_dir() && contains_file(path)
+}
+
+fn bundledPayloadComplete(app: &AppHandle) -> bool {
+    let Some(stamp) = bundledStamp(app) else {
+        return false;
+    };
+    let Some(main) = resolveResource(app, "backend-py/app/main.py") else {
+        return false;
+    };
+    let Some(python) = bundledPython(app) else {
+        return false;
+    };
+    let Some(wheels) = bundledWheelsDir(app) else {
+        return false;
+    };
+    let Some(skills) = resolveResource(app, "skills") else {
+        return false;
+    };
+    let Some(manifest) = resolveResource(app, "backend-runtime.json") else {
+        return false;
+    };
+    let Some(node) = bundledNode(app) else {
+        return false;
+    };
+    let backend = match projectRootFor(&main) {
+        Some(path) => path,
+        None => return false,
+    };
+    let sidecar = backend.join("sidecar");
+    main.is_file()
+        && backend.join("pyproject.toml").is_file()
+        && sidecar.join("package.json").is_file()
+        && sidecar.join("package-lock.json").is_file()
+        && sidecar.join("firmware-runner.mjs").is_file()
+        && directoryHasFiles(&sidecar.join("node_modules"))
+        && python.is_file()
+        && wheels.is_dir()
+        && directoryHasFiles(&wheels)
+        && skills.is_dir()
+        && directoryHasFiles(&skills)
+        && manifest.is_file()
+        && node.is_file()
+        && !stamp.is_empty()
+}
+
+/// True when the complete AppData runtime payload is present, including the
+/// backend entry points, sidecar dependencies, skills, and runtime manifest.
+fn runtimePayloadComplete(app: &AppHandle) -> bool {
+    let runtime = runtimeRoot(app);
+    let main = runtimeBackendMain(app);
+    let venv_python = resolveVenvPython(&main);
+    let skills = runtime.join("skills");
+    let manifest = runtime.join("backend-runtime.json");
+    let backend = match main.parent().and_then(|path| path.parent()) {
+        Some(path) => path,
+        None => return false,
+    };
+    let sidecar = backend.join("sidecar");
+    main.is_file()
+        && venv_python
+            .as_ref()
+            .map(|path| path.is_file())
+            .unwrap_or(false)
+        && backend.join("pyproject.toml").is_file()
+        && sidecar.join("package.json").is_file()
+        && sidecar.join("package-lock.json").is_file()
+        && sidecar.join("firmware-runner.mjs").is_file()
+        && directoryHasFiles(&sidecar.join("node_modules"))
+        && skills.is_dir()
+        && directoryHasFiles(&skills)
+        && manifest.is_file()
+}
+
 /// True when the AppData runtime stamp matches the bundled stamp AND the
-/// runtime main.py + venv exist (i.e. the bootstrap "up-to-date" check would
-/// pass). Used to detect a stale-but-healthy backend at startup (must be
-/// re-bootstrapped) and a stamped-but-broken runtime (must be reinstalled).
+/// complete runtime payload is present. A stamp alone is never enough to
+/// declare an installed backend healthy.
 fn runtimeStampMatches(app: &AppHandle) -> bool {
     let Some(bundled) = bundledStamp(app) else {
         return true; // dev checkout — nothing to compare
@@ -253,11 +388,7 @@ fn runtimeStampMatches(app: &AppHandle) -> bool {
         .ok()
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
-    current == bundled
-        && runtimeBackendMain(app).is_file()
-        && resolveVenvPython(&runtimeBackendMain(app))
-            .map(|p| p.is_file())
-            .unwrap_or(false)
+    current == bundled && runtimePayloadComplete(app) && bundledPayloadComplete(app)
 }
 
 fn bundledPython(app: &AppHandle) -> Option<PathBuf> {
@@ -270,10 +401,39 @@ fn bundledPython(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn bundledWheelsDir(app: &AppHandle) -> Option<PathBuf> {
-    resolveResource(app, "wheels")
+    let wheels = resolveResource(app, "wheels")?;
+    (wheels.is_dir() && directoryHasFiles(&wheels)).then_some(wheels)
 }
 
-fn copyDirRecursive(src: &Path, dst: &Path) -> Result<(), String> {
+fn bundledNode(app: &AppHandle) -> Option<PathBuf> {
+    let binaries = resolveResource(app, "binaries")?;
+    let expected = if cfg!(windows) {
+        "node-x86_64-pc-windows-msvc.exe"
+    } else if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            "node-aarch64-apple-darwin"
+        } else {
+            "node-x86_64-apple-darwin"
+        }
+    } else if cfg!(target_arch = "aarch64") {
+        "node-aarch64-unknown-linux-gnu"
+    } else {
+        "node-x86_64-unknown-linux-gnu"
+    };
+    let exact = binaries.join(expected);
+    exact.is_file().then_some(exact)
+}
+
+fn copyDirRecursive(src: &Path, dst: &Path, excludeTests: bool) -> Result<(), String> {
+    copyDirRecursiveAt(src, dst, excludeTests, 0)
+}
+
+fn copyDirRecursiveAt(
+    src: &Path,
+    dst: &Path,
+    excludeTests: bool,
+    depth: usize,
+) -> Result<(), String> {
     std::fs::create_dir_all(dst).map_err(|e| format!("mkdir {}: {e}", dst.display()))?;
     for entry in std::fs::read_dir(src).map_err(|e| format!("read_dir {}: {e}", src.display()))? {
         let entry = entry.map_err(|e| format!("read_dir entry: {e}"))?;
@@ -284,16 +444,27 @@ fn copyDirRecursive(src: &Path, dst: &Path) -> Result<(), String> {
             .map_err(|e| format!("file_type {}: {e}", from.display()))?;
         if ft.is_dir() {
             let name = entry.file_name().to_string_lossy().to_string();
+            // `build`/`dist`/egg-info are this package's own setuptools output and
+            // only ever sit at the payload root. Applied at depth they also delete
+            // every dependency's compiled entry point under sidecar/node_modules
+            // (avr8js, jimp, …), which the runtime then cannot import.
+            let rootOnlyArtifact = depth == 0
+                && (name == "build" || name == "dist" || name == "august_proxy.egg-info");
             if name == "__pycache__"
                 || name == ".venv"
                 || name == ".mypy_cache"
                 || name == ".ruff_cache"
-                || name == "tests"
+                || name == ".pytest_cache"
+                || (excludeTests && name == "tests")
+                || rootOnlyArtifact
             {
                 continue;
             }
-            copyDirRecursive(&from, &to)?;
+            copyDirRecursiveAt(&from, &to, excludeTests, depth + 1)?;
         } else if ft.is_file() {
+            if from.file_name().and_then(|name| name.to_str()) == Some(".usage.json") {
+                continue;
+            }
             if let Some(ext) = from.extension() {
                 if ext == "pyc" {
                     continue;
@@ -309,10 +480,14 @@ fn copyDirRecursive(src: &Path, dst: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn runPythonSilent(python: &Path, args: &[&str], cwd: &Path, log_path: &Path) -> Result<(), String> {
-    let log_file = File::create(log_path).unwrap_or_else(|_| {
-        File::create(devNullPath()).expect("failed to open null")
-    });
+fn runPythonSilent(
+    python: &Path,
+    args: &[&str],
+    cwd: &Path,
+    log_path: &Path,
+) -> Result<(), String> {
+    let log_file = File::create(log_path)
+        .unwrap_or_else(|_| File::create(devNullPath()).expect("failed to open null"));
     let mut cmd = Command::new(python);
     cmd.args(args)
         .current_dir(cwd)
@@ -323,9 +498,13 @@ fn runPythonSilent(python: &Path, args: &[&str], cwd: &Path, log_path: &Path) ->
         })))
         .stderr(Stdio::from(log_file));
     applyNoWindow(&mut cmd);
-    let status = cmd
-        .status()
-        .map_err(|e| format!("{} {} failed to start: {e}", python.display(), args.join(" ")))?;
+    let status = cmd.status().map_err(|e| {
+        format!(
+            "{} {} failed to start: {e}",
+            python.display(),
+            args.join(" ")
+        )
+    })?;
     if !status.success() {
         return Err(format!(
             "{} {} exited with {}",
@@ -347,8 +526,7 @@ fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
             || resolveResource(app, "python/python.exe").is_some()
         {
             return Err(
-                "bundled backend resources found but backend-runtime.stamp is missing"
-                    .into(),
+                "bundled backend resources found but backend-runtime.stamp is missing".into(),
             );
         }
         return Ok(());
@@ -365,12 +543,17 @@ fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
         return Err("bundled portable python missing".into());
     };
     let Some(wheels) = bundledWheelsDir(app) else {
-        return Err("bundled wheels/ missing".into());
+        return Err("bundled wheels/ missing or empty".into());
+    };
+    let Some(bundled_skills) = resolveResource(app, "skills") else {
+        return Err("bundled skills/ missing".into());
+    };
+    let Some(bundled_manifest) = resolveResource(app, "backend-runtime.json") else {
+        return Err("bundled backend-runtime.json missing".into());
     };
 
     let runtime = runtimeRoot(app);
     let runtime_backend = runtime.join("backend-py");
-    let runtime_main = runtimeBackendMain(app);
     let stamp_path = runtimeStampPath(app);
     let current = std::fs::read_to_string(&stamp_path)
         .ok()
@@ -382,7 +565,18 @@ fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
         runtime_backend.join(".venv/bin/python")
     };
 
-    if current == stamp && runtime_main.is_file() && venv_py.is_file() {
+    // Build provenance for the running backend (audit finding 2026-09-15 #7):
+    // the staged manifest tells app/lib/build_info.py which commit this copy
+    // came from, and it looks for the file BESIDE backend-py/ — which nothing
+    // used to copy here, so installed builds reported `Runtime code: unknown`
+    // forever. Stage it before the up-to-date early return so installs
+    // bootstrapped before this fix self-heal on their next launch.
+    std::fs::create_dir_all(&runtime).map_err(|e| format!("mkdir runtime: {e}"))?;
+    let runtime_manifest = runtime.join("backend-runtime.json");
+    std::fs::copy(&bundled_manifest, &runtime_manifest)
+        .map_err(|e| format!("stage backend-runtime.json: {e}"))?;
+
+    if current == stamp && runtimePayloadComplete(app) {
         log::info!("[backend] AppData runtime up-to-date ({})", stamp);
         return Ok(());
     }
@@ -391,32 +585,34 @@ fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
         "[backend] bootstrapping AppData runtime → {}",
         runtime.display()
     );
-    setSetupPhase(
-        app,
-        "copying",
-        Some("Preparing backend files…".into()),
-    );
+    setSetupPhase(app, "copying", Some("Preparing backend files…".into()));
     let log_dir = appDataDir(app).join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
     let bootstrap_log = log_dir.join("backend-bootstrap.log");
 
-    // Refresh sources (keep existing .venv if present until recreate)
+    // Replace the complete runtime trees. Partial cleanup leaves stale skills,
+    // metadata, or virtualenv files after an update and can mask a bad payload.
     if runtime_backend.exists() {
-        let _ = std::fs::remove_dir_all(runtime_backend.join("app"));
+        std::fs::remove_dir_all(&runtime_backend)
+            .map_err(|e| format!("remove stale runtime backend: {e}"))?;
     }
-    std::fs::create_dir_all(&runtime_backend)
-        .map_err(|e| format!("mkdir runtime: {e}"))?;
-    copyDirRecursive(&bundled_py_root, &runtime_backend)?;
+    let runtime_skills = runtime.join("skills");
+    if runtime_skills.exists() {
+        std::fs::remove_dir_all(&runtime_skills)
+            .map_err(|e| format!("remove stale runtime skills: {e}"))?;
+    }
+    std::fs::create_dir_all(&runtime_backend).map_err(|e| format!("mkdir runtime: {e}"))?;
+    copyDirRecursive(&bundled_py_root, &runtime_backend, true)?;
 
     // Bundled skills (D16): skill_service resolves SKILLS_DIR to
     // {appData}/backend-runtime/skills — copy the staged skills tree so
     // installed builds ship the built-in skill catalog.
-    if let Some(bundled_skills) = resolveResource(app, "skills") {
-        let runtime_skills = runtime.join("skills");
-        let _ = std::fs::create_dir_all(&runtime_skills);
-        let _ = copyDirRecursive(&bundled_skills, &runtime_skills);
-        log::info!("[backend] bundled skills copied → {}", runtime_skills.display());
-    }
+    std::fs::create_dir_all(&runtime_skills).map_err(|e| format!("mkdir runtime skills: {e}"))?;
+    copyDirRecursive(&bundled_skills, &runtime_skills, false)?;
+    log::info!(
+        "[backend] bundled skills copied → {}",
+        runtime_skills.display()
+    );
 
     if !venv_py.is_file() {
         setSetupPhase(
@@ -424,9 +620,6 @@ fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
             "creating_venv",
             Some("Creating Python environment…".into()),
         );
-        if runtime_backend.join(".venv").exists() {
-            let _ = std::fs::remove_dir_all(runtime_backend.join(".venv"));
-        }
         runPythonSilent(
             &base_python,
             &["-m", "venv", ".venv"],
@@ -478,9 +671,7 @@ fn pythonVersionOk(path: &Path) -> bool {
         .args(["-c", "import sys; print(sys.version_info >= (3, 12))"])
         .output()
     {
-        Ok(out) if out.status.success() => {
-            String::from_utf8_lossy(&out.stdout).trim() == "True"
-        }
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim() == "True",
         _ => false,
     }
 }
@@ -536,8 +727,12 @@ fn resolvePythonBackend(app: &AppHandle) -> Option<PathBuf> {
 
     let mut candidates: Vec<Option<PathBuf>> = vec![
         resolveResource(app, "backend-py/app/main.py"),
-        env::current_dir().ok().map(|cwd| cwd.join("backend-py/app/main.py")),
-        env::current_dir().ok().map(|cwd| cwd.join("../backend-py/app/main.py")),
+        env::current_dir()
+            .ok()
+            .map(|cwd| cwd.join("backend-py/app/main.py")),
+        env::current_dir()
+            .ok()
+            .map(|cwd| cwd.join("../backend-py/app/main.py")),
     ];
 
     // Walk up from the executable so release/dev builds find a repo checkout
@@ -564,32 +759,32 @@ fn nodeBinaryNames() -> &'static [&'static str] {
     }
 }
 
+fn existingAbsolutePath(value: &str) -> Option<PathBuf> {
+    let path = PathBuf::from(value.trim());
+    if !path.is_absolute() {
+        return None;
+    }
+    path.canonicalize().ok().filter(|path| path.is_file())
+}
+
 fn resolveNode(app: &AppHandle) -> Option<PathBuf> {
     if let Ok(path) = env::var("AUGUST_DESKTOP_NODE") {
-        let path = PathBuf::from(path);
-        if path.exists() {
+        if let Some(path) = existingAbsolutePath(&path) {
             return Some(path);
         }
     }
 
-    let mut candidates = Vec::new();
-    for name in nodeBinaryNames() {
-        candidates.push(app.path().resolve(name, tauri::path::BaseDirectory::Resource).ok());
+    if let Some(node) = bundledNode(app) {
+        return Some(node);
     }
 
-    if let Ok(binariesDir) = app.path().resolve("binaries", tauri::path::BaseDirectory::Resource) {
-        if let Ok(entries) = std::fs::read_dir(binariesDir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        if name.starts_with("node-") {
-                            candidates.push(Some(path));
-                        }
-                    }
-                }
-            }
-        }
+    let mut candidates = Vec::new();
+    for name in nodeBinaryNames() {
+        candidates.push(
+            app.path()
+                .resolve(name, tauri::path::BaseDirectory::Resource)
+                .ok(),
+        );
     }
 
     candidates
@@ -612,11 +807,20 @@ fn resolveNodeBackend(app: &AppHandle) -> Option<PathBuf> {
             .resolve("backend/index.js", tauri::path::BaseDirectory::Resource)
             .ok(),
         app.path()
-            .resolve("../../backend/index.js", tauri::path::BaseDirectory::Resource)
+            .resolve(
+                "../../backend/index.js",
+                tauri::path::BaseDirectory::Resource,
+            )
             .ok(),
-        env::current_dir().ok().map(|cwd| cwd.join("backend/index.js")),
-        env::current_dir().ok().map(|cwd| cwd.join("../backend/index.js")),
-        env::current_dir().ok().map(|cwd| cwd.join("../../backend/index.js")),
+        env::current_dir()
+            .ok()
+            .map(|cwd| cwd.join("backend/index.js")),
+        env::current_dir()
+            .ok()
+            .map(|cwd| cwd.join("../backend/index.js")),
+        env::current_dir()
+            .ok()
+            .map(|cwd| cwd.join("../../backend/index.js")),
     ];
     candidates.into_iter().flatten().find(|path| path.is_file())
 }
@@ -682,6 +886,12 @@ pub fn stopBackendOnQuit(app: &AppHandle) {
 }
 
 fn stopBackend(app: &AppHandle, reason: &str) {
+    if !INSTANCE_LOCK_OWNED.load(Ordering::SeqCst) {
+        // A launch refused by the single-instance guard shares no backend with
+        // us: killing "orphans" here would tear down the owning instance.
+        log::info!("[backend] teardown skipped — not the lock owner ({reason})");
+        return;
+    }
     // Prevent watchBackend from respawning while we tear down.
     UPDATE_HOLDOFF.store(true, Ordering::SeqCst);
     let detail = if reason == "quit" {
@@ -1079,6 +1289,16 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                             File::create(devNullPath()).expect("failed to open null")
                         })))
                         .stderr(Stdio::from(logFile));
+                    // The AppData backend has no checkout-relative binaries tree.
+                    // Hand the firmware sidecar our bundled Node path so a clean
+                    // install does not require Node on PATH. Preserve valid overrides.
+                    let sidecarNode = env::var("AUGUST_NODE_EXE")
+                        .ok()
+                        .and_then(|path| existingAbsolutePath(&path))
+                        .or_else(|| resolveNode(app));
+                    if let Some(node) = sidecarNode {
+                        cmd.env("AUGUST_NODE_EXE", node);
+                    }
                     applyNoWindow(&mut cmd);
 
                     match cmd.spawn() {
@@ -1124,7 +1344,10 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                 // runtimeStampMatches here would skip recovery in exactly the
                 // case it exists for. Any packaged install whose runtime was
                 // materialized but never boots gets one clean rebuild.
-                if !force_reinstall && bundledStamp(app).is_some() && runtimeBackendMain(app).is_file() {
+                if !force_reinstall
+                    && bundledStamp(app).is_some()
+                    && runtimeBackendMain(app).is_file()
+                {
                     log::warn!(
                         "[backend] runtime stamped healthy but proxy never up — wiping AppData runtime for clean reinstall"
                     );
@@ -1157,7 +1380,10 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
     };
 
     let Some(projectRoot) = projectRootFor(&entry) else {
-        log::error!("[backend] could not resolve project root for {}", entry.display());
+        log::error!(
+            "[backend] could not resolve project root for {}",
+            entry.display()
+        );
         return false;
     };
 
@@ -1436,6 +1662,70 @@ struct InstallerDownloadProgress {
     total_bytes: Option<u64>,
 }
 
+fn validateReleaseVersion(version: &str) -> Result<(), String> {
+    let valid = !version.is_empty()
+        && version
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'))
+        && version.split('.').count() == 3;
+    if valid {
+        Ok(())
+    } else {
+        Err(format!("invalid release version: {version}"))
+    }
+}
+
+fn expectedReleaseFilename(version: &str) -> Result<String, String> {
+    validateReleaseVersion(version)?;
+    Ok(format!("August_{version}_x64-setup.exe"))
+}
+
+fn expectedReleaseUrl(version: &str, filename: &str) -> String {
+    format!("https://github.com/{RELEASE_REPOSITORY}/releases/download/v{version}/{filename}")
+}
+
+fn verifyInstallerSignature(installer: &Path, signature_text: &str) -> Result<(), String> {
+    let public_key_text = String::from_utf8(
+        STANDARD
+            .decode(UPDATER_PUBLIC_KEY_B64)
+            .map_err(|e| format!("invalid embedded updater public key: {e}"))?,
+    )
+    .map_err(|e| format!("invalid embedded updater public key encoding: {e}"))?;
+    let public_key = PublicKey::decode(&public_key_text)
+        .map_err(|e| format!("invalid embedded updater public key: {e}"))?;
+    let signature = decodeInstallerSignature(signature_text)?;
+    let installer_bytes = std::fs::read(installer)
+        .map_err(|e| format!("could not read the downloaded installer: {e}"))?;
+    public_key
+        .verify(&installer_bytes, &signature, true)
+        .map_err(|e| format!("installer signature verification failed: {e}"))
+}
+
+/// Unwrap the `.sig` asset into something `minisign_verify::Signature::decode`
+/// accepts.
+///
+/// Tauri signs with **one base64 line** that wraps the four-line minisign text
+/// (`untrusted comment:` / signature / `trusted comment:` / signature), and
+/// `Signature::decode` reads all four lines — so feeding the raw asset straight
+/// in failed 100% of downloads with `InvalidEncoding` and made in-app updates
+/// impossible. Tauri's own updater base64-decodes first
+/// (`tauri-plugin-updater/src/updater.rs` → `verify_signature`), which is the
+/// step that was missing here. Plain unwrapped minisign text is still accepted
+/// so a hand-made `.sig` verifies too.
+fn decodeInstallerSignature(signature_text: &str) -> Result<Signature, String> {
+    let trimmed = signature_text.trim();
+    let unwrapped = STANDARD
+        .decode(trimmed)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok());
+    if let Some(text) = unwrapped {
+        if let Ok(signature) = Signature::decode(&text) {
+            return Ok(signature);
+        }
+    }
+    Signature::decode(trimmed).map_err(|e| format!("invalid installer signature: {e}"))
+}
+
 /// Stream a GitHub release installer into `{temp}/august-updates/{filename}`,
 /// emitting `update-download-progress` events for the webview progress bar.
 /// Returns the absolute path of the downloaded installer.
@@ -1445,27 +1735,24 @@ struct InstallerDownloadProgress {
 /// runs it with its normal wizard — the same experience as a first install,
 /// so bundled backend changes always land.
 #[tauri::command]
-pub async fn download_release_installer(
-    app: AppHandle,
-    url: String,
-    filename: String,
-) -> Result<String, String> {
+pub async fn download_release_installer(app: AppHandle, version: String) -> Result<String, String> {
     UPDATE_DOWNLOAD_CANCEL.store(false, Ordering::SeqCst);
+    let filename = expectedReleaseFilename(&version)?;
+    let url = expectedReleaseUrl(&version, &filename);
+    let signature_url = format!("{url}.sig");
     tokio::task::spawn_blocking(move || {
         use std::io::{Read, Write};
 
-        let dir = std::env::temp_dir().join("august-updates");
+        let dir = app
+            .path()
+            .temp_dir()
+            .map_err(|e| format!("could not resolve the temp directory: {e}"))?
+            .join("august-updates");
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("could not prepare the download folder: {e}"))?;
-        let safe: String = filename
-            .chars()
-            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
-            .collect();
-        let dest = dir.join(if safe.is_empty() {
-            "august-setup.exe".to_string()
-        } else {
-            safe
-        });
+        let dest = dir.join(&filename);
+        let partial = dir.join(format!(".{filename}.part"));
+        let _ = std::fs::remove_file(&partial);
         if dest.exists() {
             let _ = std::fs::remove_file(&dest);
         }
@@ -1486,8 +1773,8 @@ pub async fn download_release_installer(
             ));
         }
         let total = resp.content_length();
-        let mut file = File::create(&dest)
-            .map_err(|e| format!("could not create {}: {e}", dest.display()))?;
+        let mut file = File::create(&partial)
+            .map_err(|e| format!("could not create {}: {e}", partial.display()))?;
 
         let emit = |downloaded: u64, total: Option<u64>| {
             let _ = app.emit(
@@ -1507,7 +1794,7 @@ pub async fn download_release_installer(
         let mut buf = [0u8; 64 * 1024];
         loop {
             if UPDATE_DOWNLOAD_CANCEL.load(Ordering::SeqCst) {
-                let _ = std::fs::remove_file(&dest);
+                let _ = std::fs::remove_file(&partial);
                 return Err("update download cancelled".into());
             }
             let n = resp
@@ -1525,21 +1812,54 @@ pub async fn download_release_installer(
             }
         }
         let _ = file.flush();
+        drop(file);
         emit(downloaded, total.or(Some(downloaded)));
 
         // A real installer is tens of MB — anything tiny is an error page.
         if downloaded < 1024 * 1024 {
-            let _ = std::fs::remove_file(&dest);
-            return Err(
-                "downloaded file is too small — the release asset may be missing".into(),
-            );
+            let _ = std::fs::remove_file(&partial);
+            return Err("downloaded file is too small — the release asset may be missing".into());
+        }
+
+        let mut signature_resp = client
+            .get(&signature_url)
+            .send()
+            .map_err(|e| format!("signature download failed: {e}"))?;
+        if !signature_resp.status().is_success() {
+            let _ = std::fs::remove_file(&partial);
+            return Err(format!(
+                "signature download failed (HTTP {})",
+                signature_resp.status()
+            ));
+        }
+        let mut signature_text = String::new();
+        signature_resp
+            .read_to_string(&mut signature_text)
+            .map_err(|e| format!("could not read the installer signature: {e}"))?;
+        if signature_text.trim().is_empty() || signature_text.len() > 1024 * 1024 {
+            let _ = std::fs::remove_file(&partial);
+            return Err("release signature is missing or unexpectedly large".into());
+        }
+        if let Err(message) = verifyInstallerSignature(&partial, signature_text.trim()) {
+            // Every other error branch below already removes the partial file;
+            // verification must not be the one that leaves `.part` behind.
+            let _ = std::fs::remove_file(&partial);
+            return Err(message);
+        }
+
+        std::fs::rename(&partial, &dest)
+            .map_err(|e| format!("could not finalize the installer download: {e}"))?;
+        let canonical_dest = std::fs::canonicalize(&dest)
+            .map_err(|e| format!("could not resolve the installer path: {e}"))?;
+        if let Ok(mut verified) = VERIFIED_INSTALLER.lock() {
+            *verified = Some((canonical_dest.clone(), signature_text));
         }
         log::info!(
-            "[update] installer downloaded → {} ({} bytes)",
+            "[update] verified installer downloaded → {} ({} bytes)",
             dest.display(),
             downloaded
         );
-        Ok(dest.to_string_lossy().to_string())
+        Ok(canonical_dest.to_string_lossy().to_string())
     })
     .await
     .map_err(|e| format!("download task failed: {e}"))?
@@ -1572,10 +1892,20 @@ pub fn cancel_update_download() -> String {
 /// processes so locked `resources/python/*.pyd` files don't abort the copy.
 #[tauri::command]
 pub fn launch_installer_and_exit(app: AppHandle, path: String) -> Result<String, String> {
-    let installer = PathBuf::from(&path);
-    if !installer.is_file() {
-        return Err(format!("installer not found: {path}"));
+    let supplied = PathBuf::from(&path);
+    let installer =
+        std::fs::canonicalize(&supplied).map_err(|_| format!("installer not found: {path}"))?;
+    let verified = VERIFIED_INSTALLER
+        .lock()
+        .map_err(|_| "installer verification state is unavailable".to_string())?
+        .clone();
+    let Some((verified_path, signature_text)) = verified else {
+        return Err("installer has not been downloaded and verified by August".into());
+    };
+    if installer != verified_path {
+        return Err("installer path does not match the verified download".into());
     }
+    verifyInstallerSignature(&installer, signature_text.trim())?;
     // Release python/.pyd locks before NSIS copies over the install dir.
     stopBackendForUpdate(&app);
     Command::new(&installer)
@@ -1583,7 +1913,7 @@ pub fn launch_installer_and_exit(app: AppHandle, path: String) -> Result<String,
         .spawn()
         .map_err(|e| format!("could not launch the installer: {e}"))?;
     log::info!(
-        "[update] installer launched ({}) — exiting August",
+        "[update] verified installer launched ({}) — exiting August",
         installer.display()
     );
     // Give the installer process a beat to start before we release our handles.
@@ -1654,7 +1984,11 @@ pub fn reveal_in_folder(path: String) -> Result<String, String> {
     }
     #[cfg(target_os = "macos")]
     {
-        match std::process::Command::new("open").arg("-R").arg(&path).spawn() {
+        match std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .spawn()
+        {
             Ok(_) => Ok("revealed".into()),
             Err(e) => Err(format!("open -R failed: {e}")),
         }
@@ -1805,5 +2139,181 @@ pub async fn sync_backend_deps(app: AppHandle) -> String {
     {
         Ok(s) => s,
         Err(e) => format!("error: sync task failed: {e}"),
+    }
+}
+
+#[cfg(all(test, windows))]
+mod instance_lock_tests {
+    use super::isAugustRow;
+
+    const CSV_HEAD: &str = "\"Image Name\",\"PID\",\"Session Name\",\"Session#\",\"Mem Usage\"";
+
+    fn row(image: &str, pid: u32) -> String {
+        format!("{CSV_HEAD}\r\n\"{image}\",\"{pid}\",\"Console\",\"1\",\"123 K\"")
+    }
+
+    #[test]
+    fn treats_a_recycled_non_august_pid_as_dead() {
+        // The real-world lockout: the recorded PID was reused by another app.
+        assert!(!isAugustRow(&row("Qoder.exe", 20528), 20528));
+    }
+
+    #[test]
+    fn recognises_both_the_packaged_and_dev_image_names() {
+        assert!(isAugustRow(&row("August.exe", 20528), 20528));
+        assert!(isAugustRow(&row("august-desktop.exe", 20528), 20528));
+    }
+
+    #[test]
+    fn requires_an_exact_pid_match_not_a_substring() {
+        // tasklist output for 20528 must not satisfy a query for 2052.
+        assert!(!isAugustRow(&row("August.exe", 20528), 2052));
+    }
+
+    #[test]
+    fn treats_no_matching_process_as_dead() {
+        assert!(!isAugustRow(
+            "INFO: No tasks are running which match the specified criteria.",
+            20528
+        ));
+    }
+}
+
+#[cfg(test)]
+mod copy_payload_tests {
+    use super::copyDirRecursive;
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// Each test gets its own scratch tree so it never touches a real payload.
+    fn scratch(tag: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SEQ: AtomicUsize = AtomicUsize::new(0);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!(
+            "august-copy-test-{}-{}-{}-{}",
+            std::process::id(),
+            tag,
+            nanos,
+            SEQ.fetch_add(1, Ordering::SeqCst),
+        ));
+        fs::create_dir_all(&dir).expect("create scratch");
+        dir
+    }
+
+    fn touch(root: &PathBuf, rel: &str) {
+        let path = root.join(rel);
+        fs::create_dir_all(path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&path, "x").expect("write");
+    }
+
+    #[test]
+    fn keeps_dependency_dist_but_drops_root_build_artifacts() {
+        let src = scratch("src");
+        let dst = scratch("dst");
+        // The package's own setuptools output at the payload root.
+        touch(&src, "dist/august_proxy.pth");
+        touch(&src, "build/lib/x.py");
+        touch(&src, "august_proxy.egg-info/PKG-INFO");
+        // Dependency entry points live in dist/ one level deeper.
+        touch(&src, "sidecar/node_modules/avr8js/dist/cjs/index.js");
+        touch(&src, "sidecar/node_modules/jimp/dist/index.js");
+        touch(&src, "sidecar/firmware-runner.mjs");
+
+        copyDirRecursive(&src, &dst, true).expect("copy");
+
+        assert!(!dst.join("dist").exists(), "root dist must be skipped");
+        assert!(!dst.join("build").exists(), "root build must be skipped");
+        assert!(
+            !dst.join("august_proxy.egg-info").exists(),
+            "root egg-info must be skipped"
+        );
+        assert!(
+            dst.join("sidecar/node_modules/avr8js/dist/cjs/index.js")
+                .is_file(),
+            "dependency dist output must survive — the sidecar imports it"
+        );
+        assert!(dst
+            .join("sidecar/node_modules/jimp/dist/index.js")
+            .is_file());
+        assert!(dst.join("sidecar/firmware-runner.mjs").is_file());
+
+        let _ = fs::remove_dir_all(&src);
+        let _ = fs::remove_dir_all(&dst);
+    }
+
+    #[test]
+    fn still_drops_regenerable_caches_at_any_depth() {
+        let src = scratch("cache-src");
+        let dst = scratch("cache-dst");
+        touch(&src, "app/__pycache__/mod.pyc");
+        touch(&src, "app/services/__pycache__/deep.pyc");
+        touch(&src, "app/main.py");
+
+        copyDirRecursive(&src, &dst, true).expect("copy");
+
+        assert!(!dst.join("app/__pycache__").exists());
+        assert!(!dst.join("app/services/__pycache__").exists());
+        assert!(dst.join("app/main.py").is_file());
+
+        let _ = fs::remove_dir_all(&src);
+        let _ = fs::remove_dir_all(&dst);
+    }
+}
+
+#[cfg(test)]
+mod update_signature_tests {
+    use super::{decodeInstallerSignature, STANDARD};
+    use base64::Engine;
+
+    /// The four-line minisign text `Signature::decode` is built for: bin1 is
+    /// algorithm (2) + key id (8) + signature (64) = 74 bytes, bin2 is the
+    /// 64-byte global signature — the exact lengths `decode` enforces.
+    fn minisignText() -> String {
+        let bin1 = [b"Ed".as_slice(), &[7u8; 8], &[9u8; 64]].concat();
+        let bin2 = [3u8; 64];
+        format!(
+            "untrusted comment: signature from tauri secret key\n{}\n\
+             trusted comment: timestamp:1757800000\tfile:August_0.18.11_x64-setup.exe\n{}",
+            STANDARD.encode(bin1),
+            STANDARD.encode(bin2),
+        )
+    }
+
+    #[test]
+    fn the_sig_asset_is_one_base64_line_wrapping_the_minisign_text() {
+        // The shape of the asset on disk (420 chars, no newline).
+        let asset = STANDARD.encode(minisignText());
+        assert!(!asset.contains('\n'), "Tauri's .sig asset is a single line");
+        assert!(
+            decodeInstallerSignature(&asset).is_ok(),
+            "the shipped asset must decode to a signature"
+        );
+    }
+
+    #[test]
+    fn the_base64_step_is_what_the_update_path_was_missing() {
+        let asset = STANDARD.encode(minisignText());
+        assert!(
+            minisign_verify::Signature::decode(&asset).is_err(),
+            "pinned: the raw asset fed to Signature::decode fails (it reads lines 2 \
+             and 4 of a single-line file) — base64 must be stripped first"
+        );
+    }
+
+    #[test]
+    fn plain_minisign_text_is_still_accepted() {
+        assert!(decodeInstallerSignature(&minisignText()).is_ok());
+        assert!(decodeInstallerSignature(&format!("{}\n", minisignText())).is_ok());
+    }
+
+    #[test]
+    fn something_that_is_not_a_signature_is_refused() {
+        assert!(decodeInstallerSignature("").is_err());
+        assert!(decodeInstallerSignature("not a signature at all").is_err());
+        assert!(decodeInstallerSignature(&STANDARD.encode(b"junk")).is_err());
     }
 }

@@ -627,7 +627,9 @@ async function main() {
     }
 
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-    await assertNonEmptyFile(latestPath);
+    // Only a --tauri run produces the updater manifest, so only that run can
+    // be expected to have one.
+    if (buildTauri) await assertNonEmptyFile(latestPath);
 
     console.log(`[release] version ${version}`);
     console.log(`[release] web ${webZip}`);

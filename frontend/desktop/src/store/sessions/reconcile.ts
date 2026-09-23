@@ -25,6 +25,10 @@ export type SessionsSnapshot = {
  *   second session (or looked like the new chat was deleted).
  * - Local-only drafts (no workbenchSessionId yet) are kept even when the
  *   backend list is empty.
+ * - `isArchived` is the single manage-plane truth read here: the sessions
+ *   table owns the flag and the list endpoint carries it, so an archived chat
+ *   stays archived after a localStorage wipe. No other field is taken from the
+ *   server beyond the ones already merged below.
  * - Locals whose workbenchSessionId is gone from the backend are dropped
  *   (true server-side delete), unless tombstoned already.
  *
@@ -69,6 +73,12 @@ export async function reconcileSessionsFromBackend(
           // session never loses its true path (the task-home backfill would
           // otherwise reassign it to ~).
           workspacePath: local.workspacePath || backend.workspacePath || null,
+          // The server owns the archive column now; an absent flag means the
+          // backend has no opinion, so the local value stands. This is the ONE
+          // field read from the manage plane — everything else below (id,
+          // title, folder, path) stays local-owned because merging it here has
+          // repeatedly destroyed live sessions.
+          isArchived: backend.isArchived ?? local.isArchived,
         });
         continue;
       }
@@ -138,6 +148,7 @@ export async function reconcileSessionsFromBackend(
         // Carry the backend workspace across so a restored project session
         // keeps its path (and the task-home backfill does not claim it).
         workspacePath: bs.workspacePath || null,
+        isArchived: !!bs.isArchived,
       });
     }
 

@@ -33,11 +33,15 @@ export function bindTurnStreamHandlers(opts: {
     assistantMsgId,
     initialMessages,
     setMessages: (updater) => {
-      updateSessionStreamState(sessionId, prev => {
-        const nextMsgs = applyUpdater(updater, prev.messages);
-        persistMessagesDebounced(sessionId, nextMsgs);
-        return { messages: nextMsgs };
-      });
+      updateSessionStreamState(
+        sessionId,
+        (prev) => {
+          const nextMsgs = applyUpdater(updater, prev.messages);
+          persistMessagesDebounced(sessionId, nextMsgs);
+          return { messages: nextMsgs, history: prev.history };
+        },
+        { transcriptUpdate: 'stream' },
+      );
     },
     persistMessages,
     setSessionStatus,

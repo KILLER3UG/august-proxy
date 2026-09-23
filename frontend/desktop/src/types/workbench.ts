@@ -56,6 +56,10 @@ export interface WorkbenchSession {
   goal: WorkbenchGoal | null;
   lastGoal: WorkbenchGoal | null;
   messageCount: number;
+  /** Archive flag from the sessions table. Only ever present on the list
+   *  payload, and only consumed by the sidebar reconcile — it is the one
+   *  server-side truth that has to survive a wiped localStorage. */
+  isArchived?: boolean;
   mutationCount: number;
   lastMutationAt: string | null;
   updatedAt: string;
@@ -362,6 +366,13 @@ export interface WorkbenchEventHandlers {
     maxContext?: number;
     remainingTokens?: number;
     promptCache?: { hitTokens: number; missTokens: number; hitRate?: number } | null;
+    /** Bytes of each volatile tail block the backend injected this turn. */
+    contextSections?: {
+      memoryBytes?: number;
+      skillsBytes?: number;
+      stateBytes?: number;
+      nudgeBytes?: number;
+    } | null;
   }) => void;
   /** Informational messages (auto-memory sync, guideline updates, etc.).
    *  Unknown fields go into `extras` for the same reason as onWarning. */

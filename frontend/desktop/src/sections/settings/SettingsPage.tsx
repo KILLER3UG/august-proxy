@@ -107,15 +107,23 @@ export function SettingsPage() {
   // Hub IA: rawSection can be a category id (e.g. "models") or a legacy section/category.
   const mappedRaw = rawSection ? (LEGACY_HUB_MAP[rawSection] ?? rawSection) : rawSection;
   const rawIsHub = isHubId(mappedRaw ?? null);
-  const resolvedSectionId = mappedRaw && !rawIsHub ? resolveLegacyTab(mappedRaw) : null;
   // Hub IA v2: a bare category id resolves to the category's first visible
   // section — the left rail's tree shows all children, and there are no
   // in-page pill tabs anymore.
   const firstSectionOfCategory = (catId: string): string | null =>
-    sectionsForCategory(catId).find((s) => s.tier !== 'hidden')?.id ?? null;
+    sectionsForCategory(catId).find(
+      (s) => s.tier !== 'hidden' && isImplementedSettingsSection(s.id),
+    )?.id ?? null;
   const hubTargetId = rawIsHub ? firstSectionOfCategory(mappedRaw!) : null;
-  const activeId = hubTargetId ?? (mappedRaw && !rawIsHub ? resolvedSectionId : null) ?? landingSectionId;
-  const active: SettingsSection | null =
+  const requestedSectionId = hubTargetId ?? (mappedRaw && !rawIsHub ? resolveLegacyTab(mappedRaw) : null);
+  const requestedSection = requestedSectionId ? getSection(requestedSectionId) : undefined;
+  const activeId =
+    requestedSection && isImplementedSettingsSection(requestedSection.id)
+      ? requestedSection.id
+      : (requestedSection
+          ? firstSectionOfCategory(requestedSection.category)
+          : null) ?? landingSectionId;
+  const active: SettingsSection =
     SETTINGS_SECTIONS.find((s) => s.id === activeId) ?? SETTINGS_SECTIONS[0];
   const prevSectionRef = useRef(activeId);
 
@@ -158,11 +166,14 @@ export function SettingsPage() {
     });
   }, [activeId, queryClient]);
 
-  const SectionComponent = SECTION_COMPONENTS[activeId] ?? SettingsStub;
+  const SectionComponent = SECTION_COMPONENTS[activeId];
+  const implementedSections = SETTINGS_SECTIONS.filter((s) =>
+    isImplementedSettingsSection(s.id),
+  ) as WorkspaceSectionMeta[];
 
   return (
     <WorkspaceShell
-      sections={SETTINGS_SECTIONS as unknown as WorkspaceSectionMeta[]}
+      sections={implementedSections}
       active={activeId}
     >
       <AnimatePresence mode="wait" initial={false}>
@@ -176,9 +187,11 @@ export function SettingsPage() {
         >
           <div className="min-h-0">
             <SectionHeader active={active} />
-            <React.Suspense fallback={<SettingsSectionLoader />}>
-              <SectionComponent active={active} />
-            </React.Suspense>
+            {SectionComponent ? (
+              <React.Suspense fallback={<SettingsSectionLoader />}>
+                <SectionComponent active={active} />
+              </React.Suspense>
+            ) : null}
           </div>
         </motion.div>
       </AnimatePresence>
@@ -307,6 +320,7 @@ const SystemHealthWrapper = lazySection(() => import('./SystemHealthSection'), '
 const ToolsConnectionsWrapper = lazySection(() => import('./IntegrationsSection'), 'IntegrationsSection');
 const SkillsWrapper = lazySection(() => import('./SkillsSection'), 'SkillsSection');
 const HarnessImprovementsWrapper = lazySection(() => import('./HarnessImprovementsSection'), 'HarnessImprovementsSection');
+const ModelFamiliesWrapper = lazySection(() => import('./ModelFamiliesSection'), 'ModelFamiliesSection');
 const ConversationsHistoryWrapper = lazySection(() => import('./ConversationsHistorySection'), 'ConversationsHistorySection');
 const AgentsAutomationWrapper = lazySection(() => import('./AgentsAutomationSection'), 'AgentsAutomationSection');
 const ComputerUseWrapper = lazySection(() => import('./ComputerUseSection'), 'ComputerUseSection');
@@ -332,9 +346,8 @@ export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps
   'model-quotas': ModelQuotasWrapper,
   // browser-use / subagents / plugins are wired to CapabilitySections —
   // the live panels for delegation limits, the plugin roster, and the
-  // browser/web tool surface. hooks / indexing remain stubs until their
-  // pages exist; rendering a *different* feature's page under these ids
-  // misleads users searching for what the section title promises.
+  // browser/web tool surface. Unimplemented registry entries are excluded
+  // from navigation and redirected to a real section.
   'browser-use': BrowserUseWrapper,
   subagents: SubagentsWrapper,
   plugins: PluginsWrapper,
@@ -346,6 +359,7 @@ export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps
   'tools-connections': ToolsConnectionsWrapper,
   skills: SkillsWrapper,
   'harness-improve': HarnessImprovementsWrapper,
+  'model-families': ModelFamiliesWrapper,
   'conversations-history': ConversationsHistoryWrapper,
   'agents-automation': AgentsAutomationWrapper,
   'computer-access': ComputerAccessSettingsWrapper,
@@ -367,21 +381,6 @@ export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps
   'health-simulator': HealthSimulatorWrapper,
 };
 
-
-
-/** Placeholder for sections not yet wired. With all 10 entries now
- *  mapped, this only renders for genuinely-unknown :section params. */
-function SettingsStub({ active }: SectionProps) {
-  return (
-    <div className="px-8 py-12 max-w-2xl">
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">{active.label}</h1>
-      <p className="mt-2 text-sm text-muted-foreground">{active.description}</p>
-      <div className="mt-8 rounded-xl border border-white/[0.06] bg-card/60 p-6">
-        <p className="text-sm text-muted-foreground">
-          This section hasn&apos;t been migrated to the new visual style yet. Use the left rail to
-          switch to one of the available sections.
-        </p>
-      </div>
-    </div>
-  );
+function isImplementedSettingsSection(id: string): boolean {
+  return Object.hasOwn(SECTION_COMPONENTS, id);
 }

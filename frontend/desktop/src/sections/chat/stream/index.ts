@@ -24,6 +24,11 @@ export {
   applyUpdater,
 } from './session-stream-store';
 
+export {
+  ensureSessionHistory,
+  injectSessionMessage,
+} from './session-history';
+
 export { appendBlockEvent } from './append-block-event';
 
 export {

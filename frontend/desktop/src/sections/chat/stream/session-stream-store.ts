@@ -15,9 +15,24 @@ import { useSessionsStore, isSessionIdTombstoned } from '@/store/sessions';
 import {
   loadMessagesForSession as loadMessagesFromStorage,
   persistMessages as persistMessagesToStorage,
+  hasStoredMessages,
 } from '../message-storage';
 
+export interface SessionHistoryState {
+  status: 'missing' | 'loading' | 'ready';
+  promise?: Promise<void>;
+}
+
+export type SessionStreamUpdateMode = 'replace' | 'stream';
+
+export interface UpdateSessionStreamStateOptions {
+  /** Stream updates keep the hydration identity and pending persistence alive. */
+  transcriptUpdate?: SessionStreamUpdateMode;
+}
+
 export interface SessionStreamState {
+  /** Identity also invalidates late history responses after local edits/eviction. */
+  history?: SessionHistoryState;
   messages: ChatMessage[];
   subagentPrompts: Map<string, {
     content: string;
@@ -141,9 +156,16 @@ const _persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const _persistPending = new Map<string, ChatMessage[]>();
 const _PERSIST_DEBOUNCE_MS = 1000;
 
+function canPersistSession(sessionId: string): boolean {
+  const history = useSessionStreamStore.getState().bySession[sessionId]?.history;
+  // Legacy in-memory states have no history field; treat them as durable.
+  return !history || history.status === 'ready';
+}
+
 export function persistMessagesDebounced(sessionId: string, messages: ChatMessage[]): void {
-  // A deleted session's handlers must never write a resurrected transcript.
-  if (isSessionIdTombstoned(sessionId)) return;
+  // A deleted session or an in-progress history hydration must never write a
+  // partial transcript that would later be mistaken for a complete snapshot.
+  if (isSessionIdTombstoned(sessionId) || !canPersistSession(sessionId)) return;
   _persistPending.set(sessionId, messages);
   if (_persistTimers.has(sessionId)) return; // already scheduled
   _persistTimers.set(
@@ -153,7 +175,8 @@ export function persistMessagesDebounced(sessionId: string, messages: ChatMessag
       const pending = _persistPending.get(sessionId);
       if (pending) {
         _persistPending.delete(sessionId);
-        persistMessagesToStorage(sessionId, pending);
+        if (isSessionIdTombstoned(sessionId) || !canPersistSession(sessionId)) return;
+        persistMessages(sessionId, pending);
       }
     }, _PERSIST_DEBOUNCE_MS),
   );
@@ -176,7 +199,8 @@ export function flushPersistMessages(sessionId: string): void {
   const pending = _persistPending.get(sessionId);
   if (pending) {
     _persistPending.delete(sessionId);
-    persistMessagesToStorage(sessionId, pending);
+    if (!canPersistSession(sessionId)) return;
+    persistMessages(sessionId, pending);
   }
 }
 
@@ -235,6 +259,7 @@ export function getOrInitSessionStreamState(sessionId: string | null): SessionSt
 
   const state: SessionStreamState = {
     messages: initialMessages,
+    history: { status: hasStoredMessages(sessionId) ? 'ready' : 'missing' },
     subagentPrompts: new Map(),
     subagentBlocks: new Map(),
     toolProgress: new Map(),
@@ -270,12 +295,26 @@ export function peekSessionStreamState(sessionId: string | null): SessionStreamS
 
 export function updateSessionStreamState(
   sessionId: string,
-  updater: (prev: SessionStreamState) => Partial<SessionStreamState>
+  updater: (prev: SessionStreamState) => Partial<SessionStreamState>,
+  options: UpdateSessionStreamStateOptions = {},
 ) {
   // A deleted session's handlers must never write (transcript resurrection).
   if (isSessionIdTombstoned(sessionId)) return;
   const current = getOrInitSessionStreamState(sessionId);
-  const next = { ...current, ...updater(current) };
+  const patch = updater(current);
+  const next = { ...current, ...patch };
+  // Explicit transcript replacements (Undo, clear, send, regeneration) own
+  // history and invalidate an older queued snapshot. Live stream reducers
+  // carry the current history identity forward so hydration can still merge.
+  // A replacement issued while a fetch is in flight still wins on purpose:
+  // see useSessionHistory "vetoes late backend history after the real Undo".
+  if ('messages' in patch && options.transcriptUpdate !== 'stream') {
+    next.history = { status: 'ready' };
+    const timer = _persistTimers.get(sessionId);
+    if (timer) clearTimeout(timer);
+    _persistTimers.delete(sessionId);
+    _persistPending.delete(sessionId);
+  }
   useSessionStreamStore.setState({
     bySession: {
       ...useSessionStreamStore.getState().bySession,

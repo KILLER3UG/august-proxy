@@ -25,8 +25,9 @@ function renderShell(ui: React.ReactNode) {
 }
 
 function pickSections(): WorkspaceSectionMeta[] {
-  const ids = ['system-health', 'skills', 'api-access', 'computer-access', 'observability', 'computer-use'];
-  return SETTINGS_SECTIONS.filter((s) => ids.includes(s.id)).map((s) => ({
+  const ids = ['system-health', 'skills', 'api-access', 'computer-access', 'observability', 'computer-use', 'hooks', 'indexing'];
+  const implementedIds = new Set(ids.filter((id) => !['hooks', 'indexing'].includes(id)));
+  return SETTINGS_SECTIONS.filter((s) => implementedIds.has(s.id)).map((s) => ({
     id: s.id,
     label: s.label,
     icon: s.icon,
@@ -53,12 +54,35 @@ describe('WorkspaceShell — hub IA', () => {
         <div>main</div>
       </WorkspaceShell>,
     );
-    for (const cat of SETTINGS_CATEGORIES) {
-      expect(screen.getByText(cat.label)).toBeInTheDocument();
-    }
     const labels = visibleRailLabels();
-    expect(labels).toContain('General');
     expect(labels).toContain('Skills');
+    expect(labels).not.toContain('General');
+    expect(labels).not.toContain('Hooks');
+    expect(labels).not.toContain('Indexing');
+  });
+
+  it('constrains the rail and keeps rail metadata readable', () => {
+    renderShell(
+      <WorkspaceShell sections={pickSections()} active="skills">
+        <div>main</div>
+      </WorkspaceShell>,
+    );
+    const rail = document.querySelector('aside');
+    expect(rail?.className).toContain('overflow-hidden');
+    const input = screen.getByLabelText(/Search settings/i);
+    fireEvent.change(input, { target: { value: 'hooks' } });
+    expect(screen.getByText('0 of 6 sections').className).toContain('text-xs');
+  });
+
+  it('does not surface unimplemented sections from the passed registry', () => {
+    renderShell(
+      <WorkspaceShell sections={pickSections()} active="skills">
+        <div>main</div>
+      </WorkspaceShell>,
+    );
+    const input = screen.getByLabelText(/Search settings/i);
+    fireEvent.change(input, { target: { value: 'hooks' } });
+    expect(screen.getByText(/No sections match/)).toBeInTheDocument();
   });
 
   it('search surfaces matching sections grouped by category', () => {

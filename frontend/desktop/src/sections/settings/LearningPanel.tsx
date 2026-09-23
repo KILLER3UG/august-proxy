@@ -93,6 +93,85 @@ interface SchedulerState {
   runs: Array<{ job: string; finished_at?: string; status?: string }>;
 }
 
+/* ── 046 turn verdicts ─────────────────────────────────────────────────── */
+/* Why each turn's managed tool loop stopped, and how much it had to
+ * self-correct on the way — the persisted twin of the `turn_end` SSE event
+ * and of the loop's turn-scoped counters, read back over one window from
+ * `GET /api/brain/turn-outcomes`. Read-only diagnostics: every row is a turn
+ * that FINISHED and whose answer reached the user. Nothing here is a gate,
+ * and `null` totals are labelled "not recorded" instead of being shown as a
+ * clean zero. */
+interface VerdictCounter {
+  total: number | null;
+  measured?: number;
+  turns?: number;
+  unrecorded?: number;
+}
+interface TurnVerdicts {
+  days?: number;
+  turns?: number;
+  reasons?: Array<{ reason: string; turns: number }>;
+  reasonUnrecorded?: number;
+  counters?: {
+    rounds?: { avg: number | null; max: number | null; measured?: number; unrecorded?: number };
+    malformedToolArgs?: VerdictCounter;
+    surfaceDowngrades?: VerdictCounter;
+    editVerifyFails?: VerdictCounter;
+    guardrailBlocks?: VerdictCounter & { byTool?: Array<{ tool: string; blocks: number }> };
+  };
+}
+interface TurnOutcomeResponse {
+  days?: number;
+  verdicts?: TurnVerdicts;
+}
+
+/** `turn_end.reason` in plain words. The raw token stays in the tooltip. */
+const REASON_PHRASE: Record<string, string> = {
+  finished: 'answered',
+  length: 'hit output limit',
+  cap: 'tool-round cap',
+  'stall-stop': 'stalled then stopped',
+  error: 'errored',
+  interrupted: 'you stopped it',
+  'awaiting-input': 'waiting on your input',
+};
+
+/** A counter line, or the honest "not recorded" when the window held no
+ *  measured row. A measured zero must never render as this. */
+function counterLine(c: VerdictCounter | undefined): string {
+  if (!c) return 'not recorded';
+  const total = typeof c.total === 'number' ? String(c.total) : 'not recorded';
+  const parts = [total];
+  if (c.turns) parts.push(`${c.turns} turn(s)`);
+  if (c.unrecorded) parts.push(`${c.unrecorded} not recorded`);
+  return parts.join(' · ');
+}
+
+function verdictCounterLines(v: TurnVerdicts | undefined): Array<[string, string]> {
+  const c = v?.counters ?? {};
+  const rounds = c.rounds;
+  const guardrail = c.guardrailBlocks
+    ? `${counterLine(c.guardrailBlocks)}${
+        c.guardrailBlocks.byTool?.length
+          ? ` — ${c.guardrailBlocks.byTool.map((t) => `${t.tool} ${t.blocks}`).join(', ')}`
+          : ''
+      }`
+    : 'not recorded';
+  return [
+    [
+      'Rounds',
+      rounds && typeof rounds.avg === 'number'
+        ? `avg ${rounds.avg}${typeof rounds.max === 'number' ? ` · max ${rounds.max}` : ''}` +
+          (rounds.unrecorded ? ` · ${rounds.unrecorded} not recorded` : '')
+        : 'not recorded',
+    ],
+    ['Malformed tool args', counterLine(c.malformedToolArgs)],
+    ['Tool-surface downgrades', counterLine(c.surfaceDowngrades)],
+    ['Edit-verification misses', counterLine(c.editVerifyFails)],
+    ['Guardrail blocks', guardrail],
+  ];
+}
+
 const REFINE_PHRASE: Record<string, string> = {
   kept: 'kept',
   discarded: 'discarded by reviewer',
@@ -172,10 +251,12 @@ function prettify(s: string): string {
   return s.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/** Keys are the backend's episode kinds, so they stay snake_case — quoted as
+ *  string literals rather than renamed to please a camelCase identifier rule. */
 const KIND_PHRASE: Record<string, string> = {
-  failure_recovery: 'Recovered from a failure',
-  correction_accepted: 'Adapted after your correction',
-  contested: 'Found a contradiction to resolve',
+  'failure_recovery': 'Recovered from a failure',
+  'correction_accepted': 'Adapted after your correction',
+  'contested': 'Found a contradiction to resolve',
 };
 
 function describeEpisode(ep: FlaggedEpisode): string {
@@ -227,6 +308,12 @@ export function LearningPanel() {
     queryFn: () => api.get<SchedulerState>('/api/curator/scheduler'),
     enabled: expanded,
     refetchInterval: 60_000, // cadence is hours; a minute-level tick keeps "last run" honest
+  });
+  const verdictsQ = useQuery({
+    queryKey: ['turn-outcomes', 'verdicts'],
+    queryFn: () => api.get<TurnOutcomeResponse>('/api/brain/turn-outcomes?days=7'),
+    enabled: expanded,
+    refetchInterval: 60_000,
   });
 
   const runJobNow = useMutation({
@@ -314,6 +401,7 @@ export function LearningPanel() {
 
   const learning = reportQ.data?.learning ?? {};
   const precision = reportQ.data?.precision;
+  const verdicts = verdictsQ.data?.verdicts;
   const metrics: Array<[string, number | string | undefined]> = [
     ['Episodes', learning.episodes],
     ['Tier 2', learning.tier2],
@@ -404,6 +492,66 @@ export function LearningPanel() {
                 {reportQ.data.skillsIndexOverflow.omittedSkills ?? 0} skill(s) not listed in
                 prompts
               </span>
+            )}
+          </div>
+
+          {/* 046: the turn verdict ledger — why the loop stopped and how often
+              it had to self-correct. Diagnostics on the same rows the backend
+              writes per turn; a reason is a turn that already delivered its
+              answer, never a withheld one. */}
+          <div data-testid="learning-turn-verdicts">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Turn verdicts ({verdicts?.days ?? 7}d)
+            </p>
+            {!verdicts || !verdicts.turns ? (
+              <p className="text-xs text-muted-foreground">
+                {verdictsQ.isError
+                  ? 'Turn verdict telemetry unavailable — the ledger still records every turn.'
+                  : 'No turns recorded in this window yet — the ledger fills as you chat.'}
+              </p>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(verdicts.reasons ?? []).map((r) => (
+                    <span
+                      key={r.reason}
+                      data-testid={`learning-verdict-${r.reason}`}
+                      title={`end_reason = ${r.reason}`}
+                      className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground"
+                    >
+                      {REASON_PHRASE[r.reason] ?? r.reason} {r.turns}
+                    </span>
+                  ))}
+                  {!!verdicts.reasonUnrecorded && (
+                    <span
+                      data-testid="learning-verdict-unrecorded"
+                      title="Rows written before the verdict was recorded, or turns whose reason never reached the ledger — not a reason of their own"
+                      className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground/80"
+                    >
+                      {verdicts.reasonUnrecorded} turn(s) not recorded
+                    </span>
+                  )}
+                </div>
+                <ul className="mt-1.5 space-y-0.5">
+                  {verdictCounterLines(verdicts).map(([label, value]) => (
+                    <li
+                      key={label}
+                      data-testid={`learning-verdict-counter-${label.toLowerCase().replace(/[^a-z]+/g, '-')}`}
+                      className="flex items-center justify-between gap-3 text-[10.5px]"
+                    >
+                      <span className="text-muted-foreground">{label}</span>
+                      <span className="text-foreground/80">{value}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p
+                  data-testid="learning-verdict-no-gate"
+                  className="mt-1 text-[10px] text-muted-foreground/70"
+                >
+                  These are finished turns — every answer still reached you. Nothing here gates a
+                  response.
+                </p>
+              </>
             )}
           </div>
 

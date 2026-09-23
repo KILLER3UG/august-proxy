@@ -51,6 +51,7 @@ import { setSubagentProposal } from './subagent-proposals-store';
 import { pushNotification } from '@/store/notifications';
 import { publishExecutionState, publishTodos } from '@/store/liveActivity';
 import { setPromptCacheLive } from '@/store/promptCacheLive';
+import { setContextSectionsLive } from '@/store/contextSectionsLive';
 import {
   addRightDrawerSection,
   closeRightDrawerSection,
@@ -846,12 +847,15 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'system', content: warning });
       scheduleUpdate();
     },
-    onContextPressure: ({ contextUsedPct, attentionPressure, totalTokens, maxContext, remainingTokens, promptCache }) => {
+    onContextPressure: ({ contextUsedPct, attentionPressure, totalTokens, maxContext, remainingTokens, promptCache, contextSections }) => {
       // Live-meter event — the backend emits one per turn, not only when the
       // window is nearly full. The prompt-cache split always feeds the
       // ContextRing live store (before the pressure gate — low pressure is
       // the common case and still carries fresh cache stats).
       setPromptCacheLive(sessionId, promptCache);
+      // Byte sizes of the blocks this turn actually injected, so the context
+      // breakdown can report a measurement instead of guessing zero.
+      setContextSectionsLive(sessionId, contextSections);
       // Only surface the warning when the budget is actually stressed (see
       // isContextPressured); low/medium pressure is a silent no-op and the
       // composer's ContextRing shows the gauge instead.

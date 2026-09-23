@@ -117,19 +117,24 @@ export async function startChatStream(
 
     // Backend queued because another turn is active — keep a calm note, not an error.
     if (startResult?.queued) {
-      updateSessionStreamState(sessionId, prev => ({
-        messages: prev.messages
-          .map(msg =>
-            msg.id === assistantMsgId
-              ? {
-                  ...msg,
-                  content:
-                    'Your message is queued and will run when the current response finishes.',
-                }
-              : msg
-          )
-          .filter(msg => !(msg.id === assistantMsgId && !msg.content)),
-      }));
+      updateSessionStreamState(
+        sessionId,
+        (prev) => ({
+          messages: prev.messages
+            .map(msg =>
+              msg.id === assistantMsgId
+                ? {
+                    ...msg,
+                    content:
+                      'Your message is queued and will run when the current response finishes.',
+                  }
+                : msg
+            )
+            .filter(msg => !(msg.id === assistantMsgId && !msg.content)),
+          history: prev.history,
+        }),
+        { transcriptUpdate: 'stream' },
+      );
       // 'queued' — finalize for cleanup WITHOUT the
       // response-complete chime/OS notification (the real reply hasn't
       // happened; the queued turn's own finalize will chime).

@@ -38,6 +38,12 @@ export function createManageSession(params?: {
 export function deleteManageSession(id: string): Promise<unknown> {
   return api.delete(`/api/sessions/${encodeURIComponent(id)}`);
 }
+/** Persist the archive flag server-side. Absent from the backend it lived only
+ *  in localStorage, so a different device (or a cleared profile) un-archived
+ *  everything. */
+export function setManageSessionArchived(id: string, archived: boolean): Promise<unknown> {
+  return api.patch(`/api/sessions/${encodeURIComponent(id)}`, { isArchived: archived });
+}
 
 // Providers (uses /api/providers router)
 export function listManageProviders(): Promise<unknown[]> {

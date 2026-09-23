@@ -30,13 +30,17 @@ export const fadeUp: Variants = {
   exit:    { opacity: 0, y: -2, transition: t.fast },
 };
 
-/* Session row leave — snappy slide-out so deletes feel real-time. */
+/* Session row leave — snappy slide-out so deletes feel real-time.
+ * NOTE: initial/animate must NOT animate `height`. Framer measures
+ * layout against the mounted height, and a height:0 → 'auto' entry
+ * animation can stick at 0 (rows collapse and overflow-into the next
+ * section — 2026-09-16 sidebar collision). Collapse only on exit,
+ * which popLayout animates correctly. */
 export const sessionRow: Variants = {
-  initial: { opacity: 0, x: -6, height: 0 },
+  initial: { opacity: 0, x: -6 },
   animate: {
     opacity: 1,
     x: 0,
-    height: 'auto',
     transition: t.fast,
   },
   exit: {

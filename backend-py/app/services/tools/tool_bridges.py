@@ -128,6 +128,8 @@ async def handleToolCall(name: str, arguments: str) -> str:
             return 'Invalid arguments JSON: expected an object.'
     except json.JSONDecodeError as e:
         return f'Invalid arguments JSON: {e}'
+
+    session: object = None
     try:
         from app.services.workbench.workbench import _checkToolGuard, get_session
 
@@ -146,6 +148,20 @@ async def handleToolCall(name: str, arguments: str) -> str:
                 return '[Blocked] tool_call could not verify the session guard for a mutating tool.'
         except Exception:
             pass
+    # The sub-agent loop refuses blocked tools at its own dispatch site, but
+    # `tool_call` is a core tool that arrives here instead, so a worker could
+    # reach `remember`/`forget`/`create_agent` through the back door. The
+    # invariant is that the parent turn is the single memory write door.
+    try:
+        from app.services.workbench.context import currentSubagentDepth
+
+        if currentSubagentDepth.get() > 0:
+            from app.services.workbench.subagent import _blocked_tools
+
+            if name in _blocked_tools(session):
+                return f"[Blocked] Sub-agent not permitted to use '{name}' via tool_call."
+    except Exception:
+        return '[Blocked] tool_call could not verify sub-agent tool restrictions.'
     # Dispatch through the turn loop's real executor (hooks,
     # read-before-edit observation gate, spill, mutation log) instead of a
     # raw registry dispatch — the bridge previously re-implemented a

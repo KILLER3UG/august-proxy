@@ -4,7 +4,7 @@
  * sidebar (no horizontal pill tabs). Hidden Bots stay accessible via
  * the eye toggle in the row menu. */
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useLayoutEffect, useRef, useId } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { EyeOff, Eye, EllipsisVertical, Plus, Trash2, Copy, Shuffle, Search, Bell, BellOff, Users, X, Bot as BotIcon } from 'lucide-react';
@@ -70,6 +70,9 @@ interface BotRowMenuProps {
 function BotRowMenu({ bot, onDeleted }: BotRowMenuProps) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
 
   const toggleHidden = useMutation({
     mutationFn: (hidden: boolean) => updateBotUiMeta(bot.id, { hidden }),
@@ -121,23 +124,79 @@ function BotRowMenu({ bot, onDeleted }: BotRowMenuProps) {
     onError: () => toast.error('Could not delete Bot'),
   });
 
+  const closeMenu = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const previouslyFocused = document.activeElement;
+    window.queueMicrotask(() => {
+      menuRef.current
+        ?.querySelector<HTMLElement>('[role="menuitem"]')
+        ?.focus();
+    });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+        if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+        return;
+      }
+      if (e.key === "ArrowDown" && document.activeElement === triggerRef.current) {
+        e.preventDefault();
+        setOpen(true);
+        return;
+      }
+      if (!menuRef.current?.contains(e.target as Node)) return;
+      if (!["ArrowDown", "ArrowUp"].includes(e.key)) return;
+      e.preventDefault();
+      const items = Array.from(
+        menuRef.current.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+      );
+      if (items.length === 0) return;
+      const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+      const nextIndex = e.key === "ArrowDown"
+        ? (currentIndex + 1 + items.length) % items.length
+        : (currentIndex - 1 + items.length) % items.length;
+      items[nextIndex]?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   return (
-    <div className="relative">
+    <div className="relative focus-within:opacity-100">
       <button
+        ref={triggerRef}
         type="button"
         onClick={(e) => {
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-sidebar-foreground/40 hover:text-sidebar-foreground/80 transition"
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setOpen(true);
+          }
+        }}
+        className="rounded p-0.5 text-tier-2 opacity-100 transition hover:text-tier-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         aria-label="Bot actions"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-controls={menuId}
       >
         <EllipsisVertical className="size-3" />
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="fixed inset-0 z-40" onClick={closeMenu} />
           <div
+            id={menuId}
+            ref={menuRef}
             role="menu"
             className="absolute right-0 top-6 z-50 w-36 rounded-md border border-border/50 bg-popover py-1 text-xs shadow-2xl"
             onClick={(e) => e.stopPropagation()}
@@ -147,7 +206,7 @@ function BotRowMenu({ bot, onDeleted }: BotRowMenuProps) {
               role="menuitem"
               onClick={() => {
                 toggleHidden.mutate(!bot.uiMeta?.hidden);
-                setOpen(false);
+                closeMenu();
               }}
               className="flex w-full items-center gap-1.5 px-2.5 py-1 text-left text-foreground/90 hover:bg-white/5"
             >
@@ -161,7 +220,7 @@ function BotRowMenu({ bot, onDeleted }: BotRowMenuProps) {
                 void navigator.clipboard?.writeText(bot.name).then(() =>
                   toast.success('Bot name copied'),
                 );
-                setOpen(false);
+                closeMenu();
               }}
               className="flex w-full items-center gap-1.5 px-2.5 py-1 text-left text-foreground/90 hover:bg-white/5"
             >
@@ -173,7 +232,7 @@ function BotRowMenu({ bot, onDeleted }: BotRowMenuProps) {
               role="menuitem"
               onClick={() => {
                 randomize.mutate();
-                setOpen(false);
+                closeMenu();
               }}
               className="flex w-full items-center gap-1.5 px-2.5 py-1 text-left text-foreground/90 hover:bg-white/5"
               title="New deterministic face for this Bot"
@@ -186,7 +245,7 @@ function BotRowMenu({ bot, onDeleted }: BotRowMenuProps) {
               role="menuitem"
               onClick={() => {
                 duplicate.mutate();
-                setOpen(false);
+                closeMenu();
               }}
               className="flex w-full items-center gap-1.5 px-2.5 py-1 text-left text-foreground/90 hover:bg-white/5"
             >
@@ -199,7 +258,7 @@ function BotRowMenu({ bot, onDeleted }: BotRowMenuProps) {
               role="menuitem"
               onClick={() => {
                 remove.mutate();
-                setOpen(false);
+                closeMenu();
               }}
               className="flex w-full items-center gap-1.5 px-2.5 py-1 text-left text-destructive hover:bg-white/5"
             >
@@ -256,20 +315,20 @@ function BotRow({ bot, sessionId, active, onOpenChat, onOpenProfile, summary }: 
           <span className="flex items-baseline justify-between gap-1">
             <span
               className={cn(
-                'truncate text-[12.5px]',
-                bot.uiMeta?.hidden ? 'text-sidebar-foreground/35 italic' : 'text-sidebar-foreground/85',
+                'truncate text-xs',
+                bot.uiMeta?.hidden ? 'text-tier-3 italic' : 'text-tier-1',
               )}
             >
               {title}
             </span>
             {summary?.updatedAt && (
-              <span className="shrink-0 text-[9.5px] text-sidebar-foreground/25 tabular-nums">
+              <span className="shrink-0 text-xs text-tier-2 tabular-nums">
                 {timeAgo(summary.updatedAt)}
               </span>
             )}
           </span>
           {summary?.lastPreview ? (
-            <span className="truncate text-[10.5px] text-sidebar-foreground/35">
+            <span className="truncate text-xs text-tier-3">
               {summary.lastPreview}
             </span>
           ) : null}
@@ -410,9 +469,9 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
     <div className="august-bots-rail">
       <div className="flex items-center justify-between px-2 mb-1">
         <div className="flex items-center gap-1">
-          <h3 className="text-[11px] text-sidebar-foreground/40 font-normal">Bots</h3>
+          <h3 className="text-xs text-tier-2 font-medium">Bots</h3>
           {anyBots && (
-            <span className="text-[10px] text-sidebar-foreground/25 tabular-nums">
+            <span className="text-xs text-tier-2 tabular-nums">
               {botsQuery.data?.bots.length ?? 0}
             </span>
           )}
@@ -421,7 +480,7 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
           <button
             type="button"
             onClick={() => setShowRooms(true)}
-            className="p-0.5 rounded text-sidebar-foreground/30 hover:text-sidebar-foreground/60 transition-colors hover:bg-white/[0.03]"
+            className="p-0.5 rounded text-tier-2 hover:text-tier-1 transition-colors hover:bg-white/[0.03]"
             title="Group rooms"
             aria-label="Group rooms"
             data-testid="bots-open-rooms"
@@ -431,7 +490,7 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
           <button
             type="button"
             onClick={() => setMuted((v) => !v)}
-            className="p-0.5 rounded text-sidebar-foreground/30 hover:text-sidebar-foreground/60 transition-colors hover:bg-white/[0.03]"
+            className="p-0.5 rounded text-tier-2 hover:text-tier-1 transition-colors hover:bg-white/[0.03]"
             title={muted ? 'Unmute Bot activity' : 'Mute Bot activity'}
             aria-label={muted ? 'Unmute Bot activity' : 'Mute Bot activity'}
             aria-pressed={muted}
@@ -442,7 +501,7 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
             <button
               type="button"
               onClick={() => setMenuOpen((v) => !v)}
-              className="p-0.5 rounded text-sidebar-foreground/30 hover:text-sidebar-foreground/60 transition-colors hover:bg-white/[0.03]"
+              className="p-0.5 rounded text-tier-2 hover:text-tier-1 transition-colors hover:bg-white/[0.03]"
               title="New"
               aria-label="New"
               aria-expanded={menuOpen}
@@ -491,13 +550,13 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
       {anyBots && (
         <div className="px-1.5 pb-1">
           <div className="flex items-center gap-1.5 rounded-md border border-sidebar-border/50 bg-white/[0.03] px-2 py-1">
-            <Search className="size-3 shrink-0 text-sidebar-foreground/30" />
+            <Search className="size-3 shrink-0 text-tier-3" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search bots…"
               aria-label="Search bots"
-              className="min-w-0 flex-1 bg-transparent text-[11.5px] text-sidebar-foreground/80 outline-none placeholder:text-sidebar-foreground/30"
+              className="min-w-0 flex-1 bg-transparent text-xs text-sidebar-foreground/80 outline-none placeholder:text-tier-3"
             />
           </div>
         </div>
@@ -508,7 +567,7 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
           className="mb-1 flex flex-wrap items-center gap-1 px-1.5"
           data-testid="bots-active-now"
         >
-          <span className="text-[9.5px] uppercase tracking-wide text-emerald-400/70">
+          <span className="text-xs uppercase tracking-wide text-emerald-400/70">
             Active now
           </span>
           {activeNow.map((b) => (
@@ -516,7 +575,7 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
               key={b.id}
               type="button"
               onClick={() => void openChat(b)}
-              className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] text-emerald-300 hover:bg-emerald-400/20 transition"
+              className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-1.5 py-0.5 text-xs text-emerald-300 hover:bg-emerald-400/20 transition"
               title={`Open ${b.uiMeta?.title || b.name}`}
             >
               {b.uiMeta?.title || b.name}
@@ -540,12 +599,12 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
           ))}
         </AnimatePresence>
         {!anyBots && (
-          <p className="px-2 py-1 text-[11px] text-sidebar-foreground/30 italic">
+          <p className="px-2 py-1 text-xs text-tier-3 italic">
             No Bots yet — create one to give it a forever-chat.
           </p>
         )}
         {anyBots && bots.length === 0 && (
-          <p className="px-2 py-1 text-[11px] text-sidebar-foreground/30 italic">
+          <p className="px-2 py-1 text-xs text-tier-3 italic">
             No Bots match “{search}”.
           </p>
         )}
@@ -558,8 +617,8 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
       {rooms.length > 0 && (
         <div className="mt-1.5 space-y-0.5" data-testid="bots-rooms-in-rail">
           <div className="flex items-center justify-between px-2 pt-1">
-            <h3 className="text-[11px] text-sidebar-foreground/40 font-normal">Rooms</h3>
-            <span className="text-[10px] text-sidebar-foreground/25 tabular-nums">
+            <h3 className="text-xs text-tier-2 font-medium">Rooms</h3>
+            <span className="text-xs text-tier-2 tabular-nums">
               {rooms.length}
             </span>
           </div>
@@ -574,10 +633,10 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
                 title={room.name}
               >
                 <Users className="size-3.5 shrink-0 text-muted-foreground/60" />
-                <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground/85">
+                <span className="min-w-0 flex-1 truncate text-xs text-foreground/85">
                   {room.name}
                 </span>
-                <span className="shrink-0 text-[10px] text-sidebar-foreground/30 tabular-nums">
+                <span className="shrink-0 text-xs text-tier-2 tabular-nums">
                   {room.members.length}b
                 </span>
                 {room.needs_you && (
@@ -618,19 +677,19 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
             <h2 className="text-lg font-semibold text-foreground">
               {profileBot.uiMeta?.title || profileBot.name}
             </h2>
-            <p className="mt-0.5 text-[12px] text-muted-foreground">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               Bot · @{profileBot.name}
             </p>
             {/* Plan F5 device line — confirms the bot is wired to *this* install. */}
-            <p className="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground/60">
+            <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground/60">
               This device
             </p>
             {profileBot.description && (
-              <p className="mx-auto mt-3 max-w-xs text-[12.5px] leading-relaxed text-muted-foreground/90">
+              <p className="mx-auto mt-3 max-w-xs text-xs leading-relaxed text-muted-foreground/90">
                 {profileBot.description}
               </p>
             )}
-            <p className="mx-auto mt-4 max-w-xs text-[12px] text-muted-foreground/70">
+            <p className="mx-auto mt-4 max-w-xs text-xs text-muted-foreground/70">
               Open this bot&apos;s continuous chat. Its background work keeps running when you
               switch away.
             </p>

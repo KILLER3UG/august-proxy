@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   ToolCallItemBody,
@@ -1016,6 +1016,26 @@ export function AssistantBlockTimeline({
 
       // Non-process leftovers inside process list (ignore)
       ti++;
+    }
+
+    const settled = !isLast || !streaming;
+    const hasProducedFiles = filesTouched.size > 0 || editedCount > 0;
+    if (withDoneMarker && settled && !anyToolRunning && hasProducedFiles) {
+      tagged.push({
+        kind: 'block',
+        node: (
+          <div
+            key="presented-file"
+            className="flex items-center justify-between px-3.5 py-2.5 text-xs text-muted-foreground/90 transition-colors hover:text-foreground cursor-pointer group"
+            data-testid="presented-file-row"
+          >
+            <span className="font-normal text-muted-foreground/90 group-hover:text-foreground">
+              Presented file
+            </span>
+            <ChevronRight className="size-3 text-muted-foreground/60 transition-colors group-hover:text-foreground" />
+          </div>
+        ),
+      });
     }
 
     // Terminal rail marker once the turn settles. Gated off while the last

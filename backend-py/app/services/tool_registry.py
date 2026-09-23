@@ -74,6 +74,95 @@ _DAEMON_TRANSPARENT_PREFIXES = frozenset({
     'sudo', 'doas', 'env', 'nohup', 'time', 'command', 'builtin', 'xargs',
 })
 
+# Options that consume the token after them. Without this table `sudo -u root
+# rm -rf x` stops unwrapping at `-u`, classifies the *option* as the program,
+# and finds it harmless — the deny list was reachable by adding one flag.
+_DAEMON_WRAPPER_VALUE_OPTIONS: dict[str, frozenset[str]] = {
+    'sudo': frozenset({'-u', '--user', '-g', '--group', '-h', '--host', '-p', '--prompt',
+                       '-C', '--close-from', '-r', '--role', '-t', '--type'}),
+    # `doas -s` takes NO argument (it means "run the shell"): listing it as a
+    # value option consumed the *program* behind it and promoted the trailing
+    # argument — `doas -s rm x` classified `x` and waved `rm` through.
+    'doas': frozenset({'-C', '-u'}),
+    'env': frozenset({'-u', '--unset', '-C', '--chdir', '-S', '--split-string', '-v',
+                      '--debug', '--default-signal', '--ignore-signal', '--signal-context'}),
+    'xargs': frozenset({'-n', '--max-args', '-s', '--max-chars', '-P', '--max-procs',
+                        '-I', '--replace', '-E', '--eof', '-d', '--delimiter',
+                        '-L', '--max-lines', '-a', '--arg-file'}),
+    'time': frozenset({'-o', '--output'}),
+    'exec': frozenset({'-a', '--argv0'}),
+    'command': frozenset(),
+    'nohup': frozenset(),
+    'builtin': frozenset(),
+}
+
+
+def _unwrapDaemonPrefixes(tokens: list[str]) -> tuple[int, list[str]] | None:
+    """Index of the real program behind transparent wrappers, plus the tokens
+    those wrappers swallowed as option *values*.
+
+    Returns None when the chain cannot be resolved, so the caller refuses
+    rather than classifying an option as the program. The swallowed tokens come
+    back because a value can itself be the program (`doas -s rm x`) — handing
+    back only the index would hide it behind a flag.
+    """
+    index = 0
+    swallowed: list[str] = []
+    while index < len(tokens):
+        wrapper = _normalizeProgram(tokens[index])
+        if wrapper not in _DAEMON_TRANSPARENT_PREFIXES:
+            return index, swallowed
+        index += 1
+        valueOptions = _DAEMON_WRAPPER_VALUE_OPTIONS.get(wrapper, frozenset())
+        while index < len(tokens):
+            arg = tokens[index]
+            if arg == '--':
+                index += 1
+                break
+            if arg.startswith('-'):
+                index += 1
+                if '=' in arg:
+                    continue
+                if arg in valueOptions and index < len(tokens):
+                    if not tokens[index].startswith('-'):
+                        swallowed.append(tokens[index])
+                        index += 1
+                continue
+            if _isEnvAssignment(arg):
+                # `env FOO=bar rm x`: an assignment behind a wrapper is not the
+                # program. Stopping here classified `foo=bar` as one and waved
+                # the whole command behind it through — the same hole as `-u`,
+                # wearing `NAME=value` instead of a flag.
+                index += 1
+                continue
+            break
+    # Every token was a wrapper (or its option): there is no program to
+    # classify. Returning `(None, …)` here would sail past the caller's
+    # `is None` guard and compare None against a length.
+    return None
+
+
+def _hiddenByWrapperValue(value: str) -> str | None:
+    """Why this swallowed wrapper value hides a program, or None when it can't.
+
+    A wrapper option's value may be a whole command line: `env -S 'rm -rf x'`
+    and `env -S 'python -c …'` exec the string, and `doas -s rm x` hides `rm`
+    behind a flag that does not even take an argument. Classifying only the
+    token *behind* the value would then certify the wrong program.
+    """
+    parts = value.split()
+    if not parts:
+        return None
+    word = _normalizeProgram(parts[0])
+    if word in _DAEMON_DENY_PROGRAMS or word in _DAEMON_SHELLS_AND_INSTALLERS:
+        return f'wrapper option value {value!r} hides the program that runs'
+    if word in _DAEMON_INTERPRETERS and (
+        any(part.split('=', 1)[0] in _DAEMON_INLINE_CODE_FLAGS for part in parts[1:])
+        or '-' in parts[1:]
+    ):
+        return f'wrapper option value {value!r} carries inline code'
+    return None
+
 # Programs that can execute arbitrary code passed inline on the command line.
 # Only refused when an inline-code flag is actually present: a daemon running a
 # pre-existing `analyze.py` is no more dangerous than the daemon's own code, so
@@ -96,7 +185,8 @@ _DAEMON_SHELLS_AND_INSTALLERS = frozenset({
 # Compared lowercased, matching `_DAEMON_DENY_FLAGS` lookups below.
 _DAEMON_DENY_FLAGS: dict[str, tuple[str, ...]] = {
     'find': ('-delete', '-exec', '-execdir', '-ok', '-okdir', '-fprint', '-fprintf'),
-    'git': ('clean', 'reset', 'checkout', 'restore', 'rm', 'mv', 'push', 'rebase', 'gc', 'stash'),
+    'git': ('clean', 'reset', 'checkout', 'restore', 'rm', 'mv', 'push', 'rebase',
+            'gc', 'stash', 'config'),
     'sed': ('--in-place', '-i'),
     'tar': ('--delete',),
     # curl/wget are classified case-sensitively in `_httpWriteReason` instead:
@@ -107,6 +197,13 @@ _DAEMON_DENY_FLAGS: dict[str, tuple[str, ...]] = {
 # `-c`/`-e` style inline-code flags, shared across interpreter families.
 _DAEMON_INLINE_CODE_FLAGS = frozenset({
     '-c', '-e', '--command', '--eval', '-encodedcommand',
+})
+
+# `python -m pip …` is `pip …` wearing an interpreter's clothes: the installer
+# deny list never sees the program name because argv[0] is `python`.
+_DAEMON_MODULE_DENY = frozenset({
+    'pip', 'pip3', 'uv', 'uvx', 'npm', 'npx', 'pnpm', 'yarn', 'cargo', 'conda',
+    'ensurepip', 'venv', 'virtualenv', 'setuptools', 'distutils', 'build',
 })
 
 # Fork-bomb family: a function definition whose body invokes itself. There is
@@ -187,6 +284,52 @@ def _redirectWritesSomewhere(segment: str) -> bool:
     return False
 
 
+# Config keys a daemon may set inline with `git -c`. Everything else is
+# refused because a git config value can *name a program to run*: alias `!…`,
+# core.pager, core.editor, core.sshCommand, core.fsmonitor, diff.external,
+# merge.*.program, credential.helper. A deny list of those keys is a list to
+# grow forever, so only keys that hold plain data are open.
+_GIT_INLINE_CONFIG_ALLOW = frozenset({
+    'user.name', 'user.email', 'user.username',
+    'commit.gpgsign', 'tag.gpgsign',
+    'core.autocrlf', 'core.safecrlf', 'core.filemode', 'core.symlinks',
+    'core.longpaths', 'core.quotepath', 'core.precomposeunicode',
+    'init.defaultbranch', 'safe.directory', 'gc.auto',
+    'protocol.file.allow', 'protocol.https.allow', 'protocol.ssh.allow',
+})
+
+
+def _gitInlineConfigRefusal(rawArgs: list[str]) -> str | None:
+    """Why this `git -c …` line is refused, or None when every key is data.
+
+    `git config` (the subcommand) is denied by `_DAEMON_DENY_FLAGS`, but
+    `git -c alias.x='!rm -rf /' x` performs the same injection in one command:
+    I confirmed the alias executes on git 2.55, so the flag needs the same door.
+    Case-sensitively matched against raw tokens — `rest` is lower-cased and
+    `-C <dir>` (chdir) would otherwise read as `-c`.
+    """
+    position = 0
+    while position < len(rawArgs):
+        token = rawArgs[position]
+        if token in ('-c', '--config-env'):
+            inline = rawArgs[position + 1] if position + 1 < len(rawArgs) else ''
+            position += 2
+        elif token.startswith('--config-env='):
+            inline = token.partition('=')[2]
+            position += 1
+        else:
+            position += 1
+            continue
+        key = inline.partition('=')[0].lower()
+        if not key or key not in _GIT_INLINE_CONFIG_ALLOW:
+            named = key or inline or 'key=?'
+            return (
+                f'git -c {named} injects configuration that can name a program '
+                f'to run; set it with `git config` outside daemon context'
+            )
+    return None
+
+
 def commandBlockReason(command: str) -> str | None:
     """Why this command is unsafe for unattended execution, or None to allow."""
     import shlex
@@ -216,23 +359,47 @@ def commandBlockReason(command: str) -> str | None:
         if not tokens:
             continue
 
-        index = 0
-        while index < len(tokens) and _normalizeProgram(tokens[index]) in _DAEMON_TRANSPARENT_PREFIXES:
-            index += 1
-        if index >= len(tokens):
+        resolved = _unwrapDaemonPrefixes(tokens)
+        if resolved is None or resolved[0] >= len(tokens):
             return f'wrapper with no resolvable program: {tokens[0]!r}'
+        index, swallowed = resolved
 
         program = _normalizeProgram(tokens[index])
         rest = [tok.lower() for tok in tokens[index + 1:]]
+        for value in swallowed:
+            hidden = _hiddenByWrapperValue(value)
+            if hidden:
+                return hidden
+        if index > 0 and program.startswith('-'):
+            # An option this table does not know would otherwise be classified
+            # as a harmless program name and waved through. Only meaningful
+            # behind a wrapper — a leading '-' is not a wrapper at all.
+            return f'unrecognised wrapper argument {program!r} hides the program that runs'
 
         if program in _DAEMON_DENY_PROGRAMS:
             return f'{program} mutates the filesystem or system state'
         if program in _DAEMON_SHELLS_AND_INSTALLERS:
             return f'{program} writes files or executes fetched code'
-        if program in _DAEMON_INTERPRETERS and any(
-            token.split('=', 1)[0] in _DAEMON_INLINE_CODE_FLAGS for token in rest
-        ):
-            return f'{program} invoked with an inline code flag'
+        if program == 'git':
+            # Checked case-SENSITIVELY against the raw tokens: `rest` is lower-
+            # cased, and `-C <dir>` (chdir) would otherwise read as `-c`.
+            inlineConfig = _gitInlineConfigRefusal(tokens[index + 1:])
+            if inlineConfig:
+                return inlineConfig
+        if program in _DAEMON_INTERPRETERS:
+            if any(token.split('=', 1)[0] in _DAEMON_INLINE_CODE_FLAGS for token in rest):
+                return f'{program} invoked with an inline code flag'
+            if '-' in rest:
+                # `python - <<EOF` pipes a whole program in, so no segment of it
+                # is ever classified — the heredoc body reads as new commands.
+                return f'{program} reads the program to run from stdin'
+            for offset, token in enumerate(rest):
+                if token not in ('-m', '--module'):
+                    continue
+                module = rest[offset + 1].partition('.')[0] if offset + 1 < len(rest) else ''
+                if module in _DAEMON_MODULE_DENY:
+                    return f'{program} -m {module} installs packages or runs fetched code'
+                break
 
         deny = _DAEMON_DENY_FLAGS.get(program, ())
         if program in _DAEMON_HTTP_TOOLS:

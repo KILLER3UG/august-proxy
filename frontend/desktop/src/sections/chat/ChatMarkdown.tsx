@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { marked, type Tokens } from 'marked';
 import katex from 'katex';
 import { highlightCode } from '@/lib/code-highlight';
+import { safeExternalHref } from '@/lib/safe-href';
 
 const COPY_PLACEHOLDER_ATTR = 'data-copy-placeholder';
 const COPY_CODE_ATTR = 'data-copy-code';
@@ -33,25 +34,48 @@ function renderHtml(token: Tokens.HTML | Tokens.Tag): string {
   return escapeHtml(token.text ?? '');
 }
 
+interface LinkRendererThis {
+  parser: { parseInline(tokens: Tokens.Link['tokens']): string };
+}
+
+/** marked's default link renderer passes `href` straight through, and the
+ *  result is applied with dangerouslySetInnerHTML — so a model-authored
+ *  `[x](javascript:…)` would run in the webview. */
+function renderLink(this: LinkRendererThis, token: Tokens.Link): string {
+  const label = this.parser.parseInline(token.tokens);
+  const href = safeExternalHref(token.href);
+  if (!href) return label;
+  const title = token.title ? ` title="${escapeAttr(token.title)}"` : '';
+  return `<a href="${escapeAttr(href)}"${title} target="_blank" rel="noopener noreferrer">${label}</a>`;
+}
+
 function renderCode(token: Tokens.Code): string {
-  const lang = (token.lang || '').trim();
-  const langClass = lang ? ` class="hljs language-${escapeAttr(lang)}"` : ' class="hljs"';
+  const rawLang = (token.lang || '').trim();
+  const displayLang = rawLang ? rawLang.split(/\s+/)[0] : 'code';
+  const langClass = rawLang ? ` class="hljs language-${escapeAttr(rawLang)}"` : ' class="hljs"';
   const code = escapeAttr(token.text);
   // Skip highlight.js while streaming — full re-highlight every flush was the
   // main cost of live markdown paints; colors apply once the turn settles.
   const highlighted = liveMarkdownParse
     ? escapeHtml(token.text)
-    : highlightCode(token.text, lang);
+    : highlightCode(token.text, rawLang);
+
+  const copyIconSvg =
+    `<svg class="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+      `<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>` +
+      `<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>` +
+    `</svg>`;
+
   return (
     `<div class="markdown-code-block relative group">` +
+      `<div class="markdown-code-header flex items-center justify-between px-3.5 py-1.5 bg-muted/30 border-b border-border/30 text-xs font-mono text-muted-foreground select-none">` +
+        `<span class="uppercase tracking-wider text-[11px] font-medium opacity-80">${escapeHtml(displayLang)}</span>` +
+        `<button type="button" ${COPY_PLACEHOLDER_ATTR} ${COPY_CODE_ATTR}="${code}" ` +
+          `class="markdown-copy-btn inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">` +
+          `${copyIconSvg}<span class="copy-text">Copy</span>` +
+        `</button>` +
+      `</div>` +
       `<pre${langClass}><code${langClass}>${highlighted}</code></pre>` +
-      `<button type="button" ${COPY_PLACEHOLDER_ATTR} ${COPY_CODE_ATTR}="${code}" ` +
-        `class="markdown-copy-btn absolute right-2 top-2 inline-flex items-center gap-1 rounded-md ` +
-        `border border-border/60 bg-background/80 px-2 py-1 text-xs font-medium text-muted-foreground ` +
-        `opacity-0 transition-opacity hover:text-foreground focus:opacity-100 group-hover:opacity-100" ` +
-        `style="z-index:10">` +
-        `Copy` +
-      `</button>` +
     `</div>`
   );
 }
@@ -266,7 +290,7 @@ const mathBlockExtension = {
 marked.use({
   gfm: true,
   breaks: true,
-  renderer: { code: renderCode, html: renderHtml },
+  renderer: { code: renderCode, html: renderHtml, link: renderLink },
   extensions: [mathInlineExtension, mathBlockExtension],
 });
 
@@ -426,9 +450,15 @@ export function Markdown({
       const code = btn.getAttribute(COPY_CODE_ATTR);
       if (!code) return;
       navigator.clipboard.writeText(code).catch(() => {});
-      const orig = btn.textContent;
-      btn.textContent = 'Copied!';
-      setTimeout(() => { btn.textContent = orig; }, COPY_RESET_MS);
+      const label = btn.querySelector('.copy-text');
+      if (label) {
+        label.textContent = 'Copied!';
+        setTimeout(() => { label.textContent = 'Copy'; }, COPY_RESET_MS);
+      } else {
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = orig; }, COPY_RESET_MS);
+      }
     }
 
     el.addEventListener('click', handleClick);

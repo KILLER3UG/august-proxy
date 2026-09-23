@@ -20,9 +20,6 @@ export interface AppUpdateInfo {
   date?: string;
 }
 
-/** GitHub repo hosting the desktop releases (NSIS setup + latest.json). */
-const RELEASE_DOWNLOAD_BASE = 'https://github.com/KILLER3UG/august-proxy/releases';
-
 // The downloaded payload must survive across the settings page, notification
 // panel, and the global update dialog. Keep only the prepared artifact here;
 // the Zustand store owns the visible phase and progress.
@@ -169,10 +166,8 @@ export function useAppUpdate() {
             });
           },
         );
-        const filename = `August_${version}_x64-setup.exe`;
         const installerPath = await invoke<string>('download_release_installer', {
-          url: `${RELEASE_DOWNLOAD_BASE}/latest/download/${filename}`,
-          filename,
+          version,
         });
         if (cancelRequested) {
           resetInstall();

@@ -32,6 +32,17 @@ module.exports = {
           foreground: 'hsl(var(--dt-primary-foreground-hsl) / <alpha-value>)',
         },
         border: 'hsl(var(--dt-border-hsl) / <alpha-value>)',
+        // Contrast tiers. Registered here as well as defined in styles.css so
+        // that variant forms work: a plain `.text-tier-N` CSS rule cannot be
+        // prefixed, so `hover:text-tier-1`, `placeholder:text-tier-3` and
+        // `aria-selected:text-tier-1` were silently emitting no CSS at all.
+        // Hex (not `-hsl` channel) vars, so `/NN` alpha modifiers are not
+        // supported on these.
+        tier: {
+          1: 'var(--dt-fg-1)',
+          2: 'var(--dt-fg-2)',
+          3: 'var(--dt-fg-3)',
+        },
       },
       fontFamily: {
         sans: [
