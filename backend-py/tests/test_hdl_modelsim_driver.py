@@ -57,7 +57,16 @@ def test_resolve_modelsim_returns_none_when_absent(monkeypatch, tmp_path):
 
 def test_resolve_modelsim_probes_modelsim_ase_roots(monkeypatch, tmp_path):
     """The probe must search the intelFPGA versioned modelsim_ase trees —
-    where ModelSim actually lives on Quartus-kit machines."""
+    where ModelSim actually lives on Quartus-kit machines. A fixture tree
+    stands in for the kit so the search is asserted on every host: the real
+    ``C:\\intelFPGA`` tree only exists on kit machines, so the old assertion
+    silently depended on this dev box (and failed wherever it was absent)."""
+    kit = tmp_path / 'intelFPGA'
+    vsim = kit / '18.1' / 'modelsim_ase' / 'win32aloem'
+    vsim.mkdir(parents=True)
+    (vsim / 'vsim.exe').write_text('', encoding='utf-8')
+    monkeypatch.setattr(ht, '_MODELSIM_KIT_ROOTS', (str(kit),))
+    monkeypatch.delenv('AUGUST_MODELSIM', raising=False)
     seen: dict[str, object] = {}
 
     async def _fake_probe(names, args, version_re, extra_dirs=(), timeout=10.0):
@@ -204,7 +213,14 @@ def test_resolve_ghdl_honors_august_ghdl_env(monkeypatch, tmp_path):
 
 def test_resolve_ghdl_searches_winget_root(monkeypatch, tmp_path):
     """The winget GHDL package lands in the WinGet Packages tree — the
-    probe must search it (this machine's actual install location)."""
+    probe must search it. LOCALAPPDATA points at a fixture tree so the
+    assertion holds on every host (posix expandvars never understood the
+    %LOCALAPPDATA% form, and the real tree only exists on winget boxes)."""
+    packages = tmp_path / 'Local' / 'Microsoft' / 'WinGet' / 'Packages'
+    (packages / 'ghdl.ghdl.ucrt64_mcode_1.0.0_x64__testpkg' / 'bin').mkdir(
+        parents=True
+    )
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'Local'))
     seen: dict[str, object] = {}
 
     async def _fake_probe(names, args, version_re, extra_dirs=(), timeout=10.0):

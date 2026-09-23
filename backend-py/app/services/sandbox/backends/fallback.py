@@ -556,6 +556,12 @@ _TEXT_EMITTER_HEADS = frozenset({'echo', 'printf', 'title'})
 # is scanned despite its head.
 _NOT_PURE_TEXT_RE = re.compile(r'\$\(|`|\$\{|[<>]')
 
+# Windows-style switch shape: slash + letter, optionally an attached value
+# (`/c`, `/s`, `/c:"ToolSearch"`) — the same regex paths._one_points_outside
+# exempts, which is gated there to Windows hosts (B8: on POSIX `/c` IS a
+# real absolute dir).
+_NT_SWITCH_RE = re.compile(r'/[A-Za-z](?::.*)?')
+
 
 def _split_shell_segments(command: str, *, platform: str | None = None) -> list[str]:
     """Split separators using the native shell quoting, preserving source text."""
@@ -627,6 +633,15 @@ def _scan_path_tokens(
             continue
         allowLogs = head in _READ_ONLY_VIEWER_HEADS
         for tok in _shell_tokens_for_scan(segment, platform=platform):
+            cleaned = tok.strip().strip('"').strip("'")
+            if _is_nt_platform(platform) and _NT_SWITCH_RE.fullmatch(cleaned):
+                # Declared-nt command semantics (or a Windows host): `/c`,
+                # `/b`, `/c:"Tool"` are switches, not paths. paths.py gates
+                # the same shape to Windows hosts so a POSIX host still
+                # blocks a real `/c` dir — extend that to a command that
+                # DECLARES nt while the host is POSIX, so both evaluation
+                # contexts agree on what the token means.
+                continue
             if path_looks_outside_workspace(tok, rootStr, allow_app_logs=allowLogs):
                 return (
                     f'path outside workspace blocked: {tok} '

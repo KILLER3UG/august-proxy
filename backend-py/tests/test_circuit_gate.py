@@ -942,11 +942,17 @@ def test_firmware_run_requires_node_and_sidecar(monkeypatch):
         ft._sidecar_ready = orig_ready
 
 
-def test_firmware_run_validates_hex_arg():
+def test_firmware_run_validates_hex_arg(monkeypatch):
     import asyncio
 
     from app.services.tools import firmware_tools as ft
 
+    # firmware_run probes the environment FIRST by design (install guidance
+    # beats a path error), so without a ready node + avr8js sidecar every
+    # bad arg comes back as an error dict on toolchain-less hosts (CI)
+    # instead of the ValueError this test asserts. Pin the env to ready.
+    monkeypatch.setattr(ft, '_resolve_node', lambda: 'node')
+    monkeypatch.setattr(ft, '_sidecar_ready', lambda: True)
     for bad in ('', '   ', 'missing-file.hex'):
         try:
             asyncio.run(ft.firmware_run(bad))
@@ -1605,23 +1611,23 @@ def test_fpga_qsf_generation_pins_and_device():
     assert 'TOP_LEVEL_ENTITY top_ent' in qsf
 
 
-def test_fpga_compile_validates_and_degrades():
+def test_fpga_compile_validates_and_degrades(monkeypatch):
     import asyncio
 
     from app.services.tools import fpga_tools as ft
 
+    # Same env-first ordering as firmware_run: quartus resolution precedes
+    # source validation, so pin a present toolchain for the validation half
+    # (on a machine without Quartus ANY source returns install guidance).
+    monkeypatch.setattr(ft, 'resolve_quartus_sh', lambda: '/quartus/bin/quartus_sh')
     try:
         asyncio.run(ft.fpga_compile(''))
         assert False
     except ValueError:
         pass
-    orig = ft.resolve_quartus_sh
-    ft.resolve_quartus_sh = lambda: None
-    try:
-        r = asyncio.run(ft.fpga_compile('entity x is end x;'))
-        assert r['installed'] is False and 'Quartus' in r['error']
-    finally:
-        ft.resolve_quartus_sh = orig
+    monkeypatch.setattr(ft, 'resolve_quartus_sh', lambda: None)
+    r = asyncio.run(ft.fpga_compile('entity x is end x;'))
+    assert r['installed'] is False and 'Quartus' in r['error']
 
 
 # ── kicad_checks + kicad_render — ERC/DRC gates + board visuals (P5.1) ────
