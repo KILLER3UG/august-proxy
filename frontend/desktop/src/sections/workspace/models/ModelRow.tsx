@@ -38,6 +38,17 @@ export function suggestModelApiFormat(id: string): ApiFormat | null {
   return null;
 }
 
+/** One price field from the form. Empty means "no price set" (bill from the
+ *  family estimate), and a free model sends null for both so the store can
+ *  never hold a flag and a price that disagree. */
+function parsePriceInput(raw: string, disabled: boolean): number | null {
+  if (disabled) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 export function ModelRow({
   providerId,
   model,
@@ -75,6 +86,15 @@ export function ModelRow({
   const [maxTools, setMaxTools] = useState<string>((model.maxTools ?? 0).toString());
   const [maxToolResultChars, setMaxToolResultChars] = useState<string>(
     (model.maxToolResultChars ?? 0).toString(),
+  );
+  const [free, setFree] = useState(!!model.free);
+  // `!= null`, not `|| ''`: 0 is a real price (a local host charges nothing)
+  // and must come back into the field as 0, not as a blank.
+  const [priceIn, setPriceIn] = useState(
+    model.priceInPerM != null ? model.priceInPerM.toString() : '',
+  );
+  const [priceOut, setPriceOut] = useState(
+    model.priceOutPerM != null ? model.priceOutPerM.toString() : '',
   );
   // "Auto (heuristic)" is decided by the capability family table. Asking the
   // same endpoint the harness uses keeps this a report, not a second guess.
@@ -125,7 +145,10 @@ export function ModelRow({
     setMaxReasoningEffort(model.maxReasoningEffort ?? '');
     setMaxTools((model.maxTools ?? 0).toString());
     setMaxToolResultChars((model.maxToolResultChars ?? 0).toString());
-  }, [model.id, model.name, model.contextWindow, model.reasoning, model.apiFormat, model.supportsReasoningEffort, model.maxReasoningEffort, model.toolSurface, model.maxTools, model.maxToolResultChars]);
+    setFree(!!model.free);
+    setPriceIn(model.priceInPerM != null ? model.priceInPerM.toString() : '');
+    setPriceOut(model.priceOutPerM != null ? model.priceOutPerM.toString() : '');
+  }, [model.id, model.name, model.contextWindow, model.reasoning, model.apiFormat, model.supportsReasoningEffort, model.maxReasoningEffort, model.toolSurface, model.maxTools, model.maxToolResultChars, model.free, model.priceInPerM, model.priceOutPerM]);
 
   useModalDismiss(editing, () => setEditing(false));
 
@@ -143,6 +166,9 @@ export function ModelRow({
       maxOutputTokens?: number | null;
       inputTypes?: string[] | null;
       outputTypes?: string[] | null;
+      free?: boolean;
+      priceInPerM?: number | null;
+      priceOutPerM?: number | null;
     }) => providersApi.updateModel(providerId, model.id, body),
     onSuccess: () => {
       setEditing(false);
@@ -419,6 +445,51 @@ if (editing) {
                       <option value="high">high</option>
                     </select>
                   </label>
+                  {/* Pricing. Left blank, August bills from its built-in family
+                      table and says the figure is estimated; a number here is
+                      the only thing that makes the spend readout a fact. */}
+                  <label className="flex items-center gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={free}
+                      onChange={(e) => setFree(e.target.checked)}
+                      aria-label="Free — no per-token charge"
+                    />
+                    Free — no per-token charge
+                  </label>
+                  <label className="flex items-center gap-2 text-xs">
+                    <span className="w-36 shrink-0">Price in ($/1M)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      disabled={free}
+                      value={priceIn}
+                      onChange={(e) => setPriceIn(e.target.value)}
+                      aria-label="Price per million input tokens"
+                      placeholder={free ? 'free' : 'blank = August estimates'}
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono disabled:opacity-50"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-xs">
+                    <span className="w-36 shrink-0">Price out ($/1M)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      disabled={free}
+                      value={priceOut}
+                      onChange={(e) => setPriceOut(e.target.value)}
+                      aria-label="Price per million output tokens"
+                      placeholder={free ? 'free' : 'blank = August estimates'}
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono disabled:opacity-50"
+                    />
+                  </label>
+                  <p className="text-[10px] text-muted-foreground" data-testid="model-price-hint">
+                    {free
+                      ? 'Marked free, so spend for this model always reads $0 — a local host charges the electricity, not the API.'
+                      : 'Blank leaves August guessing from its model-family table, and the spend readout says “estimated”. Set 0 for a local or free-tier host.'}
+                  </p>
                 </div>
               </div>
             </details>
@@ -449,6 +520,9 @@ if (editing) {
                   toolSurface: toolSurface || null,
                   maxTools: maxTools.trim() ? Number(maxTools) : null,
                   maxToolResultChars: maxToolResultChars.trim() ? Number(maxToolResultChars) : null,
+                  free,
+                  priceInPerM: parsePriceInput(priceIn, free),
+                  priceOutPerM: parsePriceInput(priceOut, free),
                 })
               }
               disabled={update.isPending}

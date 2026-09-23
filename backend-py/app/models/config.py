@@ -43,6 +43,13 @@ class ModelConfig(ExtraAllowBaseModel):
     max_output_tokens: int | None = None
     input_types: list[str] | None = None
     output_types: list[str] | None = None
+    # Per-model price in USD per 1M tokens. None = unknown, which lets the
+    # cost estimator fall back to its family table; 0.0 is a real price
+    # ("this host bills nothing"), so the two must not collapse together.
+    # Set alongside `free` in Model settings — see cost_estimator for the
+    # precedence the two resolve to.
+    price_in_per_m: float | None = None
+    price_out_per_m: float | None = None
 
 
 class ProviderConfig(ExtraAllowBaseModel):
@@ -97,6 +104,8 @@ class ModelCreate(ExtraAllowBaseModel):
     max_output_tokens: int | None = None
     input_types: list[str] | None = None
     output_types: list[str] | None = None
+    price_in_per_m: float | None = None
+    price_out_per_m: float | None = None
 
 
 class ModelUpdate(ExtraAllowBaseModel):
@@ -117,3 +126,7 @@ class ModelUpdate(ExtraAllowBaseModel):
     max_output_tokens: int | None = None
     input_types: list[str] | None = None
     output_types: list[str] | None = None
+    # Price override. Sending null for both clears the override and returns the
+    # model to the family table; 0.0 is kept as a real zero price.
+    price_in_per_m: float | None = None
+    price_out_per_m: float | None = None

@@ -80,6 +80,14 @@ def saveProvidersStore(data: dict[str, object]) -> None:
         model_service.invalidate_cache()
     except Exception:
         pass
+    # Same reason for prices: a saved priceInPerM must be billable on the very
+    # next turn, not whenever the file stamp next differs.
+    try:
+        from app.services import cost_estimator
+
+        cost_estimator.invalidate_price_cache()
+    except Exception:
+        pass
 
 
 def apply_model_tool_surface(model_id: str, surface: str) -> bool:
@@ -119,6 +127,17 @@ def clear_model_tool_surface(model_id: str) -> bool:
     except Exception:
         return False
     return False
+
+
+def _parse_price(entry: dict[str, object], *keys: str) -> float | None:
+    """One stored price under either spelling, or None when it is unset."""
+    from app.services.cost_estimator import parse_stored_price
+
+    for key in keys:
+        raw = entry.get(key)
+        if raw is not None:
+            return parse_stored_price(raw)
+    return None
 
 
 def getProvidersAsModels() -> list[ProviderConfig]:
@@ -161,6 +180,11 @@ def getProvidersAsModels() -> list[ProviderConfig]:
                         max_tool_result_chars=as_int(
                             m.get('maxToolResultChars') or m.get('max_tool_result_chars'), 0
                         ),
+                        # Through the estimator's own parser, so "not set" and
+                        # "set to zero" cannot mean different things here than
+                        # they do when the price is billed.
+                        price_in_per_m=_parse_price(m, 'priceInPerM', 'price_in_per_m'),
+                        price_out_per_m=_parse_price(m, 'priceOutPerM', 'price_out_per_m'),
                     )
                 )
         from app.providers.api_format import normalize_api_format

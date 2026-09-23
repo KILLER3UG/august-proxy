@@ -43,6 +43,12 @@ export interface ProviderModel {
   /** Modality support badges (e.g. ['text','image']). Absent = text-only. */
   inputTypes?: string[] | null;
   outputTypes?: string[] | null;
+  /** Price in USD per 1M tokens, typed in Model settings. null/absent = no
+   *  price set, so August falls back to its built-in family table and reports
+   *  the figure as estimated. 0 is a real price — a local host charges
+   *  nothing — so nothing here may coerce it to null. */
+  priceInPerM?: number | null;
+  priceOutPerM?: number | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -90,6 +96,10 @@ export interface ModelCreate {
   /** Modality badges; empty clears. */
   inputTypes?: string[] | null;
   outputTypes?: string[] | null;
+  /** USD per 1M tokens. null clears the override back to August's family
+   *  table; 0 is kept and means the host genuinely charges nothing. */
+  priceInPerM?: number | null;
+  priceOutPerM?: number | null;
 }
 
 export interface RefreshResult {

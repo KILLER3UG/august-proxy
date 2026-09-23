@@ -366,6 +366,18 @@ the `/v1/chat/completions` · `/v1/messages` · `/v1/responses` proxy adapters
 (OpenAI-format requests to a Claude model are translated to the Anthropic
 wire protocol automatically).
 
+**Per-model price (`priceInPerM` / `priceOutPerM`):** USD per **1,000,000**
+tokens, set in **Settings → Models & Providers** → pencil-edit a model row →
+*Price in / out ($/1M)*. Resolution order is env override
+(`AUGUST_PRICE_IN_PER_M` / `AUGUST_PRICE_OUT_PER_M`) → the model's own price →
+its **Free** flag → August's built-in family table → a last-resort default.
+**0 is a price, not an absence**: a local or free-tier host should be set to
+`0` (or ticked **Free**) so its spend reads `$0` instead of being estimated at
+API rates. Anything resolved from the family table is a guess about somebody
+else's price sheet, so the readout marks it *estimated* — a stored price is
+what makes the number a fact. Table rows are best-effort public list prices
+and are not kept current against provider sheets.
+
 Desktop **0.12.21+** also stops forwarding `session_id: null` on OpenAI
 bodies (Console 400).
 

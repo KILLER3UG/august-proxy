@@ -58,6 +58,10 @@ def _provider_to_dict(p: object) -> dict:
                     'maxOutputTokens': getattr(m, 'max_output_tokens', None) or None,
                     'inputTypes': getattr(m, 'input_types', None) or None,
                     'outputTypes': getattr(m, 'output_types', None) or None,
+                    # Not `or None`: 0.0 is a real price (a local host charges
+                    # nothing) and must survive the round trip to the form.
+                    'priceInPerM': m.price_in_per_m,
+                    'priceOutPerM': m.price_out_per_m,
                 }
                 for m in p.models
             ],
@@ -595,6 +599,10 @@ async def addModel(providerId: str, body: ModelCreate):
                 entry['inputTypes'] = [str(t) for t in body.input_types]
             if body.output_types:
                 entry['outputTypes'] = [str(t) for t in body.output_types]
+            if body.price_in_per_m is not None:
+                entry['priceInPerM'] = body.price_in_per_m
+            if body.price_out_per_m is not None:
+                entry['priceOutPerM'] = body.price_out_per_m
             p_models.append(entry)
             config_service.saveProvidersStore(store)
             model_service.invalidate_cache()
@@ -696,6 +704,20 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                             m['outputTypes'] = [str(t) for t in val]
                         else:
                             m.pop('outputTypes', None)
+                    # Per-model price. Explicit null clears the override and
+                    # hands the model back to the family table; 0.0 is stored as
+                    # a real zero, which is why this cannot use the `if val:`
+                    # shape the fields above use.
+                    for field, key in (
+                        ('price_in_per_m', 'priceInPerM'),
+                        ('price_out_per_m', 'priceOutPerM'),
+                    ):
+                        if field in dumped:
+                            val = dumped[field]
+                            if val is None:
+                                m.pop(key, None)
+                            else:
+                                m[key] = val
                     config_service.saveProvidersStore(store)
                     model_service.invalidate_cache()
                     return {'updated': True}
