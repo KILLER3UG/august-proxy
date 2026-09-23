@@ -196,6 +196,12 @@ export function ActivitySummary({
   // so the transcript always reads as active the moment the assistant
   // placeholder appears.
   const showLiveOnly = !isCompletion && !hasProse && segments.length === 0 && !!liveLine;
+  // The header label answers "what is the model doing" whenever the turn is
+  // live — collapsed OR expanded, counts or not — and only falls back to the
+  // empty-band case (showLiveOnly) once the turn settles. It used to hide on
+  // expand while a second animated row reappeared below the header, which
+  // made "Working…" jump down on open.
+  const showLiveLabel = !isCompletion && !!liveLine && (live || showLiveOnly);
 
   return (
     <div
@@ -226,7 +232,12 @@ export function ActivitySummary({
               aria-hidden
             />
             <span className="activity-summary-counts flex min-w-0 items-center gap-1.5">
-              <span className="shrink-0 font-semibold text-foreground">
+              <span
+                className={cn(
+                  'shrink-0 font-semibold text-foreground',
+                  live && 'activity-working-text',
+                )}
+              >
                 {live ? 'Working…' : 'Task completed'}
               </span>
               {!live && errors > 0 ? (
@@ -268,13 +279,19 @@ export function ActivitySummary({
         ) : (
           <>
             <span className="activity-summary-counts flex min-w-0 flex-1 items-center gap-2">
-              {/* Collapsed-only: when expanded, the inline live line below
-                  already carries the working state — a bold header label on
-                  top of it read as noise. */}
-              {showLiveOnly && !open ? (
+              {/* The live label stays in the header in BOTH states: collapsed
+                  it surfaces what the model is doing even when counts exist;
+                  expanded it anchors in place instead of jumping down to a
+                  second "Working…" row below the header. */}
+              {showLiveLabel ? (
                 <span
-                  className="shrink-0 font-semibold text-foreground"
+                  className={cn(
+                    'activity-summary-live-label font-semibold text-foreground',
+                    live && 'activity-working-text',
+                  )}
                   data-testid="activity-summary-live-label"
+                  aria-live="polite"
+                  title={liveLine || undefined}
                 >
                   {liveLine || 'Working…'}
                 </span>
@@ -324,16 +341,6 @@ export function ActivitySummary({
           </>
         )}
       </button>
-
-      {live && open && liveLine && !hasProse && segments.length === 0 && !isCompletion ? (
-        <div className="activity-summary-live" aria-live="polite">
-          <span className="activity-summary-live-dot" aria-hidden />
-          <span className="truncate">{liveLine}</span>
-        </div>
-      ) : null}
-      {/* When steps exist (segments.length > 0 or hasProse), the individual rows
-          inside the divided card already show active states and spinners, so
-          the redundant outer banner is suppressed to prevent duplication. */}
 
       <AnimatePresence initial={false}>
         {open && (

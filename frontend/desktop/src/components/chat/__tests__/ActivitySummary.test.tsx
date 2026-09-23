@@ -150,6 +150,8 @@ describe('ActivitySummary completion mode', () => {
       </ActivitySummary>,
     );
     expect(screen.getByText('Working…')).toBeInTheDocument();
+    // The completion-mode "Working…" gets the same shimmer while live.
+    expect(screen.getByText('Working…').className).toContain('activity-working-text');
     expect(screen.queryByText('Task completed')).toBeNull();
     // The live detail renders both in the header and in the live line.
     expect(screen.getAllByText('Reading config.yaml').length).toBeGreaterThanOrEqual(1);
@@ -173,17 +175,44 @@ describe('ActivitySummary pending state (live + empty)', () => {
     expect(screen.getByTestId('activity-summary-live-indicator')).toBeInTheDocument();
   });
 
-  it('drops the redundant header label when expanded (Bug 3)', () => {
-    // Expanded + live + nothing summarised yet: the inline live line already
-    // carries the working state, so the bold header label must not duplicate it.
+  it('keeps the working label in the header when expanded (Bug 3)', () => {
+    // Expanding must NOT move the working state into a second animated row
+    // below the header: the label stays anchored in the header, rendered
+    // exactly once, and no below-header live row exists anymore.
     render(
       <ActivitySummary thoughtCount={0} live liveDetail="Working…" defaultOpen>
         <div>body</div>
       </ActivitySummary>,
     );
-    expect(screen.queryByTestId('activity-summary-live-label')).toBeNull();
-    // The inline live line still shows the state exactly once.
+    const label = screen.getByTestId('activity-summary-live-label');
+    expect(label).toHaveTextContent('Working…');
+    // Still inside the header button — it never jumps down on open.
+    expect(label.closest('button')).not.toBeNull();
+    // Exactly one "Working…" — the header label; no second row below it.
     expect(screen.getAllByText('Working…')).toHaveLength(1);
+    expect(document.querySelector('.activity-summary-live')).toBeNull();
+  });
+
+  it('shows liveDetail in the collapsed header even when counts exist', () => {
+    // A live pack with counts used to show NO live detail while collapsed
+    // (showLiveOnly required empty prose + segments) — the collapsed version
+    // must still say what the model is doing, beside the counts.
+    render(
+      <ActivitySummary
+        thoughtCount={1}
+        live
+        liveDetail="Reading config.yaml"
+        defaultOpen={false}
+      >
+        <div>body</div>
+      </ActivitySummary>,
+    );
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId('activity-summary-live-label')).toHaveTextContent(
+      'Reading config.yaml',
+    );
+    // The counts stay visible beside it — the label adds, it does not replace.
+    expect(screen.getByText('1 thought')).toBeInTheDocument();
   });
 
   it('uses the supplied liveDetail as the inline label when present', () => {
@@ -199,6 +228,32 @@ describe('ActivitySummary pending state (live + empty)', () => {
     );
     expect(screen.getByTestId('activity-summary-live-label')).toHaveTextContent(
       'Reading config.yaml',
+    );
+  });
+});
+
+describe('ActivitySummary working shimmer', () => {
+  it('animates the live label while the turn is working', () => {
+    render(
+      <ActivitySummary thoughtCount={0} live defaultOpen={false}>
+        <div>body</div>
+      </ActivitySummary>,
+    );
+    expect(screen.getByTestId('activity-summary-live-label').className).toContain(
+      'activity-working-text',
+    );
+  });
+
+  it('stops the shimmer once the turn settles', () => {
+    // Settled + nothing else to say still surfaces the last liveDetail
+    // (showLiveOnly), but without the animation — nothing is running.
+    render(
+      <ActivitySummary thoughtCount={0} liveDetail="Reading config.yaml">
+        <div>body</div>
+      </ActivitySummary>,
+    );
+    expect(screen.getByTestId('activity-summary-live-label').className).not.toContain(
+      'activity-working-text',
     );
   });
 });

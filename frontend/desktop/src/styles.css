@@ -1390,16 +1390,47 @@ input::placeholder {
   max-width: 100%;
   overflow-x: hidden;
 }
-.activity-summary-live {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 10px 6px;
-  padding: 4px 8px;
-  font-size: 11px;
-  color: color-mix(in srgb, var(--dt-foreground) 82%, transparent);
-  background: color-mix(in srgb, var(--dt-foreground) 6%, transparent);
-  border-radius: 6px;
+/* Live label in the activity header — answers "what is the model doing"
+   while the pack is collapsed, and stays right there when it expands (the
+   old second row below the header duplicated it and made the text jump
+   down on open). Shrinkable so a long liveDetail ellipsizes instead of
+   overflowing the card; alone in the header it simply takes the full line. */
+.activity-summary-live-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* "Working…" shimmer — the same sweep as the live thought summary, so the
+   header text itself signals activity rather than only the pulse dot. */
+.activity-working-text {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent) 40%,
+    color-mix(in srgb, var(--dt-foreground) 88%, transparent) 50%,
+    color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent) 60%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: activity-working-shimmer 1.8s linear infinite;
+}
+@keyframes activity-working-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-working-text {
+    animation: none;
+    -webkit-text-fill-color: initial;
+    background: none;
+  }
 }
 .activity-summary-live-dot {
   width: 6px;
@@ -2550,8 +2581,12 @@ input::placeholder {
   border: none;
   background: transparent;
   color: color-mix(in srgb, var(--dt-muted-foreground) 78%, transparent);
-  font-size: 0.75rem;
+  /* Tucked inline next to the 0.8rem summary — smaller than the summary
+     itself and never wrapping, so the affordance rides the same line
+     instead of pushing the row onto two lines on narrow rails. */
+  font-size: 0.7rem;
   line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
   transition: color 0.15s ease;
 }
