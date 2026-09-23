@@ -173,7 +173,13 @@ def _tableRates(model_id: str) -> tuple[float, float, str]:
 
 
 def price_for_model(model_id: str) -> ModelPrice:
-    """The price to bill ``model_id`` at, and whether it is a guess."""
+    """The price to bill ``model_id`` at, and whether it is a guess.
+
+    Total by design: callers hand it a model id that came from a session, a log
+    entry or a usage row, and the spend accumulation runs inside a ``try`` that
+    only logs — a raise here would lose spend silently.
+    """
+    model_id = str(model_id or '').strip()
     try:
         env_in = os.environ.get('AUGUST_PRICE_IN_PER_M')
         env_out = os.environ.get('AUGUST_PRICE_OUT_PER_M')
@@ -184,7 +190,7 @@ def price_for_model(model_id: str) -> ModelPrice:
     except (TypeError, ValueError):
         pass  # a malformed override falls through to the real sources
 
-    configured = _configuredPrices().get(str(model_id or '').strip())
+    configured = _configuredPrices().get(model_id)
     if configured is not None:
         conf_in, conf_out, free = configured
         if conf_in is None and conf_out is None and free:

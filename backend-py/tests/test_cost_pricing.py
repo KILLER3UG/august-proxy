@@ -52,8 +52,9 @@ def _no_stale_price_index():
 
 
 @pytest.fixture()
-def priced(tmp_path, monkeypatch):
-    monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
+def priced(isolatedData):
+    """One isolated data dir holding both providers.json and the brain SQLite,
+    so a test can price a model and then read the usage endpoint for it."""
     from app.services import config_service
 
     config_service.saveProvidersStore(
@@ -70,7 +71,7 @@ def priced(tmp_path, monkeypatch):
             ]
         }
     )
-    return tmp_path
+    return isolatedData
 
 
 def _price(model_id: str):
@@ -249,3 +250,180 @@ def _falls_back_to_a_guess(model_id: str) -> bool:
     from app.services import cost_estimator
 
     return cost_estimator.price_for_model(model_id).estimated
+
+
+class TestTheDisplaysThatCouldNeverShowANumber:
+    """Three money readouts were structurally pinned to zero, and each was a
+    *read* mismatch rather than a missing calculation:
+
+    * the cost card asked ``get_stats`` for ``estimatedInputCost`` /
+      ``estimatedTotalCost``; get_stats returned only ``estimatedCost``, so the
+      card printed $0.00 beside a real total one line away;
+    * the Traffic table read a per-entry ``totalCost`` / ``estimatedCost`` that
+      no writer ever set, so every row said $0.0000;
+    * ``session.totalCost`` was serialized and rendered by the Runs page but
+      never assigned.
+
+    These pin that all three now carry a number, and that the number is priced
+    per model instead of by one flat rate applied to everything.
+    """
+
+    @staticmethod
+    def _tracker(monkeypatch):
+        from app.services import logger as req_logger
+
+        fresh = req_logger.RequestTracker()
+        monkeypatch.setattr(req_logger, '_tracker', fresh)
+        return fresh
+
+    @staticmethod
+    def _record(tracker, model: str, inp: int, out: int) -> None:
+        req_id = tracker.startRequest({'model': model, 'provider': 'p1'})
+        tracker.capture_tokens(req_id, inp, out)
+        tracker.endRequest(req_id, {})
+
+    def test_stats_price_each_model_at_its_own_rate(self, priced, monkeypatch):
+        tracker = self._tracker(monkeypatch)
+        # 1M in + 1M out of a $1.25/$10 model and a $15/$75 model. The old code
+        # billed both at a flat 3.0/15.0, which answers 6.0 and 30.0 instead.
+        self._record(tracker, 'gpt-5-mini', 1_000_000, 1_000_000)
+        self._record(tracker, 'claude-opus-4-1', 1_000_000, 1_000_000)
+        stats = tracker.get_stats()
+        assert stats['estimatedInputCost'] == pytest.approx(16.25)
+        assert stats['estimatedOutputCost'] == pytest.approx(85.0)
+        assert stats['estimatedTotalCost'] == pytest.approx(101.25)
+        assert stats['estimatedCost'] == pytest.approx(101.25)
+
+    def test_stats_carry_the_exact_key_names_the_readers_ask_for(self, priced, monkeypatch):
+        # /api/overview does `stats.get('estimatedInputCost') or
+        # stats.get('inputCost')` — a synonym here renders as $0, so the names
+        # are the contract and are pinned as names.
+        tracker = self._tracker(monkeypatch)
+        self._record(tracker, 'gpt-5-mini', 500_000, 250_000)
+        stats = tracker.get_stats()
+        for key in (
+            'estimatedInputCost',
+            'estimatedOutputCost',
+            'estimatedTotalCost',
+            'estimatedCost',
+            'costEstimated',
+        ):
+            assert key in stats, f'{key} missing — readers fall back to 0.0 silently'
+        assert stats['estimatedTotalCost'] > 0.0
+
+    def test_stats_report_a_free_session_as_exact(self, priced, monkeypatch):
+        tracker = self._tracker(monkeypatch)
+        self._record(tracker, 'llama3.1:8b-instruct', 900_000, 100_000)
+        stats = tracker.get_stats()
+        assert stats['estimatedTotalCost'] == 0.0
+        assert stats['costEstimated'] is False, 'a price of 0 here is a fact, not a guess'
+
+    def test_stats_flag_a_table_guessed_session_as_estimated(self, priced, monkeypatch):
+        tracker = self._tracker(monkeypatch)
+        self._record(tracker, 'gpt-5-mini', 1000, 100)
+        assert tracker.get_stats()['costEstimated'] is True
+
+    def test_a_finished_request_carries_its_own_cost(self, priced, monkeypatch):
+        tracker = self._tracker(monkeypatch)
+        self._record(tracker, 'claude-opus-4-1', 10_000, 2_000)
+        entry = tracker.getLog()[0]
+        # 10k in at 15/1M + 2k out at 75/1M.
+        assert entry['estimatedCost'] == pytest.approx(0.15 + 0.15)
+        assert entry['costEstimated'] is True
+
+
+class TestEstimateCostEndpoint:
+    @pytest.mark.asyncio
+    async def test_it_bills_instead_of_returning_a_confident_zero(self, priced):
+        from app.routers.models import CostEstimateBody, estimate_cost
+
+        out = await estimate_cost(
+            CostEstimateBody(
+                model_id='gpt-5-mini', input_tokens=1_000_000, output_tokens=1_000_000
+            )
+        )
+        assert out['cost'] == pytest.approx(11.25)
+        assert out['estimated'] is True, 'the old hardcoded estimated: False was the lie'
+        assert out['priceSource'] == 'table'
+        assert (out['priceInPerM'], out['priceOutPerM']) == (1.25, 10.0)
+
+    @pytest.mark.asyncio
+    async def test_a_priced_model_reports_the_price_as_fact(self, priced):
+        from app.routers.models import CostEstimateBody, estimate_cost
+
+        out = await estimate_cost(
+            CostEstimateBody(
+                model_id='llama3.1:8b-instruct', input_tokens=9_000_000, output_tokens=1_000_000
+            )
+        )
+        assert out['cost'] == 0.0
+        assert out['estimated'] is False
+
+
+class TestPricingCannotRaise:
+    """The session-cost accumulation sits inside a ``try`` whose ``except`` only
+    logs, so a raising price lookup would lose spend silently instead of
+    failing loudly. Nothing on this path may throw.
+    """
+
+    @pytest.mark.parametrize(
+        'bad',
+        ['', None, 'x' * 500, '////', 'CLAUDE-OPUS', 'claude-opus\n', 0, 12345, {'a': 1}],
+    )
+    def test_hostile_model_values_resolve_without_an_exception(self, priced, bad):
+        from app.services import cost_estimator
+
+        price = cost_estimator.price_for_model(bad)
+        assert price.in_per_m >= 0.0 and price.out_per_m >= 0.0
+        assert isinstance(price.estimated, bool)
+
+    def test_a_cache_split_never_outbills_the_whole_input(self, priced):
+        from app.services.cost_estimator import session_cost_usd
+
+        whole = session_cost_usd('claude-sonnet-4-5', 1_000_000, 0)
+        all_hit = session_cost_usd('claude-sonnet-4-5', 1_000_000, 0, cache_hit=1_000_000)
+        assert all_hit < whole
+        assert all_hit >= 0.0
+
+
+class TestUsageEndpointCarriesProvenance:
+    """`GET /api/usage/{session}` feeds the composer chip, so `costEstimated`
+    has to be right here or the tilde is decoration on the wrong number. The
+    sum is per event and a session can span models, so the flag is an "any of
+    them were guessed", not a property of the last one.
+    """
+
+    @staticmethod
+    def _usage(session_id: str):
+        from app.services.memory_store import get_usage, init
+
+        init()
+        return get_usage(session_id)
+
+    def test_a_priced_model_reports_an_exact_cost(self, priced):
+        from app.services.memory_store import record_usage
+
+        record_usage('s-exact', 'claude-sonnet-4-5', inputTokens=1_000_000, outputTokens=1_000_000)
+        usage = self._usage('s-exact')
+        assert usage['totalCost'] == pytest.approx(3.0)
+        assert usage['costEstimated'] is False
+
+    def test_a_table_guessed_model_says_so(self, priced):
+        from app.services.memory_store import record_usage
+
+        record_usage('s-guess', 'gpt-5-mini', inputTokens=1_000_000, outputTokens=1_000_000)
+        usage = self._usage('s-guess')
+        assert usage['totalCost'] == pytest.approx(11.25)
+        assert usage['costEstimated'] is True
+
+    def test_one_guessed_row_makes_a_mixed_session_a_guess(self, priced):
+        from app.services.memory_store import record_usage
+
+        record_usage('s-mix', 'claude-sonnet-4-5', inputTokens=1_000_000, outputTokens=0)
+        record_usage('s-mix', 'gpt-5-mini', inputTokens=0, outputTokens=1_000_000)
+        assert self._usage('s-mix')['costEstimated'] is True
+
+    def test_a_session_with_no_usage_is_zero_and_not_flagged(self, priced):
+        usage = self._usage('s-empty')
+        assert usage['totalCost'] == 0.0
+        assert usage['costEstimated'] is False

@@ -549,20 +549,25 @@ def get_usage(sessionId: str) -> dict[str, object]:
     # Cost: per-event sum using the shared pricing table (the composer chip,
     # the spend ceiling, and this endpoint must agree). Never raises.
     total_cost = 0.0
+    cost_estimated = False
     try:
-        from app.services.cost_estimator import session_cost_usd
+        from app.services.cost_estimator import session_cost_estimate
 
         for e in conn.execute(
             'SELECT model, input_tokens, output_tokens, cache_hit_tokens, cache_miss_tokens FROM usage_events WHERE session_id = ?',
             (sessionId,),
         ).fetchall():
-            total_cost += session_cost_usd(
+            cost, estimated = session_cost_estimate(
                 model_id=as_str(e['model'], ''),
                 total_in=as_int(e['input_tokens'], 0),
                 total_out=as_int(e['output_tokens'], 0),
                 cache_hit=as_int(e['cache_hit_tokens'], 0),
                 cache_miss=as_int(e['cache_miss_tokens'], 0),
             )
+            total_cost += cost
+            # One guessed price in a mixed-model session makes the whole sum a
+            # guess; one exact price cannot make the others exact.
+            cost_estimated = cost_estimated or estimated
         total_cost = round(total_cost, 4)
     except Exception:
         total_cost = 0.0
@@ -576,6 +581,7 @@ def get_usage(sessionId: str) -> dict[str, object]:
         'cacheMissTokens': cache_miss,
         'cacheHitRate': round(cache_hit / cache_total, 3) if cache_total else 0.0,
         'totalCost': total_cost,
+        'costEstimated': cost_estimated,
         'model': events[0]['model'] if events else None,
         'provider': None,
         'contextTokens': latestCtx,

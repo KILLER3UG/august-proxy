@@ -149,7 +149,16 @@ function VirtualizedRequestsTable({ rows }: { rows: TrafficRow[] }) {
                                     <span className="truncate text-muted-foreground">{r.model}</span>
                                     <span className="text-right tabular-nums">{formatDuration(r.durationMs)}</span>
                                     <span className="text-right tabular-nums">{(r.inputTokens + r.outputTokens).toLocaleString()}</span>
-                                    <span className="text-right tabular-nums">${r.totalCost.toFixed(4)}</span>
+                                    <span
+                                        className="text-right tabular-nums"
+                                        title={
+                                            r.costEstimated
+                                                ? 'Priced from August’s model-family table — set a price on the model (Model settings) to make this exact, or 0 for a local host.'
+                                                : 'Priced at the rates set on this model.'
+                                        }
+                                    >
+                                        {r.costEstimated ? '~' : ''}${r.totalCost.toFixed(4)}
+                                    </span>
                                 </div>
                             );
                         })}

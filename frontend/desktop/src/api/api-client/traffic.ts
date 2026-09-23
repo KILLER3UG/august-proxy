@@ -21,6 +21,9 @@ export interface RequestEntry {
   inputCost?: number;
   outputCost?: number;
   totalCost?: number;
+  /** The request log now carries the price provenance per entry; absent on
+   *  rows written before this shipped. */
+  costEstimated?: boolean;
   requestType?: string;
 }
 

@@ -190,15 +190,27 @@ class CostEstimateBody(CamelModel):
 
 @router.post('/api/models/estimate-cost')
 async def estimate_cost(body: CostEstimateBody):
-    # Placeholder pricing — honest zero when unknown rather than fake numbers.
+    """Bill a token count through the same estimator the composer chip and the
+    spend ceiling use, and report which price it used.
+
+    This used to return a literal ``cost: 0.0`` with ``estimated: False`` —
+    a made-up number wearing the flag that means "this one is exact".
+    """
+    from app.services.cost_estimator import price_for_model, session_cost_estimate
+
     model = body.model_id or 'unknown'
+    price = price_for_model(model)
+    cost, estimated = session_cost_estimate(model, body.input_tokens, body.output_tokens)
     return {
         'model': model,
-        'cost': 0.0,
+        'cost': round(cost, 6),
         'inputTokens': body.input_tokens,
         'outputTokens': body.output_tokens,
         'currency': 'USD',
-        'estimated': False,
+        'estimated': estimated,
+        'priceInPerM': price.in_per_m,
+        'priceOutPerM': price.out_per_m,
+        'priceSource': price.source,
     }
 
 

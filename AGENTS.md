@@ -72,6 +72,21 @@ call arrives, and only a narration with NO tool call triggers the
 reminder + retry. Per-model capability profiles
 (`toolSurface` full/reduced/bare, `maxTools`, `maxToolResultChars` in Model
 settings) are honored by both tool-definition paths and result truncation.
+**Per-model pricing** follows the same pattern: `priceInPerM` / `priceOutPerM`
+(and the pre-existing `free` flag) are set in Model settings, and
+`cost_estimator.price_for_model` is the ONLY pricing source — resolve order is
+env override → the model's own price → `free` → family table → default, and it
+returns `estimated: True` for the last two so a readout can tell a fact from a
+guess (`~$0.41`). Do not add a second rate table or a flat-rate computation:
+`logger.get_stats` used to bill every token at 3.0/15.0 regardless of model and
+disagreed with the composer chip. **0.0 is a price, not an absence** — only
+`None` means unset, so nothing on this path may use `value or default`. The
+price index is stamped on `(mtime, size)` and busted by `saveProvidersStore`;
+`getProvidersStore()` re-reads its file on every call, and the usage endpoint
+sums cost across up to 500 events, so an uncached lookup is a per-event file
+read. `getProvidersAsModels()` and `_provider_to_dict` rebuild model entries
+field by field, so a new per-model field must be named in BOTH or it is
+silently dropped on read (write-only).
 Routing evidence (`routing_evidence`) is written by the Arena/Debate verdict
 endpoint (`POST /api/brain/routing/arena`, `source='arena'`) and read back by
 `GET /api/brain/routing/arena` (archive) + `GET /api/brain/routing/suggestions`

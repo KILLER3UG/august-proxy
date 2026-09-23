@@ -10,6 +10,8 @@ export type SessionUsageState = {
   output: number;
   contextTokens: number;
   totalCost?: number;
+  /** The cost came from a family-table guess, not a price set on the model. */
+  costEstimated?: boolean;
   /** Universal prompt-cache split for the context ring. */
   cacheHitTokens?: number;
   cacheMissTokens?: number;
@@ -47,6 +49,7 @@ export function useChatUsage(
           output: data.totalOutputTokens,
           contextTokens: data.contextTokens ?? 0,
           totalCost: data.totalCost ?? 0,
+          costEstimated: data.costEstimated ?? true,
           cacheHitTokens: data.cacheHitTokens ?? 0,
           cacheMissTokens: data.cacheMissTokens ?? 0,
           cacheHitRate: data.cacheHitRate ?? 0,

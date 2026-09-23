@@ -499,6 +499,19 @@ def persistAndClose(
                 session.cacheMissTokens = as_int(
                     getattr(session, 'cacheMissTokens', 0), 0
                 ) + totals.cacheMissTokens
+                # The session has carried `totalCost` since the dataclass was
+                # written, and the Runs table has rendered it ever since — but
+                # nothing assigned it, so every run showed $0.0000 whatever it
+                # spent. Accumulated here, the one place the token totals land.
+                from app.services.cost_estimator import session_cost_usd
+
+                session.totalCost += session_cost_usd(
+                    model_id=resolvedModel,
+                    total_in=totals.inputTokens,
+                    total_out=totals.outputTokens,
+                    cache_hit=totals.cacheHitTokens,
+                    cache_miss=totals.cacheMissTokens,
+                )
             except Exception:
                 logger.exception('workbench record_usage failed')
 

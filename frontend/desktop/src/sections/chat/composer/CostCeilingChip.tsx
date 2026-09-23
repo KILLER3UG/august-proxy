@@ -11,11 +11,16 @@ import { setWorkbenchCostCeiling } from '@/api/workbench';
 export function CostCeilingChip({
   sessionId,
   cost,
+  estimated,
   initialCeiling,
 }: {
   sessionId: string;
   /** Estimated cumulative session cost in USD (from the usage endpoint). */
   cost: number;
+  /** True when the figure rests on August's family-table guess rather than a
+   *  price set on the model. Rendered as `~$`, because a bare `$` reads as a
+   *  bill. */
+  estimated?: boolean;
   initialCeiling: number;
 }) {
   const [ceiling, setCeiling] = useState(initialCeiling > 0 ? initialCeiling : 0);
@@ -42,19 +47,32 @@ export function CostCeilingChip({
 
   const pct = ceiling > 0 ? cost / ceiling : 0;
   const over = ceiling > 0 && cost >= ceiling;
+  // A bare `$` is a claim of precision, so it has to be earned: only an
+  // explicit `estimated={false}` — the server saying the price was set on the
+  // model — removes the tilde.
+  const est = estimated !== false;
 
   return (
     <span
       className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-mono tabular-nums"
       title={
         ceiling > 0
-          ? `Per-session spend ceiling: $${cost.toFixed(3)} of $${ceiling.toFixed(2)} used`
-          : 'Estimated session spend — click "cap" to set a per-session ceiling'
+          ? `Per-session spend ceiling: $${cost.toFixed(3)} of $${ceiling.toFixed(2)} used${
+              est ? ' — priced from August’s model-family table; set a price in Model settings to make it exact' : ''
+            }`
+          : est
+            ? 'Estimated session spend, priced from August’s model-family table — set a price in Model settings to make it exact, or 0 for a local host. Click "cap" to set a per-session ceiling.'
+            : 'Session spend at the prices you set. Click "cap" to set a per-session ceiling.'
       }
       data-testid="cost-ceiling-chip"
     >
       <Wallet className="size-3 text-muted-foreground" />
-      <span className={over ? 'text-amber-500' : 'text-muted-foreground'}>${cost.toFixed(3)}</span>
+      <span
+        className={over ? 'text-amber-500' : 'text-muted-foreground'}
+        data-testid="cost-ceiling-value"
+      >
+        {est ? '~' : ''}${cost.toFixed(3)}
+      </span>
       {ceiling > 0 && (
         <>
           <span className="text-muted-foreground/50">/</span>

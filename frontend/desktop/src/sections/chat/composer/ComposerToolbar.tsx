@@ -279,6 +279,7 @@ export function ComposerToolbar({
                 <CostCeilingChip
                   sessionId={workbenchSession.id}
                   cost={sessionUsage.totalCost ?? 0}
+                  estimated={sessionUsage.costEstimated}
                   initialCeiling={workbenchSession.costCeiling ?? 0}
                 />
               )}

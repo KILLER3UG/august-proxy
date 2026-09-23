@@ -29,6 +29,7 @@ export interface TrafficRow {
   inputTokens: number;
   outputTokens: number;
   totalCost: number;
+  costEstimated: boolean;
   timestamp: number | string;
   error?: string | null;
 }
@@ -44,6 +45,7 @@ function toRow(r: RequestEntry): TrafficRow {
     inputTokens: r.inputTokens || 0,
     outputTokens: r.outputTokens || 0,
     totalCost: r.totalCost || 0,
+    costEstimated: r.costEstimated ?? true,
     timestamp: r.timestamp || r.date || r.time || Date.now(),
     error: r.error,
   };

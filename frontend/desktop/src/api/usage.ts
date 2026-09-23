@@ -46,6 +46,10 @@ export interface SessionUsage {
   totalOutputTokens: number;
   totalTokens: number;
   totalCost: number;
+  /** True when any billed token was priced from August's family table rather
+   *  than a price set on the model — the difference between "$0.41" and
+   *  "~$0.41". */
+  costEstimated: boolean;
   model: string | null;
   provider: string | null;
   /** Provider-reported input_tokens of the FINAL sub-call of the latest turn —

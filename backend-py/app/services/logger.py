@@ -193,8 +193,21 @@ class RequestTracker:
         for e in entries:
             m = as_str(e.get('model'), 'unknown')
             models[m] = models.get(m, 0) + 1
-        inputCost = totalInput / 1000000 * 3.0
-        outputCost = totalOutput / 1000000 * 15.0
+        # Cost per entry, through the one estimator. This used to be a second,
+        # contradicting pricing source: `totalInput / 1e6 * 3.0` billed every
+        # token in the log at one flat rate whatever model answered it, so an
+        # hour of a $0.27/1M model and an hour of Opus printed the same number
+        # — and it disagreed with the composer chip, which used the table.
+        from app.services.cost_estimator import price_for_model
+
+        inputCost = 0.0
+        outputCost = 0.0
+        costEstimated = False
+        for e in entries:
+            price = price_for_model(as_str(e.get('model'), ''))
+            inputCost += as_int(e.get('inputTokens')) / 1_000_000 * price.in_per_m
+            outputCost += as_int(e.get('outputTokens')) / 1_000_000 * price.out_per_m
+            costEstimated = costEstimated or price.estimated
         return {
             'totalRequests': total,
             'completed': completed,
@@ -202,6 +215,14 @@ class RequestTracker:
             'totalInputTokens': totalInput,
             'totalOutputTokens': totalOutput,
             'estimatedCost': round(inputCost + outputCost, 4),
+            # The split keys /api/overview and /api/monitoring already ask for.
+            # They were never returned, so `stats.get('estimatedInputCost')`
+            # answered the default and the cost card showed $0.00 next to a
+            # real total one line away.
+            'estimatedInputCost': round(inputCost, 4),
+            'estimatedOutputCost': round(outputCost, 4),
+            'estimatedTotalCost': round(inputCost + outputCost, 4),
+            'costEstimated': costEstimated,
             'mostUsedModel': max(models, key=lambda k: models.get(k, 0)) if models else 'none',
             'modelBreakdown': models,
             'averageDuration': 0,
@@ -255,7 +276,7 @@ class RequestTracker:
         """Build the final request log entry."""
         usage = as_dict(result.get('usage'), {})
         detail = self._details.pop(reqId, {})
-        return {
+        entry = {
             'id': reqId,
             'startedAt': as_str(pending.get('startedAt'), ''),
             'completedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
@@ -274,6 +295,19 @@ class RequestTracker:
             'sessionId': as_str(result.get('sessionId')) or as_str(pending.get('sessionId'), ''),
             **detail,
         }
+        # Traffic's cost column reads `e.get('totalCost') or
+        # e.get('estimatedCost') or 0.0` — and no writer ever set either key, so
+        # every row in the table said $0.0000 no matter what had been spent.
+        from app.services.cost_estimator import price_for_model
+
+        price = price_for_model(as_str(entry.get('model'), ''))
+        entry['estimatedCost'] = round(
+            as_int(entry.get('inputTokens')) / 1_000_000 * price.in_per_m
+            + as_int(entry.get('outputTokens')) / 1_000_000 * price.out_per_m,
+            6,
+        )
+        entry['costEstimated'] = price.estimated
+        return entry
 
     def _cleanupStale(self, timeoutS: int = 600) -> None:
         """Remove pending requests older than timeout."""
