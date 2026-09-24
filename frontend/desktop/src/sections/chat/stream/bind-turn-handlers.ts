@@ -19,6 +19,7 @@ import {
 } from './session-stream-store';
 import { activeStreamControllers } from './active-stream-controllers';
 import { appendBlockEvent } from './append-block-event';
+import { flushTranscriptSync } from './transcript-sync';
 
 export function bindTurnStreamHandlers(opts: {
   sessionId: string;
@@ -69,6 +70,10 @@ export function bindTurnStreamHandlers(opts: {
     isTurnVisible: () => true,
     finishTurn: (t, status) => {
       flushPersistMessages(sessionId);
+      // The assistant turn is complete: its block timeline (reasoning, tool
+      // cards, usage, stop reason) is final enough to sync. Fire-and-forget,
+      // so finalization never waits on the backend (migration 048).
+      flushTranscriptSync(sessionId);
       chatRuntime.finishTurn(t.turnId, status);
       activeStreamControllers.delete(sessionId);
     },

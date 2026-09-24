@@ -183,6 +183,12 @@ def assembleToolDefs(
         removed = preloadedDefs.pop()
         totalTokens -= _estimateToolTokens(removed)
         result.preloadedToolCount = len(preloadedDefs)
+    # Per-call copy of the bridge defs. The short-catalog hint below is derived
+    # from THIS session's tool inventory, so it must never be written back to
+    # the module global: doing so grows the description without bound across
+    # calls, leaks one session's tool names into every other session's prompt,
+    # and permanently breaks prefix-cache stability for a core tool.
+    bridgeDefs: list[dict[str, object]] = [dict(bd) for bd in _BRIDGEToolDefs]
     # Inline short schemas for remaining deferrable tools so model doesn't need extra round-trip
     remaining = [td for td in deferrableDefs if td.get('name', '') not in preloadedNames][:30]
     if remaining:
@@ -196,21 +202,21 @@ def assembleToolDefs(
             short_lines.append(f'- {name2}: {desc} [{keys}]')
         if short_lines:
             hint = ' Available (short): ' + ' | '.join(short_lines[:15])
-            for i, bd in enumerate(_BRIDGEToolDefs):
+            for i, bd in enumerate(bridgeDefs):
                 if bd.get('name') == 'tool_search':
                     patched = dict(bd)
                     patched['description'] = str(bd.get('description', '')) + hint[:800]
-                    _BRIDGEToolDefs[i] = patched
+                    bridgeDefs[i] = patched
                     break
     # The bridge tools may ALSO sit in coreDefs/preloadedDefs (the registry
     # registers its own dispatchable copies for the non-activated path).
     # When disclosure is active the hardcoded bridge defs are the ones we
     # want (their descriptions carry the short-catalog hint); drop the
     # registry copies so the assembled surface never duplicates a name.
-    bridge_names = {str(bd.get('name', '')) for bd in _BRIDGEToolDefs}
+    bridge_names = {str(bd.get('name', '')) for bd in bridgeDefs}
     result.tool_defs = (
         [t for t in coreDefs if t.get('name', '') not in bridge_names]
         + [t for t in preloadedDefs if t.get('name', '') not in bridge_names]
-        + _BRIDGEToolDefs
+        + bridgeDefs
     )
     return result

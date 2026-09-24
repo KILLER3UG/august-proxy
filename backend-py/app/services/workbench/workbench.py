@@ -62,6 +62,12 @@ from app.services.workbench.sessions import (
     getWorkbenchSession,
     saveSessions,
 )
+from app.services.workbench.tool_protocol import (
+    canonical_tool_calls as _canonicalToolCalls,
+)
+from app.services.workbench.tool_protocol import (
+    reconcile_tool_results as _reconcileToolResults,
+)
 from app.services.workbench.validator import validationErrorText
 from app.type_aliases import JsonValue
 
@@ -566,6 +572,56 @@ def _retryBlockedByPartialEmission(response: dict[str, object], emitted_content:
     those tokens, so even a retryable failure surfaces instead of retrying
     (double-billing prevention)."""
     return bool(emitted_content) and _isRetryableModelError(response)
+
+
+# ── P0 replay-safety veto ───────────────────────────────────────────────
+# `_retryBlockedByPartialEmission` only sees ONE model attempt: it stops the
+# identical-body retry after that attempt streamed text. It says nothing
+# about the round REPLAY paths — the tools-fallback, the context promotion,
+# the fallback-chain model switch, and the narration self-heal — which each
+# re-invoke the model for a round the turn may already have moved past.
+#
+# Two kinds of side effect make such a replay blind rather than safe:
+#   * visible text — the user has already read half the answer, so a
+#     second answer is a duplicate, and the provider may bill twice;
+#   * an executed tool — the world has already moved (a file written, a
+#     command run). Re-planning the same round against the mutated world
+#     re-runs the same work, which is exactly the double-execution the
+#     per-tool "never re-dispatch" guard exists to prevent, one layer up.
+#
+# The veto is deliberately scoped to REPLAY re-invocations. The plain
+# same-body, same-round transient retry (429/5xx) stays allowed even after a
+# tool ran: nothing is re-executed there, it just asks the model the same
+# question again, and that is the turn's main recovery route. Only a
+# request-changing rescue is refused once the turn has side effects.
+_REPLAY_RESCUES = frozenset({'tools_fallback', 'context_promotion', 'chain_fallback', 'self_heal'})
+
+
+def _replayVetoReason(
+    rescue: str,
+    *,
+    emitted_text: bool,
+    executed_tool: bool,
+    text_vetoes: bool = True,
+) -> str | None:
+    """Why a replay rescue must be refused, or None when it is safe.
+
+    ``rescue`` names the re-invocation being considered; an unknown rescue
+    is treated conservatively (vetoed once the turn has side effects) so a
+    new path cannot accidentally opt out of the gate.
+
+    ``text_vetoes=False`` is for the narration self-heal only: the text that
+    tripped the stream rule is precisely what the self-heal exists to throw
+    away, so its presence is the trigger, not a side effect. The tool signal
+    still vetoes it there — that is the double-execution case.
+    """
+    if rescue not in _REPLAY_RESCUES:
+        return f'unknown replay rescue {rescue!r}'
+    if executed_tool:
+        return 'a tool already ran this turn, so re-invoking the model would re-plan against a mutated workspace'
+    if emitted_text and text_vetoes:
+        return 'visible text was already emitted this turn, so a replay would double-answer (and double-bill)'
+    return None
 
 
 # ── Tools-fallback retry ────────────────────────────────────
@@ -2639,12 +2695,35 @@ async def _runFencedCodeBlock(session: WorkbenchSession, text: str, toolRound: i
         # T13's sequential guarantee covers the WARM path too — the session
         # lock is taken BEFORE the kernel branch (it used to wrap only the
         # cold spawn; concurrent warm cells could interleave stdin writes).
+        #
+        # SECURITY: the warm child is spawned directly and does NOT go
+        # through the sandbox backends. While a strong backend (container,
+        # AppContainer, seatbelt, landlock, bwrap) is active that would be a
+        # hole — everything else confined, code mode wide open. So the warm
+        # path is skipped and the cold spawn below runs the cell through
+        # run_command, which IS sandboxed. Kernels already alive are killed
+        # so a backend that turned on mid-session leaves none behind.
         lock = _kernel.session_kernel_lock(session.id)
         async with lock:
             try:
                 from app.services.workbench import kernel as _kernel_mod
 
-                if (os.environ.get('AUGUST_WARM_KERNEL_OFF', '').strip().lower()) not in ('1', 'true', 'yes'):
+                warmOff = (os.environ.get('AUGUST_WARM_KERNEL_OFF', '').strip().lower()) in (
+                    '1',
+                    'true',
+                    'yes',
+                )
+                warmAllowed, warmReason = _kernel_mod.warm_kernel_allowed()
+                if not warmAllowed:
+                    # A strong backend turned on (or could not be ruled out)
+                    # after kernels were already booted — those children run
+                    # unsandboxed, so none may outlive the decision. The cold
+                    # path below still serves this cell, sandboxed.
+                    if _kernel_mod.shutdown_warm_kernels():
+                        logger.info(
+                            'warm code kernels stopped: %s', warmReason
+                        )
+                if not (warmOff or not warmAllowed):
                     denial = _kernel_mod.preflight_warm_cell(sandbox_mode or None, ws or None)
                     if denial:
                         return f'[sandbox:soft] Blocked: {denial}'
@@ -3572,6 +3651,12 @@ async def _sendWorkbenchMessageStreamImpl(
     # loop cap instead of narrating forever.
     _SELFHEAL_EXEMPT_ROUNDS = 4
     _selfHealRetries = 0
+    # P0 replay-safety state. Turn-scoped, not round-scoped: a rescue that
+    # re-invokes the model after a PREVIOUS round already showed text or ran
+    # a tool is a blind replay of work the user can see. Feeds
+    # `_replayVetoReason` at every request-changing rescue.
+    _turnEmittedText = False
+    _turnExecutedTool = False
     # A prose answer cut off by the output token limit gets a bounded
     # "continue exactly where you stopped" retry rather than being delivered
     # mid-word as if it were complete (audit finding 2026-09-15 #3).
@@ -3798,6 +3883,20 @@ async def _sendWorkbenchMessageStreamImpl(
         # configured chain model (or a larger-context sibling on overflow).
         for chainIndex in range(len(chainModels) + 1):
             if chainIndex > 0:
+                # P0: walking the fallback chain re-asks the round on a
+                # DIFFERENT model, against whatever the earlier rounds left
+                # behind. If the turn already showed text or ran a tool,
+                # that is a blind replay — surface the error instead.
+                _chainVeto = _replayVetoReason(
+                    'chain_fallback',
+                    emitted_text=_turnEmittedText,
+                    executed_tool=_turnExecutedTool,
+                )
+                if _chainVeto is not None:
+                    logger.warning(
+                        'workbench chain fallback refused — %s; surfacing the error', _chainVeto
+                    )
+                    break
                 nextModel = chainModels[chainIndex - 1]
                 nProvider, nModel = _resolveChatLlm(model=nextModel)
                 if not nProvider or not nModel:
@@ -3869,11 +3968,15 @@ async def _sendWorkbenchMessageStreamImpl(
                 attemptEmittedText = False
 
                 def _attemptEmit(evt: dict[str, object]) -> None:
-                    nonlocal attemptEmittedContent, attemptEmittedText
+                    nonlocal attemptEmittedContent, attemptEmittedText, _turnEmittedText
                     if evt.get('type') in ('finalOutput', 'thinking'):
                         attemptEmittedContent = True
                     if evt.get('type') == 'finalOutput':
                         attemptEmittedText = True
+                        # P0 replay veto: text that reached the user is
+                        # turn-scoped, not attempt-scoped — a rescue in a
+                        # LATER round must see it too.
+                        _turnEmittedText = True
                     if emit is not None:
                         emit(evt)
 
@@ -4057,11 +4160,21 @@ async def _sendWorkbenchMessageStreamImpl(
                     for m in _DETERMINISTIC_400_MARKERS
                 )
                 _hasToolsNow = bool(_wireTools or _wireOpenaiTools)
+                # P0: the tools-fallback rewrites history (drops tool_calls,
+                # flattens receipts) and re-asks as plain text. Once the
+                # turn has side effects that is a blind replay, not a
+                # rescue — the model would re-plan the same work.
+                _toolsFallbackVeto = _replayVetoReason(
+                    'tools_fallback',
+                    emitted_text=_turnEmittedText,
+                    executed_tool=_turnExecutedTool,
+                )
                 if (
                     retryPolicy.get('toolsFallback', 1)
                     and not toolsFallbackUsed
                     and _hasToolsNow
                     and not attemptEmittedContent
+                    and _toolsFallbackVeto is None
                     and not _isCancelled()
                     and not _isQuotaLike
                     and not _isDeterministic400
@@ -4108,9 +4221,22 @@ async def _sendWorkbenchMessageStreamImpl(
                 break
             if _isCancelled():
                 break
+            # P0: promotion is a replay rescue — it re-asks the round on a
+            # different model after the turn may already have shown text or
+            # run a tool. Refuse once it has side effects.
+            _promotionVeto = _replayVetoReason(
+                'context_promotion',
+                emitted_text=_turnEmittedText,
+                executed_tool=_turnExecutedTool,
+            )
             # Context promotion: overflow → larger-context sibling once,
             # before walking the normal fallback chain.
-            if not promotionUsed and promotionModel and _isContextOverflowError(response):
+            if (
+                not promotionUsed
+                and promotionModel
+                and _isContextOverflowError(response)
+                and _promotionVeto is None
+            ):
                 pProvider, pModel = _resolveChatLlm(model=promotionModel)
                 if pProvider and pModel:
                     # Consume the one-shot promotion only on a
@@ -4190,6 +4316,20 @@ async def _sendWorkbenchMessageStreamImpl(
                     ),
                 }
             )
+            # P0: the self-heal re-runs THIS round. The narration that
+            # tripped the rule was already streamed to the user, and on a
+            # later round a tool may have already moved the workspace —
+            # re-asking is then a duplicate answer or a double-execution,
+            # not a nudge. Let the narration ship instead.
+            _selfHealVeto = _replayVetoReason(
+                'self_heal',
+                emitted_text=_turnEmittedText,
+                executed_tool=_turnExecutedTool,
+                text_vetoes=False,
+            )
+            if _selfHealVeto is not None:
+                logger.warning('workbench narration self-heal refused — %s', _selfHealVeto)
+                break
             if _selfHealRetries < _SELFHEAL_EXEMPT_ROUNDS:
                 _selfHealRetries += 1
                 toolRound -= 1
@@ -4292,15 +4432,42 @@ async def _sendWorkbenchMessageStreamImpl(
             if getattr(session, 'agent_mode', '') == 'code' and textContent:
                 codeResult = await _runFencedCodeBlock(session, textContent, toolRound)
                 if codeResult is not None:
+                    # P0: this round's "call" is the fenced block itself. It
+                    # needs a real tool_use block to hang the receipt on —
+                    # a bare tool message with a `code_<n>` id is an orphan
+                    # tool_result, which strict gateways reject outright.
+                    _codeId = f'code_{toolRound}'
+                    _codeUse = {
+                        'type': 'tool_use',
+                        'id': _codeId,
+                        'name': 'code_run',
+                        'input': {'code': textContent[:2000]},
+                    }
+                    if isAnthropic:
+                        contentVal = assistantMsg.get('content')
+                        if not isinstance(contentVal, list):
+                            contentVal = []
+                        assistantMsg['content'] = [*contentVal, _codeUse]
+                    else:
+                        assistantMsg['tool_calls'] = [
+                            {
+                                'id': _codeId,
+                                'type': 'function',
+                                'function': {'name': 'code_run', 'arguments': '{}'},
+                            }
+                        ]
                     currentMessages.append(assistantMsg)
                     currentMessages.append(
-                        {'role': 'tool', 'tool_use_id': f'code_{toolRound}', 'content': codeResult}
+                        _reconcileToolResults(
+                            [(_codeId, 'code_run')],
+                            [{'tool_use_id': _codeId, 'content': codeResult}],
+                        ).results[0]
                     )
                     if emit:
                         emit(
                             {
                                 'type': 'toolResult',
-                                'id': f'code_{toolRound}',
+                                'id': _codeId,
                                 'name': 'code_run',
                                 'content': codeResult[:4000],
                                 'status': 'done',
@@ -4463,6 +4630,15 @@ async def _sendWorkbenchMessageStreamImpl(
         clarifySubmittedThisRound = False
         pending_regular: list[tuple[str, dict[str, object], str]] = []
         invalidThisRound = 0
+        # P0: the ordered (tool_use_id, tool_name) pairs this round actually
+        # dispatched. `reconcile_tool_results` closes the round against this
+        # list, so the assistant message's tool blocks and their results can
+        # never drift apart — a missing result is synthesized, a duplicate or
+        # orphan is dropped, on every exit path below. Building it also
+        # repairs a tool block the model emitted without an id.
+        callOrder: list[tuple[str, str]] = _canonicalToolCalls(
+            toolUses, assistantMsg, is_anthropic=isAnthropic
+        )
         # T2 length-stop fail-all: a generation that stopped on
         # the output token limit may carry half-parsed tool-call arguments —
         # executing them runs truncated commands/paths. Fail every call in
@@ -5332,6 +5508,11 @@ async def _sendWorkbenchMessageStreamImpl(
             return {'tool_use_id': toolUseId, 'role': 'tool', 'content': historyContent}
 
         try:
+            if pending_regular:
+                # P0 replay veto: the batch is about to dispatch real tools,
+                # so from here on a request-changing rescue would re-plan
+                # against an already-mutated world.
+                _turnExecutedTool = True
             toolResults.extend(
                 await run_regular_tools_stage(
                     pending_regular,
@@ -5402,6 +5583,39 @@ async def _sendWorkbenchMessageStreamImpl(
                             ),
                         }
                     )
+        # P0 — the single normalization choke point, reached on EVERY
+        # tool-call exit path. Everything that built a result above
+        # (blocked/approval/plan receipts, the parallel stage, the
+        # length-stop fail-all, malformed-arg self-heals) lands here and
+        # only here, so the round closes with exactly one well-formed
+        # result per dispatched call: missing → synthetic, duplicate →
+        # collapsed, orphan → dropped. This must run BEFORE the
+        # "no results" bail below — that path used to break out of the loop
+        # while the assistant message still carried tool calls, and the
+        # next turn then replayed a tool_use with no tool_result, which
+        # Anthropic rejects as a NON-retryable 400 and which OpenAI
+        # gateways silently mangle.
+        _closed = _reconcileToolResults(callOrder, toolResults) if callOrder else None
+        if _closed is not None:
+            if _closed.synthesized or _closed.dropped:
+                logger.warning(
+                    'workbench tool-result reconciliation repaired round %d — '
+                    'synthesized=%d dropped=%d',
+                    toolRound,
+                    len(_closed.synthesized),
+                    len(_closed.dropped),
+                )
+                if emit:
+                    emit(
+                        {
+                            'type': 'warning',
+                            'message': (
+                                f'{len(_closed.synthesized)} tool result(s) were missing and were '
+                                'marked NOT executed; re-issue them if the work is still needed.'
+                            ),
+                        }
+                    )
+            toolResults = _closed.results
         if not toolResults:
             try:
                 if hasattr(session, '_tool_tracker') and session._tool_tracker:
@@ -5449,6 +5663,8 @@ async def _sendWorkbenchMessageStreamImpl(
         # all dangling — appending them yields a tool_result with no matching
         # tool_use, which Anthropic rejects as a NON-retryable 400 and bricks
         # the session on the next turn. Drop them with the calls they answered.
+        # (`toolResults` is already the reconciled, exactly-one-per-call list
+        # closed above.)
         if not cancelledMidRound:
             currentMessages.extend(toolResults)
         # T18 barrier 3: durable flush at the step boundary — the completed

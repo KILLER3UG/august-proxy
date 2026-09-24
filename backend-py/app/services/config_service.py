@@ -13,7 +13,7 @@ from typing import Optional
 from app.atomic_write import write_json_atomic
 from app.json_narrowing import as_int, as_list
 from app.lib.paths import dataPath
-from app.models.config import ModelConfig, ProviderConfig
+from app.models.config import ModelConfig, ProviderConfig, QuotaAuthConfig, QuotaEndpointConfig
 
 # ── read cache (avoids hitting disk on every hot-path call) ──────────────
 _CONFIG_CACHE_TTL_S = 2.0  # seconds — long enough to dedup burst reads,
@@ -213,6 +213,11 @@ def getProvidersAsModels() -> list[ProviderConfig]:
                 )
         from app.providers.api_format import normalize_api_format
 
+        # quotaEndpoint/quotaAuth are read here as well as in the router's
+        # _provider_to_dict — a field named in only one of the two is silently
+        # dropped on read, which is how the per-model price fields were lost.
+        quota_endpoint_raw = raw.get('quotaEndpoint') if raw.get('quotaEndpoint') is not None else raw.get('quota_endpoint')
+        quota_auth_raw = raw.get('quotaAuth') if raw.get('quotaAuth') is not None else raw.get('quota_auth')
         result.append(
             ProviderConfig(
                 id=str(raw.get('id', '')),
@@ -223,6 +228,10 @@ def getProvidersAsModels() -> list[ProviderConfig]:
                 enabled=bool(raw.get('enabled', True)),
                 auto_fetch=bool(raw.get('autoFetch', False)),
                 models=models,
+                quota_endpoint=QuotaEndpointConfig.model_validate(quota_endpoint_raw)
+                if isinstance(quota_endpoint_raw, dict)
+                else None,
+                quota_auth=QuotaAuthConfig.model_validate(quota_auth_raw) if isinstance(quota_auth_raw, dict) else None,
             )
         )
     return result

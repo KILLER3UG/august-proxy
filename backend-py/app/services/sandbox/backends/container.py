@@ -28,7 +28,7 @@ from app.services.sandbox.paths import resolve_workspace_root
 from app.services.sandbox.policy import SandboxPolicy, SandboxResult
 
 _PROBE_TTL_S = 60
-_probe_cache: tuple[float, bool] | None = None
+_probe_cache: tuple[float, bool, str] | None = None
 
 
 def container_enabled() -> bool:
@@ -40,28 +40,47 @@ def container_enabled() -> bool:
     )
 
 
-def is_available() -> bool:
-    """Docker CLI present AND the daemon answers. Probed at most once/minute."""
+def probe() -> tuple[bool, str]:
+    """``(available, reason_when_unavailable)``, probed at most once/minute.
+
+    ``reason`` is what doctor/Settings show for a REQUESTED-but-inactive
+    tier, so "the user asked for a container and did not get one" is
+    distinguishable from "the user never asked". Never guess: the reason
+    names the concrete missing piece (no CLI vs. daemon down).
+    """
     global _probe_cache
     now = time.monotonic()
     if _probe_cache is not None and now - _probe_cache[0] < _PROBE_TTL_S:
-        return _probe_cache[1]
+        return _probe_cache[1], _probe_cache[2]
     available = False
+    reason = ''
     docker = shutil.which('docker')
-    if docker:
+    if not docker:
+        reason = 'docker CLI not found on PATH'
+    else:
         try:
             import subprocess
 
-            probe = subprocess.run(
+            probeProc = subprocess.run(
                 [docker, 'version', '--format', '{{.Server.Version}}'],
                 capture_output=True,
                 text=True,
                 timeout=10,
             )
-            available = probe.returncode == 0
-        except (OSError, subprocess.SubprocessError):
-            available = False
-    _probe_cache = (now, available)
+            available = probeProc.returncode == 0
+            if not available:
+                reason = 'docker daemon is not answering (start Docker Desktop)'
+        except (OSError, subprocess.SubprocessError) as exc:
+            reason = f'docker probe failed: {exc}'
+    if available:
+        reason = ''
+    _probe_cache = (now, available, reason)
+    return available, reason
+
+
+def is_available() -> bool:
+    """Docker CLI present AND the daemon answers."""
+    available, _ = probe()
     return available
 
 

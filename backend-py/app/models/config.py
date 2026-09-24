@@ -6,6 +6,8 @@ CRUD endpoints and the config service.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from app.models.base import ExtraAllowBaseModel
 
 
@@ -52,6 +54,58 @@ class ModelConfig(ExtraAllowBaseModel):
     price_out_per_m: float | None = None
 
 
+class QuotaExtractConfig(ExtraAllowBaseModel):
+    """Dotted JSON paths into a declared quota endpoint's response.
+
+    Each path names where the provider states one value. An absent or
+    unresolved path means "not stated" — never zero — so a provider that
+    publishes no cap leaves the row on its local estimate.
+    """
+
+    model: str = ''
+    limit: str = ''
+    remaining: str = ''
+    used: str = ''
+    reset: str = ''
+
+
+class QuotaEndpointConfig(ExtraAllowBaseModel):
+    """Opt-in, user-declared provider quota endpoint.
+
+    August contacts this only when a user configures it. ``url`` is either an
+    absolute URL (used exactly as written) or a path joined onto the provider's
+    baseUrl under the same exact-base rule as chat — no invented ``/v1``.
+    """
+
+    # Only JSON is supported; adding a kind means adding a real parser for it.
+    kind: Literal['json'] = 'json'
+    url: str = ''
+    method: Literal['GET', 'POST'] = 'GET'
+    headers: dict[str, str] = {}
+    body: dict[str, object] | None = None
+    # Optional model id for an account-level endpoint that reports one
+    # aggregate budget rather than per-model rows.
+    model: str = ''
+    bucket: str = ''
+    extract: QuotaExtractConfig = QuotaExtractConfig()
+
+
+class QuotaAuthConfig(ExtraAllowBaseModel):
+    """How to authenticate the declared quota endpoint.
+
+    ``use_provider_key`` (the default) reuses the provider's stored API key so
+    the secret is never written twice; ``token`` is for endpoints whose
+    credential differs from the chat key.
+    """
+
+    type: Literal['none', 'bearer', 'header', 'query'] = 'none'
+    header: str = ''
+    prefix: str = ''
+    param: str = ''
+    token: str = ''
+    use_provider_key: bool = True
+
+
 class ProviderConfig(ExtraAllowBaseModel):
     """A provider entry from the providers config store.
 
@@ -66,6 +120,9 @@ class ProviderConfig(ExtraAllowBaseModel):
     enabled: bool = True
     auto_fetch: bool = False
     models: list[ModelConfig] = []
+    # Absent = August never contacts a quota endpoint for this provider.
+    quota_endpoint: QuotaEndpointConfig | None = None
+    quota_auth: QuotaAuthConfig | None = None
 
 
 class ProviderCreate(ExtraAllowBaseModel):
@@ -76,6 +133,8 @@ class ProviderCreate(ExtraAllowBaseModel):
     api_format: str = 'openaiChat'
     api_key: str = ''
     enabled: bool = True
+    quota_endpoint: QuotaEndpointConfig | None = None
+    quota_auth: QuotaAuthConfig | None = None
 
 
 class ProviderUpdate(ExtraAllowBaseModel):
@@ -86,6 +145,11 @@ class ProviderUpdate(ExtraAllowBaseModel):
     api_format: str | None = None
     api_key: str | None = None
     enabled: bool | None = None
+    # Set to an object to declare/change the quota endpoint; null clears it
+    # (the provider goes back to headers + local usage only).
+    quota_endpoint: QuotaEndpointConfig | None = None
+    quota_auth: QuotaAuthConfig | None = None
+    auto_fetch: bool | None = None
 
 
 class ModelCreate(ExtraAllowBaseModel):

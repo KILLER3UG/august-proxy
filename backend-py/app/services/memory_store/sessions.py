@@ -98,6 +98,103 @@ def save_session(session: SessionRecord) -> None:
     conn.commit()
 
 
+# Client-identity match window for the snapshot rewrite (migration 048). The
+# workbench transcript and the desktop transcript are the same conversation
+# seen from two sides, so the same message can differ in its TAIL: the desktop
+# sends the typed text while the backend row carries the appended @git snapshot
+# / bot-mention note, and a mid-turn save catches a partially streamed
+# assistant reply. Both differences append, so the LEADING window identifies
+# the message while a full-text comparison does not. 160 chars is long enough
+# that an unrelated message must open identically to be adopted.
+_CLIENT_MATCH_PREFIX = 160
+
+
+def _normalize_text(content: object) -> str:
+    text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False, default=str)
+    # The two writers spell a text message differently: the POST path stores
+    # ``_json(content)`` (a JSON string, quotes included) while the snapshot
+    # writer stores the bare string. Unwrap one so the pair can be compared.
+    stripped = text.strip()
+    if len(stripped) > 1 and stripped[0] == '"' and stripped[-1] == '"':
+        try:
+            decoded = json.loads(stripped)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            decoded = None
+        if isinstance(decoded, str):
+            text = decoded
+    return ' '.join(text.split())
+
+
+def _same_message(a: object, b: object) -> bool:
+    """True when two views of one message agree over the leading window.
+
+    Either side may be the longer one: the desktop's text is a prefix of the
+    backend's row (injected @git / bot notes), and a streamed assistant reply
+    is a prefix of the finalized one.
+    """
+    left = _normalize_text(a)
+    right = _normalize_text(b)
+    if not left or not right:
+        return False
+    if left[:_CLIENT_MATCH_PREFIX] == right[:_CLIENT_MATCH_PREFIX]:
+        return True
+    if len(left) <= _CLIENT_MATCH_PREFIX and right.startswith(left):
+        return True
+    return len(right) <= _CLIENT_MATCH_PREFIX and left.startswith(right)
+
+
+def _claim_client_rows(
+    conn,
+    sid: str,
+) -> dict[str, list[dict[str, object]]]:
+    """Existing client-authored rows of this session, grouped by role, in order.
+
+    Only rows the desktop has claimed (``client_message_id IS NOT NULL``) take
+    part: a server-derived row must never be adopted, or an enrichment PATCH
+    could land on a message the client never authored.
+    """
+    rows = conn.execute(
+        'SELECT id, role, content, client_message_id, blocks_json FROM messages'
+        ' WHERE session_id = ? AND client_message_id IS NOT NULL ORDER BY id',
+        (sid,),
+    ).fetchall()
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for row in rows:
+        try:
+            entry = {
+                'id': row['id'],
+                'role': row['role'],
+                'content': row['content'],
+                'clientMessageId': row['client_message_id'],
+                'blocksJson': row['blocks_json'],
+            }
+        except (KeyError, IndexError, TypeError):
+            entry = {
+                'id': row[0],
+                'role': row[1],
+                'content': row[2],
+                'clientMessageId': row[3],
+                'blocksJson': row[4],
+            }
+        grouped.setdefault(as_str(entry['role'], 'user'), []).append(entry)
+    return grouped
+
+
+def _claim_client_row(
+    bucket: dict[str, list[dict[str, object]]],
+    role: str,
+    content: object,
+) -> dict[str, object] | None:
+    """Take the earliest unclaimed client row that is the same message."""
+    candidates = bucket.get(role)
+    if not candidates:
+        return None
+    for index, entry in enumerate(candidates):
+        if _same_message(entry['content'], content):
+            return candidates.pop(index)
+    return None
+
+
 def save_workbench_session_sot(
     session_dict: dict[str, object],
     messages: list[dict[str, object]] | None = None,
@@ -106,6 +203,14 @@ def save_workbench_session_sot(
 
     This is the primary workbench save path. Optional JSON file export happens
     outside this function.
+
+    Migration 048: the rewrite is DELETE-all + re-INSERT, which used to silently
+    drop everything the desktop had synced. Client-authored identity and
+    ``blocks_json`` are now carried across the rewrite, so the rich transcript
+    a user sees survives the next durability barrier (model dispatch, tool
+    step boundary, autosave). A row the snapshot no longer contains IS deleted —
+    the backend transcript stays authoritative for removals (Undo, clear,
+    regeneration) — and the client re-posts it on its next sync.
     """
 
     conn = _conn()
@@ -172,8 +277,20 @@ def save_workbench_session_sot(
                 updated,
             ),
         )
+        # A durability barrier must not fail because of an optional nicety.
+        # On a DB that somehow lacks the 048 column the save proceeds exactly
+        # as it did before 048 (no identity carried across the rewrite).
+        try:
+            client_rows = _claim_client_rows(conn, sid)
+            has_client_column = True
+        except Exception:
+            client_rows = {}
+            has_client_column = False
         conn.execute('DELETE FROM messages WHERE session_id = ?', (sid,))
-        rows: list[tuple[str, str, str, str | None]] = []
+        rows: list[tuple[str, str, str, str | None, str | None]] = []
+        # The unique index would reject a duplicate id inside this batch and
+        # roll the whole save back; the first claim wins instead.
+        seen_client_ids: set[str] = set()
         for msg in msgs:
             if not isinstance(msg, dict):
                 continue
@@ -191,15 +308,45 @@ def save_workbench_session_sot(
             # 047: the structured timeline (blocks / thinking / tools /
             # attachments / todos …) rides beside `content`, which stays the
             # FTS-indexed text. NULL for a message with nothing structured.
-            rows.append((sid, role, content_str, encode_blocks(msg)))
+            blocks_json = encode_blocks(msg)
+            # 048: re-attach the desktop's identity for this message, and keep
+            # the timeline it synced when the snapshot itself carries none
+            # (the backend's own transcript cannot derive tool cards the
+            # desktop rendered).
+            client_id = msg.get('clientMessageId') or msg.get('client_message_id')
+            claimed: dict[str, object] | None = None
+            if isinstance(client_id, str) and client_id.strip():
+                client_id = client_id.strip()
+            else:
+                client_id = None
+                claimed = _claim_client_row(client_rows, role, content_str)
+                if claimed is not None:
+                    client_id = as_str(claimed.get('clientMessageId'), '') or None
+            if blocks_json is None and claimed is not None:
+                preserved = claimed.get('blocksJson')
+                blocks_json = preserved if isinstance(preserved, str) else None
+            if client_id is not None and client_id in seen_client_ids:
+                client_id = None
+            if client_id is not None:
+                seen_client_ids.add(client_id)
+            rows.append((sid, role, content_str, blocks_json, client_id))
         # One executemany instead of a per-row execute: the active session's
         # full transcript is re-written on every debounced save, so O(N)
         # round-trips were the dominant write cost on long sessions.
         if rows:
-            conn.executemany(
-                'INSERT INTO messages (session_id, role, content, blocks_json) VALUES (?, ?, ?, ?)',
-                rows,
-            )
+            if has_client_column:
+                conn.executemany(
+                    'INSERT INTO messages'
+                    ' (session_id, role, content, blocks_json, client_message_id)'
+                    ' VALUES (?, ?, ?, ?, ?)',
+                    rows,
+                )
+            else:  # pre-048 database: the pre-048 shape, no identity column
+                conn.executemany(
+                    'INSERT INTO messages (session_id, role, content, blocks_json)'
+                    ' VALUES (?, ?, ?, ?)',
+                    [r[:4] for r in rows],
+                )
         conn.commit()
     except Exception:
         conn.rollback()

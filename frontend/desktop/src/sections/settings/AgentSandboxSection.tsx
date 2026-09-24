@@ -15,11 +15,19 @@ type DoctorCheck = {
   ok?: boolean;
   detail?: string;
   backend?: string;
+  requested?: string;
+  strong?: boolean;
+  degraded?: boolean;
+  reason?: string;
 };
 
 export function AgentSandboxSection() {
   const [backend, setBackend] = useState<string>('…');
   const [detail, setDetail] = useState('');
+  const [requested, setRequested] = useState<string>('');
+  const [strong, setStrong] = useState(false);
+  const [degraded, setDegraded] = useState(false);
+  const [reason, setReason] = useState('');
   const [networkDefault, setNetworkDefault] = useState(false);
 
   useEffect(() => {
@@ -32,6 +40,10 @@ export function AgentSandboxSection() {
         const sandbox = checks.find((c) => c.id === 'sandbox');
         setBackend(String(sandbox?.backend || 'soft'));
         setDetail(String(sandbox?.detail || 'Soft policy enforcement'));
+        setRequested(String(sandbox?.requested || ''));
+        setStrong(Boolean(sandbox?.strong));
+        setDegraded(Boolean(sandbox?.degraded));
+        setReason(String(sandbox?.reason || ''));
       })
       .catch(() => {
         if (!cancelled) {
@@ -87,14 +99,51 @@ export function AgentSandboxSection() {
         <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
           Active backend
         </div>
-        <div className="font-mono text-xs text-foreground" data-testid="sandbox-backend">
-          {backend}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-mono text-xs text-foreground" data-testid="sandbox-backend">
+            {backend}
+          </span>
+          <span
+            className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${
+              strong
+                ? 'text-emerald-400/90 border-emerald-400/30 bg-emerald-400/10'
+                : 'text-warning/90 border-warning/30 bg-warning/10'
+            }`}
+            data-testid="sandbox-strength"
+          >
+            {strong ? 'OS isolation' : 'Not OS isolation'}
+          </span>
         </div>
         <p className="text-xs text-muted-foreground">{detail}</p>
-        {backend === 'soft' && (
+
+        {degraded && (
+          <div
+            className="rounded-lg border border-warning/30 bg-warning/10 p-2 space-y-1"
+            data-testid="sandbox-degraded"
+          >
+            <p className="text-xs text-warning">
+              You asked for <span className="font-mono">{requested}</span> but commands are
+              running under <span className="font-mono">{backend}</span>.
+            </p>
+            {reason && <p className="text-xs text-muted-foreground">{reason}</p>}
+            <p className="text-xs text-muted-foreground">
+              This is not a security boundary while it reads this way — treat the session as
+              unsandboxed, or turn the opt-in off so the state is not misleading.
+            </p>
+          </div>
+        )}
+
+        {!strong && !degraded && (
           <p className="text-xs text-warning/90 pt-1">
             Soft mode is not OS isolation. It forces workspace cwd, blocks network prefixes, and
             rejects out-of-workspace paths. Seatbelt / bwrap / AppContainer activate when available.
+          </p>
+        )}
+
+        {strong && (
+          <p className="text-xs text-muted-foreground pt-1">
+            Code-mode cells run one-shot inside this backend; the persistent warm interpreter is
+            switched off, because it spawns outside the sandbox.
           </p>
         )}
       </div>

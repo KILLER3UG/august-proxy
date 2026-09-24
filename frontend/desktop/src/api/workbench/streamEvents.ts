@@ -209,13 +209,15 @@ export function dispatchWorkbenchEvent(
         jobId: typeof p?.jobId === 'string' ? p.jobId : JSON.stringify(p?.jobId ?? ''),
         agentId: typeof p?.agentId === 'string' ? p.agentId : JSON.stringify(p?.agentId ?? ''),
         // Backend statuses: completed | failed | error | blocked | partial |
-        // cancelled | recovered. Coercing error/blocked/partial to completed
-        // hid failures as successes — pass them through so the UI can render
-        // them honestly.
-        status: (['completed', 'failed', 'cancelled', 'error', 'blocked', 'partial', 'recovered'].includes(
+        // cancelled | recovered | skipped. Coercing error/blocked/partial to
+        // completed hid failures as successes — pass them through so the UI can
+        // render them honestly. `skipped` was missing from this list, so a lane
+        // the parent never launched arrived as 'failed' and told the user a
+        // worker had broken when no worker had run.
+        status: (['completed', 'failed', 'cancelled', 'error', 'blocked', 'partial', 'recovered', 'skipped'].includes(
           p?.status as string,
         )
-          ? (p.status as 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered')
+          ? (p.status as 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered' | 'skipped')
           : 'failed'),
         // Failure reasons arrive in `error` (executeSubAgent path) or
         // `message` (orchestrator path) — surface whichever is present.

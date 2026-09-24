@@ -414,12 +414,16 @@ export function removeSessionLocally(id: string): boolean {
     // mergedSessionStates spread in the sidebar.
     clearSessionStatus(lid);
     // Drop the in-memory transcript too — the stream store would otherwise
-    // keep the session's blocks/tool previews alive forever. Dynamic import
-    // avoids a store → chat-section import cycle.
+    // keep the session's blocks/tool previews alive forever, and a pending
+    // transcript sync must never write into a session that no longer exists.
+    // Dynamic import avoids a store → chat-section import cycle.
     try {
-      void import('../sections/chat/stream/session-stream-store').then((m) =>
-        m.evictSessionStreamState(lid),
-      );
+      void import('../sections/chat/stream/session-stream-store')
+        .then((m) => {
+          m.evictSessionStreamState(lid);
+          return import('../sections/chat/stream/transcript-sync');
+        })
+        .then((m) => m.resetTranscriptSync(lid));
     } catch {
       /* ignore */
     }

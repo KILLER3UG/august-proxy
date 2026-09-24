@@ -67,7 +67,13 @@ export interface MessageBlock {
     | 'error'
     /** Harness notice (retry warning, context pressure, info) — NOT model
      *  chain-of-thought; the thinking block holds only model reasoning. */
-    | 'system';
+    | 'system'
+    /** Durable snapshot of one delegated worker, carried in the PARENT
+     *  assistant message's block list. This is what makes the inline worker
+     *  transcript survive a reload / session switch: the live
+     *  `subagentBlocks` map is in-memory only, so without a persisted copy
+     *  the inline row degrades to a status stub with no output. */
+    | 'subagent';
   content?: string;
   /** For type === 'error': the raw upstream error text, kept for the
    *  expandable details — content holds the friendly copy. */
@@ -82,6 +88,9 @@ export interface MessageBlock {
   /** For type === 'recalledMemories': the auto-memory rows that
    *  getRelevantMemories() prefetched into the system prompt this turn. */
   memories?: RecalledMemoryItem[];
+  /** For type === 'subagent': the worker's own transcript snapshot. Shape
+   *  matches `SubagentBlockState` minus the live-only bookkeeping. */
+  subagent?: SubagentSnapshot;
   /** Legacy persisted rows only: a `thinking` block that was actually a
    *  harness notice (old reducer collapsed warnings into the thinking pack).
    *  normalizeSystemBlocks() converts these to `type: 'system'` on load. */
@@ -292,6 +301,24 @@ export interface SubagentBlockState {
   workstream?: string;
   skills?: string[];
 }
+
+/** The persisted form of a `SubagentBlockState`, stored on a parent
+ *  `MessageBlock` of type 'subagent'.
+ *
+ *  Why a snapshot and not the live object: the live container lives in the
+ *  in-memory `session-stream-store`, which is evicted by the LRU cap, lost on
+ *  reload, and rebuilt empty on a session switch. Mirroring it into the
+ *  parent message's `blocks` array puts it on the path that is ALREADY
+ *  durable — localStorage (`persistMessages`) and the structured-block sync
+ *  (`transcript-sync.ts` → `messages.blocks_json`) — so a restored chat
+ *  re-renders the worker's own transcript instead of a status-only stub.
+ *
+ *  Every field is plain JSON: it crosses the network and lands in SQLite. */
+export type SubagentSnapshot = Omit<SubagentBlockState, 'id' | 'scope' | 'depth'> & {
+  /** Which parent tool call spawned this worker, so a reloaded transcript
+   *  can re-attach the row to its spawn position. */
+  parentToolId: string;
+};
 
 /** Tool progress entry used by the streaming layer. Kept loose (`status`
  *  is two-state because the chat UI only flips between reading→read). */

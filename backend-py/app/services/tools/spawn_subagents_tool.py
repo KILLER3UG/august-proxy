@@ -38,10 +38,13 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from app.json_narrowing import as_list, as_str
 from app.services.subagent_orchestrator import SubagentOrchestrator, SubagentSpawnRequest
+
+if TYPE_CHECKING:
+    from app.services.workbench.sessions import WorkbenchSession
 
 logger = logging.getLogger(__name__)
 TOOL_NAME = 'spawn_subagents'
@@ -319,7 +322,7 @@ def _session_id(session: object) -> str:
     return ''
 
 
-def _format_completion_notice(result: dict[str, Any]) -> str:
+def _format_completion_notice(result: dict[str, Any], session: object = None) -> str:
     task_id = result.get('taskId', '')
     agent_id = result.get('agentId', 'general')
     status = result.get('status', 'completed')
@@ -330,8 +333,22 @@ def _format_completion_notice(result: dict[str, Any]) -> str:
     else:
         text = str(payload or result.get('error') or '')
     text = text.strip()
+    # A head-only `text[:8000]` used to live here. The worker's answer is now
+    # its own final round (see _subagent_answer), but a long answer still ends,
+    # so bound it the way tool output is bounded: head+tail with an omission
+    # receipt, spilled to a file the parent can actually re-open.
     if len(text) > 8000:
-        text = text[:8000] + '\n…[truncated]'
+        from app.services.workbench.workbench import _spillToolResult, _truncateToolOutput
+
+        # `_spillToolResult` returns None without a workspace, and `session` is
+        # sometimes a plain dict here — both fall through to the honest
+        # head+tail clip rather than emitting a receipt that names no file.
+        spilled = None
+        if as_str(getattr(session, 'workspacePath', ''), '').strip():
+            spilled = _spillToolResult(
+                cast('WorkbenchSession', session), 'subagent_result', text
+            )
+        text = spilled if spilled is not None else _truncateToolOutput(text, 8000)[0]
     lines = [
         f'[SUBAGENT_COMPLETE taskId="{task_id}" agentId="{agent_id}" status="{status}"]',
         f'goal: {goal}' if goal else '',
@@ -349,7 +366,7 @@ def _enqueue_completion(session: object, result: dict[str, Any]) -> None:
     try:
         from app.services.workbench.workbench import enqueueUserMessage
 
-        enqueueUserMessage(sid, _format_completion_notice(result), kind='subagent')
+        enqueueUserMessage(sid, _format_completion_notice(result, session), kind='subagent')
     except Exception:
         logger.debug('failed to enqueue subagent completion', exc_info=True)
         return
@@ -572,9 +589,9 @@ async def _doSpawn(
 
     async def _run_all_waves() -> list[dict[str, Any]]:
         all_results: list[dict[str, Any]] = []
-        for wave in waves:
+        for waveNo, wave in enumerate(waves):
             runnable: list[dict[str, Any]] = []
-            for item in wave:
+            for itemNo, item in enumerate(wave):
                 try:
                     nm = item_name(item, 0)
                 except WorkstreamError:
@@ -582,8 +599,14 @@ async def _doSpawn(
                 deps = [str(d) for d in (item.get('dependsOn') or [])]
                 sources = [str(s) for s in (item.get('sourceWorkstreams') or [])]
                 if any(d in failed_names for d in deps + sources):
+                    # A skipped lane needs a non-empty id of its own: the
+                    # frontend reducer ignores any subagent event whose jobId is
+                    # falsy, so emitting `jobId: ''` hid the lane entirely, and
+                    # never enqueueing a completion meant the parent model was
+                    # never told the lane was skipped — it just waited on an
+                    # answer that was never coming.
                     skipped = {
-                        'taskId': '',
+                        'taskId': f'skip_{job_id or sid or "job"}_{waveNo}-{itemNo}',
                         'agentId': item.get('agentId', 'general'),
                         'goal': item.get('goal', ''),
                         'status': 'skipped',
@@ -604,12 +627,16 @@ async def _doSpawn(
                         emit(
                             {
                                 'type': 'subagentDone',
-                                'jobId': '',
+                                'jobId': skipped['taskId'],
+                                'agentId': skipped['agentId'],
                                 'status': 'skipped',
                                 'result': '',
                                 'message': skipped['error'],
+                                'workstream': nm or None,
                             }
                         )
+                    if background:
+                        _enqueue_completion(session, skipped)
                     continue
                 runnable.append(_enrich(item))
             if not runnable:

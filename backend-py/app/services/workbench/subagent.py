@@ -61,6 +61,35 @@ _SUBAGENT_NEVER_TOOLS = frozenset(
 _SPAWN_TOOLS = frozenset({'spawn_subagent', 'spawn_subagents'})
 
 
+def _subagent_answer(accumulated: str, lastRound: str) -> str:
+    """The child's answer, decided by ONE rule that every consumer shares.
+
+    A model puts its conclusion in the FINAL round, so the all-rounds
+    accumulation has the answer buried behind the child's own narration; a
+    head-truncated slice of that blob therefore shipped the narration and
+    discarded the answer. Prefer the last round, and fall back to the
+    accumulation only when the last round was empty — which is what a capped or
+    interrupted run leaves behind. Mirrors how deepseek-harness normalizes
+    subagent output in `assistant-output.ts` rather than re-deriving it per
+    call site.
+    """
+    trimmed = lastRound.strip()
+    return trimmed or accumulated.strip()
+
+
+def _clip(text: str, cap: int) -> str:
+    """Bound text WITHOUT dropping its tail — reuses the tool-output clipper.
+
+    The subagent path used to carry its own `text[:N]` cuts at four different
+    caps, which is exactly the head-only truncation that loses an answer.
+    `_truncateToolOutput` keeps head 3/4 + tail 1/4 with an omission receipt,
+    so calling it here rather than re-implementing it keeps one authority.
+    """
+    from app.services.workbench.workbench import _truncateToolOutput
+
+    return _truncateToolOutput(text, cap)[0]
+
+
 def _blocked_tools(session: object = None, depth: int | None = None) -> frozenset[str]:
     """What this child may not touch — spawn gated by the configured maxDepth.
 
@@ -664,6 +693,8 @@ async def executeSubAgent(
         user_parts.append(f'Context: {context}')
     messages: list[dict[str, object]] = [{'role': 'user', 'content': '\n\n'.join(user_parts)}]
     finalText = ''
+    # The round that produced no tool call holds the answer; see _subagent_answer.
+    lastRoundText = ''
     token = currentSessionId.set(getattr(session, 'id', 'default'))
     # Task-scoped id for per-agent state routing (todo lists). ContextVars are
     # copied per asyncio task, so concurrent workers each see their OWN value
@@ -897,6 +928,7 @@ async def executeSubAgent(
                 toolUses = [as_dict(tu) for tu in as_list(response.get('tool_uses'), [])]
             if textContent:
                 finalText += textContent
+                lastRoundText = textContent
             if not toolUses:
                 # Text tool protocol (parent-loop parity): a toolSurface='text'
                 # model calls tools via `[TOOLCALL] name|json` lines. Without
@@ -1219,7 +1251,7 @@ async def executeSubAgent(
                             'jobId': jobId,
                             'id': tId,
                             'name': tName,
-                            'content': resultStr[:2000],
+                            'content': _clip(resultStr, 2000),
                             'status': status,
                         }
                     )
@@ -1234,10 +1266,13 @@ async def executeSubAgent(
             capErr = f'[loop cap reached] tool round limit {managedToolLoopCap} exceeded'
             capStatus = 'partial' if finalText.strip() else 'failed'
             if finalText.strip():
+                # Deliberately NOT _subagent_answer here: a capped run never
+                # reached a final round, so there is no last answer to prefer —
+                # the accumulation is the honest record of what it managed.
                 capResult = f'{capErr}\n{finalText}'
             else:
                 capResult = f'({capErr}; no textual answer.)'
-            updateJob(jobId, {'status': capStatus, 'result': capResult[:2000], 'error': capErr})
+            updateJob(jobId, {'status': capStatus, 'result': _clip(capResult, 2000), 'error': capErr})
             if emit:
                 emit(
                     {
@@ -1246,7 +1281,7 @@ async def executeSubAgent(
                         'jobId': jobId,
                         'status': capStatus,
                         'error': capErr,
-                        'result': capResult[:4000],
+                        'result': _clip(capResult, 4000),
                         'isFallback': isFallback,
                     }
                 )
@@ -1259,20 +1294,28 @@ async def executeSubAgent(
         # returning — the parent reads a structured object, not prose. A
         # failed yield must report status='failed' (not 'completed') so the
         # orchestrator tallies it as a loss and the parent can retry.
-        resultText = finalText
+        answer = _subagent_answer(finalText, lastRoundText)
+        resultText = answer
         yieldFailed = False
-        if yield_schema and finalText.strip():
+        if yield_schema and answer.strip():
             try:
                 import json as _json
 
                 from app.services.workbench.json_salvage import salvage_json_object
 
-                parsed = salvage_json_object(finalText)
+                parsed = salvage_json_object(answer)
                 if not isinstance(parsed, dict):
                     try:
-                        parsed = _json.loads(finalText.strip().strip('`'))
+                        parsed = _json.loads(answer.strip().strip('`'))
                     except (_json.JSONDecodeError, TypeError, ValueError):
                         parsed = None
+                if not isinstance(parsed, dict) and finalText != answer:
+                    # A child that emitted its JSON object and then kept
+                    # talking has the payload in an earlier round; the answer
+                    # alone would fail schema validation and the run would be
+                    # tallied as a loss. Trying the accumulation second can only
+                    # add recoveries, never remove one.
+                    parsed = salvage_json_object(finalText)
                 if isinstance(parsed, dict):
                     from app.services.workbench.validator import validateToolArguments
 
@@ -1291,14 +1334,14 @@ async def executeSubAgent(
                         yieldFailed = True
                         resultText = (
                             f'[yield validation failed: {as_str(check.get("error"), "schema mismatch")}]\n'
-                            f'Raw answer:\n{finalText[:4000]}'
+                            f'Raw answer:\n{_clip(finalText, 4000)}'
                         )
                 else:
                     yieldFailed = True
-                    resultText = f'[yield validation failed: expected a JSON object]\nRaw answer:\n{finalText[:4000]}'
+                    resultText = f'[yield validation failed: expected a JSON object]\nRaw answer:\n{_clip(finalText, 4000)}'
             except Exception:
                 yieldFailed = True
-                resultText = f'[yield validation failed: answer was not valid JSON]\nRaw answer:\n{finalText[:4000]}'
+                resultText = f'[yield validation failed: answer was not valid JSON]\nRaw answer:\n{_clip(finalText, 4000)}'
         elif not resultText.strip():
             # A tool-only sub-agent that finishes cleanly returns no text.
             # The orchestrator treats a completed-but-empty payload as a
@@ -1307,7 +1350,7 @@ async def executeSubAgent(
             resultText = f'(Sub-agent completed after {toolRound} tool round(s) with no textual answer.)'
         if yieldFailed:
             yieldErr = 'yield schema validation failed'
-            updateJob(jobId, {'status': 'failed', 'error': yieldErr, 'result': resultText[:2000]})
+            updateJob(jobId, {'status': 'failed', 'error': yieldErr, 'result': _clip(resultText, 2000)})
             if emit:
                 emit(
                     {
@@ -1316,14 +1359,14 @@ async def executeSubAgent(
                         'jobId': jobId,
                         'status': 'failed',
                         'error': yieldErr,
-                        'result': resultText[:4000],
+                        'result': _clip(resultText, 4000),
                         'isFallback': isFallback,
                     }
                 )
             _commit_episode('blocked', resultText, tool_count=total_tools_called)
             _flag_dirty('Worker mutated then exited without a valid episode.')
             return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'failed', 'error': yieldErr, 'result': resultText}
-        updateJob(jobId, {'status': 'completed', 'result': resultText[:2000]})
+        updateJob(jobId, {'status': 'completed', 'result': _clip(resultText, 2000)})
         if emit:
             emit(
                 {
@@ -1331,7 +1374,7 @@ async def executeSubAgent(
                     'agentId': resolvedAgentId,
                     'jobId': jobId,
                     'status': 'completed',
-                    'result': resultText[:4000],
+                    'result': _clip(resultText, 4000),
                     'isFallback': isFallback,
                 }
             )

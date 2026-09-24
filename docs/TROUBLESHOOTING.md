@@ -100,6 +100,31 @@ providers**. That is expected, not a missing install step.
 Provider clients retry with exponential backoff (capped, honors `Retry-After`).
 If it persists, spread traffic or reduce parallelism.
 
+### Quotas stay on "local" and no cap appears
+
+That is the intended behaviour, not a bug: August only shows a cap the provider
+actually published.
+
+* **Check the provider sends standard rate-limit headers.** August reads
+  `x-ratelimit-limit` / `-remaining` / `-reset` (with the `-requests` /
+  `-tokens` variants, or the IETF `ratelimit-*` spelling) on every response.
+  Most gateways publish them only on some routes — a `/models` probe may carry
+  none, so make one real chat call and the reading appears.
+* **Readings expire after an hour** on purpose; a header from yesterday is not a
+  live budget. Make a call, or configure a quota endpoint, to refresh it.
+* **A `remaining` without a `limit` is not a quota row.** Some providers report
+  only what is left in a rolling window. That value is not a cap, so August
+  does not draw a bar from it.
+* **For a provider with no headers**, declare its usage endpoint: Settings →
+  Models & Providers → provider → *Quota endpoint*. A blank URL means August
+  never calls anything. Check the extractor paths against a real response
+  (`curl` it with your key) — a path that does not resolve is treated as "not
+  stated", not as zero. `GET /api/providers/quota?provider=X` shows what came
+  back; a `local` row means nothing usable was extracted.
+* **A relative `quotaEndpoint.url` never gains a `/v1`.** Against a base of
+  `https://host/v1`, `"url": "usage"` calls `https://host/v1/usage`. Paste the
+  full path if the host wants it elsewhere.
+
 ### Workbench / Test: `session_id: … received null` (OpenCode Console)
 
 **Fixed in desktop 0.12.21.** Earlier builds dumped `session_id: null` (and other

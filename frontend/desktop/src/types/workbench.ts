@@ -318,11 +318,13 @@ export interface WorkbenchEventHandlers {
     workstream?: string;
   }) => void;
   /** Emitted when a sub-agent finishes. `status` is `completed` / `failed`
-   *  / `cancelled` (the last mirrors the parent turn's aborted state). */
+   *  / `cancelled` (the last mirrors the parent turn's aborted state), plus
+   *  `partial` (the worker hit its cap with some text produced) and `skipped`
+   *  (a lane the parent never launched because a dependency failed). */
   onSubagentDone?: (data: {
     jobId: string;
     agentId: string;
-    status: 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered';
+    status: 'completed' | 'failed' | 'cancelled' | 'error' | 'blocked' | 'partial' | 'recovered' | 'skipped';
     message?: string;
     result?: string;
     workstream?: string;

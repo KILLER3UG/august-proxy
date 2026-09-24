@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Pencil, Trash2, Plus, Search } from 'lucide-react';
 import { toast } from 'sonner';
-import { providersApi, type Provider, type ApiFormat } from '@/api/providers';
+import { providersApi, type Provider, type ApiFormat, type QuotaAuth, type QuotaEndpoint } from '@/api/providers';
 import { WorkspaceField } from '@/components/workspace/WorkspaceField';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,7 @@ import { API_FORMATS } from './modelSettingsShared';
 import { ModelDiscoveryActions } from './ModelDiscoveryActions';
 import { ModelRow } from './ModelRow';
 import { AddModelForm } from './AddModelForm';
+import { ProviderQuotaConfig } from './ProviderQuotaConfig';
 
 export function ProviderDetailForm({
   provider,
@@ -75,7 +76,7 @@ export function ProviderDetailForm({
   }, [provider.models, modelQuery]);
 
   const update = useMutation({
-    mutationFn: (patch: Partial<{ name: string; baseUrl: string; apiFormat: ApiFormat; apiKey: string; enabled: boolean; autoFetch: boolean }>) =>
+    mutationFn: (patch: Partial<{ name: string; baseUrl: string; apiFormat: ApiFormat; apiKey: string; enabled: boolean; autoFetch: boolean; quotaEndpoint: QuotaEndpoint | null; quotaAuth: QuotaAuth | null }>) =>
       providersApi.update(provider.id, patch),
     onSuccess: () => {
       toast.success('Saved');
@@ -253,6 +254,12 @@ export function ProviderDetailForm({
             setAutoFetch(next);
             update.mutate({ autoFetch: next });
           }}
+        />
+
+        <ProviderQuotaConfig
+          provider={provider}
+          pending={update.isPending}
+          onSave={(patch) => update.mutate(patch)}
         />
 
         <div>

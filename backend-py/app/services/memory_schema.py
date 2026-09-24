@@ -87,6 +87,11 @@ _CORE_SCHEMA_SQL = """
             -- tools / attachments / todos / usage …). NULL = legacy text-only
             -- row; `content` stays the FTS-indexed text either way.
             blocks_json TEXT,
+            -- 048: stable join key for the desktop-authored block timeline.
+            -- NULL on every legacy / server-derived row; the unique index
+            -- below makes POST /api/sessions/{id}/messages idempotent when the
+            -- client replays the same message.
+            client_message_id TEXT,
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         );
@@ -159,7 +164,13 @@ _CORE_SCHEMA_SQL = """
             INSERT INTO messages_fts(messages_fts, rowid, content, session_id, role)
             VALUES('delete', old.id, old.content, old.session_id, old.role);
         END;
-        CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
+        -- 048: scoped to the INDEXED columns. A blocks-only enrichment write
+        -- (UPDATE messages SET blocks_json) must not churn the FTS payload —
+        -- the search index does not contain blocks_json at all. The DROP is
+        -- needed for a pre-048 database: CREATE ... IF NOT EXISTS would keep
+        -- the old unscoped trigger.
+        DROP TRIGGER IF EXISTS messages_fts_au;
+        CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE OF content, session_id, role ON messages BEGIN
             INSERT INTO messages_fts(messages_fts, rowid, content, session_id, role)
             VALUES('delete', old.id, old.content, old.session_id, old.role);
             INSERT INTO messages_fts(rowid, content, session_id, role)
@@ -387,6 +398,14 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     # 047: durable structured transcript blocks per message. No DEFAULT — NULL
     # means "this row predates structured transcripts", not "empty transcript".
     ensure_column(conn, 'messages', 'blocks_json', 'TEXT')
+    # 048: client-authored identity for the rich transcript sync. Also NULL by
+    # default — absence means "server-derived row, no client identity".
+    ensure_column(conn, 'messages', 'client_message_id', 'TEXT')
+    conn.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_id '
+        'ON messages(session_id, client_message_id) '
+        'WHERE client_message_id IS NOT NULL'
+    )
     # Per-agent todo list (JSON) for sub-agent runs — drawer parity.
     ensure_column(conn, 'subagent_runs', 'todos_json', "TEXT DEFAULT ''")
     conn.execute(
@@ -404,7 +423,10 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
 # v13: early-dispatch telemetry (030) — turn_outcomes.tool_args_ready_to_stream_end_ms.
 # v14: facts.description column (044) — ZCode-parity recall hook.
 # v15: messages.blocks_json column (047) — durable structured transcript blocks.
-_SCHEMA_USER_VERSION = 15
+# v16: messages.client_message_id column + unique index (048) — client-authored
+#      message identity; the FTS UPDATE trigger is narrowed to the indexed
+#      columns so blocks-only enrichment writes never re-index.
+_SCHEMA_USER_VERSION = 16
 
 
 def _ensure_messages_fts(conn: sqlite3.Connection) -> None:
@@ -432,9 +454,13 @@ def _ensure_messages_fts(conn: sqlite3.Connection) -> None:
         END
         """
     )
+    # 048: recreate the UPDATE trigger scoped to the INDEXED columns. An
+    # older DB carries the unscoped `AFTER UPDATE ON messages` form, which
+    # `CREATE TRIGGER IF NOT EXISTS` would silently leave in place.
+    conn.execute('DROP TRIGGER IF EXISTS messages_fts_au')
     conn.execute(
         """
-        CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
+        CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE OF content, session_id, role ON messages BEGIN
             INSERT INTO messages_fts(messages_fts, rowid, content, session_id, role)
             VALUES('delete', old.id, old.content, old.session_id, old.role);
             INSERT INTO messages_fts(rowid, content, session_id, role)
@@ -552,6 +578,13 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
             # 047: durable structured transcript blocks (see create_extended_tables).
             ensure_column(conn, 'messages', 'blocks_json', 'TEXT')
+            # 048: client-authored message identity + its unique index.
+            ensure_column(conn, 'messages', 'client_message_id', 'TEXT')
+            conn.execute(
+                'CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_client_id '
+                'ON messages(session_id, client_message_id) '
+                'WHERE client_message_id IS NOT NULL'
+            )
             ensure_column(conn, 'subagent_runs', 'todos_json', "TEXT DEFAULT ''")
             ensure_column(conn, 'facts', 'expires_at', 'TEXT')
             ensure_column(conn, 'facts', 'title', "TEXT DEFAULT ''")

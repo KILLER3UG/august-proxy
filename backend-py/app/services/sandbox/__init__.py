@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.services.sandbox.backends import enforcement_report, strong_backend_active
 from app.services.sandbox.paths import bind_path, is_within_root, resolve_workspace_root
 from app.services.sandbox.policy import (
     DEFAULT_SANDBOX_MODE,
@@ -28,10 +29,12 @@ __all__ = [
     'active_backend',
     'bind_path',
     'command_fingerprint',
+    'enforcement_report',
     'is_within_root',
     'normalize_sandbox_mode',
     'policy_from_session',
     'resolve_workspace_root',
     'run_sandboxed',
+    'strong_backend_active',
     'unsandboxed_grant_key',
 ]

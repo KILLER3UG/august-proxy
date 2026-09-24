@@ -34,11 +34,15 @@ from app.services.memory_store.kv import (
     set_internal_state,
 )
 from app.services.memory_store.messages import (
+    MAX_CLIENT_MESSAGE_ID_CHARS,
     count_messages,
     delete_session_messages,
+    enrich_client_message,
     get_messages,
     get_messages_async,
+    normalize_client_message_id,
     save_message,
+    upsert_client_message,
 )
 from app.services.memory_store.rest import (
     PROFILE_FACT_KIND,
@@ -122,6 +126,10 @@ __all__ = [
     'delete_session_cascade',
     'delete_session_record',
     'save_message',
+    'upsert_client_message',
+    'enrich_client_message',
+    'normalize_client_message_id',
+    'MAX_CLIENT_MESSAGE_ID_CHARS',
     'get_messages',
     'count_messages',
     'get_messages_async',

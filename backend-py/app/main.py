@@ -183,6 +183,15 @@ async def lifespan(app: FastAPI):
 
     brain_backup.apply_pending_restore()
     memory_store.init()
+    # Anything still marked active in `subagent_runs` belonged to the previous
+    # process, so nothing will ever move it again — resolve it before the first
+    # drawer poll renders a dead worker as one still thinking.
+    try:
+        from app.services.subagent_orchestrator import sweep_orphaned_runs
+
+        sweep_orphaned_runs()
+    except Exception:
+        logger.debug('Subagent orphan sweep skipped', exc_info=True)
     # One verified safety copy per 12 h, off the event loop and after migrations
     # (the backup API needs a read lock, which a migration transaction holds).
     # An upgrade must never boot without something restorable behind it.

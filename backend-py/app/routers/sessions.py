@@ -26,10 +26,27 @@ class MessageCreate(CamelModel):
     (migration 047). Both are additive: a client that only knows role +
     content still works, and the structured fields are what a restore needs to
     rebuild tool calls, reasoning, attachments and todos instead of flat text.
+
+    ``clientMessageId`` (migration 048) is the caller's own message id. When
+    present the write is an UPSERT keyed on it, so a replayed send converges
+    on one row instead of appending a duplicate bubble.
     """
 
     role: str
     content: str
+    blocks: list[dict[str, object]] | None = None
+    structured: dict[str, object] | None = None
+    client_message_id: str | None = None
+
+
+class MessageEnrichment(CamelModel):
+    """Structured-payload-only write for a message the client already owns.
+
+    Deliberately has no ``role`` / ``content``: enrichment must never rewrite
+    the FTS-indexed text of a row, only the ``blocks_json`` beside it.
+    """
+
+    client_message_id: str
     blocks: list[dict[str, object]] | None = None
     structured: dict[str, object] | None = None
 
@@ -200,11 +217,62 @@ async def addMessage(sessionId: str, body: MessageCreate):
     Structured transcript fields (``blocks`` / ``structured``) are stored
     alongside the text in ``messages.blocks_json`` so a later restore can
     rebuild the message. Omitting them writes a legacy text-only row.
+
+    With ``clientMessageId`` (migration 048) the write is idempotent: the row
+    is found by that id, or by an identical unclaimed role+content row, so the
+    desktop can re-send a message (or replay after a reconnect) without
+    duplicating the bubble in the restored chat.
     """
     payload: dict[str, object] = dict(body.structured or {})
     if body.blocks is not None:
         payload['blocks'] = body.blocks
+    client_id = memory_store.normalize_client_message_id(body.client_message_id)
+    if client_id:
+        result = memory_store.upsert_client_message(
+            sessionId, client_id, body.role, body.content, payload or None
+        )
+        return {'id': result['id'], 'status': 'ok', 'write': result['status']}
     msgId = memory_store.save_message(
         sessionId, body.role, body.content, payload or None
     )
     return {'id': msgId, 'status': 'ok'}
+
+
+@router.patch('/{sessionId}/messages/enrichment')
+@router.put('/{sessionId}/messages/enrichment')
+async def enrichMessage(sessionId: str, body: MessageEnrichment):
+    """Attach the client-authored structured transcript to one message.
+
+    The rich-transcript sync counterpart to the POST above (migration 048).
+    Only ``messages.blocks_json`` is written: ``content`` is never touched, so
+    the FTS-indexed text and the session search index stay exactly as the send
+    wrote them, and the 048 UPDATE trigger is scoped to those columns so the
+    write is FTS-neutral by construction.
+
+    The payload is allow-listed (``STRUCTURED_FIELDS``) and size-capped
+    (64 KB encoded per message) before it is stored; trailing blocks are
+    dropped to fit rather than storing a timeline that no longer restores.
+
+    Re-sending an identical payload is a no-op (``unchanged: true``), so a
+    debounced client can retry freely. PATCH and PUT are the same operation —
+    the body replaces the structured payload wholesale, so "merge" semantics
+    would be a lie.
+    """
+    if not memory_store.normalize_client_message_id(body.client_message_id):
+        raise HTTPException(400, detail='clientMessageId is required')
+    result = memory_store.enrich_client_message(
+        sessionId, body.client_message_id, body.blocks, body.structured
+    )
+    if result.get('ok'):
+        return {
+            'status': 'ok',
+            'messageId': result['id'],
+            'clientMessageId': body.client_message_id.strip(),
+            'unchanged': bool(result.get('unchanged')),
+        }
+    reason = str(result.get('reason', ''))
+    if reason == 'not_found':
+        raise HTTPException(404, detail='Message not found for clientMessageId')
+    if reason == 'too_large':
+        raise HTTPException(413, detail='Structured payload exceeds the size cap')
+    raise HTTPException(400, detail='No supported structured fields provided')

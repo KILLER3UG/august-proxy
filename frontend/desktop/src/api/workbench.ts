@@ -225,6 +225,16 @@ export type DoctorCheck = {
   ok: boolean;
   detail: string;
   optional?: boolean;
+  /** Sandbox check only: the tier the host actually enforces right now. */
+  backend?: string;
+  /** Sandbox check only: the strong tier the user asked for, if any. */
+  requested?: string;
+  /** Sandbox check only: true when `backend` is real OS-level containment. */
+  strong?: boolean;
+  /** Sandbox check only: requested a strong tier, did not get one. */
+  degraded?: boolean;
+  /** Sandbox check only: why the effective tier is what it is. */
+  reason?: string;
 };
 
 export type DoctorReport = {

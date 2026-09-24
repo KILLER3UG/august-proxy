@@ -270,3 +270,259 @@ def decode_blocks(raw: object) -> dict[str, object]:
     if blocks is not None and not isinstance(blocks, list):
         out.pop('blocks', None)
     return out
+
+
+# ── Client enrichment caps (migration 048) ──────────────────────────────
+#
+# The PATCH enrichment endpoint accepts a payload from the desktop, so the
+# server cannot trust its shape or its size. Three bounds, applied in this
+# order, keep a single message row from becoming an unbounded blob:
+#
+#   1. allow-list   — only STRUCTURED_FIELDS survive (unknown keys dropped),
+#   2. per-item cap — a block's text is truncated, the list is truncated,
+#   3. byte budget — trailing blocks are dropped until the encoded row fits.
+#
+# A message whose *smallest* honest payload (its blocks reduced to a single
+# stub) still does not fit is refused outright (see fits_enrichment) rather
+# than stored truncated into meaninglessness.
+MAX_ENRICHMENT_BYTES = 64_000
+MAX_ENRICHMENT_BLOCKS = 200
+MAX_ENRICHMENT_BLOCK_CONTENT = 8_000
+MAX_ENRICHMENT_DEPTH = 8
+# A `subagent` block nests a whole worker transcript, so its blocks are bounded
+# by BYTES as well as by count. Count alone is not a bound: 200 nested blocks
+# at the 8 KB per-string cap is ~1.6 MB, and the top-level byte budget trims
+# by dropping trailing TOP-LEVEL blocks — so a single verbose worker would take
+# the whole message's timeline down with it. The nested budget is deliberately
+# a share of the total, leaving room for the rest of the turn.
+MAX_ENRICHMENT_SUBAGENT_BYTES = 24_000
+MAX_ENRICHMENT_SUBAGENT_BLOCKS = 80
+
+# Block-level allow-list, mirroring the desktop's ``MessageBlock``. A block
+# that grew a new key upstream is added here on purpose — an unknown key is
+# dropped rather than persisted, so a stale or hostile payload cannot smuggle
+# arbitrary blobs into a row the renderer will hand to the UI.
+_BLOCK_FIELDS = frozenset(
+    {
+        'id',
+        'type',
+        'content',
+        'rawContent',
+        'step',
+        'tool',
+        'isRevisedPlan',
+        'memories',
+        'system',
+        # Durable snapshot of one delegated worker, mirrored onto the parent
+        # assistant message by the desktop (see frontend
+        # sections/chat/stream/subagent-blocks.ts). Without this key the
+        # server's allow-list DROPPED it on enrichment, so a restored chat
+        # rendered a status stub with no worker output even though the client
+        # had synced it. Sanitized recursively by _sanitize_subagent.
+        'subagent',
+    }
+)
+_TOOL_FIELDS = frozenset(
+    {
+        'id',
+        'name',
+        'context',
+        'args',
+        'preview',
+        'summary',
+        'error',
+        'status',
+        'duration',
+        'startedAt',
+        'searchHits',
+        'providerSetup',
+        'integrationSetup',
+        'actionNeeded',
+        'previewDropped',
+        'contentTruncated',
+        'contentFullLength',
+        'result',
+    }
+)
+
+
+def _clip_value(value: object, depth: int = 0) -> object:
+    """Recursively cap free text and collection length. Shape is preserved."""
+    if depth > MAX_ENRICHMENT_DEPTH:
+        return None
+    if isinstance(value, str):
+        if len(value) > MAX_ENRICHMENT_BLOCK_CONTENT:
+            return value[:MAX_ENRICHMENT_BLOCK_CONTENT] + '…'
+        return value
+    if isinstance(value, dict):
+        return {
+            k: _clip_value(v, depth + 1) for k, v in value.items() if isinstance(k, str)
+        }
+    if isinstance(value, list):
+        return [_clip_value(v, depth + 1) for v in value[:MAX_ENRICHMENT_BLOCKS]]
+    return value
+
+
+def _sanitize_tool(tool: object) -> object:
+    if not isinstance(tool, dict):
+        return None
+    return {k: v for k, v in tool.items() if k in _TOOL_FIELDS}
+
+
+# Worker-snapshot keys (frontend `SubagentSnapshot`). `id` is deliberately
+# absent: the client derives it from the job id, so storing a second copy
+# could only disagree with the block id the renderer keys on.
+_SUBAGENT_FIELDS = frozenset(
+    {
+        'jobId',
+        'parentToolId',
+        'agentId',
+        'task',
+        'status',
+        'startedAt',
+        'finishedAt',
+        'error',
+        'workstream',
+        'skills',
+        'blocks',
+    }
+)
+
+
+def _encoded_size(value: object) -> int:
+    """Byte size of an already-sanitized value. Unencodable → 'does not fit'."""
+    try:
+        return len(json.dumps(value, ensure_ascii=False, default=str).encode('utf-8'))
+    except (TypeError, ValueError):
+        return MAX_ENRICHMENT_BYTES + 1
+
+
+def _sanitize_subagent(snapshot: object) -> dict[str, object] | None:
+    """One worker's nested transcript, allow-listed and size-capped.
+
+    The nested ``blocks`` run through the SAME ``_sanitize_block`` allow-list
+    as a top-level block, so a worker transcript cannot smuggle keys the
+    renderer would hand to the UI. A snapshot with no job id is useless (the
+    renderer keys and de-duplicates on it) and is dropped rather than stored.
+    """
+    if not isinstance(snapshot, dict):
+        return None
+    job_id = snapshot.get('jobId')
+    if not isinstance(job_id, str) or not job_id.strip():
+        return None
+    clean: dict[str, object] = {}
+    for key, value in snapshot.items():
+        if key not in _SUBAGENT_FIELDS or value is None:
+            continue
+        if key == 'blocks':
+            if not isinstance(value, list):
+                continue
+            nested = [
+                b
+                for b in (
+                    _sanitize_block(item)
+                    for item in value[:MAX_ENRICHMENT_SUBAGENT_BLOCKS]
+                )
+                if b
+            ]
+            # Keep the OLDEST blocks, dropping the tail first: a worker's
+            # early trajectory (what it was asked to do, what it read) is what
+            # makes the restored row useful, and this mirrors fit_enrichment's
+            # "newest block is the least settled" rule for top-level blocks.
+            while nested and _encoded_size(nested) > MAX_ENRICHMENT_SUBAGENT_BYTES:
+                nested.pop()
+            if nested:
+                clean['blocks'] = nested
+            continue
+        try:
+            json.dumps(value)
+        except (TypeError, ValueError):
+            continue
+        clean[key] = _clip_value(value)
+    return clean or None
+
+
+def _sanitize_block(block: object) -> dict[str, object] | None:
+    """One UI block, allow-listed, JSON-safe and size-capped.
+
+    None when unusable — the caller drops the block rather than storing a row
+    the renderer would have to guess at.
+    """
+    if not isinstance(block, dict):
+        return None
+    clean: dict[str, object] = {}
+    for key, value in block.items():
+        if not isinstance(key, str) or key not in _BLOCK_FIELDS:
+            continue
+        if key == 'tool':
+            picked = _sanitize_tool(value)
+            if picked:
+                clean['tool'] = picked
+            continue
+        if key == 'subagent':
+            picked = _sanitize_subagent(value)
+            if picked:
+                clean['subagent'] = picked
+            continue
+        try:
+            json.dumps(value)
+        except (TypeError, ValueError):
+            continue  # not representable — skip rather than fail the message
+        clean[key] = _clip_value(value)
+    if not clean.get('id') or not clean.get('type'):
+        return None  # the renderer merges by id and switches on type
+    return clean
+
+
+def sanitize_enrichment(
+    blocks: object = None,
+    structured: object = None,
+) -> dict[str, object]:
+    """Allow-listed, size-capped structured payload for one message.
+
+    Empty dict means "nothing worth storing" (the caller then answers 400).
+    ``blocks`` and ``structured['blocks']`` are merged in that order, so a
+    body that carries both does not silently drop one of them.
+    """
+    out: dict[str, object] = {}
+    raw_struct = structured if isinstance(structured, dict) else {}
+    for key, value in raw_struct.items():
+        if key in STRUCTURED_FIELDS and value is not None and key != 'blocks':
+            out[key] = _clip_value(value)
+    for candidate in (raw_struct.get('blocks'), blocks):
+        if not isinstance(candidate, list):
+            continue
+        clean = [b for b in (_sanitize_block(item) for item in candidate[:MAX_ENRICHMENT_BLOCKS]) if b]
+        if clean:
+            out['blocks'] = clean
+    try:
+        json.dumps(out, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return {}
+    return out
+
+
+def enrichment_size(fields: dict[str, object]) -> int:
+    """Encoded byte size of a sanitized payload (what actually lands in SQLite)."""
+    return _encoded_size(fields)
+
+
+def fit_enrichment(fields: dict[str, object]) -> dict[str, object] | None:
+    """Drop trailing blocks until the payload fits the byte budget.
+
+    Returns the payload unchanged when it already fits, and None when even the
+    reduced form does not — the caller then refuses the write instead of
+    persisting a message that no longer restores to what the user saw.
+    """
+    if enrichment_size(fields) <= MAX_ENRICHMENT_BYTES:
+        return fields
+    blocks = fields.get('blocks')
+    if not isinstance(blocks, list):
+        return None
+    trimmed = list(blocks)
+    while trimmed:
+        trimmed.pop()  # newest block first: the tail is the least settled
+        candidate = {**fields, 'blocks': trimmed}
+        if enrichment_size(candidate) <= MAX_ENRICHMENT_BYTES:
+            return candidate
+    return None

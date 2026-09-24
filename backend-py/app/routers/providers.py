@@ -18,6 +18,48 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/providers')
 
 
+def _iso(epoch: float | None) -> str | None:
+    """Epoch seconds → ISO-8601 UTC, for the quota rows the UI renders."""
+    if epoch is None:
+        return None
+    from datetime import datetime, timezone
+
+    try:
+        return datetime.fromtimestamp(float(epoch), tz=timezone.utc).isoformat()
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _quota_blocks(entry: dict) -> dict:
+    """Serialize a provider's quotaEndpoint/quotaAuth for an API response.
+
+    ``quotaAuth.token`` is a secret like the API key, so it is never echoed —
+    only its set/masked shape, matching the apiKey treatment.
+    """
+    from app.lib.secrets import mask
+    from app.services.quota_endpoint import quota_auth_config, quota_endpoint_config
+
+    endpoint = quota_endpoint_config(entry)
+    auth = quota_auth_config(entry)
+    token = as_str(auth.get('token'))
+    return {
+        'quotaEndpoint': endpoint or None,
+        'quotaAuth': (
+            {
+                'type': as_str(auth.get('type'), 'none') or 'none',
+                'header': as_str(auth.get('header')),
+                'prefix': as_str(auth.get('prefix')),
+                'param': as_str(auth.get('param')),
+                'useProviderKey': auth.get('useProviderKey', True),
+                'tokenSet': bool(token),
+                'tokenMasked': mask(token),
+            }
+            if auth
+            else None
+        ),
+    }
+
+
 def _provider_to_dict(p: object) -> dict:
     """Convert a ProviderConfig or raw dict to the API response shape.
 
@@ -31,6 +73,14 @@ def _provider_to_dict(p: object) -> dict:
     from app.providers.api_format import normalize_api_format
 
     if isinstance(p, ProviderConfig):
+        quota = _quota_blocks(
+            {
+                'quotaEndpoint': p.quota_endpoint.model_dump(by_alias=True, exclude_none=True)
+                if p.quota_endpoint
+                else None,
+                'quotaAuth': p.quota_auth.model_dump(by_alias=True, exclude_none=True) if p.quota_auth else None,
+            }
+        )
         return {
             'id': p.id,
             'name': p.name,
@@ -40,6 +90,7 @@ def _provider_to_dict(p: object) -> dict:
             'apiKeySet': bool(p.api_key),
             'apiKeyMasked': mask(p.api_key),
             'autoFetch': p.auto_fetch,
+            **quota,
             'models': [
                 {
                     'id': m.id,
@@ -78,6 +129,7 @@ def _provider_to_dict(p: object) -> dict:
         'apiKeySet': bool(raw_key),
         'apiKeyMasked': mask(raw_key),
         'autoFetch': as_bool(pd.get('autoFetch', False)),
+        **_quota_blocks(pd),
         'models': as_list(pd.get('models', [])),
     }
 
@@ -88,13 +140,14 @@ def _public(entry: dict) -> dict:
     Mutating routes returned `{**entry, 'apiKeySet': ...}` straight from the
     providers store, which echoed the key back on every create, update and
     model add. `**entry` makes that leak invisible to a reader — serialize
-    through here instead.
+    through here instead. ``quotaAuth.token`` is a secret on the same footing.
     """
     from app.lib.secrets import mask
 
     public = {k: v for k, v in entry.items() if k != 'apiKey'}
     public['apiKeySet'] = bool(entry.get('apiKey'))
     public['apiKeyMasked'] = mask(str(entry.get('apiKey') or ''))
+    public.update(_quota_blocks(entry))
     return public
 
 
@@ -147,13 +200,23 @@ async def providersHealth(force: int = 0):
 # Static `/quota` must also precede `/{providerId}` or "quota" is captured as an id.
 @router.get('/quota')
 async def getQuota(provider: str | None = None, model: str | None = None, range: str = '30d'):
-    """Per-model quota estimates derived from local usage events.
+    """Per-model quota rows: provider-native when observed, local otherwise.
 
-    August has no native per-model quota API, so this reports tokens consumed
-    in the window from ``/api/usage`` events, mapped model → provider via the
-    configured provider list. ``limit`` is null (no configured cap) and
-    ``source`` is 'local'; a provider-native quota integration can extend this
-    later without changing the contract.
+    Two sources, never blended:
+
+    * **native** — the provider itself stated a budget, either in standard
+      ``x-ratelimit-*`` response headers (captured from every upstream call
+      into a small in-process observation store) or through an opt-in,
+      user-declared ``quotaEndpoint`` with data-driven JSON extractors. Only a
+      real stated limit produces ``source: 'native'``.
+    * **local** — tokens August itself consumed in the window, from
+      ``/api/usage`` events. ``limit`` stays null; this is an estimate of
+      spend, not a cap.
+
+    A native row is only reported when a limit was actually observed, so the
+    bar never implies a ceiling nobody published. The local token counts are
+    still carried on native rows (``prompt``/``completion``) so the UI can say
+    what August spent against the provider's own number.
 
     Query contract (frontend ``quota.ts``):
       • ``?provider=X``          → ``{results: ModelQuota[]}``
@@ -164,6 +227,8 @@ async def getQuota(provider: str | None = None, model: str | None = None, range:
     from datetime import datetime, timedelta, timezone
 
     from app.services import memory_store
+    from app.services.quota_endpoint import fetch_provider_quota, is_quota_endpoint_enabled
+    from app.services.quota_observation import quota_observations
 
     days = 7 if range in ('7d', '7') else 30
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
@@ -205,25 +270,104 @@ async def getQuota(provider: str | None = None, model: str | None = None, range:
         a['prompt'] += inp
         a['completion'] += out
 
-    def _row(providerName: str, modelId: str, a: dict) -> dict:
+    # Opt-in declared endpoints are refreshed here (bounded, best-effort) so
+    # the row the user asked for is current. A provider with no declared
+    # endpoint is never contacted by this route.
+    store = config_service.getProvidersStore()
+    for raw in as_list(store.get('providers', [])):
+        entry = as_dict(raw)
+        name = as_str(entry.get('name'))
+        if not name or (provider and name != provider):
+            continue
+        if not is_quota_endpoint_enabled(entry):
+            continue
+        try:
+            await fetch_provider_quota(
+                entry,
+                provider_name=name,
+                base_url=as_str(entry.get('baseUrl')),
+                api_key=as_str(entry.get('apiKey')),
+            )
+        except Exception as exc:
+            # Never fail the read for an optional enrichment: the local row
+            # below is still correct without it.
+            logger.debug('quota endpoint fetch failed for %s: %s', name, exc)
+
+    def _native(providerName: str, modelId: str) -> dict | None:
+        """Native fields for a model, or None when no real limit was stated."""
+        obs = quota_observations.best_for(providerName, modelId)
+        if obs is None or obs.limit is None:
+            return None
+        used = obs.used
+        percent = round(used / obs.limit * 100, 1) if used is not None and obs.limit > 0 else 0.0
         return {
+            'limit': obs.limit,
+            'remaining': obs.remaining,
+            # Provider-side consumption (limit - remaining). Deliberately its
+            # own field: it counts the provider's window, while `used` counts
+            # August's spend over the usage window. Printing one as the other
+            # would be a fabricated number.
+            'nativeUsed': used,
+            'percent': percent,
+            'resetsAt': _iso(obs.reset_at),
+            'observedAt': _iso(obs.observed_at),
+            'bucket': obs.bucket,
+        }
+
+    def _row(providerName: str, modelId: str, a: dict) -> dict:
+        native = _native(providerName, modelId)
+        row = {
             'provider': providerName,
             'model': modelId,
             'used': a['used'],
             'prompt': a['prompt'],
             'completion': a['completion'],
             'limit': None,
+            'remaining': None,
+            'nativeUsed': None,
             'percent': 0.0,
             'resetsAt': None,
+            'observedAt': None,
             'source': 'local',
         }
+        if native is None:
+            return row
+        # Native supplies the cap; the local split stays as what August spent.
+        row.update(
+            {
+                'limit': native['limit'],
+                'remaining': native['remaining'],
+                'nativeUsed': native['nativeUsed'],
+                'percent': native['percent'],
+                'resetsAt': native['resetsAt'],
+                'observedAt': native['observedAt'],
+                'source': 'native',
+            }
+        )
+        return row
 
     rows = [_row(p, m, a) for (p, m), a in sorted(agg.items())]
+    # A native observation for a model August has not called yet is still a
+    # real provider statement — surface it rather than hiding it until the
+    # first call. A model-less reading is an account-level quota and keeps an
+    # empty model id so nothing is attributed to a model that never claimed it.
+    observed_keys = {
+        (obs.provider, obs.model)
+        for obs in quota_observations.list_for_provider(provider or '')
+        if obs.limit is not None
+    }
+    for providerName, modelId in sorted(observed_keys):
+        if (providerName, modelId) in agg:
+            continue
+        rows.append(_row(providerName, modelId, {'used': 0, 'prompt': 0, 'completion': 0}))
+    rows.sort(key=lambda r: (r['provider'], r['model']))
+
     if provider and model:
         match = next((r for r in rows if r['provider'] == provider and r['model'] == model), None)
         if match is not None:
             return match
-        # No usage yet — still return a zeroed row so the UI never blanks.
+        # No usage and no observation yet — still return a zeroed row so the
+        # UI never blanks.
         return _row(provider, model, {'used': 0, 'prompt': 0, 'completion': 0})
     if provider:
         return {'results': [r for r in rows if r['provider'] == provider]}
@@ -306,6 +450,10 @@ async def createProvider(body: ProviderCreate):
         'autoFetch': False,
         'models': [],
     }
+    if body.quota_endpoint is not None:
+        entry['quotaEndpoint'] = body.quota_endpoint.model_dump(by_alias=True, exclude_none=True)
+    if body.quota_auth is not None:
+        entry['quotaAuth'] = body.quota_auth.model_dump(by_alias=True, exclude_none=True)
     providers_list = as_list(store.get('providers', []))
     if not isinstance(providers_list, list):
         providers_list = []
@@ -386,6 +534,23 @@ async def updateProvider(providerId: str, body: ProviderUpdate):
                 p['apiKey'] = body.api_key
             if body.enabled is not None:
                 p['enabled'] = body.enabled
+            if body.auto_fetch is not None:
+                p['autoFetch'] = body.auto_fetch
+            # Quota config is opt-in: a null block clears the declaration, an
+            # object stores it. Only a supported endpoint kind is accepted, so
+            # a typo fails the write rather than silently never being called.
+            if 'quota_endpoint' in body.model_fields_set:
+                if body.quota_endpoint is None:
+                    p.pop('quotaEndpoint', None)
+                    p.pop('quota_endpoint', None)
+                else:
+                    p['quotaEndpoint'] = body.quota_endpoint.model_dump(by_alias=True, exclude_none=True)
+            if 'quota_auth' in body.model_fields_set:
+                if body.quota_auth is None:
+                    p.pop('quotaAuth', None)
+                    p.pop('quota_auth', None)
+                else:
+                    p['quotaAuth'] = body.quota_auth.model_dump(by_alias=True, exclude_none=True)
             config_service.saveProvidersStore(store)
             model_service.invalidate_cache()
             try:

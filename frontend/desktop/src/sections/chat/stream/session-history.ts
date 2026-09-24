@@ -9,6 +9,7 @@ import {
   persistMessages,
   type SessionHistoryState,
 } from './session-stream-store';
+import { snapshotsFromMessages } from './subagent-blocks';
 
 const HISTORY_RETRY_DELAYS_MS = [1_000, 3_000, 8_000];
 const _historyRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -96,6 +97,20 @@ function contentFromBlocks(blocks: MessageBlock[]): string {
     .trim();
 }
 
+/** Identity a restored row should carry in the client transcript.
+ *
+ * Migration 048: a row the desktop authored keeps the client's own message id
+ * in `clientMessageId`. Using it as the local `id` is what makes the sync
+ * round trip — the next PATCH enrichment lands on the same message, and
+ * `reconcileHistory` matches by id instead of by content+timestamp. A row with
+ * no client id (server-derived, or written before 048) keeps its SQLite id,
+ * so nothing about the legacy restore changes. */
+function restoredId(row: Record<string, unknown>, index: number): string {
+  const clientId = row.clientMessageId ?? row.client_message_id;
+  if (typeof clientId === 'string' && clientId.trim()) return clientId.trim();
+  return String(row.id ?? `m_remote_${index}`);
+}
+
 function looksLikeJsonPayload(content: string): boolean {
   const trimmed = content.trim();
   return trimmed.startsWith('[') || trimmed.startsWith('{');
@@ -126,7 +141,7 @@ export function mapRemoteMessages(remote: unknown[]): ChatMessage[] {
     if (!text.trim() && !blocks && !structured.tool) continue;
     const isToolRow = role === 'tool';
     out.push({
-      id: String(r.id ?? `m_remote_${out.length}`),
+      id: restoredId(r, out.length),
       // Keep the tool role only when a tool payload rides along —
       // MessageBubble renders role:'tool' through ToolCallCard, which needs it.
       role: isToolRow && structured.tool ? 'tool' : isToolRow ? 'assistant' : role,
@@ -193,7 +208,26 @@ export function ensureSessionHistory(sessionId: string): Promise<void> {
       mapRemoteMessages(Array.isArray(res?.messages) ? res.messages : []),
       current.messages,
     );
-    updateSessionStreamState(sessionId, () => ({ messages, history: { status: 'ready' } }));
+    // Merge the restored worker timelines with anything already live. A live
+    // container always wins: after a reconnect the SSE stream may already be
+    // streaming fresh frames for a job whose restored snapshot is the
+    // transcript up to the last persisted write. Overwriting the live one
+    // with the stored one would visibly rewind the worker's output.
+    const restored = snapshotsFromMessages(messages);
+    const merged = new Map(restored);
+    for (const [jobId, state] of current.subagentBlocks ?? []) {
+      merged.set(jobId, state);
+    }
+    const subagentBlocks = new Map(
+      [...merged.entries()].sort(
+        (a, b) => (a[1].startedAt || 0) - (b[1].startedAt || 0),
+      ),
+    );
+    updateSessionStreamState(sessionId, () => ({
+      messages,
+      history: { status: 'ready' },
+      subagentBlocks,
+    }));
     persistMessages(sessionId, messages);
   }).catch(() => {
     if (useSessionStreamStore.getState().bySession[sessionId]?.history !== history) return;

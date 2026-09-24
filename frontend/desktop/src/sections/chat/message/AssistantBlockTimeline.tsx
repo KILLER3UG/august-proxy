@@ -21,10 +21,11 @@ import { SearchResultsTask } from '@/components/chat/SearchResultsCard';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { SubagentDelegateRow } from '@/components/chat/SubagentDelegateRow';
 import { ExploreGroup } from '@/components/chat/ExploreGroup';
+import { collectSnapshots, fromSnapshot, readSnapshot } from '../stream/subagent-blocks';
 import { classifyTool, normalizeToolName } from '@/lib/tool-classify';
 import { Markdown } from '../ChatMarkdown';
 import { useSmoothReveal } from '../hooks/useSmoothReveal';
-import type { ChatMessage, MessageBlock } from '@/types/chat';
+import type { ChatMessage, MessageBlock, SubagentSnapshot } from '@/types/chat';
 import type { SubagentBlockState } from '../chat-stream-manager';
 import { buildProcessSummaryLine } from '@/lib/process-summary';
 import {
@@ -133,6 +134,7 @@ function splitProcessAndFinal(blocks: DisplayBlock[]): {
   finalBlocks: DisplayBlock[];
   errorBlocks: DisplayBlock[];
   noticeBlocks: DisplayBlock[];
+  subagentBlocks: DisplayBlock[];
   hasFinalOutput: boolean;
 } {
   let lastFinalIdx = -1;
@@ -143,12 +145,15 @@ function splitProcessAndFinal(blocks: DisplayBlock[]): {
   const finalBlocks: DisplayBlock[] = [];
   const errorBlocks: DisplayBlock[] = [];
   const noticeBlocks: DisplayBlock[] = [];
+  const subagentBlocks: DisplayBlock[] = [];
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i];
     if (block.type === 'error') {
       errorBlocks.push(block);
     } else if (block.type === 'system') {
       noticeBlocks.push(block);
+    } else if (block.type === 'subagent') {
+      subagentBlocks.push(block);
     } else if (isFinalOutput(block)) {
       if (i === lastFinalIdx) finalBlocks.push(block);
       else processBlocks.push({ ...block, type: 'thinking' });
@@ -161,6 +166,7 @@ function splitProcessAndFinal(blocks: DisplayBlock[]): {
     finalBlocks,
     errorBlocks,
     noticeBlocks,
+    subagentBlocks,
     hasFinalOutput: finalBlocks.length > 0,
   };
 }
@@ -300,8 +306,39 @@ export function AssistantBlockTimeline({
   // progress no longer renders an inline model label.
   void modelId;
 
-  const { processBlocks, finalBlocks, errorBlocks, noticeBlocks, hasFinalOutput } =
-    splitProcessAndFinal(displayBlocks);
+  const {
+    processBlocks,
+    finalBlocks,
+    errorBlocks,
+    noticeBlocks,
+    subagentBlocks: persistedSubagentBlocks,
+    hasFinalOutput,
+  } = splitProcessAndFinal(displayBlocks);
+
+  // One row per worker, from three sources that overlap by design:
+  //   1. the live `subagentBlocks` map (SSE, this session),
+  //   2. the `subagent` blocks on this message (persisted with the transcript),
+  //   3. the backend roster (settled runs whose SSE block was evicted).
+  // A job already rendered from a live container is skipped by the later
+  // sources, which is what stops a reconnected session from showing the same
+  // worker twice — once live, once restored.
+  const liveSubagentStates = useMemo(
+    () => new Map(subagentBlocks ?? []),
+    [subagentBlocks],
+  );
+  const persistedSubagentStates = useMemo(
+    () => collectSnapshots(persistedSubagentBlocks).map(fromSnapshot),
+    [persistedSubagentBlocks],
+  );
+  /** Every worker this message can show, live snapshot preferred. */
+  const allSubagentStates = useMemo(() => {
+    const out = new Map<string, SubagentBlockState>();
+    for (const state of persistedSubagentStates) out.set(state.jobId, state);
+    for (const [jobId, state] of liveSubagentStates) out.set(jobId, state);
+    return new Map(
+      [...out.entries()].sort((a, b) => (a[1].startedAt || 0) - (b[1].startedAt || 0)),
+    );
+  }, [persistedSubagentStates, liveSubagentStates]);
 
   // Id-keyed expand overrides; missing key → default from status.
   // Tools: running → open, else collapsed. Thoughts: collapsed+clamped by
@@ -621,18 +658,30 @@ export function AssistantBlockTimeline({
         // call whose workers already streamed out (reloaded transcript)
         // still renders one settled row from the tool block itself.
         if (isSubagentCall) {
-          // A1 keystone: live SSE containers first, then the persisted roster
-          // (settled runs whose SSE block was evicted — the reload case the
-          // drawer was the only place that ever showed), then a stub from
-          // the spawn tool's own context as the last-resort fallback.
+          // A1 keystone: live SSE containers first, then the persisted
+          // transcript's own `subagent` blocks (the reload / reconnect case
+          // that used to leave a bare stub with no output), then the backend
+          // roster for runs that predate this message, then a stub from the
+          // spawn tool's own context as the last-resort fallback. Each source
+          // is filtered against the ones above it, so a worker renders once.
           const liveContainers = subagentBlocks
             ? Array.from(subagentBlocks.values())
                 .filter((s) => s.parentToolId === tool.id)
                 .sort((a, b) => a.startedAt - b.startedAt)
             : [];
-          const rosterForTool = (subagentRoster ?? []).filter(
-            (r) => r.jobId && !liveContainers.some((c) => c.jobId === r.jobId),
-          );
+          const claimed = new Set(liveContainers.map((c) => c.jobId));
+          const persistedForTool = persistedSubagentStates.filter((s) => {
+            if (claimed.has(s.jobId)) return false;
+            if (s.parentToolId !== tool.id) return false;
+            claimed.add(s.jobId);
+            return true;
+          });
+          const rosterForTool = (subagentRoster ?? []).filter((r) => {
+            if (!r.jobId || claimed.has(r.jobId)) return false;
+            claimed.add(r.jobId);
+            return true;
+          });
+
           if (liveContainers.length > 0) {
             for (const c of liveContainers) {
               tagged.push({
@@ -647,6 +696,31 @@ export function AssistantBlockTimeline({
                     startedAt={c.startedAt}
                     finishedAt={c.finishedAt}
                     workstream={c.workstream}
+                    state={c}
+                    defaultExpanded
+                    sessionId={liveSessionKey}
+                  />
+                ),
+              });
+            }
+          } else if (persistedForTool.length > 0) {
+            // The reload path: the transcript carries the worker's own
+            // timeline, so the row expands inline without any SSE replay.
+            for (const s of persistedForTool) {
+              tagged.push({
+                kind: 'block',
+                node: (
+                  <SubagentDelegateRow
+                    key={`sub_block_${s.jobId}`}
+                    jobId={s.jobId}
+                    agentId={s.agentId}
+                    task={s.task || ''}
+                    status={s.status}
+                    startedAt={s.startedAt}
+                    finishedAt={s.finishedAt}
+                    workstream={s.workstream}
+                    state={s}
+                    sessionId={liveSessionKey}
                   />
                 ),
               });
@@ -665,6 +739,8 @@ export function AssistantBlockTimeline({
                     startedAt={r.startedAt}
                     finishedAt={r.finishedAt}
                     workstream={r.workstream}
+                    state={allSubagentStates.get(r.jobId)}
+                    sessionId={liveSessionKey}
                   />
                 ),
               });
@@ -686,6 +762,7 @@ export function AssistantBlockTimeline({
                         : 'completed'
                   }
                   startedAt={tool.startedAt}
+                  sessionId={liveSessionKey}
                 />
               ),
             });
@@ -1159,6 +1236,49 @@ export function AssistantBlockTimeline({
       );
     });
 
+  /**
+   * Persisted worker rows that no spawn tool call claims.
+   *
+   * The backend only reports `parentToolUseId` when a worker was launched
+   * from inside a tool call; otherwise the block is anchored to the newest
+   * assistant message with no matching `toolCall` block. Rendering it here
+   * (outside the activity pack, next to the answer) is what stops a
+   * reconnected session from silently dropping a worker's output.
+   */
+  const renderOrphanSubagentRows = (blocks: DisplayBlock[]) => {
+    const claimed = new Set<string>();
+    for (const block of blocks) {
+      if (block.type !== 'toolCall' && block.type !== 'command') continue;
+      if (!block.tool) continue;
+      for (const state of allSubagentStates.values()) {
+        if (state.parentToolId === block.tool!.id) claimed.add(state.jobId);
+      }
+    }
+    const orphans = blocks
+      .map((block) => readSnapshot(block))
+      .filter((s): s is SubagentSnapshot => !!s && !claimed.has(s.jobId))
+      .map(fromSnapshot);
+    if (orphans.length === 0) return null;
+    return (
+      <div className="mt-1 space-y-1" data-testid="subagent-orphan-rows">
+        {orphans.map((s) => (
+          <SubagentDelegateRow
+            key={`orphan_${s.jobId}`}
+            jobId={s.jobId}
+            agentId={s.agentId}
+            task={s.task || ''}
+            status={s.status}
+            startedAt={s.startedAt}
+            finishedAt={s.finishedAt}
+            workstream={s.workstream}
+            state={s}
+            sessionId={liveSessionKey}
+          />
+        ))}
+      </div>
+    );
+  };
+
   const renderErrorBubble = (blocks: DisplayBlock[]) =>
     blocks.map((block, index) => {
       // A provider/turn failure rendered as its OWN message bubble — left
@@ -1280,6 +1400,7 @@ export function AssistantBlockTimeline({
         </ActivitySummary>
       )}
       {hasFinalOutput && renderFinal(finalBlocks)}
+      {renderOrphanSubagentRows(persistedSubagentBlocks)}
       {noticeBlocks.length > 0 && renderSystemNotices(noticeBlocks)}
       {errorBlocks.length > 0 && renderErrorBubble(errorBlocks)}
     </div>

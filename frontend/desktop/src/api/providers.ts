@@ -53,6 +53,44 @@ export interface ProviderModel {
   updatedAt?: string;
 }
 
+/** Dotted JSON paths into a declared quota endpoint's response. An empty or
+ *  unresolved path means "not stated" — never zero. */
+export interface QuotaExtract {
+  model?: string;
+  limit?: string;
+  remaining?: string;
+  used?: string;
+  reset?: string;
+}
+
+/** Opt-in, user-declared provider quota endpoint. `kind` is typed: 'json' is
+ *  the only supported response shape, because it is the only one with a
+ *  verified parser. A relative `url` is joined onto baseUrl under the same
+ *  exact-base rule as chat — August never invents /v1. */
+export interface QuotaEndpoint {
+  kind?: 'json';
+  url?: string;
+  method?: 'GET' | 'POST';
+  headers?: Record<string, string>;
+  body?: Record<string, unknown> | null;
+  model?: string;
+  bucket?: string;
+  extract?: QuotaExtract;
+}
+
+/** Auth for the declared quota endpoint. The token is write-only: the API
+ *  returns tokenSet/tokenMasked, never the secret. */
+export interface QuotaAuth {
+  type?: 'none' | 'bearer' | 'header' | 'query';
+  header?: string;
+  prefix?: string;
+  param?: string;
+  token?: string;
+  useProviderKey?: boolean;
+  tokenSet?: boolean;
+  tokenMasked?: string | null;
+}
+
 export interface Provider {
   id: string;
   name: string;
@@ -63,6 +101,9 @@ export interface Provider {
   /** Last-4 display only. The key itself is never returned over HTTP. */
   apiKeyMasked?: string | null;
   autoFetch?: boolean;
+  /** Absent/null → August never contacts a quota endpoint for this provider. */
+  quotaEndpoint?: QuotaEndpoint | null;
+  quotaAuth?: QuotaAuth | null;
   models: ProviderModel[];
   createdAt?: string;
   updatedAt?: string;
@@ -76,6 +117,8 @@ export interface ProviderCreate {
   apiKey?: string;
   enabled?: boolean;
   autoFetch?: boolean;
+  quotaEndpoint?: QuotaEndpoint | null;
+  quotaAuth?: QuotaAuth | null;
 }
 
 export type ProviderUpdate = Partial<Omit<ProviderCreate, 'id'>>;

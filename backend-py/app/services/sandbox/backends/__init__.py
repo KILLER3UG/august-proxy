@@ -12,6 +12,12 @@ if TYPE_CHECKING:
 _SELECT_TTL_S = 30
 _select_cache: tuple[float, 'EnforcementBackend'] | None = None
 
+# Tiers that are real OS-level containment. Everything else is policy
+# enforcement in the parent process, which the model shares a session with.
+STRONG_BACKENDS: frozenset[str] = frozenset(
+    {'container', 'windows-appcontainer', 'seatbelt', 'landlock', 'bwrap'}
+)
+
 
 def select_backend_name() -> 'EnforcementBackend':
     """Report the best available enforcement backend for this host.
@@ -55,6 +61,64 @@ def invalidate_backend_cache() -> None:
     """Re-probe on the next selection (after Docker starts/stops, env flips)."""
     global _select_cache
     _select_cache = None
+
+
+def strong_backend_active() -> bool:
+    """True when commands run inside real OS-level containment.
+
+    Code mode and any other path that spawns an interpreter directly must
+    consult this: a direct child process is NOT covered by the sandbox
+    backends, so a strong backend that is switched on makes the warm kernel
+    the weakest link in the chain.
+    """
+    return select_backend_name() in STRONG_BACKENDS
+
+
+def enforcement_report() -> dict[str, object]:
+    """Requested vs effective enforcement, plus the reason for any gap.
+
+    The distinction doctor/Settings must show. "The user asked for a
+    container and did not get one" and "the user never asked" look identical
+    if you only report the effective backend, which is how a requested-but-
+    unavailable tier previously presented as healthy.
+    """
+    effective = select_backend_name()
+    requested = 'soft'
+    reason = ''
+
+    if sys.platform == 'win32':
+        from app.services.sandbox.backends import windows as _windows
+
+        if _windows.opt_in():
+            requested = 'windows-appcontainer'
+            capable, why = _windows.probe()
+            if not capable and why:
+                reason = why
+            elif capable and effective != 'windows-appcontainer':
+                # Capable and requested, but a stronger opt-in tier won.
+                reason = ''
+
+    from app.services.sandbox.backends.container import container_enabled
+    from app.services.sandbox.backends.container import probe as _cprobe
+
+    if container_enabled():
+        requested = 'container'
+        available, why = _cprobe()
+        if not available and why:
+            reason = why
+        elif available and effective != 'container':
+            reason = ''
+
+    if requested == 'soft' and not reason:
+        reason = 'no OS-level sandbox tier is enabled on this host'
+
+    return {
+        'effective': effective,
+        'requested': requested,
+        'strong': effective in STRONG_BACKENDS,
+        'degraded': requested in STRONG_BACKENDS and effective not in STRONG_BACKENDS,
+        'reason': reason,
+    }
 
 
 async def run_with_best_backend(

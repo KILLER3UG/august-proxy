@@ -269,6 +269,34 @@ def _warm_key(workspace_path: str, session_id: str) -> str:
     return f'{(workspace_path or "").strip()}::{(session_id or "").strip()}'
 
 
+def warm_kernel_allowed() -> tuple[bool, str]:
+    """``(allowed, reason_when_not)`` for the warm code-mode kernel.
+
+    The warm kernel spawns ``python -I`` DIRECTLY (see ``WarmKernel._boot``),
+    so it does not pass through the sandbox backends. When a strong backend
+    is active that is a containment hole: every other tool call would be
+    confined while code mode quietly ran as a normal host process. The warm
+    kernel is therefore refused whenever a strong tier is in play, and the
+    caller falls back to the cold path — which goes through ``run_command``
+    and IS sandboxed.
+
+    Cost: code mode pays an interpreter boot per cell while a strong backend
+    is active. That is the correct trade — a warm cell that escapes the
+    sandbox is worse than a slow one that does not.
+    """
+    try:
+        from app.services.sandbox.backends import strong_backend_active
+
+        if strong_backend_active():
+            return False, (
+                'warm code kernel bypasses the active OS-level sandbox backend; '
+                'code cells run one-shot through the sandboxed run_command path instead'
+            )
+    except Exception as exc:  # pragma: no cover - defensive
+        return False, f'could not verify sandbox backend ({exc})'
+    return True, ''
+
+
 def acquire_warm_kernel(workspace_path: str, session_id: str, interpreter: str = '') -> WarmKernel:
     """Get (or create) the warm kernel for a (workspace, session) pair.
 
@@ -282,6 +310,17 @@ def acquire_warm_kernel(workspace_path: str, session_id: str, interpreter: str =
     k = WarmKernel(workspace_path, session_id, interpreter)
     _WARM_KERNELS[key] = k
     return k
+
+
+def shutdown_warm_kernels() -> int:
+    """Kill every live warm kernel (used when a strong backend turns on).
+
+    Returns how many were actually reaped, so callers can log a one-liner
+    instead of doing so on every code cell.
+    """
+    live = [k for k in _WARM_KERNELS.values() if k.proc is not None]
+    shutdown_all_warm_kernels()
+    return len(live)
 
 
 def shutdown_all_warm_kernels() -> None:

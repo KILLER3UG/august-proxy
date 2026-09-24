@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Callable
@@ -19,6 +20,8 @@ from fastapi.responses import StreamingResponse
 from app.json_narrowing import as_dict, as_float, as_int, as_list, as_str
 from app.services import event_log
 from app.services.workbench import workbench as wb
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/api/workbench')
 _chatTasks: set[asyncio.Task] = set()
@@ -153,6 +156,12 @@ def _startTurnTask(
             if _activeStreams.get(sessionId) is task:
                 _activeStreams.pop(sessionId, None)
             _notify_chat_idle()
+            # Re-arm the auto-turn. A subagent/daemon completion that landed
+            # after this turn's LAST queue drain finds no live turn to pick it
+            # up, and the wake it scheduled already gave up (it saw this turn
+            # still streaming). Without this the completion sat in the queue
+            # until the user's next message — the parent model never saw it.
+            _rearmAutoTurnIfPending(sessionId)
 
     task = asyncio.create_task(safeStream())
     _activeStreams[sessionId] = task
@@ -180,6 +189,66 @@ _AUTO_TURN_MAX_CONSECUTIVE = 4
 _autoTurnWakes: dict[str, asyncio.Task] = {}
 
 
+def _notifyAutoTurnCapReached(sessionId: str, consecutive: int) -> None:
+    """Tell the client why queued subagent results stopped being delivered.
+
+    Uses ``session.updated`` because that is an event the desktop realtime
+    bridge actually handles (it invalidates the workbench-session query so the
+    drawer/queue indicator refetches). Inventing an unhandled event name here
+    would reproduce the very "emitted but never rendered" bug this path exists
+    to prevent.
+    """
+    try:
+        pending = sum(
+            1
+            for e in wb.listQueuedMessages(sessionId)
+            if str(e.get('kind') or 'queue').lower() in ('subagent', 'daemon')
+        )
+    except Exception:
+        pending = 0
+    if not pending:
+        return
+    logger.warning(
+        '[auto-turn] %s: cap reached (%s consecutive); %s subagent result(s) held in queue',
+        sessionId,
+        consecutive,
+        pending,
+    )
+    try:
+        from app.services.realtime_bus import emit_realtime
+
+        emit_realtime(
+            'session.updated',
+            sessionId=sessionId,
+            action='auto_turn_cap_reached',
+            autoTurnCapReached=True,
+            pendingSubagentResults=pending,
+            consecutiveAutoTurns=consecutive,
+        )
+    except Exception:
+        pass
+
+
+def _rearmAutoTurnIfPending(sessionId: str) -> None:
+    """Schedule an auto-turn when subagent/daemon completions are still queued.
+
+    Called once a turn has fully ended (and its stream slot is released), so the
+    wake that fires after the coalesce window will find the session idle. Uses
+    the non-destructive ``listQueuedMessages`` peek — a user's own queued
+    message must never be consumed here, only subagent/daemon kinds.
+    """
+    try:
+        entries = wb.listQueuedMessages(sessionId)
+    except Exception:
+        return
+    if not any(str(e.get('kind') or 'queue').lower() in ('subagent', 'daemon') for e in entries):
+        return
+    try:
+        scheduleSubagentAutoTurn(sessionId)
+    except Exception:
+        pass
+
+
 async def _startSubagentAutoTurn(sessionId: str) -> None:
     """Run one turn from the session's queued subagent completions."""
     session = wb.getWorkbenchSession(sessionId)
@@ -190,6 +259,12 @@ async def _startSubagentAutoTurn(sessionId: str) -> None:
         return  # a turn is live — its next loop boundary drains the queue
     consecutive = int(getattr(session, '_autoTurnsSinceUser', 0) or 0)
     if consecutive >= _AUTO_TURN_MAX_CONSECUTIVE:
+        # The runaway guard is doing its job, but returning silently made a
+        # legitimate 5th wave of subagent results look like they were never
+        # produced. Say so — the results are still persisted in
+        # subagent_runs / the right drawer, they just are not being folded
+        # into the parent conversation until the user sends a message.
+        _notifyAutoTurnCapReached(sessionId, consecutive)
         return
     session._autoTurnsSinceUser = consecutive + 1  # type: ignore[attr-defined]
     entries = wb.drainQueuedMessages(
@@ -1802,9 +1877,13 @@ async def workbenchDoctor():
 
     # 5) Agent sandbox backend capability (Codex-like)
     try:
-        from app.services.sandbox import DEFAULT_SANDBOX_MODE, active_backend
+        from app.services.sandbox import DEFAULT_SANDBOX_MODE, enforcement_report
 
-        backend = active_backend()
+        report = enforcement_report()
+        backend = str(report.get('effective', 'soft'))
+        requested = str(report.get('requested', 'soft'))
+        degraded = bool(report.get('degraded'))
+        reason = str(report.get('reason', ''))
         detail_map = {
             'windows-appcontainer': 'Windows AppContainer isolation',
             'seatbelt': 'macOS Seatbelt (sandbox-exec)',
@@ -1812,17 +1891,33 @@ async def workbenchDoctor():
             'bwrap': 'Linux bubblewrap',
             'soft': 'Soft policy (cwd + network/path guards) — not OS isolation',
         }
+        detail = f'{detail_map.get(backend, backend)} · default {DEFAULT_SANDBOX_MODE}'
+        # A requested-but-unavailable tier is the case that used to read as
+        # healthy: the effective backend alone cannot distinguish "you asked
+        # for a container and did not get one" from "you never asked". Say it.
+        if degraded:
+            detail += f' · requested {requested} but inactive: {reason}'
+        elif not report.get('strong'):
+            detail += ' · not OS isolation'
         checks.append(
             {
                 'id': 'sandbox',
                 'label': 'Agent sandbox',
-                'ok': True,
-                'detail': f'{detail_map.get(backend, backend)} · default {DEFAULT_SANDBOX_MODE}',
+                # A degraded strong tier is NOT healthy. It stays `optional`
+                # so it never fails the overall doctor verdict, but the flag
+                # is false so no caller can read it as a working boundary.
+                'ok': not degraded,
+                'detail': detail,
                 'backend': backend,
+                'requested': requested,
+                'strong': bool(report.get('strong')),
+                'degraded': degraded,
+                'reason': reason,
                 'optional': True,
             }
         )
-        ok_count += 1
+        if not degraded:
+            ok_count += 1
     except Exception as exc:
         checks.append(
             {

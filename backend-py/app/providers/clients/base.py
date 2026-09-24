@@ -191,6 +191,33 @@ class ProviderResponse:
                 return None
         return None
 
+    @property
+    def rate_limit_observations(self) -> list[dict[str, object]]:
+        """Quota buckets this response's standard headers actually stated.
+
+        Pure read of the headers — empty when the provider published none,
+        which is the common case. Nothing here is inferred: only published
+        ``x-ratelimit-*`` / ``ratelimit-*`` values appear.
+        """
+        from app.services.quota_observation import parse_rate_limit_headers
+
+        return [
+            {'bucket': bucket, **values}
+            for bucket, values in sorted(parse_rate_limit_headers(self.headers).items())
+        ]
+
+    def captureQuota(self, provider: str, model: str = ''):
+        """Record this response's rate-limit headers in the quota store.
+
+        Called by the client right after the upstream answers, so every path
+        that produces a ``ProviderResponse`` (workbench chat, the Test button,
+        the ``/v1`` proxy adapters) feeds the same observation store. Returns
+        the observations stored — empty when the provider stated no budget.
+        """
+        from app.services.quota_observation import quota_observations
+
+        return quota_observations.record_headers(self.headers, provider=provider, model=model)
+
 
 def estimateStringTokens(s: str | None) -> int:
     """Estimate token count for a string using character heuristics.
@@ -443,6 +470,16 @@ class BaseProviderClient:
         baseUrl = as_str(cfg.get('baseUrl')) or as_str(self.config.get('baseUrl'), '')
         return normalize_provider_base_url(baseUrl)
 
+    def quotaProviderName(self) -> str:
+        """Identity quota observations are filed under.
+
+        The display name is what the quota rows and the local usage mapping
+        already key on, so an observed budget and a local token count for the
+        same model meet on the same row. A configured provider always has a
+        name; the id is only a fallback for hand-built client configs.
+        """
+        return as_str(self.config.get('name'), '') or as_str(self.config.get('id'), '')
+
     async def requestJson(
         self, method: str, url: str, headers: dict[str, str], body: dict[str, object] | None = None
     ) -> ProviderResponse:
@@ -479,7 +516,12 @@ class BaseProviderClient:
                     data: dict[str, object] | str = resp.json()
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     data = resp.text
-                return ProviderResponse(status=resp.status_code, headers=dict(resp.headers), body=data)
+                response = ProviderResponse(status=resp.status_code, headers=dict(resp.headers), body=data)
+                # Standard rate-limit headers are the provider stating its own
+                # budget. Record them verbatim; never derive a limit from
+                # anything else. No headers → nothing stored, no overhead.
+                response.captureQuota(self.quotaProviderName(), as_str(body.get('model')) if body else '')
+                return response
             except (httpx.ConnectError, httpx.PoolTimeout) as exc:
                 # Provably unprocessed: no connection carried the request
                 # (ConnectTimeout subclasses ConnectError and matches here).
@@ -557,6 +599,20 @@ class BaseProviderClient:
             try:
                 await rateGate.wait(host)
                 async with self.client.stream('POST', url, headers=headers, json=body, timeout=self.timeout) as resp:
+                    # Streaming responses carry the same standard rate-limit
+                    # headers as buffered ones, and streaming is the main chat
+                    # path — capture before the first event so a short turn
+                    # still updates the observation store.
+                    try:
+                        from app.services.quota_observation import quota_observations
+
+                        quota_observations.record_headers(
+                            dict(resp.headers),
+                            provider=self.quotaProviderName(),
+                            model=as_str(body.get('model')) if isinstance(body, dict) else '',
+                        )
+                    except Exception:
+                        pass
                     if resp.status_code == 429:
                         rateGate.recordRateLimit(host, parseRetryAfterMs(resp.headers.get('retry-after')))
                     if isRetryableStatus(resp.status_code) and attempt < self.maxRetries:

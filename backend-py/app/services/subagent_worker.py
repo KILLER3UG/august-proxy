@@ -141,9 +141,23 @@ async def runSubagent(
             task_id=taskId,
         )
         status = as_str(subResult.get('status'), 'completed')
+        resultText = as_str(subResult.get('result'), '')
         if status != 'completed':
-            return await _failAndBroadcast(as_str(subResult.get('error'), 'Unknown error'))
-        return {'taskId': taskId, 'agentId': agentId, 'status': status, 'result': as_str(subResult.get('result'), '')}
+            # Preserve the worker's accumulated output on EVERY non-clean exit.
+            # A capped run ('partial') puts its whole answer in `result`; this
+            # used to be discarded, so the parent model saw only
+            # "[loop cap reached]" and subagent_runs.result_full was persisted
+            # empty — real work silently lost. Keep the status distinct so the
+            # orchestrator's 'partial' branch stays reachable, and carry the
+            # payload so failed/cancelled runs can still surface partial work.
+            return {
+                'taskId': taskId,
+                'agentId': agentId,
+                'status': status,
+                'error': as_str(subResult.get('error'), 'Unknown error'),
+                'result': resultText,
+            }
+        return {'taskId': taskId, 'agentId': agentId, 'status': status, 'result': resultText}
     except Exception as exc:
         logger.exception('[SubagentWorker] error running agent %s', agentId)
         return await _failAndBroadcast(str(exc))

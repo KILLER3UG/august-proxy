@@ -17,33 +17,58 @@ function formatQuotaNumber(n: number): string {
   return n.toLocaleString();
 }
 
+function formatResetTime(iso: string | null): string | null {
+  if (!iso) return null;
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return null;
+  const minutes = Math.round((at - Date.now()) / 60_000);
+  if (minutes <= 0) return 'resets now';
+  if (minutes < 60) return `resets in ${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `resets in ${hours}h`;
+  return `resets ${new Date(at).toLocaleDateString()}`;
+}
+
 function QuotaRow({ q }: { q: ModelQuota }) {
+  const isNative = q.source === 'native';
   const hasLimit = q.limit != null && q.limit > 0;
+  const resetLabel = formatResetTime(q.resetsAt);
+  // Native rows show the provider's own accounting: limit − remaining. A
+  // limit with no remaining count can only be shown as the cap itself.
+  // Local rows have no cap, so they only show what August spent.
+  const usedText = isNative
+    ? q.nativeUsed != null
+      ? formatQuotaNumber(q.nativeUsed)
+      : q.remaining != null
+        ? `${formatQuotaNumber(q.remaining)} left`
+        : '—'
+    : formatQuotaNumber(q.used);
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="font-mono text-foreground truncate">{q.model || 'unknown'}</span>
+          <span className="font-mono text-foreground truncate">{q.model || 'account'}</span>
           <Badge variant="outline" className="text-[9px] py-0 h-4">{q.source}</Badge>
         </div>
         <div className="font-mono tabular-nums text-muted-foreground shrink-0 text-[11px]">
           {hasLimit ? (
-            <>
-              <span className="text-foreground">{formatQuotaNumber(q.used)}</span> / {formatQuotaNumber(q.limit!)} ({q.percent.toFixed(1)}%)
-            </>
+            <span className="text-foreground">
+              {usedText} / {formatQuotaNumber(q.limit!)}
+              {isNative && q.nativeUsed != null ? ` (${q.percent.toFixed(1)}%)` : ''}
+            </span>
           ) : (
-            <span className="text-foreground">{formatQuotaNumber(q.used)}</span>
+            <span className="text-foreground">{usedText}</span>
           )}
         </div>
       </div>
-      {hasLimit && (
+      {isNative && hasLimit && (
         <div
           className="h-1.5 rounded-full bg-muted overflow-hidden"
           role="progressbar"
           aria-valuenow={Math.round(q.percent)}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-label={`${q.model || 'Quota'} usage`}
+          aria-label={`${q.model || 'Account'} provider-reported usage`}
         >
           <div
             className="h-full rounded-full transition-all duration-300"
@@ -54,6 +79,12 @@ function QuotaRow({ q }: { q: ModelQuota }) {
           />
         </div>
       )}
+      {/* Every row says where its numbers came from — a local estimate is
+          August's own token count, never a provider cap. */}
+      <p className="text-[10px] text-muted-foreground font-mono">
+        {isNative ? 'Reported by provider' : 'Local estimate'}
+        {resetLabel ? ` · ${resetLabel}` : ''}
+      </p>
     </div>
   );
 }
@@ -84,14 +115,16 @@ export function QuotasPanel() {
       <SettingsEmptyState
         icon={Inbox}
         title="No quota data yet"
-        description="Once August records local model usage, the token counters for this window will appear here."
+        description="Once a provider reports a rate limit, or August records local model usage, the counters for this window will appear here."
       />
     );
   }
 
   return (
     <div className="space-y-4">
-      {data.map(({ provider, quotas }) => (
+      {data.map(({ provider, quotas }) => {
+        const nativeCount = quotas.filter((q) => q.source === 'native').length;
+        return (
         <Card key={provider}>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
@@ -100,17 +133,19 @@ export function QuotasPanel() {
                 {provider}
               </CardTitle>
               <span className="text-[10px] text-muted-foreground font-mono">
-                {quotas.length} model{quotas.length === 1 ? '' : 's'} · local usage window
+                {quotas.length} row{quotas.length === 1 ? '' : 's'}
+                {nativeCount > 0 ? ` · ${nativeCount} provider-reported` : ' · local usage window'}
               </span>
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
             {quotas.map((q) => (
-              <QuotaRow key={q.model} q={q} />
+              <QuotaRow key={`${q.model}:${q.source}`} q={q} />
             ))}
           </CardContent>
         </Card>
-      ))}
+        );
+      })}
     </div>
   );
 }

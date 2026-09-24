@@ -352,6 +352,71 @@ User-added providers, edited from **Settings → Models & Providers** or
 | `enabled` | Whether it is used |
 | `autoFetch` | Re-fetch models on startup when supported |
 | `models` | Cached catalog. Each model entry may carry its own `apiFormat` override (see below) |
+| `quotaEndpoint` | Optional, opt-in. A provider quota endpoint August may call. Absent ⇒ August never calls one (see below) |
+| `quotaAuth` | Optional auth for `quotaEndpoint` |
+
+**Provider-native quota (truthful numbers only).** August never guesses a
+provider's quota. A row in **Settings → Quotas** is `source: 'native'` only
+when the provider itself stated a limit, and it comes from exactly two places:
+
+1. **Standard rate-limit headers.** Every upstream response is checked for
+   `x-ratelimit-limit` / `-remaining` / `-reset` (and the `-requests` /
+   `-tokens` / `-input-tokens` / `-output-tokens` variants, plus the IETF
+   `ratelimit-*` spelling). Stated values are copied verbatim into a small
+   in-process observation store, keyed by provider + model. Reset hints are
+   accepted as a duration (`6m0s`, `1h30m`), a bare epoch, or an ISO-8601
+   timestamp. Observations older than an hour stop counting, so a stale header
+   never reads as a live budget.
+2. **An opt-in `quotaEndpoint` you declare.** August ships no provider quota
+   adapters here on purpose — an adapter nobody verified against a real
+   response is a made-up number. Instead you name the endpoint and the JSON
+   paths:
+
+```json
+"quotaEndpoint": {
+  "kind": "json",
+  "url": "usage",
+  "method": "GET",
+  "headers": { "x-tenant": "acme" },
+  "extract": {
+    "model": "data.model",
+    "limit": "data.quota.limit",
+    "remaining": "data.quota.remaining",
+    "used": "data.quota.used",
+    "reset": "data.quota.reset_at"
+  }
+},
+"quotaAuth": { "type": "bearer", "useProviderKey": true }
+```
+
+| `quotaEndpoint` field | Meaning |
+|-------|--------|
+| `kind` | Typed. `json` is the only supported response shape — it is the only one with a verified parser. An unknown kind is rejected at the write door (`422`) rather than silently never being called. |
+| `url` | Absolute URL (used exactly as written) or a path joined onto `baseUrl` under the **same exact-base rule as chat** — no `/v1` is invented, so a base ending in `/v1` yields `…/v1/usage`. |
+| `method` | `GET` (default) or `POST`; POST may carry a JSON `body`. |
+| `headers` | Extra non-secret request headers. |
+| `model` | Model id for an account-level endpoint that reports one aggregate budget. Optional — without it the reading stays account-level instead of being attributed to a model. |
+| `extract.*` | Dotted JSON paths, `a.b[0].c` supported. **A path that does not resolve means "not stated", never zero.** With `limit` absent but `used` present the limit is not invented either — no native row is produced. |
+
+| `quotaAuth` field | Meaning |
+|-------|--------|
+| `type` | `none` · `bearer` · `header` · `query`. |
+| `useProviderKey` | Default `true` — reuses the provider's stored key so the secret is stored once. |
+| `token` | For endpoints whose credential differs from the chat key. Write-only: the API returns `tokenSet`/`tokenMasked`, never the value. |
+| `header` / `prefix` | For `type: 'header'`: header name and optional value prefix. |
+| `param` | For `type: 'query'`: the query parameter name. |
+
+The fetch is best-effort and bounded (8 s, failures logged at debug). Any
+failure — unreachable host, non-JSON body, a path that does not resolve — falls
+back to the local estimate. Configure it in **Settings → Models & Providers** →
+provider → *Quota endpoint*.
+
+**What the two numbers mean.** `used` is always August's own token spend in
+the usage window. A native row adds `limit` / `remaining` / `nativeUsed`
+straight from the provider, where `nativeUsed = limit − remaining` counts the
+*provider's* window — a different quantity over a different period. The UI
+labels the row *Reported by provider* and prints the provider's number on the
+bar; the two are never substituted for one another.
 
 **Per-model `apiFormat` override (multi-format gateways):** a model entry may
 carry its own `apiFormat` — e.g. `"id": "claude-sonnet-4", "apiFormat":
@@ -445,18 +510,52 @@ process env.
 | `AUGUST_ARDUINO_CLI` | auto | Explicit arduino-cli path for `firmware_compile` |
 | `AUGUST_AVR_GCC` | auto | Explicit avr-gcc path for plain-C `firmware_compile` |
 | `AUGUST_NODE_EXE` | auto | Explicit Node runtime for the avr8js/wavedrom sidecar (defaults to the bundled Tauri node binary, then PATH) |
-| `AUGUST_CONTAINER_SANDBOX` | unset | `1` routes `run_command` through a Docker container (workspace bind-mounted at `/workspace`, `--network none` unless the session allows network, memory/CPU caps) instead of host-process policy. Opt-in: needs Docker Desktop running; silently falls back to the host backend when the daemon is unreachable or the session has no workspace to mount |
+| `AUGUST_CONTAINER_SANDBOX` | unset | `1` routes `run_command` through a Docker container (workspace bind-mounted at `/workspace`, `--network none` unless the session allows network, memory/CPU caps) instead of host-process policy. Opt-in: needs Docker Desktop running; falls back to the host backend when the daemon is unreachable or the session has no workspace to mount, and Settings says so explicitly |
 | `AUGUST_SANDBOX_IMAGE` | `python:3.12-slim` | Container image for the container backend — must carry a POSIX shell |
 | `AUGUST_SANDBOX_MEMORY` | `2g` | Container memory cap (`--memory`) |
 | `AUGUST_SANDBOX_CPUS` | `2` | Container CPU cap (`--cpus`) |
+| `AUGUST_SANDBOX_APPCONTAINER` | unset | Windows-only. `1` opts in to the AppContainer tier. The tier activates **only** when the host actually accepts a `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES` attribute list — see the note below. Most hosts (including Windows 11 26200) do not, so the effective tier stays `soft` |
+| `AUGUST_WARM_KERNEL_OFF` | unset | `1` disables the persistent code-mode interpreter (also disabled automatically whenever a strong backend is active) |
 
 ### Sandbox enforcement tiers and the egress filter
 
 Commands run through the strongest available backend: the container tier
 (when enabled + Docker reachable) → Seatbelt (macOS) → Landlock/bwrap
-(Linux) → AppContainer (Windows, when available) → the host policy layer
-(`soft`: path scans, redirect checks, command denylists). The active tier is
-reported by `active_backend()` and shown on the System health page.
+(Linux) → AppContainer (Windows, when proven available) → the host policy
+layer (`soft`: path scans, redirect checks, command denylists).
+
+`enforcement_report()` returns the distinction that used to be invisible:
+
+| field | meaning |
+|-------|---------|
+| `effective` | the tier commands actually run under right now |
+| `requested` | the strong tier you opted into, if any |
+| `strong` | true when `effective` is real OS-level containment |
+| `degraded` | true when a strong tier was requested but is **not** in force |
+| `reason` | the concrete cause (`docker daemon is not answering…`) |
+
+Doctor and Settings → Tool reach both render this. A requested-but-unavailable
+tier shows a degraded banner naming what you asked for, what you got, and
+why — it is never presented as a working boundary.
+
+**Windows AppContainer is currently unavailable on most hosts.**
+Availability is proven by building a real `SECURITY_CAPABILITIES` attribute
+list (the same call `CreateProcessW` needs), not by checking that symbols
+exist. On Windows 11 26200 the OS rejects that attribute with
+`ERROR_INVALID_PARAMETER` (87) even though the profile SID derives
+successfully and other attributes (`PARENT_PROCESS`, `HANDLE_LIST`) succeed
+on the same list. The tier therefore stays off and the honest answer is
+`soft`. An earlier revision checked only for symbol presence and reported
+"Windows AppContainer isolation" while every command ran soft — that label is
+not used unless the probe passes.
+
+**Code mode and the warm kernel.** The persistent code-mode interpreter
+spawns `python -I` directly and does not pass through the sandbox backends.
+While a strong backend is active it is therefore disabled, and code cells run
+one-shot through the sandboxed `run_command` path instead; kernels already
+running are stopped at the transition. The cost is an interpreter boot per
+cell — the alternative is code mode silently escaping a boundary the rest of
+the session is held to.
 
 When a session has `network: false`, sandboxed processes additionally get a
 loopback egress filter env-injected (`HTTP(S)_PROXY` → a local proxy that
@@ -466,6 +565,17 @@ HTTP-client traffic; raw sockets to hard-coded IPs still bypass it on the
 host — that is what the container tier's `--network none` is for. Loopback
 targets are exempt (`NO_PROXY=localhost,127.0.0.1`), so the model can still
 talk to dev servers it spawned.
+
+### Desktop app: sandbox opt-ins
+
+The Tauri shell forwards `AUGUST_CONTAINER_SANDBOX`, `AUGUST_SANDBOX_*`,
+`AUGUST_SANDBOX_APPCONTAINER` and `AUGUST_WARM_KERNEL_OFF` from the desktop
+process into the bundled backend (`src-tauri/src/backend.rs`,
+`applySandboxEnv`), on both the Python and Node spawn paths. Without this the
+variables were read by the backend but never reached it, so a desktop user
+setting `AUGUST_CONTAINER_SANDBOX=1` silently got soft enforcement.
+Forwarded values are logged at launch and the resulting state is shown in
+Settings → Tool reach.
 
 ### Arena & Debate routing evidence
 

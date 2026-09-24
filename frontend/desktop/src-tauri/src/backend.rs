@@ -1114,6 +1114,46 @@ fn applyNoWindow(cmd: &mut Command) {
     let _ = cmd;
 }
 
+/// Sandbox opt-in variables forwarded from the desktop process to the
+/// bundled backend.
+///
+/// `AUGUST_CONTAINER_SANDBOX` was previously backend-only: it was read by
+/// `app/services/sandbox/backends/container.py`, but the Tauri spawn built
+/// the child environment from scratch, so a user who set the variable could
+/// never reach the tier from the desktop app. The backend inherits the parent
+/// environment only where we do not overwrite it — forwarding explicitly is
+/// what makes the opt-in actually take effect, and keeps the launch log an
+/// honest record of whether the strong tier is in play.
+///
+/// These are opt-in switches only; no credential ever travels this list. The
+/// backend's own `noninteractive_env()` still scrubs `AUGUST_*` from anything
+/// the model can reach.
+const SANDBOX_ENV_KEYS: [&str; 6] = [
+    "AUGUST_CONTAINER_SANDBOX",
+    "AUGUST_SANDBOX_IMAGE",
+    "AUGUST_SANDBOX_MEMORY",
+    "AUGUST_SANDBOX_CPUS",
+    "AUGUST_SANDBOX_APPCONTAINER",
+    "AUGUST_WARM_KERNEL_OFF",
+];
+
+/// Forward the sandbox opt-in variables to the backend child.
+/// Returns the keys that were actually forwarded, for the launch log.
+fn applySandboxEnv(cmd: &mut Command) -> Vec<String> {
+    let mut forwarded = Vec::new();
+    for key in SANDBOX_ENV_KEYS {
+        if let Ok(value) = env::var(key) {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                continue;
+            }
+            cmd.env(key, &trimmed);
+            forwarded.push(format!("{key}={trimmed}"));
+        }
+    }
+    forwarded
+}
+
 /// Drop a stored Child that has already exited so we can respawn cleanly.
 fn reclaimDeadChild(app: &AppHandle) {
     let Some(state) = app.try_state::<BackendProcess>() else {
@@ -1392,6 +1432,15 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                             File::create(devNullPath()).expect("failed to open null")
                         })))
                         .stderr(Stdio::from(logFile));
+                    // Sandbox opt-ins (container / AppContainer) must reach the
+                    // backend or the user's setting silently does nothing.
+                    let sandboxEnv = applySandboxEnv(&mut cmd);
+                    if !sandboxEnv.is_empty() {
+                        log::info!(
+                            "[backend] forwarding sandbox env to backend: {}",
+                            sandboxEnv.join(", ")
+                        );
+                    }
                     // The AppData backend has no checkout-relative binaries tree.
                     // Hand the firmware sidecar our bundled Node path so a clean
                     // install does not require Node on PATH. Preserve valid overrides.
@@ -1522,6 +1571,15 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                 File::create(devNullPath()).expect("failed to open null")
             })))
             .stderr(Stdio::from(logFile));
+        // Same opt-in forwarding as the python path — the Node fallback backend
+        // reads the same sandbox flags, so a user opt-in must not be Python-only.
+        let sandboxEnv = applySandboxEnv(&mut cmd);
+        if !sandboxEnv.is_empty() {
+            log::info!(
+                "[backend] forwarding sandbox env to node backend: {}",
+                sandboxEnv.join(", ")
+            );
+        }
         applyNoWindow(&mut cmd);
 
         match cmd.spawn() {
@@ -2532,6 +2590,92 @@ mod wipe_stale_tree_tests {
             0,
         );
         assert!(matches!(outcome, WipeOutcome::Clean));
+    }
+}
+
+#[cfg(test)]
+mod sandbox_env_tests {
+    use super::{applySandboxEnv, SANDBOX_ENV_KEYS};
+    use std::process::Command;
+
+    /// The desktop process environment is process-global, so these tests
+    /// only ever set keys from our own allowlist and clean up after
+    /// themselves. They run in one process, so they stay serial.
+    fn withVars(vars: Vec<(&str, &str)>, f: impl FnOnce(Vec<String>)) {
+        let saved: Vec<(String, Option<String>)> = vars
+            .iter()
+            .map(|(k, _)| ((*k).to_string(), std::env::var(k).ok()))
+            .collect();
+        for (k, v) in &vars {
+            std::env::set_var(k, v);
+        }
+        let forwarded = applySandboxEnv(&mut Command::new("echo"));
+        f(forwarded);
+        for (k, v) in saved {
+            match v {
+                Some(value) => std::env::set_var(&k, value),
+                None => std::env::remove_var(&k),
+            }
+        }
+    }
+
+    #[test]
+    fn container_opt_in_reaches_the_backend_child() {
+        // The regression this guards: AUGUST_CONTAINER_SANDBOX was read by the
+        // backend but never forwarded, so a desktop user setting it got soft
+        // enforcement with no indication anything was wrong.
+        withVars(
+            vec![("AUGUST_CONTAINER_SANDBOX", "1")],
+            |forwarded| {
+                assert!(
+                    forwarded.iter().any(|e| e == "AUGUST_CONTAINER_SANDBOX=1"),
+                    "container opt-in must be forwarded, got {forwarded:?}"
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn blank_values_are_not_forwarded() {
+        // An empty/whitespace value is indistinguishable from unset for the
+        // backend's truthy check; forwarding it would only muddy the launch log.
+        withVars(vec![("AUGUST_SANDBOX_CPUS", "   ")], |forwarded| {
+            assert!(
+                !forwarded.iter().any(|e| e.starts_with("AUGUST_SANDBOX_CPUS")),
+                "blank values must not be forwarded, got {forwarded:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn values_are_trimmed() {
+        withVars(vec![("AUGUST_SANDBOX_MEMORY", " 4g ")], |forwarded| {
+            assert!(
+                forwarded.iter().any(|e| e == "AUGUST_SANDBOX_MEMORY=4g"),
+                "values must be trimmed, got {forwarded:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn allowlist_carries_no_credential_shaped_keys() {
+        // These keys are forwarded verbatim into a child process. Nothing
+        // credential-shaped may ever join the list.
+        for key in SANDBOX_ENV_KEYS {
+            let upper = key.to_ascii_uppercase();
+            assert!(
+                upper.starts_with("AUGUST_SANDBOX_")
+                    || upper == "AUGUST_CONTAINER_SANDBOX"
+                    || upper == "AUGUST_WARM_KERNEL_OFF",
+                "unexpected key on the sandbox env allowlist: {key}"
+            );
+            for bad in ["KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"] {
+                assert!(
+                    !upper.contains(bad),
+                    "credential-shaped key on the sandbox env allowlist: {key}"
+                );
+            }
+        }
     }
 }
 

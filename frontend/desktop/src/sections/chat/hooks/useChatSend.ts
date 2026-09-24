@@ -42,6 +42,7 @@ import {
   clearComposerDraft,
   persistMessages,
 } from '../message-storage';
+import { scheduleTranscriptSync } from '../stream/transcript-sync';
 import { enqueueOfflineMessage, type OfflineSendOutcome } from '../offline-queue-store';
 import { $gateway } from '@/store/gateway';
 import type { ModelItem } from '../model-display';
@@ -684,6 +685,10 @@ export function useChatSend(opts: UseChatSendOptions) {
         nextMessages = [...currentMessages, userMsg];
         setMessages(nextMessages);
       }
+      // Rich-transcript sync (migration 048): push the client-authored bubble
+      // (its id, text and attachments) so a backend restore can rebuild it.
+      // Debounced and fire-and-forget — the send below is NOT waiting on it.
+      scheduleTranscriptSync(sessionId, nextMessages);
       // The dormant per-turn auto-route fetch is gone (AGENTS.md:
       // there is NO automatic turn rerouting — the backend loop never existed
       // and the opt-in flag could only ever be written '0'). Arena/Debate

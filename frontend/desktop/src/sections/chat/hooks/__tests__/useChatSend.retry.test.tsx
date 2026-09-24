@@ -46,6 +46,9 @@ vi.mock('@/store/sessions', () => ({
   renameSession: vi.fn(),
   isPlaceholderTitle: () => false,
   deriveSnippetTitle: () => '',
+  // The send path schedules a fire-and-forget transcript sync (048), which
+  // checks the delete tombstone like every other transcript writer.
+  isSessionIdTombstoned: () => false,
   useSessionsStore: Object.assign(() => undefined, {
     getState: () => ({ sessions: [] }),
     setState: vi.fn(),

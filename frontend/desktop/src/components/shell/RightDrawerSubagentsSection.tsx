@@ -18,8 +18,12 @@ import {
 } from '@/api/workbench';
 import { getSubagentTranscript } from '@/api/subagents';
 import type { WorkbenchTodo } from '@/types/workbench';
-import type { MessageBlock, AppendBlockEvent, SubagentBlockState } from '@/types/chat';
+import type { MessageBlock, SubagentBlockState } from '@/types/chat';
 import { appendBlockEvent } from '@/sections/chat/stream/append-block-event';
+import {
+  subagentEventToBlockEvent,
+  type SubagentStreamEvent,
+} from '@/sections/chat/stream/apply-subagent-event';
 import { getAgentRoleLabel } from '@/lib/tool-labels';
 import { useSessionStreamStore } from '@/sections/chat/stream/session-stream-store';
 import { SubagentTimeline } from '@/components/chat/SubagentTimeline';
@@ -137,27 +141,23 @@ function fmtElapsed(sec: number): string {
   return `${m}m ${String(r).padStart(2, '0')}s`;
 }
 
-/** Map persisted orchestrator transcript events into chat blocks. The
- *  workbench emit dicts use the same camelCase types the live SSE path feeds
- *  appendBlockEvent, so replay is a filtered pass-through. Unknown event
- *  types (started/done/heartbeat) are skipped. */
-const REPLAY_TYPES = new Set([
-  'thinking',
-  'text',
-  'content',
-  'finalOutput',
-  'toolCall',
-  'command',
-  'toolResult',
-  'error',
-]);
-
+/** Map persisted orchestrator transcript events into chat blocks.
+ *
+ *  The transcript jsonl holds the backend's `subagent*` vocabulary
+ *  (`subagentText`, `subagentToolCall`, `subagentToolResult`, `subagentRetry`,
+ *  `subagentWarning`, `subagentDone`), NOT the block vocabulary
+ *  `appendBlockEvent` speaks. This used to filter on `text`/`thinking`/
+ *  `toolCall`/`finalOutput` and then pass the frame through unchanged — a set
+ *  no transcript line is ever in, so every replay rendered an empty timeline and
+ *  the drawer silently fell back to the `result_full` column. Routing through
+ *  the same mapping the live reducer uses means the two cannot disagree about
+ *  what the vocabulary is. */
 function transcriptToBlocks(events: Array<Record<string, unknown>>): MessageBlock[] {
   let blocks: MessageBlock[] = [];
   for (const ev of events) {
-    const type = typeof ev.type === 'string' ? ev.type : '';
-    if (!REPLAY_TYPES.has(type)) continue;
-    blocks = appendBlockEvent(blocks, ev as unknown as AppendBlockEvent);
+    const inner = subagentEventToBlockEvent(ev as unknown as SubagentStreamEvent);
+    if (!inner) continue;
+    blocks = appendBlockEvent(blocks, inner);
   }
   return blocks;
 }

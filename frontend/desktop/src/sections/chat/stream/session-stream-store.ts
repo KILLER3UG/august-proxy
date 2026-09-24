@@ -17,6 +17,7 @@ import {
   persistMessages as persistMessagesToStorage,
   hasStoredMessages,
 } from '../message-storage';
+import { snapshotsFromMessages } from './subagent-blocks';
 
 export interface SessionHistoryState {
   status: 'missing' | 'loading' | 'ready';
@@ -261,7 +262,11 @@ export function getOrInitSessionStreamState(sessionId: string | null): SessionSt
     messages: initialMessages,
     history: { status: hasStoredMessages(sessionId) ? 'ready' : 'missing' },
     subagentPrompts: new Map(),
-    subagentBlocks: new Map(),
+    // Rehydrate the worker timeline from the persisted transcript. Without
+    // this a session switch (or the LRU cap evicting a session) leaves the
+    // inline rows and the drawer blank even though the transcript on disk
+    // still carries every worker's output.
+    subagentBlocks: snapshotsFromMessages(initialMessages),
     toolProgress: new Map(),
     workbenchBtw: null,
     workbenchSession,

@@ -27,15 +27,35 @@ vi.mock('@/api/subagents', () => ({
   stopAll: vi.fn(),
   steer: vi.fn(),
   continueWorkstream: vi.fn(),
+  // Real orchestrator transcript vocabulary. The jsonl written by
+  // `_append_transcript` carries `subagent*` frame types, NOT the block types
+  // `appendBlockEvent` speaks — an earlier version of this mock returned
+  // `{type:'text'}`, which the backend never writes, so the replay path looked
+  // covered while nothing exercised it.
   getSubagentTranscript: vi.fn(async () => ({
-    events: [{ type: 'text', content: 'replayed output' }],
+    events: [
+      { type: 'subagentStart', taskId: 'goodall-1', jobId: 'goodall-1', agentId: 'goodall', goal: 'Inspect the backend flow' },
+      { type: 'subagentToolCall', jobId: 'goodall-1', id: 'tu_1', name: 'read_file', input: { path: 'app/main.py' }, status: 'running' },
+      { type: 'subagentText', jobId: 'goodall-1', content: 'replayed output' },
+      { type: 'subagentWarning', jobId: 'goodall-1', message: 'worker was steered' },
+      { type: 'subagentDone', jobId: 'goodall-1', status: 'completed', result: 'the final answer' },
+    ],
   })),
 }));
 
 vi.mock('@/components/chat/SubagentTimeline', () => ({
-  SubagentTimeline: ({ state }: { state: { status: string } }) => (
-    <div data-testid="subagent-timeline" data-status={state.status}>
-      Live subagent timeline
+  SubagentTimeline: ({ state }: { state: { status: string; blocks?: Array<{ type: string; content?: string }> } }) => (
+    <div
+      data-testid="subagent-timeline"
+      data-status={state.status}
+      data-block-count={state.blocks?.length ?? 0}
+      data-block-types={state.blocks?.map((block) => block.type).join(',') ?? ''}
+    >
+      {state.blocks?.map((block, i) => (
+        <span key={i} data-testid={`subagent-timeline-block-${block.type}`}>
+          {block.content}
+        </span>
+      ))}
     </div>
   ),
 }));
@@ -87,6 +107,40 @@ describe('RightDrawerSubagentsSection', () => {
 
     fireEvent.click(screen.getByTestId('right-drawer-subagent-goodall-1'));
     expect(screen.getByTestId('right-drawer-subagent-view-goodall-1')).toBeInTheDocument();
+  });
+
+  it('replays the persisted work transcript for a settled worker', async () => {
+    // The reason this test exists: `transcriptToBlocks` filtered on
+    // `text`/`toolCall`/`finalOutput` against a jsonl that only ever contains
+    // `subagentText`/`subagentToolCall`/`subagentDone`, so every settled
+    // worker's tab rendered "Waiting for output…" forever after a reload even
+    // though the full transcript was on disk.
+    listAgentsMock.mockResolvedValue({
+      agents: [
+        {
+          taskId: 'goodall-1',
+          agentId: 'goodall',
+          goal: 'Inspect the backend flow',
+          status: 'completed',
+        },
+      ],
+      meta: {},
+    });
+    renderSection();
+
+    fireEvent.click(await screen.findByTestId('right-drawer-subagent-goodall-1'));
+    const timeline = await screen.findByTestId('subagent-timeline');
+
+    // `appendBlockEvent` coalesces adjacent text frames, so assert on what the
+    // user can read rather than on a block count that depends on merge rules.
+    expect(Number(timeline.getAttribute('data-block-count'))).toBeGreaterThan(0);
+    expect(timeline.textContent).toContain('the final answer');
+    expect(timeline.textContent).toContain('replayed output');
+    expect(timeline.textContent).toContain('worker was steered');
+    // The worker's own tool call replays too (its bytes live on `block.tool`,
+    // not `block.content`, so assert on the type list rather than the text).
+    expect(timeline.getAttribute('data-block-types')).toMatch(/tool/);
+    expect(screen.queryByText('Waiting for output…')).not.toBeInTheDocument();
   });
 
   it('list is clutter-free: no harness bar, delegate button, goal card or debug panels', async () => {

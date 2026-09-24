@@ -98,6 +98,39 @@ def _read_transcript(task_id: str, limit: int = 200) -> list[dict[str, Any]]:
         return []
 
 
+async def _acquire_slot(sem: asyncio.Semaphore, timeout: float) -> bool:
+    """Take one permit, or return False — never losing a permit on either exit.
+
+    ``await asyncio.wait_for(sem.acquire(), t)`` leaks permits two ways, and a
+    leaked permit wedges a session rather than slowing it: later spawns queue
+    for the whole timeout and then fail with an empty result. (1) On timeout
+    ``wait_for`` cancels the inner future, which can strand a permit that was
+    granted in that same tick. (2) Any other exception — a Stop-all
+    ``CancelledError`` while queued — propagates with the outcome ambiguous.
+    ``asyncio.wait`` leaves the task ours to resolve, so the permit is handed
+    back if the acquisition wins the race after we give up on it.
+    """
+    acquire = asyncio.ensure_future(sem.acquire())
+
+    def _reap(task: "asyncio.Future[Any]") -> None:
+        # Cancel lost the race: the task may still have taken the permit, so
+        # give it back if it did. `exception()` on a cancelled task raises.
+        if not task.cancelled() and task.exception() is None:
+            sem.release()
+
+    try:
+        done, _ = await asyncio.wait({acquire}, timeout=timeout)
+    except BaseException:
+        acquire.add_done_callback(_reap)
+        acquire.cancel()
+        raise
+    if not done:
+        acquire.add_done_callback(_reap)
+        acquire.cancel()
+        return False
+    return not acquire.cancelled()
+
+
 def _record_run(handle: SubagentHandle) -> None:
     """Persist one run row (fire-and-forget, never raises).
 
@@ -124,6 +157,14 @@ def _record_run(handle: SubagentHandle) -> None:
             'SELECT id FROM subagent_runs WHERE task_id = ?', (handle.taskId,)
         ).fetchone()
         full = summary  # full blob for perfect drawer rendering (up to 20k)
+        if len(full) > 20000:
+            # result_full is the drawer's RECOVERY field — what a user reads
+            # after a reload when the live event stream is gone. A head-only
+            # `full[:20000]` here silently deleted the answer of every long
+            # child, which is the same failure the completion notice had.
+            from app.services.workbench.workbench import _truncateToolOutput
+
+            full = _truncateToolOutput(full, 20000)[0]
         try:
             todos_json = _json.dumps(getattr(handle, 'todos', []) or [], ensure_ascii=False)[:20000]
         except Exception:
@@ -204,6 +245,52 @@ def _record_run(handle: SubagentHandle) -> None:
         conn.commit()
     except Exception:
         logger.debug('subagent run record failed (non-fatal)', exc_info=True)
+
+
+# Statuses the subagent drawer treats as "still working". Anything in this set
+# that survives a process restart is a lie: no orchestrator outlives the process,
+# so nothing can move those rows again and the tab spins forever on a 2 s poll.
+_ORPHANABLE_STATUSES = ('pending', 'queued', 'starting', 'running', 'stalling')
+
+
+def sweep_orphaned_runs() -> int:
+    """Mark every active-but-unowned ``subagent_runs`` row terminal at startup.
+
+    A restart mid-run used to leave the row at ``running``: the drawer maps that
+    to "working", keeps polling, and never resolves — so a worker that died with
+    the previous process is presented as one still thinking. This runs before any
+    request is served, so the orchestrator holds no handles yet and EVERY active
+    row is by definition orphaned.
+
+    The recorded partial result is deliberately left alone. The point is to stop
+    the UI asserting liveness it cannot support, not to destroy what the child
+    managed to write down before it died.
+    """
+    try:
+        from app.services.memory_store import _conn
+
+        conn = _conn()
+        placeholders = ', '.join('?' for _ in _ORPHANABLE_STATUSES)
+        cur = conn.execute(
+            f'UPDATE subagent_runs SET status = ?, error = ?, '
+            "finished_at = COALESCE(finished_at, datetime('now')) "
+            f'WHERE status IN ({placeholders})',
+            (
+                'lost',
+                'Lost: the backend restarted while this sub-agent was running.',
+                *_ORPHANABLE_STATUSES,
+            ),
+        )
+        conn.commit()
+        count = int(cur.rowcount or 0)
+        if count:
+            logger.info('[Orchestrator] marked %d orphaned subagent run(s) as lost', count)
+        return count
+    except Exception:
+        # A missing table (fresh install, migrations not yet applied) must not
+        # block boot — the drawer just degrades to its previous behaviour.
+        logger.debug('subagent orphan sweep skipped (non-fatal)', exc_info=True)
+        return 0
 
 
 class SubagentSpawnRequest:
@@ -721,6 +808,32 @@ class SubagentOrchestrator:
             pass
         return True
 
+    async def _failNoWorkerSlot(self, handle: SubagentHandle, error: str) -> None:
+        """Record a slot-acquire timeout as a terminal, visible failure.
+
+        Shared by the per-session and global gates so both leave the same
+        receipt: the handle is marked failed, the transcript and the
+        `subagent_runs` row get it, and `subagentFailed` fires. Without the
+        event and the row a queued-then-abandoned spawn is indistinguishable
+        from one that never existed.
+        """
+        handle.status = 'failed'
+        handle.error = error
+        handle.finishedAt = time.time()
+        _append_transcript(
+            handle.taskId,
+            {
+                "type": "subagentDone",
+                "taskId": handle.taskId,
+                "jobId": handle.taskId,
+                "status": "failed",
+                "error": error,
+                "ts": time.time(),
+            },
+        )
+        _record_run(handle)
+        await self._fireEvent('subagentFailed', handle.toDict())
+
     async def _runWithSlot(
         self,
         handle: SubagentHandle,
@@ -751,29 +864,33 @@ class SubagentOrchestrator:
         handle.lastActivityAt = time.time()
         # 1.9: per-session gate first (so a session at its own maxConcurrent
         # waits without holding a global slot), then the global worker pool.
-        if session_semaphore is not None and session_semaphore is not self._semaphore:
-            try:
-                await asyncio.wait_for(session_semaphore.acquire(), timeout=SLOT_ACQUIRE_TIMEOUT_SECONDS)
-            except asyncio.TimeoutError:
-                handle.status = 'failed'
-                handle.error = 'Timed out waiting for a per-session worker slot (maxConcurrent reached).'
-                handle.finishedAt = time.time()
-                _append_transcript(handle.taskId, {"type": "subagentDone", "taskId": handle.taskId, "jobId": handle.taskId, "status": "failed", "error": handle.error, "ts": time.time()})
-                _record_run(handle)
-                await self._fireEvent('subagentFailed', handle.toDict())
-                return
+        #
+        # Whichever permit we manage to take must come back on EVERY exit from
+        # here, including a CancelledError raised between the two acquires: the
+        # old shape took the session permit, had the global acquire cancelled
+        # by a Stop-all, and returned without releasing — because the releasing
+        # `finally` is further down and was never entered. Each leaked permit
+        # permanently shrinks the pool until that session's later spawns queue
+        # for the full SLOT_ACQUIRE_TIMEOUT_SECONDS and fail with an empty
+        # result, which reads to the user as a subagent that produced nothing.
+        holdsSessionSlot = False
         try:
-            await asyncio.wait_for(self._semaphore.acquire(), timeout=SLOT_ACQUIRE_TIMEOUT_SECONDS)
-        except asyncio.TimeoutError:
             if session_semaphore is not None and session_semaphore is not self._semaphore:
+                if not await _acquire_slot(session_semaphore, SLOT_ACQUIRE_TIMEOUT_SECONDS):
+                    await self._failNoWorkerSlot(
+                        handle, 'Timed out waiting for a per-session worker slot (maxConcurrent reached).'
+                    )
+                    return
+                holdsSessionSlot = True
+            if not await _acquire_slot(self._semaphore, SLOT_ACQUIRE_TIMEOUT_SECONDS):
+                await self._failNoWorkerSlot(
+                    handle, 'Timed out waiting for a worker slot (all sub-agent slots busy).'
+                )
+                return
+        except BaseException:
+            if holdsSessionSlot and session_semaphore is not None and session_semaphore is not self._semaphore:
                 session_semaphore.release()
-            handle.status = 'failed'
-            handle.error = 'Timed out waiting for a worker slot (all sub-agent slots busy).'
-            handle.finishedAt = time.time()
-            _append_transcript(handle.taskId, {"type": "subagentDone", "taskId": handle.taskId, "jobId": handle.taskId, "status": "failed", "error": handle.error, "ts": time.time()})
-            _record_run(handle)
-            await self._fireEvent('subagentFailed', handle.toDict())
-            return
+            raise
         try:
             handle.status = 'running'
             handle.touch()

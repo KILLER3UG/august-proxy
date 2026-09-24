@@ -235,6 +235,40 @@ All paths below are relative to `/api/workbench`.
 | `GET /api/providers/{id}/models` | List stored models for a provider |
 | `POST /api/providers/{id}/discover` | Probe live `/models` endpoint (read-only — store not mutated) |
 | `POST /api/providers/{id}/models/{modelId}/test` | Probe a model (accepts any non-empty reply as success) |
+| `GET /api/providers/quota` | Per-model quota rows — provider-native when observed, local otherwise |
+
+#### `GET /api/providers/quota`
+
+| Query | Response |
+|-------|----------|
+| *(none)* | `{results: [{provider, quotas: ModelQuota[]}]}` |
+| `?provider=X` | `{results: ModelQuota[]}` |
+| `?provider=X&model=Y` | one `ModelQuota` |
+| `range=7d` \| `30d` (default) | local usage window |
+
+`ModelQuota`:
+
+| Field | Meaning |
+|-------|---------|
+| `used` / `prompt` / `completion` | August's own token spend in the window (from `/api/usage` events) |
+| `limit` | Provider-stated cap, or `null`. Never inferred — a provider that published no cap keeps `null` |
+| `remaining` | Provider-stated remaining budget (native rows) |
+| `nativeUsed` | `limit − remaining` — the **provider's** consumption over **its** window, kept separate from `used` |
+| `percent` | `nativeUsed / limit × 100`, rounded; `0` when there is no limit |
+| `resetsAt` / `observedAt` | ISO-8601 reset time / when the reading was taken |
+| `source` | `native` when the provider stated a real limit, otherwise `local` |
+
+A native row appears only when a limit was actually observed — from standard
+`x-ratelimit-*` response headers captured into a bounded in-process store
+(1 h TTL) or from the provider's opt-in `quotaEndpoint` (see
+[CONFIGURATION.md](CONFIGURATION.md#dataprovidersjson)). Any endpoint failure
+leaves the row `local`; the read never fails because of optional enrichment.
+
+`PATCH /api/providers/{id}` accepts `quotaEndpoint` and `quotaAuth` (both
+nullable; an object declares one, `null` clears it). `quotaEndpoint.kind` is
+typed and only `json` is accepted — anything else is a `422` rather than a
+silent never-call. `quotaAuth.token` is write-only: responses carry
+`tokenSet`/`tokenMasked`.
 
 ### `/api/models`
 
