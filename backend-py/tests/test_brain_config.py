@@ -44,6 +44,7 @@ _ALLCamelKeys = {
     'outcomeIntervalHours',
     'outcomeWindowDays',
     'episodicRetentionDays',
+    'usageRetentionDays',
     'consolidationModelSummarize',
     # Propose-only preference-retire pass (toggle + window).
     'preferenceRetireEnabled',

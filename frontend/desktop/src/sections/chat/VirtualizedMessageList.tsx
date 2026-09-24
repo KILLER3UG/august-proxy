@@ -43,7 +43,10 @@ export function VirtualizedMessageList({
   });
 
   if (virtRef) {
-    virtRef.current = virt;
+    // Short transcripts render the DOM map below. Do not expose the disabled
+    // virtualizer to search navigation: scrollToIndex() has no measurements in
+    // that mode and the DOM fallback must be used instead.
+    virtRef.current = useVirt ? virt : null;
   }
 
   if (!useVirt) {

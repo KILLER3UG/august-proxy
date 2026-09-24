@@ -109,3 +109,27 @@ def test_episodic_retention_sweep(isolatedData):
     # Wired into the scheduled pass (summary reports the count).
     summary = run_consolidation()
     assert 'episodicSwept' in summary
+
+
+def test_usage_retention_sweep(isolatedData):
+    """Usage analytics are bounded by the consolidation maintenance window."""
+    from app.services.memory_store import _conn
+    from app.services.memory_store.consolidation import _sweep_usage, run_consolidation
+
+    conn = _conn()
+    conn.execute(
+        "INSERT INTO usage_events (session_id, model, input_tokens, output_tokens, created_at) "
+        "VALUES ('s-old', 'test-model', 10, 5, datetime('now', '-400 days'))"
+    )
+    conn.execute(
+        "INSERT INTO usage_events (session_id, model, input_tokens, output_tokens, created_at) "
+        "VALUES ('s-new', 'test-model', 2, 1, datetime('now', '-2 days'))"
+    )
+    conn.commit()
+
+    assert _sweep_usage() >= 1
+    rows = conn.execute(
+        "SELECT session_id FROM usage_events WHERE session_id IN ('s-old', 's-new')"
+    ).fetchall()
+    assert {r['session_id'] for r in rows} == {'s-new'}
+    assert 'usageSwept' in run_consolidation()

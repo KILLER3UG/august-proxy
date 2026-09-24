@@ -139,6 +139,10 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # M-4: episodic_timeline retention window in days — the sweep
     # in consolidation._sweep_episodic prunes rows older than this.
     ('episodicRetentionDays', 'episodic_retention_days', 90, 'num'),
+    # Usage events are durable analytics, but not a second transcript store.
+    # Keep a generous default and let operators shorten it for long-lived
+    # installs; the consolidation pass owns the sweep.
+    ('usageRetentionDays', 'usage_retention_days', 365, 'num'),
     # OQ5 (Part 21, 2026-09-04): preference-retire propose-only pass. A
     # preference fact untouched for this many days AND never quoted
     # (use_count 0) is proposed for retirement (non-destructive — a human

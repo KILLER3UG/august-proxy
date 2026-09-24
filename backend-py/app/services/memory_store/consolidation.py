@@ -148,6 +148,39 @@ def _sweep_episodic() -> int:
         return 0
 
 
+def _sweep_usage() -> int:
+    """Delete token-usage rows older than the configured retention window.
+
+    ``usage_events`` is analytics state rather than the durable transcript, so
+    it should not grow forever on a long-lived install. The existing
+    consolidation cadence is the single maintenance window for this sweep.
+    """
+    days = 365
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        raw_days = getRuntimeConfig().get('usageRetentionDays', 365)
+        days = int(float(str(raw_days)))
+    except (TypeError, ValueError):
+        pass
+    days = max(30, min(3650, days))
+    conn = _conn()
+    try:
+        cur = conn.execute(
+            "DELETE FROM usage_events "
+            "WHERE julianday(created_at) IS NOT NULL "
+            "AND julianday(created_at) < julianday('now', ?)",
+            (f'-{days} days',),
+        )
+        conn.commit()
+        return cur.rowcount or 0
+    except Exception:
+        # Fresh/legacy stores may not have usage_events yet; maintenance must
+        # remain best-effort and never block other consolidation work.
+        logger.debug('usage sweep failed', exc_info=True)
+        return 0
+
+
 def _retire_stale_preferences() -> tuple[int, list[str]]:
     """OQ5 (Part 21, 2026-09-04): propose-only preference retire.
 
@@ -527,6 +560,12 @@ def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
             summary['episodicSwept'] = _sweep_episodic()
         except Exception:
             logger.debug('episodic sweep failed', exc_info=True)
+        # Token usage is analytics state, not the durable transcript. Sweep it
+        # in the same maintenance window so long-lived installs stay bounded.
+        try:
+            summary['usageSwept'] = _sweep_usage()
+        except Exception:
+            logger.debug('usage sweep failed', exc_info=True)
         # M-11: automation ledger/notepad/incidents retention rides the same
         # maintenance window (runs 30 d, closed incidents 90 d).
         try:
