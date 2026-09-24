@@ -5,6 +5,12 @@ so it is only meaningful while the key is specific to the arguments that were
 approved. The dangerous shape is a wildcard or an unsandboxed-escape key — the
 latter is produced by a failure fallback, so a transient exception could
 otherwise turn one "run this unsandboxed" click into permanent policy.
+
+A second, orthogonal guard keys on the *call* rather than the key: a command the
+permission axis classified as destructive or network is never made permanent,
+even when its grant key is as narrow as the command that was approved. The UI
+withholds the choice; this module enforces it, so a hand-rolled request cannot
+route around the banner.
 """
 
 from __future__ import annotations
@@ -47,6 +53,28 @@ def test_unknown_scope_still_falls_back_to_once() -> None:
     assert effective_scope('write_file:/x', 'forever')[0] == 'once'
     assert effective_scope('write_file:/x', '')[0] == 'once'
     assert effective_scope('write_file:/x', ' ALWAYS ')[0] == 'always'
+
+
+# ── destructive / network may not outlive the chat ───────────────────────
+
+@pytest.mark.parametrize('cat', ['destructive', 'network'])
+def test_destructive_or_network_is_never_durable(cat: str) -> None:
+    allowed, reason = durable_grant_allowed('run_command:cmd:9f2c1a', [cat])
+    assert allowed is False
+    assert cat in reason
+    assert 'this chat' in reason
+    assert effective_scope('run_command:cmd:9f2c1a', 'always', [cat])[0] == 'session'
+
+
+def test_benign_categories_stay_durable() -> None:
+    assert effective_scope('run_command:cmd:9f2c1a', 'always', ['read', 'build'])[0] == 'always'
+    # external is not in the non-durable set — the sandbox owns that boundary.
+    assert effective_scope('run_command:cmd:9f2c1a', 'always', ['external'])[0] == 'always'
+
+
+def test_categories_do_not_affect_the_narrower_scopes() -> None:
+    assert effective_scope('run_command:cmd:a', 'once', ['destructive']) == ('once', '')
+    assert effective_scope('run_command:cmd:a', 'session', ['network']) == ('session', '')
 
 
 # ── wiring into the real grant path ──────────────────────────────────────
@@ -98,3 +126,49 @@ def test_once_grant_return_shape_is_usable(saved_grants: list[str]) -> None:
     assert wb.has_tool_grant(session, 'write_file', {'path': '/tmp/ws/a.py'}) is True
     # once is consumed by the match above
     assert wb.has_tool_grant(session, 'write_file', {'path': '/tmp/ws/a.py'}) is False
+
+
+# ── the pending-mutation card reads the same classification ───────────────
+
+def test_pending_mutation_carries_categories_for_the_card(saved_grants: list[str]) -> None:
+    session = _session('/tmp/ws')
+    destructive = wb.createPendingMutation(session, 'run_command', {'command': 'rm -rf build'})
+    assert destructive is not None
+    assert 'destructive' in destructive['categories']
+
+    # The stored classification is what the clamp uses — no second classifier.
+    stored, note = wb.add_tool_grant(
+        session, 'run_command', {'command': 'rm -rf build'},
+        scope='always', categories=destructive['categories'],
+    )
+    assert stored == 'session'
+    assert note
+    assert saved_grants == []
+
+    safe = wb.createPendingMutation(session, 'run_command', {'command': 'git status'})
+    assert safe is not None
+    assert safe['categories'] == ['read']
+
+
+def test_destructive_grant_is_clamped_even_without_caller_categories(
+    saved_grants: list[str],
+) -> None:
+    """A caller that omits categories still gets the clamp (recomputed)."""
+    session = _session('/tmp/ws')
+    args = {'command': 'rm -rf build'}
+    stored, note = wb.add_tool_grant(session, 'run_command', args, scope='always')
+    assert stored == 'session'
+    assert note
+    assert saved_grants == []
+
+
+def test_non_command_tool_has_no_categories(saved_grants: list[str]) -> None:
+    session = _session('/tmp/ws')
+    mutation = wb.createPendingMutation(session, 'write_file', {'path': '/tmp/ws/a.py'})
+    assert mutation is not None
+    assert mutation['categories'] == []
+    stored, note = wb.add_tool_grant(
+        session, 'write_file', {'path': '/tmp/ws/a.py'},
+        scope='always', categories=mutation['categories'],
+    )
+    assert (stored, note) == ('always', '')

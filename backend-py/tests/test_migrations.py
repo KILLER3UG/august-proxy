@@ -355,7 +355,7 @@ def test_migration_033_drops_legacy_auto_memories(conn):
     )
     conn.execute(
         "CREATE VIRTUAL TABLE auto_memories_fts USING fts5("
-        "key, content, content='auto_memories', content_rowid='rowid')"
+        "key, content='auto_memories', content_rowid='id')"
     )
     conn.execute(
         "INSERT INTO auto_memories (key, content) VALUES ('conv_summary_wb_1', 'junk')"
@@ -376,3 +376,51 @@ def test_migration_033_drops_legacy_auto_memories(conn):
     conn.commit()
     run_migrations(conn)
     assert 'auto_memories' not in _tables(conn)
+
+
+# ── 044 double ownership: benign "already present" is applied, not failed ───
+#
+# facts.description has TWO owners: migration 044's ALTER and the ensure_column
+# fast path. The fast path adds the column first, so 044's ALTER fails with
+# "duplicate column name" on every boot. That is the desired end state, not a
+# failure — the old runner logged a warning, burned the retry budget, then
+# blacklisted 044 with a misleading "schema is missing ..." ERROR and left a row
+# in the failure ledger. The runner now records such a migration as applied and
+# clears the ledger row.
+
+
+def test_ensure_schema_lands_044_as_applied_not_failed(conn):
+    from app.services.memory_schema import ensure_schema
+
+    ensure_schema(conn)
+
+    cols = {r['name'] for r in conn.execute('PRAGMA table_info(facts)').fetchall()}
+    assert 'description' in cols
+
+    applied = {r[0] for r in conn.execute('SELECT version FROM schema_migrations').fetchall()}
+    assert 44 in applied, '044 must be recorded as applied, not left pending/failed'
+
+    failed = {r[0] for r in conn.execute('SELECT version FROM schema_migration_failures').fetchall()}
+    assert 44 not in failed, '044 must not poison the failure ledger'
+
+
+def test_already_applied_error_clears_a_prior_failure_ledger_row(conn):
+    """A re-run of a double-owned migration heals a stale failure entry."""
+    from app.services.memory_schema import ensure_schema
+
+    ensure_schema(conn)
+    # Simulate a boot that recorded 044 as failing (attempts below the
+    # skip-for-good budget, so it is re-attempted, not skipped).
+    conn.execute(
+        "INSERT OR REPLACE INTO schema_migration_failures (version, name, error, attempts)"
+        " VALUES (44, '044_facts_description.sql', 'duplicate column name: description', 1)"
+    )
+    conn.execute('DELETE FROM schema_migrations WHERE version = 44')
+    conn.commit()
+
+    run_migrations(conn)
+
+    failed = {r[0] for r in conn.execute('SELECT version FROM schema_migration_failures').fetchall()}
+    assert 44 not in failed
+    applied = {r[0] for r in conn.execute('SELECT version FROM schema_migrations').fetchall()}
+    assert 44 in applied

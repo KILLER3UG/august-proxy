@@ -127,7 +127,9 @@ async function readSseStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   handlers: WorkbenchEventHandlers,
   signal?: AbortSignal,
-  idleTimeoutMs = 60_000
+  idleTimeoutMs = 60_000,
+  /** Called once per dispatched frame — used to measure real progress. */
+  onFrame?: () => void,
 ): Promise<boolean> {
   const decoder = new TextDecoder();
   let buffer = '';
@@ -164,6 +166,7 @@ async function readSseStream(
       const frameSeq = frameId !== null && Number.isFinite(Number(frameId)) ? Number(frameId) : undefined;
       dispatchWorkbenchEvent(frameEvent, payload, handlers, frameSeq);
       if (frameSeq !== undefined) handlers.onSeq?.(frameSeq, frameEvent);
+      onFrame?.();
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === 'AbortError') throw e;
       // Ignore non-JSON data lines
@@ -247,7 +250,7 @@ export async function streamWorkbenchReconnect(
   handlers: WorkbenchEventHandlers,
   signal?: AbortSignal,
   sinceSeq?: number,
-  options?: { maxRetries?: number }
+  options?: { maxRetries?: number; stableProgressMs?: number }
 ): Promise<void> {
   let currentSeq = sinceSeq;
 
@@ -275,6 +278,9 @@ export async function streamWorkbenchReconnect(
   // Per-turn callers keep the default bounded budget so a transient user
   // error surfaces instead of silently retrying.
   const maxRetries = options?.maxRetries ?? 10;
+  // A connection only earns a budget reset once it has carried frames for at
+  // least this long. Terminal events end the loop outright (no budget needed).
+  const stableProgressMs = options?.stableProgressMs ?? 2_000;
   // Backoff is capped so even unbounded retry doesn't stall for minutes.
   const maxBackoffMs = 15000;
   let retryCount = 0;
@@ -314,13 +320,20 @@ export async function streamWorkbenchReconnect(
         throw new Error('ReadableStream reader not available');
       }
 
-      // Reset retry count on successful connection establishment
-      retryCount = 0;
       // The link is back, so the "Stream interrupted — reconnecting" banner is
       // already stale. It is otherwise cleared only by `onSeq` or loop exit,
       // and a session that reconnects while idle produces no events — the
       // banner would sit there until the next turn happened to start.
+      // NOTE: this does NOT reset the retry budget. A 200 only proves the
+      // socket opened; a backend/proxy that answers 200 and closes the body
+      // immediately (or an idle stream that dies on the 120s timer) would
+      // otherwise reset the counter on every pass and retry forever.
       clearStreamReconnecting(sessionId);
+      // Progress bookkeeping for this connection attempt: any dispatched
+      // frame counts, and the connection must survive `stableProgressMs`
+      // before those frames are treated as real progress worth a budget reset.
+      let framesSeen = 0;
+      const attemptStartedAt = Date.now();
 
       // Intercept terminal handlers so reconnect stops when the turn ends.
       let terminalSeen = false;
@@ -359,12 +372,28 @@ export async function streamWorkbenchReconnect(
         }
       };
 
-      const receivedTerminalEvent = await readSseStream(reader, streamHandlers, signal, 120_000);
+      const receivedTerminalEvent = await readSseStream(
+        reader,
+        streamHandlers,
+        signal,
+        120_000,
+        () => { framesSeen += 1; },
+      );
 
       // If we saw a terminal event (either returned true from readSseStream or flag was set),
       // we stop retrying and return.
       if (receivedTerminalEvent || terminalSeen || signal?.aborted) {
         break;
+      }
+
+      // Budget reset on STABLE, MEANINGFUL progress only: this connection
+      // actually carried frames AND stayed up long enough that the work is
+      // advancing. A 200 that immediately closes, or one that dies on the
+      // 120s idle timer without a single frame, keeps consuming the budget so
+      // a flapping/dead backend still exhausts `maxRetries` instead of
+      // looping forever.
+      if (framesSeen > 0 && Date.now() - attemptStartedAt >= stableProgressMs) {
+        retryCount = 0;
       }
 
       // Otherwise, the connection dropped prematurely without a terminal event.

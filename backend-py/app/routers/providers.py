@@ -205,8 +205,6 @@ async def getQuota(provider: str | None = None, model: str | None = None, range:
         a['prompt'] += inp
         a['completion'] += out
 
-    resets_at = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
-
     def _row(providerName: str, modelId: str, a: dict) -> dict:
         return {
             'provider': providerName,
@@ -216,7 +214,7 @@ async def getQuota(provider: str | None = None, model: str | None = None, range:
             'completion': a['completion'],
             'limit': None,
             'percent': 0.0,
-            'resetsAt': resets_at,
+            'resetsAt': None,
             'source': 'local',
         }
 

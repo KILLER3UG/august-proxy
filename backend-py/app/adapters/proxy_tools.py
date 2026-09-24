@@ -18,6 +18,12 @@ It is reachable only behind require_gateway_key (default-closed 403; desktop
 binds 127.0.0.1), and execution still runs through the sandbox policy +
 non-overridable hardline checks. Do not share the gateway key with parties
 you would not let run shell commands on this machine.
+
+Because a declared tool runs locally, the proxy must never *add* it on the
+client's behalf: ``mcp__workspace__bash`` is injected into the managed tool
+definitions only when ``AUGUST_PROXY_SHELL`` enables that capability
+(``proxy_shell_tools_enabled``). Ordinary gateway inference is shell-free by
+default; the typed workbench shell tools are a separate surface and unaffected.
 """
 
 from __future__ import annotations
@@ -42,6 +48,7 @@ from app.adapters.proxy_tool_defs import (
     get_proxy_openai_tool_definitions_for_anthropic,
     get_tool_definition_name,
     openai_to_anthropic_tool_definition,
+    proxy_shell_tools_enabled,
     sanitize_anthropic_tool_definition,
     sanitize_tool_schema,
 )
@@ -90,6 +97,7 @@ __all__ = [
     'get_canonical_managed_anthropic_openai_web_tools',
     'get_proxy_openai_tool_definitions',
     'get_proxy_openai_tool_definitions_for_anthropic',
+    'proxy_shell_tools_enabled',
     'get_tool_definition_name',
     'append_missing_tools',
     'appendMissingAnthropicTools',

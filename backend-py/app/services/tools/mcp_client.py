@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
 import time
 import uuid
@@ -436,6 +435,26 @@ async def _startServerProcess(serverId: str) -> asyncio.subprocess.Process | Non
         return await _startServerProcessLocked(serverId, server)
 
 
+def _child_env(server: dict[str, object]) -> dict[str, str]:
+    """Build the environment for an MCP stdio child process.
+
+    Scrubbed by default: starts from the vetted ``noninteractive_env`` (which
+    drops credential-shaped vars AND every ``AUGUST_*`` pointer — the child must
+    not learn where the brain DB lives or inherit API keys — and forces
+    non-interactive, non-paging behaviour), then layers ONLY the per-server
+    configured env on top. Previously this handed the child the parent's entire
+    ``os.environ``. The configured env is applied after the scrub so a server's
+    own explicitly-set keys (e.g. its personal API token) still reach it.
+    """
+    from app.lib.async_subprocess import noninteractive_env
+
+    env = noninteractive_env()
+    env_cfg = server.get('env', {})
+    if isinstance(env_cfg, dict):
+        env.update({str(k): str(v) for k, v in env_cfg.items()})
+    return env
+
+
 async def _startServerProcessLocked(
     serverId: str, server: dict[str, object]
 ) -> asyncio.subprocess.Process | None:
@@ -452,10 +471,8 @@ async def _startServerProcessLocked(
         server['status'] = 'running'
         server['transport'] = transport
         return None  # no local process; discoverTools handles HTTP
-    env = dict(os.environ)
-    env_cfg = server.get('env', {})
-    if isinstance(env_cfg, dict):
-        env.update({str(k): str(v) for k, v in env_cfg.items()})
+    # Scrubbed child environment (see _child_env).
+    env = _child_env(server)
     args_list = [as_str(a) for a in as_list(server.get('args'))]
     # Defense-in-depth: registration validated this, but a hand-edited
     # mcp-servers.json must still not launch a shell or a catastrophic

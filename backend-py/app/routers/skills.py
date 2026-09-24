@@ -91,7 +91,14 @@ async def getSkill(name: str, workspace: str = Query('')):
     skill = skill_service.get(name, workspace or None)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
-    return {**skill, **_usage_fields(str(skill.get('name') or name))}
+    return {
+        **skill,
+        # The raw parse is snake_case while every other skill response is
+        # camelCase, so the detail pane's `selected.createdBy` read undefined
+        # and labelled an agent-authored skill "bundled".
+        'createdBy': str(skill.get('created_by') or ''),
+        **_usage_fields(str(skill.get('name') or name)),
+    }
 
 
 @router.post('')

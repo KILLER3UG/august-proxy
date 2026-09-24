@@ -24,6 +24,7 @@ import {
   persistMessages,
 } from '../message-storage';
 import { setVerboseMode, toggleVerboseMode } from '@/lib/verbose-mode';
+import type { ChatSendFn } from './useChatSend';
 
 export type ExamSeed = { topic?: string; files?: string[] };
 export type AugPreviewState = {
@@ -44,7 +45,7 @@ export interface UseChatVoiceCommandsOptions {
   /** Workbench session id (wb_…) for goal/compact endpoints. */
   workbenchSessionId?: string | null;
   /** Latest send() from useChatSend — read via ref so the bus need not re-subscribe. */
-  send: (textOverride?: string) => Promise<void>;
+  send: ChatSendFn;
   setExamActive: Dispatch<SetStateAction<boolean>>;
   setExamSeed: Dispatch<SetStateAction<ExamSeed>>;
   setAugPreview: Dispatch<SetStateAction<AugPreviewState | null>>;

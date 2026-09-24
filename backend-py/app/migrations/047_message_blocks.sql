@@ -1,0 +1,29 @@
+-- 047: durable structured transcript blocks on chat messages.
+--
+-- The `messages` table stored ONE string per row: the assistant's final text
+-- (or a small {content, tool_calls, tool_use_id, name} envelope for tool
+-- turns). Every other thing the chat bubble renders lived only in the
+-- desktop localStorage transcript, so a localStorage wipe / restore-from-
+-- backend path rebuilt the conversation from flat text: tool calls and their
+-- results, reasoning, attachments, todos, usage and stop-reason chips were
+-- all gone, and the tool_calls envelope was re-stringified by the frontend
+-- into a single JSON blob the user actually saw.
+--
+-- blocks_json carries the STRUCTURED per-message payload (the block timeline
+-- plus the sibling fields the UI reads: thinking, tools, attachments, todos,
+-- usage, turnEnd, …) as one JSON object. It is additive:
+--
+--   * NULL for every pre-047 row — absence means "legacy text-only message",
+--     and readers fall back to `content` exactly as before.
+--   * `content` is NOT changed, so the `messages_fts` content-sync triggers
+--     (session search / snippets) keep indexing the same text as before.
+--   * No DEFAULT: a bare DEFAULT '{}' would make every legacy row claim to
+--     carry a structured (empty) transcript, which reads as "restored and
+--     complete" when it is the opposite. NULL = not recorded.
+--
+-- Consumers: app/services/memory_store/transcript_blocks.py (encode/decode),
+-- save_workbench_session_sot (writer) and get_messages (reader), surfaced by
+-- GET /api/sessions/{id}/messages and mapped by the desktop
+-- session-history.ts remote restore.
+
+ALTER TABLE messages ADD COLUMN blocks_json TEXT;

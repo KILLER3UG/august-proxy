@@ -212,4 +212,17 @@ describe('BotsRail', () => {
       expect(createBot).toHaveBeenCalledWith(expect.objectContaining({ cloneFrom: 'agent_aaa1' })),
     );
   });
+
+  it('a failed roster fetch says so instead of "No Bots yet"', async () => {
+    const { listBots } = await import('@/api/api-client');
+    (listBots as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('bots: 500 boom'),
+    );
+    withProviders(<BotsRail onOpenSession={vi.fn()} />);
+    const alert = await screen.findByTestId('query-error-state');
+    expect(alert.textContent).toContain("Couldn't load Bots");
+    expect(alert.textContent).toContain('500 boom');
+    // The empty-roster copy is a claim the failed request cannot support.
+    expect(screen.queryByText(/No Bots yet/)).toBeNull();
+  });
 });

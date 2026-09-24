@@ -128,3 +128,61 @@ def test_record_turn_outcome_lands_after_flush(tmp_path: Path) -> None:
     finally:
         foreign.close()
     assert row == ('m', 'p', 1)
+
+
+# ── raw-BEGIN interaction: a deferred write must not break session saves ────
+#
+# A per-turn deferred writer runs on the loop thread and leaves the thread-local
+# connection inside an open implicit transaction (only the COMMIT is debounced).
+# save_workbench_session_sot / delete_workbench_session then issue a raw
+# ``conn.execute('BEGIN')``, which used to raise "cannot start a transaction
+# within a transaction" and lose the whole save/delete.
+
+
+def test_deferred_write_then_session_save_does_not_hit_nested_begin() -> None:
+    from app.services import memory_store
+    from app.services.memory_conn import conn as _conn
+    from app.services.memory_store import sessions as sess
+    from app.services.memory_store.rest import record_lifecycle
+
+    memory_store.init()
+
+    async def scenario() -> None:
+        # Deferred per-turn write: leaves the connection mid-transaction.
+        record_lifecycle('sess-1', 'turn_start', {'a': 1})
+        assert _conn().in_transaction is True, 'deferred write must hold the txn open'
+
+        # A raw-BEGIN session save must now succeed instead of raising.
+        sess.save_workbench_session_sot(
+            {'id': 'sess-1', 'title': 'T', 'startedAt': 'x', 'updatedAt': 'x'},
+            [{'role': 'user', 'content': 'hi'}],
+        )
+        flush_thread_pending()
+
+    asyncio.run(scenario())
+    # The session row persisted (and did not raise OperationalError).
+    row = _conn().execute('SELECT title FROM sessions WHERE id = ?', ('sess-1',)).fetchone()
+    assert row is not None and row['title'] == 'T'
+
+
+def test_deferred_write_then_session_delete_does_not_hit_nested_begin() -> None:
+    from app.services import memory_store
+    from app.services.memory_conn import conn as _conn
+    from app.services.memory_store import sessions as sess
+    from app.services.memory_store.rest import record_lifecycle
+
+    memory_store.init()
+    sess.save_workbench_session_sot(
+        {'id': 'sess-del', 'title': 'D', 'startedAt': 'x', 'updatedAt': 'x'},
+        [{'role': 'user', 'content': 'bye'}],
+    )
+
+    async def scenario() -> None:
+        record_lifecycle('sess-del', 'turn_start', {'a': 1})
+        assert _conn().in_transaction is True
+        result = sess.delete_session_cascade('sess-del', notify=False)
+        assert result.get('ok') is True
+        flush_thread_pending()
+
+    asyncio.run(scenario())
+    assert _conn().execute('SELECT 1 FROM sessions WHERE id = ?', ('sess-del',)).fetchone() is None

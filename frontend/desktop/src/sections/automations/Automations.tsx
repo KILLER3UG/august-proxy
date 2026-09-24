@@ -39,6 +39,7 @@ import {
 } from '@/api/api-client';
 import { useModels } from '@/hooks/useModels';
 import { PageLoader } from '@/components/PageLoader';
+import { QueryErrorState } from '@/components/QueryErrorState';
 import {
   WORKBENCH_GUARD_MODES,
   WORKBENCH_GUARD_MODE_ORDER,
@@ -109,11 +110,16 @@ export function Automations() {
   const [tokenFlash, setTokenFlash] = useState<Record<string, string>>({});
   const prevStatusRef = useRef<Map<string, string>>(new Map());
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
     queryKey: ['automations'],
     queryFn: () => getAutomations(),
     refetchInterval: 5_000,
   });
+
+  // A failed list query is not an empty list: the "No automations yet" card
+  // (and its create CTA) used to be exactly what a 500 rendered. Only an
+  // answered, genuinely empty list earns the empty state.
+  const listFailed = isError && !data;
 
   // Stable identity: `data?.jobs ?? []` produced a fresh array on every render
   // while the list query was still loading, which re-ran the settle-toast
@@ -235,7 +241,9 @@ export function Automations() {
         subtitle={
           isLoading
             ? 'Loading jobs…'
-            : `${jobs.length} job${jobs.length === 1 ? '' : 's'} · ${enabledCount} active`
+            : listFailed
+              ? "Couldn't load jobs"
+              : `${jobs.length} job${jobs.length === 1 ? '' : 's'} · ${enabledCount} active`
         }
         actions={
           <Button
@@ -264,6 +272,14 @@ export function Automations() {
 
       {isLoading ? (
         <PageLoader label="Loading automations…" className="py-4" />
+      ) : listFailed ? (
+        <QueryErrorState
+          error={error}
+          onRetry={() => void refetch()}
+          retrying={isRefetching}
+          title="Couldn't load automations"
+          note="Your jobs may still exist — the list request failed, so nothing is shown here. Retry before creating a new one."
+        />
       ) : jobs.length === 0 && !showCreate ? (
         <Card className="border-dashed">
           <CardContent className="p-10 grid place-items-center text-center text-muted-foreground">
@@ -300,7 +316,14 @@ export function Automations() {
                   if (ok) remove.mutate(job.id);
                 });
               }}
-              onPause={() => patch.mutate({ id: job.id, body: { paused: !job.paused } })}
+              onPause={() =>
+                patch.mutate({
+                  id: job.id,
+                  body: job.limitReached
+                    ? { enabled: true, paused: false }
+                    : { paused: !job.paused },
+                })
+              }
               onRotate={() => rotate.mutate(job.id)}
               busy={run.isPending || remove.isPending || patch.isPending || rotate.isPending}
             />
@@ -814,8 +837,16 @@ function AutomationCard({
 
             <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground font-mono flex-wrap">
               <StatusPill
-                tone={job.enabled && !job.paused ? 'good' : 'muted'}
-                label={job.paused ? 'paused' : job.enabled ? 'enabled' : 'disabled'}
+                tone={job.enabled && !job.paused && !job.limitReached ? 'good' : 'muted'}
+                label={
+                  job.limitReached
+                    ? 'limit reached'
+                    : job.paused
+                      ? 'paused'
+                      : job.enabled
+                        ? 'enabled'
+                        : 'disabled'
+                }
               />
               {job.schedule && (
                 <span className="inline-flex items-center gap-1" title={job.schedule}>
@@ -860,8 +891,20 @@ function AutomationCard({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            <Button size="sm" variant="outline" onClick={onPause} disabled={busy} title={job.paused ? 'Resume' : 'Pause'}>
-              {job.paused ? <PlayCircle className="size-3" /> : <Pause className="size-3" />}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onPause}
+              disabled={busy}
+              title={job.limitReached ? 'Re-arm automation' : job.paused ? 'Resume' : 'Pause'}
+            >
+              {job.limitReached ? (
+                <RefreshCw className="size-3" />
+              ) : job.paused ? (
+                <PlayCircle className="size-3" />
+              ) : (
+                <Pause className="size-3" />
+              )}
             </Button>
             <Button size="sm" variant="outline" onClick={onRun} disabled={busy} title="Run now">
               <Play className="size-3" /> Run

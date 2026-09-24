@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { usageApi, type UsageRange } from '@/api/usage';
+import { QueryErrorState } from '@/components/QueryErrorState';
 import { WorkspaceHeatmap, type ActivityMode } from '@/components/workspace/WorkspaceHeatmap';
 import { WorkspaceTrendChart } from '@/components/workspace/WorkspaceTrendChart';
 import { WorkspaceDonut } from '@/components/workspace/WorkspaceDonut';
@@ -60,6 +61,14 @@ export function WorkspaceUsageSection() {
   const byModel = byModelQ.data?.results ?? [];
   const byDay = byDayQ.data?.results ?? [];
 
+  // Every panel below renders a "zero" or "no activity" answer when its query
+  // fails, so a dropped connection used to look like a perfectly idle install.
+  // A panel that has no data and has errored says so instead.
+  const statsFailed = statsQ.isError && !stats;
+  const heatmapFailed = heatmapQ.isError && !heatmapQ.data;
+  const modelFailed = byModelQ.isError && !byModelQ.data;
+  const trendFailed = byDayQ.isError && !byDayQ.data;
+
   // 100% Real Live Computed Stats from SQLite
   const totalTokensNum = stats?.totalTokens ?? 0;
   const totalTokensDisplay = formatShortTokens(totalTokensNum);
@@ -99,6 +108,16 @@ export function WorkspaceUsageSection() {
         </span>
       </div>
 
+      {statsFailed ? (
+        <QueryErrorState
+          error={statsQ.error}
+          onRetry={handleRefresh}
+          retrying={statsQ.isRefetching}
+          title="Couldn't load usage stats"
+          note="The numbers below are withheld — the request failed, so these are not zero-usage readings."
+        />
+      ) : (
+        <>
       {/* 5-Card Metric Overview Row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 text-center flex flex-col justify-center">
@@ -144,7 +163,18 @@ export function WorkspaceUsageSection() {
             ))}
           </div>
         </div>
-        <WorkspaceHeatmap cells={rawHeatmap} activityMode={activityMode} />
+        {heatmapFailed ? (
+          <QueryErrorState
+            compact
+            error={heatmapQ.error}
+            onRetry={() => void heatmapQ.refetch()}
+            retrying={heatmapQ.isRefetching}
+            title="Couldn't load token activity"
+            note="An empty heatmap is not a quiet week — the request failed."
+          />
+        ) : (
+          <WorkspaceHeatmap cells={rawHeatmap} activityMode={activityMode} />
+        )}
       </div>
 
       {/* Time Range Selector */}
@@ -171,7 +201,16 @@ export function WorkspaceUsageSection() {
       {/* Daily Token Trend Chart Card */}
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
         <div className="text-sm font-semibold text-foreground">Daily token trend chart</div>
-        {trendData.length > 0 && trendData.some((t) => t.tokens > 0) ? (
+        {trendFailed ? (
+          <QueryErrorState
+            compact
+            error={byDayQ.error}
+            onRetry={() => void byDayQ.refetch()}
+            retrying={byDayQ.isRefetching}
+            title="Couldn't load the daily trend"
+            note="A flat line here would be a failure, not zero activity."
+          />
+        ) : trendData.length > 0 && trendData.some((t) => t.tokens > 0) ? (
           <WorkspaceTrendChart data={trendData} />
         ) : (
           <div className="py-12 text-center text-xs text-muted-foreground">
@@ -183,7 +222,16 @@ export function WorkspaceUsageSection() {
       {/* Model Usage Donut Card */}
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-2">
         <div className="text-sm font-semibold text-foreground mb-2">Model usage</div>
-        {modelSlices.length > 0 ? (
+        {modelFailed ? (
+          <QueryErrorState
+            compact
+            error={byModelQ.error}
+            onRetry={() => void byModelQ.refetch()}
+            retrying={byModelQ.isRefetching}
+            title="Couldn't load the model breakdown"
+            note="No models are listed because the request failed, not because none were used."
+          />
+        ) : modelSlices.length > 0 ? (
           <WorkspaceDonut
             slices={modelSlices}
             centerLabel={formatShortTokens(modelSlices.reduce((acc, s) => acc + s.value, 0))}
@@ -195,6 +243,8 @@ export function WorkspaceUsageSection() {
           </div>
         )}
       </div>
+        </>
+      )}
 
       {/* Floating Refresh Button in bottom right */}
       <div className="fixed bottom-6 right-8 z-30">

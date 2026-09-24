@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { providersApi } from '@/api/providers';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
+import { QueryErrorState } from '@/components/QueryErrorState';
 import { ProviderListRail } from './ProviderListRail';
 import { AddProviderForm } from './AddProviderForm';
 import { ProviderDetailForm } from './ProviderDetailForm';
@@ -20,6 +21,10 @@ export function ProvidersTab() {
     queryFn: () => providersApi.list(),
   });
   const providers = listQ.data ?? [];
+  // A failed catalog fetch is not an empty catalog. The old init effect fired
+  // on "not loading" — which includes a failed query — and jumped straight
+  // into the Add-provider form, so a 500 read as "you have no providers".
+  const listFailed = listQ.isError && !listQ.data;
 
   const [mode, setMode] = useState<'add' | 'edit' | 'empty'>('empty');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -29,10 +34,11 @@ export function ProvidersTab() {
   // selectedId to null) and immediately re-selects the first provider.
   const didInitRef = useRef(false);
 
-  // Auto-select the first provider on the initial load only.
+  // Auto-select the first provider on the initial load only — and only once
+  // the request actually succeeded.
   useEffect(() => {
     if (didInitRef.current) return;
-    if (listQ.isLoading) return;
+    if (!listQ.isSuccess) return;
     didInitRef.current = true;
     if (providers.length > 0) {
       setSelectedId(providers[0].id);
@@ -40,9 +46,9 @@ export function ProvidersTab() {
     } else {
       setMode('add');
     }
-    // Only re-run when the providers query transitions out of loading.
+    // Only re-run when the providers query settles successfully.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listQ.isLoading]);
+  }, [listQ.isSuccess]);
 
   const selected = providers.find((p) => p.id === selectedId) ?? null;
 
@@ -77,6 +83,7 @@ export function ProvidersTab() {
               providers={providers}
               selectedId={selectedId}
               isFetching={listQ.isFetching}
+              error={listFailed ? listQ.error : null}
               onRefresh={() => void listQ.refetch()}
               onSelect={selectProvider}
               onAdd={openAddProvider}
@@ -85,7 +92,16 @@ export function ProvidersTab() {
         </div>
 
         <div className="rounded-xl border border-border/60 bg-card/60 flex flex-col overflow-hidden">
-          {mode === 'add' ? (
+          {listFailed && mode !== 'add' ? (
+            <QueryErrorState
+              className="m-4"
+              error={listQ.error}
+              onRetry={() => void listQ.refetch()}
+              retrying={listQ.isRefetching}
+              title="Couldn't load providers"
+              note="Your providers may still be saved — the catalog request failed, so this is not an empty list. Retry before adding a new provider."
+            />
+          ) : mode === 'add' ? (
             <AddProviderForm
               onCancel={() => {
                 if (selected) {

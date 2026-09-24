@@ -2103,9 +2103,17 @@ async def setGuardMode(request: Request):
 
 @router.post('/agent-mode')
 async def setAgentModeApi(request: Request):
-    """Persist harness agent_mode (chat / agent / code / orchestrator)."""
+    """Persist harness agent_mode (chat / agent / code / orchestrator).
+
+    This endpoint is USER-initiated (the composer's mode picker), so selecting
+    ``code`` here is the explicit confirmation that stamps the session's code
+    trust marker — the same marker a model-initiated ``set_agent_mode('code')``
+    can only obtain through the ApprovalBanner. Moving to any other mode
+    revokes it.
+    """
     from datetime import datetime, timezone
 
+    from app.services.workbench import code_runner as _code
     from app.services.workbench.sessions import save_sessions
 
     body = await request.json()
@@ -2119,6 +2127,10 @@ async def setAgentModeApi(request: Request):
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
     session.agent_mode = raw
+    if raw == 'code':
+        _code.mark_code_mode_trusted(session)
+    else:
+        _code.clear_code_mode_trust(session)
     session.updatedAt = datetime.now(timezone.utc).isoformat()
     save_sessions()
     try:

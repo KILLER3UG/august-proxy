@@ -20,10 +20,18 @@ router = APIRouter(prefix='/api/sessions')
 
 
 class MessageCreate(CamelModel):
-    """Session message body. Internals are snake_case; JSON stays camelCase."""
+    """Session message body. Internals are snake_case; JSON stays camelCase.
+
+    ``blocks`` / ``structured`` are the optional durable transcript payload
+    (migration 047). Both are additive: a client that only knows role +
+    content still works, and the structured fields are what a restore needs to
+    rebuild tool calls, reasoning, attachments and todos instead of flat text.
+    """
 
     role: str
     content: str
+    blocks: list[dict[str, object]] | None = None
+    structured: dict[str, object] | None = None
 
 
 class SessionPatch(CamelModel):
@@ -187,6 +195,16 @@ async def getSessionMessages(
 
 @router.post('/{sessionId}/messages')
 async def addMessage(sessionId: str, body: MessageCreate):
-    """Add a message to a session."""
-    msgId = memory_store.save_message(sessionId, body.role, body.content)
+    """Add a message to a session.
+
+    Structured transcript fields (``blocks`` / ``structured``) are stored
+    alongside the text in ``messages.blocks_json`` so a later restore can
+    rebuild the message. Omitting them writes a legacy text-only row.
+    """
+    payload: dict[str, object] = dict(body.structured or {})
+    if body.blocks is not None:
+        payload['blocks'] = body.blocks
+    msgId = memory_store.save_message(
+        sessionId, body.role, body.content, payload or None
+    )
     return {'id': msgId, 'status': 'ok'}

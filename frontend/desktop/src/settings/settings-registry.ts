@@ -450,7 +450,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
     id: 'model-quotas',
     label: 'Quotas',
-    description: 'Daily token limits and per-provider spend ceilings.',
+    description: 'Local token usage by model, with provider quota limits when an adapter supplies them.',
     icon: Coins,
     category: 'capabilities',
     tier: 'hidden',

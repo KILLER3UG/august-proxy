@@ -4,10 +4,17 @@
 export const PERMISSION_COPY = {
   title: 'Permission required',
   awaiting: 'Awaiting approval',
-  allow: 'Allow',
-  allowHint: 'Allow only this time',
-  always: 'Always allow in this project',
-  alwaysHint: 'Do not ask again for the same command',
+  /** Scope choices. Order in the card is fixed; see lib/approval-scope.ts. */
+  once: 'Once',
+  onceHint: 'Run only this time, then ask again next time',
+  session: 'This session',
+  sessionHint: 'Allow for the rest of this conversation, then forget it',
+  always: 'Always allow',
+  alwaysHint: 'Never ask again for this exact command, in this project',
+  /** Shown in place of the `always` row when the grant cannot be made durable. */
+  alwaysWithheld: 'Always is unavailable here',
+  alwaysWithheldHint:
+    'Destructive or network commands can only be allowed once or for this session',
   deny: 'Deny',
   denyHint: 'Reject it for now',
   instructions: 'Give instructions instead',
@@ -15,17 +22,12 @@ export const PERMISSION_COPY = {
   instructionsPlaceholder: 'e.g. Skip this and edit README.md instead…',
   confirmHint: 'Use Tab / arrow keys to choose, then press Enter to confirm',
   confirm: 'Confirm',
-  /** @deprecated Prefer `allow` — kept for PermissionToast */
-  once: 'Allow',
-  onceHint: 'Allow only this time',
-  session: 'This chat',
-  sessionHint: 'Allow for the rest of this conversation',
   reject: 'Deny',
   rejectHint: 'Reject it for now',
   subtitle: 'Choose how long similar permissions last.',
   preApply: 'Permission required',
   terminalTitle: 'Permission required',
-  terminalSubtitle: 'Allow · Always in this project · Deny',
+  terminalSubtitle: 'Once · This session · Always · Deny',
 } as const;
 
 export type PermissionCopyKey = keyof typeof PERMISSION_COPY;

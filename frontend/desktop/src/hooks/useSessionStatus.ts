@@ -12,6 +12,8 @@ export type PendingMutationItem = {
     createdAt?: string;
     path?: string;
     grantKey?: string;
+    /** Permission-axis classification, e.g. ['destructive'] or ['network']. */
+    categories?: string[];
 };
 
 export type SessionStatus = {
@@ -24,6 +26,10 @@ export type SessionStatus = {
     pendingPath?: string | null;
     pendingCreatedAt: number | string | null;
     updatedAt: string | null;
+    /** Grant fingerprint of the last pending mutation (scope gating). */
+    pendingGrantKey?: string | null;
+    /** Permission-axis categories of the last pending mutation. */
+    pendingCategories?: string[] | null;
     guardMode: 'plan' | 'ask' | 'edit' | 'full';
     sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
     sandboxNetwork?: boolean;
@@ -41,13 +47,7 @@ export function useSessionStatus(sessionId: string | null, pollIntervalMs: numbe
             if (!sessionId) return null;
             try {
                 const raw = await api.get<SessionStatus & {
-                    pendingMutation?: {
-                        token?: string;
-                        toolName?: string;
-                        args?: Record<string, unknown>;
-                        preview?: string;
-                        createdAt?: string;
-                    } | null;
+                    pendingMutation?: PendingMutationItem | null;
                 }>(
                     `/api/workbench/session/${encodeURIComponent(sessionId)}/status`
                 );
@@ -68,6 +68,11 @@ export function useSessionStatus(sessionId: string | null, pollIntervalMs: numbe
                     pendingPath: raw.pendingPath ?? pm?.path ?? null,
                     pendingCreatedAt: raw.pendingCreatedAt ?? pm?.createdAt ?? null,
                     pendingMutations: batch,
+                    // Scope inputs for the approval card, hoisted so the
+                    // single-pending fallback in MutationDiffCards can gate
+                    // the durable choice without re-reading the nested blob.
+                    pendingGrantKey: pm?.grantKey ?? null,
+                    pendingCategories: pm?.categories ?? null,
                 };
             } catch (error) {
                 // 404 means session is gone

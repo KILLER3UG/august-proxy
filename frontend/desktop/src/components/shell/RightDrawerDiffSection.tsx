@@ -298,7 +298,10 @@ function CommitComposer({ sessionId, onCommitted }: { sessionId: string; onCommi
     if (!trimmed || busy) return;
     setBusy(true);
     try {
-      await gitApi.commit(sessionId, trimmed);
+      // The drawer presents the whole working-tree diff, so stage and commit
+      // both staged and unstaged changes. The API defaults to staged-only for
+      // callers that intentionally want a narrower commit.
+      await gitApi.commit(sessionId, trimmed, undefined, true);
       toast.success('Committed');
       setMessage('');
       onCommitted();
@@ -343,7 +346,7 @@ function CommitComposer({ sessionId, onCommitted }: { sessionId: string; onCommi
           Generate
         </Button>
         <span className="ml-auto text-[10px] text-muted-foreground">
-          Commits the whole working tree
+          Commits staged + unstaged changes
         </span>
       </div>
     </div>

@@ -65,15 +65,20 @@ class TestSaveFactScopeGuard:
         assert 'alpha secret' in str(row.get('factValue'))
         assert str(row.get('scope')) == 'bot:alpha'
 
-    def test_same_scope_update_and_global_target_allowed(self, store):
+    def test_same_scope_update_allowed_global_target_refused(self, store):
         store.save_fact('p26:ok', 'v1', scope='bot:alpha')
         store.save_fact('p26:ok', 'v2', scope='bot:alpha')
         assert 'v2' in str(store.get_fact('p26:ok').get('factValue'))
-        # global → global stays fine; a bot may update a global row (6.2).
+        # global → global stays fine, but a BOT-scoped write against a global
+        # row is refused (6.2 tightened): the UPSERT never rewrites scope, so
+        # the bot's value would replace the shared one while the row stayed
+        # global. A key has exactly one home.
         store.save_fact('p26:shared', 'g1', scope='global')
-        store.save_fact('p26:shared', 'g2', scope='bot:alpha')
-        assert 'g2' in str(store.get_fact('p26:shared').get('factValue'))
-        assert str(store.get_fact('p26:shared').get('scope')) == 'global'
+        with pytest.raises(ValueError):
+            store.save_fact('p26:shared', 'g2', scope='bot:alpha')
+        row = store.get_fact('p26:shared')
+        assert 'g1' in str(row.get('factValue'))
+        assert str(row.get('scope')) == 'global'
 
     def test_override_updates_in_place_without_rewriting_scope(self, store):
         from app.services.memory_conn import conn

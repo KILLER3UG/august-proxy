@@ -177,7 +177,7 @@ describe('useChatSend — retry re-sends clean text (3.3)', () => {
       wrapper,
     });
 
-    let sending!: Promise<void>;
+    let sending!: Promise<unknown>;
     await act(async () => {
       sending = result.current.send();
       await Promise.resolve();

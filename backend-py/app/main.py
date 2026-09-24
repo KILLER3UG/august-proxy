@@ -22,6 +22,17 @@ from app.config import settings
 from app.version import backend_version
 
 
+def _cors_extra_origins() -> list[str]:
+    """Operator-added origins (`AUGUST_CORS_ORIGINS`) — always full trust.
+
+    This is the escape hatch: listing an origin here opts it into the whole
+    management API even when it is otherwise scoped (see the Surfer embed in
+    `app.lib.local_api_guard.SCOPED_ORIGIN_RULES`).
+    """
+    extra = os.environ.get('AUGUST_CORS_ORIGINS', '')
+    return [o.strip() for o in extra.split(',') if o.strip()]
+
+
 def _cors_allow_origins() -> list[str]:
     """Explicit origins for credentialed CORS (wildcard + credentials is invalid)."""
     port = settings.port
@@ -36,11 +47,12 @@ def _cors_allow_origins() -> list[str]:
         # Surfer waveform viewer embed (Circuit panel): the hosted WASM
         # build fetches workspace VCDs from the raw-file route below.
         # iframe embedding keeps it a separate program (EUPL guardrail).
+        # CORS must allow it so the embed can read its bytes, but
+        # TrustedOriginGuard narrows it to read-only GET/HEAD on
+        # /api/workbench/files/raw — the allowlist entry alone is not trust.
         'https://app.surfer-project.org',
     ]
-    extra = os.environ.get('AUGUST_CORS_ORIGINS', '')
-    if extra.strip():
-        origins.extend(o.strip() for o in extra.split(',') if o.strip())
+    origins.extend(_cors_extra_origins())
     # Preserve order, drop duplicates
     return list(dict.fromkeys(origins))
 

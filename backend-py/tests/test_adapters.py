@@ -37,6 +37,7 @@ from app.adapters.proxy_tools import (
     is_browser_automation_tool_name,
     is_managed_bash_tool_name,
     is_managed_web_tool_name,
+    is_proxy_managed_local_tool_name,
     openai_to_anthropic_tool_definition,
     sanitize_anthropic_tool_definition,
     sanitize_tool_schema,
@@ -90,13 +91,42 @@ class TestProxyTools:
         assert is_browser_automation_tool_name('browser_navigate') is True
         assert is_browser_automation_tool_name('read_file') is False
 
-    def testToolDefinitions(self):
+    def testToolDefinitions(self, monkeypatch):
+        """Default: gateway inference carries the web tools, never a shell tool."""
+        monkeypatch.delenv('AUGUST_PROXY_SHELL', raising=False)
         tools = get_managed_anthropic_web_tool_definitions()
-        assert len(tools) == 5
         names = [t['name'] for t in tools]
+        assert len(tools) == 4
         assert 'WebSearch' in names
         assert 'WebFetch' in names
+        assert 'mcp__workspace__web_search' in names
+        assert 'mcp__workspace__bash' not in names
+
+    def testToolDefinitionsShellOptIn(self, monkeypatch):
+        """AUGUST_PROXY_SHELL re-enables the managed bash tool for the proxy."""
+        monkeypatch.setenv('AUGUST_PROXY_SHELL', '1')
+        assert proxy_tool_defs.proxy_shell_tools_enabled() is True
+        names = [t['name'] for t in get_managed_anthropic_web_tool_definitions()]
         assert 'mcp__workspace__bash' in names
+        assert 'command' in get_managed_anthropic_web_tool_definitions()[-1]['input_schema']['properties']
+
+    def testShellCapabilityEnvParsing(self, monkeypatch):
+        for value, expected in (
+            (None, False),
+            ('', False),
+            ('0', False),
+            ('false', False),
+            ('nope', False),
+            ('1', True),
+            ('true', True),
+            ('YES', True),
+            (' on ', True),
+        ):
+            if value is None:
+                monkeypatch.delenv('AUGUST_PROXY_SHELL', raising=False)
+            else:
+                monkeypatch.setenv('AUGUST_PROXY_SHELL', value)
+            assert proxy_tool_defs.proxy_shell_tools_enabled() is expected, value
 
     def testFormatConverters(self):
         openai = {
@@ -148,7 +178,10 @@ class TestProxyTools:
         names = [get_tool_definition_name(t) for t in target]
         assert names == ['keep', 'new_one', 'openai_style']
 
-    def testDedupeTools(self):
+    def testDedupeTools(self, monkeypatch):
+        """Dedupe must not smuggle a shell tool into a conversation that never
+        asked for one — that is the injection this hardening removes."""
+        monkeypatch.delenv('AUGUST_PROXY_SHELL', raising=False)
         tools = [
             {'name': 'WebSearch', 'description': '', 'input_schema': {'type': 'object', 'properties': {}}},
             {'name': 'WebSearch', 'description': '', 'input_schema': {'type': 'object', 'properties': {}}},
@@ -160,7 +193,35 @@ class TestProxyTools:
         assert names.count('WebSearch') == 1
         assert 'my_tool' in names
         assert 'browser_navigate' not in names
+        assert 'mcp__workspace__bash' not in names
+
+    def testDedupeToolsShellOptIn(self, monkeypatch):
+        monkeypatch.setenv('AUGUST_PROXY_SHELL', 'true')
+        names = [t['name'] for t in dedupe_and_canonicalize_anthropic_tools([])]
         assert 'mcp__workspace__bash' in names
+
+    def testClientDeclaredBashSurvivesWithoutTheOptIn(self, monkeypatch):
+        """A client that declares the tool itself is not an injection: the
+        existing gateway contract (declared bash runs locally behind the
+        gateway key + sandbox) is unchanged by this hardening."""
+        monkeypatch.delenv('AUGUST_PROXY_SHELL', raising=False)
+        tools = [
+            {'name': 'mcp__workspace__bash', 'description': 'client schema', 'input_schema': {'type': 'object', 'properties': {}}},
+        ]
+        result = dedupe_and_canonicalize_anthropic_tools(tools)
+        assert [t['name'] for t in result] == ['mcp__workspace__bash']
+        assert result[0]['description'] == 'client schema'
+        assert is_proxy_managed_local_tool_name('mcp__workspace__bash') is True
+
+    def testProxyToolSetsCarryNoShellByDefault(self, monkeypatch):
+        """Every proxy-provided definition set (both wire formats) is shell-free
+        unless the capability is enabled."""
+        monkeypatch.delenv('AUGUST_PROXY_SHELL', raising=False)
+        anthropicNames = [get_tool_definition_name(t) for t in proxy_tool_defs.get_proxy_openai_tool_definitions_for_anthropic()]
+        openaiNames = [get_tool_definition_name(t) for t in proxy_tool_defs.get_proxy_openai_tool_definitions()]
+        assert 'mcp__workspace__bash' not in anthropicNames
+        assert 'mcp__workspace__bash' not in openaiNames
+        assert 'WebSearch' in anthropicNames
 
     def testDefinitionHelpersReexportedFromProxyTools(self):
         """Back-compat: definition helpers remain importable from proxy_tools."""

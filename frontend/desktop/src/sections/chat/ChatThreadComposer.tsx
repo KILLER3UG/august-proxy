@@ -37,6 +37,7 @@ import { useFocusedSubagent } from '@/components/chat/focused-subagent';
 import { setContinueWorkstream, useContinueWorkstream } from '@/components/chat/composer-intent';
 import { normalizeHarnessMode } from '@/components/chat/HarnessModeChip';
 import { continueWorkstream, listWorkstreams, runRoutine, steer as steerSubagent } from '@/api/subagents';
+import type { ChatSendFn, ChatSendOptions } from './hooks/useChatSend';
 
 export type { ComposerDropdownApi };
 
@@ -57,7 +58,7 @@ export interface ChatThreadComposerProps {
   attachFiles?: (files: FileList | File[]) => Promise<void> | void;
   messages: ChatMessage[];
   streaming: boolean;
-  send: (textOverride?: string) => Promise<void>;
+  send: ChatSendFn;
   stop: () => void;
   /** Optional: lets the composer toolbar append a synthetic handoff-notice card. */
   setMessages?: Dispatch<SetStateAction<ChatMessage[]>>;
@@ -180,8 +181,8 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
   const harnessMode = normalizeHarnessMode(workbenchSession?.agentMode);
   const sendKind =
     focusedSubagent ? 'steer' : continueName ? 'continue' : harnessMode === 'orchestrator' ? 'dispatch' : 'send';
-  const sendOrSteer = useCallback(
-    async (textOverride?: string) => {
+  const sendOrSteer = useCallback<ChatSendFn>(
+    async (textOverride?: string, options?: ChatSendOptions) => {
       const text = (textOverride ?? input).trim();
       const laneAt = text.match(/^@lane:([^\s]+)\s*([\s\S]*)$/);
       if (laneAt && workbenchSession?.id) {
@@ -195,8 +196,9 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           setInput('');
         } catch (e) {
           toast.error(e instanceof Error ? e.message : 'Continue failed');
+          return 'skipped';
         }
-        return;
+        return 'sent';
       }
       const routineAt = text.match(/^@routine:([^\s]+)\s*/);
       if (routineAt && workbenchSession?.id) {
@@ -206,8 +208,9 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           setInput('');
         } catch (e) {
           toast.error(e instanceof Error ? e.message : 'Routine failed');
+          return 'skipped';
         }
-        return;
+        return 'sent';
       }
       if (focusedSubagent && text) {
         const running = focusedSubagent.running !== false;
@@ -232,14 +235,15 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
               toast.success(`Worker idle — continued ${focusedSubagent.workstream}`);
               setInput('');
               setContinueWorkstream(null);
-              return;
+              return 'sent';
             } catch {
               /* fall through */
             }
           }
           toast.error(msg);
+          return 'skipped';
         }
-        return;
+        return 'sent';
       }
       if (continueName && workbenchSession?.id) {
         try {
@@ -253,10 +257,11 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           setContinueWorkstream(null);
         } catch (e) {
           toast.error(e instanceof Error ? e.message : 'Continue failed');
+          return 'skipped';
         }
-        return;
+        return 'sent';
       }
-      return send(textOverride);
+      return send(textOverride, options);
     },
     [focusedSubagent, continueName, ghostNext, input, send, setInput, workbenchSession?.id],
   );

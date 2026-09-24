@@ -147,6 +147,19 @@ describe('Automations — editing an existing job', () => {
     expect(body.agentId).toBe('bot-nightly');
   });
 
+  it('re-arms a run-capped job instead of leaving it permanently disabled', async () => {
+    const capped = { ...JOB, enabled: false, paused: false, limitReached: true };
+    mocks.getAutomations.mockResolvedValue({ jobs: [capped] });
+    renderPage(<Automations />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Re-arm automation' }));
+
+    await waitFor(() => expect(mocks.patchAutomation).toHaveBeenCalledWith('job-1', {
+      enabled: true,
+      paused: false,
+    }));
+  });
+
   it('discards the form on cancel without touching the job', async () => {
     await openEditForm();
 

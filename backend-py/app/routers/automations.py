@@ -22,7 +22,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from app.json_narrowing import as_str
 from app.models.camel_base import CamelModel
 from app.services import automations_store as store
-from app.services.automations_schedule import system_local_timezone
+from app.services.automations_schedule import compute_next_run_at, system_local_timezone
 
 router = APIRouter(prefix='/api/automations')
 
@@ -62,6 +62,7 @@ class UpsertBody(CamelModel):
     url: str | None = None
     method: str | None = None
     body: str | None = None
+    allow_localhost: bool | None = None
     max_runs: int | None = None
     # Part 19 Phase B (routines): delivery + memory knobs. The runner path
     # already honors these (automations_store._run_workbench_stream +
@@ -84,6 +85,7 @@ class PatchBody(CamelModel):
     model: str | None = None
     model_provider: str | None = None
     agent_id: str | None = None
+    allow_localhost: bool | None = None
     max_runs: int | None = None
     # Routine fields are patchable (pause the response turn,
     # toggle the notepad continuity, repoint delivery).
@@ -137,6 +139,7 @@ def _wire(job: dict[str, object], *, include_token: bool = False) -> dict[str, o
         'updatedAt': job.get('updatedAt'),
         'url': job.get('url'),
         'method': job.get('method'),
+        'allowLocalhost': bool(job.get('allowLocalhost', False)),
     }
     if include_token:
         out['triggerToken'] = job.get('triggerToken')
@@ -180,6 +183,7 @@ async def upsert_automation(body: UpsertBody):
         'url': body.url,
         'method': body.method,
         'body': body.body,
+        'allowLocalhost': body.allow_localhost,
         'maxRuns': body.max_runs,
         # Part 19 Phase B routine fields (pass through to the runner).
         'deliver': body.deliver,
@@ -206,6 +210,18 @@ async def patch_automation(job_id: str, body: PatchBody):
         updates['paused'] = body.paused
     if body.enabled is not None:
         updates['enabled'] = body.enabled
+        # The scheduler marks a capped job disabled and records limitReached.
+        # Enabling it is the explicit user action to re-arm the job; clear the
+        # terminal marker and restore a future schedule instead of leaving a
+        # job that still says "limit reached" after Resume.
+        if body.enabled:
+            current = store.get_job(job_id) or {}
+            if current.get('limitReached'):
+                updates['limitReached'] = False
+                updates['nextRunAt'] = compute_next_run_at(
+                    as_str(current.get('schedule')),
+                    as_str(current.get('timezone')) or system_local_timezone(),
+                )
     if body.name is not None:
         updates['name'] = body.name
     if body.schedule is not None:
@@ -222,6 +238,8 @@ async def patch_automation(job_id: str, body: PatchBody):
         updates['modelProvider'] = body.model_provider
     if body.agent_id is not None:
         updates['agentId'] = body.agent_id
+    if body.allow_localhost is not None:
+        updates['allowLocalhost'] = body.allow_localhost
     if body.max_runs is not None:
         updates['maxRuns'] = body.max_runs
     # Routine field patches.

@@ -2486,6 +2486,89 @@ def drainQueuedMessages(
     return entries
 
 
+def _codeModeCellDenial(session: WorkbenchSession) -> str | None:
+    """Parent trust/guard/approval gate for ONE model-authored code cell.
+
+    Code mode is the widest execution surface in the product (a raw Python
+    interpreter plus a bridge into every managed tool), so a cell may only
+    run when ALL of the following hold — checked HERE, in the parent, before
+    either the warm or the cold path executes anything:
+
+      1. the session is in code mode AND the user explicitly enabled it
+         (``code_runner.TRUST_METADATA_KEY``). A model can no longer grant
+         itself the mode: ``set_agent_mode("code")`` must clear the
+         ApprovalBanner door first (``code_mode_switch_decision``). A session
+         persisted in code mode by an older build carries no marker and is
+         refused until the user re-picks Code mode in the composer.
+      2. the sandbox is not read-only — an interpreter is not a read.
+      3. the ordinary guard axis (``_checkToolGuard``) allows the equivalent
+         ``run_command`` — so plan mode blocks, and ask/edit queue the same
+         permission prompt any other shell mutation gets.
+      4. the durable approval axis (``_resolveCommandApproval``) allows it.
+
+    Returns a receipt to hand back to the model, or None when the cell may
+    run. Warm and cold both call this, so neither is a way around it;
+    ``bridge_call`` keeps its own per-tool re-checks on top.
+    """
+    from app.services.workbench import code_runner as _code
+
+    if as_str(getattr(session, 'agent_mode', '') or '').strip().lower() != 'code':
+        return (
+            '[code-mode] Blocked: this session is not in code mode, so the ```python '
+            'block was not executed. Use tool calls instead.'
+        )
+    if not _code.is_code_mode_trusted(session):
+        return (
+            '[code-mode] Blocked: code mode is not enabled for this session. Only the '
+            'user can enable it (composer → Code mode), and the ```python block was not '
+            'executed. Ask them to switch this chat to Code mode, or use tool calls.'
+        )
+    sandbox_mode = as_str(getattr(session, 'sandboxMode', '') or '').strip().lower()
+    if sandbox_mode in ('read-only', 'readonly', 'read'):
+        return (
+            '[code-mode] Blocked: the session sandbox is read-only, so no Python cell '
+            'was executed. Use the read-only tools, or ask the user to switch the '
+            'sandbox to Workspace / Full access.'
+        )
+    args: dict[str, object] = {
+        'command': _code.cell_policy_command(),
+        'timeout': _CODE_RUN_TIMEOUT_S,
+    }
+    pending_before = len(session.pendingMutations)
+    blocked = _checkToolGuard(session, 'run_command', args)
+    if blocked:
+        _labelCodeCellMutation(session, pending_before)
+        return f'[code-mode] Blocked: {blocked}'
+    receipt = _resolveCommandApproval(session, 'run_command', args)
+    if receipt:
+        _labelCodeCellMutation(session, pending_before)
+        return receipt
+    return None
+
+
+def _labelCodeCellMutation(session: WorkbenchSession, pending_before: int) -> None:
+    """Give a freshly queued code-cell approval a human preview.
+
+    The gate runs the axes with a fixed-shape command (see
+    ``code_runner.cell_policy_command``) so once / this-chat / always grants
+    cover every later cell; the banner text must therefore spell out what is
+    being approved instead of echoing that placeholder.
+    """
+    from app.services.workbench import code_runner as _code
+
+    for pm in session.pendingMutations[max(0, pending_before) :]:
+        if not isinstance(pm, dict):
+            continue
+        if as_str(pm.get('toolName')) != 'run_command':
+            continue
+        if as_str(as_dict(pm.get('args')).get('command')) != _code.cell_policy_command():
+            continue
+        pm['preview'] = (
+            'Run a code-mode cell: August executes the model\'s fenced ```python '
+            'block locally (workspace-bound file access + shell inside the sandbox).'
+        )
+
+
 async def _runFencedCodeBlock(session: WorkbenchSession, text: str, toolRound: int) -> str | None:
     """Execute the model's fenced ```python block in code mode.
 
@@ -2513,6 +2596,12 @@ async def _runFencedCodeBlock(session: WorkbenchSession, text: str, toolRound: i
         block = extract_fenced_python(text)
         if block is None:
             return None
+        # Trust boundary: the parent decides whether a cell may run AT ALL
+        # before the warm branch or the cold spawn is reached — neither path
+        # executes anything (not even the interpreter boot) until this passes.
+        denial = _codeModeCellDenial(session)
+        if denial:
+            return denial
         ws = as_str(getattr(session, 'workspacePath', '') or '')
         sandbox_mode = as_str(getattr(session, 'sandboxMode', '') or '')
 
@@ -5796,6 +5885,32 @@ def _mutation_preview(toolName: str, args: dict[str, object] | None) -> str:
     return toolName
 
 
+def _mutation_categories(
+    toolName: str,
+    args: dict[str, object] | None,
+    workspace_path: str = '',
+) -> list[str]:
+    """Permission-axis categories for a pending call (sorted, may be empty).
+
+    Same classifier the approval axis itself uses, so the value the UI reads to
+    decide whether to offer a durable grant cannot drift from the value the
+    policy clamps on. Non-command tools carry no categories — the durable-scope
+    rule is about what a command can do.
+    """
+    if toolName not in _COMMAND_TOOLS:
+        return []
+    cmd = as_str(as_dict(args or {}).get('command'), '').strip()
+    if not cmd:
+        return []
+    try:
+        from app.services.workbench.permissions import classify_command
+
+        return sorted(classify_command(cmd, workspace_path or ''))
+    except Exception:
+        logger.debug('mutation category classification failed', exc_info=True)
+        return []
+
+
 def _get_tool_grants(session: WorkbenchSession) -> dict[str, list[str]]:
     meta = as_dict(session.metadata) if session.metadata else {}
     raw = as_dict(meta.get('toolGrants')) if meta.get('toolGrants') is not None else {}
@@ -5967,17 +6082,26 @@ def add_tool_grant(
     toolName: str,
     args: dict[str, object] | None,
     scope: str = 'once',
+    categories: list[str] | tuple[str, ...] | None = None,
 ) -> tuple[str, str]:
     """Record a user grant. scope: once | session | always.
 
     Returns the scope actually stored plus a note when the request was
     clamped, so the caller reports what happened instead of echoing what was
     asked (see app/services/workbench/grant_policy.py).
+
+    ``categories`` is the permission-axis classification of this call. Callers
+    that hold it (the pending-mutation path) pass it so an `always` on a
+    destructive/network command is clamped here rather than only in the UI; when
+    it is omitted the categories are recomputed from the args.
     """
     from app.services.workbench.grant_policy import effective_scope
 
     key = _mutation_grant_key(toolName, args)
-    scope_n, clamp_note = effective_scope(key, scope)
+    cats = list(categories) if categories is not None else _mutation_categories(
+        toolName, args, session.workspacePath or ''
+    )
+    scope_n, clamp_note = effective_scope(key, scope, cats)
     if clamp_note:
         logger.warning('grant clamped for %s: %s', toolName, clamp_note)
     grants = _get_tool_grants(session)
@@ -6624,6 +6748,9 @@ def createPendingMutation(
         'ttl': 300,
         'preview': _mutation_preview(toolName, args),
         'grantKey': _mutation_grant_key(toolName, args),
+        # Read by the approval card to decide whether a durable ("always")
+        # choice may be offered; the same list clamps the request server-side.
+        'categories': _mutation_categories(toolName, args, session.workspacePath or ''),
     }
     session.pendingMutations.append(mutation)
     session.status = 'awaiting_approval'
@@ -6682,7 +6809,19 @@ def consumePendingMutation(
                     'preview': preview,
                     'remainingPending': len(session.pendingMutations),
                 }
-            stored_scope, scope_note = add_tool_grant(session, tool_name, args, scope=scope)
+            stored_scope, scope_note = add_tool_grant(
+                session,
+                tool_name,
+                args,
+                scope=scope,
+                # Prefer the classification captured when the card was raised so
+                # the offer the user saw and the clamp applied are the same one.
+                categories=(
+                    [str(c) for c in as_list(pm.get('categories'))]
+                    if pm.get('categories') is not None
+                    else None
+                ),
+            )
             saveSessions()
             _emitSessionStatus(session.id)
             result = {

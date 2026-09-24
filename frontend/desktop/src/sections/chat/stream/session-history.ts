@@ -1,6 +1,7 @@
 import { api } from '@/api/client';
-import type { ChatMessage } from '@/types/chat';
+import type { ChatMessage, MessageBlock } from '@/types/chat';
 import { isSessionIdTombstoned } from '@/store/sessions';
+import { normalizeSystemBlocks } from './append-block-event';
 import {
   getOrInitSessionStreamState,
   useSessionStreamStore,
@@ -46,7 +47,61 @@ function scheduleHistoryRetry(sessionId: string): void {
   _historyRetryAttempts.set(sessionId, attempts + 1);
 }
 
-function mapRemoteMessages(remote: unknown[]): ChatMessage[] {
+/** Structured fields the backend restores from `messages.blocks_json`
+ * (migration 047). Copied onto the ChatMessage as-is when present; a row
+ * written before 047 has none of them and falls back to plain text. */
+const STRUCTURED_FIELDS = [
+  'thinking',
+  'thinkingDuration',
+  'tools',
+  'tool',
+  'attachments',
+  'todos',
+  'usage',
+  'turnEnd',
+  'changedFiles',
+  'clarify',
+  'kind',
+  'commandId',
+  'context',
+  'breakdown',
+  'queued',
+  'usedFallback',
+  'editHistory',
+] as const satisfies readonly (keyof ChatMessage)[];
+
+function readStructured(row: Record<string, unknown>): Partial<ChatMessage> {
+  const out: Record<string, unknown> = {};
+  for (const key of STRUCTURED_FIELDS) {
+    if (row[key] !== undefined && row[key] !== null) out[key] = row[key];
+  }
+  return out as Partial<ChatMessage>;
+}
+
+function readBlocks(row: Record<string, unknown>): MessageBlock[] | undefined {
+  if (!Array.isArray(row.blocks) || row.blocks.length === 0) return undefined;
+  // Legacy persisted rows stored harness notices as `thinking` + system:true;
+  // the thinking pack now holds model reasoning only.
+  return normalizeSystemBlocks(row.blocks as MessageBlock[]);
+}
+
+/** Text a user would expect to copy from a restored bubble. Structured rows
+ * whose `content` is a serialized block envelope (the pre-047 tool-call
+ * shape) fall back to the rendered final output. */
+function contentFromBlocks(blocks: MessageBlock[]): string {
+  return blocks
+    .filter((b) => b.type === 'finalOutput' && typeof b.content === 'string')
+    .map((b) => b.content as string)
+    .join('\n')
+    .trim();
+}
+
+function looksLikeJsonPayload(content: string): boolean {
+  const trimmed = content.trim();
+  return trimmed.startsWith('[') || trimmed.startsWith('{');
+}
+
+export function mapRemoteMessages(remote: unknown[]): ChatMessage[] {
   const out: ChatMessage[] = [];
   for (const raw of remote) {
     if (!raw || typeof raw !== 'object') continue;
@@ -57,13 +112,29 @@ function mapRemoteMessages(remote: unknown[]): ChatMessage[] {
       const c = content as Record<string, unknown>;
       content = typeof c.content === 'string' ? c.content : JSON.stringify(c);
     }
-    if (!content || String(content).trim() === '') continue;
+    const blocks = readBlocks(r);
+    const structured = readStructured(r);
+    let text = typeof content === 'string' ? content : String(content ?? '');
+    // A tool result stored before 047 is a JSON envelope in `content`; with
+    // structured blocks present the rendered text is the honest fallback.
+    if (blocks && text && looksLikeJsonPayload(text)) {
+      const rendered = contentFromBlocks(blocks);
+      if (rendered) text = rendered;
+    }
+    // A message can be meaningful with no text at all (tool call, thinking
+    // only, attachment-only) — dropping those is what erased tool cards.
+    if (!text.trim() && !blocks && !structured.tool) continue;
+    const isToolRow = role === 'tool';
     out.push({
       id: String(r.id ?? `m_remote_${out.length}`),
-      role: role === 'tool' ? 'assistant' : role,
-      content: String(content),
+      // Keep the tool role only when a tool payload rides along —
+      // MessageBubble renders role:'tool' through ToolCallCard, which needs it.
+      role: isToolRow && structured.tool ? 'tool' : isToolRow ? 'assistant' : role,
+      content: text,
       timestamp: String(r.createdAt ?? r.created_at ?? new Date().toISOString()),
       remote: true,
+      ...structured,
+      ...(blocks ? { blocks } : {}),
     } as ChatMessage);
   }
   return out;

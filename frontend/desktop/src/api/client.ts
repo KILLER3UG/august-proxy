@@ -51,27 +51,29 @@ function installFetchPatch(): void {
 }
 
 async function initBaseUrl(): Promise<void> {
-  try {
-    if (isTauri) {
-      // Retry with backoff — first-launch bootstrap (venv + wheels) can take
-      // well over the old ~11s window before /api/health answers.
-      for (let i = 0; i < 40; i++) {
+  if (isTauri) {
+    // Retry with backoff — first-launch bootstrap (venv + wheels) can take
+    // well over the old ~11s window before /api/health answers. Never guess
+    // 8085 here: the Rust supervisor may deliberately select 8086-8095 when
+    // the default port is occupied, and a guessed URL silently targets the
+    // wrong process (or the Vite asset origin).
+    for (let i = 0; i < 120; i++) {
+      try {
         const status: string = await invoke<string>('proxy_status');
         if (status.startsWith('ok:')) {
           baseUrl = `http://127.0.0.1:${status.split(':')[1]}`;
           installFetchPatch();
           return;
         }
-        // Linear backoff capped: 250ms → 1.5s — ~45s total
-        await new Promise((r) => setTimeout(r, Math.min(250 * (i + 1), 1500)));
+      } catch {
+        // The backend may be between process launches; keep polling.
       }
-      // Last resort: assume the default port so raw `/api` calls don't hit HTML.
-      baseUrl = 'http://127.0.0.1:8085';
-      installFetchPatch();
+      // Linear backoff capped: 250ms → 1.5s — about three minutes worst case.
+      await new Promise((r) => setTimeout(r, Math.min(250 * (i + 1), 1500)));
     }
-  } catch {
-    /* not in Tauri production mode — Vite / same-origin proxy handles routing */
+    throw new Error('August backend did not become ready');
   }
+  // Browser/Vite mode uses the same-origin proxy.
 }
 
 const ready = initBaseUrl();

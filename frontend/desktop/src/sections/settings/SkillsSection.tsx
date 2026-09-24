@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { QueryErrorState } from '@/components/QueryErrorState';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
 import { LearningPanel } from '@/sections/settings/LearningPanel';
 import { SkillPacksPanel } from '@/sections/settings/SkillPacksPanel';
@@ -139,6 +140,12 @@ export function SkillsSection() {
   const skills = useMemo(() => listQuery.data?.skills ?? [], [listQuery.data]);
   const selected = detailQuery.data ?? null;
   const workspaces = workspacesQ.data?.workspaces ?? [];
+  // A failed /api/skills call is not an empty catalogue — the "No skills yet"
+  // empty state (and its "author your first skill" prompt) must not stand in
+  // for a transport error. The same applies to the detail pane, which used to
+  // spin forever on a failed skill fetch.
+  const listFailed = listQuery.isError && !listQuery.data;
+  const detailFailed = detailQuery.isError && !selected;
 
   // Disambiguate same-basename workspaces with their parent dir
   // (seven leaked "proj" entries used to collapse into identical labels) and
@@ -279,7 +286,9 @@ export function SkillsSection() {
             <h1 className="truncate text-xl font-semibold tracking-tight text-foreground">{headerLabel}</h1>
             {mode === 'list' && (
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {skills.length} skill{skills.length === 1 ? '' : 's'} · loaded progressively into chat when relevant
+                {listFailed
+                  ? "Couldn't load skills"
+                  : `${skills.length} skill${skills.length === 1 ? '' : 's'} · loaded progressively into chat when relevant`}
               </p>
             )}
           </div>
@@ -379,6 +388,14 @@ export function SkillsSection() {
             <div className="flex h-32 items-center justify-center">
               <Loader2 className="size-5 animate-spin text-muted-foreground" />
             </div>
+          ) : listFailed ? (
+            <QueryErrorState
+              error={listQuery.error}
+              onRetry={() => void listQuery.refetch()}
+              retrying={listQuery.isRefetching}
+              title="Couldn't load skills"
+              note="Your skills may still exist — the catalogue request failed, so this is not an empty list."
+            />
           ) : skills.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 bg-card/40 px-6 py-12 text-center">
               <BookOpen className="mb-3 size-9 rounded-full bg-muted/50 p-1.5 text-muted-foreground" />
@@ -400,10 +417,25 @@ export function SkillsSection() {
       {/* ── Detail (Claude-style) ───────────────────────────────────── */}
       {mode === 'detail' && (
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-          {detailQuery.isLoading || !selected ? (
+          {detailQuery.isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Loader2 className="size-5 animate-spin text-muted-foreground" />
             </div>
+          ) : !selected ? (
+            // A failed skill fetch used to spin forever here. Say it failed.
+            detailFailed ? (
+              <QueryErrorState
+                error={detailQuery.error}
+                onRetry={() => void detailQuery.refetch()}
+                retrying={detailQuery.isRefetching}
+                title={`Couldn't load ${selectedName ?? 'this skill'}`}
+                note="The skill may still exist — its request failed, so nothing is shown here."
+              />
+            ) : (
+              <div className="flex h-32 items-center justify-center">
+                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              </div>
+            )
           ) : (
             <div className="mx-auto max-w-3xl space-y-4" data-testid="skill-detail">
               <div className="flex items-start justify-between gap-3">

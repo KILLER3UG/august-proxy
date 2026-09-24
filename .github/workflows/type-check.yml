@@ -53,6 +53,12 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: npm run check:docs
 
+      # Relative markdown links across docs/ and root *.md. Cheap, deterministic,
+      # and currently green, so a broken link fails CI instead of shipping.
+      - name: Doc relative links resolve
+        working-directory: ${{ github.workspace }}
+        run: npm run check:doc-links
+
       # Packaging is otherwise invisible to CI, which is how the `sidecar/`
       # staging bug shipped ~50 releases: every other gate passes because the
       # backend runs fine from a checkout, and only an installer payload shows

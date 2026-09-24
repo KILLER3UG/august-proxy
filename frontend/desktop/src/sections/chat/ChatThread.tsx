@@ -53,7 +53,7 @@ import {
   clearQueuedMessages,
   type QueuedUserMessage,
 } from './queue-store';
-import { buildHandoffSummary, markHandoffPending } from './handoff-summary';
+import { ChatSendService } from './services/ChatSendService';
 import { ComposerDecisionStack } from './ComposerDecisionStack';
 import { ChatCheckpoints } from './ChatCheckpoints';
 import { useSessionStream } from './hooks/useSessionStream';
@@ -88,7 +88,7 @@ import { setDebateRun, type DebateRun as DebateRunType } from './debate/debate-s
 import { DebateView } from './debate/DebateView';
 import {
   useOfflineQueueStore,
-  dequeueOfflineMessages,
+  replayOfflineQueue,
 } from './offline-queue-store';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import {
@@ -226,6 +226,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [attachPaths]);
   const [input, setInput] = useState(() => loadComposerDraft(sessionId));
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(sessionId);
+  // Always-current session id: guards async callbacks (queue hydration) whose
+  // response would otherwise land in the session the user has already left.
+  const currentSessionRef = useRef<string | null>(sessionId);
+  currentSessionRef.current = sessionId;
   /** True while files are dragged over the pane — shows the drop overlay. */
   const [dragOver, setDragOver] = useState(false);
 
@@ -687,11 +691,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     loadMessagesForSession,
   });
 
+  // Plain Stop is NOT a model switch: it must not leave a pending handoff
+  // behind, or the NEXT turn (on the same model) consumes a "previous model
+  // was interrupted" brief and the model narrates a handoff that never
+  // happened. switchChatModel still marks the handoff explicitly for the
+  // stop→switch flow (see switch-model.ts).
   const stop = () => {
     if (!sessionId) return;
-    const prevModel = selectedModel?.name || selectedModel?.id;
-    const summary = buildHandoffSummary(messages, prevModel);
-    markHandoffPending(sessionId, summary, selectedModel?.id);
     void stopChatStream(sessionId);
   };
 
@@ -817,15 +823,31 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     setInput(loadComposerDraft(sessionId));
     setLoadedSessionId(sessionId);
-    if (sessionId) {
-      clearQueuedMessages(sessionId);
-      getQueuedWorkbenchMessages(sessionId)
-        .then((entries) => setQueuedMessages(sessionId, entries))
-        .catch((err) => {
-          console.warn('[ChatThread] failed to hydrate queue', err);
-        });
-    }
-  }, [sessionId]);
+    if (!sessionId) return;
+    clearQueuedMessages(sessionId);
+    // The queue lives on the BACKEND under the workbench id; the pills are
+    // stored under the UI id. Hydrating with the UI id used to 404 (or land
+    // on an empty queue) until the workbench session existed, so queued pills
+    // vanished on every mount/switch. Resolve the wb_* id first.
+    const wbId = ChatSendService.resolveWorkbenchQueueId(
+      workbenchSession?.id,
+      activeSession?.workbenchSessionId,
+      sessionId,
+    );
+    // Stale-response guard: a slow hydration for the PREVIOUS session must
+    // not overwrite the queue of the session the user is now looking at.
+    const requestedSession = sessionId;
+    getQueuedWorkbenchMessages(wbId)
+      .then((entries) => {
+        if (currentSessionRef.current !== requestedSession) return;
+        setQueuedMessages(requestedSession, entries);
+      })
+      .catch((err) => {
+        if (currentSessionRef.current !== requestedSession) return;
+        console.warn('[ChatThread] failed to hydrate queue', err);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-hydrate when the UI session or its resolved workbench id changes
+  }, [sessionId, workbenchSession?.id, activeSession?.workbenchSessionId]);
 
   useSessionHistory(sessionId);
 
@@ -1294,34 +1316,26 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   // Offline compose (C9): flush queued messages for this session when the
   // backend is reachable again (also triggered by the banner's "Send now").
+  // replayOfflineQueue owns the ordering + dequeue-after-accept rule; this
+  // only owns the "one flush at a time" latch.
   const offlineItems = useOfflineQueueStore((s) => s.items);
   const offlineCount = sessionId
     ? offlineItems.filter((i) => i.sessionId === sessionId).length
     : 0;
   const [flushingOffline, setFlushingOffline] = useState(false);
+  const sendRefForReplay = useRef(send);
+  sendRefForReplay.current = send;
   const flushOffline = useCallback(async () => {
     if (!sessionId || flushingOffline) return;
-    const mine = useOfflineQueueStore
-      .getState()
-      .items.filter((i) => i.sessionId === sessionId);
-    if (mine.length === 0) return;
     setFlushingOffline(true);
     try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 2000);
-      const res = await fetch('/api/health', { signal: ctrl.signal });
-      clearTimeout(timer);
-      if (!res.ok) throw new Error('backend unhealthy');
-    } catch {
+      await replayOfflineQueue(sessionId, {
+        send: (text, options) => sendRefForReplay.current(text, options),
+      });
+    } finally {
       setFlushingOffline(false);
-      return;
     }
-    const removed = dequeueOfflineMessages(mine.map((i) => i.id));
-    for (const item of removed) {
-      await send(item.text);
-    }
-    setFlushingOffline(false);
-  }, [sessionId, flushingOffline, send]);
+  }, [sessionId, flushingOffline]);
 
   useEffect(() => {
     if (offlineCount === 0 || flushingOffline) return;

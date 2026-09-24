@@ -1,42 +1,47 @@
 /* ── PermissionRequiredCard ───────────────────────────────────────────── */
 /* Approval prompt shown before a gated tool call executes:                */
-/* header + terminal-style preview + numbered choices (Allow / Always /   */
-/* Deny / free-form instructions) + Confirm. Select with Tab/arrows or    */
-/* click, then confirm with Enter or the Confirm button.                  */
+/* header + terminal-style preview + numbered scope choices (Once / This   */
+/* session / Always — the last withheld when the grant may not be made      */
+/* durable — plus Deny / free-form instructions) + Confirm. Select with    */
+/* Tab/arrows or click, then confirm with Enter or the Confirm button.     */
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Clock, Info } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Clock, Info, ShieldOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PERMISSION_COPY } from '@/lib/permission-copy';
+import {
+  approvalChoices,
+  type ApprovalChoice,
+  type ApprovalSubject,
+} from '@/lib/approval-scope';
 
-export type PermissionChoice = 'allow' | 'always' | 'deny' | 'instructions';
+export type { ApprovalChoice } from '@/lib/approval-scope';
 
-const CHOICES: Array<{
-  id: PermissionChoice;
+type ChoiceRow = {
+  id: ApprovalChoice;
   label: string;
   hint: string;
-}> = [
-  {
-    id: 'allow',
-    label: PERMISSION_COPY.allow,
-    hint: PERMISSION_COPY.allowHint,
+};
+
+const CHOICE_COPY: Record<ApprovalChoice, ChoiceRow> = {
+  once: { id: 'once', label: PERMISSION_COPY.once, hint: PERMISSION_COPY.onceHint },
+  session: {
+    id: 'session',
+    label: PERMISSION_COPY.session,
+    hint: PERMISSION_COPY.sessionHint,
   },
-  {
+  always: {
     id: 'always',
     label: PERMISSION_COPY.always,
     hint: PERMISSION_COPY.alwaysHint,
   },
-  {
-    id: 'deny',
-    label: PERMISSION_COPY.deny,
-    hint: PERMISSION_COPY.denyHint,
-  },
-  {
+  deny: { id: 'deny', label: PERMISSION_COPY.deny, hint: PERMISSION_COPY.denyHint },
+  instructions: {
     id: 'instructions',
     label: PERMISSION_COPY.instructions,
     hint: PERMISSION_COPY.instructionsHint,
   },
-];
+};
 
 export type PermissionRequiredCardProps = {
   description: string;
@@ -45,8 +50,14 @@ export type PermissionRequiredCardProps = {
   disabled?: boolean;
   confirming?: boolean;
   className?: string;
+  /**
+   * The pending call's grant key + permission categories. Required: it decides
+   * whether the durable `always` choice is offered at all, so a caller that
+   * cannot describe the grant must not silently get a different choice set.
+   */
+  subject: ApprovalSubject;
   /** Called with the selected choice; for 'instructions', the typed text. */
-  onConfirm: (choice: PermissionChoice, instructions?: string) => void | Promise<void>;
+  onConfirm: (choice: ApprovalChoice, instructions?: string) => void | Promise<void>;
 };
 
 export function PermissionRequiredCard({
@@ -55,25 +66,35 @@ export function PermissionRequiredCard({
   disabled = false,
   confirming = false,
   className,
+  subject,
   onConfirm,
 }: PermissionRequiredCardProps) {
-  const [selected, setSelected] = useState<PermissionChoice>('allow');
+  const choices = useMemo(() => approvalChoices(subject), [subject]);
+  const [selected, setSelected] = useState<ApprovalChoice>('once');
   const [instructions, setInstructions] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const selectedIndex = CHOICES.findIndex((c) => c.id === selected);
+  // A grant that loses its `always` option must not keep the old selection.
+  useEffect(() => {
+    if (!choices.includes(selected)) setSelected(choices[0]);
+  }, [choices, selected]);
+
+  const selectedIndex = choices.findIndex((c) => c === selected);
   const instructionsReady =
     selected !== 'instructions' || instructions.trim().length > 0;
   const canConfirm = !disabled && !confirming && instructionsReady;
 
-  const move = useCallback((delta: number) => {
-    setSelected((prev) => {
-      const i = CHOICES.findIndex((c) => c.id === prev);
-      const next = (i + delta + CHOICES.length) % CHOICES.length;
-      return CHOICES[next].id;
-    });
-  }, []);
+  const move = useCallback(
+    (delta: number) => {
+      setSelected((prev) => {
+        const i = choices.indexOf(prev);
+        const next = (i + delta + choices.length) % choices.length;
+        return choices[next];
+      });
+    },
+    [choices],
+  );
 
   const confirm = useCallback(() => {
     if (!canConfirm) return;
@@ -114,18 +135,18 @@ export function PermissionRequiredCard({
       } else if (e.key === 'Enter') {
         e.preventDefault();
         confirm();
-      } else if (e.key >= '1' && e.key <= '4') {
-        const idx = Number(e.key) - 1;
-        if (CHOICES[idx]) {
+      } else if (e.key >= '1' && e.key <= '9') {
+        const choice = choices[Number(e.key) - 1];
+        if (choice) {
           e.preventDefault();
-          setSelected(CHOICES[idx].id);
+          setSelected(choice);
         }
       }
     };
 
     el.addEventListener('keydown', onKeyDown);
     return () => el.removeEventListener('keydown', onKeyDown);
-  }, [confirm, confirming, disabled, move]);
+  }, [choices, confirm, confirming, disabled, move]);
 
   return (
     <div
@@ -175,16 +196,17 @@ export function PermissionRequiredCard({
         className="px-2 pb-2"
         data-testid="permission-choices"
       >
-        {CHOICES.map((choice, index) => {
-          const isSelected = choice.id === selected;
+        {choices.map((choiceId, index) => {
+          const choice = CHOICE_COPY[choiceId];
+          const isSelected = choiceId === selected;
           return (
-            <div key={choice.id}>
+            <div key={choiceId}>
               <button
                 type="button"
                 role="option"
                 aria-selected={isSelected}
                 disabled={disabled || confirming}
-                data-testid={`permission-choice-${choice.id}`}
+                data-testid={`permission-choice-${choiceId}`}
                 data-selected={isSelected ? 'true' : 'false'}
                 className={cn(
                   'flex w-full items-baseline gap-2 rounded-md px-2.5 py-2 text-left text-[13px] transition-colors',
@@ -193,7 +215,7 @@ export function PermissionRequiredCard({
                     : 'text-foreground hover:bg-muted',
                   (disabled || confirming) && 'opacity-60',
                 )}
-                onClick={() => setSelected(choice.id)}
+                onClick={() => setSelected(choiceId)}
               >
                 <span className="w-4 shrink-0 tabular-nums text-muted-foreground">
                   {index + 1}
@@ -206,7 +228,7 @@ export function PermissionRequiredCard({
                   </span>
                 </span>
               </button>
-              {choice.id === 'instructions' && isSelected ? (
+              {choiceId === 'instructions' && isSelected ? (
                 <div className="px-2.5 pb-2 pt-0.5">
                   <input
                     ref={inputRef}
@@ -241,6 +263,22 @@ export function PermissionRequiredCard({
         })}
       </div>
 
+      {/* Why a durable grant is missing — stated rather than silently dropped. */}
+      {!choices.includes('always') ? (
+        <p
+          className="flex items-start gap-1.5 border-t border-border px-4 py-2 text-[11px] text-muted-foreground leading-snug"
+          data-testid="permission-always-withheld"
+        >
+          <ShieldOff className="mt-0.5 size-3 shrink-0 opacity-70" aria-hidden />
+          <span>
+            <span className="font-medium text-foreground/80">
+              {PERMISSION_COPY.alwaysWithheld}
+            </span>{' '}
+            {PERMISSION_COPY.alwaysWithheldHint}
+          </span>
+        </p>
+      ) : null}
+
       <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5">
         <p className="flex min-w-0 items-start gap-1.5 text-[11px] text-muted-foreground leading-snug">
           <Info className="mt-0.5 size-3 shrink-0 opacity-70" aria-hidden />
@@ -262,7 +300,7 @@ export function PermissionRequiredCard({
 
       {/* Screen-reader: announce selected index */}
       <span className="sr-only" aria-live="polite">
-        Option {selectedIndex + 1} of {CHOICES.length}: {CHOICES[selectedIndex]?.label}
+        Option {selectedIndex + 1} of {choices.length}: {CHOICE_COPY[selected]?.label}
       </span>
     </div>
   );

@@ -61,9 +61,13 @@ def save_fact(
 
     M-2 (Part 21): ``scope`` ('global' | 'bot:<agentId>' | 'project:<path>')
     stamps the row's memory home on INSERT. An update never rewrites scope —
-    a fact keeps the home it was born in (Part 26 6.2: a bot may update a
-    GLOBAL fact through the model doors — the <memory> block invites it —
-    while a row from a DIFFERENT private scope is refused).
+    a fact keeps the home it was born in. Part 26 6.2 (tightened): a key has
+    exactly one home. A write is only accepted when it comes from the row's
+    own scope: a bot may update a GLOBAL fact by re-affirming it through the
+    model doors *in a global session*, but a ``bot:<id>``-scoped write against
+    a GLOBAL row is refused (it would otherwise replace the shared value while
+    the row stayed ``global``), and a write against a row from a DIFFERENT
+    private scope is likewise refused.
 
     Part 26 6.5: a write whose caller scope differs from the existing row's
     NON-GLOBAL scope is refused (raises ``ValueError``) instead of silently
@@ -102,6 +106,22 @@ def save_fact(
                 raise ValueError(
                     f'fact "{factKey}" belongs to scope "{existingScope}"; '
                     f'refusing a write from scope "{requested}"'
+                )
+            # Part 26 6.2 (tightened): a bot-scoped write must NOT overwrite a
+            # GLOBAL fact. The UPSERT never rewrites ``scope``, so a
+            # ``bot:<id>`` write against a global row used to replace the
+            # shared value while the row stayed ``global`` — the bot's private
+            # note silently became every session's global fact, and the
+            # original shared value was lost. A key has exactly one home: to
+            # write a global key, write it from a global scope; a bot that
+            # wants its own value must use a distinct key. Callers that
+            # legitimately move/merge rows across scopes (consolidation,
+            # rollback restore) pass ``allow_scope_override=True``.
+            if requested != GLOBAL_SCOPE and existingScope == GLOBAL_SCOPE:
+                raise ValueError(
+                    f'fact "{factKey}" is a global fact; refusing to overwrite it '
+                    f'from scope "{requested}" — write the global key from a '
+                    'global scope, or use a distinct key for this scope.'
                 )
     conn = _conn()
     # '' = unspecified: fresh inserts default to 'fact', updates keep the

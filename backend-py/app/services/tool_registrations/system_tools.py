@@ -213,6 +213,13 @@ async def _setAgentMode(mode: str = '') -> str:
              with a workspace-bound tool API (read_file / write_file /
              run_command / list_files).
       orchestrator / planner — dispatch workstreams only; no shell/edit.
+
+    TRUST BOUNDARY: a model may NOT grant itself ``code``. Code mode runs
+    model-authored Python locally, so the switch is routed through
+    ``code_runner.code_mode_switch_decision`` — the user must accept the
+    ApprovalBanner prompt (or the mode is refused outright: Plan mode, a
+    read-only sandbox, or an unattended run). Leaving code mode always works
+    and revokes the standing consent.
     """
     from app.services.workbench.workbench import get_session
 
@@ -224,7 +231,26 @@ async def _setAgentMode(mode: str = '') -> str:
     session = get_session()
     if not session:
         return 'Error: no active workbench session.'
+    if mode == 'code':
+        from app.services.workbench import code_runner as _code
+
+        allowed, message = _code.code_mode_switch_decision(session)
+        if not allowed:
+            return message
+    else:
+        from app.services.workbench import code_runner as _code
+
+        _code.clear_code_mode_trust(session)
+    if as_str(getattr(session, 'agent_mode', '')) == mode:
+        return f'Agent mode is already {mode}.'
     setattr(session, 'agent_mode', mode)
+    try:
+        from app.services.workbench.workbench import _emitSessionStatus, saveSessions
+
+        saveSessions()
+        _emitSessionStatus(session.id)
+    except Exception:
+        pass
     return f'Agent mode set to {mode}.'
 
 
@@ -538,7 +564,10 @@ def register() -> None:
         'set_agent_mode',
         "Switch this session's agent mode: 'chat' (text only), 'agent' (native tools), "
         "'code' (fenced python workspace API), or 'orchestrator' (dispatch workstreams; "
-        "no shell/edit — alias: planner).",
+        "no shell/edit — alias: planner). Switching TO 'code' is a trust escalation — it "
+        'runs model-authored Python on the user\'s machine — so it only takes effect after '
+        'the user accepts the confirmation prompt shown in the app. In Plan mode or a '
+        'read-only sandbox it is refused outright; ask the user to enable Code mode instead.',
         _setAgentMode,
         {
             'type': 'object',
@@ -546,7 +575,10 @@ def register() -> None:
                 'mode': {
                     'type': 'string',
                     'enum': ['chat', 'agent', 'code', 'orchestrator', 'planner'],
-                    'description': 'The agent mode to switch to.',
+                    'description': (
+                        'The agent mode to switch to. "code" requires the user\'s '
+                        'explicit confirmation and is refused in Plan / read-only.'
+                    ),
                 }
             },
             'required': ['mode'],

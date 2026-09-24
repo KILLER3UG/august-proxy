@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import secrets
 import time
 import uuid
@@ -499,6 +500,80 @@ async def _run_shell(job: dict[str, object]) -> tuple[str, str, int | None]:
     return status, out, result.exit_code
 
 
+def _http_url_refusal(url: str, *, allow_local: bool) -> str | None:
+    """Return a refusal reason for an HTTP-automation ``url``, or None if allowed.
+
+    A scheduled HTTP job runs unattended on the user's machine, so its target is
+    a live SSRF / local-file-read primitive if left unchecked:
+
+    * **Scheme allow-list** — only ``http``/``https``. ``file://`` (and any other
+      scheme) is refused outright: ``urlopen`` would happily read a local file and
+      exfiltrate it into the run log, and schemes like ``ftp``/``gopher`` reach
+      handlers this app never intends to expose.
+    * **SSRF guard** — loopback / private / link-local / cloud-metadata hosts are
+      refused, reusing the vetted guard from the web-fetch tool. This blocks the
+      usual pivots (127.0.0.1, 10/8, 192.168/16, 169.254.169.254, ::1, decimal/hex
+      IP forms, and hostnames that *resolve* to private addresses).
+    * **Explicit localhost opt-in** — targeting a loopback/private address is
+      legitimate (a local dev server, a NAS), so it is allowed when the caller
+      opts in explicitly via the ``AUGUST_AUTOMATION_ALLOW_LOCALHOST`` env var or
+      a per-job ``allowLocalhost`` flag. The opt-in only relaxes the *network*
+      check; the http(s)-only scheme rule always holds, so ``file://`` stays
+      blocked even for an opted-in localhost job.
+    """
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return f'refused: malformed URL {url!r}'
+    scheme = (parsed.scheme or '').lower()
+    if scheme not in ('http', 'https'):
+        return (
+            f'refused: http automations require an http(s):// URL '
+            f'(got {scheme or "no"} scheme)'
+        )
+    if allow_local:
+        return None
+    from app.services.tool_registrations.web_tools import _is_private_url
+
+    if _is_private_url(url):
+        return (
+            'refused: target resolves to a private/loopback/metadata address. '
+            'Set AUGUST_AUTOMATION_ALLOW_LOCALHOST=1 (or allowLocalhost on the '
+            'job) to allow local targets.'
+        )
+    return None
+
+
+def _http_localhost_allowed(job: dict[str, object]) -> bool:
+    """Explicit localhost opt-in for a job: per-job flag OR the env var."""
+    if as_bool(job.get('allowLocalhost'), False):
+        return True
+    return (os.environ.get('AUGUST_AUTOMATION_ALLOW_LOCALHOST') or '').strip().lower() in (
+        '1',
+        'true',
+        'yes',
+        'on',
+    )
+
+
+def _open_http_url(req, *, timeout: float, allow_local: bool):
+    """Open an HTTP request while re-validating every redirect target."""
+    import urllib.request
+    from urllib.parse import urljoin
+
+    class _RedirectGuard(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            target = urljoin(req.full_url, newurl)
+            refusal = _http_url_refusal(target, allow_local=allow_local)
+            if refusal is not None:
+                raise ValueError(refusal)
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    return urllib.request.build_opener(_RedirectGuard()).open(req, timeout=timeout)
+
+
 def _run_http(job: dict[str, object]) -> tuple[str, str, int | None]:
     import urllib.error
     import urllib.request
@@ -506,6 +581,9 @@ def _run_http(job: dict[str, object]) -> tuple[str, str, int | None]:
     url = as_str(job.get('url') or job.get('command'))
     if not url:
         return 'error', 'http job missing url', None
+    refusal = _http_url_refusal(url, allow_local=_http_localhost_allowed(job))
+    if refusal is not None:
+        return 'error', refusal, None
     method = as_str(job.get('method'), 'GET').upper() or 'GET'
     body = as_str(job.get('body'))
     data = body.encode('utf-8') if body and method in ('POST', 'PUT', 'PATCH') else None
@@ -514,8 +592,10 @@ def _run_http(job: dict[str, object]) -> tuple[str, str, int | None]:
     if data is not None:
         req.add_header('Content-Type', as_str(job.get('contentType'), 'application/json'))
     try:
-        with urllib.request.urlopen(
-            req, timeout=as_float(job.get('timeoutMs'), 30000.0) / 1000.0
+        with _open_http_url(
+            req,
+            timeout=as_float(job.get('timeoutMs'), 30000.0) / 1000.0,
+            allow_local=_http_localhost_allowed(job),
         ) as resp:
             raw = resp.read().decode('utf-8', errors='replace')[:4000]
             code = int(resp.status)

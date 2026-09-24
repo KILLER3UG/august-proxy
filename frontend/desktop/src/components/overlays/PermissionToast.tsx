@@ -1,6 +1,8 @@
 /* ── PermissionToast ──────────────────────────────────────────────────── */
-/* Lightweight grant toast: Once / This chat / Always here.  */
+/* Lightweight grant toast: Once / This session / Always here.              */
 /* Reuses POST /api/workbench/confirm-mutation (same grant store as banner). */
+/* `Always` is withheld exactly as in PermissionRequiredCard — see            */
+/* lib/approval-scope.ts.                                                    */
 
 import { useState } from 'react';
 import { Shield, ShieldCheck, X } from 'lucide-react';
@@ -10,8 +12,9 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { PERMISSION_COPY } from '@/lib/permission-copy';
+import { canGrantAlways, type ApprovalSubject, type GrantScope } from '@/lib/approval-scope';
 
-export type GrantScope = 'once' | 'session' | 'always';
+export type { ApprovalSubject, GrantScope } from '@/lib/approval-scope';
 
 type Props = {
   sessionId: string;
@@ -19,10 +22,12 @@ type Props = {
   toolName?: string | null;
   path?: string | null;
   summary?: string | null;
+  /** Grant key + categories; gates the durable `Always` button. */
+  subject?: ApprovalSubject | null;
   compact?: boolean;
   className?: string;
   onDecided?: (reject: boolean, scope: GrantScope) => void;
-  /** Reattach chat SSE after backend continues the turn. */
+  /** Reattach chat SSE after backend continued the turn. */
   onContinued?: (sinceSeq: number) => void;
 };
 
@@ -53,6 +58,7 @@ export function PermissionToast({
   toolName,
   path,
   summary,
+  subject,
   compact = true,
   className,
   onDecided,
@@ -60,6 +66,7 @@ export function PermissionToast({
 }: Props) {
   const [deciding, setDeciding] = useState<string | null>(null);
   const qc = useQueryClient();
+  const allowAlways = subject === undefined ? false : canGrantAlways(subject);
 
   const label =
     summary ||
@@ -153,18 +160,26 @@ export function PermissionToast({
         >
           {deciding === 'session' ? '…' : PERMISSION_COPY.session}
         </Button>
-        <Button
-          size="sm"
-          className="h-7 px-2 text-[11px] bg-warning text-black hover:bg-warning/90"
-          disabled={!!deciding}
-          onClick={() => {
-            void decide(false, 'always');
-          }}
-          title={PERMISSION_COPY.alwaysHint}
-        >
-          {deciding === 'always' ? '…' : PERMISSION_COPY.always}
-        </Button>
+        {allowAlways ? (
+          <Button
+            size="sm"
+            className="h-7 px-2 text-[11px] bg-warning text-black hover:bg-warning/90"
+            disabled={!!deciding}
+            onClick={() => {
+              void decide(false, 'always');
+            }}
+            title={PERMISSION_COPY.alwaysHint}
+            data-testid="permission-toast-always"
+          >
+            {deciding === 'always' ? '…' : PERMISSION_COPY.always}
+          </Button>
+        ) : null}
       </div>
+      {!allowAlways ? (
+        <p className="text-[10px] text-muted-foreground" data-testid="permission-toast-always-withheld">
+          {PERMISSION_COPY.alwaysWithheldHint}
+        </p>
+      ) : null}
     </div>
   );
 }

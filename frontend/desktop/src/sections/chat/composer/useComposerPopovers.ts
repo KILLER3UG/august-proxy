@@ -19,6 +19,7 @@ import { useSessionsStore } from '@/store/sessions';
 import { voiceCommandEvents } from '@/api/voice/registry-events';
 import { getDisplayCommands } from '@/api/voice/registry';
 import { COMPOSER_TOOLS as TOOLS, fetchFileMentions, fetchMcpMentions, parseAtMention, type MentionItem , fetchConversationMentions, fetchHarnessMentions, fetchBotMentions } from '../composer-mentions';
+import type { ChatSendFn } from '../hooks/useChatSend';
 
 /** Closers useChatSend calls after a send so open popovers dismiss. */
 export type ComposerDropdownApi = {
@@ -64,7 +65,7 @@ export interface UseComposerPopoversArgs {
   setInput: Dispatch<SetStateAction<string>>;
   taRef: RefObject<HTMLTextAreaElement | null>;
   dropdownApiRef?: MutableRefObject<ComposerDropdownApi | null>;
-  send: (textOverride?: string) => Promise<void>;
+  send: ChatSendFn;
   /** Stops the in-flight generation (Esc while streaming). */
   stop?: () => void;
   /** Whether a generation is currently streaming (enables the stop key). */

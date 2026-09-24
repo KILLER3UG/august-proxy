@@ -5,16 +5,20 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { ShieldAlert } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { DiffView } from '@/components/chat/DiffView';
+import { PermissionRequiredCard } from '@/components/overlays/PermissionRequiredCard';
 import {
-  PermissionRequiredCard,
-  type PermissionChoice,
-} from '@/components/overlays/PermissionRequiredCard';
-import type { GrantScope } from '@/components/overlays/PermissionToast';
+  choiceToDecision,
+  type ApprovalChoice,
+  type ApprovalSubject,
+  type GrantScope,
+} from '@/lib/approval-scope';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { getToolLabel, pathBasename } from '@/lib/tool-labels';
 import type { PendingMutationItem, SessionStatus } from '@/hooks/useSessionStatus';
+
+export type { ApprovalChoice, ApprovalSubject, GrantScope } from '@/lib/approval-scope';
 
 type Props = {
   sessionId: string;
@@ -173,17 +177,6 @@ function previewFromMutation(m: PendingMutationItem): ReactNode {
   );
 }
 
-function choiceToDecision(choice: PermissionChoice): {
-  reject: boolean;
-  scope: GrantScope;
-} {
-  if (choice === 'deny' || choice === 'instructions') {
-    return { reject: true, scope: 'once' };
-  }
-  if (choice === 'always') return { reject: false, scope: 'always' };
-  return { reject: false, scope: 'once' };
-}
-
 async function postDecision(
   sessionId: string,
   token: string,
@@ -215,11 +208,14 @@ function MutationCard({
     [mutation],
   );
   const preview = useMemo(() => previewFromMutation(mutation), [mutation]);
+  const subject = useMemo<ApprovalSubject>(
+    () => ({ grantKey: mutation.grantKey, categories: mutation.categories }),
+    [mutation.grantKey, mutation.categories],
+  );
 
-  const handleConfirm = async (choice: PermissionChoice, instructions?: string) => {
+  const handleConfirm = async (choice: ApprovalChoice, instructions?: string) => {
     if (!token || confirming) return;
-    const { reject, scope } = choiceToDecision(choice);
-    setConfirming(true);
+    const { reject, scope } = choiceToDecision(choice);    setConfirming(true);
     try {
       const res = await postDecision(sessionId, token, reject, scope, instructions);
       void qc.invalidateQueries({ queryKey: ['session-status', sessionId] });
@@ -253,6 +249,7 @@ function MutationCard({
       preview={preview}
       disabled={!token}
       confirming={confirming}
+      subject={subject}
       onConfirm={handleConfirm}
     />
   );
@@ -277,6 +274,8 @@ export function MutationDiffCards({
           args: status.pendingArgs ?? undefined,
           preview: status.pendingPreview ?? undefined,
           path: status.pendingPath ?? undefined,
+          grantKey: status.pendingGrantKey ?? undefined,
+          categories: status.pendingCategories ?? undefined,
         } satisfies PendingMutationItem,
       ];
     }

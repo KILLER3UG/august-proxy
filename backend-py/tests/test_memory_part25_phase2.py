@@ -87,10 +87,11 @@ class TestKeyNamespacing:
         assert a.startswith('model:bot-alpha:')  # scope-namespaced
 
     def test_explicit_cross_scope_collision_policy(self, store, monkeypatch):
-        """ONE scope rule for remember/forget — rows inside the
-        session's visible union (global + own scope) are UPDATABLE (the
-        <memory> block explicitly invites a bot to update a global fact by
-        key), while a row from a DIFFERENT private scope is still refused."""
+        """ONE scope rule for remember/forget — a key has exactly one home, so
+        a write is accepted only from the row's OWN scope. A bot-scoped write
+        against a GLOBAL row is refused (it would replace the shared value
+        while the row stayed global), and a row from a DIFFERENT private scope
+        is likewise never silently overwritten."""
         import asyncio
         import json
 
@@ -99,8 +100,8 @@ class TestKeyNamespacing:
 
         # A global fact exists under key 'shared-key'.
         store.save_fact('shared-key', {'fact': 'global value'}, title='G', source='user')
-        # A bot session updating the same explicit key now EDITS the global
-        # row in place (scope stays 'global' — never rewritten).
+        # A bot session targeting the same explicit key is now REFUSED (was
+        # previously allowed to edit the global row in place).
         monkeypatch.setattr(session_scope, 'resolve_scope', lambda *a, **k: 'bot:alpha')
         res = json.loads(
             asyncio.run(
@@ -110,9 +111,11 @@ class TestKeyNamespacing:
                 )
             )
         )
-        assert res.get('ok') is True
+        assert res.get('ok') is False
+        assert 'another memory scope' in res.get('policy', '')
         row = store.get_fact('shared-key')
         assert row is not None
+        assert 'global value' in str(row.get('factValue'))
         assert str(row.get('scope') or 'global') == 'global'
 
         # A row from ANOTHER private scope is still refused — never silently

@@ -35,6 +35,29 @@ _MIGRATION_FILE_RE = re.compile(r'^(\d+)_.+\.sql$')
 # How many times a given version is attempted before it is skipped for good.
 _MAX_ATTEMPTS = 3
 
+# SQLite error fragments that mean "the schema change this migration performs
+# is already present" — NOT a failure. Several additive columns (e.g. 044
+# facts.description) have TWO owners: a versioned .sql migration AND the
+# `ensure_column` fast path in memory_schema.ensure_schema. The fast path runs
+# first, adds the column, and the migration's `ALTER TABLE ... ADD COLUMN` then
+# fails with "duplicate column name". That is a benign, self-resolving
+# condition — the desired end state is already true — but the old code logged a
+# warning, retried 3x, then recorded the version in schema_migration_failures
+# and permanently blacklisted it with a misleading ERROR ("the brain database
+# is missing whatever it creates"). Recognizing these as a successful apply
+# keeps the double ownership harmless, records the migration as applied, and
+# clears any failure-ledger row so the state stays honest.
+_ALREADY_APPLIED_ERRORS = (
+    'duplicate column name',
+    'already exists',
+)
+
+
+def _is_already_applied_error(exc: Exception) -> bool:
+    """True for benign "already present" DDL errors (see _ALREADY_APPLIED_ERRORS)."""
+    message = str(exc).lower()
+    return any(marker in message for marker in _ALREADY_APPLIED_ERRORS)
+
 
 def _ensure_migration_table(conn: sqlite3.Connection) -> None:
     """Create the schema_migrations tracking table if it doesn't exist."""
@@ -175,6 +198,32 @@ def run_migrations(conn: sqlite3.Connection) -> int:
             newly_applied += 1
             logger.info('Applied migration %03d: %s', version, name)
         except Exception as exc:
+            if _is_already_applied_error(exc):
+                # Benign double-ownership: the column/index this migration adds
+                # is already present (added by the ensure_column fast path). The
+                # desired end state holds, so record the version as APPLIED and
+                # clear any failure-ledger row instead of retrying and then
+                # blacklisting it with a misleading "schema is missing ..." ERROR.
+                try:
+                    conn.execute(
+                        'INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (?, ?)',
+                        (version, name),
+                    )
+                    conn.execute('DELETE FROM schema_migration_failures WHERE version = ?', (version,))
+                    conn.commit()
+                    logger.info(
+                        'Migration %03d (%s) already applied (schema change present): %s',
+                        version,
+                        name,
+                        exc,
+                    )
+                except Exception:
+                    # Recording is best-effort; never let a bookkeeping hiccup
+                    # mask that the schema is actually in the intended state.
+                    logger.debug(
+                        'Could not record %03d as already-applied', version, exc_info=True
+                    )
+                continue
             attempts = _record_failure(conn, version, name, exc)
             if attempts >= _MAX_ATTEMPTS:
                 # Loud on purpose: from here on the schema is knowingly partial,

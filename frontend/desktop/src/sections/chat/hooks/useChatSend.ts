@@ -42,13 +42,35 @@ import {
   clearComposerDraft,
   persistMessages,
 } from '../message-storage';
-import { enqueueOfflineMessage } from '../offline-queue-store';
+import { enqueueOfflineMessage, type OfflineSendOutcome } from '../offline-queue-store';
 import { $gateway } from '@/store/gateway';
 import type { ModelItem } from '../model-display';
 import { ChatSendService } from '../services/ChatSendService';
 import { playSendChime } from '@/lib/chat-chime';
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
+
+export interface ChatSendOptions {
+  /**
+   * Replay attachments (offline queue flush) instead of the composer set.
+   * An attachment-only message is legal — text may be empty.
+   */
+  attachments?: FileAttachment[];
+  /**
+   * When true the send path will NOT re-park the message in the offline
+   * queue when the backend is unreachable: the caller (queue replay) owns
+   * the item until it is explicitly dequeued.
+   */
+  noRequeue?: boolean;
+}
+
+export type ChatSendOutcome = OfflineSendOutcome;
+
+/** Send function shape shared by the composer, voice and replay callers. */
+export type ChatSendFn = (
+  textOverride?: string,
+  options?: ChatSendOptions,
+) => Promise<ChatSendOutcome>;
 
 /** Strip ephemeral upload UI fields before persisting on a sent message. */
 function persistAttachment(a: FileAttachment): FileAttachment {
@@ -138,7 +160,7 @@ export function useChatSend(opts: UseChatSendOptions) {
   // closure, but `send` is defined after it and is NOT in generateAIResponse's
   // dep array — calling `send` directly would capture a stale callback. Route
   // the retry through a ref that always points at the latest `send`.
-  const sendRef = useRef<(textOverride?: string) => Promise<void>>(async () => {});
+  const sendRef = useRef<ChatSendFn>(async () => 'skipped');
 
   // (b) Double-Enter latch: the second send in the same frame sees a stale
   // `input`/`streaming` closure and would append a duplicate user bubble
@@ -152,11 +174,11 @@ export function useChatSend(opts: UseChatSendOptions) {
   };
 
   const generateAIResponse = useCallback(
-    async (chatHistory: ChatMessage[]) => {
+    async (chatHistory: ChatMessage[]): Promise<ChatSendOutcome> => {
       const turnSessionId = sessionId;
       if (!turnSessionId) {
         releaseSendLatch();
-        return;
+        return 'skipped';
       }
       if (!chatRuntime.canStartTurn(turnSessionId)) {
         // Stale runtime turn with no live controller — clear and proceed.
@@ -179,12 +201,14 @@ export function useChatSend(opts: UseChatSendOptions) {
                 entry,
               ]);
               toast.message('Queued — will send when the current response finishes');
+              releaseSendLatch();
+              return 'queued';
             } catch {
               toast.error('Could not start a new response — one is already running');
             }
           }
           releaseSendLatch();
-          return;
+          return 'skipped';
         }
       }
 
@@ -225,7 +249,7 @@ export function useChatSend(opts: UseChatSendOptions) {
       if (!latestText) {
         toast.error('Nothing to send');
         releaseSendLatch();
-        return;
+        return 'skipped';
       }
 
       // Read the model from the ref: this callback is invoked from captured
@@ -235,12 +259,12 @@ export function useChatSend(opts: UseChatSendOptions) {
       if (!useModel?.id) {
         toast.error('Select a model first (e.g. a free OpenCode model)');
         releaseSendLatch();
-        return;
+        return 'skipped';
       }
       if (!useModel.provider) {
         toast.error('Selected model has no provider — pick it again from the model list');
         releaseSendLatch();
-        return;
+        return 'skipped';
       }
 
       // @git mention: attach a compact git snapshot to the request only
@@ -311,6 +335,9 @@ export function useChatSend(opts: UseChatSendOptions) {
           description: 'It will run when the current response finishes.',
         });
       }
+      // 'aborted' (user Stop) still means the turn was ACCEPTED by the
+      // backend — the offline replay must not re-send a delivered message.
+      return result === 'queued' ? 'queued' : result === 'error' ? 'error' : 'sent';
     },
     [
       sessionId,
@@ -372,23 +399,30 @@ export function useChatSend(opts: UseChatSendOptions) {
   }, [streaming, sessionId]);
 
   const send = useCallback(
-    async (textOverride?: string) => {
+    async (
+      textOverride?: string,
+      sendOptions?: ChatSendOptions,
+    ): Promise<ChatSendOutcome> => {
       // (b) Double-Enter in the same frame: the second call sees a stale
       // `input`/`streaming` closure and would append a duplicate bubble.
       // Ignore re-entry while a send is in flight (released when the turn
       // registers or the send bails — see releaseSendLatch).
-      if (sendingRef.current) return;
+      if (sendingRef.current) return 'skipped';
       sendingRef.current = true;
+
+      // Offline-queue replay supplies its own attachments; the composer set is
+      // irrelevant (and usually empty) for those sends.
+      const sourceAttachments = sendOptions?.attachments ?? attachments;
 
       if (!sessionId) {
         toast.error('No active session');
         releaseSendLatch();
-        return;
+        return 'skipped';
       }
       if (loadedSessionId !== sessionId) {
         toast.error('Session is still loading — try again in a moment');
         releaseSendLatch();
-        return;
+        return 'skipped';
       }
 
       // (a) Model guard BEFORE mutating state: appending the user bubble and
@@ -397,29 +431,29 @@ export function useChatSend(opts: UseChatSendOptions) {
       if (!modelForRequest?.id) {
         toast.error('Select a model first (e.g. a free OpenCode model)');
         releaseSendLatch();
-        return;
+        return 'skipped';
       }
       if (!modelForRequest?.provider) {
         toast.error('Selected model has no provider — pick it again from the model list');
         releaseSendLatch();
-        return;
+        return 'skipped';
       }
 
-      if (ChatAttachmentService.isReading(attachments)) {
+      if (ChatAttachmentService.isReading(sourceAttachments)) {
         toast.message('Still attaching files…', {
           description: 'Wait for uploads to finish before sending.',
         });
         releaseSendLatch();
-        return;
+        return 'skipped';
       }
 
-      const readyAttachments = ChatAttachmentService.readyOnly(attachments);
+      const readyAttachments = ChatAttachmentService.readyOnly(sourceAttachments);
       // Keep bubble content as the typed text only; compose attachment dump
       // later when calling the model (see generateAIResponse).
       const typed = (textOverride ?? input).trim();
       if (!typed && readyAttachments.length === 0) {
         releaseSendLatch();
-        return;
+        return 'skipped';
       }
       const text = typed;
 
@@ -461,12 +495,12 @@ export function useChatSend(opts: UseChatSendOptions) {
             // For commands that should fall through to the backend (e.g.
             // /btw with an arg), the handler should NOT clear the composer.
             releaseSendLatch();
-            return;
+            return 'skipped';
           } catch (err) {
             console.error('[slash] handler threw synchronously', err);
             toast.error('Command failed');
             releaseSendLatch();
-            return;
+            return 'skipped';
           }
         }
         // Unrecognized slash command — let the backend handle it (or no-op).
@@ -512,12 +546,14 @@ export function useChatSend(opts: UseChatSendOptions) {
           toast.message('Direction queued', {
             description: 'Applied after the current tool step.',
           });
+          releaseSendLatch();
+          return 'queued';
         } catch (err) {
           console.error('[send] steer failed', err);
           toast.error('Could not add direction');
+          releaseSendLatch();
+          return 'skipped';
         }
-        releaseSendLatch();
-        return;
       }
 
       // Offline compose (C9): if the backend is unreachable, park the
@@ -549,20 +585,25 @@ export function useChatSend(opts: UseChatSendOptions) {
           if ($gateway.get().status !== 'open') throw new Error('backend not ready');
         }
       } catch {
-        enqueueOfflineMessage(
-          sessionId,
-          text,
-          readyForSend.length > 0 ? readyForSend.map(persistAttachment) : undefined,
-        );
-        toast.message('Offline — message saved', {
-          description: 'It will send automatically when the backend is back.',
-        });
-        setInput('');
-        clearComposerDraft(sessionId);
+        // Queue replay owns its item while it is parked: re-enqueuing here
+        // would duplicate it (and the replay would dequeue the copy it never
+        // sent). Report "offline" and let the replay keep it parked.
+        if (!sendOptions?.noRequeue) {
+          enqueueOfflineMessage(
+            sessionId,
+            text,
+            readyForSend.length > 0 ? readyForSend.map(persistAttachment) : undefined,
+          );
+          toast.message('Offline — message saved', {
+            description: 'It will send automatically when the backend is back.',
+          });
+          setInput('');
+          clearComposerDraft(sessionId);
+        }
         setShowToolsDropdown(false);
         setShowCommandsDropdown(false);
         releaseSendLatch();
-        return;
+        return 'offline';
       }
 
       // Wait for the backend transcript before appending the local bubble. A
@@ -653,12 +694,13 @@ export function useChatSend(opts: UseChatSendOptions) {
       // overwrite the existing list with just two entries and wipe the prior
       // conversation from view and from localStorage.
       try {
-        await generateAIResponse(nextMessages);
+        return await generateAIResponse(nextMessages);
       } catch {
         // generateAIResponse releases the latch itself once the turn is
         // registered; this catch only guards pre-registration throws so a
         // bail can never wedge the double-Enter latch.
         releaseSendLatch();
+        return 'skipped';
       }
     },
     [

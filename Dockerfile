@@ -42,8 +42,11 @@ RUN uv run playwright install chromium --with-deps || echo "Playwright install s
 # Copy frontend build output, data, skills, docs, scripts
 # (host_files/ is dockerignored and live-mounted via docker-compose at runtime)
 WORKDIR /app
-COPY web-dist/ /app/web-dist/
-COPY data/ /app/data/
+# web-dist/ and data/ are gitignored build/runtime artifacts, so they are absent
+# from a clean checkout. docker-compose live-mounts both (plus host_files/), so
+# bake only tracked sources here and create empty mount points; this keeps
+# `docker build .` green on a fresh clone without changing compose runtime.
+RUN mkdir -p /app/web-dist /app/data
 COPY skills/ /app/skills/
 COPY docs/ /app/docs/
 COPY scripts/ /app/scripts/

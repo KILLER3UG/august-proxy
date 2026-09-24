@@ -15,6 +15,7 @@ import { botAvatarSvg } from '@/lib/bot-avatar';
 import { BotCreateModal } from '@/components/sidebar/BotCreateModal';
 import { RoomView } from '@/components/sidebar/RoomView';
 import { Backdrop } from '@/components/overlays/Backdrop';
+import { QueryErrorState } from '@/components/QueryErrorState';
 import {
   createBot,
   deleteBot,
@@ -426,6 +427,10 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
   };
 
   const anyBots = (botsQuery.data?.bots?.length ?? 0) > 0;
+  // A failed roster fetch is not an empty roster — the rail used to render
+  // "No Bots yet — create one", which both lied and nudged the user toward
+  // creating a duplicate of a Bot that already exists.
+  const rosterFailed = botsQuery.isError && !botsQuery.data;
 
   // Session summaries power the roster rows (last-message preview +
   // timestamp) and the "Active now" strip (updatedAt within 90 s).
@@ -597,16 +602,26 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
             />
           ))}
         </AnimatePresence>
-        {!anyBots && (
+        {rosterFailed ? (
+          <div className="px-1.5">
+            <QueryErrorState
+              compact
+              error={botsQuery.error}
+              onRetry={() => void botsQuery.refetch()}
+              retrying={botsQuery.isRefetching}
+              title="Couldn't load Bots"
+              note="The roster request failed — your Bots may still exist."
+            />
+          </div>
+        ) : !anyBots ? (
           <p className="px-2 py-1 text-xs text-tier-3 italic">
             No Bots yet — create one to give it a forever-chat.
           </p>
-        )}
-        {anyBots && bots.length === 0 && (
+        ) : bots.length === 0 ? (
           <p className="px-2 py-1 text-xs text-tier-3 italic">
             No Bots match “{search}”.
           </p>
-        )}
+        ) : null}
       </div>
 
       {/* F3: rooms as rail rows, mixed with Bots. Clicking opens the existing

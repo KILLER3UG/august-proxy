@@ -6,7 +6,38 @@ separate from definition/schema helpers (Phase 3 modularization).
 
 from __future__ import annotations
 
+import os
+
 from app.models import ToolDefinition
+
+# Proxy shell is a *capability*, not a default. Auto-injecting
+# ``mcp__workspace__bash`` into every gateway conversation handed an ordinary
+# inference client a server-side code-execution tool it never asked for — the
+# model could be talked into running one by anything in its context. The typed
+# workbench tools (``run_command`` et al.) are unaffected; this only governs the
+# names the proxy adds on the client's behalf.
+PROXY_SHELL_ENV_VAR = 'AUGUST_PROXY_SHELL'
+_PROXY_SHELL_TRUE = ('1', 'true', 'yes', 'on')
+
+
+def proxy_shell_tools_enabled() -> bool:
+    """True when the operator opted the gateway proxy into shell injection."""
+    return os.environ.get(PROXY_SHELL_ENV_VAR, '').strip().lower() in _PROXY_SHELL_TRUE
+
+
+def _managed_shell_tool_definition() -> dict[str, object]:
+    return {
+        'name': 'mcp__workspace__bash',
+        'description': 'Execute a bash command in the proxy workspace container. Returns stdout, stderr, and exit code. Use for file operations, code analysis, git commands, and scripting.',
+        'input_schema': {
+            'type': 'object',
+            'properties': {
+                'command': {'type': 'string', 'description': 'The bash command to execute.'},
+                'timeout_ms': {'type': 'integer', 'description': 'Timeout in milliseconds (default 60000).'},
+            },
+            'required': ['command'],
+        },
+    }
 
 
 def _stub_tool_definitions() -> list[dict[str, object]]:
@@ -27,8 +58,14 @@ def sanitize_tool_schema(schema: object) -> dict[str, object]:
 
 
 def get_managed_anthropic_web_tool_definitions() -> list[dict[str, object]]:
-    """Return Anthropic-format tool definitions for managed web/bash tools."""
-    return [
+    """Return Anthropic-format tool definitions for managed web/bash tools.
+
+    ``mcp__workspace__bash`` is included only when ``AUGUST_PROXY_SHELL`` opts
+    the proxy into shell injection — see :func:`proxy_shell_tools_enabled`.
+    A client that declares the tool itself is unaffected (it is passed through
+    as its own tool, not injected here).
+    """
+    defs: list[dict[str, object]] = [
         {
             'name': 'WebSearch',
             'description': 'Search the public web for ranked titles, URLs, and snippets only (does not download page bodies). Supports Brave Search, SearXNG, and the default search backend. Then use WebFetch for pages you need. External/public information only. Do not combine this tool with any other tool in the same turn.',
@@ -78,7 +115,7 @@ def get_managed_anthropic_web_tool_definitions() -> list[dict[str, object]]:
         },
         {
             'name': 'mcp__workspace__web_fetch',
-            'description': 'Fetch a public webpage by URL and convert it to clean Markdown. Use after web search when you need page content. Long pages may be summarized. Workspace-compatible alias for third-party Claude clients. Private/local network addresses are blocked. Do not combine this tool with any other tool in the same turn.',
+            'description': 'Fetch a public webpage by URL and convert it to clean Markdown. Use after web search when you need page content. Long pages may be summarized. Private/local network addresses are blocked. Workspace-compatible alias for third-party Claude clients. Do not combine this tool with any other tool in the same turn.',
             'input_schema': {
                 'type': 'object',
                 'properties': {
@@ -91,19 +128,11 @@ def get_managed_anthropic_web_tool_definitions() -> list[dict[str, object]]:
                 'required': ['url'],
             },
         },
-        {
-            'name': 'mcp__workspace__bash',
-            'description': 'Execute a bash command in the proxy workspace container. Returns stdout, stderr, and exit code. Use for file operations, code analysis, git commands, and scripting.',
-            'input_schema': {
-                'type': 'object',
-                'properties': {
-                    'command': {'type': 'string', 'description': 'The bash command to execute.'},
-                    'timeout_ms': {'type': 'integer', 'description': 'Timeout in milliseconds (default 60000).'},
-                },
-                'required': ['command'],
-            },
-        },
     ]
+    if proxy_shell_tools_enabled():
+        defs.append(_managed_shell_tool_definition())
+    return defs
+
 
 
 def sanitize_anthropic_tool_definition(tool: dict[str, object] | None) -> dict[str, object] | None:
@@ -171,19 +200,31 @@ def dedupe_and_canonicalize_anthropic_tools(tools: list[dict[str, object]]) -> l
             if ctName not in seenNames:
                 seenNames.add(ctName)
                 sanitized.append(ct)
-    bashDefs = [t for t in get_managed_anthropic_web_tool_definitions() if t.get('name') == 'mcp__workspace__bash']
-    for bd in bashDefs:
-        bdName = bd.get('name')
-        if not isinstance(bdName, str):
-            continue
-        if bdName not in seenNames:
-            seenNames.add(bdName)
-            sanitized.append(bd)
+    # The managed shell tool is appended here only under the explicit
+    # AUGUST_PROXY_SHELL opt-in; `get_managed_anthropic_web_tool_definitions()`
+    # already filters it, and this guard keeps it that way if that list is
+    # ever refactored. A client-declared `mcp__workspace__bash` stays in
+    # `sanitized` above untouched.
+    if proxy_shell_tools_enabled():
+        bashDefs = [
+            t for t in get_managed_anthropic_web_tool_definitions() if t.get('name') == 'mcp__workspace__bash'
+        ]
+        for bd in bashDefs:
+            bdName = bd.get('name')
+            if not isinstance(bdName, str):
+                continue
+            if bdName not in seenNames:
+                seenNames.add(bdName)
+                sanitized.append(bd)
     return sanitized
 
 
 def get_canonical_managed_anthropic_web_tools() -> list[dict[str, object]]:
-    """Return only the canonical web tool definitions."""
+    """Return only the canonical web tool definitions.
+
+    ``mcp__workspace__bash`` joins this list only when the proxy shell
+    capability is enabled (see :func:`proxy_shell_tools_enabled`).
+    """
     return [
         t
         for t in get_managed_anthropic_web_tool_definitions()

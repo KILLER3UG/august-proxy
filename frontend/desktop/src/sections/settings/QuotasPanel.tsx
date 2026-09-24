@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
 import { PageLoader } from '@/components/PageLoader';
+import { QueryErrorState } from '@/components/QueryErrorState';
 import { Gauge, Inbox } from 'lucide-react';
 
 function formatQuotaNumber(n: number): string {
@@ -67,13 +68,23 @@ export function QuotasPanel() {
   if (all.isLoading) {
     return <PageLoader label="Loading quota…" className="px-0 py-2" />;
   }
+  if (all.isError && !all.data) {
+    return (
+      <QueryErrorState
+        error={all.error}
+        onRetry={() => void all.refetch()}
+        retrying={all.isFetching}
+        title="Couldn't load usage"
+      />
+    );
+  }
   const data = all.data?.results || [];
   if (data.length === 0) {
     return (
       <SettingsEmptyState
         icon={Inbox}
         title="No quota data yet"
-        description="Once adapters record usage, your daily model quotas will appear here."
+        description="Once August records local model usage, the token counters for this window will appear here."
       />
     );
   }
@@ -89,8 +100,7 @@ export function QuotasPanel() {
                 {provider}
               </CardTitle>
               <span className="text-[10px] text-muted-foreground font-mono">
-                {quotas.length} model{quotas.length === 1 ? '' : 's'} · resets at{' '}
-                {new Date(quotas[0]?.resetsAt || Date.now()).toUTCString().slice(17, 22)} UTC
+                {quotas.length} model{quotas.length === 1 ? '' : 's'} · local usage window
               </span>
             </div>
           </CardHeader>

@@ -48,6 +48,8 @@ export interface AutomationJob {
   url?: string;
   method?: string;
   body?: string;
+  /** Explicit opt-in for HTTP jobs targeting localhost/private services. */
+  allowLocalhost?: boolean;
   /* Part 19 Phase B (routines): delivery + memory knobs. */
   deliver?: string;
   respond?: boolean;
@@ -86,6 +88,8 @@ export type AutomationUpsertInput = {
   url?: string;
   method?: string;
   body?: string;
+  /** Explicit opt-in for HTTP jobs targeting localhost/private services. */
+  allowLocalhost?: boolean;
   /* Part 19 Phase B (routines): delivery + memory knobs. */
   deliver?: string;
   respond?: boolean;

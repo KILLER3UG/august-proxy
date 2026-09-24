@@ -7,20 +7,36 @@ from typing import cast
 
 from app.json_narrowing import as_int
 from app.services.memory_conn import conn as _conn
+from app.services.memory_store.transcript_blocks import decode_blocks, encode_blocks
 from app.services.memory_store.wire import _json, _row_as_wire
 from app.type_aliases import JsonValue, MessageDict
 
 
-def save_message(sessionId: str, role: str, content: JsonValue) -> int:
+def save_message(
+    sessionId: str,
+    role: str,
+    content: JsonValue,
+    blocks: JsonValue | None = None,
+) -> int:
     """Save a message to a session.
+
+    ``blocks`` is the optional structured transcript payload (migration 047):
+    a block list, or an object of structured fields. Stored as JSON in
+    ``messages.blocks_json``; ``content`` stays the FTS-indexed text.
 
     FTS index ``messages_fts`` is kept in sync via SQLite content-sync triggers
     created in ``memory_schema`` (insert/update/delete).
     """
     conn = _conn()
+    source: dict[str, object] = {'role': role, 'content': content}
+    if isinstance(blocks, list):
+        source['blocks'] = blocks
+    elif isinstance(blocks, dict):
+        for key, value in blocks.items():
+            source[key] = value
     cursor = conn.execute(
-        'INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)',
-        (sessionId, role, _json(content)),
+        'INSERT INTO messages (session_id, role, content, blocks_json) VALUES (?, ?, ?, ?)',
+        (sessionId, role, _json(content), encode_blocks(source)),
     )
     conn.commit()
     return as_int(cursor.lastrowid)
@@ -63,6 +79,13 @@ def get_messages(
             msg['content'] = json.loads(msg['content']) if isinstance(msg['content'], str) else msg['content']
         except (json.JSONDecodeError, TypeError):
             pass
+        # 047: merge the structured transcript payload (blocks + thinking /
+        # tools / attachments / todos …) onto the wire message. A NULL
+        # blocks_json is a legacy text-only row and stays exactly as it was.
+        wire = cast('dict[str, object]', msg)
+        structured = decode_blocks(wire.pop('blocksJson', None))
+        if structured:
+            wire.update(structured)
         results.append(msg)
     return results
 

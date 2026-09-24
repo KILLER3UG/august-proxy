@@ -258,3 +258,111 @@ describe('streamWorkbenchReconnect — link state for the UI', () => {
     expect(getStreamReconnecting('wb_link3')).toBeNull();
   });
 });
+
+// ── Retry budget: a 200 is not progress ─────────────────────────────────
+
+describe('streamWorkbenchReconnect — retry budget', () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('exhausts the budget on repeated 200-then-immediate-close (no budget reset on connect)', async () => {
+    // Regression: `retryCount = 0` on connection establishment meant a backend
+    // (or proxy) that answers 200 and closes the body instantly could keep the
+    // loop alive forever — the budget never shrank.
+    const fetchMock = vi.fn((): Promise<Response> =>
+      Promise.resolve(
+        new Response(new ReadableStream<Uint8Array>({ start(c) { c.close(); } }), {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        }),
+      ),
+    );
+    globalThis.fetch = fetchMock as never;
+
+    const onError = vi.fn();
+    const run = streamWorkbenchReconnect('wb_budget', { onError }, undefined, 0, { maxRetries: 3 });
+    await vi.runAllTimersAsync();
+    await run;
+
+    // 1 initial attempt + 3 retries, then the error surfaces.
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it('resets the budget after a connection that carried frames for a stable window', async () => {
+    // A stream that delivers a frame, stays open past the stability window,
+    // then dies IS progress: the budget refills, so a long but healthy turn
+    // survives more drops than maxRetries. The 4th connection finishes the
+    // turn so the loop terminates.
+    let call = 0;
+    const fetchMock = vi.fn((): Promise<Response> => {
+      call += 1;
+      if (call === 4) {
+        return Promise.resolve(
+          sseResponse(['event: done', 'data: {"sessionId":"wb_progress"}', 'id: 99']),
+        );
+      }
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(`event: text\ndata: {"content":"hi"}\nid: ${call}\n\n`),
+          );
+          // Close after the stability window (fake timers advance it).
+          setTimeout(() => controller.close(), 50);
+        },
+      });
+      return Promise.resolve(
+        new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+      );
+    });
+    globalThis.fetch = fetchMock as never;
+
+    const run = streamWorkbenchReconnect(
+      'wb_progress',
+      {},
+      undefined,
+      0,
+      { maxRetries: 2, stableProgressMs: 10 },
+    );
+    await vi.runAllTimersAsync();
+    await run;
+
+    // With maxRetries: 2 the run would have given up after attempt 3 if the
+    // progress-carrying connections had not refilled the budget.
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it('does NOT reset the budget when the connection dies before any frame', async () => {
+    // Frames that arrive and are immediately dropped are not "stable progress":
+    // the budget must keep shrinking or a flapping stream retries forever.
+    const fetchMock = vi.fn((): Promise<Response> =>
+      Promise.resolve(
+        sseResponse(['event: text', 'data: {"content":"par"}', 'id: 1']),
+      ),
+    );
+    globalThis.fetch = fetchMock as never;
+
+    const onError = vi.fn();
+    const run = streamWorkbenchReconnect(
+      'wb_flap',
+      { onError },
+      undefined,
+      0,
+      { maxRetries: 2, stableProgressMs: 60_000 },
+    );
+    await vi.runAllTimersAsync();
+    await run;
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+});

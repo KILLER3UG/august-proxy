@@ -10,7 +10,7 @@ export interface ModelQuota {
   completion: number;
   limit: number | null;
   percent: number;
-  resetsAt: string;
+  resetsAt: string | null;
   source: 'native' | 'local' | 'none';
 }
 

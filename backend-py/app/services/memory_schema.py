@@ -83,6 +83,10 @@ _CORE_SCHEMA_SQL = """
             session_id TEXT NOT NULL,
             role TEXT NOT NULL,
             content TEXT,
+            -- 047: structured transcript payload (block timeline + thinking /
+            -- tools / attachments / todos / usage …). NULL = legacy text-only
+            -- row; `content` stays the FTS-indexed text either way.
+            blocks_json TEXT,
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         );
@@ -380,6 +384,9 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     # Full workbench session JSON + last-update time (primary session store).
     ensure_column(conn, 'sessions', 'workbench_blob', 'TEXT')
     ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
+    # 047: durable structured transcript blocks per message. No DEFAULT — NULL
+    # means "this row predates structured transcripts", not "empty transcript".
+    ensure_column(conn, 'messages', 'blocks_json', 'TEXT')
     # Per-agent todo list (JSON) for sub-agent runs — drawer parity.
     ensure_column(conn, 'subagent_runs', 'todos_json', "TEXT DEFAULT ''")
     conn.execute(
@@ -396,7 +403,8 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
 # v12: turn latency telemetry (027) — turn_outcomes ttft_ms + cache hit/miss.
 # v13: early-dispatch telemetry (030) — turn_outcomes.tool_args_ready_to_stream_end_ms.
 # v14: facts.description column (044) — ZCode-parity recall hook.
-_SCHEMA_USER_VERSION = 14
+# v15: messages.blocks_json column (047) — durable structured transcript blocks.
+_SCHEMA_USER_VERSION = 15
 
 
 def _ensure_messages_fts(conn: sqlite3.Connection) -> None:
@@ -542,6 +550,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'usage_events', 'cache_miss_tokens', 'INTEGER DEFAULT 0')
             ensure_column(conn, 'sessions', 'workbench_blob', 'TEXT')
             ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
+            # 047: durable structured transcript blocks (see create_extended_tables).
+            ensure_column(conn, 'messages', 'blocks_json', 'TEXT')
             ensure_column(conn, 'subagent_runs', 'todos_json', "TEXT DEFAULT ''")
             ensure_column(conn, 'facts', 'expires_at', 'TEXT')
             ensure_column(conn, 'facts', 'title', "TEXT DEFAULT ''")

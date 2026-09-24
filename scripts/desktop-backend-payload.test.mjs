@@ -28,9 +28,17 @@ function runNode(args, cwd) {
   return result.stdout;
 }
 
-test('production payload works without checkout deps and hashes only shipped artifacts', { timeout: 240_000 }, async (t) => {
+test('production payload works without checkout deps and hashes only shipped artifacts', { timeout: 600_000 }, async (t) => {
   const temp = await mkdtemp(join(tmpdir(), 'august payload test '));
   t.after(() => rm(temp, { recursive: true, force: true }));
+  // Both staged payloads install the exact same committed lock, so point npm at
+  // one warm cache inside the test temp dir: the second "fresh ci" reuses
+  // tarballs instead of re-downloading, which removes most of the wall-clock
+  // cost (and the cold-cache timeout flake) without changing what is asserted.
+  const npmCache = join(temp, 'npm-cache');
+  await mkdir(npmCache, { recursive: true });
+  process.env.npm_config_cache = npmCache;
+  process.env.npm_config_prefer_offline = 'true';
   const source = join(temp, 'checkout');
   const output = join(temp, 'resources');
   const binaries = join(temp, 'binaries');

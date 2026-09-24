@@ -24,7 +24,7 @@ export function useChatMessageActions({
   input: string;
   setInput: Dispatch<SetStateAction<string>>;
   streaming: boolean;
-  generateAIResponse: (msgs: ChatMessage[]) => Promise<void>;
+  generateAIResponse: (msgs: ChatMessage[]) => Promise<unknown>;
 }) {
   const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
     useConfirmDialog();

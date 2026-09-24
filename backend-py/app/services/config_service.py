@@ -140,6 +140,21 @@ def _parse_price(entry: dict[str, object], *keys: str) -> float | None:
     return None
 
 
+def _stringList(entry: dict[str, object], *keys: str) -> list[str] | None:
+    """One stored string list under either spelling, or None when unset.
+
+    An empty list is treated as unset because that is what the write door
+    stores nothing as — ``inputTypes: []`` pops the key rather than saving it.
+    """
+    for key in keys:
+        raw = entry.get(key)
+        if isinstance(raw, list):
+            values = [str(v) for v in raw if str(v or '').strip()]
+            if values:
+                return values
+    return None
+
+
 def getProvidersAsModels() -> list[ProviderConfig]:
     """Read providers from the store and return typed ProviderConfig models."""
     store = getProvidersStore()
@@ -180,6 +195,15 @@ def getProvidersAsModels() -> list[ProviderConfig]:
                         max_tool_result_chars=as_int(
                             m.get('maxToolResultChars') or m.get('max_tool_result_chars'), 0
                         ),
+                        # Reference-modal fields. These were never passed here,
+                        # so a stored output cap read back as null and the
+                        # editor's `?? 128000` seed reset it on the next save.
+                        max_output_tokens=as_int(
+                            m.get('maxOutputTokens') or m.get('max_output_tokens'), 0
+                        )
+                        or None,
+                        input_types=_stringList(m, 'inputTypes', 'input_types'),
+                        output_types=_stringList(m, 'outputTypes', 'output_types'),
                         # Through the estimator's own parser, so "not set" and
                         # "set to zero" cannot mean different things here than
                         # they do when the price is billed.

@@ -267,6 +267,9 @@ export interface ChatMessage {
   retryNotice?: string;
   /** Edit history for user messages — each entry is a prior content version. */
   editHistory?: Array<{ content: string; timestamp: number }>;
+  /** True when this message was rebuilt from the backend transcript rather
+   * than from the localStorage cache (see session-history.ts restore). */
+  remote?: boolean;
 }
 
 /** Per-session sub-agent container rendered nested under the parent

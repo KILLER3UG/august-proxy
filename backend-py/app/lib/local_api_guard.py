@@ -13,6 +13,9 @@ The rule this enforces:
 
   * a request carrying an ``Origin`` header must present one the app already
     trusts — the same allowlist that makes CORS work for the Tauri webview;
+  * an origin that is only *scoped* (see ``SCOPED_ORIGIN_RULES``) is trusted
+    for one read-only route and rejected everywhere else, so a third-party
+    embed can fetch its data without inheriting the management API;
   * a request with no ``Origin`` but a ``Sec-Fetch-Site`` that claims a
     cross-site or cross-origin relationship is rejected the same way;
   * requests with neither are non-browser clients (curl, SDKs, the test
@@ -30,9 +33,16 @@ this guard and answers them, and a preflight carries no authority to act on.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from typing import Any
 
-__all__ = ['TrustedOriginGuard', 'trusted_origins']
+__all__ = [
+    'SCOPED_ORIGIN_RULES',
+    'ScopedOriginRule',
+    'TrustedOriginGuard',
+    'resolve_origins',
+    'trusted_origins',
+]
 
 # Surfaces that act on the user's machine or data. `/v1/*` is deliberately
 # absent: it is the *external* proxy, gated by the gateway bearer key.
@@ -42,6 +52,40 @@ GUARDED_EXACT = frozenset({'/api', '/mcp'})
 # `same-origin` and `none` are what the webview and non-fetch callers produce.
 # `same-site`/`cross-site` are the drive-by shapes.
 _SAFE_SEC_FETCH_SITES = frozenset({'same-origin', 'same-site', 'none'})
+
+# A scoped origin is trusted for one read-only slice of the API and nowhere
+# else. CORS still needs it in `allow_origins` (the embed is a real browser
+# program fetching bytes), but full management-API trust is what turns an
+# embed into a drive-by — the Waveform panel's Surfer viewer only needs to
+# GET workspace VCD/FST/GHW bytes, so that is all it gets.
+SCOPED_READ_METHODS = frozenset({'GET', 'HEAD'})
+
+
+@dataclass(frozen=True)
+class ScopedOriginRule:
+    """One origin trusted for an exact path + read-only method slice."""
+
+    methods: frozenset[str]
+    paths: tuple[str, ...]
+
+    def allows(self, method: str, path: str) -> bool:
+        # A websocket upgrade has no HTTP method; `GET` in scope['method'] is
+        # absent, so a scoped origin can never open a socket here.
+        if str(method or '').upper() not in self.methods:
+            return False
+        normalized = (path or '').rstrip('/') or '/'
+        return any(normalized == expected.rstrip('/') for expected in self.paths)
+
+
+SCOPED_ORIGIN_RULES: dict[str, ScopedOriginRule] = {
+    # Surfer waveform viewer embed (Circuit panel): the hosted WASM build
+    # fetches workspace waveform files from the raw-file route. iframe
+    # embedding keeps it a separate program (EUPL guardrail).
+    'https://app.surfer-project.org': ScopedOriginRule(
+        methods=SCOPED_READ_METHODS,
+        paths=('/api/workbench/files/raw',),
+    ),
+}
 
 _REJECT_BODY = (
     b'{"detail":"untrusted origin","code":"untrusted_origin",'
@@ -99,7 +143,7 @@ class TrustedOriginGuard:
         origin = _header(scope, b'origin')
         if origin is not None:
             normalized = origin.strip().rstrip('/').lower()
-            if normalized and normalized not in self._origins_provider():
+            if normalized and not self._origin_trusted(normalized, scope, path):
                 await self._reject(scope, receive, send, origin=normalized)
                 return
         else:
@@ -109,6 +153,16 @@ class TrustedOriginGuard:
                 return
 
         await self.app(scope, receive, send)
+
+    def _origin_trusted(self, origin: str, scope: dict[str, Any], path: str) -> bool:
+        """Full-trust allowlist, else the origin's read-only scoped slice."""
+        if origin in self._origins_provider():
+            return True
+        rule = SCOPED_ORIGIN_RULES.get(origin)
+        if rule is None:
+            return False
+        method = 'GET' if scope.get('type') == 'websocket' else scope.get('method', '')
+        return rule.allows(method, path)
 
     @staticmethod
     def _is_guarded(path: str) -> bool:
@@ -162,11 +216,17 @@ class TrustedOriginGuard:
 
 
 def resolve_origins() -> frozenset[str]:
-    """The allowlist CORS already uses, plus anything the operator adds.
+    """The origins trusted for the *whole* management API.
 
     Kept in one place so CORS and this guard can never disagree: an origin
-    allowed to read responses must be allowed to make requests.
+    allowed to read responses must be allowed to make requests. The only
+    deliberate split is the scoped origins (Surfer's embed): they stay in the
+    CORS allowlist so the read-only route keeps working, but they are removed
+    from full trust unless the operator *explicitly* listed them in
+    ``AUGUST_CORS_ORIGINS`` — an explicit opt-in still means full trust.
     """
-    from app.main import _cors_allow_origins
+    from app.main import _cors_allow_origins, _cors_extra_origins
 
-    return trusted_origins(_cors_allow_origins())
+    full = trusted_origins(_cors_allow_origins())
+    operator_opt_in = trusted_origins(_cors_extra_origins())
+    return frozenset((full - set(SCOPED_ORIGIN_RULES)) | operator_opt_in)

@@ -31,6 +31,7 @@ import { usePromptCacheLiveStore, selectPromptCacheLive } from '@/store/promptCa
 import { normalizeHarnessMode, type HarnessAgentMode } from '@/components/chat/HarnessModeChip';
 import { GalleryVertical } from 'lucide-react';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
+import type { ChatSendFn } from '../hooks/useChatSend';
 
 export function ComposerToolbar({
   sessionId,
@@ -88,7 +89,7 @@ export function ComposerToolbar({
   /** Disable send while files are still being read. */
   attachmentsReading?: boolean;
   streaming: boolean;
-  send: (textOverride?: string) => Promise<void>;
+  send: ChatSendFn;
   stop: () => void;
   /** Optional: lets the toolbar append a synthetic handoff-notice card. */
   setMessages?: Dispatch<SetStateAction<ChatMessage[]>>;

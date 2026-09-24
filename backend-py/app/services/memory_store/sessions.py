@@ -6,8 +6,28 @@ from typing import cast
 
 from app.json_narrowing import as_int, as_str
 from app.services.memory_conn import conn as _conn
+from app.services.memory_store.transcript_blocks import encode_blocks
 from app.services.memory_store.wire import _row_as_wire, _session_field
 from app.type_aliases import SessionRecord
+
+
+def _begin_txn(conn) -> None:
+    """Start an explicit transaction, tolerating an already-open one.
+
+    Per-turn writers (``turn_outcomes`` / ``lifecycle`` / ``internal_state``)
+    run on the loop thread and use ``deferred_writes.defer_commit``, which
+    deliberately leaves the thread-local connection inside an open implicit
+    transaction (only the COMMIT is debounced). A raw ``BEGIN`` on top of that
+    raises "cannot start a transaction within a transaction" and the whole
+    session save/delete is lost. Settling the open transaction first is safe —
+    those rows only ever wanted a *later* commit, and committing now just makes
+    them durable sooner — and it lets the explicit ``BEGIN`` below own a clean,
+    atomic transaction. When a transaction is already open it already provides
+    the atomicity the raw ``BEGIN`` was asking for, so we simply keep it.
+    """
+    if conn.in_transaction:
+        conn.commit()
+    conn.execute('BEGIN')
 
 
 def save_session(session: SessionRecord) -> None:
@@ -106,7 +126,7 @@ def save_workbench_session_sot(
     # autosave. Keep the stored value unless this caller states it explicitly.
     explicit_archived = 'isArchived' in session_dict or 'is_archived' in session_dict
     try:
-        conn.execute('BEGIN')
+        _begin_txn(conn)
         if explicit_archived:
             archived = 1 if (
                 session_dict.get('isArchived') or session_dict.get('is_archived')
@@ -153,7 +173,7 @@ def save_workbench_session_sot(
             ),
         )
         conn.execute('DELETE FROM messages WHERE session_id = ?', (sid,))
-        rows: list[tuple[str, str, str]] = []
+        rows: list[tuple[str, str, str, str | None]] = []
         for msg in msgs:
             if not isinstance(msg, dict):
                 continue
@@ -168,13 +188,16 @@ def save_workbench_session_sot(
             else:
                 payload = content
             content_str = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
-            rows.append((sid, role, content_str))
+            # 047: the structured timeline (blocks / thinking / tools /
+            # attachments / todos …) rides beside `content`, which stays the
+            # FTS-indexed text. NULL for a message with nothing structured.
+            rows.append((sid, role, content_str, encode_blocks(msg)))
         # One executemany instead of a per-row execute: the active session's
         # full transcript is re-written on every debounced save, so O(N)
         # round-trips were the dominant write cost on long sessions.
         if rows:
             conn.executemany(
-                'INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)',
+                'INSERT INTO messages (session_id, role, content, blocks_json) VALUES (?, ?, ?, ?)',
                 rows,
             )
         conn.commit()
@@ -398,7 +421,7 @@ def delete_session_cascade(
 
     children: dict[str, int] = {}
     try:
-        conn.execute('BEGIN')
+        _begin_txn(conn)
         # Messages first (real FK + optional FTS corruption path).
         try:
             msg_n = _delete_messages_for_session(conn, sid)

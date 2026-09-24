@@ -18,13 +18,152 @@ import logging
 import re
 import uuid
 
-from app.json_narrowing import as_str
+from app.json_narrowing import as_dict, as_str
 
 logger = logging.getLogger(__name__)
 
 _FENCED_BLOCK_RE = re.compile(r'```python\s*\n(.*?)```', re.DOTALL | re.IGNORECASE)
 _CODE_TIMEOUT_S = 60
 _MAX_OUTPUT_CHARS = 24 * 1024
+
+# ── Trust boundary ──────────────────────────────────────────────────────────
+# Code mode hands the model an unrestricted raw-Python interpreter (plus a
+# ``call_tool`` bridge back into the full managed tool surface). That is a
+# materially wider blast radius than any single typed tool, so the mode may
+# only ever be ENTERED by a human:
+#
+#   * the composer's Code-mode picker (``POST /api/workbench/agent-mode``)
+#     stamps the trust marker — that IS the explicit user confirmation;
+#   * a model-initiated ``set_agent_mode("code")`` queues a pending mutation
+#     (the same ApprovalBanner door every gated tool uses) and returns a
+#     receipt; the user accepting it records the grant the handler consumes.
+#
+# A session sitting in code mode WITHOUT that marker (a session persisted by
+# an older build, a forged attribute, a replayed tool call) is untrusted, and
+# ``workbench._codeModeCellDenial`` refuses every cell before either the warm
+# or the cold path executes anything.
+TRUST_METADATA_KEY = 'codeModeUserApproved'
+
+_CODE_MODE_PREVIEW = (
+    'Switch this session to CODE MODE — the model will write fenced ```python '
+    'blocks that August executes locally (workspace-bound file access, shell, '
+    'and a bridge to the full tool surface). Only accept this if you want raw '
+    'code execution in this chat.'
+)
+
+_CODE_MODE_REFUSAL_PLAN = (
+    'Error: refused — this session is in Plan mode, so code mode is not available. '
+    'Code mode runs model-authored Python locally, which Plan mode forbids. '
+    'Investigate read-only, call submit_plan, and wait for the user to approve the '
+    'plan (or to switch the session to Code mode themselves). Do not retry.'
+)
+
+_CODE_MODE_REFUSAL_READ_ONLY = (
+    'Error: refused — this session\'s sandbox is read-only, so code mode cannot run. '
+    'A code cell executes a raw Python interpreter, which the read-only sandbox '
+    'blocks. Keep working with the read-only tools, or ask the user to switch the '
+    'sandbox to Workspace / Full access. Do not retry.'
+)
+
+_CODE_MODE_REFUSAL_UNATTENDED = (
+    'Error: refused — switching to code mode needs the user\'s confirmation and this '
+    'is an unattended run, so no approver is available. Finish the turn and tell the '
+    'user that Code mode must be enabled manually. Do not retry.'
+)
+
+_CODE_MODE_PENDING = (
+    'Code mode requires the user\'s explicit confirmation. A permission prompt '
+    '(Accept / Reject) was shown to them in the app. Do not retry and do not write '
+    'a ```python block yet — if they accept, the next turn runs in code mode.'
+)
+
+_CODE_MODE_ALREADY_PENDING = (
+    'Code mode is already waiting for the user\'s confirmation in the app. '
+    'Do not retry until they accept or reject it.'
+)
+
+
+def is_code_mode_trusted(session: object) -> bool:
+    """True when the USER explicitly enabled code mode for this session."""
+    meta = getattr(session, 'metadata', None)
+    return bool(as_dict(meta).get(TRUST_METADATA_KEY))
+
+
+def mark_code_mode_trusted(session: object) -> None:
+    """Stamp the user-confirmation marker (persisted with session metadata)."""
+    meta = dict(as_dict(getattr(session, 'metadata', None)))
+    meta[TRUST_METADATA_KEY] = True
+    setattr(session, 'metadata', meta)
+
+
+def clear_code_mode_trust(session: object) -> None:
+    """Drop the marker — leaving code mode revokes the standing consent."""
+    meta = as_dict(getattr(session, 'metadata', None))
+    if not meta or TRUST_METADATA_KEY not in meta:
+        return
+    meta = dict(meta)
+    meta.pop(TRUST_METADATA_KEY, None)
+    setattr(session, 'metadata', meta)
+
+
+def cell_policy_command() -> str:
+    """Stable command identity for the parent guard/approval axes.
+
+    A cold cell's real command embeds a per-cell script path, so fingerprinting
+    IT would raise a fresh approval prompt for every cell and a "this chat"
+    grant would never match the next one. The warm kernel already uses a
+    fixed-shape boot command for the same reason (``WarmKernel.launch_command``)
+    — both paths present this one shape to the guard/approval policy, while the
+    sandbox still preflights the real command and the hardline guard still runs
+    inside the cell.
+    """
+    return 'python -I -u "<august-code-cell>"'
+
+
+def code_mode_switch_decision(session: object) -> tuple[bool, str]:
+    """Model-initiated ``set_agent_mode("code")`` — never a silent escalation.
+
+    Returns ``(allowed, message)``. ``allowed`` is True only when the session
+    is already user-trusted, or the user just accepted the prompt (whose grant
+    this consumes). Otherwise the message is a hard refusal (plan mode,
+    read-only sandbox, unattended run) or the "a prompt is waiting" receipt.
+    """
+    from app.services.workbench import workbench as wb
+
+    args: dict[str, object] = {'mode': 'code'}
+    if is_code_mode_trusted(session):
+        return True, 'Agent mode set to code (confirmed by the user for this session).'
+    if wb.has_tool_grant(session, 'set_agent_mode', args):  # type: ignore[arg-type]
+        mark_code_mode_trusted(session)
+        return True, 'Agent mode set to code (approved by the user).'
+    guard = wb.normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
+    if guard == 'plan' and not bool(getattr(session, 'planApproved', False)):
+        return False, _CODE_MODE_REFUSAL_PLAN
+    sandbox = as_str(getattr(session, 'sandboxMode', '') or '').strip().lower()
+    if sandbox in ('read-only', 'readonly', 'read'):
+        return False, _CODE_MODE_REFUSAL_READ_ONLY
+    if wb._approval_never_ask(wb._loadApprovalPolicy(session), session):  # type: ignore[arg-type]
+        wb._record_unattended_denial(  # type: ignore[arg-type]
+            session, 'set_agent_mode', 'model-initiated switch to code mode'  # type: ignore[arg-type]
+        )
+        return False, _CODE_MODE_REFUSAL_UNATTENDED
+    pending = getattr(session, 'pendingMutations', None) or []
+    for pm in pending:  # type: ignore[union-attr]
+        if not isinstance(pm, dict):
+            continue
+        if as_str(pm.get('toolName')) == 'set_agent_mode' and (
+            as_str(as_dict(pm.get('args')).get('mode')) == 'code'
+        ):
+            return False, _CODE_MODE_ALREADY_PENDING
+    mutation = wb.createPendingMutation(session, 'set_agent_mode', args)  # type: ignore[arg-type]
+    if mutation is None:
+        return False, 'Error: could not open a code-mode confirmation prompt — ask the user to enable Code mode themselves.'
+    mutation['kind'] = 'code_mode'
+    mutation['approvalReason'] = 'model requested unrestricted local code execution'
+    mutation['preview'] = _CODE_MODE_PREVIEW
+    wb.saveSessions()
+    wb._emitSessionStatus(session.id)  # type: ignore[attr-defined]
+    return False, _CODE_MODE_PENDING
 
 _PREAMBLE = '''\
 # August code-mode tool API (workspace-bound)

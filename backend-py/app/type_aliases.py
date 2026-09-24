@@ -234,13 +234,28 @@ class UsageEventDict(TypedDict, total=False):
 
 
 class MessageDict(TypedDict, total=False):
-    """Wire-format keys (SQLite messages); not renamed in Phase 2."""
+    """Wire-format keys (SQLite messages); not renamed in Phase 2.
+
+    ``content`` stays the (possibly JSON-decoded) stored text. The remaining
+    keys are the structured transcript payload restored from
+    ``messages.blocks_json`` (migration 047) — absent on legacy text-only rows.
+    """
 
     id: int
     sessionId: str
     role: str
     content: str
     createdAt: str
+    blocks: list[JsonValue]
+    thinking: str
+    tools: list[JsonValue]
+    tool: dict[str, JsonValue]
+    attachments: list[JsonValue]
+    todos: list[JsonValue]
+    usage: dict[str, JsonValue]
+    turnEnd: dict[str, JsonValue]
+    toolCalls: list[JsonValue]
+    toolUseId: str
 
 
 class ToolCallDict(TypedDict, total=False):

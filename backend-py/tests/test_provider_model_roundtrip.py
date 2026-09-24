@@ -77,3 +77,34 @@ async def test_add_model_persists_reasoning_fields(store_with_model):
     model = next(m for m in providers[0].models if m.id == 'new-reasoner')
     assert model.supports_reasoning_effort is False
     assert model.max_reasoning_effort == 'low'
+
+
+def test_reference_modal_fields_round_trip(store_with_model):
+    """The output cap and modality badges must survive the provider read path.
+
+    ``_provider_to_dict`` reads them off ``ModelConfig``, but
+    ``getProvidersAsModels()`` rebuilds each entry from an explicit kwarg list
+    that never included them — so the GET answered null for a value that was
+    stored. That is not merely cosmetic: ModelRow seeds its field with
+    ``model.maxOutputTokens ?? 128000``, so opening the editor and saving ANY
+    change silently resets a real cap (a small local model's 8192) to 128000,
+    and the modality pills collapse to ['text'].
+    """
+    from app.routers.providers import _provider_to_dict
+    from app.services import config_service
+
+    store = config_service.getProvidersStore()
+    store['providers'][0]['models'][0].update(
+        {'maxOutputTokens': 8192, 'inputTypes': ['text', 'image'], 'outputTypes': ['text']}
+    )
+    config_service.saveProvidersStore(store)
+
+    provider = config_service.getProvidersAsModels()[0]
+    model = provider.models[0]
+    assert model.max_output_tokens == 8192
+    assert model.input_types == ['text', 'image']
+
+    out = _provider_to_dict(provider)['models'][0]
+    assert out['maxOutputTokens'] == 8192, 'a stored cap must not read back as null'
+    assert out['inputTypes'] == ['text', 'image']
+    assert out['outputTypes'] == ['text']

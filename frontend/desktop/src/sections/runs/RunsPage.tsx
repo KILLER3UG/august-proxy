@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
+import { QueryErrorState } from '@/components/QueryErrorState';
 import {
   startChatStream,
   stopChatStream,
@@ -128,7 +129,7 @@ export function RunsPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
-  const { data, isFetching } = useQuery<WorkbenchRun[]>({
+  const { data, isFetching, isError, error, refetch, isRefetching } = useQuery<WorkbenchRun[]>({
     queryKey: ['workbench-runs'],
     queryFn: async () => api.get<WorkbenchRun[]>('/api/workbench/sessions'),
     // Fast poll while anything is live; slow otherwise (history rarely changes).
@@ -140,6 +141,11 @@ export function RunsPage() {
     },
     staleTime: 2_000,
   });
+
+  // A failed sessions request is not "0 runs, 0 tokens" — it used to render
+  // the empty card plus a stat strip of zeroes that read like real numbers.
+  // Only an answered list is allowed to say "No runs yet".
+  const listFailed = isError && !data;
 
   /** Re-send the run's last user message as a fresh turn (same session,
    *  same model — the backend appends the message like a normal send). */
@@ -252,17 +258,20 @@ export function RunsPage() {
         </button>
       </div>
 
-      {/* Stat strip */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Total runs" value={String(stats.total)} hint="Across all workspaces" />
-        <StatCard
-          label="Active now"
-          value={String(stats.active + stats.awaiting)}
-          hint={`${stats.active} working · ${stats.awaiting} awaiting approval`}
-        />
-        <StatCard label="Completed" value={String(stats.done)} />
-        <StatCard label="Tokens · cost" value={`${fmtTokens(stats.tokens)} · ${fmtCost(stats.cost)}`} />
-      </div>
+      {/* Stat strip — suppressed when the list request failed, so a failure
+          never reads as "0 total runs · 0 tokens · $0". */}
+      {!listFailed && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard label="Total runs" value={String(stats.total)} hint="Across all workspaces" />
+          <StatCard
+            label="Active now"
+            value={String(stats.active + stats.awaiting)}
+            hint={`${stats.active} working · ${stats.awaiting} awaiting approval`}
+          />
+          <StatCard label="Completed" value={String(stats.done)} />
+          <StatCard label="Tokens · cost" value={`${fmtTokens(stats.tokens)} · ${fmtCost(stats.cost)}`} />
+        </div>
+      )}
 
       {/* Filter chips */}
       <div className="flex flex-wrap items-center gap-1.5">
@@ -288,7 +297,15 @@ export function RunsPage() {
       </div>
 
       {/* Run list */}
-      {!data ? (
+      {listFailed ? (
+        <QueryErrorState
+          error={error}
+          onRetry={() => void refetch()}
+          retrying={isRefetching}
+          title="Couldn't load runs"
+          note="Your runs may still exist — the request failed, so this is not an empty history."
+        />
+      ) : !data ? (
         <PageLoader label="Loading runs…" variant="card" className="py-8" />
       ) : visible.length === 0 ? (
         <div className="rounded-xl border border-white/[0.06] bg-card/60 p-8 text-center">

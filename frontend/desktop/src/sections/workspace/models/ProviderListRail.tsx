@@ -14,6 +14,7 @@ export function ProviderListRail({
   onRefresh,
   onSelect,
   onAdd,
+  error = null,
 }: {
   providers: Provider[];
   selectedId: string | null;
@@ -21,6 +22,9 @@ export function ProviderListRail({
   onRefresh: () => void;
   onSelect: (id: string) => void;
   onAdd: () => void;
+  /** When the catalog request failed, the rail says so instead of claiming
+   *  the list is empty. Retry is the pane's button; the rail keeps a hint. */
+  error?: unknown;
 }) {
   return (
     <div className="rounded-xl border border-border/60 bg-card/60 flex flex-col overflow-hidden md:max-h-[calc(100vh-9rem)]">
@@ -37,7 +41,14 @@ export function ProviderListRail({
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-1 space-y-0.5">
-        {providers.length === 0 ? (
+        {error ? (
+          <p
+            className="px-3 py-4 text-[11px] text-destructive text-center"
+            data-testid="providers-rail-error"
+          >
+            Couldn't load providers
+          </p>
+        ) : providers.length === 0 ? (
           <p className="px-3 py-4 text-xs text-muted-foreground text-center">No providers yet</p>
         ) : (
           providers.map((p) => (

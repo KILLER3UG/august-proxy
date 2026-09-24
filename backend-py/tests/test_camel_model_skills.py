@@ -5,6 +5,7 @@ aliases, and that SkillCreate/SkillPatch validate as expected.
 """
 from __future__ import annotations
 
+import pytest
 from app.routers.skills import SkillCreate, SkillFileWrite, SkillPatch
 
 
@@ -69,3 +70,37 @@ def test_skill_patch_basic_validation():
     assert partial.trigger == 'on demand'
     assert partial.category == 'ops'
     assert partial.body is None
+
+
+@pytest.mark.asyncio
+async def test_get_skill_answers_camel_case_like_the_list_endpoint(monkeypatch):
+    """GET /api/skills/{name} handed back the raw snake_case parse while
+    GET /api/skills built camelCase rows, so the detail pane's
+    ``selected.createdBy`` read undefined and every skill — including one the
+    agent authored — was labelled "bundled"."""
+    from app.routers import skills
+
+    monkeypatch.setattr(
+        skills.skill_service,
+        'get',
+        lambda name, workspace=None: {
+            'name': name,
+            'description': 'd',
+            'created_by': 'agent',
+            'enabled': True,
+        },
+    )
+    out = await skills.getSkill('acme-skill')
+    assert out['createdBy'] == 'agent'
+    assert out['usageCount'] == 0
+
+
+@pytest.mark.asyncio
+async def test_a_bundled_skill_reports_an_empty_author_not_a_crash(monkeypatch):
+    from app.routers import skills
+
+    monkeypatch.setattr(
+        skills.skill_service, 'get', lambda name, workspace=None: {'name': name}
+    )
+    out = await skills.getSkill('plain')
+    assert out['createdBy'] == ''
