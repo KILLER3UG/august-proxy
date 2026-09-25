@@ -690,3 +690,70 @@ def build_memory_block(
                 break
             recalled.append(_recalled_row(f))
     return '\n'.join(lines), injected
+
+
+def memory_context_preview(
+    query: str = '', workspace: str = '', scope: str = 'global'
+) -> dict[str, object]:
+    """Render the durable-memory text a turn actually receives, for Settings.
+
+    The Memory settings page lists stored ROWS; this returns the rendered
+    BLOCK — the same bytes :mod:`app.services.workbench.workbench` injects,
+    produced by the same builders under the same gates (``memoryAutoInject``
+    picks the relevance block vs the profile lane alone). Re-formatting rows
+    into a prettier view here would make Settings a second authority on what
+    the model sees, which is the one thing a preview must not be.
+
+    ``bootIndex`` and ``projectBlock`` are the session-start pair. Both are
+    frozen per session in a live chat, so this is what a NEW session would
+    start with — and ``modelMemoryRead`` is reported rather than applied here,
+    because the tool-gating that suppresses the index lives in one other place
+    (``workbench`` builds it only when the memory read tools are offered).
+    """
+    from app.services import brain_config_service as _bc
+
+    try:
+        cfg = _bc.getRuntimeConfig()
+    except Exception:
+        cfg = {}
+    autoInject = bool(cfg.get('memoryAutoInject', False))
+
+    turnBlock: str
+    injected: list[tuple[str, str]]
+    if autoInject:
+        turnBlock, injected = build_memory_block(
+            (query or '').strip(), workspace=workspace, scope=scope
+        )
+    else:
+        turnBlock, laneRows = build_profile_memory_block(scope=scope)
+        injected = [
+            (str(r.get('key') or ''), str(r.get('title') or '')) for r in laneRows
+        ]
+
+    bootIndex = ''
+    projectBlock = ''
+    try:
+        from app.services.memory_store.brain import brain_index_snippet
+
+        bootIndex = brain_index_snippet(scope).strip()
+    except Exception:
+        logging.debug('memory preview boot index failed', exc_info=True)
+    if workspace and bool(cfg.get('projectMemory', True)):
+        try:
+            from app.services import project_memory as _pm
+
+            projectBlock = _pm.project_block(workspace)
+        except Exception:
+            logging.debug('memory preview project block failed', exc_info=True)
+
+    return {
+        'query': (query or '').strip(),
+        'workspace': workspace,
+        'scope': scope,
+        'autoInject': autoInject,
+        'modelMemoryRead': bool(cfg.get('modelMemoryRead', True)),
+        'turnBlock': turnBlock,
+        'bootIndex': bootIndex,
+        'projectBlock': projectBlock,
+        'injectedFacts': [{'key': k, 'title': t} for k, t in injected if k or t],
+    }

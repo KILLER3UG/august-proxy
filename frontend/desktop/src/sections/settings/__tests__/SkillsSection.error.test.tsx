@@ -5,6 +5,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn() }));
@@ -32,7 +33,9 @@ function renderSection() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <SkillsSection />
+      <MemoryRouter>
+        <SkillsSection />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -71,7 +74,7 @@ describe('SkillsSection — list query failure', () => {
     });
     fireEvent.click(within(grid).getByTestId('query-error-retry'));
 
-    await waitFor(() => expect(screen.getByTestId('skill-card-circuit-helper')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('skill-row-circuit-helper')).toBeTruthy());
     expect(within(grid).queryByTestId('query-error-state')).toBeNull();
   });
 });

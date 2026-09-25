@@ -500,6 +500,19 @@ async def manage_memory(body: ActionBody):
             except Exception:
                 pass
             return {'ok': True, 'scope': 'project', 'deleted': True, 'key': key}
+        if action == 'read':
+            # Show one memory file's own text. The name is checked against
+            # list_files() instead of being joined onto the root, so this door
+            # cannot be pointed at anything outside <workspace>/.aug/memory.
+            name = (key or '').strip()
+            known = {str(f['file']) for f in pm.list_files(ws)}
+            if name not in known:
+                return {'ok': False, 'error': f'no memory file named {name or "(blank)"} here'}
+            try:
+                text = (pm.memory_root(ws) / name).read_text('utf-8')
+            except OSError as exc:
+                return {'ok': False, 'error': f'could not read {name}: {exc}'}
+            return {'ok': True, 'scope': 'project', 'file': name, 'text': text}
         if action == 'list':
             files = pm.list_files(ws)
             entries = [

@@ -52,6 +52,27 @@ def _usage_fields(skill_name: str) -> dict[str, object]:
     }
 
 
+def _lineage_fields(skill: dict[str, object]) -> dict[str, object]:
+    """Provenance an approved learning proposal writes into SKILL.md.
+
+    ``origin`` / ``learned_from`` / ``version`` / ``status`` / ``supersedes``
+    are not parsed fields — they arrive in the parse's unrecognized-key bag,
+    which is why they need naming here. Both the list and the detail row must
+    spread this one helper: each endpoint rebuilds its payload field by field,
+    so a key added to one and not the other silently vanishes on that read."""
+    raw = skill.get('meta')
+    meta = raw if isinstance(raw, dict) else {}
+    # SKILL.md values are always strings, and ``as_int`` rejects a string on
+    # purpose — running it through here read every learned skill as version 1.
+    digits = str(meta.get('version') or '').strip()
+    return {
+        'supersedes': str(meta.get('supersedes') or '').strip(),
+        'origin': str(meta.get('origin') or '').strip(),
+        'status': str(meta.get('status') or '').strip(),
+        'version': int(digits) if digits.isdigit() else 1,
+    }
+
+
 @router.get('')
 async def listSkills(
     q: str = Query('', description='Search query (name/description/trigger)'),
@@ -77,6 +98,7 @@ async def listSkills(
                 'createdBy': s.get('created_by', ''),
                 'scope': s.get('scope', ''),
                 'overrides': s.get('overrides', ''),
+                **_lineage_fields(s),
                 **_usage_fields(str(s.get('name') or '')),
             }
             for s in results
@@ -97,6 +119,7 @@ async def getSkill(name: str, workspace: str = Query('')):
         # camelCase, so the detail pane's `selected.createdBy` read undefined
         # and labelled an agent-authored skill "bundled".
         'createdBy': str(skill.get('created_by') or ''),
+        **_lineage_fields(skill),
         **_usage_fields(str(skill.get('name') or name)),
     }
 

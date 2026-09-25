@@ -701,14 +701,16 @@ export function LearningPanel() {
                 <span className="shrink-0">producer</span>
                 <select
                   data-testid="learning-refine-producer"
-                  className="max-w-[220px] truncate rounded-md border border-border/60 bg-muted/30 px-1.5 py-0.5 text-[10.5px] text-foreground focus:border-primary/40 focus:outline-none"
+                  className="max-w-[220px] truncate rounded-md border border-border/60 bg-card px-1.5 py-0.5 text-[10.5px] text-foreground focus:border-primary/40 focus:outline-none [color-scheme:dark]"
                   value={refineQ.data?.config?.producerModel ?? ''}
                   disabled={setRefineModels.isPending}
                   onChange={(e) => setRefineModels.mutate({ producerModel: e.target.value })}
                 >
-                  <option value="">default</option>
+                  <option className="bg-card text-foreground" value="">
+                    default
+                  </option>
                   {models.map((m) => (
-                    <option key={`p-${m.provider}-${m.id}`} value={m.id}>
+                    <option className="bg-card text-foreground" key={`p-${m.provider}-${m.id}`} value={m.id}>
                       {m.name || m.id} · {m.provider}
                     </option>
                   ))}
@@ -718,14 +720,16 @@ export function LearningPanel() {
                 <span className="shrink-0">reviewer</span>
                 <select
                   data-testid="learning-refine-reviewer"
-                  className="max-w-[220px] truncate rounded-md border border-border/60 bg-muted/30 px-1.5 py-0.5 text-[10.5px] text-foreground focus:border-primary/40 focus:outline-none"
+                  className="max-w-[220px] truncate rounded-md border border-border/60 bg-card px-1.5 py-0.5 text-[10.5px] text-foreground focus:border-primary/40 focus:outline-none [color-scheme:dark]"
                   value={refineQ.data?.config?.reviewModel ?? ''}
                   disabled={setRefineModels.isPending}
                   onChange={(e) => setRefineModels.mutate({ reviewModel: e.target.value })}
                 >
-                  <option value="">default</option>
+                  <option className="bg-card text-foreground" value="">
+                    default
+                  </option>
                   {models.map((m) => (
-                    <option key={`r-${m.provider}-${m.id}`} value={m.id}>
+                    <option className="bg-card text-foreground" key={`r-${m.provider}-${m.id}`} value={m.id}>
                       {m.name || m.id} · {m.provider}
                     </option>
                   ))}

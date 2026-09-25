@@ -430,9 +430,13 @@ def skills_tools_allowed(allowed_tool_names: Iterable[str]) -> bool:
     return bool(allowed & {'load_skill', 'load_skills', 'list_skills'})
 
 
-# Tier-3 per-turn skill relevance (M6 item 6): top-3 descriptions, ~150 tokens.
-_RELEVANT_SKILLS_TOP_K = 3
-_RELEVANT_SKILLS_CHAR_CAP = 600
+# Tier-3 per-turn skill relevance (M6 item 6). This block rides the per-turn
+# tail, NOT the cached system prompt, so widening it costs turn tokens and never
+# busts the provider prefix cache. Three skills at ~150 tokens was the original
+# budget; a catalogue of dozens got starved by it — the BM25 ranking was right
+# and the window was too small to show it — so both are larger now.
+_RELEVANT_SKILLS_TOP_K = 5
+_RELEVANT_SKILLS_CHAR_CAP = 1400
 # BM25 index cache for the per-turn relevant-skills block (identity-keyed,
 # see build_relevant_skills_block).
 _skills_bm25_cache: dict[tuple[str, str], tuple[object, object, list[dict[str, object]]]] = {}

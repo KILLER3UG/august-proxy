@@ -15,6 +15,10 @@ import { api } from '../client';
  *  `fromTheFuture` means its schema version is newer than this build knows. */
 export interface BrainBackupEntry {
   name: string;
+  /** Why the copy exists, parsed from its name by the server (`startup`,
+   *  `manual`, …) — '' when the name is not one this module wrote. The name is
+   *  an identifier; this is the field a label is built from. */
+  reason?: string;
   bytes: number;
   /** ISO timestamp of the copy (file mtime). */
   createdAt: string;

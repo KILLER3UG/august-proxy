@@ -1,13 +1,15 @@
 /* ── Skills — Claude-style catalogue + detail viewer (0.17.0) ───────── */
-/* List view: card grid (name, by-line, description, usage).            */
-/* Detail view: name + attribution + enabled toggle + description with  */
-/* see-more + SKILL.md rendered as markdown. Authoring via create/edit  */
-/* forms and delete-with-confirm; bundled skills are copy-on-write.     */
+/* List view: one hairline row per skill, grouped by the scope that       */
+/* decides whether it shadows another.                                     */
+/* Detail view: a facts strip (usage, lineage, open learning proposals)    */
+/* over the rendered SKILL.md, with the enabled toggle, edit / delete and  */
+/* create forms. Bundled skills are copy-on-write.                         */
 /* Workspace scope selector (project skills merge in   */
 /* with shadowing, C-1), scope + overrides badges (C-2), and the write  */
 /* paths (create/edit/delete/toggle) route through the selected scope.  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -48,10 +50,29 @@ interface SkillSummary {
    *  `skills-list` response from before this shipped has no such key. */
   usageCount?: number;
   lastUsed?: string;
+  /** The skill this one replaced, when an approved learning proposal
+   *  superseded an older behaviour. The applier disables the older skill in
+   *  the same write, so this is the pair that says "v2 of what I learned". */
+  supersedes?: string;
+  /** Who wrote the current version: human | distilled | amended. Only
+   *  proposal-approved skills carry it, so its absence means hand-authored. */
+  origin?: string;
+  /** How many approved patches this skill has had. 1 is the original write. */
+  version?: number;
 }
 
 interface SkillDetail extends SkillSummary {
   instructions: string;
+}
+
+/** The open rows of the learning queue that name this skill — the same
+ *  records the Review Inbox lists, so the skills page can say what is
+ *  waiting without duplicating the decision UI. */
+interface OpenSkillProposal {
+  id: string;
+  kind: string;
+  proposal?: string;
+  payload?: { name?: string };
 }
 
 interface WorkspaceInfo {
@@ -68,6 +89,7 @@ const EMPTY_FORM = { name: '', description: '', body: '', trigger: '', category:
 
 export function SkillsSection() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>('list');
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -120,8 +142,18 @@ export function SkillsSection() {
     enabled: !!selectedName && (mode === 'detail' || mode === 'edit'),
   });
 
-  const refresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['skills-list'] });
+  // Keyed exactly like the Review Inbox's own request so the two share one
+  // cache entry: approving there invalidates the line here, and opening a
+  // skill never fires a second proposals fetch while the inbox is mounted.
+  const proposalsQ = useQuery<{ proposals: OpenSkillProposal[] }>({
+    queryKey: ['harness-proposals', 'open'],
+    queryFn: () =>
+      api.get<{ proposals: OpenSkillProposal[] }>('/api/harness/proposals?status=open'),
+    enabled: mode === 'detail',
+    staleTime: 30_000,
+  });
+
+  const refresh = useCallback(() => {    void queryClient.invalidateQueries({ queryKey: ['skills-list'] });
     void queryClient.invalidateQueries({ queryKey: ['skill-detail', selectedName] });
     void queryClient.invalidateQueries({ queryKey: ['memory-workspaces'] });
   }, [queryClient, selectedName]);
@@ -138,8 +170,29 @@ export function SkillsSection() {
   }, [wsScope]);
 
   const skills = useMemo(() => listQuery.data?.skills ?? [], [listQuery.data]);
+  // Grouped by the scope that decides whether a skill shadows another — the
+  // distinction a reader needs before they read any description.
+  const grouped = useMemo(() => {
+    const out: Record<SkillScopeKey, SkillSummary[]> = { project: [], agent: [], bundled: [], other: [] };
+    for (const s of skills) out[skillScopeKey(s)].push(s);
+    return out;
+  }, [skills]);
   const selected = detailQuery.data ?? null;
   const workspaces = workspacesQ.data?.workspaces ?? [];
+  // What the learning loop wants changed about this skill right now. Matched
+  // on payload.name because that is the key every skill applier reads.
+  const openProposals = useMemo(() => {
+    const rows = proposalsQ.data?.proposals ?? [];
+    if (!selected?.name) return [];
+    return rows.filter((p) => (p.payload?.name ?? '') === selected.name);
+  }, [proposalsQ.data, selected?.name]);
+  // The v1 this skill replaced. It stays in the catalogue (disabled) rather
+  // than being deleted, so the pane can say which state it is in now.
+  const superseded = useMemo(() => {
+    const older = selected?.supersedes?.trim();
+    if (!older || older === selected?.name) return null;
+    return { name: older, row: skills.find((s) => s.name === older) ?? null };
+  }, [skills, selected?.supersedes, selected?.name]);
   // A failed /api/skills call is not an empty catalogue — the "No skills yet"
   // empty state (and its "author your first skill" prompt) must not stand in
   // for a transport error. The same applies to the detail pane, which used to
@@ -405,10 +458,30 @@ export function SkillsSection() {
               </p>
             </div>
           ) : (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {skills.map((s) => (
-                <SkillCard key={s.name} skill={s} onOpen={() => openDetail(s.name)} />
-              ))}
+            /* One hairline row per skill, grouped by the scope that decides
+             * whether it shadows another — the card grid buried the only
+             * distinction that matters when a catalogue grows. */
+            <div className="space-y-4" data-testid="skill-rows">
+              {SKILL_SCOPE_GROUPS.map(({ key, label, note }) => {
+                const group = grouped[key];
+                if (group.length === 0) return null;
+                return (
+                  <section key={key} data-testid={`skill-group-${key}`}>
+                    <h3 className="flex items-baseline gap-2 pb-0.5 text-[10.5px] font-semibold uppercase tracking-widest text-muted-foreground/55">
+                      {label}
+                      <span className="text-[10px] font-normal normal-case tracking-normal text-muted-foreground/60">
+                        {group.length}
+                      </span>
+                    </h3>
+                    {note && <p className="pb-1 text-[11px] text-muted-foreground/70">{note}</p>}
+                    <div className="divide-y divide-white/[0.06]">
+                      {group.map((s) => (
+                        <SkillRow key={s.name} skill={s} onOpen={() => openDetail(s.name)} />
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
             </div>
           )}
         </div>
@@ -469,7 +542,6 @@ export function SkillsSection() {
                         overrides {selected.overrides}
                       </span>
                     )}
-                    <UsageChip skill={selected} />
                   </div>
                   <p className={cn('mt-1 text-[12.5px] leading-relaxed text-muted-foreground', !seeMore && 'line-clamp-2')}>
                     {selected.description || 'No description.'}
@@ -522,19 +594,58 @@ export function SkillsSection() {
                 </div>
               </div>
 
-              {selected.trigger && (
-                <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
-                  <span className="font-medium uppercase tracking-wide">Trigger · </span>
-                  {selected.trigger}
-                </div>
-              )}
-
-              <div className="rounded-xl border border-border/50 bg-card/60 p-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <Badge variant="outline" className="font-mono text-[10px]">SKILL.md</Badge>
-                </div>
-                <Markdown content={selected.instructions || '_No instructions body._'} />
+              {/* What this skill's own text cannot say: whether chat ever used
+                  it, who wrote it, which behaviour it replaced, and what the
+                  learning loop is waiting on. Hairlines, because this is
+                  metadata rather than content. */}
+              <div className="divide-y divide-white/[0.06] border-y border-white/[0.06]" data-testid="skill-facts">
+                <SkillFact label="Usage">{usageLine(selected)}</SkillFact>
+                {selected.trigger && <SkillFact label="Trigger">{selected.trigger}</SkillFact>}
+                {selected.origin && <SkillFact label="Source">{originLine(selected)}</SkillFact>}
+                {superseded && (
+                  <SkillFact label="Lineage">
+                    Replaces{' '}
+                    {superseded.row ? (
+                      <button
+                        type="button"
+                        onClick={() => openDetail(superseded.name)}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        {superseded.name}
+                      </button>
+                    ) : (
+                      <span className="font-medium text-foreground/85">{superseded.name}</span>
+                    )}{' '}
+                    {superseded.row
+                      ? superseded.row.enabled === false
+                        ? '— retired from injection when this version was approved.'
+                        : '— still enabled, so both versions reach the model.'
+                      : '— no longer in the catalogue.'}
+                  </SkillFact>
+                )}
+                {openProposals.length > 0 && (
+                  <SkillFact label="Learning">
+                    {openProposals.length}{' '}
+                    {openProposals.length === 1 ? 'proposal' : 'proposals'} awaiting your decision (
+                    {openProposals.map((p) => p.kind).join(', ')}) —{' '}
+                    <button
+                      type="button"
+                      data-testid="skill-open-inbox"
+                      onClick={() => void navigate('/settings/harness-improve')}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      Review inbox
+                    </button>
+                  </SkillFact>
+                )}
               </div>
+
+              <section>
+                <h3 className="mb-2 text-[10.5px] font-semibold uppercase tracking-widest text-muted-foreground/55">
+                  Instructions
+                </h3>
+                <Markdown content={selected.instructions || '_No instructions body._'} />
+              </section>
             </div>
           )}
         </div>
@@ -585,15 +696,15 @@ export function SkillsSection() {
                 <select
                   value={form.category}
                   onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                  className="w-full rounded-lg border border-border/60 bg-muted/40 px-3 py-2 text-sm focus:border-primary/40 focus:outline-none"
+                  className="w-full rounded-lg border border-border/60 bg-card px-3 py-2 text-sm focus:border-primary/40 focus:outline-none [color-scheme:dark]"
                 >
-                  <option value="uncategorized">Uncategorized</option>
-                  <option value="development">Development</option>
-                  <option value="testing">Testing</option>
-                  <option value="devops">DevOps</option>
-                  <option value="writing">Writing</option>
-                  <option value="research">Research</option>
-                  <option value="learned">Learned</option>
+                  <option className="bg-card text-foreground" value="uncategorized">Uncategorized</option>
+                  <option className="bg-card text-foreground" value="development">Development</option>
+                  <option className="bg-card text-foreground" value="testing">Testing</option>
+                  <option className="bg-card text-foreground" value="devops">DevOps</option>
+                  <option className="bg-card text-foreground" value="writing">Writing</option>
+                  <option className="bg-card text-foreground" value="research">Research</option>
+                  <option className="bg-card text-foreground" value="learned">Learned</option>
                 </select>
               </FormField>
             </div>
@@ -681,57 +792,116 @@ function UsageChip({ skill }: { skill: SkillSummary }) {
   );
 }
 
-function SkillCard({ skill, onOpen }: { skill: SkillSummary; onOpen: () => void }) {
+/** One label/value line of the detail pane's facts strip. */
+function SkillFact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-3 py-2">
+      <span className="w-[52px] shrink-0 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/55">
+        {label}
+      </span>
+      <span className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-muted-foreground">
+        {children}
+      </span>
+    </div>
+  );
+}
+
+/** The counter the catalogue never answered: has this skill ever actually
+ *  fired in a chat, and when. The sidecar writes an offset-bearing ISO
+ *  timestamp, so `Date.parse` needs no normalizing here. */
+function usageLine(skill: SkillSummary): string {
+  const count = skill.usageCount ?? 0;
+  if (!count) return 'No chat has triggered this skill yet.';
+  const ms = skill.lastUsed ? Date.parse(skill.lastUsed) : NaN;
+  return `Triggered ${count}× in chat${
+    Number.isFinite(ms) ? `, most recently ${new Date(ms).toLocaleString()}` : ''
+  }.`;
+}
+
+/** Provenance from an approved learning proposal. `version > 1` is the loop
+ *  revising its own work, which is the thing worth saying out loud. */
+function originLine(skill: SkillSummary): string {
+  const by =
+    skill.origin === 'distilled'
+      ? 'August distilled this from its own sessions'
+      : skill.origin === 'amended'
+        ? 'August rewrote this from an approved proposal'
+        : 'A human approved this wording';
+  const v = (skill.version ?? 1) > 1 ? `, now at version ${skill.version}` : '';
+  return `${by}${v}.`;
+}
+
+/** The scopes a skill can come from, in the order a reader reasons about
+ *  them: what this project overrode, what lives in August's own folder, and
+ *  what shipped with it. */
+type SkillScopeKey = 'project' | 'agent' | 'bundled' | 'other';
+
+const SKILL_SCOPE_GROUPS: Array<{ key: SkillScopeKey; label: string; note?: string }> = [
+  {
+    key: 'project',
+    label: 'Project',
+    note: 'This workspace’s own skills — they shadow a global one of the same name.',
+  },
+  {
+    key: 'agent',
+    label: 'Global',
+    note: 'August’s own skills folder — written here from this page, or by a learning proposal you approved.',
+  },
+  { key: 'bundled', label: 'Bundled', note: 'Ship with August. Editing one saves a copy of its own, not the original.' },
+  { key: 'other', label: 'Other' },
+];
+
+function skillScopeKey(s: SkillSummary): SkillScopeKey {
+  if (s.scope === 'project') return 'project';
+  if (s.scope === 'agent') return 'agent';
+  if (s.scope === 'bundled') return 'bundled';
+  // A bot-private root reports its own scope, and an older server reports
+  // none. Only the second is guessable: fall back on the author, because
+  // filing another agent's private skill under this one's would hide it.
+  return s.scope
+    ? 'other'
+    : s.createdBy && s.createdBy !== 'builtin' && s.createdBy !== 'bundled'
+      ? 'agent'
+      : 'bundled';
+}
+
+/* One line per skill: name, what it does, and the two facts that say whether it
+ * is live and whether anyone uses it. The whole row opens the detail pane. */
+function SkillRow({ skill, onOpen }: { skill: SkillSummary; onOpen: () => void }) {
   return (
     <button
       type="button"
       onClick={onOpen}
-      data-testid={`skill-card-${skill.name}`}
-      className="group w-full rounded-xl border border-border/50 bg-card/50 p-4 text-left transition hover:border-border hover:bg-card/80 focus:outline-none focus:ring-1 focus:ring-primary/40"
+      data-testid={`skill-row-${skill.name}`}
+      className="flex w-full items-center gap-3 py-2.5 text-left transition hover:bg-white/[0.03]"
     >
-      <div className="flex items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-[11px] font-semibold uppercase text-primary">
-          {skill.name.slice(0, 2)}
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-[13px] font-medium text-foreground/90">{skill.name}</span>
+          {skill.enabled === false && (
+            <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 py-0.5 text-[9px] uppercase tracking-wide text-amber-400">
+              disabled
+            </span>
+          )}
+          {skill.overrides && (
+            <span
+              className="shrink-0 rounded border border-sky-500/30 bg-sky-500/10 px-1 py-0.5 text-[9px] uppercase tracking-wide text-sky-400"
+              data-testid="skill-row-overrides"
+            >
+              overrides {skill.overrides}
+            </span>
+          )}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate text-[13.5px] font-semibold text-foreground">{skill.name}</span>
-          </div>
-          <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-snug text-muted-foreground">
-            {skill.description || 'No description'}
-          </p>
-          <div className="mt-1.5 flex items-center gap-1.5">
-            {skill.createdBy && (
-              <span className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-                {skill.createdBy}
-              </span>
-            )}
-            {/* C-2: scope + overrides badges on cards. */}
-            {skill.scope === 'project' && (
-              <span
-                className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-emerald-400"
-                data-testid="skill-card-scope"
-              >
-                project
-              </span>
-            )}
-            {skill.overrides && (
-              <span
-                className="rounded-md border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-sky-400"
-                data-testid="skill-card-overrides"
-              >
-                overrides {skill.overrides}
-              </span>
-            )}
-            {skill.enabled === false && (
-              <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-amber-400">
-                disabled
-              </span>
-            )}
-            <UsageChip skill={skill} />
-          </div>
-        </div>
-      </div>
+        <span className="mt-0.5 block truncate text-[11.5px] text-muted-foreground/75">
+          {skill.description || 'No description'}
+        </span>
+      </span>
+      {skill.createdBy && (
+        <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/50">
+          {skill.createdBy}
+        </span>
+      )}
+      <UsageChip skill={skill} />
     </button>
   );
 }

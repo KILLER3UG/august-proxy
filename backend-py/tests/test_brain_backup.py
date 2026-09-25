@@ -194,6 +194,8 @@ def test_backup_routes_round_trip(isolatedData):
     assert listed.status_code == 200
     assert [b['name'] for b in listed.json()['backups']] == [name]
     assert listed.json()['backups'][0]['healthy'] is True
+    # The settings row labels itself from this field, so it has to cross HTTP.
+    assert listed.json()['backups'][0]['reason'] == 'before-upgrade'
 
     assert client.get('/api/brain/integrity').json()['ok'] is True
 
@@ -288,6 +290,24 @@ def test_a_real_backup_still_passes_the_content_gate(isolatedData):
     entry = next(e for e in brain_backup.list_backups() if e['name'] == result['name'])
     assert entry['healthy'] is True, entry
     assert brain_backup.schedule_restore(result['name'])['ok'] is True
+
+
+def test_a_listed_copy_says_why_it_exists(isolatedData):
+    """The filename is the only durable record of the reason, and the settings
+    UI now reads it back through this field instead of showing the raw name.
+    A copy whose reason came back '' would render as the generic label, which
+    is the ambiguity the field exists to kill — so the writer's slug has to
+    survive the round trip through the name."""
+    _save('fact:reason', 'Must be labelled')
+    startup = brain_backup.create_backup(reason='startup')
+    manual = brain_backup.create_backup(reason='manual')
+
+    by_name = {e['name']: e for e in brain_backup.list_backups()}
+    assert by_name[startup['name']]['reason'] == 'startup'
+    assert by_name[manual['name']]['reason'] == 'manual'
+    # A name this module did not write has no reason to invent.
+    assert brain_backup.reason_of('brain-someone-elses-copy.sqlite') == ''
+    assert brain_backup.reason_of('') == ''
 
 
 # ── Regressions: a restore must not cost the memory it replaces ────────────

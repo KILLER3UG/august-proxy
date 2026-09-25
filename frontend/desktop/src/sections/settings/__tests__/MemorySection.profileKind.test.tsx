@@ -72,15 +72,18 @@ function seedFacts() {
   ];
 }
 
-function renderTab(id = 'memory-facts') {
+async function renderTab(id = 'memory-facts') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const utils = render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
         <MemorySection active={{ id }} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  // The rows live inside the Global memory pane.
+  fireEvent.click(screen.getByTestId('memory-global-row'));
+  return utils;
 }
 
 function pageFor(store: string) {
@@ -152,15 +155,16 @@ beforeEach(() => {
 /* ── 1 · the kind column wins over the category heuristic ────────────── */
 
 it('reads a kind=profile fact as profile whatever its category', async () => {
-  renderTab();
+  await renderTab();
   const row = await waitFor(() => requireRow('I train small Qwen models'));
   expect(row).toHaveAttribute('data-kind', 'profile');
   expect(within(row).getByTestId('memory-kind-label')).toHaveTextContent('profile');
 });
 
 it('leaves non-profile rows on their existing derivation', async () => {
-  renderTab();
-  await waitFor(() => expect(screen.getAllByTestId('memory-flat-row')).toHaveLength(4));
+  await renderTab();
+  // 3 facts + 1 legacy lesson + 1 KV note: the Global group merges stores.
+  await waitFor(() => expect(screen.getAllByTestId('memory-flat-row')).toHaveLength(5));
   expect(rowByTitle('FastAPI backend')).toHaveAttribute('data-kind', 'fact');
   expect(rowByTitle('Prefers dark mode')).toHaveAttribute('data-kind', 'pref');
   expect(rowByTitle('Run tests after edits')).toHaveAttribute('data-kind', 'lesson');
@@ -169,7 +173,7 @@ it('leaves non-profile rows on their existing derivation', async () => {
 /* ── 2 · chip + filter ───────────────────────────────────────────────── */
 
 it('counts profile rows in a chip and filters to them', async () => {
-  renderTab();
+  await renderTab();
   const chip = await screen.findByTestId('memory-kind-chip-profile');
   expect(chip).toHaveTextContent('1');
 
@@ -180,7 +184,7 @@ it('counts profile rows in a chip and filters to them', async () => {
 });
 
 it('explains what the profile lane is whenever the chip is present', async () => {
-  renderTab();
+  await renderTab();
   const line = await screen.findByTestId('memory-profile-explainer');
   expect(line).toHaveTextContent('always in the model’s context on every turn');
   expect(line).toHaveTextContent('not recalled by keyword');
@@ -188,8 +192,8 @@ it('explains what the profile lane is whenever the chip is present', async () =>
 
 it('withholds the profile chip and its explainer when no row is profile', async () => {
   factRows = factRows.filter((r) => r.kind !== 'profile');
-  renderTab();
-  await waitFor(() => expect(screen.getAllByTestId('memory-flat-row')).toHaveLength(3));
+  await renderTab();
+  await waitFor(() => expect(screen.getAllByTestId('memory-flat-row')).toHaveLength(4));
   expect(screen.queryByTestId('memory-kind-chip-profile')).toBeNull();
   expect(screen.queryByTestId('memory-profile-explainer')).toBeNull();
 });
@@ -197,7 +201,7 @@ it('withholds the profile chip and its explainer when no row is profile', async 
 /* ── 3 · promote / demote, server-confirmed only ─────────────────────── */
 
 it('promotes a fact through a PATCH of the kind column', async () => {
-  renderTab();
+  await renderTab();
   await openMenu('FastAPI backend');
   fireEvent.click(await screen.findByText('Add to profile'));
 
@@ -208,14 +212,14 @@ it('promotes a fact through a PATCH of the kind column', async () => {
 
 it('does not flip the chip locally while the server row still says fact', async () => {
   patchMock.mockImplementation(async () => ({ row: {} }));
-  renderTab();
+  await renderTab();
   await openMenu('FastAPI backend');
   fireEvent.click(await screen.findByText('Add to profile'));
   await waitFor(() => expect(patchMock).toHaveBeenCalled());
 
   // factRows was never mutated: the refetch re-reports kind='fact', so the row
   // must still read 'fact'. An optimistic flip would show 'profile' here.
-  await waitFor(() => expect(screen.getAllByTestId('memory-flat-row')).toHaveLength(4));
+  await waitFor(() => expect(screen.getAllByTestId('memory-flat-row')).toHaveLength(5));
   expect(rowByTitle('FastAPI backend')).toHaveAttribute('data-kind', 'fact');
   expect(screen.getByTestId('memory-kind-chip-profile')).toHaveTextContent('1');
 });
@@ -226,7 +230,7 @@ it('shows the promoted row as profile once the refetched kind comes back', async
     factRows = factRows.map((r) => (r.id === 2 ? { ...r, kind } : r));
     return { row: {} };
   });
-  renderTab();
+  await renderTab();
   await openMenu('FastAPI backend');
   fireEvent.click(await screen.findByText('Add to profile'));
 
@@ -240,7 +244,7 @@ it('demotes a profile row back to fact', async () => {
     factRows = factRows.map((r) => (r.id === 1 ? { ...r, kind } : r));
     return { row: {} };
   });
-  renderTab();
+  await renderTab();
 
   const row = await openMenu('I train small Qwen models');
   const action = await screen.findByText('Remove from profile');
@@ -258,7 +262,7 @@ it('reports a failed lane write instead of pretending it landed', async () => {
     throw new Error('column "kind" is not writable');
   });
   const { toast } = await import('sonner');
-  renderTab();
+  await renderTab();
   await openMenu('FastAPI backend');
   fireEvent.click(await screen.findByText('Add to profile'));
 
@@ -269,8 +273,11 @@ it('reports a failed lane write instead of pretending it landed', async () => {
 /* ── 4 · only the store with a kind column offers the action ─────────── */
 
 it('offers no lane action on a KV note row', async () => {
-  renderTab('memory-knowledge');
-  await openMenu('user:plant');
+  await renderTab('memory-knowledge');
+  // The note reads as its text, not as the key the store files it under —
+  // `user:plant` is a handle for remember/forget, not something to show a user.
+  await openMenu('My plant is named Gerald');
+  expect(rowByTitle('user:plant')).toBeNull();
   // View / Export / Delete render; the lane write would 400 on this store.
   expect(screen.getByRole('menuitem', { name: 'View' })).toBeInTheDocument();
   expect(screen.queryByText('Add to profile')).toBeNull();

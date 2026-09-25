@@ -12,6 +12,13 @@ const iso = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOStr
 // every expiry relative to the run time.
 const isoInDays = (days: number) =>
   new Date(now + days * 86_400_000).toISOString().replace('T', ' ').slice(0, 19);
+/* SQLite's datetime('now') — UTC, but with no zone marker. Read as local time
+ * it shifts by the machine's offset, so on a UTC+8 box a fact learned two
+ * minutes ago rendered "8h ago" and an expiry arrived eight hours early. This
+ * shape is what the store wire actually sends. (On a UTC machine the shift is
+ * zero and this test is vacuous — it exists to catch the bug where it bites.) */
+const sqliteUtc = (minutesAgo: number) =>
+  new Date(now - minutesAgo * 60_000).toISOString().replace('T', ' ').slice(0, 19);
 
 /* Fixture rows per store, in the camelCase WIRE shape the real
  * /api/brain/stores/{name} endpoint returns (rows pass through the backend
@@ -85,10 +92,17 @@ const workspacesPayload = {
   ],
 };
 
+/* The REAL wire shape of project_memory.list_files(): one object per file with
+ * its entry count, not a bare filename. An earlier fixture here said
+ * `files: ['memory.md']`, which matched the frontend's wrong `string[]` type and
+ * let the "Objects are not valid as a React child" crash ship. */
 const projectListPayload = {
   ok: true,
   scope: 'project',
-  files: ['memory.md'],
+  files: [
+    { file: 'memory.md', entries: 1, updated: iso(30) },
+    { file: 'user-profile.md', entries: 2, updated: iso(90) },
+  ],
   entries: [
     {
       key: 'project:NSIS is legacy here',
@@ -98,14 +112,6 @@ const projectListPayload = {
       file: 'memory.md',
     },
   ],
-};
-
-let stateLookupPayload: Record<string, unknown> = {
-  key: 'cognitive:boot',
-  found: true,
-  source: 'internal_state',
-  value: { phase: 'done' },
-  updatedAt: iso(1),
 };
 
 vi.mock('@tanstack/react-query', async (importOriginal) => {
@@ -132,12 +138,6 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
         return { data: workspacesPayload, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() };
       if (key.includes('project-memory'))
         return { data: projectListPayload, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() };
-      if (key.includes('state-lookup')) {
-        // Exercise the real queryFn so the URL construction is observable.
-        if (opts.enabled === false) return idle;
-        void opts.queryFn?.().catch(() => undefined);
-        return { data: stateLookupPayload, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() };
-      }
       if (key.includes('brain-store')) {
         // Exercise the real queryFn so URL construction (filters, sort,
         // offset — Part 17 C-3/4/5) is observable through the api.get mock.
@@ -179,43 +179,54 @@ import { api } from '@/api/client';
 
 function renderSection(id = 'memory-facts') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const utils = render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
         <MemorySection active={{ id }} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  // Global memory is a row that opens its own pane; these tests are about the
+  // browse inside it.
+  fireEvent.click(screen.getByTestId('memory-global-row'));
+  return utils;
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  stateLookupPayload = {
-    key: 'cognitive:boot',
-    found: true,
-    source: 'internal_state',
-    value: { phase: 'done' },
-    updatedAt: iso(1),
-  };
 });
 
 describe('MemorySection — unified flat list', () => {
-  it('merges both scope stores into one flat list sorted newest first', () => {
+  /* The Global memory group is one list across every browsable store — facts,
+   * KV notes and the legacy heuristics table — because the choice between
+   * "Memories" and "Facts & Rules" was a choice between two backend tables. */
+  it('merges every global store into one flat list sorted newest first', () => {
     renderSection('memory-facts');
     const rows = screen.getAllByTestId('memory-flat-row');
-    expect(rows).toHaveLength(3);
-    // 5m ago (fact) → 60m ago (lesson) → 120m ago (fact)
+    expect(rows).toHaveLength(4);
+    // 5m fact → 10m KV note → 60m lesson → 120m fact
     expect(rows[0]).toHaveTextContent('Prefers dark mode');
-    expect(rows[1]).toHaveTextContent('Run tests after edits');
-    expect(rows[2]).toHaveTextContent('FastAPI backend');
+    expect(rows[1]).toHaveTextContent('My plant is named Gerald');
+    expect(rows[2]).toHaveTextContent('Run tests after edits');
+    expect(rows[3]).toHaveTextContent('FastAPI backend');
   });
 
-  it('derives kind chips with counts: all / fact / lesson / pref / expiring', () => {
+  it('renders the same list for either deep-link alias', () => {
+    const facts = renderSection('memory-facts');
+    const count = screen.getAllByTestId('memory-flat-row').length;
+    facts.unmount();
+    renderSection('memory-knowledge');
+    expect(screen.getAllByTestId('memory-flat-row')).toHaveLength(count);
+    expect(screen.getByRole('heading', { name: 'Memory' })).toBeInTheDocument();
+  });
+
+  it('derives kind chips with counts: all / fact / lesson / pref / note / expiring', () => {
     renderSection('memory-facts');
-    expect(screen.getByTestId('memory-kind-chip-all')).toHaveTextContent('3');
+    expect(screen.getByTestId('memory-kind-chip-all')).toHaveTextContent('4');
     expect(screen.getByTestId('memory-kind-chip-fact')).toHaveTextContent('1');
     expect(screen.getByTestId('memory-kind-chip-lesson')).toHaveTextContent('1');
     expect(screen.getByTestId('memory-kind-chip-pref')).toHaveTextContent('1');
+    expect(screen.getByTestId('memory-kind-chip-note')).toHaveTextContent('1');
     expect(screen.getByTestId('memory-kind-chip-expiring')).toHaveTextContent('1');
   });
 
@@ -239,17 +250,18 @@ describe('MemorySection — unified flat list', () => {
   it('offers Edit + Delete for writable rows; legacy heuristics get Delete but not Edit (C-11)', () => {
     renderSection('memory-facts');
     const rows = screen.getAllByTestId('memory-flat-row');
+    // Located by kind, not index: the merged list orders by recency across
+    // three stores, so a position is not a stable way to name a row.
+    const rowOf = (kind: string) => rows.find((r) => r.getAttribute('data-kind') === kind)!;
     // Writable fact row: menu has Edit and Delete.
-    const factMenu = within(rows[0]).getByTestId('memory-row-menu');
-    fireEvent.click(factMenu);
+    fireEvent.click(within(rowOf('fact')).getByTestId('memory-row-menu'));
     expect(screen.getByRole('menuitem', { name: /edit/i })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /delete/i })).toBeInTheDocument();
     fireEvent.keyDown(document, { key: 'Escape' });
     // Legacy heuristics row: no live writer so no Edit — but DELETABLE
     // (brain.py _ROW_DELETABLE includes heuristics; C-11 stops the UI
     // suppressing a delete the backend allows).
-    const lessonMenu = within(rows[1]).getByTestId('memory-row-menu');
-    fireEvent.click(lessonMenu);
+    fireEvent.click(within(rowOf('lesson')).getByTestId('memory-row-menu'));
     expect(screen.queryByRole('menuitem', { name: /edit/i })).not.toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /delete/i })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /view/i })).toBeInTheDocument();
@@ -271,7 +283,7 @@ describe('MemorySection — unified flat list', () => {
     fireEvent.change(screen.getByTestId('memory-add-input'), {
       target: { value: 'My plant is named Gerald' },
     });
-    fireEvent.click(screen.getByTestId('memory-add-button'));
+    fireEvent.click(screen.getByTestId('memory-add-submit'));
     await waitFor(() => {
       expect(api.post).toHaveBeenCalledWith(
         '/api/august/memory/manage',
@@ -291,47 +303,19 @@ describe('MemorySection — unified flat list', () => {
   });
 });
 
-describe('MemorySection — raw state lookup', () => {
-  it('renders the raw row for a found key with source and JSON value', async () => {
-    renderSection('memory-facts');
-    fireEvent.change(screen.getByTestId('raw-state-key-input'), {
-      target: { value: 'cognitive:boot' },
-    });
-    fireEvent.click(screen.getByTestId('raw-state-lookup-button'));
-    await waitFor(() => {
-      expect(api.get).toHaveBeenCalledWith(
-        '/api/brain/state-lookup?key=cognitive%3Aboot',
-      );
-    });
-    const result = await screen.findByTestId('raw-state-result');
-    expect(result).toHaveTextContent('internal_state');
-    expect(result).toHaveTextContent('"phase": "done"');
-  });
-
-  it('says when no row exists for the key', async () => {
-    stateLookupPayload = { key: 'nope', found: false, source: null, value: null, updatedAt: null };
-    renderSection('memory-facts');
-    fireEvent.change(screen.getByTestId('raw-state-key-input'), { target: { value: 'nope' } });
-    fireEvent.click(screen.getByTestId('raw-state-lookup-button'));
-    const result = await screen.findByTestId('raw-state-result');
-    await waitFor(() => {
-      expect(result).toHaveTextContent('no row for key "nope"');
-    });
-  });
-});
-
 describe('MemorySection — Part 17 Phase C gap closings', () => {
-  // C-1: scope selector lists Global + one entry per known workspace.
-  it('shows the scope selector with the known workspaces (C-1)', () => {
+  // C-1: every workspace that holds a memory folder gets its own row, so the
+  // page says what exists without anyone opening a picker. `sheesh` has skills
+  // but no memory folder, so it is not a memory row.
+  it('renders one row per project that has memory (C-1)', () => {
     renderSection('memory-facts');
-    const select = screen.getByTestId('memory-scope-select');
-    const options = Array.from(select.querySelectorAll('option'));
-    expect(options.map((o) => o.textContent)).toEqual([
-      'Global (all workspaces)',
-      'august-proxy · project',
-      'sheesh · project',
-    ]);
-    expect(select).toHaveValue('');
+    const group = screen.getByTestId('memory-group-project');
+    const rows = within(group).getAllByTestId('memory-project-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent('august-proxy');
+    expect(within(group).queryByText('sheesh')).toBeNull();
+    // The folder's contents are not on this pane — the row opens them.
+    expect(within(group).queryByTestId('memory-project-files')).toBeNull();
   });
 
   // C-3: category/source/confidence filters and C-4: sort control exist and feed the query URL.
@@ -362,33 +346,27 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
     expect(badges.some((b) => b.textContent === 'remember')).toBe(true);
   });
 
-  // C-7: the add box gains a category select (global) and routes project
-  // scope writes through the md-file door.
-  it('add-box posts with the chosen category (C-7)', async () => {
+  /* Category and expiry are per-entry edits now — the bottom bar is one field,
+   * so they moved into the row's edit view (both are in the facts whitelist the
+   * backend PATCH accepts). */
+  it('sets category and expiry from the row’s edit view (C-7, M-10)', async () => {
     renderSection('memory-facts');
-    fireEvent.change(screen.getByTestId('memory-add-category'), { target: { value: 'user' } });
-    fireEvent.change(screen.getByTestId('memory-add-input'), { target: { value: 'Likes tea' } });
-    fireEvent.click(screen.getByTestId('memory-add-button'));
-    await waitFor(() => {
-      expect(api.post).toHaveBeenCalledWith(
-        '/api/august/memory/manage',
-        expect.objectContaining({ action: 'set', value: 'Likes tea', category: 'user' }),
-      );
-    });
-  });
+    const rows = screen.getAllByTestId('memory-flat-row');
+    fireEvent.click(within(rows[0]).getByTestId('memory-row-menu'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /edit/i }));
 
-  // M-10: the add-box TTL selection rides the manage call.
-  it('add-box posts ttl_days when an expiry is chosen (M-10)', async () => {
-    renderSection('memory-facts');
-    fireEvent.change(screen.getByTestId('memory-add-ttl'), { target: { value: '30' } });
-    fireEvent.change(screen.getByTestId('memory-add-input'), { target: { value: 'Temporary note' } });
-    fireEvent.click(screen.getByTestId('memory-add-button'));
-    await waitFor(() => {
-      expect(api.post).toHaveBeenCalledWith(
-        '/api/august/memory/manage',
-        expect.objectContaining({ action: 'set', value: 'Temporary note', ttl_days: 30 }),
-      );
+    fireEvent.change(screen.getByLabelText('category'), { target: { value: 'user' } });
+    fireEvent.change(screen.getByLabelText('expires_at'), {
+      target: { value: '2026-12-31 00:00:00' },
     });
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/ }));
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith(
+        '/api/brain/stores/facts/1',
+        expect.objectContaining({ category: 'user', 'expires_at': '2026-12-31 00:00:00' }),
+      ),
+    );
   });
 
   // C-8: expired rows are visually separated with an absolute date.
@@ -400,6 +378,30 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
     // expired.
     expect(screen.getByTestId('memory-expiring-badge')).toBeInTheDocument();
     expect(screen.queryByTestId('memory-expired-badge')).not.toBeInTheDocument();
+  });
+
+  it('reads a store timestamp as UTC, not as local time', () => {
+    const original = rowsByStore.facts.rows;
+    const originalTotal = rowsByStore.facts.total;
+    rowsByStore.facts.rows = [
+      { id: 50, factKey: 'user:fresh', factValue: 'Learned just now', kind: 'fact', updatedAt: sqliteUtc(2) },
+      // An expiry one hour AHEAD, in the same markerless UTC shape.
+      { id: 51, factKey: 'user:soon', factValue: 'Expires in an hour', kind: 'fact', updatedAt: sqliteUtc(3), expiresAt: sqliteUtc(-60) },
+    ];
+    rowsByStore.facts.total = 2;
+    try {
+      renderSection('memory-facts');
+      const rows = screen.getAllByTestId('memory-flat-row');
+      // Two minutes, not "8h ago" — the shift was the machine's UTC offset.
+      expect(rows[0]).toHaveTextContent('Learned just now');
+      expect(rows[0]).toHaveTextContent('2m ago');
+      // And a future expiry must not be filed as expired.
+      expect(screen.queryByTestId('memory-expired-badge')).toBeNull();
+      expect(screen.getByTestId('memory-expiring-badge')).toBeInTheDocument();
+    } finally {
+      rowsByStore.facts.rows = original;
+      rowsByStore.facts.total = originalTotal;
+    }
   });
 
   // C-6: bulk select + bulk delete + bulk export.
@@ -417,20 +419,33 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
     });
   });
 
-  // C-9: project scope view shows md files + entries + bound sessions.
-  it('switching to a workspace shows the project view (C-9)', async () => {
+  // C-9: picking a workspace shows its md files + entries + bound sessions —
+  // alongside the global list, which switching scope used to hide.
+  it('opening a project replaces the pane with its files and entries (C-9)', async () => {
     renderSection('memory-facts');
-    fireEvent.change(screen.getByTestId('memory-scope-select'), {
-      target: { value: 'C:\\Dev\\august-proxy' },
+    fireEvent.click(screen.getByTestId('memory-project-row'));
+
+    const pane = await screen.findByTestId('memory-project-pane');
+    // The Files roster renders the server's {file, entries, updated} objects —
+    // the shape that used to throw "Objects are not valid as a React child".
+    const files = within(pane).getByTestId('memory-project-files');
+    const rows = within(files).getAllByTestId('memory-project-file');
+    expect(rows).toHaveLength(2);
+    expect(within(files).getByText('memory.md')).toBeInTheDocument();
+    expect(within(rows[0]).getByText('1 entry')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('2 entries')).toBeInTheDocument();
+    expect(within(pane).getByTestId('memory-project-entries')).toHaveTextContent(
+      'NSIS is legacy here',
+    );
+    // A pane switch, not a region swap: the global list is gone from the DOM.
+    expect(screen.queryByTestId('memory-group-global')).toBeNull();
+    expect(screen.queryByTestId('memory-flat-list')).toBeNull();
+
+    // The pane's own bar posts through the md-file door.
+    fireEvent.change(within(pane).getByTestId('memory-project-add-input'), {
+      target: { value: 'New project note' },
     });
-    const view = await screen.findByTestId('memory-project-view');
-    expect(view).toHaveTextContent('NSIS is legacy here');
-    expect(screen.getByTestId('memory-project-files')).toHaveTextContent('memory.md');
-    expect(screen.getByTestId('memory-project-path')).toHaveTextContent('august-proxy');
-    expect(view).toHaveTextContent('4 sessions bound');
-    // The project add-box posts through the md-file door.
-    fireEvent.change(screen.getByTestId('memory-add-input'), { target: { value: 'New project note' } });
-    fireEvent.click(screen.getByTestId('memory-add-button'));
+    fireEvent.click(within(pane).getByTestId('memory-project-add-submit'));
     await waitFor(() => {
       expect(api.post).toHaveBeenCalledWith(
         '/api/august/memory/manage',
@@ -444,14 +459,63 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
     });
   });
 
+  it('back from a project returns to the memory list', async () => {
+    renderSection('memory-facts');
+    fireEvent.click(screen.getByTestId('memory-project-row'));
+    const pane = await screen.findByTestId('memory-project-pane');
+    fireEvent.click(within(pane).getByTestId('memory-project-pane-header-back'));
+    await waitFor(() => expect(screen.getByTestId('memory-group-global')).toBeInTheDocument());
+    expect(screen.queryByTestId('memory-project-pane')).toBeNull();
+  });
+
+  it('opening a memory file swaps the column to its pane', async () => {
+    renderSection('memory-facts');
+    fireEvent.click(screen.getByTestId('memory-project-row'));
+    const pane = await screen.findByTestId('memory-project-pane');
+    const [firstFile] = await within(pane).findAllByTestId('memory-project-file');
+    fireEvent.click(firstFile);
+
+    // This file mocks useQuery wholesale, so the read request itself is asserted
+    // in MemorySection.layout.test.tsx; here it is the routing that matters.
+    const filePane = await screen.findByTestId('memory-file-pane');
+    expect(within(filePane).getByTestId('memory-file-pane-header')).toHaveTextContent('memory.md');
+    expect(screen.queryByTestId('memory-project-pane')).toBeNull();
+    // Back leads to the project it came from, not to the top of the page.
+    fireEvent.click(within(filePane).getByTestId('memory-file-pane-header-back'));
+    await waitFor(() => expect(screen.getByTestId('memory-project-pane')).toBeInTheDocument());
+  });
+
+  it('adds a global memory as a fact, the store recall reads', async () => {
+    renderSection('memory-facts');
+    fireEvent.change(screen.getByTestId('memory-add-input'), {
+      target: { value: 'My coffee machine is called Brev' },
+    });
+    fireEvent.click(screen.getByTestId('memory-add-submit'));
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/august/memory/manage',
+        expect.objectContaining({
+          action: 'set',
+          key: 'user:my-coffee-machine-is-called-brev',
+          value: 'My coffee machine is called Brev',
+          source: 'user',
+        }),
+      );
+    });
+    // No project selected: nothing rides along to the md-file door.
+    expect(api.post).not.toHaveBeenCalledWith(
+      '/api/august/memory/manage',
+      expect.objectContaining({ scope: 'project' }),
+    );
+  });
+
   // C-9 delete: project entries delete through the project door.
   it('project entries delete via scope=project (C-9)', async () => {
     renderSection('memory-facts');
-    fireEvent.change(screen.getByTestId('memory-scope-select'), {
-      target: { value: 'C:\\Dev\\august-proxy' },
-    });
-    await screen.findByTestId('memory-project-view');
-    fireEvent.click(screen.getByTestId('memory-project-delete'));
+    fireEvent.click(screen.getByTestId('memory-project-row'));
+    const pane = await screen.findByTestId('memory-project-pane');
+    await within(pane).findByTestId('memory-project-entries');
+    fireEvent.click(within(pane).getByTestId('memory-project-delete'));
     await waitFor(() => {
       expect(screen.getByText('Delete this project entry?')).toBeInTheDocument();
     });

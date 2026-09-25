@@ -14,6 +14,7 @@ Acceptance (plan docs/plans/2026-08-29-project-scoped-memory.md Phase A):
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -207,6 +208,22 @@ class TestFreeFormTolerance:
         assert files == ['decisions.md', 'memory.md']
         titles = {e.title for e in pm.read_entries(ws)}
         assert titles == {'Main entry', 'DEC-1'}
+
+    def test_list_files_carries_the_roster_the_ui_renders(self, ws: Path) -> None:
+        """The settings project card renders each row of this list directly, so
+        a missing key is a blank — and the frontend once typed it `string[]` and
+        threw "Objects are not valid as a React child" on the real shape.
+        `updated` must carry its offset: a markerless UTC stamp is read as local
+        time by the browser and shifts the displayed age by the viewer's offset."""
+        _writeMd(ws, 'memory.md', '# H\n\n## Main entry\n\na\n\n## Second\n\nb\n')
+        rows = pm.list_files(ws)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row['file'] == 'memory.md'
+        assert row['entries'] == 2
+        assert isinstance(row['updated'], str) and row['updated']
+        parsed = datetime.fromisoformat(str(row['updated']))
+        assert parsed.tzinfo is not None, f'markerless timestamp: {row["updated"]!r}'
 
 
 # ── frozen block byte-stability across turns ──────────────────────────
@@ -569,6 +586,42 @@ class TestMemoryManageProject:
         )
         assert r.json()['ok'] is True
         assert pm.read_entries(ws) == []
+
+    def test_read_returns_a_file_s_own_text(self, ws: Path) -> None:
+        """The settings card lists files and now has to open one. `key` is a
+        basename checked against list_files(), never a path joined onto the
+        root — so the door cannot be aimed outside .aug/memory."""
+        from app.main import app
+        from fastapi.testclient import TestClient
+
+        _writeMd(ws, 'decisions.md', '# D\n\n## DEC-1\n\nuse postgres\n')
+        client = TestClient(app)
+        r = client.post(
+            '/api/august/memory/manage',
+            json={'action': 'read', 'key': 'decisions.md', 'scope': 'project', 'workspace': str(ws)},
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data['ok'] is True
+        assert data['file'] == 'decisions.md'
+        assert 'use postgres' in data['text']
+
+    @pytest.mark.parametrize(
+        'name',
+        ['../../secret.md', '.aug/memory/memory.md', 'missing.md', ''],
+    )
+    def test_read_refuses_any_name_that_is_not_a_listed_file(self, ws: Path, name: str) -> None:
+        from app.main import app
+        from fastapi.testclient import TestClient
+
+        _writeMd(ws, 'memory.md', '# H\n\n## Keep\n\nbody\n')
+        client = TestClient(app)
+        r = client.post(
+            '/api/august/memory/manage',
+            json={'action': 'read', 'key': name, 'scope': 'project', 'workspace': str(ws)},
+        )
+        assert r.json()['ok'] is False
+        assert 'no memory file' in r.json()['error']
 
     def test_project_requires_workspace(self) -> None:
         from app.main import app

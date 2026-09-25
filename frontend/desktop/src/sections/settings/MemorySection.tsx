@@ -24,28 +24,17 @@
  * /api/brain/stores/{name}/{id} (edit/delete). */
 
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Brain, ChevronLeft, ChevronRight, Download, FolderTree, HardDrive, MoreHorizontal, Pencil, Plus, RefreshCw, Search, ShieldAlert, ShieldCheck, Trash2, UserRoundCog } from 'lucide-react';
+import { ArrowUp, ChevronLeft, ChevronRight, Download, MoreHorizontal, Pencil, RefreshCw, Search, Trash2, UserRoundCog } from 'lucide-react';
 import { api } from '@/api/client';
-import {
-  cancelBrainRestore,
-  createBrainBackup,
-  getBrainIntegrity,
-  listBrainBackups,
-  stageBrainRestore,
-  type BrainBackupEntry,
-  type BrainBackupList,
-  type BrainIntegrity,
-} from '@/api/api-client';
-import { useSessionsStore } from '@/store/sessions';
 import { PageLoader } from '@/components/PageLoader';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
-import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
-import { cn, formatBytes, timeAgo } from '@/lib/utils';
+import { absoluteDate, cn, timeAgo } from '@/lib/utils';
 import { ImportMemoryDialog } from './ImportMemoryDialog';
 
 type Row = Record<string, unknown>;
@@ -89,11 +78,31 @@ interface ProjectEntry {
   file: string;
 }
 
+/** One memory file in a project's `.aug/memory` folder — the server's own shape
+ *  (project_memory.list_files). It is a roster with a count, NOT a filename:
+ *  this file used to type it `string[]` and render `{f}` directly, which threw
+ *  "Objects are not valid as a React child" the moment a project had memory. */
+interface ProjectFile {
+  file: string;
+  entries: number;
+  /** ISO timestamp with its offset, from the file's mtime. */
+  updated?: string;
+}
+
+/** Which pane fills the settings column. One union, because opening anything
+ *  replaces the whole content — a detail region nested inside the list is what
+ *  made the page read as boxes inside boxes. */
+type Pane =
+  | { kind: 'list' }
+  | { kind: 'global' }
+  | { kind: 'project'; workspace: WorkspaceInfo }
+  | { kind: 'file'; workspace: WorkspaceInfo; file: string };
+
 /** C-9: /api/august/memory/manage {action:list, scope:project} response. */
 interface ProjectList {
   ok?: boolean;
   scope?: string;
-  files?: string[];
+  files?: ProjectFile[];
   entries?: ProjectEntry[];
 }
 
@@ -105,21 +114,16 @@ interface ProjectList {
  *  sessions/messages/exams stores duplicate the sidebar, chat, and exam UIs.
  *  Part 21 OQ1 (2026-09-04): auto_memories retired — the phantom store entry
  *  is gone (migration 033 drops the table). */
-const SCOPES: Record<string, { title: string; blurb: string; stores: string[] }> = {
-  'memory-knowledge': {
-    title: 'Memories',
-    blurb: 'KV notes the agent keeps about you.',
-    stores: ['memory'],
-  },
-  'memory-facts': {
-    title: 'Facts & Rules',
-    blurb: 'Structured facts August extracted and the behavioral rules it learned.',
-    stores: ['facts', 'heuristics'],
-  },
-};
+/* One Memory page. The rail has always shown a single "Memory" entry, and
+ * `memory-knowledge` / `memory-facts` are deep-link aliases for it: asking
+ * someone to choose between "Memories" and "Facts & Rules" is asking them to
+ * distinguish two backend tables they never see. The stores are still what a
+ * row IS (the kind chip says so) — they are just no longer the navigation. */
+const PAGE_TITLE = 'Memory';
+const PAGE_BLURB = 'Everything August has learned about you and your projects.';
 
-/** Tabs rendered as one flat chronological list across kinds. */
-const UNIFIED_TABS = new Set(['memory-knowledge', 'memory-facts']);
+/** The Global memory group lists every browsable store at once. */
+const GLOBAL_STORES = ['facts', 'memory', 'heuristics'];
 
 const SORTS: Array<{ value: string; label: string }> = [
   { value: 'newest', label: 'Newest' },
@@ -275,6 +279,17 @@ function deriveKind(store: string, r: Row): EntryKind {
  *  column, so the promote/demote action must not render for them. */
 const KIND_EDITABLE_STORE = 'facts';
 
+/* SQLite's datetime('now') is UTC and serialises as "YYYY-MM-DD HH:MM:SS" with
+ * no zone marker, which JS then reads as LOCAL time: on a UTC+8 machine a fact
+ * learned two minutes ago rendered as "8h ago", and an expiry was judged eight
+ * hours early. Tag the zone before parsing anything from the store wire. Only
+ * that exact shape is touched — a date-only ISO or a real offset passes
+ * through. */
+function asUtc(stamp: string): string {
+  const s = (stamp || '').trim();
+  return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(s) ? `${s.replace(' ', 'T')}Z` : s;
+}
+
 function hasExpiry(r: Row): boolean {
   return str(r.expiresAt).trim() !== '';
 }
@@ -282,12 +297,12 @@ function hasExpiry(r: Row): boolean {
 /** C-8: a fact whose expiresAt is in the past — visually separated from
  *  live expiring rows (which still have time left). */
 function isExpired(r: Row): boolean {
-  const t = Date.parse(str(r.expiresAt).replace(' ', 'T'));
+  const t = Date.parse(asUtc(str(r.expiresAt)));
   return Number.isFinite(t) && t < Date.now();
 }
 
 function sortTime(r: Row, meta: StoreMeta | undefined): number {
-  const t = Date.parse(meta?.updated?.(r) ?? '');
+  const t = Date.parse(asUtc(meta?.updated?.(r) ?? ''));
   return Number.isFinite(t) ? t : 0;
 }
 
@@ -308,6 +323,17 @@ interface FlatEntry {
 const UNIFIED_FETCH = 200;
 const UNIFIED_RENDER = 50;
 const LONG_TEXT_FIELDS = new Set(['fact_value', 'value', 'event_summary', 'rule']);
+
+/* What a row says out loud in the merged list: the memory itself, not the slug
+ * the store keys it by. Facts and KV notes both stored their text behind a
+ * machine key, so a row used to read `user:plant` where the memory is "My plant
+ * is named Gerald". The key stays the detail header and the remember/forget
+ * handle. */
+function rowTitle(store: string, row: Row): string {
+  if (store === 'facts') return parseFactValue(row.factValue).summary || str(row.factKey);
+  if (store === 'memory') return summarizeKvValue(row.value).summary || str(row.key);
+  return STORE_META[store]?.title(row) || '(untitled)';
+}
 
 function slugify(text: string): string {
   return (
@@ -351,28 +377,62 @@ function entryToMarkdown(store: string, r: Row, meta: StoreMeta): string {
   return lines.join('\n');
 }
 
+/* The pane reads as four groups in the order the questions arrive: what memory
+ * is allowed to do, what it knows about you everywhere, what it knows inside one
+ * project, and the August-specific surface under that. Groups are separated by a
+ * rule, not by a box — a box around every group is what made the page read as
+ * stacked cards instead of one list you scan. */
+function MemoryGroup({
+  title,
+  aside,
+  children,
+  testId,
+}: {
+  title: string;
+  aside?: string;
+  children: ReactNode;
+  testId: string;
+}) {
+  return (
+    <section
+      className="border-t border-white/[0.07] pt-3 first:border-t-0 first:pt-0"
+      data-testid={testId}
+    >
+      <div className="flex items-baseline gap-3 pb-0.5">
+        <h2 className="text-[10.5px] font-semibold uppercase tracking-widest text-muted-foreground/55">
+          {title}
+        </h2>
+        {aside && (
+          <span
+            className="ml-auto shrink-0 text-[10.5px] tabular-nums text-muted-foreground/70"
+            data-testid={`${testId}-aside`}
+          >
+            {aside}
+          </span>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+
+
 export function MemorySection({ active }: { active: { id: string } }) {
-  const scope = SCOPES[active.id];
-  const unified = UNIFIED_TABS.has(active.id);
   const qc = useQueryClient();
   const { state: confirmState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
-  const [activeStore, setActiveStore] = useState<string>(scope?.stores[0] ?? 'facts');
+  // Which store the open row came from — DetailView's metadata, not a nav state.
+  const [activeStore, setActiveStore] = useState<string>(GLOBAL_STORES[0]);
   const [mode, setMode] = useState<'list' | 'detail'>('list');
   const [selected, setSelected] = useState<Row | null>(null);
   const [editing, setEditing] = useState(false);
   const [editDraft, setEditDraft] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [addText, setAddText] = useState('');
-  const [addCategory, setAddCategory] = useState('general');
-  // M-10: the add-box TTL actually reaches the store again —
-  // ttl_days rides the manage call and lands as expires_at on the fact.
-  const [addTtlDays, setAddTtlDays] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
   const [kindFilter, setKindFilter] = useState<'all' | EntryKind | 'expiring'>('all');
   const [unifiedShown, setUnifiedShown] = useState(UNIFIED_RENDER);
-  // C-1: scope selector — '' = Global, a path = that project's view.
-  const [wsScope, setWsScope] = useState('');
   // C-3/4: server-side filters + sort (persist across page navigation).
   const [catFilter, setCatFilter] = useState('');
   const [srcFilter, setSrcFilter] = useState('');
@@ -384,23 +444,23 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const [unifiedOffset, setUnifiedOffset] = useState(0);
   const query = search.trim();
 
-  // Switching sub-tabs resets the browse state to that scope's first store.
+  // A deep link to either alias lands on the same page; clear the browse state
+  // so arriving from a stale link never shows another entry's filters.
   useEffect(() => {
-    setActiveStore(scope?.stores[0] ?? 'facts');
+    setActiveStore(GLOBAL_STORES[0]);
     setMode('list');
     setSelected(null);
     setEditing(false);
     setSearch('');
     setKindFilter('all');
     setUnifiedShown(UNIFIED_RENDER);
-    setWsScope('');
     setCatFilter('');
     setSrcFilter('');
     setConfFilter('');
     setSort('newest');
     setChecked(new Set());
     setUnifiedOffset(0);
-  }, [active.id, scope]);
+  }, [active.id]);
 
   const storesQ = useQuery<{ stores: StoreInfo[] }>({
     queryKey: ['brain-stores'],
@@ -415,24 +475,11 @@ export function MemorySection({ active }: { active: { id: string } }) {
     queryKey: ['memory-workspaces'],
     queryFn: () => api.get<{ workspaces: WorkspaceInfo[] }>('/api/august/memory/workspaces'),
   });
-  // C-9: with a project scope selected, the section switches to the project
-  // view — the workspace's md files + entries + the sessions
-  // bound to that workspace — instead of the global store rows.
-  const projectQ = useQuery<ProjectList>({
-    queryKey: ['project-memory', wsScope],
-    queryFn: () =>
-      api.post<ProjectList>('/api/august/memory/manage', {
-        action: 'list',
-        scope: 'project',
-        workspace: wsScope,
-      }),
-    enabled: !!wsScope,
-  });
-  // Unified tabs fetch both scope stores and merge client-side.
-  // C-5: real pagination — the fetch uses UNIFIED_FETCH rows per page and a
-  // movable offset, so page 2+ reaches rows past the old hard 200 cap.
-  const unifiedStoreA = unified ? scope.stores[0] : '';
-  const unifiedStoreB = unified ? (scope.stores[1] ?? '') : '';
+  // The Global memory group merges every browsable store into one
+  // chronological list — the kind chip, not a second page, is what tells a
+  // fact from a KV note from a legacy lesson.
+  // C-5: real pagination — UNIFIED_FETCH rows per page per store with a movable
+  // offset, so page 2+ reaches rows past the old hard 200 cap.
   const unifiedFetch = (store: string) =>
     api.get<StorePage>(
       `/api/brain/stores/${encodeURIComponent(store)}` +
@@ -442,16 +489,22 @@ export function MemorySection({ active }: { active: { id: string } }) {
         (srcFilter ? `&source=${encodeURIComponent(srcFilter)}` : '') +
         (confFilter ? `&confidence=${encodeURIComponent(confFilter)}` : ''),
     );
+  const unifiedQueryKey = (store: string) =>
+    ['brain-store', store, unifiedOffset, query, UNIFIED_FETCH, catFilter, srcFilter, confFilter, sort];
+  const [storeA, storeB, storeC] = GLOBAL_STORES;
   const unifiedQa = useQuery<StorePage>({
-    queryKey: ['brain-store', unifiedStoreA, unifiedOffset, query, UNIFIED_FETCH, catFilter, srcFilter, confFilter, sort],
-    queryFn: () => unifiedFetch(unifiedStoreA),
-    enabled: unified && !!unifiedStoreA,
+    queryKey: unifiedQueryKey(storeA),
+    queryFn: () => unifiedFetch(storeA),
   });
   const unifiedQb = useQuery<StorePage>({
-    queryKey: ['brain-store', unifiedStoreB, unifiedOffset, query, UNIFIED_FETCH, catFilter, srcFilter, confFilter, sort],
-    queryFn: () => unifiedFetch(unifiedStoreB),
-    enabled: unified && !!unifiedStoreB,
+    queryKey: unifiedQueryKey(storeB),
+    queryFn: () => unifiedFetch(storeB),
   });
+  const unifiedQc = useQuery<StorePage>({
+    queryKey: unifiedQueryKey(storeC),
+    queryFn: () => unifiedFetch(storeC),
+  });
+  const storeQueries = [unifiedQa, unifiedQb, unifiedQc];
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['brain-stores'] });
@@ -460,7 +513,9 @@ export function MemorySection({ active }: { active: { id: string } }) {
 
   const configMut = useMutation({
     mutationFn: (patch: Record<string, boolean>) => api.put('/api/brain/config', patch),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['brain-config'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['brain-config'] });
+    },
     onError: (e: Error) => toast.error(e.message || 'Could not update setting'),
   });
   const addMut = useMutation({
@@ -528,29 +583,24 @@ export function MemorySection({ active }: { active: { id: string } }) {
 
   const meta = STORE_META[activeStore];
 
-  /* Merge both scope stores into one flat chronological list. */
+  /* Merge every browsable store into one flat chronological list. */
   const flatEntries = useMemo<FlatEntry[]>(() => {
-    if (!unified || !scope) return [];
     const pages: Array<[string, StorePage | undefined]> = [
-      [unifiedStoreA, unifiedQa.data],
-      [unifiedStoreB, unifiedQb.data],
+      [storeA, unifiedQa.data],
+      [storeB, unifiedQb.data],
+      [storeC, unifiedQc.data],
     ];
     const out: FlatEntry[] = [];
     for (const [store, page] of pages) {
       if (!store) continue;
       const m = STORE_META[store];
       for (const row of page?.rows ?? []) {
-        // Facts read human-first in the flat list: the fact text, not the
-        // slug-like factKey, is the row title (key stays the detail header).
-        const baseTitle = m?.title(row) || '(untitled)';
-        const title =
-          store === 'facts' ? parseFactValue(row.factValue).summary || baseTitle : baseTitle;
         out.push({
           store,
           row,
           id: str(row[m?.idField ?? 'id']),
           kind: deriveKind(store, row),
-          title,
+          title: rowTitle(store, row),
           summary: m?.summary(row) ?? '',
           updated: m?.updated?.(row) ?? '',
           expiring: hasExpiry(row),
@@ -562,7 +612,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
     }
     out.sort((a, b) => sortTime(b.row, STORE_META[b.store]) - sortTime(a.row, STORE_META[a.store]));
     return out;
-  }, [unified, scope, unifiedStoreA, unifiedStoreB, unifiedQa.data, unifiedQb.data]);
+  }, [storeA, storeB, storeC, unifiedQa.data, unifiedQb.data, unifiedQc.data]);
 
   const kindCounts = useMemo(() => {
     const counts: Record<'all' | EntryKind | 'expiring', number> = {
@@ -590,12 +640,17 @@ export function MemorySection({ active }: { active: { id: string } }) {
   }, [flatEntries, kindFilter]);
 
   // Server-reported totals drive the unified pager (C-5).
-  const unifiedTotal = (unifiedQa.data?.total ?? 0) + (unifiedQb.data?.total ?? 0);
+  const unifiedTotal =
+    (unifiedQa.data?.total ?? 0) + (unifiedQb.data?.total ?? 0) + (unifiedQc.data?.total ?? 0);
   const unifiedCanPrev = unifiedOffset > 0;
   const unifiedCanNext = unifiedOffset + UNIFIED_FETCH < unifiedTotal;
 
-  const title = scope?.title ?? 'Memory';
-  const showAddBox = active.id === 'memory-knowledge' || active.id === 'memory-facts';
+  // The group header answers "how much does August remember about me, and when
+  // did it last learn something" without anyone counting rows.
+  const newestGlobal = flatEntries.reduce(
+    (acc, e) => Math.max(acc, sortTime(e.row, STORE_META[e.store])),
+    0,
+  );
 
   const openDetail = (r: Row, store?: string) => {
     if (store) setActiveStore(store);
@@ -694,84 +749,98 @@ export function MemorySection({ active }: { active: { id: string } }) {
     const body = flatEntries
       .map((e) => entryToMarkdown(e.store, e.row, STORE_META[e.store]))
       .join('\n\n---\n\n');
-    downloadMarkdown(`${scope?.title ?? 'memory'}-export.md`.toLowerCase().replace(/\s+/g, '-'), body);
+    downloadMarkdown('global-memory-export.md', body);
   };
 
-  /* C-7: the add box gains category + scope. Global writes land in facts
-   * with the chosen category (no more always-general); project writes go
-   * through the md-file door (scope=project + workspace). */
-  const addMemory = () => {
+  /* The bottom bar writes a fact — the store recall reads and the model can be
+   * told to forget by key. Category and expiry are per-entry edits (both are in
+   * the facts edit whitelist), so they live in the row's edit view rather than
+   * in front of every write. Project notes go through the md-file door in that
+   * project's own pane. */
+  const addGlobalMemory = () => {
     const text = addText.trim();
     if (!text) return;
-    if (wsScope) {
-      addMut.mutate({
-        action: 'set',
-        scope: 'project',
-        workspace: wsScope,
-        key: text.split('\n')[0].slice(0, 80),
-        value: text,
-        details: '',
-      });
-      return;
-    }
-    // The Memories tab lists the KV `memory` store — write to
-    // THAT store so the entry actually appears in the list (it previously
-    // landed in Facts & Rules via the facts door and never showed up).
-    if (active.id === 'memory-knowledge') {
-      addMut.mutate({
-        action: 'set',
-        store: 'memory',
-        key: text.split('\n')[0].slice(0, 80),
-        value: text,
-      });
-      return;
-    }
     addMut.mutate({
       action: 'set',
       key: `user:${slugify(text)}`,
       value: text,
-      category: addCategory,
       source: 'user',
-      ...(addTtlDays > 0 ? { ttl_days: addTtlDays } : {}),
     });
   };
 
   const cfg = configQ.data?.config;
-  const unifiedLoading = unified && (unifiedQa.isLoading || (!!unifiedStoreB && unifiedQb.isLoading));
-  const unifiedError = unified && ((unifiedQa.isError && unifiedQa.error) || (unifiedQb.isError && unifiedQb.error));
+  const unifiedLoading = storeQueries.some((q) => q.isLoading);
+  const unifiedError = storeQueries.reduce<unknown>(
+    (acc, q) => acc ?? (q.isError ? q.error : null),
+    null,
+  );
   const workspaces = workspacesQ.data?.workspaces ?? [];
-  // The remember tool defaults to project scope inside a workspace session
-  // (session_tools writes the workspace md-file, not the global facts store),
-  // so a memory saved during a project chat is invisible to the default
-  // Global view. Surface where it went instead of showing an empty list.
-  const sessions = useSessionsStore((s) => s.sessions);
-  const activeProjectPath = useMemo(() => {
-    try {
-      const lastId = localStorage.getItem('august_last_session');
-      if (!lastId) return '';
-      const s = sessions.find((x) => x.id === lastId || x.workbenchSessionId === lastId);
-      const wp = (s?.workspacePath || '').trim();
-      // Home is never in the workspace list, so membership means "a project".
-      return wp && workspaces.some((w) => w.path === wp) ? wp : '';
-    } catch {
-      return '';
-    }
-  }, [sessions, workspaces]);
+  // The Project group's empty state distinguishes "nothing has memory yet" from
+  // "pick one" — the first is a fact about August, the second is a prompt.
+  const projectsWithMemory = workspaces.filter((w) => w.hasMemory);
+  // Which pane fills the column. Opening a memory, a project, or one of that
+  // project's files replaces the WHOLE settings content.
+  const [pane, setPane] = useState<Pane>({ kind: 'list' });
+  const detailOpen = mode === 'detail' && !!selected && !!meta;
 
   return (
-    <div className="px-8 py-6 max-w-4xl space-y-5">
-      <div className="flex items-center gap-3">
-        <Brain className="size-6 text-primary" />
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
-          <p className="text-sm text-muted-foreground">
-            {scope?.blurb ?? 'Everything August has learned and recorded, store by store.'}
-          </p>
-        </div>
+    <div className="px-8 py-6 max-w-3xl">
+      {pane.kind === 'file' ? (
+        <ProjectFilePane
+          workspace={pane.workspace}
+          file={pane.file}
+          onBack={() => setPane({ kind: 'project', workspace: pane.workspace })}
+        />
+      ) : pane.kind === 'project' ? (
+        <ProjectMemoryPane
+          workspace={pane.workspace}
+          onBack={() => setPane({ kind: 'list' })}
+          onOpenFile={(file) => setPane({ kind: 'file', workspace: pane.workspace, file })}
+        />
+      ) : detailOpen ? (
+        <DetailView
+          store={activeStore}
+          row={selected}
+          meta={meta}
+          editing={editing}
+          editDraft={editDraft}
+          saving={editMut.isPending}
+          onDraftChange={(k, v) => setEditDraft((d) => ({ ...d, [k]: v }))}
+          onBack={() => {
+            setMode('list');
+            setSelected(null);
+            setEditing(false);
+          }}
+          onStartEdit={startEdit}
+          onSaveEdit={saveEdit}
+          onCancelEdit={() => setEditing(false)}
+          onDelete={() => requestDelete()}
+          onExport={() => exportEntry()}
+        />
+      ) : (
+        <>
+      <div className="pb-1">
+        <h1 className="text-[22px] font-semibold tracking-tight text-foreground">{PAGE_TITLE}</h1>
+        <p className="mt-1 text-[13px] text-muted-foreground">{PAGE_BLURB}</p>
       </div>
 
-      {/* Model-memory toggles (Claude parity) */}
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-2 space-y-1">
+      {/* Global memory opens as its own pane, exactly like a project does: the
+          column shows only the browse, with a back that returns here. */}
+      {pane.kind === 'global' && (
+        <PaneHeader
+          testId="memory-global-pane-header"
+          backLabel="Memory"
+          onBack={() => setPane({ kind: 'list' })}
+          title="Global memory"
+          subtitle={`${unifiedTotal} ${unifiedTotal === 1 ? 'memory' : 'memories'} August applies to every project.`}
+        />
+      )}
+
+      <div className="space-y-5 pt-4">
+      {pane.kind !== 'global' && (
+      <MemoryGroup testId="memory-group-behavior" title="Memory behavior">
+        {/* Model-memory toggles: one line each, separated by rules. */}
+        <div className="divide-y divide-white/[0.06]">
         <SettingsToggle
           checked={Boolean(cfg?.modelMemoryRead ?? true)}
           onCheckedChange={(next) => configMut.mutate({ modelMemoryRead: next })}
@@ -805,84 +874,30 @@ export function MemorySection({ active }: { active: { id: string } }) {
           data-testid="memory-sensitive-toggle"
         />
       </div>
+      </MemoryGroup>
+      )}
 
-      {/* Import from another AI — prominent row (Claude-parity layout):
-          title + description on the left, a single "Start import" action on
-          the right. Opens the parser dialog (Markdown / JSON export). */}
-      <div className="flex items-start justify-between gap-4 rounded-xl border border-white/[0.06] bg-card/60 p-4">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-foreground">
-            Import memory from other AI providers
-          </h3>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Bring relevant context and data from another AI provider into August. Drop a
-            Markdown or JSON memory export — August parses it into entries you can review
-            before importing.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setImportOpen(true)}
-          className="shrink-0 rounded-lg border border-border/60 bg-card px-3.5 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:bg-muted/60"
-          data-testid="memory-import-open"
-        >
-          Start import
-        </button>
-      </div>
-
-      {storesQ.isLoading ? (
-        <PageLoader label="Loading memory stores…" variant="card" className="py-10" />
-      ) : (
-        <>
-          {/* C-1: scope selector — Global + one entry per known workspace. */}
-          <div className="flex items-center gap-2" data-testid="memory-scope-row">
-            <FolderTree className="size-3.5 text-muted-foreground/70" />
-            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">Scope</span>
-            <div className="max-w-xs flex-1">
-              <WorkspaceSelect
-                value={wsScope}
-                onChange={(e) => {
-                  setWsScope(e.target.value);
-                  setChecked(new Set());
-                  setUnifiedOffset(0);
-                }}
-                options={[
-                  { value: '', label: 'Global (all workspaces)' },
-                  ...workspaces.map((w) => ({
-                    value: w.path,
-                    label: `${w.name}${w.hasMemory || w.hasSkills ? ' · project' : ''}`,
-                  })),
-                ]}
-                data-testid="memory-scope-select"
-                aria-label="Memory scope"
-              />
-            </div>
-          </div>
-
-          {!wsScope && activeProjectPath && (
-            <div
-              className="flex items-center gap-2 rounded-lg border border-sky-500/25 bg-sky-500/5 px-3 py-2 text-[11px] text-muted-foreground"
-              data-testid="memory-project-scope-hint"
-            >
-              <span className="min-w-0 flex-1">
-                Memories the model saved in your last chat (
-                <span className="font-mono text-foreground/80">
-                  {activeProjectPath.split(/[\\/]/).filter(Boolean).pop()}
-                </span>
-                ) live in that project’s scope, not Global.
-              </span>
-              <button
-                type="button"
-                onClick={() => setWsScope(activeProjectPath)}
-                className="shrink-0 rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-1 font-medium text-sky-400 transition hover:bg-sky-500/20"
-              >
-                View project memories
-              </button>
-            </div>
-          )}
-
+      <MemoryGroup
+        testId="memory-group-global"
+        title="Global memory"
+        aside={`${unifiedTotal} ${unifiedTotal === 1 ? 'memory' : 'memories'}${
+          newestGlobal ? ` · updated ${timeAgo(new Date(newestGlobal))}` : ''
+        }`}
+      >
+        {pane.kind !== 'global' ? (
+          <MemoryRow
+            testId="memory-global-row"
+            title="All global memories"
+            detail="What August knows about you in every project"
+            meta={`${unifiedTotal} ${unifiedTotal === 1 ? 'memory' : 'memories'}`}
+            onClick={() => setPane({ kind: 'global' })}
+          />
+        ) : storesQ.isLoading ? (
+          <PageLoader label="Loading memory stores…" variant="card" className="py-6" />
+        ) : (
+          <>
           {/* Search + filters + sort + refresh + export-store */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 pb-1">
             <div className="relative flex-1 max-w-sm min-w-44">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
               <input
@@ -983,117 +998,6 @@ export function MemorySection({ active }: { active: { id: string } }) {
             </button>
           </div>
 
-          {/* Add-box (Memories + Facts tabs) — C-7: category + scope aware. */}
-          {showAddBox && (
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                value={addText}
-                onChange={(e) => setAddText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') addMemory();
-                }}
-                placeholder={
-                  wsScope
-                    ? `Add to this project’s memory (md file), e.g. “NSIS is legacy here”`
-                    : 'Add a memory, e.g. “My plant is named Gerald”'
-                }
-                className="flex-1 min-w-56 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-xs text-foreground outline-none transition focus:border-primary/40"
-                data-testid="memory-add-input"
-              />
-              {!wsScope && (
-                <select
-                  value={addCategory}
-                  onChange={(e) => setAddCategory(e.target.value)}
-                  className="rounded-lg border border-border/60 bg-card/60 px-2 py-2 text-xs text-foreground outline-none"
-                  data-testid="memory-add-category"
-                  aria-label="Category for the new memory"
-                >
-                  {['general', 'user', 'project', 'workflow', 'preference'].map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              )}
-              {!wsScope && (
-                <select
-                  value={addTtlDays}
-                  onChange={(e) => setAddTtlDays(Number(e.target.value))}
-                  className="rounded-lg border border-border/60 bg-card/60 px-2 py-2 text-xs text-foreground outline-none"
-                  data-testid="memory-add-ttl"
-                  aria-label="Expiry for the new memory"
-                >
-                  <option value={0}>never expires</option>
-                  {[7, 30, 90].map((d) => (
-                    <option key={d} value={d}>{`expires in ${d}d`}</option>
-                  ))}
-                </select>
-              )}
-              <button
-                type="button"
-                onClick={addMemory}
-                disabled={addMut.isPending || !addText.trim()}
-                className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
-                data-testid="memory-add-button"
-              >
-                <Plus className="size-3.5" /> Add{wsScope ? ' to project' : ''}
-              </button>
-            </div>
-          )}
-
-          {mode === 'detail' && selected && meta ? (
-            <DetailView
-              store={activeStore}
-              row={selected}
-              meta={meta}
-              editing={editing}
-              editDraft={editDraft}
-              saving={editMut.isPending}
-              onDraftChange={(k, v) => setEditDraft((d) => ({ ...d, [k]: v }))}
-              onBack={() => {
-                setMode('list');
-                setSelected(null);
-                setEditing(false);
-              }}
-              onStartEdit={startEdit}
-              onSaveEdit={saveEdit}
-              onCancelEdit={() => setEditing(false)}
-              onDelete={() => requestDelete()}
-              onExport={() => exportEntry()}
-            />
-          ) : wsScope ? (
-            /* C-9: project scope view — md files + entries + sessions bound
-             * to the workspace, replacing the global store rows. */
-            <ProjectMemoryView
-              workspacePath={wsScope}
-              query={query}
-              data={projectQ.data}
-              loading={projectQ.isLoading}
-              error={projectQ.isError ? (projectQ.error as Error | null)?.message ?? 'unknown error' : ''}
-              sessions={workspaces.find((w) => w.path === wsScope)?.sessions ?? 0}
-              onDelete={(title) => {
-                void confirm({
-                  title: 'Delete this project entry?',
-                  message: `“${title}” will be removed from this project's memory file. This cannot be undone from here.`,
-                  confirmLabel: 'Delete',
-                  variant: 'destructive',
-                }).then((ok) => {
-                  if (!ok) return;
-                  api
-                    .post('/api/august/memory/manage', {
-                      action: 'delete',
-                      scope: 'project',
-                      workspace: wsScope,
-                      key: title,
-                    })
-                    .then(() => {
-                      void qc.invalidateQueries({ queryKey: ['project-memory'] });
-                      toast.success('Project entry deleted');
-                    })
-                    .catch((e: Error) => toast.error(e.message || 'Delete failed'));
-                });
-              }}
-            />
-          ) : unified ? (
-            <>
               {/* §5.1 filter chips — above the list, not tabs. */}
               <div className="flex flex-wrap items-center gap-1.5" data-testid="memory-kind-chips">
                 <KindChip
@@ -1275,20 +1179,79 @@ export function MemorySection({ active }: { active: { id: string } }) {
                 onRunNow={() => consolidateMut.mutate()}
               />
             </>
-          ) : (
-            <p className="rounded-xl border border-white/[0.06] bg-card/60 px-4 py-6 text-center text-xs text-muted-foreground">
-              This store is not browsable from here.
-            </p>
           )}
+      </MemoryGroup>
+
+      {/* One line per project that has a memory folder; the row opens that
+          project's pane. */}
+      <MemoryGroup
+        testId="memory-group-project"
+        title="Project memory"
+        aside={
+          projectsWithMemory.length > 0
+            ? `${projectsWithMemory.length} project${projectsWithMemory.length === 1 ? '' : 's'}`
+            : undefined
+        }
+      >
+        {projectsWithMemory.length === 0 ? (
+          <p
+            className="py-3 text-[11.5px] text-muted-foreground"
+            data-testid="memory-project-group-empty"
+          >
+            No project memories yet. Open a project and chat with August — its memory folder
+            appears here.
+          </p>
+        ) : (
+          <div className="divide-y divide-white/[0.06]" data-testid="memory-project-rows">
+            {projectsWithMemory.map((w) => (
+              <MemoryRow
+                key={w.path}
+                testId="memory-project-row"
+                title={w.name}
+                detail={w.path}
+                meta={`${w.sessions} session${w.sessions === 1 ? '' : 's'}`}
+                onClick={() => setPane({ kind: 'project', workspace: w })}
+              />
+            ))}
+          </div>
+        )}
+      </MemoryGroup>
+
+      {/* Import from another AI — prominent row (Claude-parity layout):
+          title + description on the left, a single "Start import" action on
+          the right. Opens the parser dialog (Markdown / JSON export). */}
+      <div className="flex items-start justify-between gap-4 rounded-xl border border-white/[0.06] bg-card/60 p-4">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">
+            Import memory from other AI providers
+          </h3>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            Bring relevant context and data from another AI provider into August. Drop a
+            Markdown or JSON memory export — August parses it into entries you can review
+            before importing.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setImportOpen(true)}
+          className="shrink-0 rounded-lg border border-border/60 bg-card px-3.5 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:bg-muted/60"
+          data-testid="memory-import-open"
+        >
+          Start import
+        </button>
+      </div>
+      </div>
+
+      <BottomAddBar
+        testId="memory-add"
+        placeholder="Add a memory, e.g. “My plant is named Gerald”"
+        value={addText}
+        onChange={setAddText}
+        onSubmit={addGlobalMemory}
+        pending={addMut.isPending}
+      />
         </>
       )}
-
-      {/* §5.6 brain-database backup + restore (backend: services/brain_backup.py). */}
-      <MemoryFilesCard />
-
-      {/* §5.5 raw state lookup — the only surface where internal_state
-          machine state is ever visible. */}
-      <RawStateLookup />
 
       <ConfirmDialog
         open={confirmState.open}
@@ -1318,6 +1281,386 @@ export function MemorySection({ active }: { active: { id: string } }) {
 }
 
 /* ── §5.1 kind chip ────────────────────────────────────────────────── */
+
+/* A pane header with its own back control. Because opening a memory, a project
+ * or a file replaces the whole content column, the back affordance belongs to
+ * the pane rather than to a region inside the list. */
+function PaneHeader({
+  title,
+  subtitle,
+  onBack,
+  backLabel,
+  actions,
+  testId,
+}: {
+  title: string;
+  subtitle?: string;
+  onBack: () => void;
+  backLabel: string;
+  actions?: ReactNode;
+  testId: string;
+}) {
+  return (
+    <div className="flex items-start gap-3 pb-1" data-testid={testId}>
+      <button
+        type="button"
+        onClick={onBack}
+        className="-ml-1 mt-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[11.5px] text-muted-foreground transition hover:text-foreground"
+        data-testid={`${testId}-back`}
+      >
+        <ChevronLeft className="size-3.5" /> {backLabel}
+      </button>
+      <div className="min-w-0 flex-1">
+        <h2 className="truncate text-[17px] font-semibold tracking-tight text-foreground">{title}</h2>
+        {subtitle && (
+          <p className="mt-0.5 truncate text-[11.5px] text-muted-foreground" title={subtitle}>
+            {subtitle}
+          </p>
+        )}
+      </div>
+      {actions && <div className="flex shrink-0 items-center gap-1.5">{actions}</div>}
+    </div>
+  );
+}
+
+/* One scannable line: label left, the fact about it right, a hair below. The
+ * whole line is the hit target when it opens a pane. */
+function MemoryRow({
+  title,
+  detail,
+  meta,
+  actions,
+  onClick,
+  testId,
+}: {
+  title: string;
+  detail?: string;
+  meta?: string;
+  actions?: ReactNode;
+  onClick?: () => void;
+  testId?: string;
+}) {
+  const className =
+    'flex w-full items-center gap-3 py-2.5 text-left' +
+    (onClick ? ' cursor-pointer transition hover:bg-white/[0.03]' : '');
+  const body = (
+    <>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] text-foreground/90">{title}</span>
+        {detail && (
+          <span className="mt-0.5 block truncate text-[11.5px] text-muted-foreground/75" title={detail}>
+            {detail}
+          </span>
+        )}
+      </span>
+      {meta && (
+        <span className="shrink-0 text-[10.5px] tabular-nums text-muted-foreground/60">{meta}</span>
+      )}
+      {actions && <span className="flex shrink-0 items-center gap-1">{actions}</span>}
+    </>
+  );
+  return onClick ? (
+    <button type="button" onClick={onClick} className={className} data-testid={testId}>
+      {body}
+    </button>
+  ) : (
+    <div className={className} data-testid={testId}>
+      {body}
+    </div>
+  );
+}
+
+/* One project's memory folder as its own pane: the .md files first (each one
+ * opens and reads), then the entries they parse into. */
+function ProjectMemoryPane({
+  workspace,
+  onBack,
+  onOpenFile,
+}: {
+  workspace: WorkspaceInfo;
+  onBack: () => void;
+  onOpenFile: (file: string) => void;
+}) {
+  const qc = useQueryClient();
+  const { state: confirmState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
+  const [filter, setFilter] = useState('');
+  const [text, setText] = useState('');
+
+  const listQ = useQuery<ProjectList>({
+    queryKey: ['project-memory', workspace.path],
+    queryFn: () =>
+      api.post<ProjectList>('/api/august/memory/manage', {
+        action: 'list',
+        scope: 'project',
+        workspace: workspace.path,
+      }),
+  });
+  const invalidate = () =>
+    void qc.invalidateQueries({ queryKey: ['project-memory', workspace.path] });
+
+  const addMut = useMutation({
+    mutationFn: (value: string) =>
+      api.post('/api/august/memory/manage', {
+        action: 'set',
+        scope: 'project',
+        workspace: workspace.path,
+        key: value.split('\n')[0].slice(0, 80),
+        value,
+        details: '',
+      }),
+    onSuccess: () => {
+      setText('');
+      invalidate();
+      toast.success('Memory saved');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Could not save memory'),
+  });
+
+  const removeEntry = (title: string) => {
+    void confirm({
+      title: 'Delete this project entry?',
+      message: `“${title}” will be removed from this project's memory file. This cannot be undone from here.`,
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    }).then((ok) => {
+      if (!ok) return;
+      api
+        .post('/api/august/memory/manage', {
+          action: 'delete',
+          scope: 'project',
+          workspace: workspace.path,
+          key: title,
+        })
+        .then(() => {
+          invalidate();
+          toast.success('Project entry deleted');
+        })
+        .catch((e: Error) => toast.error(e.message || 'Delete failed'));
+    });
+  };
+
+  const all = listQ.data?.entries ?? [];
+  const q = filter.trim().toLowerCase();
+  const entries = q
+    ? all.filter((e) => e.title.toLowerCase().includes(q) || e.body.toLowerCase().includes(q))
+    : all;
+  const files = listQ.data?.files ?? [];
+
+  return (
+    <div className="space-y-4" data-testid="memory-project-pane">
+      <PaneHeader
+        testId="memory-project-pane-header"
+        backLabel="Memory"
+        onBack={onBack}
+        title={workspace.name}
+        subtitle={workspace.path}
+      />
+
+      {listQ.isLoading ? (
+        <PageLoader label="Loading project memory…" variant="card" className="py-6" />
+      ) : listQ.isError ? (
+        <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+          {(listQ.error as Error | null)?.message ?? 'Could not read this project’s memory.'}
+        </p>
+      ) : (
+        <>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-0 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+            <input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Search this project’s memory…"
+              className="w-full border-b border-white/[0.08] bg-transparent py-1.5 pl-6 pr-2 text-[12.5px] text-foreground outline-none transition focus:border-primary/40"
+              data-testid="memory-project-search"
+            />
+          </div>
+
+          <section className="border-t border-white/[0.07] pt-2" data-testid="memory-project-files">
+            <h3 className="pb-0.5 text-[10.5px] font-semibold uppercase tracking-widest text-muted-foreground/55">
+              Files
+            </h3>
+            <div className="divide-y divide-white/[0.06]">
+              {files.length === 0 ? (
+                <p className="py-3 text-[11.5px] text-muted-foreground">
+                  No memory files yet in this project.
+                </p>
+              ) : (
+                files.map((f) => (
+                  <MemoryRow
+                    key={f.file}
+                    testId="memory-project-file"
+                    title={f.file}
+                    detail={`${f.entries} ${f.entries === 1 ? 'entry' : 'entries'}`}
+                    meta={f.updated ? absoluteDate(f.updated) : ''}
+                    onClick={() => onOpenFile(f.file)}
+                  />
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="border-t border-white/[0.07] pt-2" data-testid="memory-project-entries">
+            <h3 className="pb-0.5 text-[10.5px] font-semibold uppercase tracking-widest text-muted-foreground/55">
+              Entries
+            </h3>
+            <div className="divide-y divide-white/[0.06]">
+              {entries.length === 0 ? (
+                <p className="py-3 text-[11.5px] text-muted-foreground">
+                  {q ? `Nothing here matches “${filter.trim()}”.` : 'No entries yet.'}
+                </p>
+              ) : (
+                entries.map((e) => (
+                  <MemoryRow
+                    key={e.key}
+                    testId="memory-project-entry"
+                    title={e.title}
+                    detail={e.body.split('\n')[0]}
+                    meta={e.updated ? timeAgo(e.updated) : ''}
+                    actions={
+                      <button
+                        type="button"
+                        onClick={() => removeEntry(e.title)}
+                        aria-label={`Delete ${e.title}`}
+                        className="rounded p-1 text-muted-foreground/50 transition hover:text-destructive"
+                        data-testid="memory-project-delete"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    }
+                  />
+                ))
+              )}
+            </div>
+          </section>
+        </>
+      )}
+
+      <BottomAddBar
+        testId="memory-project-add"
+        placeholder="Add to this project’s memory, e.g. “NSIS is legacy here”"
+        value={text}
+        onChange={setText}
+        onSubmit={() => text.trim() && addMut.mutate(text.trim())}
+        pending={addMut.isPending}
+      />
+
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
+    </div>
+  );
+}
+
+/* A memory file's own text. It is read through the same door that lists it, and
+ * the name is validated server-side against list_files(), so this pane cannot be
+ * pointed anywhere else on disk. */
+function ProjectFilePane({
+  workspace,
+  file,
+  onBack,
+}: {
+  workspace: WorkspaceInfo;
+  file: string;
+  onBack: () => void;
+}) {
+  const fileQ = useQuery<{ ok: boolean; text?: string; error?: string }>({
+    queryKey: ['project-memory-file', workspace.path, file],
+    queryFn: () =>
+      api.post('/api/august/memory/manage', {
+        action: 'read',
+        scope: 'project',
+        workspace: workspace.path,
+        key: file,
+      }),
+    retry: false,
+  });
+
+  return (
+    <div className="space-y-4" data-testid="memory-file-pane">
+      <PaneHeader
+        testId="memory-file-pane-header"
+        backLabel={workspace.name}
+        onBack={onBack}
+        title={file}
+        subtitle="The file this project’s memory is parsed from."
+      />
+      {fileQ.isLoading ? (
+        <PageLoader label="Loading file…" variant="card" className="py-6" />
+      ) : fileQ.isError ? (
+        <p className="text-[12px] text-destructive">
+          {(fileQ.error as Error | null)?.message ?? 'Could not read this file.'}
+        </p>
+      ) : !fileQ.data?.ok ? (
+        <p className="text-[12px] text-destructive">
+          {fileQ.data?.error ?? 'Could not read this file.'}
+        </p>
+      ) : (
+        <div
+          className="markdown-content text-[13px] leading-relaxed text-foreground/90"
+          data-testid="memory-file-text"
+        >
+          <Markdown content={fileQ.data.text ?? ''} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Claude adds memory from one pinned input at the bottom of the pane. Category
+ * and expiry are per-entry edits, so they live in the entry's edit view instead
+ * of standing in front of every write. */
+function BottomAddBar({
+  placeholder,
+  value,
+  onChange,
+  onSubmit,
+  pending,
+  testId,
+}: {
+  testId: string;
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  pending: boolean;
+}) {
+  return (
+    <div
+      className="sticky bottom-0 -mx-8 mt-6 border-t border-white/[0.07] bg-background/95 px-8 py-3 backdrop-blur"
+      data-testid={testId}
+    >
+      <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-card/60 px-3 py-2">
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && value.trim() && !pending) onSubmit();
+          }}
+          placeholder={placeholder}
+          className="min-w-0 flex-1 bg-transparent text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground/60"
+          data-testid={`${testId}-input`}
+        />
+        <button
+          type="button"
+          onClick={onSubmit}
+          disabled={pending || !value.trim()}
+          aria-label="Save memory"
+          className="rounded-lg bg-primary p-1.5 text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
+          data-testid={`${testId}-submit`}
+        >
+          <ArrowUp className="size-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function KindChip({
   label,
@@ -1450,9 +1793,9 @@ function FlatEntryRow({
       ) : null}
       <span
         className="shrink-0 text-[10px] tabular-nums text-muted-foreground/60"
-        title={entry.updated}
+        title={absoluteDate(asUtc(entry.updated)) || entry.updated}
       >
-        {timeAgo(entry.updated)}
+        {timeAgo(asUtc(entry.updated))}
       </span>
       <div className="relative shrink-0">
         <button
@@ -1647,483 +1990,6 @@ function HealthFooter({
   );
 }
 
-/* ── §5.6 brain-database backup + restore ──────────────────────────── */
-/* The server owns every judgement this card makes: `GET /api/brain/backups`
- * health-checks each copy (`healthy`, `fromTheFuture`) and reports what is
- * staged (`pendingRestore`), and `GET /api/brain/integrity` checks the live
- * file. Nothing here is cached in component state except the one number that
- * exists nowhere else — the names this POST pruned, which are gone from the
- * list by the time it refetches. */
-
-function MemoryFilesCard() {
-  const qc = useQueryClient();
-  const { state: confirmState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
-  const [lastSaved, setLastSaved] = useState<{
-    name: string;
-    bytes: number | null;
-    pruned: number;
-  } | null>(null);
-
-  const integrityQ = useQuery<BrainIntegrity>({
-    queryKey: ['brain-integrity'],
-    queryFn: getBrainIntegrity,
-  });
-  const backupsQ = useQuery<BrainBackupList>({
-    queryKey: ['brain-backups'],
-    queryFn: listBrainBackups,
-  });
-
-  const refetchAll = () => {
-    void qc.invalidateQueries({ queryKey: ['brain-backups'] });
-    void qc.invalidateQueries({ queryKey: ['brain-integrity'] });
-  };
-
-  const createMut = useMutation({
-    mutationFn: () => createBrainBackup('manual'),
-    onSuccess: (res) => {
-      setLastSaved({
-        name: res.name ?? '(unnamed)',
-        bytes: typeof res.bytes === 'number' ? res.bytes : null,
-        pruned: res.pruned?.length ?? 0,
-      });
-      refetchAll();
-    },
-    // The backend raises 500 with `detail` on failure, which api-client turns
-    // into the Error message — so a failed backup never reads as a success.
-    onError: (e: Error) => toast.error(e.message || 'Backup failed'),
-  });
-  const restoreMut = useMutation({
-    mutationFn: (name: string) => stageBrainRestore(name),
-    onSuccess: () => {
-      // No local "staged" flag: the banner reads `pendingRestore` back from the
-      // server, which is the only thing that survives a restart or a remount.
-      refetchAll();
-      toast.success('Restore staged — restart August to apply');
-    },
-    onError: (e: Error) => toast.error(e.message || 'Restore refused'),
-  });
-  const cancelMut = useMutation({
-    mutationFn: () => cancelBrainRestore(),
-    onSuccess: (res) => {
-      refetchAll();
-      if (!res.cancelled) toast.warning('Nothing was staged to cancel');
-    },
-    onError: (e: Error) => toast.error(e.message || 'Could not cancel restore'),
-  });
-
-  const integrity = integrityQ.data;
-  const list = backupsQ.data?.backups ?? [];
-  const keep = backupsQ.data?.keep;
-  const pending = backupsQ.data?.pendingRestore ?? null;
-
-  const requestRestore = (b: BrainBackupEntry) => {
-    void confirm({
-      title: 'Restore this backup?',
-      message:
-        `Restoring “${b.name}” replaces your current memory database with that copy. ` +
-        'It takes effect on the NEXT LAUNCH — August keeps using the current database until you restart it. ' +
-        'The database it replaces is kept as a “.pre-restore” copy, so this is itself undoable.',
-      confirmLabel: 'Restore',
-      variant: 'destructive',
-    }).then((ok) => {
-      if (!ok) return;
-      restoreMut.mutate(b.name);
-    });
-  };
-
-  return (
-    <div className="space-y-2.5 border-t border-white/[0.06] pt-4" data-testid="memory-files-card">
-      <div className="flex items-center gap-2">
-        <HardDrive className="size-3.5 text-muted-foreground/70" />
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-          Memory files
-        </span>
-        <button
-          type="button"
-          onClick={() => {
-            setLastSaved(null);
-            createMut.mutate();
-          }}
-          disabled={createMut.isPending}
-          className="ml-auto rounded-md border border-border/60 px-2 py-0.5 text-[10.5px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
-          title="Verify the live database, then take an offline copy of it"
-          data-testid="memory-backup-now"
-        >
-          {createMut.isPending ? 'Backing up…' : 'Back up now'}
-        </button>
-      </div>
-
-      {/* 1 · live integrity — a bad verdict prints the server's reason. */}
-      {integrityQ.isLoading ? (
-        <p className="text-[11px] text-muted-foreground/70" data-testid="memory-integrity-loading">
-          Checking the memory database…
-        </p>
-      ) : integrityQ.isError ? (
-        <p
-          className="flex items-center gap-1.5 text-[11px] text-destructive"
-          data-testid="memory-integrity-error"
-        >
-          <ShieldAlert className="size-3 shrink-0" />
-          Could not check the database: {(integrityQ.error as Error | null)?.message ?? 'unknown error'}
-        </p>
-      ) : !integrity?.exists ? (
-        // `ok` is true when there is no file to check; calling that "healthy"
-        // would be a green pill over nothing.
-        <p className="text-[11px] text-muted-foreground/70" data-testid="memory-integrity-missing">
-          {integrity?.detail || 'no database yet'}
-        </p>
-      ) : integrity.ok ? (
-        <p
-          className="flex items-center gap-1.5 text-[11px] text-emerald-400"
-          data-testid="memory-integrity-ok"
-        >
-          <ShieldCheck className="size-3 shrink-0" /> memory database healthy
-        </p>
-      ) : (
-        <p
-          className="flex items-center gap-1.5 text-[11px] text-destructive"
-          data-testid="memory-integrity-bad"
-        >
-          <ShieldAlert className="size-3 shrink-0" />
-          <span data-testid="memory-integrity-detail">{integrity.detail || 'integrity check failed'}</span>
-        </p>
-      )}
-
-      {/* 4 · a staged restore is the server's state, so this shows on load. */}
-      {pending && (
-        <div
-          className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-[11px] text-warning"
-          data-testid="memory-restore-banner"
-        >
-          <span className="min-w-0 flex-1">
-            Restore staged — restart August to apply
-            <span className="ml-1 font-mono opacity-80">({pending})</span>
-          </span>
-          <button
-            type="button"
-            onClick={() => cancelMut.mutate()}
-            disabled={cancelMut.isPending}
-            className="shrink-0 rounded-md border border-warning/50 px-2 py-0.5 text-[10.5px] font-medium transition hover:bg-warning/15 disabled:opacity-40"
-            data-testid="memory-restore-cancel"
-          >
-            {cancelMut.isPending ? 'Cancelling…' : 'Cancel'}
-          </button>
-        </div>
-      )}
-
-      {/* 2 · the copy this call just wrote, incl. what retention retired. */}
-      {lastSaved && (
-        <p className="text-[11px] text-muted-foreground" data-testid="memory-backup-created">
-          Saved <span className="font-mono text-foreground/80">{lastSaved.name}</span>
-          {lastSaved.bytes !== null ? ` · ${formatBytes(lastSaved.bytes)}` : ''}
-          {lastSaved.pruned > 0 &&
-            ` · retired ${lastSaved.pruned} older ${lastSaved.pruned === 1 ? 'copy' : 'copies'}`}
-          {lastSaved.pruned > 0 && keep !== undefined ? ` (this app keeps the newest ${keep})` : ''}
-        </p>
-      )}
-
-      {/* 3 · the copy list. */}
-      {backupsQ.isLoading ? (
-        <p className="text-[11px] text-muted-foreground/70" data-testid="memory-backups-loading">
-          Listing backups…
-        </p>
-      ) : backupsQ.isError ? (
-        <p className="text-[11px] text-destructive" data-testid="memory-backups-error">
-          Could not list backups: {(backupsQ.error as Error | null)?.message ?? 'unknown error'}
-        </p>
-      ) : list.length === 0 ? (
-        <p className="text-[11px] text-muted-foreground/70" data-testid="memory-backups-empty">
-          No backups yet — “Back up now” takes the first one.
-        </p>
-      ) : (
-        <ul className="divide-y divide-white/[0.04]" data-testid="memory-backup-list">
-          {list.map((b) => {
-            const blocked = !b.healthy
-              ? `unhealthy${b.error ? ` · ${b.error}` : ''}`
-              : b.fromTheFuture
-                ? `from a newer version · schema ${b.appliedVersion}`
-                : '';
-            return (
-              <li
-                key={b.name}
-                className="flex items-center gap-2 py-1.5 text-[11px]"
-                data-testid="memory-backup-row"
-                data-healthy={b.healthy ? 'true' : 'false'}
-                data-future={b.fromTheFuture ? 'true' : 'false'}
-              >
-                <span
-                  className="min-w-0 flex-1 truncate font-mono text-foreground/80"
-                  title={b.name}
-                >
-                  {b.name}
-                </span>
-                <span className="shrink-0 tabular-nums text-muted-foreground/70">
-                  {formatBytes(b.bytes)}
-                </span>
-                <span className="shrink-0 tabular-nums text-muted-foreground/60" title={b.createdAt}>
-                  {timeAgo(b.createdAt) || 'unknown age'}
-                </span>
-                {pending === b.name ? (
-                  <span
-                    className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[9px] uppercase"
-                    data-testid="memory-backup-staged"
-                  >
-                    staged
-                  </span>
-                ) : (
-                  <>
-                    <span
-                      className={cn(
-                        'shrink-0 rounded border px-1.5 py-0.5 text-[9px] uppercase',
-                        blocked
-                          ? 'border-destructive/30 bg-destructive/10 text-destructive'
-                          : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
-                      )}
-                      data-testid="memory-backup-status"
-                    >
-                      {blocked || 'verified'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => requestRestore(b)}
-                      disabled={!!blocked || restoreMut.isPending}
-                      title={
-                        blocked
-                          ? `Cannot restore: ${blocked}`
-                          : 'Stage this copy to replace the memory database on next launch'
-                      }
-                      className="shrink-0 rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] transition enabled:hover:border-primary/30 enabled:hover:text-foreground disabled:opacity-40"
-                      data-testid="memory-backup-restore"
-                    >
-                      {restoreMut.isPending && restoreMut.variables === b.name ? 'Staging…' : 'Restore'}
-                    </button>
-                  </>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {/* 5 · where the copies physically live. */}
-      <p className="text-[10.5px] text-muted-foreground/70">
-        {keep !== undefined && `Keeps the newest ${keep} copies. `}
-        Restoring applies on the next launch and keeps the database it replaces as a{' '}
-        <code className="font-mono">.pre-restore</code> copy.
-      </p>
-      <div className="space-y-0.5 text-[10.5px] text-muted-foreground/60">
-        {backupsQ.data?.directory && (
-          <p className="truncate" title={backupsQ.data.directory} data-testid="memory-backup-dir">
-            backups · <span className="font-mono">{backupsQ.data.directory}</span>
-          </p>
-        )}
-        {integrity?.path && (
-          <p className="truncate" title={integrity.path} data-testid="memory-db-path">
-            database · <span className="font-mono">{integrity.path}</span>
-          </p>
-        )}
-      </div>
-
-      <ConfirmDialog
-        open={confirmState.open}
-        title={confirmState.title}
-        message={confirmState.message}
-        confirmLabel={confirmState.confirmLabel}
-        cancelLabel={confirmState.cancelLabel}
-        variant={confirmState.variant}
-        onConfirm={handleConfirm}
-        onCancel={handleCancel}
-      />
-    </div>
-  );
-}
-
-/* ── §5.5 raw state lookup ─────────────────────────────────────────── */
-
-interface StateLookupResponse {
-  key: string;
-  found: boolean;
-  source: 'internal_state' | 'memory_store' | null;
-  value: unknown;
-  updatedAt: string | null;
-}
-
-function RawStateLookup() {
-  const [input, setInput] = useState('');
-  const [submitted, setSubmitted] = useState('');
-
-  const lookupQ = useQuery<StateLookupResponse>({
-    queryKey: ['state-lookup', submitted],
-    queryFn: () =>
-      api.get<StateLookupResponse>(
-        `/api/brain/state-lookup?key=${encodeURIComponent(submitted)}`,
-      ),
-    enabled: !!submitted,
-    retry: false,
-  });
-
-  const submit = () => {
-    const key = input.trim();
-    setSubmitted(key);
-  };
-
-  return (
-    <div className="space-y-2 border-t border-white/[0.06] pt-4" data-testid="raw-state-lookup">
-      <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-        Raw state lookup
-      </div>
-      <p className="text-[11px] text-muted-foreground/70">
-        Type a key to inspect the raw <code className="font-mono">internal_state</code> /{' '}
-        <code className="font-mono">memory_store</code> row. Machine state (
-        <code className="font-mono">cognitive:*</code> and friends) is only ever visible here —
-        never in Memory itself.
-      </p>
-      <div className="flex items-center gap-2">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') submit();
-          }}
-          placeholder="e.g. cognitive:boot_maintenance_state"
-          className="flex-1 max-w-sm rounded-lg border border-border/60 bg-card/60 px-3 py-1.5 font-mono text-[11px] text-foreground outline-none transition focus:border-primary/40"
-          data-testid="raw-state-key-input"
-        />
-        <button
-          type="button"
-          onClick={submit}
-          disabled={!input.trim() || lookupQ.isFetching}
-          className="rounded-lg border border-border/60 bg-card/60 px-2.5 py-1.5 text-[11px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
-          data-testid="raw-state-lookup-button"
-        >
-          {lookupQ.isFetching ? 'Looking up…' : 'Look up'}
-        </button>
-      </div>
-      {submitted && lookupQ.data && (
-        <pre
-          className="max-h-64 overflow-auto rounded-lg border border-white/[0.06] bg-black/20 p-3 font-mono text-[10.5px] leading-relaxed text-foreground/80"
-          data-testid="raw-state-result"
-        >
-          {lookupQ.data.found
-            ? `-- ${lookupQ.data.source} · updated ${lookupQ.data.updatedAt ?? '?'}\n` +
-              JSON.stringify(lookupQ.data.value, null, 2)
-            : `no row for key ${JSON.stringify(lookupQ.data.key)}`}
-        </pre>
-      )}
-      {submitted && lookupQ.isError && (
-        <p className="text-[11px] text-destructive" data-testid="raw-state-error">
-          Lookup failed: {(lookupQ.error as Error | null)?.message ?? 'unknown error'}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/* ── C-9: project scope view — md files + entries + bound sessions ──── */
-
-function ProjectMemoryView({
-  workspacePath,
-  query,
-  data,
-  loading,
-  error,
-  sessions,
-  onDelete,
-}: {
-  workspacePath: string;
-  query: string;
-  data?: ProjectList;
-  loading: boolean;
-  error: string;
-  sessions: number;
-  onDelete: (title: string) => void;
-}) {
-  const entries = useMemo(() => {
-    const all = data?.entries ?? [];
-    if (!query) return all;
-    const q = query.toLowerCase();
-    return all.filter(
-      (e) => e.title.toLowerCase().includes(q) || e.body.toLowerCase().includes(q),
-    );
-  }, [data, query]);
-  const files = data?.files ?? [];
-  const wsName = workspacePath.split(/[\\/]/).filter(Boolean).pop() ?? workspacePath;
-
-  if (loading) {
-    return <PageLoader label="Loading project memory…" variant="card" className="py-8" />;
-  }
-  if (error) {
-    return (
-      <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-6 text-center text-xs text-destructive">
-        Could not load project memory: {error}
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-3" data-testid="memory-project-view">
-      <div className="flex flex-wrap items-center gap-1.5 text-[10.5px] text-muted-foreground/80">
-        <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 font-medium uppercase tracking-wide text-emerald-400">
-          project
-        </span>
-        <span className="font-mono" data-testid="memory-project-path">
-          {workspacePath}
-        </span>
-        <span>· {entries.length} entr{entries.length === 1 ? 'y' : 'ies'}</span>
-        <span>· {files.length} file{files.length === 1 ? '' : 's'}</span>
-        <span>· {sessions} session{sessions === 1 ? '' : 's'} bound to this workspace</span>
-      </div>
-      {files.length > 0 && (
-        <div className="flex flex-wrap gap-1.5" data-testid="memory-project-files">
-          {files.map((f) => (
-            <span
-              key={f}
-              className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-            >
-              {f}
-            </span>
-          ))}
-        </div>
-      )}
-      {entries.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border/60 bg-card/40 px-4 py-6 text-center text-xs text-muted-foreground">
-          No project memory yet in <strong>{wsName}</strong> — use the add-box above or the
-          remember tool in a session bound to this workspace.
-        </p>
-      ) : (
-        <div className="divide-y divide-white/[0.04]">
-          {entries.map((e) => (
-            <div key={e.key} className="flex items-start gap-2.5 py-2" data-testid="memory-project-entry">
-              <span className="mt-0.5 w-14 shrink-0 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1 py-0.5 text-center text-[9px] font-medium uppercase tracking-wide text-emerald-400">
-                entry
-              </span>
-              <div className="min-w-0 flex-1">
-                <span className="block truncate text-[12.5px] text-foreground/90">{e.title}</span>
-                <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
-                  {e.body.split('\n')[0]}
-                </p>
-              </div>
-              {e.updated && (
-                <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/60" title={e.updated}>
-                  {timeAgo(e.updated)}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => onDelete(e.title)}
-                className="shrink-0 rounded p-0.5 text-muted-foreground/40 transition hover:text-destructive"
-                aria-label={`Delete ${e.title}`}
-                data-testid="memory-project-delete"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ── Detail view ────────────────────────────────────────────────────── */
 
 function DetailView({
@@ -2155,7 +2021,13 @@ function DetailView({
   onDelete: () => void;
   onExport: () => void;
 }) {
-  const title = meta.title(row) || '(untitled)';
+  // The row and its pane must not disagree about what an entry is called:
+  // `meta.title` is the store's own key column, which is an identifier the
+  // model quotes (`forget(key=…)`) not a name a person reads. The list already
+  // labels rows with their text via rowTitle; the pane uses the same thing and
+  // keeps the key underneath, where it is still quotable.
+  const title = rowTitle(store, row);
+  const entryKey = store === 'facts' ? str(row.factKey) : store === 'memory' ? str(row.key) : '';
   const summary = meta.summary(row);
   const details = meta.details?.(row);
   const category = meta.category?.(row);
@@ -2167,7 +2039,7 @@ function DetailView({
   const expired = isExpired(row);
 
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
+    <div className="space-y-4" data-testid="memory-detail-view">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <button
@@ -2177,7 +2049,14 @@ function DetailView({
           >
             <ChevronLeft className="size-3.5" /> Back to {store}
           </button>
-          <h2 className="truncate text-lg font-semibold text-foreground">{title}</h2>
+          <h2 className="text-lg font-semibold leading-snug text-foreground [overflow-wrap:anywhere]">
+            {title}
+          </h2>
+          {entryKey && entryKey !== title && (
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground/55" data-testid="memory-detail-key">
+              {entryKey}
+            </p>
+          )}
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {category && (
               <span className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -2245,21 +2124,28 @@ function DetailView({
         <div className="space-y-3">
           {(meta.editable ?? []).map((f) => (
             <div key={f}>
-              <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <label
+                htmlFor={`memory-edit-${f}`}
+                className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+              >
                 {f}
               </label>
               {LONG_TEXT_FIELDS.has(f) ? (
                 <textarea
+                  id={`memory-edit-${f}`}
                   value={editDraft[f] ?? ''}
                   onChange={(e) => onDraftChange(f, e.target.value)}
                   rows={4}
                   className="w-full rounded-lg border border-border/60 bg-background/40 p-2 text-xs text-foreground outline-none focus:border-primary/40"
+                  data-testid={`memory-edit-${f}`}
                 />
               ) : (
                 <input
+                  id={`memory-edit-${f}`}
                   value={editDraft[f] ?? ''}
                   onChange={(e) => onDraftChange(f, e.target.value)}
                   className="w-full rounded-lg border border-border/60 bg-background/40 px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary/40"
+                  data-testid={`memory-edit-${f}`}
                 />
               )}
             </div>
@@ -2284,14 +2170,15 @@ function DetailView({
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="rounded-lg border border-white/[0.06] bg-background/30 p-3">
-            <Markdown content={summary || '_No content_'} />
-            {details && (
-              <div className="mt-3 border-t border-white/[0.06] pt-3">
-                <Markdown content={details} />
-              </div>
-            )}
-          </div>
+          {/* A plain fact's title IS its text, so repeating it under itself is
+              an echo, not a body. Show the prose only where it adds something,
+              and as a hairline-separated passage rather than another box. */}
+          {(summary !== title || details) && (
+            <div className="border-t border-white/[0.06] pt-3">
+              {summary !== title && <Markdown content={summary || '_No content_'} />}
+              {details && <Markdown content={details} />}
+            </div>
+          )}
           <p className="text-[10px] text-muted-foreground/80">
             {[
               source ? `source: ${source}` : '',

@@ -39,6 +39,24 @@ PRE_RESTORE_SUFFIX: Final = '.pre-restore'
 # can write — a copy whose name this rejects still lists as "verified" with
 # Restore enabled, and then fails, which is worse than refusing it at write time.
 _BACKUP_NAME_RE: Final = re.compile(r'^brain-\d{8}T\d{6}Z-[a-z0-9][a-z0-9-]{0,20}\.sqlite$')
+# The same name split into its two parts, so a reader gets WHEN and WHY without
+# parsing a filename. `create_backup` is the only writer, and this accepts every
+# slug it can produce.
+_BACKUP_NAME_PARTS: Final = re.compile(
+    r'^brain-(\d{8})T(\d{6})Z-([a-z0-9][a-z0-9-]{0,20})\.sqlite$'
+)
+
+
+def reason_of(name: str) -> str:
+    """Why a copy was taken, as the slug ``create_backup`` wrote into its name.
+
+    The filename is the only durable record of the reason, so this is the door
+    the settings UI reads through: showing the raw name asked the user to
+    decode ``brain-20260924T063947Z-startup.sqlite`` when "Auto-copy at startup,
+    Sep 24 6:39 AM" is the same fact in words. '' when the name is not ours.
+    """
+    match = _BACKUP_NAME_PARTS.match(name or '')
+    return match.group(3) if match else ''
 
 
 def _db_path() -> Path:
@@ -217,6 +235,7 @@ def list_backups() -> list[dict[str, object]]:
     for path in sorted(directory.glob('brain-*.sqlite'), key=lambda p: p.name, reverse=True):
         entry: dict[str, object] = {
             'name': path.name,
+            'reason': reason_of(path.name),
             'bytes': path.stat().st_size,
             'createdAt': datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat(),
             'healthy': False,

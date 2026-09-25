@@ -44,7 +44,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -190,11 +190,20 @@ def _list_files(workspace: str | Path) -> list[Path]:
 
 
 def list_files(workspace: str | Path) -> list[dict[str, object]]:
-    """Files + entry counts for the UI's project scope view."""
+    """Files + entry counts + last write for the UI's project scope view.
+
+    ``updated`` is a real ISO timestamp with its offset (not SQLite's markerless
+    UTC string) — a markerless stamp is read as local time by the browser, which
+    shifted every displayed age by the viewer's UTC offset.
+    """
     out: list[dict[str, object]] = []
     for p in _list_files(workspace):
         pf = parse_memory_md(p.read_text('utf-8'))
-        out.append({'file': p.name, 'entries': len(pf.entries)})
+        try:
+            stamp = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc).isoformat()
+        except OSError:
+            stamp = ''
+        out.append({'file': p.name, 'entries': len(pf.entries), 'updated': stamp})
     return out
 
 

@@ -377,6 +377,7 @@ but ignored keys is a `400`, not a silent no-op.
 | Consolidation | `GET /consolidation/log` · `POST /consolidation/run` | M4 pass log + M5 lesson-promotion decisions; run one pass now |
 | Telemetry | `GET /turn-outcomes?days=` | Per-model/provider error rates + the turn verdict distribution. Diagnostics only — never injected into prompts |
 | | `GET /memory/metrics?days=` | Recall and latency metrics |
+| | `GET /memory/preview?query&workspace` | The **verbatim** text a turn receives: the `<memory>` block, the session-start memory index, and the project boot block. Rendered by the same builders the workbench calls, so Settings → Memory cannot disagree with chat. `autoInject` / `modelMemoryRead` come back too — the UI says which gate shaped the block |
 | Routing | `POST /routing/arena` · `GET /routing/arena` · `GET /routing/suggestions` | Record an Arena/Debate verdict, read the archive, rank models by win rate. There is no automatic per-turn rerouting |
 | Raw state | `GET /state-lookup?key=` | One `internal_state` / `memory_store` row by key |
 | Memory files | `GET /integrity` | `PRAGMA integrity_check` on the live DB, its path, healthy-copy count and any staged restore |

@@ -4,14 +4,14 @@
 /* the Settings overlay route. The previous `/workspace/*` routes were     */
 /* retired when Settings absorbed the panel.                                   */
 
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
-  ArrowLeft,
   ArrowUpCircle,
   BrainCircuit,
   Globe,
   LineChart,
   Settings2,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -50,14 +50,12 @@ interface WorkspaceShellProps {
   sections: WorkspaceSectionMeta[];
   active: string;
   children: ReactNode;
-  className?: string;
 }
 
 export function WorkspaceShell({
   sections,
   active,
   children,
-  className,
 }: WorkspaceShellProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -124,24 +122,36 @@ export function WorkspaceShell({
     return SETTINGS_CATEGORIES.length;
   }, [filtered, isFiltering]);
 
+  const closeToWorkspace = () => {
+    // Return to the exact chat the user came from (saved when navigating into
+    // /settings), not always "/".
+    const back = sessionStorage.getItem('pre-settings-path');
+    void navigate(back && back !== location.pathname ? back : '/');
+    sessionStorage.removeItem('pre-settings-path');
+  };
+
+  // Escape closes the panel the way it does in Claude — the surface is
+  // transient, so it should leave the way a dialog does.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeToWorkspace();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   return (
-    <div className={cn('flex h-full min-h-0', className)}>
-      {/* Left rail */}
-      <aside className="flex min-h-0 h-full w-64 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
-        <button
-          onClick={() => {
-            // Return to the exact chat the user came from (saved when
-            // navigating into /settings), not always "/".
-            const back = sessionStorage.getItem('pre-settings-path');
-            void navigate(back && back !== location.pathname ? back : '/');
-            sessionStorage.removeItem('pre-settings-path');
-          }}
-          className="flex items-center gap-2 px-4 py-3 text-left text-sm text-sidebar-foreground/60 transition hover:text-sidebar-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          Back to workspace
-        </button>
-        <div className="px-3 pb-2">
+    /* Settings is a panel floating over the workspace rather than a page that
+     * replaces it: the chat stays behind the scrim, and the panel owns its own
+     * scroll so no section can stretch the frame. */
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-3 sm:p-8"
+      data-testid="settings-backdrop"
+    >
+      <div className="relative flex h-full max-h-full w-full max-w-[1180px] overflow-hidden rounded-2xl border border-white/[0.08] bg-background shadow-2xl">
+        {/* Left rail */}
+        <aside className="flex min-h-0 h-full w-60 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
+          <div className="px-3 pb-2 pt-3">
           <SettingsSearch value={query} onChange={setQuery} />
           {isFiltering && (
             <p className="mt-1.5 px-1 text-xs text-muted-foreground/70">
@@ -260,7 +270,21 @@ export function WorkspaceShell({
       {/* Main content — each section renders its own h1 inside.
           overflow-x-hidden: wide children (tables, pre) must not give the
           whole settings pane a horizontal scrollbar. */}
-      <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">{children}</div>
+        <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">{children}</div>
+
+        {/* Claude puts the dismiss control at the top-right of the content pane,
+            not in the nav rail — the rail is for moving around inside. */}
+        <button
+          type="button"
+          onClick={closeToWorkspace}
+          aria-label="Close settings"
+          title="Close settings (Esc)"
+          data-testid="settings-close"
+          className="absolute right-3 top-3 z-10 rounded-lg p-1.5 text-muted-foreground/70 transition hover:bg-muted/60 hover:text-foreground"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
     </div>
   );
 }

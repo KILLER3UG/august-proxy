@@ -17,6 +17,7 @@ Mounts four routes under ``/api/brain``:
                                           + the turn verdict distribution and
                                           self-correction counters (046)
   GET  /api/brain/state-lookup          — §5.5 raw internal_state/memory_store row by key
+  GET  /api/brain/memory/preview         — the verbatim <memory> block + boot index a turn receives
   GET  /api/brain/backups               — offline brain-DB copies, each with its own health
   POST /api/brain/backups               — take a verified copy now
   POST /api/brain/backups/restore       — stage a verified restore (applies next launch)
@@ -294,6 +295,23 @@ async def getMemoryMetrics(days: int = Query(7, ge=1, le=30)):
     except Exception:
         latency = {'turns': 0, 'error': 'turn_outcomes unavailable'}
     return {'days': days, 'recall': recall, 'latency': latency}
+
+
+@router.get('/memory/preview')
+async def getMemoryPreview(
+    query: str = Query('', max_length=2000, description='Message to recall against'),
+    workspace: str = Query('', max_length=500, description='Project workspace to include'),
+):
+    """The literal durable-memory text a turn receives, for Settings → Memory.
+
+    Not a listing of stored rows — the rendered ``<memory>`` block itself,
+    produced by the same builders the workbench calls, so what the user reads
+    here is what the model reads in chat. See
+    :func:`app.services.memory_store.fact_retrieval.memory_context_preview`.
+    """
+    from app.services.memory_store.fact_retrieval import memory_context_preview
+
+    return memory_context_preview(query, workspace)
 
 
 @router.get('/backups')

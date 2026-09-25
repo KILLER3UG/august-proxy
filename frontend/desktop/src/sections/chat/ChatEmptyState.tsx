@@ -1,38 +1,10 @@
 /* ── Empty chat state ──────────────────────────────────────────────────── */
 
 import { motion } from 'framer-motion';
-import { GitBranch, Send, Bug, FileText, Code2 } from 'lucide-react';
+import { GitBranch, Send } from 'lucide-react';
 import { workspaceBaseName } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import { normalizeHarnessMode } from '@/components/chat/HarnessModeChip';
-import { dispatchInsertComposerText, dispatchFocusComposer } from '@/api/ui-events';
-
-const PROMPT_SUGGESTIONS = [
-  {
-    icon: Code2,
-    title: 'Explain codebase architecture',
-    hint: 'Map key components & dependencies',
-    prompt: 'Can you give an overview of this codebase architecture and key dependencies?',
-  },
-  {
-    icon: Bug,
-    title: 'Scan for bugs & run tests',
-    hint: 'Find issues & verify test suites',
-    prompt: 'Check the workspace for potential bugs and run the project test suite.',
-  },
-  {
-    icon: GitBranch,
-    title: 'Review git changes',
-    hint: 'Inspect uncommitted modifications',
-    prompt: 'Review the current git status and uncommitted changes in this repository.',
-  },
-  {
-    icon: FileText,
-    title: 'Draft documentation',
-    hint: 'Create README or API guides',
-    prompt: 'Help me draft updated documentation for the key features in this project.',
-  },
-];
 
 const ORCH_EXAMPLES = [
   {
@@ -140,45 +112,14 @@ export function ChatEmptyState({
             </button>
           </>
         ) : (
-          <>
-            <div className="flex flex-col items-center gap-2 text-center">
-              <h1 className="text-[30px] font-[620] tracking-[-0.03em] leading-tight text-foreground">
-                What should we work on?
-              </h1>
-              <p className="text-[13px] text-muted-foreground/60">
-                in <span className="font-mono text-foreground/55">{project}</span> — pick a starter or type a prompt.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-xl my-1" data-testid="empty-state-suggestions">
-              {PROMPT_SUGGESTIONS.map((card) => {
-                const CardIcon = card.icon;
-                return (
-                  <button
-                    key={card.title}
-                    type="button"
-                    onClick={() => {
-                      dispatchInsertComposerText(card.prompt);
-                      dispatchFocusComposer();
-                    }}
-                    className="flex items-start gap-3 rounded-xl border border-border/40 bg-card/40 backdrop-blur-sm p-3 text-left hover:bg-card hover:border-border/70 transition-all cursor-pointer group shadow-2xs"
-                  >
-                    <span className="mt-0.5 rounded-lg p-1.5 bg-muted/40 text-muted-foreground group-hover:text-primary transition-colors shrink-0">
-                      <CardIcon className="size-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[13px] font-medium text-foreground/90 group-hover:text-foreground">
-                        {card.title}
-                      </div>
-                      <div className="text-[11.5px] text-muted-foreground/70 leading-snug truncate">
-                        {card.hint}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </>
+          <div className="flex flex-col items-center gap-2 text-center">
+            <h1 className="text-[30px] font-[620] tracking-[-0.03em] leading-tight text-foreground">
+              What should we work on?
+            </h1>
+            <p className="text-[13px] text-muted-foreground/60">
+              in <span className="font-mono text-foreground/55">{project}</span>
+            </p>
+          </div>
         )}
 
         <div className="w-full pt-1">{children}</div>
