@@ -88,6 +88,11 @@ frontend/desktop/src-tauri/resources/backend-py/**
 !frontend/desktop/src-tauri/resources/backend-py/.keep
 frontend/desktop/src-tauri/resources/wheels/**
 !frontend/desktop/src-tauri/resources/wheels/.keep
+# Bundled ngspice (the engine `circuit_simulate` drives). Nothing generates this
+# tree the way prepare-desktop-backend.mjs generates the others — it is a local
+# drop, and 25 MB of third-party DLLs must not become permanent in history.
+frontend/desktop/src-tauri/resources/ngspice/**
+!frontend/desktop/src-tauri/resources/ngspice/.keep
 frontend/desktop/src-tauri/resources/_python_extract/
 frontend/desktop/src-tauri/resources/*.tar.gz
 
@@ -127,3 +132,10 @@ skills/**/.usage.json
 # Scratch scans and one-off scripts
 .hermes-scan-*.log
 tmp_rename_camel.py
+
+# Local worktree/branch backup bundles (a `git bundle` is a whole repo in one
+# file — 54 MB here). Backups belong outside the repository, not in history.
+*.bundle
+
+# Third-party tool marker (holds a generated project id)
+.freebuff/

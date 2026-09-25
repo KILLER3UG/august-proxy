@@ -8,6 +8,7 @@
 - `web-dist/` is the Vite build artifact that Tauri packages into the desktop shell (and that FastAPI can serve for local backend-only runs). It is **not** a separate “web app” to QA against for product work.
 - Prefer `npm run dev:desktop` / packaged MSI·NSIS installs when checking UI + workbench behavior.
 - Installed production builds copy bundled `backend-py` into AppData from the installer stamp — **desktop releases must include backend changes**, not UI-only rebuilds.
+- **Two guards carry the whole install/update promise** (don't relax either to make a build pass): a new download must start with an empty memory, and an update must keep everything. `{appData}/data` holds everything a user owns (brain DB, `providers.json`, learned skills, sessions, backups) and `{appData}/backend-runtime` holds the re-extractable copy of the payload — siblings, never nested. `scripts/desktop-backend-payload.mjs` therefore refuses to stage runtime user state (`data/`, `*.sqlite*`, `providers.json`, `config.json`, `.env`, `.usage.json`), because staging reads from a working checkout and one stray `AUGUST_DATA_DIR` run would otherwise ship a developer's memory and API keys to every user. And `wipeStaleTree` in `backend.rs` — the only recursive delete the update path performs — refuses any target that is not inside `backend-runtime/`. Uninstall deleting app data is deliberately opt-in AND suppressed under `/UPDATE`.
 - Provider **baseUrl** is used exactly as pasted; August only appends the API format leaf (`chat/completions` / `v1/messages` / `responses` / `models`). It never invents `/v1` on the base — Anthropic’s format already includes `v1` in the leaf; OpenAI-compatible hosts include `/v1` in the paste when needed.
 
 ## Recent desktop fix (0.12.21)
@@ -108,13 +109,28 @@ on purpose, because workspace memory is the separate `.aug/memory` markdown
 layer that the tail already carries. `skill_delete` proposals, `patchSkill` and
 the usage counter all key on `SKILL.md`, never on directory existence — skill
 usage lives at `<dataDir>/skills/<name>/.usage.json` and the install tree must
-stay free of it.
+stay free of it. Two serialization traps on this path: a fact/KV value is
+**stored JSON-encoded**, so every read door must decode it or the human browse
+list shows `“"a sentence"”` where the boot index shows the sentence (and the
+edit field re-encodes it on every save) — `memory_store.brain_browse` decodes a
+JSON *string* and leaves an object verbatim, because unwrapping one would drop
+`details` on the next save. And `_apply_approved` **rewrites SKILL.md
+frontmatter wholesale**, so any field a `skill_patch` proposal does not restate
+is gone: `supersedes`, `origin`, `learned_from` and `trigger` are therefore read
+back off the existing file before the write. Losing `trigger` is not cosmetic —
+it is what per-turn relevance matching reads, so a silent patch would retire a
+skill from recall.
 
 **Memory survives independently of recall** — `app/services/brain_backup.py`
 takes online copies through SQLite's backup API (read-only handle, no write lock
 on the live file), runs `PRAGMA integrity_check` on every copy before trusting
 it, and prunes to a verified rolling set; `GET /api/brain/integrity` is the
-health read and Settings → Memory shows it. **A restore is staged and applied at
+health read. **Settings → Memory no longer shows either of them:** the 0.18
+restyle removed the "Memory files" card (backups, integrity, restore, raw-state
+lookup and the model-context preview all lived in it), so a restore is staged
+through `POST /api/brain/backups/restore` and nothing in the UI lists or stages
+it — `api/api-client/brain-backup.ts` is the surviving client if the card is
+ever rebuilt. **A restore is staged and applied at
 the next launch, never in place:** `memory_store.close()` closes only a
 thread-local connection while other threads still hold the live file, so an
 in-process swap yields a half-old database (and fails to rename on Windows).

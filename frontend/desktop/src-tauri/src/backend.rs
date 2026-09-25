@@ -167,13 +167,19 @@ fn resolveResource(app: &AppHandle, rel: &str) -> Option<PathBuf> {
     None
 }
 
+/// The two leaves under `{appData}`, and the one rule that keeps an update from
+/// destroying what a user taught August: `data` is everything they own (memory
+/// database, provider keys, sessions, learned skills, backups) and is only ever
+/// deleted by an explicit uninstall; `backend-runtime` is the copy of the
+/// installer's payload, which an update may delete and re-extract at will.
+/// Naming them here is what lets the wipe below check which one it is holding.
+const DATA_DIR_LEAF: &str = "data";
+const RUNTIME_DIR_LEAF: &str = "backend-runtime";
+
 /// Writable AppData tree used for the installed (bundled) backend runtime.
 /// Layout: `{appData}/backend-runtime/backend-py/{app,.venv,…}`
 fn runtimeRoot(app: &AppHandle) -> PathBuf {
-    app.path()
-        .app_data_dir()
-        .unwrap_or_else(|_| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-        .join("backend-runtime")
+    appDataRoot(app).join(RUNTIME_DIR_LEAF)
 }
 
 fn runtimeBackendMain(app: &AppHandle) -> PathBuf {
@@ -517,6 +523,22 @@ fn runPythonSilent(
     Ok(())
 }
 
+/// True only for a path INSIDE `{appData}/backend-runtime/…` — a copy of the
+/// installer's payload, which re-extracting can always replace.
+///
+/// This is the guard on the only recursive deletes the update path performs.
+/// `{appData}/data` (the memory database, provider keys, learned skills,
+/// sessions, backups) is a SIBLING of `backend-runtime`, so a wipe pointed at
+/// anything the user owns cannot pass this check — which is what makes
+/// "the new release deleted everything I had taught it" a case the code refuses
+/// rather than one it has to keep remembering to avoid. Both trees are built
+/// from one base, so a wrong leaf name or an `app_data_dir()` failure falling
+/// back to the current directory is exactly what this catches.
+fn isReextractableRuntimePath(path: &Path) -> bool {
+    let runtime_leaf = std::ffi::OsStr::new(RUNTIME_DIR_LEAF);
+    path.ancestors().skip(1).any(|parent| parent.file_name() == Some(runtime_leaf))
+}
+
 /// Outcome of wiping a stale bootstrap tree. A wipe that cannot finish is
 /// never fatal on its own: `Degraded` carries the warning to surface while
 /// boot continues.
@@ -525,6 +547,10 @@ enum WipeOutcome {
     Clean,
     /// Removal stayed blocked; the message says what was left behind.
     Degraded(String),
+    /// The target is not re-extractable payload, so nothing was deleted and the
+    /// caller must stop rather than overwrite it with a fresh copy. This is the
+    /// guard against an update erasing `{appData}/data`.
+    Refused(String),
 }
 
 /// Windows locks (an antivirus scan, a lingering python.exe) make deletion
@@ -537,7 +563,22 @@ const WIPE_RETRY_DELAY_MS: u64 = 300;
 /// skills): retry, then rename to a `.old` sibling, then leave it in place.
 /// Only a genuinely blocked removal reaches the fallbacks — a normal wipe
 /// still returns `Clean`, so a fresh tree (and rebuilt venv) is the rule.
+///
+/// Every recursive delete the update path performs goes through here, so this
+/// is the single place that decides what may be erased: a target outside the
+/// re-extractable payload is refused before any filesystem call is made.
 fn wipeStaleTree(path: &Path) -> WipeOutcome {
+    if !isReextractableRuntimePath(path) {
+        let reason = format!(
+            "refused to wipe {} — an update may only replace a tree inside {}/, \
+             and this is not one (user state lives in the sibling {}/ folder)",
+            path.display(),
+            RUNTIME_DIR_LEAF,
+            DATA_DIR_LEAF
+        );
+        log::error!("[backend] {reason}");
+        return WipeOutcome::Refused(reason);
+    }
     wipeStaleTreeWith(
         path,
         |p| std::fs::remove_dir_all(p),
@@ -545,6 +586,17 @@ fn wipeStaleTree(path: &Path) -> WipeOutcome {
         WIPE_RETRIES,
         WIPE_RETRY_DELAY_MS,
     )
+}
+
+/// `wipeStaleTree` for the bootstrap: a refusal is not a warning to carry on
+/// past, because continuing would copy the payload on top of whatever was
+/// about to be deleted.
+fn wipePayloadTree(path: &Path) -> Result<Vec<String>, String> {
+    match wipeStaleTree(path) {
+        WipeOutcome::Clean => Ok(vec![]),
+        WipeOutcome::Degraded(warning) => Ok(vec![warning]),
+        WipeOutcome::Refused(reason) => Err(reason),
+    }
 }
 
 /// `wipeStaleTree` with the filesystem operations injected, so tests can
@@ -640,6 +692,7 @@ fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
 
     let runtime = runtimeRoot(app);
     let runtime_backend = runtime.join("backend-py");
+    let runtime_skills = runtime.join("skills");
     let stamp_path = runtimeStampPath(app);
     let current = std::fs::read_to_string(&stamp_path)
         .ok()
@@ -680,15 +733,12 @@ fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
     // metadata, or virtualenv files after an update and can mask a bad payload.
     // But a wipe blocked by a Windows lock degrades to a warning instead of an
     // error: the stale tree is harmless, while aborting here traps packaged
-    // installs on the Retry gate over a tree that did nothing wrong.
+    // installs on the Retry gate over a tree that did nothing wrong. A refusal
+    // is different — it means the target was not the payload, so the bootstrap
+    // stops before copying anything over it.
     let mut wipe_warnings: Vec<String> = Vec::new();
-    if let WipeOutcome::Degraded(warning) = wipeStaleTree(&runtime_backend) {
-        wipe_warnings.push(warning);
-    }
-    let runtime_skills = runtime.join("skills");
-    if let WipeOutcome::Degraded(warning) = wipeStaleTree(&runtime_skills) {
-        wipe_warnings.push(warning);
-    }
+    wipe_warnings.extend(wipePayloadTree(&runtime_backend)?);
+    wipe_warnings.extend(wipePayloadTree(&runtime_skills)?);
     std::fs::create_dir_all(&runtime_backend).map_err(|e| format!("mkdir runtime: {e}"))?;
     copyDirRecursive(&bundled_py_root, &runtime_backend, true)?;
 
@@ -932,11 +982,16 @@ fn projectRootFor(entry: &Path) -> Option<PathBuf> {
     entry.parent()?.parent().map(Path::to_path_buf)
 }
 
-fn appDataDir(app: &AppHandle) -> PathBuf {
+/// The `{appData}` both user state and the re-extractable runtime hang off.
+/// One helper so the two can never be resolved from different bases.
+fn appDataRoot(app: &AppHandle) -> PathBuf {
     app.path()
         .app_data_dir()
         .unwrap_or_else(|_| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-        .join("data")
+}
+
+fn appDataDir(app: &AppHandle) -> PathBuf {
+    appDataRoot(app).join(DATA_DIR_LEAF)
 }
 
 fn killChild(child: &mut Child) {
@@ -1451,6 +1506,26 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                     if let Some(node) = sidecarNode {
                         cmd.env("AUGUST_NODE_EXE", node);
                     }
+                    // Bundled ngspice (resources/ngspice) so circuit_simulate
+                    // works on a clean machine. circuit_tools._resolve_ngspice_sync
+                    // reads AUGUST_NGSPICE_EXE first, so an explicit user override
+                    // still wins; we only fill it in when unset/invalid.
+                    if env::var("AUGUST_NGSPICE_EXE")
+                        .ok()
+                        .and_then(|path| existingAbsolutePath(&path))
+                        .is_none()
+                    {
+                        if let Some(ng) = resolveResource(
+                            app,
+                            "ngspice/bin/ngspice_con.exe",
+                        ) {
+                            cmd.env("AUGUST_NGSPICE_EXE", &ng);
+                            log::info!(
+                                "[backend] circuit engine: bundled ngspice at {}",
+                                ng.display()
+                            );
+                        }
+                    }
                     applyNoWindow(&mut cmd);
 
                     match cmd.spawn() {
@@ -1505,7 +1580,10 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                     );
                     force_reinstall = true;
                     let runtime = runtimeRoot(app);
-                    let _ = std::fs::remove_dir_all(runtime.join("backend-py"));
+                    // Through the same guarded wipe as the bootstrap: this is a
+                    // recursive delete of an AppData tree, and the guard is the
+                    // only thing that keeps it from being able to reach data/.
+                    let _ = wipePayloadTree(&runtime.join("backend-py"));
                     let _ = std::fs::remove_file(runtimeStampPath(app));
                     continue;
                 }
@@ -2198,7 +2276,7 @@ fn versionStampPath(app: &AppHandle) -> Option<PathBuf> {
     app.path()
         .app_data_dir()
         .ok()
-        .map(|p| p.join("data").join("backend-version.txt"))
+        .map(|p| p.join(DATA_DIR_LEAF).join("backend-version.txt"))
 }
 
 /// Sync / bootstrap backend deps, then ensure the proxy is running.
@@ -2427,11 +2505,43 @@ mod copy_payload_tests {
 
 #[cfg(test)]
 mod wipe_stale_tree_tests {
-    use super::{copyDirRecursive, wipeStaleTreeWith, WipeOutcome};
+    use super::{
+        copyDirRecursive, isReextractableRuntimePath, wipeStaleTreeWith, WipeOutcome,
+    };
     use std::cell::Cell;
     use std::fs;
     use std::io;
     use std::path::{Path, PathBuf};
+
+    /// The guard is the only thing standing between an update and the user's
+    /// memory, so it is tested against the real shapes of both trees rather
+    /// than assumed from the call sites.
+    #[test]
+    fn only_a_tree_inside_the_runtime_folder_may_be_wiped() {
+        let app_data = Path::new("C:/Users/rober/AppData/Roaming/com.august.proxy");
+        assert!(isReextractableRuntimePath(
+            &app_data.join("backend-runtime/backend-py")
+        ));
+        assert!(isReextractableRuntimePath(
+            &app_data.join("backend-runtime/skills")
+        ));
+        assert!(isReextractableRuntimePath(
+            &app_data.join("backend-runtime/backend-py/.venv/Lib")
+        ));
+        // Everything the user owns, and the folders that hold it: never.
+        for kept in [
+            "data",
+            "data/august_brain.sqlite",
+            "data/skills/circuit-helper/.usage.json",
+            "data/backups",
+            "backend-runtime",
+        ] {
+            assert!(
+                !isReextractableRuntimePath(&app_data.join(kept)),
+                "{kept} must not be wipeable by an update"
+            );
+        }
+    }
 
     /// Each test gets its own scratch tree so it never touches a real payload.
     fn scratch(tag: &str) -> PathBuf {
@@ -2505,6 +2615,7 @@ mod wipe_stale_tree_tests {
         let warning = match outcome {
             WipeOutcome::Degraded(w) => w,
             WipeOutcome::Clean => panic!("a blocked wipe must not report Clean"),
+            WipeOutcome::Refused(r) => panic!("the guard must not decide a blocked removal: {r}"),
         };
         assert!(
             warning.contains(".old"),
@@ -2547,6 +2658,7 @@ mod wipe_stale_tree_tests {
         let warning = match outcome {
             WipeOutcome::Degraded(w) => w,
             WipeOutcome::Clean => panic!("a blocked wipe must not report Clean"),
+            WipeOutcome::Refused(r) => panic!("the guard must not decide a blocked removal: {r}"),
         };
         assert!(
             warning.contains("left in place"),

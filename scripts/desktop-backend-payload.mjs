@@ -11,6 +11,37 @@ const cacheDirs = new Set([
 ]);
 const generatedDirs = new Set(['build', 'dist', 'august_proxy.egg-info']);
 
+// What a running August writes for ONE person: the memory database, provider
+// credentials, session transcripts, learned-skill counters. Staging copies
+// straight out of a working checkout, and one launch with AUGUST_DATA_DIR
+// pointed into that checkout drops all of them there — at which point a release
+// would ship a developer's history (and their API keys) inside the installer,
+// so a "first download" opens with somebody else's memory and the next update
+// overwrites the real user's stores with the shipped copy. None of these names
+// exists in the source tree today, so if staging ever starts dropping one, that
+// is the build catching the leak rather than a silent change in what ships.
+const userStateNames = new Set([
+  'config.json', 'providers.json', 'mcp-servers.json', 'workbench-sessions.json',
+  'automations.json', 'scheduled-jobs.json', 'harness-activity.json', 'hooks.json',
+  '.env', '.env.local', '.usage.json',
+]);
+const userStateDirs = new Set([
+  'data', 'backups', 'logs', 'harness_proposals', 'shadow-git', 'checkpoints',
+  'event_log', 'refine_store',
+]);
+const userStateSuffixes = [
+  '.sqlite', '.sqlite-wal', '.sqlite-shm', '.pre-migration', '.pre-migration-wal',
+  '.db', '.key', '.pem', '.p12',
+];
+
+function userStateReason(parts) {
+  const name = parts.at(-1);
+  if (parts.some((part) => userStateDirs.has(part))) return 'user-state directory';
+  if (userStateNames.has(name)) return 'user-state file';
+  if (userStateSuffixes.some((suffix) => name.endsWith(suffix))) return 'database or key file';
+  return null;
+}
+
 async function exists(path) {
   try { await stat(path); return true; }
   catch (error) { if (error.code === 'ENOENT') return false; throw error; }
@@ -28,11 +59,52 @@ function sourceFilter(source, excludeTests) {
   return (path) => {
     const parts = relative(source, path).split(/[\\/]/);
     const name = parts.at(-1);
+    if (userStateReason(parts)) return false;
     return !parts.some(part => cacheDirs.has(part) || generatedDirs.has(part) || (excludeTests && part === 'tests'))
-      && name !== '.usage.json'
       && !name.endsWith('.egg-info')
       && !path.endsWith('.pyc');
   };
+}
+
+/** Fail a release build whose staged payload contains anything a running
+ *  August would have written for one specific human.
+ *
+ *  Checked after staging rather than only filtered during it: the sidecar's
+ *  `npm ci` runs inside the payload, a stale tree can survive an interrupted
+ *  build, and the thing worth protecting here is a user's memory database and
+ *  provider keys, so the build reads the shipped bytes before stamping them.
+ *  Third-party runtimes (wheels, portable python, node_modules, binaries) are
+ *  deliberately not walked — a python package legitimately owns `data/` and
+ *  `logs/` directories, and none of them can hold August user state. */
+export async function assertPayloadHasNoUserState(resourcesDir) {
+  const offenders = [];
+  const roots = [
+    [join(resourcesDir, 'backend-py', 'app'), 'backend-py/app'],
+    [join(resourcesDir, 'backend-py', 'sidecar'), 'backend-py/sidecar'],
+    [join(resourcesDir, 'skills'), 'skills'],
+  ];
+  async function walk(path, name) {
+    if (!await exists(path)) return;
+    const entries = await readdir(path, { withFileTypes: true });
+    for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      if (cacheDirs.has(entry.name)) continue;
+      const childName = `${name}/${entry.name}`;
+      const reason = userStateReason(childName.split('/'));
+      if (reason) {
+        offenders.push(`${reason}: ${childName}`);
+        continue;
+      }
+      if (entry.isDirectory()) await walk(join(path, entry.name), childName);
+    }
+  }
+  for (const [path, name] of roots) await walk(path, name);
+  if (offenders.length) {
+    throw new Error(
+      'staged payload contains user state and must not ship — a fresh install '
+      + `would inherit it and an update could overwrite real data:\n  ${offenders.join('\n  ')}`,
+    );
+  }
+  return offenders;
 }
 
 export function installSidecarDependencies(sidecarOut) {
@@ -96,6 +168,7 @@ export async function stageBackendPayload(root, resourcesDir) {
   if (!(await directoryHasFiles(skillsOut))) {
     throw new Error('staged skills payload is empty');
   }
+  await assertPayloadHasNoUserState(resourcesDir);
 }
 
 export async function hashStagedBackendPayload(resourcesDir) {

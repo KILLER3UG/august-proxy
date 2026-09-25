@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { stageBackendPayload, hashStagedBackendPayload } from './desktop-backend-payload.mjs';
+import { stageBackendPayload, hashStagedBackendPayload, assertPayloadHasNoUserState } from './desktop-backend-payload.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 async function put(path, text) {
@@ -65,6 +65,14 @@ test('production payload works without checkout deps and hashes only shipped art
   await put(join(source, 'backend-py', 'app', 'main.py'), 'print("fixture")\n');
   await put(join(source, 'backend-py', 'app', '__pycache__', 'main.pyc'), 'cache');
   await put(join(source, 'backend-py', 'app', 'tests', 'test_noise.py'), 'dev tests');
+  // One developer's own running state, sitting in the checkout staging reads
+  // from: a fresh install must never inherit it, and an update must never have
+  // it written over the user's real stores.
+  await put(join(source, 'backend-py', 'app', 'august_brain.sqlite'), 'dev memory db');
+  await put(join(source, 'backend-py', 'app', 'providers.json'), '{"apiKey":"dev"}');
+  await put(join(source, 'backend-py', 'app', 'config.json'), '{"dev":true}');
+  await put(join(source, 'backend-py', 'app', 'data', 'workbench-sessions.json'), '[]');
+  await put(join(source, 'backend-py', 'app', 'lib', 'logs', 'backend.log'), 'dev log');
   await put(join(sidecarSource, 'node_modules', 'avr8js', 'package.json'), 'poisoned local dependency');
   await put(join(source, 'skills', 'fixture', 'tests', 'example.py'), 'shipped skill example');
   await put(join(source, 'skills', 'fixture', '.usage.json'), '{"calls":999}');
@@ -84,6 +92,9 @@ test('production payload works without checkout deps and hashes only shipped art
     'backend-py/app/tests', 'skills/fixture/.usage.json',
     'skills/fixture/__pycache__',
     'backend-py/sidecar/node_modules/packaging-dev-only',
+    'backend-py/app/august_brain.sqlite', 'backend-py/app/providers.json',
+    'backend-py/app/config.json', 'backend-py/app/data',
+    'backend-py/app/lib/logs',
   ]) assert.equal(existsSync(join(output, path)), false, path);
   assert.ok(existsSync(join(output, 'skills', 'fixture', 'tests', 'example.py')));
   const stagedAvr = JSON.parse(await readFile(join(sidecarOut, 'node_modules', 'avr8js', 'package.json')));
@@ -174,4 +185,57 @@ test('production payload works without checkout deps and hashes only shipped art
   await assert.rejects(stageBackendPayload(source, output), /ENOENT/);
   assert.equal(await hashStagedBackendPayload(output), initial, 'missing lock does not erase prior output');
   t.diagnostic(`avr8js ${stagedAvr.version}: 1ms firmware simulation; WaveDrom SVG+PNG; two identical clean npm ci payloads`);
+});
+
+// The same state is checked in the shipped tree, not only filtered on the way
+// in: the payload is also assembled by npm itself, and an interrupted build can
+// leave an older tree behind.
+test('the payload guard reads the shipped bytes and ignores third-party trees', async () => {
+  // One clean tree per case: a planted offender creates a directory too, and a
+  // half-cleaned tree would report the leftovers as new failures.
+  async function cleanTree(tag) {
+    const resources = await mkdtemp(join(tmpdir(), `august guard ${tag} `));
+    await put(join(resources, 'backend-py', 'app', 'main.py'), 'print("x")\n');
+    await put(join(resources, 'backend-py', 'sidecar', 'package.json'), '{}');
+    await put(join(resources, 'skills', 'demo', 'SKILL.md'), '---\nname: demo\n---\n\nbody\n');
+    // A python/npm dependency legitimately owns config.json and data/ folders;
+    // third-party trees are not walked, or every release would fail on them.
+    await put(join(resources, 'backend-py', 'sidecar', 'node_modules', 'avr8js', 'config.json'), '{}');
+    await put(join(resources, 'wheels', 'data', 'anything.txt'), 'x');
+    return resources;
+  }
+
+  const offenders = [
+    ['backend-py/app/august_brain.sqlite', 'august_brain.sqlite'],
+    ['backend-py/app/august_brain.sqlite-wal', 'august_brain.sqlite-wal'],
+    ['backend-py/app/august_brain.sqlite.pre-migration', 'pre-migration'],
+    ['backend-py/app/providers.json', 'providers.json'],
+    ['backend-py/app/config.json', 'config.json'],
+    ['backend-py/app/.env', '.env'],
+    ['backend-py/app/backups/brain-20260925T000000Z-manual.sqlite', 'app/backups'],
+    ['backend-py/app/harness_proposals/prop_1.json', 'harness_proposals'],
+    ['backend-py/app/services/roots/logs/backend.log', 'logs'],
+    ['skills/demo/.usage.json', '.usage.json'],
+  ];
+
+  const clean = await cleanTree('baseline');
+  try {
+    assert.deepEqual(await assertPayloadHasNoUserState(clean), []);
+  } finally {
+    await rm(clean, { recursive: true, force: true });
+  }
+
+  for (const [index, [rel, named]] of offenders.entries()) {
+    const resources = await cleanTree(`case-${index}`);
+    try {
+      await put(join(resources, rel), 'planted');
+      await assert.rejects(
+        assertPayloadHasNoUserState(resources),
+        new RegExp(`must not ship[\\s\\S]*${named.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+        rel,
+      );
+    } finally {
+      await rm(resources, { recursive: true, force: true });
+    }
+  }
 });
