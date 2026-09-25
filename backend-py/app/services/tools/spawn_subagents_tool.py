@@ -322,6 +322,17 @@ def _session_id(session: object) -> str:
     return ''
 
 
+def _parent_tool_use_id() -> str:
+    """The enclosing tool-call id, so the UI can anchor worker rows under the
+    spawn call. Empty when the spawn did not happen inside a tool call."""
+    try:
+        from app.services.workbench.context import currentToolUseId
+
+        return str(currentToolUseId.get() or '')
+    except Exception:
+        return ''
+
+
 def _format_completion_notice(result: dict[str, Any], session: object = None) -> str:
     task_id = result.get('taskId', '')
     agent_id = result.get('agentId', 'general')
@@ -566,12 +577,7 @@ async def _doSpawn(
     def _emit_starts(handles: list) -> None:
         if not emit:
             return
-        try:
-            from app.services.workbench.context import currentToolUseId
-
-            parentToolUseId = currentToolUseId.get()
-        except Exception:
-            parentToolUseId = ''
+        parentToolUseId = _parent_tool_use_id()
         for h in handles:
             emit(
                 {
@@ -584,6 +590,30 @@ async def _doSpawn(
                     'parentToolUseId': parentToolUseId or None,
                 }
             )
+
+    def _emit_skip_start(skipped: dict[str, Any]) -> None:
+        """Announce a lane the DAG never launched.
+
+        The chat reducer deliberately ignores a ``subagentDone`` for a jobId that
+        never sent ``subagentStart`` (a ghost frame after an LRU eviction must not
+        resurrect a settled row), so a skipped lane needs its announcement too.
+        Without it the user sees N-1 rows for N requested lanes and no trace of
+        the one that was dropped — which reads as a lost result.
+        """
+        if not emit:
+            return
+        parentToolUseId = _parent_tool_use_id()
+        emit(
+            {
+                'type': 'subagentStart',
+                'jobId': skipped['taskId'],
+                'agentId': skipped['agentId'],
+                'task': skipped['goal'],
+                'workstream': skipped['workstream'] or None,
+                'skills': [],
+                'parentToolUseId': parentToolUseId or None,
+            }
+        )
 
     failed_names: set[str] = set()
 
@@ -623,6 +653,7 @@ async def _doSpawn(
                             record_lane(job_id, nm, 'skipped', skipped['error'])
                         except Exception:
                             pass
+                    _emit_skip_start(skipped)
                     if emit:
                         emit(
                             {

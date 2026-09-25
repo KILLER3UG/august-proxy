@@ -106,7 +106,11 @@ export function subagentResultText(raw: unknown): string {
     const nested = (raw as Record<string, unknown>).result
       ?? (raw as Record<string, unknown>).output;
     if (typeof nested === 'string') return nested;
-    return nested != null ? JSON.stringify(nested) : '';
+    if (nested != null) return JSON.stringify(nested);
+    // A payload shaped like neither: render what arrived rather than nothing.
+    // Returning '' here turned an unexpected backend shape into a worker that
+    // appeared to produce no output at all.
+    return JSON.stringify(raw);
   }
   return '';
 }
