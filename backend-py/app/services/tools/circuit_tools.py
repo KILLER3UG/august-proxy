@@ -144,6 +144,18 @@ CIRCUIT_HINT = (
     'wire-routing ops) — netlists stay the SPICE source of truth; the '
     'diagram describes breadboard wiring around the MCU and pins the '
     'co-sim mapping. '
+    'The schematic layer is a sidecar over the netlist, not a second '
+    'source of truth: the deck keeps every value and connection, and a '
+    '<name>.layout.json holds only component positions (10 px grid) and '
+    'wire routes. circuit_read_schematic returns the renderable graph '
+    '(components with their layout, orthogonal wires, nodes); '
+    'circuit_edit_schematic moves parts (moves=[{ref, col, row, rot}], '
+    'optional wireRoutes, auto=True to re-derive a clean column layout) '
+    'and saves the sidecar; circuit_render_schematic draws the SVG '
+    'artifact (native resistor/capacitor/inductor/diode/source symbols — '
+    'no ngspice needed). Use these to lay out and draw a circuit, then '
+    'circuit_simulate/circuit_annotate to measure it; never edit values '
+    'through the schematic, only the netlist. '
     'circuit_env reports '
     'which EDA engines are installed (ngspice + XSPICE health, ghdl, '
     'iverilog, verilator, quartus_sh, kicad-cli, arduino-cli, node) — '
@@ -184,8 +196,30 @@ def _bind(path: str, workspace: str, for_write: bool):
 _NETLIST_EXT = ('.cir', '.net', '.ckt', '.sp')
 
 
+def _bundled_ngspice() -> str | None:
+    """Find the ngspice shipped inside the desktop app's resources.
+
+    The Tauri bundle stages it at ``resources/ngspice/bin/ngspice_con.exe``;
+    in a dev checkout that path sits under ``frontend/desktop/src-tauri``.
+    Returns the console binary only — the GUI build cannot be driven through
+    pipes.
+    """
+    name = 'ngspice_con.exe' if os.name == 'nt' else 'ngspice'
+    here = Path(__file__).resolve()
+    # backend-py/app/services/tools/circuit_tools.py → repo root is 5 levels up.
+    for base in (here.parents[4], here.parents[5]):
+        for rel in (
+            Path('frontend/desktop/src-tauri/resources/ngspice/bin') / name,
+            Path('src-tauri/resources/ngspice/bin') / name,
+        ):
+            candidate = base / rel
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
 def _resolve_ngspice_sync() -> str | None:
-    """Locate an ngspice executable (env override, PATH, common install dirs).
+    """Locate an ngspice executable (env override, bundled, PATH, installs).
 
     Console builds (``ngspice_con.exe``) are preferred: they are the
     scripting-oriented variant and reliably emit stdout when driven through
@@ -194,6 +228,9 @@ def _resolve_ngspice_sync() -> str | None:
     env_exe = os.environ.get('AUGUST_NGSPICE_EXE', '').strip()
     if env_exe and os.path.isfile(env_exe):
         return env_exe
+    bundled = _bundled_ngspice()
+    if bundled:
+        return bundled
     for name in ('ngspice_con', 'ngspice'):
         exe = shutil.which(name)
         if exe:
@@ -549,6 +586,146 @@ def list_netlists(workspace: str = '') -> dict[str, object]:
         if len(found) >= 200:
             break
     return {'netlists': sorted(found)[:200], 'count': len(found)}
+
+
+# ── Schematic (netlist stays the SPICE source of truth) ────────────────────
+#
+# The schematic is a *sidecar* over the netlist: a ``<name>.layout.json``
+# holding only component positions and wire routes. Values and connectivity
+# live in the deck — the only file a simulator reads. Both the human editor
+# and these tools drive the same sidecar, so the drawing can never drift
+# out of sync with the circuit. See ``schematic.py`` for the model.
+
+
+def _resolve_deck_path(netlist: str, workspace: str, for_write: bool) -> Path:
+    """Accept an inline deck or a workspace path; return a real deck file.
+
+    Inline text is written to a scratch ``.cir`` next to the workspace so
+    the sidecar has a stable home; a path is bound and returned as-is.
+    A non-string argument is a caller error — raise a plain message rather
+    than letting ``AttributeError`` leak through the tool boundary.
+    """
+    if not isinstance(netlist, str):
+        raise ValueError('netlist must be a string (inline SPICE text or a deck path)')
+    stripped = netlist.strip()
+    is_path = bool(stripped) and '\n' not in stripped and len(stripped) < 260
+    if is_path:
+        p = _bind(stripped, workspace, for_write=for_write)
+        if not p.exists():
+            raise ValueError(f'File not found: {netlist}')
+        if p.suffix.lower() not in _NETLIST_EXT:
+            raise ValueError(f'{netlist} must end with one of {", ".join(_NETLIST_EXT)}')
+        return p
+    if not stripped:
+        raise ValueError('netlist is empty.')
+    root = _bind('.', workspace, for_write=True) if workspace else Path(tempfile.gettempdir())
+    root = root if root.is_dir() else root.parent
+    target = root / '_schematic_inline.cir'
+    text = stripped if stripped.lower().startswith('*') else f'* netlist\n{stripped}'
+    if not re.search(r'^\.end\s*$', text, re.M | re.I):
+        text += '\n.end'
+    target.write_text(text + '\n', encoding='utf-8')
+    return target
+
+
+def read_schematic(netlist: str, workspace: str = '') -> dict[str, object]:
+    """Return the renderable graph: components (with layout), wires, nodes."""
+    from app.services.tools import schematic
+
+    deck_path = _resolve_deck_path(netlist, workspace, for_write=False)
+    deck_text = deck_path.read_text(encoding='utf-8', errors='replace')
+    layout = schematic.read_layout(deck_path)
+    graph = schematic.build_graph(deck_text, layout)
+    payload = schematic.graph_to_wire_payload(graph)
+    payload['path'] = str(deck_path)
+    payload['layoutPath'] = str(schematic.layout_path_for(deck_path))
+    payload['layoutExists'] = schematic.layout_path_for(deck_path).exists()
+    payload['autoLayout'] = bool(layout.get('auto'))
+    return payload
+
+
+def edit_schematic(
+    netlist: str,
+    moves: list[dict] | None = None,
+    wire_routes: dict | None = None,
+    auto: bool = False,
+    workspace: str = '',
+) -> dict[str, object]:
+    """Move components (and optionally set wire routes) in the sidecar.
+
+    ``moves`` is ``[{"ref": "R1", "col": 0, "row": 8, "rot": 0}, …]`` on the
+    10 px grid; omitted fields keep their current value. ``wireRoutes``
+    maps a node name to an explicit ``[[x, y], …]`` polyline. ``auto``
+    discards the sidecar and re-derives a deterministic column layout.
+    Values/connectivity are untouched — edit the netlist for those.
+    """
+    from app.services.tools import schematic
+
+    deck_path = _resolve_deck_path(netlist, workspace, for_write=True)
+    layout = schematic.read_layout(deck_path)
+    deck_text = deck_path.read_text(encoding='utf-8', errors='replace')
+    elements = schematic.parse_elements(deck_text)
+    known = {el.ref for el in elements}
+    if auto:
+        layout = {'grid': schematic.GRID, 'components': schematic.auto_layout(elements)}
+    else:
+        comps = dict(layout.get('components') or {})
+        if not comps:
+            comps = schematic.auto_layout(elements)
+        for mv in moves or []:
+            if not isinstance(mv, dict):
+                raise ValueError('each move must be an object {ref, col?, row?, rot?}')
+            ref = str(mv.get('ref', '')).upper()
+            if ref not in known:
+                raise ValueError(f'Unknown component {ref!r}; deck has {sorted(known)}')
+            cur = dict(comps.get(ref) or {'col': 0, 'row': 0, 'rot': 0})
+            for key in ('col', 'row', 'rot'):
+                if mv.get(key) is not None:
+                    try:
+                        cur[key] = float(mv[key]) if key != 'rot' else int(mv[key])
+                    except (TypeError, ValueError):
+                        raise ValueError(f'{key} must be numeric for {ref}') from None
+            comps[ref] = cur
+        layout['components'] = comps
+        layout.pop('auto', None)
+        if wire_routes:
+            routes = dict(layout.get('wireRoutes') or {})
+            for node, pts in wire_routes.items():
+                if not isinstance(pts, list) or len(pts) < 2:
+                    raise ValueError(f'wireRoutes[{node}] needs at least two [x, y] points')
+                routes[str(node)] = pts
+            layout['wireRoutes'] = routes
+    layout_path = schematic.write_layout(deck_path, layout)
+    graph = schematic.build_graph(deck_text, layout)
+    payload = schematic.graph_to_wire_payload(graph)
+    payload['savedTo'] = str(layout_path)
+    return payload
+
+
+def render_schematic(
+    netlist: str,
+    name: str = 'schematic',
+    workspace: str = '',
+) -> dict[str, object]:
+    """Render the schematic to an SVG artifact (native symbols, no ngspice)."""
+    from app.services.tools import schematic
+
+    deck_path = _resolve_deck_path(netlist, workspace, for_write=True)
+    deck_text = deck_path.read_text(encoding='utf-8', errors='replace')
+    layout = schematic.read_layout(deck_path)
+    graph = schematic.build_graph(deck_text, layout)
+    svg = schematic.render_svg(graph, title=deck_path.stem)
+    base = name if name.endswith('.svg') else f'{name}.svg'
+    out_path = _bind(base, workspace, for_write=True)
+    out_path.write_text(svg, encoding='utf-8')
+    return {
+        'path': str(out_path),
+        'savedTo': str(out_path),
+        'sourceIsFile': '\n' not in (netlist or '').strip(),
+        'components': len(graph['components']),
+        'wires': len(graph['wires']),
+        'svgBytes': len(svg.encode('utf-8')),
+    }
 
 
 # ── Simulation ────────────────────────────────────────────────────────────

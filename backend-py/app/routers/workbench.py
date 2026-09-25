@@ -2490,3 +2490,57 @@ async def setSessionAgent(sessionId: str, request: Request):
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
     return session.toDict()
+
+
+# ── Circuit schematic (the netlist stays the source of truth) ─────────────
+#
+# The drawer's schematic editor drives the same layout sidecar the model's
+# circuit_edit_schematic tool writes, so human drags and model moves edit one
+# file. Only positions/routes cross this boundary — a schematic request can
+# never change a value or a connection in the deck.
+
+
+def _circuit_workspace(sessionId: str) -> str:
+    session = wb.getWorkbenchSession(sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return str(getattr(session, 'workspacePath', '') or '')
+
+
+@router.get('/sessions/{sessionId}/circuit/schematic')
+async def readCircuitSchematic(sessionId: str, path: str = Query(...)):
+    """Renderable schematic graph for a workspace deck (components + wires)."""
+    from app.services.tools import circuit_tools
+
+    ws = _circuit_workspace(sessionId)
+    try:
+        return circuit_tools.read_schematic(path, workspace=ws)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post('/sessions/{sessionId}/circuit/schematic')
+async def editCircuitSchematic(sessionId: str, request: Request):
+    """Move parts / set wire routes in the layout sidecar.
+
+    Body: ``{path, moves?: [{ref, col, row, rot}], wireRoutes?: {node:
+    [[x, y], ...]}, auto?: boolean}``. Touches only ``<name>.layout.json``.
+    """
+    from app.services.tools import circuit_tools
+
+    ws = _circuit_workspace(sessionId)
+    body = as_dict(await request.json() if request.headers.get('content-type') else {}, {})
+    path = as_str(body.get('path'), '')
+    if not path:
+        raise HTTPException(status_code=400, detail='path is required')
+    try:
+        moves = [m for m in as_list(body.get('moves'), []) if isinstance(m, dict)]
+        return circuit_tools.edit_schematic(
+            path,
+            moves=[as_dict(m) for m in moves],
+            wire_routes=as_dict(body.get('wireRoutes'), {}),
+            auto=bool(body.get('auto', False)),
+            workspace=ws,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

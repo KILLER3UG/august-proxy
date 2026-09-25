@@ -531,6 +531,25 @@ def test_ngspice_env_override(monkeypatch):
     assert circuit_tools._resolve_ngspice_sync() == sys.executable
 
 
+def test_ngspice_bundled_with_desktop_resources():
+    """The Tauri bundle ships the console build so simulate works on a
+    clean machine instead of degrading to 'not installed'."""
+    bundled = circuit_tools._bundled_ngspice()
+    assert bundled is not None, 'ngspice must be staged under src-tauri/resources'
+    assert Path(bundled).is_file()
+    # Only the console variant is bundled — the GUI build cannot be driven
+    # through pipes.
+    assert Path(bundled).name.startswith('ngspice_con')
+
+
+def test_ngspice_resolution_falls_back_to_bundled(monkeypatch):
+    """A stale/invalid AUGUST_NGSPICE_EXE must not strand the workbench."""
+    monkeypatch.setenv('AUGUST_NGSPICE_EXE', '/definitely/not/here.exe')
+    resolved = circuit_tools._resolve_ngspice_sync()
+    assert resolved is not None
+    assert Path(resolved).is_file()
+
+
 # ── Board brain + search→integrate ────────────────────────────────────────
 
 

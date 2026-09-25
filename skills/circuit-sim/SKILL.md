@@ -38,8 +38,10 @@ render loop and the install requirements for ngspice.
 3. Write a netlist with a title comment, real `.include` lines for
    manufacturer models, and explicit `.measure` statements.
 4. `circuit_simulate` to run ngspice, then `render_chart` for waveforms.
-5. `draw_circuit` for the schematic, `circuit_render_3d` for the board
-   preview. State ideal-vs-real assumptions next to numeric results.
+5. `circuit_read_schematic` → `circuit_edit_schematic` →
+   `circuit_render_schematic` to lay out and draw the schematic, then
+   `circuit_render_3d` for the board preview. State ideal-vs-real
+   assumptions next to numeric results.
 
 ## 1. Find components
 
@@ -80,12 +82,20 @@ meas ac vout_max find v(out) at=1k
   save it with `write_file` (e.g. `models/lm358.lib`), then
   `.include models/lm358.lib` in the netlist. When no model exists,
   use a behavioral equivalent (RC, ideal diode) and say so.
-- ngspice must be installed (`winget install ngspice` or set
-  `AUGUST_NGSPICE_EXE` to the executable path); the tool returns
-  install guidance when missing.
+- ngspice ships inside the desktop app (`src-tauri/resources/ngspice`), so
+  simulation works on a clean machine. `circuit_env` reports the resolved
+  engine; set `AUGUST_NGSPICE_EXE` to prefer your own build, and the tool
+  returns install guidance only when no engine is found at all.
 
 ## 3. Render
 
+- `circuit_read_schematic` returns the renderable graph for a deck:
+  components with their layout, orthogonal wires, nodes.
+- `circuit_edit_schematic` moves parts on the 10px grid and saves the
+  layout sidecar; `auto=true` re-derives a clean column layout.
+  `circuit_render_schematic` draws the SVG artifact (native symbols, no
+  ngspice needed). The Circuit panel's editor writes the same sidecar, so
+  a human drag and a model move never disagree.
 - `draw_circuit` draws the schematic PNG (series-loop elements with
   labels and directions).
 - `circuit_render_3d` renders a board preview PNG from a netlist.
@@ -98,6 +108,19 @@ meas ac vout_max find v(out) at=1k
 
 Always state assumptions (ideal vs real models, tolerances) next to
 the numeric results.
+
+### Netlist vs schematic — which to edit
+
+The **netlist is the SPICE source of truth**: every value, connection, and
+`.measure` lives there, and every simulator reads it. The schematic is a
+*sidecar* (`<name>.layout.json`) holding only where parts sit and how
+wires run. So:
+
+- change a **value / connection / analysis** → `circuit_update_netlist`
+  (then re-read).
+- change a **position / route** → `circuit_edit_schematic`.
+
+Deleting the sidecar loses only the drawing, never the circuit.
 
 ## 4. Firmware-in-the-loop (MCU + analog together)
 

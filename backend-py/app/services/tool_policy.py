@@ -41,6 +41,9 @@ _PROMPT_READ = frozenset({
     # Circuit workbench lookups — read-only datasheet/board facts.
     'list_boards', 'search_component', 'circuit_list_boards',
     'circuit_search_component', 'circuit_read_netlist', 'circuit_list_netlists',
+    # Schematic read — merges the netlist (SoT) with its layout sidecar and
+    # returns the renderable graph; reads two files, writes nothing.
+    'circuit_read_schematic',
     # Circuit environment doctor — probes installed EDA engines (version
     # banners + a hardcoded XSPICE probe deck); reads machine state only,
     # no workspace mutation.
@@ -103,6 +106,11 @@ _PROMPT_WRITE = frozenset({
     'create_pptx', 'render_chart', 'render_video', 'draw_circuit',
     # Circuit workbench mutations — netlist files + rendered PNG output.
     'circuit_create_netlist', 'circuit_update_netlist', 'circuit_render_3d',
+    # Schematic sidecar — writes only <name>.layout.json (positions/routes);
+    # never touches the netlist, so a schematic edit cannot change a value.
+    'circuit_edit_schematic',
+    # Schematic SVG artifact — reads netlist + sidecar, writes <name>.svg.
+    'circuit_render_schematic',
     # Firmware→SPICE bridge — reads the pin-timeline JSON and writes the
     # merged <name>.cir stimulus deck into the workspace (no binary spawn).
     'firmware_stimulus',
@@ -185,6 +193,8 @@ _PLAN_BLOCKED_EXACT = frozenset({
     # Circuit netlist CRUD — workspace file writes/edits behind the
     # /circuit workbench gate (still plan-mode mutations).
     'circuit_create_netlist', 'circuit_update_netlist',
+    # Schematic sidecar edits — a workspace file write (layout only).
+    'circuit_edit_schematic',
 })
 
 _PLAN_BLOCKED_BULK_PLURALS = frozenset({

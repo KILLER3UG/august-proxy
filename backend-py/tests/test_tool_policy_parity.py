@@ -42,6 +42,9 @@ _ORACLE_READ = frozenset({
     # Circuit workbench lookups — netlists, datasheet/board facts (read-only).
     'circuit_list_boards', 'circuit_search_component', 'circuit_read_netlist',
     'circuit_list_netlists',
+    # Schematic read — merges the netlist (SoT) with its layout sidecar and
+    # returns the renderable graph; reads two files, writes nothing.
+    'circuit_read_schematic',
     # Circuit environment doctor — probes installed EDA engines; reads
     # machine state only, no workspace mutation.
     'circuit_env',
@@ -108,6 +111,11 @@ _ORACLE_WRITE = frozenset({
     'create_html_artifact',
     # Circuit workbench mutations — netlist files + rendered PNG output.
     'circuit_create_netlist', 'circuit_update_netlist', 'circuit_render_3d',
+    # Schematic sidecar — writes only <name>.layout.json (positions/routes);
+    # never touches the netlist, so a schematic edit cannot change a value.
+    'circuit_edit_schematic',
+    # Schematic SVG artifact — reads netlist + sidecar, writes <name>.svg.
+    'circuit_render_schematic',
     # Firmware→SPICE bridge — reads the pin-timeline JSON and writes the
     # merged <name>.cir stimulus deck into the workspace (no binary spawn).
     'firmware_stimulus',
@@ -202,7 +210,8 @@ def _oracle_plan_blocked(name: str, args: dict | None = None) -> bool:
     if n in {'write_files', 'delete_sessions', 'rename_sessions', 'kill_daemons'}:
         return True
     # Circuit netlist CRUD — workspace file writes/edits.
-    if n in {'circuit_create_netlist', 'circuit_update_netlist'}:
+    if n in {'circuit_create_netlist', 'circuit_update_netlist',
+             'circuit_edit_schematic'}:
         return True
     return any(marker in n for marker in _ORACLE_PLAN_MARKERS)
 

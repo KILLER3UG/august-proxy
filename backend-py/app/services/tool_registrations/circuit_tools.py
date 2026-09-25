@@ -122,6 +122,31 @@ async def _annotate(netlist: str = '', name: str = 'op') -> str:
         return _err(exc)
 
 
+async def _readSchematic(netlist: str = '') -> str:
+    try:
+        return json.dumps(circuit_tools.read_schematic(netlist, _ws()))
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _editSchematic(
+    netlist: str = '', moves=None, wireRoutes=None, auto: bool = False,
+) -> str:
+    try:
+        return json.dumps(circuit_tools.edit_schematic(
+            netlist, moves=moves, wire_routes=wireRoutes, auto=auto, workspace=_ws(),
+        ))
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _renderSchematic(netlist: str = '', name: str = 'schematic') -> str:
+    try:
+        return json.dumps(circuit_tools.render_schematic(netlist, name=name, workspace=_ws()))
+    except Exception as exc:
+        return _err(exc)
+
+
 async def _lintDiagram(diagram: str = '') -> str:
     try:
         return json.dumps(circuit_tools.circuit_lint_diagram(diagram))
@@ -472,6 +497,72 @@ def register() -> None:
         'List every netlist file in the workspace.',
         lambda: _listNetlists(),
         {'type': 'object', 'properties': {}},
+    )
+    tool_registry.register(
+        'circuit_read_schematic',
+        'Read the schematic graph for a deck (inline text or workspace path). '
+        'The netlist stays the SPICE source of truth; the schematic is a '
+        'sidecar layout. Returns components (ref, kind, nodes, value, col/row/rot, '
+        'computed pins), orthogonal wire polylines, and the node list — the same '
+        'data the Circuit-panel editor renders, so you can see where a part sits '
+        'before moving it.',
+        _readSchematic,
+        {
+            'type': 'object',
+            'properties': {'netlist': {'type': 'string', 'description': 'Inline SPICE text or deck path'}},
+            'required': ['netlist'],
+        },
+    )
+    tool_registry.register(
+        'circuit_edit_schematic',
+        'Lay out a schematic by moving parts on the 10px grid and saving the '
+        'sidecar (<name>.layout.json). moves=[{ref, col, row, rot}] (omitted fields '
+        'keep their value); wireRoutes={node: [[x,y],...]} overrides a net\'s route; '
+        'auto=true re-derive a clean column layout. Never changes values or '
+        'connectivity — that is the netlist.',
+        _editSchematic,
+        {
+            'type': 'object',
+            'properties': {
+                'netlist': {'type': 'string', 'description': 'Inline SPICE text or deck path'},
+                'moves': {
+                    'type': 'array',
+                    'items': {
+                        'type': 'object',
+                        'properties': {
+                            'ref': {'type': 'string'},
+                            'col': {'type': 'number'},
+                            'row': {'type': 'number'},
+                            'rot': {'type': 'integer', 'description': '0 = horizontal, 1 = vertical rung'},
+                        },
+                        'required': ['ref'],
+                    },
+                    'description': 'Component moves on the 10px grid',
+                },
+                'wireRoutes': {
+                    'type': 'object',
+                    'description': 'Explicit wire polylines keyed by node name, e.g. {"out": [[0,80],[120,80]]}',
+                },
+                'auto': {'type': 'boolean', 'description': 'Discard the sidecar and re-derive a column layout'},
+            },
+            'required': ['netlist'],
+        },
+    )
+    tool_registry.register(
+        'circuit_render_schematic',
+        'Draw the schematic to an SVG artifact (native resistor/capacitor/inductor/'
+        'diode/source/ground symbols, orthogonal wires) and return the saved path. '
+        'Pure rendering from the netlist + layout — does not need ngspice, so it '
+        'works even when no simulator is installed.',
+        _renderSchematic,
+        {
+            'type': 'object',
+            'properties': {
+                'netlist': {'type': 'string', 'description': 'Inline SPICE text or deck path'},
+                'name': {'type': 'string', 'description': 'Artifact basename (default "schematic")'},
+            },
+            'required': ['netlist'],
+        },
     )
     tool_registry.register(
         'circuit_simulate',

@@ -4,7 +4,7 @@
  * files pattern the ChangesCard uses, lifted into a dedicated drawer     *
  * section. Images open in the file viewer; netlists reveal in folder.    */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Cpu, FolderOpen, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { FileIcon } from '@/components/ui/FileIcon';
@@ -16,6 +16,7 @@ import { revealInFolder } from '@/lib/tauri-shell';
 import { useSessionStream } from '@/sections/chat/hooks/useSessionStream';
 import { CircuitInstruments } from '@/components/shell/CircuitInstruments';
 import { CircuitWaveformViewer } from '@/components/shell/CircuitWaveformViewer';
+import { CircuitSchematicEditor } from '@/components/shell/CircuitSchematicEditor';
 import type { MessageBlock } from '@/types/chat';
 
 const CIRCUIT_TOOLS =
@@ -83,6 +84,15 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
     () => messages.flatMap((m) => collectCircuitArtifacts(m.blocks)),
     [messages],
   );
+  // The schematic editor edits ONE netlist at a time — the newest by
+  // default, switchable from the picker.
+  const netlists = useMemo(
+    () => artifacts.filter((a) => a.kind === 'netlist'),
+    [artifacts],
+  );
+  const [selectedNetlist, setSelectedNetlist] = useState<string>('');
+  const activeNetlist =
+    (netlists.find((n) => n.path === selectedNetlist) ?? netlists[0])?.path ?? '';
   const busy = false;
 
   const open = async (path: string) => {
@@ -112,6 +122,29 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2 chat-scroll">
+        {netlists.length > 0 ? (
+          <>
+            {netlists.length > 1 ? (
+              <select
+                value={activeNetlist}
+                onChange={(e) => setSelectedNetlist(e.target.value)}
+                className="mb-2 w-full rounded-md border border-border/60 bg-card/60 px-2 py-1 text-[11px] text-foreground"
+                aria-label="Schematic netlist"
+              >
+                {netlists.map((n) => (
+                  <option key={n.path} value={n.path}>
+                    {n.label}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <CircuitSchematicEditor
+              sessionId={sessionId}
+              netlistPath={activeNetlist}
+              className="mb-3"
+            />
+          </>
+        ) : null}
         <CircuitInstruments messages={messages} />
         <CircuitWaveformViewer messages={messages} sessionId={sessionId} />
         {artifacts.length === 0 ? (
