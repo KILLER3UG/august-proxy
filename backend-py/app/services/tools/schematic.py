@@ -154,26 +154,84 @@ def deck_nodes(elements: list[Element]) -> list[str]:
 
 # ── Auto layout ────────────────────────────────────────────────────────────
 
-def auto_layout(elements: list[Element]) -> dict[str, dict[str, int]]:
-    """Deterministic column layout: a vertical spine of 2-terminal parts,
-    each part on its own row, grounded parts to the right of ground.
+# A 2-terminal part spans ±2 cells plus its leads, so neighbours need this much
+# column clearance or their bodies overlap and wires cross through them.
+_COL_STEP = 5
+# Row clearance has to fit the body, the ref/value label above it and the
+# current annotation below.
+_ROW_STEP = 6
 
-    Purely geometric — no simulation knowledge. A human or the model can
-    then drag parts from here; the sidecar records the result.
+
+def auto_layout(elements: list[Element]) -> dict[str, dict[str, int]]:
+    """Place parts left-to-right by signal depth, stacking parallel branches
+    into rows.
+
+    Every part used to land in column 0 on its own row, which meant each net
+    became a long vertical rail down one side and the drawing did not read as a
+    circuit. Depth from the nearest source gives a signal-flow layout instead.
+    Purely geometric and deterministic — no simulation knowledge — so a human or
+    the model can drag parts from here and the sidecar records the result.
     """
-    layout: dict[str, dict[str, int]] = {}
-    row = 0
+    if not elements:
+        return {}
+
+    refs = [el.ref for el in elements]
+    by_ref = {el.ref: el for el in elements}
+    nets: dict[str, list[str]] = {}
     for el in elements:
-        if el.kind in ('resistor', 'capacitor', 'inductor', 'diode',
-                       'voltage', 'isource', 'subckt', 'switch', 'coupled'):
-            layout[el.ref] = {'col': 0, 'row': row, 'rot': 0}
-            row += 4
-        elif el.kind in ('transistor', 'mosfet'):
-            layout[el.ref] = {'col': 0, 'row': row, 'rot': 0}
-            row += 5
-        else:
-            layout[el.ref] = {'col': 0, 'row': row, 'rot': 0}
-            row += 4
+        for node in el.nodes:
+            if node == '0':
+                continue
+            nets.setdefault(node, []).append(el.ref)
+
+    # Adjacency over shared signal nets.
+    neighbours: dict[str, set[str]] = {ref: set() for ref in refs}
+    for members in nets.values():
+        for a in members:
+            for b in members:
+                if a != b:
+                    neighbours[a].add(b)
+
+    # Sources (and anything wired straight to ground) start the chain.
+    seeds = [el.ref for el in elements if el.kind in ('voltage', 'isource')]
+    if not seeds:
+        seeds = [el.ref for el in elements if '0' in el.nodes] or [refs[0]]
+
+    depth: dict[str, int] = {}
+    frontier = list(dict.fromkeys(seeds))
+    for ref in frontier:
+        depth[ref] = 0
+    level = 0
+    while frontier:
+        level += 1
+        nxt: list[str] = []
+        for ref in frontier:
+            for other in sorted(neighbours[ref]):
+                if other not in depth:
+                    depth[other] = level
+                    nxt.append(other)
+        frontier = nxt
+    for ref in refs:  # islands with no path to a source
+        depth.setdefault(ref, 0)
+
+    # Row = index within its own column, so a column of parallel branches fans
+    # out vertically instead of colliding.
+    per_column: dict[int, list[str]] = {}
+    for ref in refs:  # keep deck order for determinism
+        per_column.setdefault(depth[ref], []).append(ref)
+
+    layout: dict[str, dict[str, int]] = {}
+    for col_index, refs_in_col in sorted(per_column.items()):
+        span = len(refs_in_col)
+        for slot, ref in enumerate(refs_in_col):
+            kind = by_ref[ref].kind
+            # Tall parts (3-pin devices) need more room than a 2-terminal one.
+            tall = kind in ('transistor', 'mosfet')
+            layout[ref] = {
+                'col': col_index * _COL_STEP,
+                'row': (slot - (span - 1) / 2) * (_ROW_STEP + (2 if tall else 0)),
+                'rot': 0,
+            }
     return layout
 
 
@@ -367,6 +425,9 @@ def _symbol_svg(comp: Component, color: str, voltage: float | None,
                                                    comp.value, comp.params, 0, 0, 0), color, voltage, current))
                 + '</g>']
     half = 8  # body half-height
+    # Round-bodied parts (sources r=11, BJT/MOSFET r=14) need the label clear of
+    # the circle; a 14px gap used to print the ref straight onto the symbol.
+    label_gap = 26 if comp.kind in ('voltage', 'isource', 'transistor', 'mosfet') else 20
     if comp.kind == 'resistor':
         parts.append(f'<polyline points="{_resistor_path(x0 + 4, y0, x1 - 4, y0)}" fill="none" stroke="{stroke}" stroke-width="2"/>')
     elif comp.kind == 'capacitor':
@@ -414,10 +475,10 @@ def _symbol_svg(comp: Component, color: str, voltage: float | None,
     else:
         parts.append(f'<line x1="{x0:.0f}" y1="{y0:.0f}" x2="{x1:.0f}" y2="{y0:.0f}" stroke="{stroke}" stroke-width="2"/>')
         parts.append(f'<rect x="{(x0 + x1) / 2 - 10:.0f}" y="{y0 - 8:.0f}" width="20" height="16" fill="none" stroke="{stroke}" stroke-width="1.5" rx="2"/>')
-    parts.append(f'<text x="{(x0 + x1) / 2:.0f}" y="{y0 - 14:.0f}" text-anchor="middle" font-size="11" font-family="Segoe UI, system-ui, sans-serif" fill="#0f172a">{label}</text>')
+    parts.append(f'<text x="{(x0 + x1) / 2:.0f}" y="{y0 - label_gap:.0f}" text-anchor="middle" font-size="11" font-family="Segoe UI, system-ui, sans-serif" fill="#0f172a">{label}</text>')
     cur = current
     if cur is not None and math.isfinite(cur):
-        parts.append(f'<text x="{(x0 + x1) / 2:.0f}" y="{y0 + 22:.0f}" text-anchor="middle" font-size="10" font-family="Segoe UI, system-ui, sans-serif" fill="#b91c1c">{cur:.3g} A</text>')
+        parts.append(f'<text x="{(x0 + x1) / 2:.0f}" y="{y0 + label_gap + 8:.0f}" text-anchor="middle" font-size="10" font-family="Segoe UI, system-ui, sans-serif" fill="#b91c1c">{cur:.3g} A</text>')
     _ = voltage
     return parts
 
@@ -450,7 +511,9 @@ def render_svg(graph: dict[str, Any], title: str = 'Schematic',
     if not xs:
         xs, ys = [0, 100], [0, 100]
     minx, maxx = min(xs) - pad, max(xs) + pad
-    miny, maxy = min(ys) - pad, max(ys) + pad
+    # Extra headroom for the title, which is drawn at miny + 20 and used to
+    # overprint the topmost part's label.
+    miny, maxy = min(ys) - pad - 26, max(ys) + pad
     parts: list[str] = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{minx:.0f} {miny:.0f} {maxx - minx:.0f} {maxy - miny:.0f}" '
         f'font-family="Segoe UI, system-ui, sans-serif">',

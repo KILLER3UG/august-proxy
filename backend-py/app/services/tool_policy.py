@@ -111,6 +111,9 @@ _PROMPT_WRITE = frozenset({
     'circuit_edit_schematic',
     # Schematic SVG artifact — reads netlist + sidecar, writes <name>.svg.
     'circuit_render_schematic',
+    # Digital schematic SVG artifact — parses boolean/gate-level HDL text and
+    # writes <name>.svg; spawns no engine and touches no deck.
+    'circuit_render_logic',
     # Firmware→SPICE bridge — reads the pin-timeline JSON and writes the
     # merged <name>.cir stimulus deck into the workspace (no binary spawn).
     'firmware_stimulus',

@@ -74,6 +74,10 @@ function detailFor(kind: CircuitDeliverable['kind'], art: CircuitArtifact): stri
     case 'firmware':
       return 'AVR firmware · HEX';
     default:
+      if (art.tool === 'circuit_render_logic') {
+        const gates = num(art.data.gates);
+        return gates != null ? `${gates} gates` : 'Logic schematic';
+      }
       return art.tool === 'circuit_render_schematic'
         ? 'Native schematic'
         : 'Schematic drawing';

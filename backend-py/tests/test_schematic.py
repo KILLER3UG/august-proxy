@@ -379,3 +379,75 @@ def test_ngspice_builtin_constants_are_not_measures():
     assert circuit_tools._is_ngspice_constant('c', node_c) is False, 'node "c" discarded'
     assert circuit_tools._is_ngspice_constant('c', DECK) is True
     assert circuit_tools._is_ngspice_constant('out', DECK) is False
+
+
+# ── The drawing must be legible, not merely well-formed ────────────────────
+# Orthogonal wires and separated pins can all pass while the picture is still
+# unreadable: the auto-layout used to drop every part in column 0 so each net
+# became a long rail, labels printed on top of the symbol bodies, and the panel
+# title overprinted the first part. These measure the boxes the renderer emits.
+
+_ROUND_BODY = {'voltage': 11, 'isource': 11, 'transistor': 14, 'mosfet': 14}
+
+TOPOLOGIES = {
+    'rc-lowpass': '* RC\nVin in 0 5\nR1 in out 1k\nC1 out 0 1u\n.end\n',
+    'divider': '* div\nV1 top 0 10\nR1 top mid 1k\nR2 mid 0 2k\n.end\n',
+    'rlc': '* rlc\nV1 n1 0 5\nR1 n1 n2 10\nL1 n2 n3 1m\nC1 n3 0 100n\n.end\n',
+    'led': '* led\nV1 an 0 5\nR1 an k 330\nD1 k 0 LED\n.model LED D\n.end\n',
+    'bjt': '* bjt\nV1 c 0 9\nRb b 0 100k\nQ1 c b e Qmod\nRe e 0 470\n.model Qmod NPN\n.end\n',
+    'isource': '* i\nI1 n 0 2m\nR1 n 0 1k\n.end\n',
+    'branching': '* fan\nV1 a 0 12\nR1 a b 1k\nR2 b c 2k\nR3 c 0 3k\nC1 b d 1u\nD1 d 0 LED\n.end\n',
+    'subckt': '* sub\nVin in 0 5\nX1 in out LPF\nRload out 0 10k\n'
+              '.subckt LPF i o\nRc i n1 1k\nCc n1 o 1u\n.ends\n.end\n',
+}
+
+
+def _body_box(comp: schematic.Component) -> tuple[float, float, float, float]:
+    xs = [p[0] for p in comp.pins()]
+    ys = [p[1] for p in comp.pins()]
+    half = _ROUND_BODY.get(comp.kind, 8)
+    if comp.rot % 2:
+        cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+        return (cx - half, cy - (max(xs) - min(xs)) / 2, cx + half, cy + (max(xs) - min(xs)) / 2)
+    return (min(xs), min(ys) - half, max(xs), max(ys) + half)
+
+
+def _label_box(comp: schematic.Component) -> tuple[float, float, float, float]:
+    pins = comp.pins()
+    cx = (pins[0][0] + pins[1][0]) / 2
+    cy = (pins[0][1] + pins[1][1]) / 2
+    gap = 26 if comp.kind in _ROUND_BODY else 20
+    half_w = 6.2 * len(f'{comp.ref} {comp.value}'.strip()) / 2
+    return (cx - half_w, cy - gap - 10, cx + half_w, cy - gap + 2)
+
+
+def _clash(a, b) -> bool:
+    return not (a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1])
+
+
+@pytest.mark.parametrize('name,deck', sorted(TOPOLOGIES.items()))
+def test_rendered_topology_has_no_collisions(name: str, deck: str):
+    graph = schematic.build_graph(deck, {'grid': schematic.GRID, 'components': {}})
+    parts = graph['components']
+    assert len(parts) >= 2, f'{name} degenerated to {len(parts)} parts'
+
+    bodies = {c.ref: _body_box(c) for c in parts}
+    labels = {c.ref: _label_box(c) for c in parts}
+    refs = sorted(bodies)
+
+    for i, a in enumerate(refs):
+        for b in refs[i + 1:]:
+            assert not _clash(bodies[a], bodies[b]), f'{name}: bodies {a}/{b} overlap'
+            assert not _clash(labels[a], labels[b]), f'{name}: labels {a}/{b} overlap'
+    for a in refs:
+        for b in refs:
+            assert not _clash(labels[a], bodies[b]), f'{name}: label {a} sits on body {b}'
+
+    # The title is painted at (minx+8, miny+20) over a viewBox built from pins.
+    xs = [v for c in parts for v in (c.pins()[0][0], c.pins()[1][0])]
+    ys = [v for c in parts for v in (c.pins()[0][1], c.pins()[1][1])]
+    minx, miny = min(xs) - 40, min(ys) - 40 - 26
+    title = (minx + 8, miny + 8, minx + 8 + 7.5 * len(name), miny + 22)
+    for ref in refs:
+        assert not _clash(title, bodies[ref]), f'{name}: title overlaps body {ref}'
+        assert not _clash(title, labels[ref]), f'{name}: title overlaps label {ref}'

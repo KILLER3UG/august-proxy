@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 
 from app.services import tool_registry
-from app.services.tools import circuit_tools
+from app.services.tools import circuit_tools, ic_detect
 
 
 def _session() -> object | None:
@@ -147,9 +147,27 @@ async def _renderSchematic(netlist: str = '', name: str = 'schematic') -> str:
         return _err(exc)
 
 
+async def _renderLogic(source: str = '', name: str = 'logic',
+                       truthTable: bool = True) -> str:
+    try:
+        return json.dumps(circuit_tools.render_logic(
+            source, name=name, workspace=_ws(), truth_table=bool(truthTable),
+        ))
+    except Exception as exc:
+        return _err(exc)
+
+
 async def _lintDiagram(diagram: str = '') -> str:
     try:
         return json.dumps(circuit_tools.circuit_lint_diagram(diagram))
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _detectIc(netlist: str = '', topK: object = None) -> str:
+    """Topology → real-part identification for a deck (offline, explainable)."""
+    try:
+        return json.dumps(ic_detect.detect_ic_for_deck(netlist, _ws(), top_k=topK))
     except Exception as exc:
         return _err(exc)
 
@@ -387,7 +405,11 @@ CIRCUIT_MODE_HINT = (
     'real .kicad_sch/.kicad_pcb designs (agent-verifiable gates); '
     'kicad_render makes real-board PNG/GLB visuals from a .kicad_pcb; '
     'circuit_render_3d writes a PNG '
-    'the user sees in the right-hand Circuit panel; circuit_env tells you '
+    'the user sees in the right-hand Circuit panel; circuit_render_logic draws a '
+    'DIGITAL gate schematic from boolean equations, gate-level Verilog or '
+    'concurrent VHDL and returns its truth table (structural logic only — '
+    'clocked always/process blocks are reported under `unsupported`, not drawn); '
+    'circuit_env tells you '
     'which EDA engines (ngspice/HDL/FPGA/KiCad/arduino-cli) are installed.'
 )
 
@@ -562,6 +584,29 @@ def register() -> None:
                 'name': {'type': 'string', 'description': 'Artifact basename (default "schematic")'},
             },
             'required': ['netlist'],
+        },
+    )
+    tool_registry.register(
+        'circuit_render_logic',
+        'Draw a DIGITAL schematic to an SVG artifact: boolean equations '
+        '("y = (a & b) | ~c"), gate-level Verilog primitives ("and (w, a, b);", '
+        '"assign y = a & b;") and concurrent VHDL assignments ("sum <= a xor b;"). '
+        'Renders AND/OR/XOR/NAND/NOR/XNOR/NOT/DFF symbols laid out by logic depth '
+        'and returns a truth table for the primary inputs. Use this for logic '
+        'circuits; circuit_render_schematic is for SPICE/analog decks. Structural '
+        'logic only: clocked always/process blocks need real synthesis, are NOT '
+        'drawn, and come back listed under `unsupported` — say so rather than '
+        'presenting a partial diagram as the whole design.',
+        _renderLogic,
+        {
+            'type': 'object',
+            'properties': {
+                'source': {'type': 'string',
+                           'description': 'Boolean equations, gate-level Verilog or concurrent VHDL'},
+                'name': {'type': 'string', 'description': 'Artifact basename (default "logic")'},
+                'truthTable': {'type': 'boolean', 'description': 'Include a truth table (default true)'},
+            },
+            'required': ['source'],
         },
     )
     tool_registry.register(

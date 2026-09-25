@@ -776,6 +776,44 @@ def render_schematic(
     }
 
 
+def render_logic(
+    source: str,
+    name: str = 'logic',
+    workspace: str = '',
+    truth_table: bool = True,
+) -> dict[str, object]:
+    """Render boolean / gate-level HDL to an SVG artifact (digital symbols)."""
+    from app.services.tools import logic_schematic
+
+    net = logic_schematic.parse_logic(source)
+    svg = logic_schematic.render_logic_svg(net, title=name)
+    base = name if name.endswith('.svg') else f'{name}.svg'
+    out_path = _bind(base, workspace, for_write=True)
+    out_path.write_text(svg, encoding='utf-8')
+    payload: dict[str, object] = {
+        'path': str(out_path),
+        'savedTo': str(out_path),
+        'sourceKind': net.source_kind,
+        'gates': len(net.gates),
+        'inputs': net.inputs,
+        'outputs': net.outputs,
+    }
+    if net.unsupported:
+        # Say what was not drawn: a schematic of half a design that looks
+        # complete is worse than no schematic.
+        payload['unsupported'] = net.unsupported[:12]
+        payload['note'] = (
+            'behavioural HDL needs real synthesis to become gates and was not '
+            'drawn; only structural logic is represented in this SVG'
+        )
+    if truth_table:
+        try:
+            payload['truthTable'] = logic_schematic.truth_table(net)
+        except Exception as exc:  # noqa: BLE001
+            payload['truthTableError'] = str(exc)[:200]
+    return payload
+
+
 # ── Simulation ────────────────────────────────────────────────────────────
 
 # ngspice prints measures as ``name = value`` and operating-point results
