@@ -330,7 +330,7 @@ _LIB: tuple[Topology, ...] = (
         ),
         evidence=('{series_r} ({series_r.value}) feeds {shunt_c} ({shunt_c.value}) at '
                   'net {shunt_c.p0}, and {shunt_c} is the only path from that net to '
-                  'ground'),
+                  'ground',),
         limits=('whatever drives the far end of {series_r} is outside this subgraph, so '
                 'the corner frequency is a value question, not a shape question',),
     ),
@@ -347,7 +347,7 @@ _LIB: tuple[Topology, ...] = (
                        'resistor to ground; a 1st-order high-pass has no single-chip '
                        'equivalent hiding in this deck', 0.95, False),),
         evidence=('{series_c} ({series_c.value}) couples net {series_c.p0} into '
-                  '{shunt_r} ({shunt_r.value}), which returns to ground'),
+                  '{shunt_r} ({shunt_r.value}), which returns to ground',),
         limits=('AC coupling and the capacitive-dropper leg are the same graph: see '
                 'capacitive_dropper for the reading that also needs an AC source',),
     ),
@@ -366,7 +366,7 @@ _LIB: tuple[Topology, ...] = (
                        'it', 0.9, False),),
         evidence=('{snub_r} ({snub_r.value}) and {snub_c} ({snub_c.value}) form one '
                   'series branch between nets {snub_r.p0} and {snub_c.p1}; both ends '
-                  'are off ground, so this is a snubber leg and not a filter'),
+                  'are off ground, so this is a snubber leg and not a filter',),
         limits=('what the branch hangs across (a relay coil, a MOSFET, a contact) is '
                 'outside the subgraph, and the graph cannot rank snubber against '
                 'bootstrap or coupling intent',),
@@ -388,7 +388,7 @@ _LIB: tuple[Topology, ...] = (
                        'the isolation question this topology raises', 0.85, False),),
         evidence=('{ac_v} carries an AC/SIN card, {line_c} ({line_c.value}) drops it '
                   'onto net {line_c.p1}, and {drop_r} ({drop_r.value}) returns that net '
-                  'to ground'),
+                  'to ground',),
         limits=('one source card plus the shape: the rectifier, zener and reservoir a '
                 'dropper normally feeds are NOT proven here (they would be separate '
                 'matches, or they are absent)',),
@@ -411,7 +411,7 @@ _LIB: tuple[Topology, ...] = (
                0.3, True),
         ),
         evidence=('{top_r} ({top_r.value}) runs from net {top_r.p0} to the tap and '
-                  '{bottom_r} ({bottom_r.value}) from the tap to ground'),
+                  '{bottom_r} ({bottom_r.value}) from the tap to ground',),
         limits=('a tap with matched resistors divides; whether it is a reference, a '
                 'sensor read or a level shift is not knowable from connectivity',),
     ),
@@ -437,7 +437,7 @@ _LIB: tuple[Topology, ...] = (
         ),
         evidence=('{shunt_r} is {shunt_r.value} from net {shunt_r.p0} to ground, i.e. '
                   'at or below 1 ohm, and that node carries three or more pins, so '
-                  'current arrives from somewhere and leaves somewhere else'),
+                  'current arrives from somewhere and leaves somewhere else',),
         limits=('the 1-ohm test is what separates a shunt from a pull-down, so the '
                 'reading is only as good as the value written in the deck; high-side '
                 'sensing has a different shape and is not claimed here',),
@@ -464,7 +464,7 @@ _LIB: tuple[Topology, ...] = (
         ),
         evidence=('{limit_r} ({limit_r.value}) limits into the anode of {lamp_d}, whose '
                   'model field reads {lamp_d.binding} (lamp-like), and its cathode is '
-                  'the only ground path from net {lamp_d.p0}'),
+                  'the only ground path from net {lamp_d.p0}',),
         limits=('the lamp reading comes from the MODEL NAME, not from the graph. A '
                 'segment LCD or bar-graph display cannot be identified at all here — '
                 'no element kind exists for it, so "LCD indicator" is out of reach '
@@ -483,7 +483,7 @@ _LIB: tuple[Topology, ...] = (
                        'protection diode or a lamp — connectivity cannot tell them '
                        'apart', 0.5, False),),
         evidence=('{limit_r} ({limit_r.value}) into the anode of {line_d} at net '
-                  '{line_d.p0}, cathode to ground'),
+                  '{line_d.p0}, cathode to ground',),
         limits=('the graph proves direction (anode fed, cathode grounded) and nothing '
                 'about what the diode IS, which is why this reading sits at 0.5 while '
                 'the LED reading needs a lamp-shaped model name',),
@@ -507,7 +507,7 @@ _LIB: tuple[Topology, ...] = (
         ),
         evidence=('{q} has its emitter on ground, {rc} ({rc.value}) pulls its collector '
                   'to net {rc.p1}, and the base at {q.p1} is the input — the gain is '
-                  'inverting'),
+                  'inverting',),
         limits=('a grounded-emitter stage with a collector load is a switch or an '
                 'amplifier depending on bias, which connectivity cannot decide. The '
                 'transistor model card (NPN vs PNP) is not consulted, so the device '
@@ -528,7 +528,7 @@ _LIB: tuple[Topology, ...] = (
                        'number guesses which transistor, not the topology', 0.5, True),),
         evidence=('{q}\'s emitter shares net {q.p2} with {re} ({re.value}) to ground, '
                   'while its collector sits on {q.p0} with at least one other '
-                  'connection (a rail), so the output is the emitter'),
+                  'connection (a rail), so the output is the emitter',),
         limits=('the collector net must carry something else for this to be a follower '
                 'rather than a floating collector — that is checked — but what it '
                 'carries stays outside the subgraph',),
@@ -553,7 +553,7 @@ _LIB: tuple[Topology, ...] = (
         ),
         evidence=('{q1} and {q2} share one emitter net which returns through {tail_r} '
                   '({tail_r.value}) to ground, and the two collectors ({q1.p0}, '
-                  '{q2.p0}) and two bases ({q1.p1}, {q2.p1}) are four separate nets'),
+                  '{q2.p0}) and two bases ({q1.p1}, {q2.p1}) are four separate nets',),
         limits=('this is a STAGE, not an amplifier: one long-tailed pair is the input '
                 'of TL072/LM358/NE5532-class parts but says nothing about the rest of '
                 'such a chip, so no op-amp number is offered as fact. A tail CURRENT '
@@ -578,7 +578,7 @@ _LIB: tuple[Topology, ...] = (
         evidence=('{diode_q} is diode-connected (its collector is bonded to its own '
                   'base on net {diode_q.p0}), that base net also drives {out_q}, both '
                   'emitters are on ground, and the two collectors ({diode_q.p0}, '
-                  '{out_q.p0}) stay separate'),
+                  '{out_q.p0}) stay separate',),
         limits=('the mirror ratio comes from emitter area and matching, which a '
                 'netlist does not carry — two identical model cards do not guarantee '
                 '1:1',),
@@ -603,7 +603,7 @@ _LIB: tuple[Topology, ...] = (
         ),
         evidence=('{hi_q}\'s emitter meets {lo_q}\'s collector on the output net '
                   '{hi_q.p2}, both bases sit on {hi_q.p1}, {lo_q}\'s emitter is ground '
-                  'and {hi_q}\'s collector is the rail at {hi_q.p0}'),
+                  'and {hi_q}\'s collector is the rail at {hi_q.p0}',),
         limits=('which device sources and which sinks is a model-type question (NPN vs '
                 'PNP lives in the params field, which this reading does not consult), '
                 'so "push-pull" is proven structurally, not electrically',),
@@ -625,7 +625,7 @@ _LIB: tuple[Topology, ...] = (
         ),
         evidence=('{hi_q} and {lo_q} cross to one supply net ({hi_q.p0}), one output net '
                   '({hi_q.p2}) and one shared base net ({hi_q.p1}), and no pin of either '
-                  'device is on ground'),
+                  'device is on ground',),
         limits=('both devices sit above ground in this reading, so the supply and load '
                 'that make it a stage are expected but not part of the match',),
     ),
@@ -642,7 +642,7 @@ _LIB: tuple[Topology, ...] = (
         candidates=(_c('discrete L + 2 C', 'discrete', 'a pi section is three passives; '
                        'the second-order shape is what the graph proves', 0.9, False),),
         evidence=('{ser_l} ({ser_l.value}) runs between the two shunt capacitors '
-                  '{in_c} and {out_c}, each of which returns to ground'),
+                  '{in_c} and {out_c}, each of which returns to ground',),
         limits=('which end is the input is not a connectivity fact — the two shunt '
                 'caps are interchangeable in the graph',),
     ),
@@ -659,7 +659,7 @@ _LIB: tuple[Topology, ...] = (
         candidates=(_c('discrete 2 L + C', 'discrete', 'T-section passive filter',
                        0.9, False),),
         evidence=('{shunt_c} ({shunt_c.value}) drops to ground from the node between '
-                  '{ser_l1} and {ser_l2} ({ser_l1.value}, {ser_l2.value})'),
+                  '{ser_l1} and {ser_l2} ({ser_l1.value}, {ser_l2.value})',),
         limits=('as with the pi: the graph does not name the input end',),
     ),
     Topology(
@@ -674,7 +674,7 @@ _LIB: tuple[Topology, ...] = (
                        'looks the same until the coupling card is read', 0.85, False),),
         evidence=('{tank_l} ({tank_l.value}) and {tank_c} ({tank_c.value}) share BOTH '
                   'nets, so they are in parallel, and the two nets are distinct (not a '
-                  'shorted loop)'),
+                  'shorted loop)',),
         limits=('two parts across two nets is all this proves; whether something also '
                 'taps the tank is outside the subgraph',),
     ),
@@ -703,7 +703,7 @@ _LIB: tuple[Topology, ...] = (
                   'at {dev.p1}, {fb_c} ({fb_c.value}) continues to {dev.p2}, and the '
                   'device itself closes the remaining third of the loop: a cycle '
                   'through an amplifier plus one reactive element is OBLIGATORY for '
-                  'oscillation and NOT sufficient for it'),
+                  'oscillation and NOT sufficient for it',),
         limits=('loop gain and phase are simulation questions (run .tran / .ac), not '
                 'graph questions. A CRYSTAL cannot be matched at all: a plain SPICE '
                 'deck has no crystal element kind, so only a motional R-L-C branch or '
@@ -728,7 +728,7 @@ _LIB: tuple[Topology, ...] = (
         ),
         evidence=('{btn} lands on the same net as {shunt_c} ({shunt_c.value}) and '
                   '{ser_r} ({ser_r.value}) — that is the RC which has to charge and '
-                  'discharge every time the contact moves'),
+                  'discharge every time the contact moves',),
         limits=('the time constant is R*C and only meaningful against the threshold of '
                 'whatever else sits on that node, which is outside the subgraph',),
     ),
@@ -760,7 +760,7 @@ _LIB: tuple[Topology, ...] = (
         candidates=(_c('discrete R + contact', 'discrete', 'the canonical active-high '
                        'input network', 0.9, False),),
         evidence=('{pd_r} ({pd_r.value}) holds the contact node to ground while {sw} '
-                  'carries it toward {sw.p1} when it closes'),
+                  'carries it toward {sw.p1} when it closes',),
         limits=('which of switch_pull_up / switch_pull_down fires is decided purely by '
                 'which side of the resistor is grounded — that IS visible in the '
                 'graph, so the only open question left is the contact type',),
@@ -786,7 +786,7 @@ _LIB: tuple[Topology, ...] = (
         ),
         evidence=('{amp} is bound to {amp.binding}, a name in the amplifier alias '
                   'table; the two pins the parser sees sit on nets {amp.p0} and '
-                  '{amp.p1}'),
+                  '{amp.p1}',),
         limits=('PURELY NAME-BASED. A plain SPICE deck has no op-amp element kind, so '
                 'this reads the author\'s naming: a mislabelled subckt would fool it, '
                 'and a generic word like "amp" proves nothing about a part number. It '
@@ -813,7 +813,7 @@ _LIB: tuple[Topology, ...] = (
         ),
         evidence=('{fb} ({fb.value}) bridges the two visible pins of {amp} '
                   '({amp.p0}, {amp.p1}), which is a feedback path, and the instance is '
-                  'bound to {amp.binding}'),
+                  'bound to {amp.binding}',),
         limits=('name-based for the amplifier, graph-based for the feedback leg. Only '
                 'two pins of an X line are parsed, so which is inverting and which is '
                 'the output is assumed, not seen — and the closed-loop gain needs the '
@@ -1431,6 +1431,15 @@ def _match_payload(m: _Match, known: frozenset[str]) -> dict[str, Any]:
     estimated = all(c['estimated'] for c in candidates) if candidates else True
     evidence = [_substitute(t, top, assign) for t in top.evidence]
     evidence += _net_lines(m)
+    for part in top.parts:
+        # Anything selected on a NAME is called out per part, so a reader can see
+        # exactly which half of the match came from the graph and which did not.
+        if part.model_any and part.role in assign:
+            comp = assign[part.role].comp
+            evidence.append(
+                f'{comp.ref} was selected on its own field ({comp.binding or comp.tail or "?"}), '
+                f'not on connectivity — {part.model_note or "read it as a name, not a fact"}'
+            )
     if top.name_role:
         evidence.append(
             'how this was read: '
