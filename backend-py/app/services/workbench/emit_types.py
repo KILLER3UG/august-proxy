@@ -30,6 +30,11 @@ WORKBENCH_EMIT_TYPES: frozenset[str] = frozenset(
         'subagentToolCall',
         'subagentToolResult',
         'subagentDone',
+        # One per dispatch: what the concurrency cap / children cap / shared
+        # round budget WERE, and whether any of them bound the run. The
+        # sub-agent rows are per-worker; this is the fleet-level receipt that
+        # answers "why did only 6 of the 8 lanes I asked for start".
+        'subagentFanout',
         'info',
         'checkpoint',
         'warning',

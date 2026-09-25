@@ -37,6 +37,11 @@ from app.services import config_service
 from app.services.cognitive_config import DEFAULT_FEATURES
 from app.services.memory_store import record_config_audit
 from app.services.workbench import workbench as workbenchSvc
+from app.services.workbench.subagent_fanout import (
+    FANOUT_ROUND_BUDGET_DEFAULT,
+    MAX_CHILDREN_PER_FANOUT_DEFAULT,
+    SUBAGENT_CONCURRENCY_DEFAULT,
+)
 from app.type_aliases import BrainConfigDict
 
 boolKeys: tuple[str, ...] = (
@@ -69,6 +74,8 @@ numKeys: tuple[str, ...] = (
     'subagentMaxConcurrent',
     'subagentMaxIterations',
     'subagentMaxDepth',
+    'subagentMaxChildrenPerTurn',
+    'subagentFanoutRoundBudget',
 )
 floatKeys: tuple[str, ...] = ('flagRateCap',)
 strKeys: tuple[str, ...] = ('titleModel', 'skillLearning', 'skillLearningJudgeModel')
@@ -83,6 +90,15 @@ flagRateCapRange = (0.0, 0.5)
 subagentMaxConcurrentRange = (1, 30)
 subagentMaxIterationsRange = (5, 200)
 subagentMaxDepthRange = (1, 5)
+# Fan-out bounds (app/services/workbench/subagent_fanout.py). The accepted
+# RANGE is deliberately wider than what the runtime APPLIES: the panel speaks
+# of intent, the runtime keeps a desktop-safe ceiling. maxConcurrent may be
+# saved up to 30 but the process pool is clamped to
+# SUBAGENT_CONCURRENCY_CEILING (8) by resolve_subagent_concurrency, and the
+# applied number — plus what was asked for — is what the subagentFanout
+# telemetry reports, so the divergence is observable rather than silent.
+subagentMaxChildrenPerTurnRange = (1, 24)
+subagentFanoutRoundBudgetRange = (0, 2000)
 fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('enabled', 'enabled', DEFAULT_FEATURES.get('enabled', True), 'bool'),
     # The agent-jobs flag is gone: the registry job ledger is an in-memory
@@ -181,9 +197,22 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # fallback the spawn path uses when a session has no per-session override
     # in its workbench metadata — the settings panel posts them with no
     # session id (routers/subagent.py GET/POST /config).
-    ('subagentMaxConcurrent', 'subagent_max_concurrent', 5, 'num'),
+    # The concurrency default is the PROCESS-WIDE worker pool size, not just a
+    # per-session wish: it used to be 5 hardcoded in runtime_services, which
+    # made this setting dead above 5. 4 keeps real parallelism for a wave of
+    # independent lanes while costing one fewer live transcript on a machine
+    # that is also running the IDE and the Tauri shell.
+    ('subagentMaxConcurrent', 'subagent_max_concurrent', SUBAGENT_CONCURRENCY_DEFAULT, 'num'),
     ('subagentMaxIterations', 'subagent_max_iterations', 50, 'num'),
     ('subagentMaxDepth', 'subagent_max_depth', 1, 'num'),
+    # How many sub-agents ONE turn may request. Over the cap is a loud
+    # [Proxy Self-Heal] rejection of the whole dispatch, never a silent
+    # truncation (subagent_fanout.children_cap_message).
+    ('subagentMaxChildrenPerTurn', 'subagent_max_children_per_turn', MAX_CHILDREN_PER_FANOUT_DEFAULT, 'num'),
+    # Aggregate work per fan-out: tool rounds across ALL children of one
+    # dispatch. 0 disables the bound (opt-out); the default is a real ceiling
+    # so N children cannot collectively do N times the work.
+    ('subagentFanoutRoundBudget', 'subagent_fanout_round_budget', FANOUT_ROUND_BUDGET_DEFAULT, 'num'),
     ('subagentWorktreeIsolation', 'subagent_worktree_isolation', False, 'bool'),
 )
 snakeToCamel: dict[str, str] = {snake: camel for camel, snake, _d, _k in fieldTable}
@@ -208,12 +237,40 @@ def getDelegationLimits() -> dict[str, object]:
     """Global subagent delegation limits (Settings → Subagents), already
     clamped to the Hermes-style ranges the orchestrator enforces. One source
     of truth shared by the /api/subagents/config router and the spawn path
-    (subagent_orchestrator) for sessions without a per-session override."""
+    (subagent_orchestrator) for sessions without a per-session override.
+
+    ``maxConcurrent`` is the SAVED intent (up to 30). What the runtime applies
+    is ``min(this, SUBAGENT_CONCURRENCY_CEILING)`` — resolved in exactly one
+    place, ``subagent_fanout.resolve_subagent_concurrency``, which also reports
+    the applied number next to the requested one so a fan-out audit can see the
+    ceiling bound a run. Do not clamp a second time here or the two answers can
+    drift.
+    """
     cfg = getRuntimeConfig()
     return {
-        'maxConcurrent': max(1, min(30, as_int(cfg.get('subagentMaxConcurrent'), 5) or 5)),
+        'maxConcurrent': max(
+            1,
+            min(30, as_int(cfg.get('subagentMaxConcurrent'), SUBAGENT_CONCURRENCY_DEFAULT) or SUBAGENT_CONCURRENCY_DEFAULT),
+        ),
         'maxIterations': max(5, min(200, as_int(cfg.get('subagentMaxIterations'), 50) or 50)),
         'maxDepth': max(1, min(5, as_int(cfg.get('subagentMaxDepth'), 1) or 1)),
+        'maxChildrenPerTurn': max(
+            1,
+            min(
+                subagentMaxChildrenPerTurnRange[1],
+                as_int(cfg.get('subagentMaxChildrenPerTurn'), MAX_CHILDREN_PER_FANOUT_DEFAULT)
+                or MAX_CHILDREN_PER_FANOUT_DEFAULT,
+            ),
+        ),
+        # 0 is a value here (the opt-out), not an absence — `value or default`
+        # would silently re-enable the bound on a configured 0.
+        'fanoutRoundBudget': max(
+            0,
+            min(
+                subagentFanoutRoundBudgetRange[1],
+                as_int(cfg.get('subagentFanoutRoundBudget'), FANOUT_ROUND_BUDGET_DEFAULT),
+            ),
+        ),
         'worktreeIsolation': as_bool(cfg.get('subagentWorktreeIsolation'), False),
     }
 
@@ -340,6 +397,12 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 lo, hi = subagentMaxIterationsRange
             elif key == 'subagentMaxDepth':
                 lo, hi = subagentMaxDepthRange
+            elif key == 'subagentMaxChildrenPerTurn':
+                lo, hi = subagentMaxChildrenPerTurnRange
+            elif key == 'subagentFanoutRoundBudget':
+                # 0 is legal and means "no aggregate bound" — the one opt-out
+                # in this family. Read by subagent_fanout.charge_fanout_round.
+                lo, hi = subagentFanoutRoundBudgetRange
             else:
                 lo, hi = maxWorkbenchLoopsRange
             if value < lo or value > hi:

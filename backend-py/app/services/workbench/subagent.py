@@ -28,6 +28,11 @@ from app.services.tools.agent_registry import (
     updateJob,
 )
 from app.services.workbench.context import currentSessionId
+from app.services.workbench.subagent_fanout import (
+    charge_fanout_round,
+    fanout_snapshot,
+    round_budget_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -739,6 +744,12 @@ async def executeSubAgent(
         seenToolSigs: set[tuple[str, str]] = set()
         targetUses: dict[tuple[str, str], int] = {}
         capReached = False
+        # Aggregate-work bound of the DISPATCH this child belongs to (see
+        # app/services/workbench/subagent_fanout.py). `capReached` is this
+        # child's own round ceiling; `budgetReached` is the whole fan-out's
+        # shared ceiling — eight children at 50 rounds each are 400 model calls
+        # and eight live transcripts, and no per-child number sees that.
+        budgetReached = False
         # Worker-local execution state (update_state is intercepted below):
         # the parent session's _execution_state is shared by every concurrent
         # worker, so reading it for stall detection cross-talks.
@@ -746,6 +757,13 @@ async def executeSubAgent(
         localStep = 0
         while True:
             toolRound += 1
+            # One round of the shared budget, charged before the model call so a
+            # child never spends a round the fleet had already used. A child
+            # outside a dispatch (no job/fanout id) is bounded only by its own
+            # cap — which is exactly the pre-existing behaviour.
+            if harness_job_id and not charge_fanout_round(harness_job_id):
+                budgetReached = True
+                break
             try:
                 from app.services.runtime_services import get_orchestrator
 
@@ -1257,13 +1275,20 @@ async def executeSubAgent(
                     )
                 toolResults.append({'tool_use_id': tId, 'role': 'tool', 'content': resultStr})
             messages.extend(toolResults)
-        if capReached:
-            # The sub-agent hit the managed tool-round cap — this is NOT a
-            # clean completion. Report failed (or partial when the run
-            # produced text) with an explicit note so the orchestrator's
-            # failure tally and _doSpawn's `succeeded` counter do not count
-            # a capped run as a win (mirrors the stall hard-stop path).
-            capErr = f'[loop cap reached] tool round limit {managedToolLoopCap} exceeded'
+        if capReached or budgetReached:
+            # The sub-agent hit either its OWN round cap or the shared budget of
+            # the dispatch it was fanned out from — neither is a clean
+            # completion. Report failed (or partial when the run produced text)
+            # with an explicit note so the orchestrator's failure tally and
+            # _doSpawn's `succeeded` counter do not count a bounded run as a win
+            # (mirrors the stall hard-stop path).
+            if capReached:
+                capErr = f'[loop cap reached] tool round limit {managedToolLoopCap} exceeded'
+            else:
+                _snap = fanout_snapshot(harness_job_id)
+                capErr = round_budget_message(
+                    harness_job_id, as_int(_snap.get('roundBudget'), 0), as_int(_snap.get('roundsUsed'), 0)
+                )
             capStatus = 'partial' if finalText.strip() else 'failed'
             if finalText.strip():
                 # Deliberately NOT _subagent_answer here: a capped run never
@@ -1287,7 +1312,11 @@ async def executeSubAgent(
                 )
             _commit_episode(capStatus, capResult, tool_count=total_tools_called)
             if capStatus != 'completed':
-                _flag_dirty('Worker mutated then hit loop cap without a clean episode.')
+                _flag_dirty(
+                    'Worker mutated then hit the shared dispatch round budget without a clean episode.'
+                    if budgetReached
+                    else 'Worker mutated then hit loop cap without a clean episode.'
+                )
             return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': capStatus, 'error': capErr, 'result': capResult}
         # Schema-validated yields (Oh My Pi lesson): when a yield_schema was
         # requested, parse the final text as JSON and validate it before

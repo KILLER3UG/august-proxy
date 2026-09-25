@@ -58,6 +58,9 @@ _ORACLE_READ = frozenset({
     # Wiring-diagram lint — pure JSON validation transform (no binary
     # spawn, no file writes); spawns nothing.
     'circuit_lint_diagram',
+    # Topology → real-part identification — subgraph matching over a parsed
+    # deck, in process; reads at most one deck, writes nothing, spawns nothing.
+    'circuit_detect_ic',
     # Datasheet/model-card lookup — network read, no workspace mutation.
     'circuit_integrate_component',
     # VCD analysis — pure-Python read of a workspace waveform file; no
@@ -116,6 +119,8 @@ _ORACLE_WRITE = frozenset({
     'circuit_edit_schematic',
     # Schematic SVG artifact — reads netlist + sidecar, writes <name>.svg.
     'circuit_render_schematic',
+    # Digital gate schematic SVG — writes <name>.svg from boolean/HDL text.
+    'circuit_render_logic',
     # Firmware→SPICE bridge — reads the pin-timeline JSON and writes the
     # merged <name>.cir stimulus deck into the workspace (no binary spawn).
     'firmware_stimulus',

@@ -36,6 +36,7 @@ per-subagent results incrementally rather than after a blocking join.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING, Any, Callable, cast
@@ -489,6 +490,53 @@ def _doneResultText(result: dict[str, Any]) -> str:
     return '' if payload is None else str(payload)
 
 
+def _recordFanoutTelemetry(sid: str, payload: dict[str, Any], emit: Any | None = None) -> None:
+    """Record one fan-out readout: the session event log + a turn_outcomes row.
+
+    Deliberately the TWO mechanisms the repo already has for "why did it stop"
+    (the ``turn_end`` session-log convention and the ``turn_outcomes`` counters,
+    migration 046) rather than a third. ``task_type='subagent_fanout'`` keeps it
+    a distinct population — an audit reads
+
+        SELECT ts, end_reason, rounds, duration_ms FROM turn_outcomes
+        WHERE task_type = 'subagent_fanout';
+
+    to see what the cap was and whether it bound a run, and the richer numbers
+    (children cap, applied concurrency, observed peak, requested concurrency) are
+    on the ``subagentFanout`` event in the session log, where a per-turn row has
+    no column for them. Never raises: a dispatch must not fail over telemetry.
+    """
+    if emit:
+        try:
+            emit({'type': 'subagentFanout', 'fanoutId': payload.get('fanoutId') or '', **payload})
+        except Exception:
+            logger.debug('fanout event emit failed (non-fatal)', exc_info=True)
+    # A durable row only for a TERMINAL readout: `dispatched` announces the same
+    # numbers at the start, and one dispatch must produce exactly one row —
+    # otherwise a count of fan-outs is a count of events and reads wrong.
+    if str(payload.get('phase') or '') not in ('ended', 'refused'):
+        return
+    try:
+        from app.services.turn_outcomes import record_turn_outcome
+
+        reason = str(payload.get('reason') or payload.get('endReason') or 'finished')
+        record_turn_outcome(
+            model='',
+            provider='',
+            task_type='subagent_fanout',
+            ok=reason in ('finished', 'ok', ''),
+            duration_ms=int(payload.get('elapsedMs') or 0),
+            session_id=sid or '',
+            # The aggregate tool rounds every child actually ran, in the same
+            # column the loop's own round count uses — comparable across the
+            # two populations, and NULL-vs-0 honesty is the writer's job.
+            rounds=int(payload.get('roundsUsed') or 0),
+            end_reason=reason,
+        )
+    except Exception:
+        logger.debug('fanout telemetry row failed (non-fatal)', exc_info=True)
+
+
 async def _doSpawn(
     orchestrator: SubagentOrchestrator,
     session: object,
@@ -500,7 +548,27 @@ async def _doSpawn(
 
     Work items may form a DAG via ``dependsOn`` / same-batch ``sourceWorkstreams``.
     Independent items in a wave run in parallel; the next wave waits.
+
+    Fan-out bounds (all resolved in ONE place, ``workbench.subagent_fanout``,
+    which the orchestrator consults again as a backstop — neither door can
+    report a different number):
+
+    * asking for more children than ``maxChildrenPerTurn`` refuses the WHOLE
+      dispatch with a ``[Proxy Self-Heal]`` receipt and starts nothing, rather
+      than silently launching a subset the parent would believe was all of them;
+    * every child of this dispatch then shares one round budget
+      (``fanoutRoundBudget`` tool rounds ACROSS all lanes), charged by the
+      worker loop, so N children cannot collectively do N times the work;
+    * how many run at once is the orchestrator's pool, whose applied size is
+      reported on the ``subagentFanout`` events below.
     """
+    from app.services.workbench.subagent_fanout import (
+        begin_fanout,
+        children_cap_message,
+        end_fanout,
+        new_fanout_id,
+        resolve_fanout_limits,
+    )
     from app.services.workstreams import (
         WorkstreamError,
         format_episode_context,
@@ -510,6 +578,39 @@ async def _doSpawn(
     )
 
     sid = _session_id(session)
+    limits = resolve_fanout_limits(session=session)
+
+    # ── children per turn: refuse, do not truncate ───────────────────────
+    if len(workItems) > limits.max_children_per_fanout:
+        message = children_cap_message(len(workItems), limits.max_children_per_fanout)
+        _recordFanoutTelemetry(
+            sid,
+            {
+                'phase': 'refused',
+                'reason': 'children-cap',
+                'requested': len(workItems),
+                'childrenCap': limits.max_children_per_fanout,
+                'concurrencyLimit': limits.concurrency,
+                'roundBudget': limits.round_budget,
+                'dispatched': 0,
+            },
+            emit=emit,
+        )
+        logger.info(
+            '[Fanout] %s refused: %d children requested, cap is %d',
+            sid or '(no session)',
+            len(workItems),
+            limits.max_children_per_fanout,
+        )
+        return {
+            'status': 'error',
+            'error': message,
+            'reason': 'children-cap',
+            'requested': len(workItems),
+            'childrenCap': limits.max_children_per_fanout,
+            'total': 0,
+        }
+
     try:
         waves = plan_waves(workItems)
     except WorkstreamError as exc:
@@ -523,6 +624,41 @@ async def _doSpawn(
             job_id = create_job(sid, waves=waves, work_items=workItems)
         except Exception:
             logger.debug('harness job create failed', exc_info=True)
+
+    # The ledger key for this dispatch. With a harness job that id is used
+    # verbatim; without one (no session, or the ledger write failed) a synthetic
+    # id keeps the AGGREGATE bound in force — the bound is a safety property of
+    # the process, not a side effect of a DB row. Unknown ids are inert in
+    # harness_jobs, so the `mark_dirty` a child may attempt stays a no-op exactly
+    # as it was with ''.
+    fanout_id = job_id or new_fanout_id()
+    begin_fanout(
+        fanout_id,
+        session_id=sid,
+        round_budget=limits.round_budget,
+        children_requested=len(workItems),
+    )
+    # Announce the bounds BEFORE the first lane starts. The completion event
+    # alone cannot answer "was the fleet ever allowed to be bigger", and the
+    # model's own tool receipt says the same numbers, so a reader has one story.
+    _recordFanoutTelemetry(
+        sid,
+        {
+            'phase': 'dispatched',
+            'fanoutId': fanout_id,
+            'jobId': job_id or None,
+            'reason': 'ok',
+            'requested': len(workItems),
+            'waves': len(waves),
+            'childrenCap': limits.max_children_per_fanout,
+            'concurrencyLimit': limits.concurrency,
+            'requestedConcurrency': limits.requested_concurrency,
+            'roundBudget': limits.round_budget,
+            'roundsUsed': 0,
+            'recordRow': False,
+        },
+        emit=emit,
+    )
 
     def _enrich(item: dict[str, Any], index_hint: int = 0) -> dict[str, Any]:
         enriched = dict(item)
@@ -563,7 +699,11 @@ async def _doSpawn(
                     'woven_sources': item.get('woven_sources') or '',
                     'episode_required': bool(item.get('episode_required') or item.get('workstream') or item.get('name')),
                     'skills': item.get('skills') or [],
-                    'harness_job_id': job_id,
+                    # The fan-out ledger, not just the job row: this is the key
+                    # the worker loop charges its round against (see
+                    # workbench/subagent.py), so a dispatch with no ledger row
+                    # still has an aggregate bound.
+                    'harness_job_id': fanout_id,
                     'autoHop': bool(item.get('autoHop') or item.get('auto_hop')),
                     'capability': item.get('capability') or 'standard',
                 }
@@ -571,6 +711,7 @@ async def _doSpawn(
             ],
             mode='auto',
             emit=emit,
+            fanoutId=fanout_id,
         )
         return await orchestrator.spawn(request)
 
@@ -727,12 +868,74 @@ async def _doSpawn(
             # Re-enrich later waves with newly committed episodes
         return all_results
 
+    fanout_closed = False
+    fanoutReport: dict[str, Any] = {}
+
+    def _closeFanout(reason: str = 'finished') -> dict[str, Any]:
+        """Close the dispatch ledger once and record what the bounds did.
+
+        The readout is the point: an audit must be able to see the applied
+        concurrency limit, the children cap, the shared round budget, the peak
+        that was actually observed, and whether any bound stopped the fleet —
+        without re-reading this code.
+
+        The double-close guard matters: the cancel/error handlers call this with
+        their own reason and the ``finally`` calls it again, and a second close
+        would write a second telemetry row for one dispatch.
+        """
+        nonlocal fanout_closed
+        if fanout_closed:
+            return {}
+        fanout_closed = True
+        snap = end_fanout(fanout_id, reason=reason)
+        payload: dict[str, Any] = {
+            'phase': 'ended',
+            'fanoutId': fanout_id,
+            'jobId': job_id or None,
+            'reason': str(snap.get('endReason') or reason),
+            'requested': len(workItems),
+            'waves': len(waves),
+            'concurrencyLimit': limits.concurrency,
+            'requestedConcurrency': limits.requested_concurrency,
+            'childrenCap': limits.max_children_per_fanout,
+            'roundBudget': limits.round_budget,
+            'roundsUsed': snap.get('roundsUsed', 0),
+            'childrenStarted': snap.get('childrenStarted', 0),
+            'childrenPeak': snap.get('childrenPeak', 0),
+            'childrenFinished': snap.get('childrenFinished', 0),
+            'elapsedMs': int(float(snap.get('elapsedS', 0) or 0) * 1000),
+            # The pool's live view (queue depth + slot timeouts) — a run that
+            # timed out waiting for a slot is a bound that bit, and only the
+            # gate knows it.
+            'pool': getattr(orchestrator, 'workerPoolSnapshot', lambda: {})(),
+        }
+        _recordFanoutTelemetry(sid, payload, emit=emit)
+        fanoutReport.clear()
+        fanoutReport.update(payload)
+        return payload
+
+    async def _run_all_waves_bounded() -> list[dict[str, Any]]:
+        """The wave loop, with the dispatch ledger closed on EVERY exit.
+
+        CancelledError included: a Stop-all mid-fan-out must still report the
+        rounds spent, or the telemetry claims a fleet that never finished.
+        """
+        try:
+            return await _run_all_waves()
+        except asyncio.CancelledError:
+            _closeFanout('cancelled')
+            raise
+        except Exception:
+            _closeFanout('error')
+            raise
+        finally:
+            _closeFanout('finished')
+
     if background:
-        import asyncio
 
         async def _watch() -> None:
             try:
-                await _run_all_waves()
+                await _run_all_waves_bounded()
                 if job_id:
                     from app.services.harness_jobs import finish_job
 
@@ -759,18 +962,27 @@ async def _doSpawn(
         return {
             'status': 'started',
             'jobId': job_id or None,
+            'fanoutId': fanout_id,
             'total': len(workItems),
             'background': True,
             'waves': len(waves),
+            # The bounds the model is working inside, in its own tool receipt —
+            # a fleet that quietly ran four at a time teaches nothing.
+            'childrenCap': limits.max_children_per_fanout,
+            'concurrencyLimit': limits.concurrency,
+            'roundBudget': limits.round_budget,
             'waveNames': [[as_str(it.get('name') or it.get('workstream'), '') for it in w] for w in waves],
             'handles': [{'goal': it.get('goal', ''), 'name': as_str(it.get('name') or it.get('workstream'), '')} for it in workItems],
             'message': (
                 f'Dispatched {len(workItems)} subagent(s) in {len(waves)} wave(s). '
+                f'At most {limits.concurrency} run concurrently and the whole dispatch shares a budget of '
+                f'{limits.round_budget} tool rounds (0 = unbounded), so lanes beyond that stop as partial — '
+                'plan the number of lanes and their maxIterations together. '
                 'Each completion is an episode handoff — do not expect tool traces.'
             ),
         }
 
-    results = await _run_all_waves()
+    results = await _run_all_waves_bounded()
     succeeded = sum((1 for r in results if r.get('status') == 'completed'))
     failed = sum((1 for r in results if r.get('status') in ('failed', 'error', 'skipped')))
     status = 'completed' if failed == 0 else 'partial' if succeeded > 0 else 'failed'
@@ -789,5 +1001,19 @@ async def _doSpawn(
         'failed': failed,
         'background': False,
         'waves': len(waves),
+        # What the bounds were and whether one of them stopped the fleet —
+        # the same readout the session log carries, in the tool result too.
+        'fanout': {
+            k: fanoutReport.get(k)
+            for k in (
+                'fanoutId',
+                'childrenCap',
+                'concurrencyLimit',
+                'roundBudget',
+                'roundsUsed',
+                'childrenPeak',
+                'reason',
+            )
+        },
         'results': results,
     }

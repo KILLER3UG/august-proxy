@@ -31,7 +31,12 @@ from app.services.subagent_orchestrator import (
 
 
 def test_module_constants_are_exposed():
-    assert MAX_CONCURRENT_WORKERS == 5
+    # MAX_CONCURRENT_WORKERS is now the pool DEFAULT (4, on a desktop), not the
+    # enforced size: the applied limit comes from brain config on every dispatch
+    # (subagent_fanout.resolve_subagent_concurrency, ceiling 8), so a Settings
+    # change takes effect without a restart. Pinned here because AGENTS.md tells
+    # an agent to plan against it — keep the docs in step (`npm run check:docs`).
+    assert MAX_CONCURRENT_WORKERS == 4
     assert PEER_HELP_WINDOW_SECONDS == 5.0
 
 

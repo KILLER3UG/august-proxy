@@ -4,7 +4,14 @@ worker pool.
 
 Design
 - Singleton (one per app process), attached to ``app.state`` via lifespan.
-- Worker pool capped at 5 via ``asyncio.Semaphore``.
+- Worker pool sized by brain config (``subagentMaxConcurrent``, default 4,
+  desktop ceiling 8) through :class:`ConcurrencyGate`, and re-applied on every
+  dispatch so Settings → Subagents takes effect without a restart. Passing
+  ``max_workers`` pins the pool instead (tests, and any caller that wants a
+  fixed fleet).
+- Fan-out bounds (children per dispatch, aggregate round budget) are resolved
+  in ONE place, ``app.services.workbench.subagent_fanout``, shared with the
+  spawn tool so the two cannot disagree about what the limit was.
 - Each sub-agent task publishes lifecycle events to the shared
   ``AgentMessageBus`` under topics ``task:{taskId}:{progress|result|failure}``.
 
@@ -40,14 +47,28 @@ from typing import Any, Callable
 
 from app.json_narrowing import as_float, as_int, as_str
 from app.services.agent_message_bus import AgentMessageBus, Handler, Subscription
+from app.services.workbench.subagent_fanout import (
+    # Re-exported: callers and tests read the ceiling off this module, which is
+    # where the pool has always advertised it. noqa keeps autofix from
+    # mistaking the re-export for dead weight.
+    MAX_CONCURRENT_WORKERS,  # noqa: F401
+    SLOT_ACQUIRE_TIMEOUT_SECONDS,
+    SUBAGENT_CONCURRENCY_DEFAULT,
+    ConcurrencyGate,
+    children_cap_message,
+    note_child_finish,
+    note_child_start,
+    resolve_fanout_limits,
+)
 
 logger = logging.getLogger(__name__)
-MAX_CONCURRENT_WORKERS = 5
+# ``MAX_CONCURRENT_WORKERS`` (the pool DEFAULT, imported from subagent_fanout)
+# is the conservative starting point; the applied size comes from brain config
+# on every dispatch. ``SLOT_ACQUIRE_TIMEOUT_SECONDS`` lives there too — one
+# number for "how long a worker may queue for a slot", shared with the gate.
+# PEER_HELP_WINDOW_SECONDS is measured behaviour, not a budget — see the
+# docstring.
 PEER_HELP_WINDOW_SECONDS = 5.0
-# A worker that hangs (e.g. a provider call that never returns) must not
-# occupy a slot forever — and a queued sub-agent must not wait forever for
-# a slot while hung workers hold them all.
-SLOT_ACQUIRE_TIMEOUT_SECONDS = 600
 _MAX_RETAINED_HANDLES = 12
 
 
@@ -98,7 +119,7 @@ def _read_transcript(task_id: str, limit: int = 200) -> list[dict[str, Any]]:
         return []
 
 
-async def _acquire_slot(sem: asyncio.Semaphore, timeout: float) -> bool:
+async def _acquire_slot(sem: asyncio.Semaphore | ConcurrencyGate, timeout: float) -> bool:
     """Take one permit, or return False — never losing a permit on either exit.
 
     ``await asyncio.wait_for(sem.acquire(), t)`` leaks permits two ways, and a
@@ -109,14 +130,23 @@ async def _acquire_slot(sem: asyncio.Semaphore, timeout: float) -> bool:
     ``CancelledError`` while queued — propagates with the outcome ambiguous.
     ``asyncio.wait`` leaves the task ours to resolve, so the permit is handed
     back if the acquisition wins the race after we give up on it.
+
+    Also drives :class:`ConcurrencyGate`, which is duck-typed against a
+    semaphore. A gate refuses by RETURNING False rather than by timing out, and
+    reading the result is mandatory: "done and not cancelled" is not proof that
+    a slot was taken, and treating it as one would let the worker's ``finally``
+    return a slot it never held — permanently over-admitting.
     """
     acquire = asyncio.ensure_future(sem.acquire())
 
     def _reap(task: "asyncio.Future[Any]") -> None:
-        # Cancel lost the race: the task may still have taken the permit, so
-        # give it back if it did. `exception()` on a cancelled task raises.
-        if not task.cancelled() and task.exception() is None:
-            sem.release()
+        # Cancelled OR refused: give the permit back only when it was genuinely
+        # taken. `Semaphore.acquire` returns None; a gate returns True/False.
+        if task.cancelled() or task.exception() is not None:
+            return
+        if task.result() is False:
+            return
+        sem.release()
 
     try:
         done, _ = await asyncio.wait({acquire}, timeout=timeout)
@@ -128,7 +158,12 @@ async def _acquire_slot(sem: asyncio.Semaphore, timeout: float) -> bool:
         acquire.add_done_callback(_reap)
         acquire.cancel()
         return False
-    return not acquire.cancelled()
+    if acquire.cancelled():
+        return False
+    exc = acquire.exception()
+    if exc is not None:
+        raise exc
+    return acquire.result() is not False
 
 
 def _record_run(handle: SubagentHandle) -> None:
@@ -302,10 +337,19 @@ class SubagentSpawnRequest:
         workItems: list[dict[str, Any]],
         mode: str = 'auto',
         emit: Callable[[dict[str, Any]], None] | None = None,
+        fanoutId: str = '',
     ) -> None:
         self.session = session
         self.workItems = workItems
         self.mode = mode
+        # The dispatch this batch belongs to (``harness_jobs`` id, or a synthetic
+        # ``fan_…`` id when there is no ledger row). It is the key of the SHARED
+        # round budget in ``workbench.subagent_fanout`` — the bound on aggregate
+        # work across all children of one fan-out, as opposed to the per-child
+        # iteration cap — so every consumer that only knows ``harness_job_id``
+        # (worker → executeSubAgent) reaches the same ledger without a new
+        # parameter on five signatures.
+        self.fanoutId = fanoutId
         # Optional parent SSE emitter. Live sub-agent output (text / tool
         # calls / tool results) is forwarded to it so the chat thread shows
         # progress instead of only start + done. Start/done events are NOT
@@ -406,14 +450,30 @@ class _OrchestratorSubscription(Subscription):
 class SubagentOrchestrator:
     """Manages concurrent sub-agent execution with failure recovery."""
 
-    def __init__(self, bus: AgentMessageBus, max_workers: int = MAX_CONCURRENT_WORKERS) -> None:
+    def __init__(self, bus: AgentMessageBus, max_workers: int | None = None) -> None:
         self._bus = bus
-        self._semaphore = asyncio.Semaphore(max_workers)
-        # 1.9: the global 5-slot semaphore ignored each session's
-        # delegation.maxConcurrent (a session set to 2 still ran 5; one set to
-        # 30 was capped at 5). A per-session semaphore, acquired alongside the
-        # global one, makes the effective gate min(per-session, global).
+        # The process-wide worker pool. `max_workers=None` means "follow brain
+        # config": the limit is re-applied from resolve_fanout_limits() on every
+        # dispatch, so Settings → Subagents takes effect without a restart.
+        # An explicit int PINS the pool (what the tests and every existing
+        # caller pass) — the historical `max_workers=5` still means exactly 5.
+        self._pinnedWorkers = max_workers is not None
+        self._semaphore: ConcurrencyGate = ConcurrencyGate(
+            max_workers if max_workers is not None else SUBAGENT_CONCURRENCY_DEFAULT,
+            name='subagent-pool',
+        )
+        # Kept as one object, two names: `_semaphore` is the slot the worker
+        # acquires (and what the cancellation-leak test asserts identity on).
+        self._workerGate = self._semaphore
+        # 1.9: the global worker pool used to be the only gate, which ignored
+        # each session's delegation.maxConcurrent (a session set to 2 still ran
+        # 5; one set to 30 was capped at 5). A per-session semaphore, acquired
+        # alongside the global one, makes the effective gate
+        # min(per-session, pool). The pool is now the configured one, so raising
+        # a per-session value above the pool ceiling stays honest: it is a
+        # fairness gate, not a way to grow the process.
         self._sessionSemaphores: dict[str, asyncio.Semaphore] = {}
+
         self._handles: dict[str, SubagentHandle] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._eventHandlers: dict[str, list[Handler]] = {}
@@ -472,17 +532,46 @@ class SubagentOrchestrator:
             pass
         max_concurrent = max(1, min(30, as_int(delegation.get('maxConcurrent', 5), 5) or 5))  # Hermes default 3, August default 5
         default_max_iter = max(5, min(200, as_int(delegation.get('maxIterations', 50), 50) or 50))
+        # ONE resolution for every fan-out bound, shared with the spawn tool
+        # (app/services/tools/spawn_subagents_tool.py) so the two can never
+        # disagree about what the cap was. `max_concurrent` above stays the
+        # per-session FAIRNESS gate (a user may legitimately ask for 30);
+        # `limits.concurrency` is the process pool, clamped to the desktop
+        # ceiling, and it is what actually decides how many children run at
+        # once. Re-applied per dispatch so a Settings change takes effect on the
+        # next fan-out without a restart — but only when nobody pinned the pool.
+        limits = resolve_fanout_limits(delegation)
+        if not self._pinnedWorkers:
+            self._semaphore.set_limit(limits.concurrency)
         # One resolver for the cap, shared with the sub-agent tool surface:
         # when both computed it separately, the surface could block spawning
         # unconditionally and a raised maxDepth was unreachable.
         from app.services.workbench.context import resolve_max_spawn_depth
 
         max_depth = resolve_max_spawn_depth(delegation)
-        # Enforce per-call concurrency cap (Hermes max_concurrent_children)
+        # ── children per dispatch (backstop) ───────────────────────────────
+        # The spawn tool refuses the WHOLE dispatch over the cap with a
+        # [Proxy Self-Heal] receipt so a model never sees a half-launched fleet.
+        # That leaves every other caller (workstream continuation, a future
+        # router, the batch tools) unbounded, so the pool refuses here too:
+        # dispatch the first `cap`, refuse the rest exactly the way an
+        # over-depth child is refused — a visible failed handle with an error
+        # string, persisted in subagent_runs — never a silent drop. There is
+        # still ONE resolution of the number (subagent_fanout), so the two doors
+        # cannot report different caps.
         work_items = request.workItems
-        if len(work_items) > max_concurrent:
-            # Keep deterministic order — Hermes would queue, but we surface the cap
-            logger.info("[Harness] %d work items exceeds maxConcurrent=%d, will queue via semaphore", len(work_items), max_concurrent)
+        children_cap = limits.max_children_per_fanout
+        refused_items: list[dict[str, Any]] = []
+        if len(work_items) > children_cap:
+            logger.info(
+                '[Harness] %d work items exceeds maxChildrenPerTurn=%d — dispatching %d, refusing %d',
+                len(work_items),
+                children_cap,
+                children_cap,
+                len(work_items) - children_cap,
+            )
+            refused_items = list(work_items[children_cap:])
+            work_items = work_items[:children_cap]
         # Hermes-style: wrap emit to capture live transcript + touch liveness
         _orig_emit = request.emit
         def _wrapped_emit(ev: dict[str, Any]) -> None:
@@ -590,12 +679,39 @@ class SubagentOrchestrator:
                     auto_hop=bool(item.get('autoHop') or item.get('auto_hop')),
                     capability=as_str(item.get('capability') or 'standard'),
                     session_semaphore=self._sessionSemaphore(sid, max_concurrent),
+                    fanout_id=request.fanoutId,
                 )
             )
             self._tasks[taskId] = task
             handle._future = task
             tasks.append(task)
+        for item in refused_items:
+            # Refused, not truncated-away: a handle with an error the parent can
+            # read, and a subagent_runs row, exactly like the over-depth door
+            # above. The caller's `succeeded/failed` tally sees the loss.
+            taskId = f'task_{uuid.uuid4().hex[:12]}'
+            handle = SubagentHandle(
+                taskId,
+                as_str(item.get('agentId'), 'general'),
+                as_str(item.get('goal'), ''),
+                sessionId=_sid_probe,
+            )
+            handle.workstream = as_str(item.get('workstream') or item.get('name'), '')
+            handle.status = 'failed'
+            handle.error = children_cap_message(len(request.workItems), children_cap)
+            handle.finishedAt = time.time()
+            self._handles[taskId] = handle
+            _record_run(handle)
+            handles.append(handle)
         return handles
+
+    def workerPoolSnapshot(self) -> dict[str, Any]:
+        """The process pool as it stands: applied limit, in use, peak, queue.
+
+        Read by the fan-out telemetry so a future audit can answer "what was the
+        cap and did it bind this run" from the session log alone.
+        """
+        return self._semaphore.snapshot()
 
     def terminateForSession(self, sessionId: str) -> int:
         """Cancel every in-flight sub-agent task for a session and drop it from
@@ -858,8 +974,16 @@ class SubagentOrchestrator:
         auto_hop: bool = False,
         capability: str = 'standard',
         session_semaphore: asyncio.Semaphore | None = None,
+        fanout_id: str = '',
     ) -> None:
-        """Acquire semaphore, run the sub-agent task, release."""
+        """Acquire semaphore, run the sub-agent task, release.
+
+        ``fanout_id`` is the dispatch this worker belongs to. Slot bookkeeping
+        (``note_child_start`` / ``note_child_finish``) rides it, so the
+        ``subagentFanout`` telemetry can state the PEAK concurrency that was
+        actually observed — the number a future audit needs to tell "the cap
+        bound this run" from "the cap was never reached".
+        """
         # If queued, update to running on dequeue; touch for stall monitor
         handle.lastActivityAt = time.time()
         # 1.9: per-session gate first (so a session at its own maxConcurrent
@@ -893,6 +1017,11 @@ class SubagentOrchestrator:
             raise
         try:
             handle.status = 'running'
+            # Observed concurrency for THIS dispatch (telemetry only — the gate
+            # is what bounds it). Unknown fanout ids are inert by design, so a
+            # worker spawned outside a fan-out (daemon, recurring task) does not
+            # pollute a budget that was never opened for it.
+            note_child_start(fanout_id)
             handle.touch()
             _append_transcript(handle.taskId, {"type": "subagentRunning", "taskId": handle.taskId, "ts": time.time()})
             _record_run(handle)
@@ -976,6 +1105,7 @@ class SubagentOrchestrator:
                 await self._handleFailure(handle, request)
                 await self._fireEvent('subagentFailed', handle.toDict())
         finally:
+            note_child_finish(fanout_id)
             self._semaphore.release()
             if session_semaphore is not None and session_semaphore is not self._semaphore:
                 session_semaphore.release()

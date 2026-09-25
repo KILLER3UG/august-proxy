@@ -36,10 +36,18 @@ def test_get_without_session_returns_global_defaults(isolatedData):
     resp = _client().get('/api/subagents/config')
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body['maxConcurrent'] == 5
+    # 4, not the 5 this asserted before the fan-out bounds landed: the value
+    # used to size only a per-session semaphore while a hardcoded pool of 5
+    # overrode it, so it was dead above 5. It now sizes the PROCESS pool
+    # (clamped to the desktop ceiling of 8 — subagent_fanout).
+    assert body['maxConcurrent'] == 4
     assert body['maxIterations'] == 50
     assert body['maxDepth'] == 1
     assert body['worktreeIsolation'] is False
+    # The two fan-out bounds are configured through the same door
+    # (PUT /api/brain/config accepts them too) and readable here.
+    assert body['maxChildrenPerTurn'] == 8
+    assert body['fanoutRoundBudget'] == 240
 
 
 def test_post_without_session_saves_globally(isolatedData):

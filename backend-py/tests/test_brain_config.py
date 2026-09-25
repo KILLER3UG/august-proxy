@@ -66,6 +66,11 @@ _ALLCamelKeys = {
     'subagentMaxConcurrent',
     'subagentMaxIterations',
     'subagentMaxDepth',
+    # Fan-out bounds: how many children ONE turn may request, and the aggregate
+    # tool-round budget shared by all children of one dispatch
+    # (app/services/workbench/subagent_fanout.py).
+    'subagentMaxChildrenPerTurn',
+    'subagentFanoutRoundBudget',
     'subagentWorktreeIsolation',
 }
 

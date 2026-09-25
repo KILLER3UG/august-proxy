@@ -33,7 +33,11 @@ def get_orchestrator(app: Any | None = None) -> Any:
     from app.services.subagent_orchestrator import SubagentOrchestrator
 
     _bus = AgentMessageBus()
-    _orchestrator = SubagentOrchestrator(_bus, max_workers=5)
+    # No max_workers: the process pool follows brain config
+    # (subagentMaxConcurrent → subagent_fanout.resolve_subagent_concurrency,
+    # default 4, desktop ceiling 8) and is re-applied on every dispatch. This
+    # line used to pin 5, which made the Settings number dead above 5.
+    _orchestrator = SubagentOrchestrator(_bus)
     if app is not None:
         app.state.subagent_bus = _bus
         app.state.subagent_orchestrator = _orchestrator
