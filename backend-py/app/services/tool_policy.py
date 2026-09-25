@@ -58,6 +58,10 @@ _PROMPT_READ = frozenset({
     # Wiring-diagram lint — pure JSON validation transform (no binary
     # spawn, no file writes); spawns nothing.
     'circuit_lint_diagram',
+    # Topology → real-part identification: subgraph matching over the parsed
+    # deck, in process. Reads at most one deck file, writes nothing, spawns
+    # nothing — the same bucket as circuit_symbolic and circuit_inject_fault.
+    'circuit_detect_ic',
     # Datasheet/model-card lookup — network read, no workspace mutation.
     'circuit_integrate_component',
     # VCD analysis — pure-Python read of a workspace waveform file; no

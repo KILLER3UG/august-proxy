@@ -369,7 +369,8 @@ CIRCUIT_MODE_HINT = (
     'circuit_annotate, circuit_lint_diagram, firmware_compile, firmware_run, '
     'firmware_stimulus, hdl_lint, hdl_simulate, vcd_parse, hdl_test, '
     'hdl_timing_diagram, fpga_compile, kicad_checks, kicad_render, '
-    'circuit_search_component, circuit_render_3d, circuit_env). Use SPICE netlists; '
+    'circuit_search_component, circuit_integrate_component, circuit_detect_ic, '
+    'circuit_render_3d, circuit_env). Use SPICE netlists; '
     'simulate with .op/.dc/.tran/.ac cards; verify designs with circuit_test '
     'assertions ({measure, expect, tolerance} or {measure, min, max}); '
     'fault decks with circuit_inject_fault (open/short/drift) for '
@@ -384,6 +385,13 @@ CIRCUIT_MODE_HINT = (
     'artifact (parts + "part:pin" connections) before use — netlists '
     'stay the SPICE source of truth, the diagram describes wiring '
     'around the MCU and pins the co-sim mapping; '
+    'circuit_detect_ic matches the deck\'s NET CONNECTIVITY against an '
+    'offline library of known topologies (RC/LC filters, dividers, shunts, '
+    'BJT stages, mirrors, push-pull pairs, switch bias networks) and returns '
+    'each match with a confidence, the subgraph that produced it and real '
+    'part-number candidates; when its "patterns" list is empty, fall back to '
+    'circuit_search_component / circuit_integrate_component — and never '
+    'present a low-confidence match as an identification; '
     'firmware_compile builds Arduino/C firmware to a HEX for emulated '
     'runs (board=uno/nano/mega/...); firmware_run emulates that HEX and '
     'returns the serial monitor capture, GPIO state, expect/fail serial '
@@ -453,7 +461,13 @@ def filter_circuit_tools(
 def _is_circuit_gate_tool(name: str) -> bool:
     """Names the /circuit gate owns. circuit_* plus the Phase-3/4/5 firmware,
     HDL, VCD, FPGA, and KiCad tools — they all belong to the circuit
-    workbench."""
+    workbench.
+
+    The ``circuit_`` prefix is the whole rule for this family, so the analysis
+    doors (``circuit_symbolic``, ``circuit_lint_diagram`` and the offline
+    topology matcher ``circuit_detect_ic``) are reachable the moment /circuit
+    is on and need no name listed here — a new circuit_* tool is gated by
+    construction. Only names OUTSIDE the prefix families have to be listed."""
     return (
         name.startswith('circuit_')
         or name.startswith('firmware_')
@@ -767,6 +781,53 @@ def register() -> None:
                 },
             },
             'required': ['diagram'],
+        },
+    )
+    tool_registry.register(
+        'circuit_detect_ic',
+        f'Identify which real part a schematic\'s TOPOLOGY corresponds to — '
+        'deterministic, offline and explainable. It matches net connectivity '
+        '(subgraph isomorphism over the parsed deck: kinds, shared nets, '
+        'ground, net degree) against a curated library of known topologies: '
+        'RC low/high-pass, RC snubber, capacitive dropper, voltage divider, '
+        'low-side current-sense shunt, LED/diode with series resistor, '
+        'common-emitter and common-collector BJT stages, differential pair, '
+        'current mirror, totem-pole and complementary push-pull pairs, LC pi '
+        'and T filters, LC tank, reactive feedback loop, switch debounce RC, '
+        'pull-up/pull-down with a switch, and amplifier instances. Returns '
+        'per match: confidence, the matched subgraph (refs + nets), evidence '
+        'lines, what the graph CANNOT prove (limits), and real part-number '
+        f'candidates with estimated flags; plus "unexplained" — the refs no '
+        f'match covered. READ confidence as a scale: at/above '
+        f'{ic_detect.MIN_DEFINITE_CONFIDENCE} the graph pins the topology and it '
+        'may be stated as an identification; 0.7-0.79 the shape is matched but '
+        'the ROLE is the judgement (snubber vs bootstrap, lamp vs clamp, shunt '
+        'vs pull-down) so name the reading; 0.6-0.69 it is a STAGE, not a '
+        'function (a differential pair is the input of an op-amp and is not an '
+        'op-amp); below 0.6 it is a hint to check by simulation, never an '
+        'identification. Separately, "source": "name" means the reading came '
+        'from what the deck NAMED the instance (shapeProven: false) — an '
+        'amplifier or a lamp, because a plain SPICE deck has no op-amp, LED or '
+        'crystal element kind; quote the name as the evidence, not the shape. '
+        'Candidates flagged "estimated" were inferred, not read from the deck. '
+        'If "patterns" comes back EMPTY, do not guess: fall back to '
+        'circuit_search_component / circuit_integrate_component on the part '
+        'numbers already in the deck, or ask the user which block it is.',
+        _detectIc,
+        {
+            'type': 'object',
+            'properties': {
+                'netlist': {
+                    'type': 'string',
+                    'description': 'Inline SPICE text or a workspace deck path',
+                },
+                'topK': {
+                    'type': 'number',
+                    'description': 'Keep only this many highest-confidence '
+                                   'matches (default: every match found)',
+                },
+            },
+            'required': ['netlist'],
         },
     )
     tool_registry.register(
