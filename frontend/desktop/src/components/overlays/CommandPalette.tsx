@@ -38,7 +38,7 @@ import { useResolvedThemeStore, toggleTheme } from "@/store/theme";
 import { SECTION_NAV_ITEMS, SETTINGS_TABS } from '@/routes';
 import { Backdrop } from "./Backdrop";
 import { useQueryClient } from "@tanstack/react-query";
-import { dispatchUiAction } from "@/api/ui-events";
+import { dispatchUiAction, hasChatSurface, type UiAction } from "@/api/ui-events";
 import { openConversationSearch } from "@/store/conversation-search";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 
@@ -76,6 +76,27 @@ export function CommandPalette() {
     fn();
     closeCommandPalette();
   };
+
+  /**
+   * A command that acts on the conversation currently open in the chat thread.
+   *
+   * `useChatUiActions` and the composer's model picker are the only listeners for
+   * these actions and both live inside ChatThread, which renders on the chat
+   * route only — while this palette is mounted at app level and ChatLayout wraps
+   * /settings, /board, /runs, /automations and /history too. So selecting Undo /
+   * Stop / Branch / Free-up-chat-memory / Export / Copy / Switch model there
+   * dispatched a CustomEvent into nothing: no error, no toast, no feedback.
+   * Saying why is the same convention `stop_chat` already uses when nothing is
+   * streaming.
+   */
+  const chatAction = (action: UiAction) =>
+    run(() => {
+      if (!hasChatSurface()) {
+        toast.message('Open a conversation first — this acts on the current chat.');
+        return;
+      }
+      dispatchUiAction({ action, target: 'active' });
+    });
 
   return (
     <Backdrop onClose={closeCommandPalette} className="items-start pt-[15vh]">
@@ -119,72 +140,56 @@ export function CommandPalette() {
             </Command.Item>
             <Command.Item
               value="action undo last turn"
-              onSelect={run(() =>
-                dispatchUiAction({ action: 'undo_last_turn', target: 'active' }),
-              )}
+              onSelect={chatAction('undo_last_turn')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
               <Undo2 className="size-3.5" /> Undo last turn
             </Command.Item>
             <Command.Item
               value="action stop generation"
-              onSelect={run(() =>
-                dispatchUiAction({ action: 'stop_chat', target: 'active' }),
-              )}
+              onSelect={chatAction('stop_chat')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
               <Square className="size-3.5" /> Stop generation
             </Command.Item>
             <Command.Item
               value="action switch model picker"
-              onSelect={run(() =>
-                dispatchUiAction({ action: 'open_model_picker', target: 'active' }),
-              )}
+              onSelect={chatAction('open_model_picker')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
               <ArrowLeftRight className="size-3.5" /> Switch model…
             </Command.Item>
             <Command.Item
               value="action branch chat fork"
-              onSelect={run(() =>
-                dispatchUiAction({ action: 'branch_session', target: 'active' }),
-              )}
+              onSelect={chatAction('branch_session')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
               <GitBranch className="size-3.5" /> Branch this chat
             </Command.Item>
             <Command.Item
               value="action free up chat memory compact"
-              onSelect={run(() =>
-                dispatchUiAction({ action: 'compact_now', target: 'active' }),
-              )}
+              onSelect={chatAction('compact_now')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
               <Shrink className="size-3.5" /> Free up chat memory
             </Command.Item>
             <Command.Item
               value="action export conversation download markdown transcript"
-              onSelect={run(() =>
-                dispatchUiAction({ action: 'export_conversation', target: 'active' }),
-              )}
+              onSelect={chatAction('export_conversation')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
               <FileDown className="size-3.5" /> Export conversation (Markdown)
             </Command.Item>
             <Command.Item
               value="action export conversation pdf print"
-              onSelect={run(() =>
-                dispatchUiAction({ action: 'export_conversation_pdf', target: 'active' }),
-              )}
+              onSelect={chatAction('export_conversation_pdf')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
               <FileDown className="size-3.5" /> Export conversation (PDF)
             </Command.Item>
             <Command.Item
               value="action copy conversation clipboard markdown"
-              onSelect={run(() =>
-                dispatchUiAction({ action: 'copy_conversation', target: 'active' }),
-              )}
+              onSelect={chatAction('copy_conversation')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
               <Copy className="size-3.5" /> Copy conversation

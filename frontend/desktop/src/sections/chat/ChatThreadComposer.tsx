@@ -17,6 +17,7 @@ import type { QueuedUserMessage } from './queue-store';
 import { type ContextBreakdown } from './ChatComposer';
 import { Markdown } from './ChatMarkdown';
 import { TaskProgressPill } from '@/components/chat/TaskProgressPill';
+import { ScrollToBottomButton } from '@/components/chat/ScrollToBottomButton';
 import type { ModelItem } from './model-display';
 import type { SessionUsageState } from './hooks/useChatUsage';
 import type { EffortLevel } from './hooks/useChatSend';
@@ -109,6 +110,10 @@ export interface ChatThreadComposerProps {
   setThinkingEnabled: Dispatch<SetStateAction<boolean>>;
   voiceActive: boolean;
   startVoiceInput: () => void;
+  /** Jump-to-bottom affordance anchored to the composer card's top border. */
+  scrolledFromBottom: boolean;
+  showNewContentPill: boolean;
+  onScrollToBottom: () => void;
   /** Optional: parent registers send-path popover closers. */
   dropdownApiRef?: MutableRefObject<ComposerDropdownApi | null>;
 }
@@ -164,6 +169,9 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     setThinkingEnabled,
     voiceActive,
     startVoiceInput,
+    scrolledFromBottom,
+    showNewContentPill,
+    onScrollToBottom,
     dropdownApiRef,
   } = props;
 
@@ -423,10 +431,21 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
 
       <div
         className={cn(
-          'august-composer w-full min-w-0 rounded-2xl border bg-chat-input backdrop-blur-sm shadow-md',
+          'august-composer relative w-full min-w-0 rounded-2xl border bg-chat-input backdrop-blur-sm shadow-md',
           'border-border/70 overflow-visible',
         )}
       >
+        {/* Jump-to-bottom, centered and straddling the card's top border.
+            The button lives here (not in the message pane's corner) so the
+            border is a stable anchor even when the rows above the card —
+            stream-link banner, queue pills, task progress — change height. */}
+        <div className="pointer-events-none absolute inset-x-0 -top-3 z-20 flex justify-center">
+          <ScrollToBottomButton
+            visible={scrolledFromBottom}
+            onClick={onScrollToBottom}
+            showNewContentPill={showNewContentPill}
+          />
+        </div>
         {voiceActive ? (
           <ComposerVoiceListening />
         ) : (

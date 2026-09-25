@@ -211,7 +211,13 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const connectSocket = () => {
       if (!activeId || disposed) return;
-      const termPath = `/api/terminal/${encodeURIComponent(activeId)}/ws`;
+      // The ONLY terminal websocket the backend exposes is
+      // `/api/terminal/connect?id=&offset=` (terminal_routes.py). This used to
+      // build `/api/terminal/<id>/ws`, which matches no route: FastAPI 404s the
+      // upgrade, onclose fires, and the retry loop spun forever behind
+      // "Connecting to shell…" with keystrokes going nowhere. offset=0 asks for
+      // the full buffer, which is what a dock that tracks no watermark wants.
+      const termPath = `/api/terminal/connect?id=${encodeURIComponent(activeId)}&offset=0`;
       // WebSocket bypasses the window.fetch rewrite; in Tauri it must target
       // the proxy origin (the only ws:// the desktop CSP allows), not the
       // asset/dev origin that window.location.host points at.

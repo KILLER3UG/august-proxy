@@ -3,9 +3,8 @@
 /* sticky composer / plan banner strip under the transcript.               */
 
 import { useCallback, useState, type ReactNode, type RefObject } from 'react';
-import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { messagePop, userMessagePop } from '@/lib/motion';
 import { ScrollToTopButton } from '@/components/chat/ScrollToTopButton';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
@@ -33,10 +32,7 @@ export function ChatThreadMessagePane({
   modelPickerActive,
   onDismissModelPicker,
   scrolledFromTop,
-  scrolledFromBottom,
-  showNewContentPill = false,
   scrollRef,
-  onScrollToBottom,
   onRevert,
   onEdit,
   onRegenerate,
@@ -70,11 +66,7 @@ export function ChatThreadMessagePane({
   modelPickerActive: boolean;
   onDismissModelPicker: () => void;
   scrolledFromTop: boolean;
-  scrolledFromBottom: boolean;
-  /** True when new tokens/cards arrived while the user was scrolled up. */
-  showNewContentPill?: boolean;
   scrollRef: RefObject<HTMLDivElement | null>;
-  onScrollToBottom: () => void;
   onRevert: (index: number) => void;
   onEdit: (index: number, text: string) => void;
   onRegenerate: (index: number) => void | Promise<void>;
@@ -242,33 +234,14 @@ export function ChatThreadMessagePane({
       </div>
 
       {/* Viewport-fixed chrome — sticky inside the scroller sat at content end,
-          so the jump-to-bottom control unmounted exactly when it became visible. */}
+          so the jump-to-top control unmounted exactly when it became visible.
+          The jump-to-bottom button now lives in the composer card (see
+          ChatThreadComposer) so it can straddle the composer's top border. */}
       <div className="chat-scroll-chrome pointer-events-none absolute bottom-4 right-3 z-30 flex flex-col gap-2 items-center">
         <ScrollToTopButton
           scrollParentRef={scrollRef}
           visible={scrolledFromTop}
         />
-        <AnimatePresence>
-          {scrolledFromBottom && (
-            <motion.button
-              type="button"
-              initial={{ opacity: 0, y: 6, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 6, scale: 0.96 }}
-              transition={{ duration: 0.18 }}
-              onClick={onScrollToBottom}
-              className={
-                showNewContentPill
-                  ? 'pointer-events-auto inline-flex items-center gap-1.5 rounded-full bg-background/90 backdrop-blur-sm border border-border shadow-sm px-3 py-1.5 text-xs font-medium text-foreground hover:bg-background transition-colors cursor-pointer'
-                  : 'pointer-events-auto w-9 h-9 flex items-center justify-center rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-sm text-muted-foreground hover:text-foreground hover:bg-background/95 transition-colors cursor-pointer'
-              }
-              aria-label={showNewContentPill ? 'Jump to new content' : 'Scroll to bottom'}
-            >
-              <ChevronDown className={showNewContentPill ? 'size-3.5 shrink-0' : 'size-4'} />
-              {showNewContentPill ? 'New content' : null}
-            </motion.button>
-          )}
-        </AnimatePresence>
       </div>
 
       {/* AUG — anchored above the composer; the slot grows with the live

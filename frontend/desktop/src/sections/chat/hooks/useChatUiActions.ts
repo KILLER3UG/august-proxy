@@ -21,7 +21,7 @@ import {
   WORKBENCH_GUARD_MODES,
   type WorkbenchGuardMode,
 } from '@/components/chat/WorkbenchModeSelector';
-import { onUiAction } from '@/api/ui-events';
+import { claimChatSurface, onUiAction } from '@/api/ui-events';
 import type { ChatMessage } from '@/types/chat';
 import { downloadConversation, copyConversationToClipboard, exportConversationToPdf } from '@/lib/export-conversation';
 import { persistMessages } from '../message-storage';
@@ -56,6 +56,11 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
     activeSession,
     onStop,
   } = opts;
+
+  // Publish that these listeners exist, so the command palette can tell the
+  // user why a chat-only command is unavailable instead of dispatching into
+  // nothing on /settings, /board or /runs.
+  useEffect(() => claimChatSurface(), []);
 
   useEffect(() => {
     const resolveWbId = () =>

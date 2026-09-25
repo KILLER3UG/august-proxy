@@ -18,6 +18,22 @@ export function shouldShowOnboarding(): boolean {
   }
 }
 
+/** The other half of the gate, so Settings can offer a switch that actually
+ *  controls the tour. `DONE_KEY` is owned by this file; the previous Settings
+ *  toggle was a local `useState(true)` that wrote nothing and reset on
+ *  remount, so the tour ignored it completely.
+ *
+ *  Setting it back to "not shown" does not replay the tour by itself —
+ *  `OnboardingTour` also requires a session count of zero. */
+export function setOnboardingSeen(seen: boolean): void {
+  try {
+    if (seen) localStorage.setItem(DONE_KEY, '1');
+    else localStorage.removeItem(DONE_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 interface TourStep {
   icon: typeof Sparkles;
   title: string;

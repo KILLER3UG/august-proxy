@@ -413,6 +413,12 @@ export function useComposerPopovers({
 
   const onKey = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      // IME composition guard. Enter is how a CJK user accepts a candidate, and
+      // without this the half-composed text is sent and the draft cleared —
+      // unrecoverable input loss. 229 is the legacy keyCode an composing keydown
+      // reports when isComposing is unavailable. Applies to every Enter branch
+      // below (send, mention pick, command pick), so it goes first.
+      if (e.key === 'Enter' && (e.nativeEvent.isComposing || e.keyCode === 229)) return;
       if (showMentionsDropdown && mentionItems.length > 0) {
         if (e.key === 'ArrowDown') {
           e.preventDefault();

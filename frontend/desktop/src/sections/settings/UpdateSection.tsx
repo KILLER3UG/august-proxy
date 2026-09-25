@@ -234,9 +234,16 @@ function BackendDepsCard({
         ? 'text-red-400'
         : 'text-muted-foreground';
 
-  let syncLabel = 'Dependencies: up to date';
-  let syncCls = 'text-green-400';
-  if (backend.sync === 'syncing') {
+  // `unknown` is the initial value of BackendSync and nothing polls it, so this
+  // used to fall through to the "up to date" default: a never-bootstrapped or
+  // half-synced runtime told the user its dependencies were current. The
+  // reassurance now requires the state that actually earned it.
+  let syncLabel = 'Dependencies: not checked yet';
+  let syncCls = 'text-muted-foreground';
+  if (backend.sync === 'up-to-date') {
+    syncLabel = 'Dependencies: up to date';
+    syncCls = 'text-green-400';
+  } else if (backend.sync === 'syncing') {
     syncLabel = 'Syncing backend dependencies…';
     syncCls = 'text-amber-400';
   } else if (backend.sync === 'needs_setup') {

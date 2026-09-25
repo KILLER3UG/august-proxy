@@ -10,7 +10,6 @@ import { useEffect, useState } from 'react';
 import {
   Sparkles,
   GraduationCap,
-  Check,
   Bell,
   Keyboard,
   SlidersHorizontal,
@@ -19,6 +18,7 @@ import {
 import { useThemeStore, setTextSize } from '@/lib/theme';
 import type { TextSize } from '@/lib/theme';
 import { usePreferencesStore, type ChatFont, type VoiceSpeed } from '@/lib/preferences';
+import { setOnboardingSeen, shouldShowOnboarding } from '@/components/overlays/OnboardingTour';
 import { useAccountStore } from '@/store/account';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
@@ -39,34 +39,11 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ['esc'],                      label: 'Close overlay / dialog' },
 ];
 
-interface Preset {
-  id: string;
-  name: string;
-  description: string;
-}
-
-const PRESETS: Preset[] = [
-  { id: 'default',  name: 'Default',      description: 'Balanced view with helpful explanations shown.' },
-  { id: 'power',    name: 'Power User',   description: 'Denser layouts, raw bodies surfaced, fewer tooltips.' },
-  { id: 'privacy',  name: 'Privacy Focused', description: 'Hide usage analytics and history previews.' },
-];
-
 const TEXT_SIZE_OPTIONS: { id: TextSize; label: string; scale: string }[] = [
   { id: 'compact',     label: 'Small',      scale: '0.92' },
   { id: 'default',     label: 'Default',    scale: '1.00' },
   { id: 'comfortable', label: 'Large',      scale: '1.08' },
   { id: 'spacious',    label: 'Extra Large', scale: '1.18' },
-];
-
-const WORK_OPTIONS = [
-  'Software engineering',
-  'Product & design',
-  'Research & analysis',
-  'Writing & content',
-  'Data & analytics',
-  'IT & operations',
-  'Student',
-  'Something else',
 ];
 
 const CHAT_FONT_OPTIONS: { id: ChatFont; label: string }[] = [
@@ -75,15 +52,11 @@ const CHAT_FONT_OPTIONS: { id: ChatFont; label: string }[] = [
   { id: 'mono',    label: 'Monospace' },
 ];
 
-const VOICE_STYLES = ['Neutral', 'Warm', 'Buttery', 'Bright'];
-
 const VOICE_SPEEDS: { id: VoiceSpeed; label: string }[] = [
   { id: 'slow',   label: 'Slow' },
   { id: 'normal', label: 'Normal' },
   { id: 'fast',   label: 'Fast' },
 ];
-
-const PRESET_KEY = 'august_preset';
 
 const inputClass =
   'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground ' +
@@ -91,12 +64,10 @@ const inputClass =
 
 export function GeneralSection() {
   const textSize = useThemeStore((s) => s.textSize);
-  const profile = usePreferencesStore((s) => s.profile);
   const chatFont = usePreferencesStore((s) => s.chatFont);
   const reduceMotion = usePreferencesStore((s) => s.reduceMotion);
   const voice = usePreferencesStore((s) => s.voice);
   const notifyResponseComplete = usePreferencesStore((s) => s.notifyResponseComplete);
-  const setProfile = usePreferencesStore((s) => s.setProfile);
   const setChatFont = usePreferencesStore((s) => s.setChatFont);
   const setReduceMotion = usePreferencesStore((s) => s.setReduceMotion);
   const setVoice = usePreferencesStore((s) => s.setVoice);
@@ -106,36 +77,19 @@ export function GeneralSection() {
   const activeAccountId = useAccountStore((s) => s.activeAccountId);
   const account = accounts.find((a) => a.id === activeAccountId) ?? null;
 
-  const [activePreset, setActivePreset] = useState<string>(() => {
-    try {
-      return localStorage.getItem(PRESET_KEY) ?? 'default';
-    } catch {
-      return 'default';
-    }
-  });
-  const [tour, setTour] = useState(true);
+  // Backed by the key OnboardingTour actually gates on, so this switch now has
+  // an effect. It used to be `useState(true)`: unwired, reset on every revisit
+  // to Settings, and ignored by the tour.
+  const [tour, setTour] = useState<boolean>(() => shouldShowOnboarding());
   const [osNotify, setOsNotify] = useState(false);
 
   useEffect(() => {
     setOsNotify(OsNotifyService.isEnabled());
   }, []);
 
-  const selectPreset = (id: string) => {
-    setActivePreset(id);
-    try {
-      localStorage.setItem(PRESET_KEY, id);
-    } catch {
-      /* storage unavailable */
-    }
-    // Cheap preset hints: privacy preset hides the OS-notification surface
-    // and keeps the tour off.
-    if (id === 'privacy') {
-      setTour(false);
-      if (OsNotifyService.isEnabled()) {
-        OsNotifyService.setEnabled(false);
-        setOsNotify(false);
-      }
-    }
+  const toggleTour = (next: boolean) => {
+    setTour(next);
+    setOnboardingSeen(!next);
   };
 
   return (
@@ -170,45 +124,13 @@ export function GeneralSection() {
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-foreground">What should August call you?</span>
-                <input
-                  type="text"
-                  value={profile.callYou}
-                  onChange={(e) => setProfile({ callYou: e.target.value })}
-                  placeholder={account?.displayName.split(' ')[0] ?? 'Your name'}
-                  className={inputClass}
-                />
-              </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-foreground">What best describes your work?</span>
-                <select
-                  value={profile.workDescription}
-                  onChange={(e) => setProfile({ workDescription: e.target.value })}
-                  className={inputClass}
-                >
-                  <option value="">Select…</option>
-                  {WORK_OPTIONS.map((w) => (
-                    <option key={w} value={w}>{w}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-foreground">Instructions for August</span>
-              <p className="text-xs leading-4 text-muted-foreground">
-                Added to the start of every conversation so August knows how you like to work.
-              </p>
-              <textarea
-                value={profile.instructions}
-                onChange={(e) => setProfile({ instructions: e.target.value })}
-                placeholder="e.g. keep explanations brief and to the point"
-                rows={3}
-                className={cn(inputClass, 'resize-y leading-5')}
-              />
-            </label>
+            {/* The three fields that used to sit here — "What should August
+                call you?", "What best describes your work?" and "Instructions
+                for August", the last one labelled "Added to the start of every
+                conversation" — wrote only to localStorage. Nothing in the
+                frontend or the backend ever read them, so the promise was
+                false. What actually shapes the model is the `kind='profile'`
+                fact lane, edited under Settings → Memory. */}
           </div>
         </SettingsCard>
 
@@ -253,18 +175,6 @@ export function GeneralSection() {
                   className={inputClass}
                 >
                   <option value="en">English (en)</option>
-                </select>
-              </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-foreground">Voice style</span>
-                <select
-                  value={voice.style}
-                  onChange={(e) => setVoice({ style: e.target.value })}
-                  className={inputClass}
-                >
-                  {VOICE_STYLES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
                 </select>
               </label>
               <label className="block space-y-1.5">
@@ -375,51 +285,14 @@ export function GeneralSection() {
           </div>
         </SettingsCard>
 
-        {/* Experience presets */}
-        <SettingsCard
-          icon={Sparkles}
-          title="Experience"
-          description={
-            <span>
-              Start from a preset that matches how you use August.{' '}
-              <SettingsTooltip content="Presets are quick starting points. You can fine-tune individual settings afterwards." />
-            </span>
-          }
-        >
-          <div className="space-y-2">
-            {PRESETS.map((p) => {
-              const active = activePreset === p.id;
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => selectPreset(p.id)}
-                  className={cn(
-                    'flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition',
-                    active
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:bg-muted/40',
-                  )}
-                >
-                  <div
-                    className={cn(
-                      'mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border',
-                      active ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40',
-                    )}
-                  >
-                    {active && <Check className="size-3" />}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">{p.name}</span>
-                      {p.id === 'default' && <Badge variant="secondary" className="text-[9px]">recommended</Badge>}
-                    </div>
-                    <p className="mt-0.5 text-xs leading-4 text-muted-foreground">{p.description}</p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </SettingsCard>
+        {/* The "Experience" preset picker that used to sit here wrote
+            `localStorage['august_preset']` and read it back for nothing but its
+            own selected-button highlight — no layout, density, analytics or
+            tooltip behaviour keyed off it anywhere in the frontend or backend,
+            so "Power User — denser layouts, raw bodies surfaced" and "Privacy
+            Focused — hide usage analytics and history previews" changed no
+            thing. Its inline comment claimed the privacy preset hid the
+            notification surface and kept the tour off; that code never existed. */}
 
         {/* Keyboard shortcuts */}
         <SettingsCard
@@ -455,10 +328,10 @@ export function GeneralSection() {
         >
           <SettingsToggle
             checked={tour}
-            onCheckedChange={setTour}
+            onCheckedChange={toggleTour}
             label="Show onboarding tour"
-            description="Display a guided walkthrough the next time you open August."
-            tooltip="The tour highlights where to find chat, settings, and activity."
+            description="Play the guided walkthrough the next time you start August with no conversations yet."
+            tooltip="The tour highlights where to find chat, settings, and activity. It only plays while you have zero conversations, so clearing this stops it permanently."
           />
         </SettingsCard>
 

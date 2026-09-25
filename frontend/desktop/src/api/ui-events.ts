@@ -71,3 +71,44 @@ export function asUiActionEvent(event: Event): UiActionEvent | null {
   if (typeof ce.detail.action !== 'string' || typeof ce.detail.target !== 'string') return null;
   return ce.detail;
 }
+
+/**
+ * Actions whose only listeners live inside the chat surface
+ * (`useChatUiActions`, `ChatThreadComposer`). The command palette is mounted at
+ * app level and `ChatLayout` wraps `/settings`, `/board`, `/runs`, `/automations`
+ * and `/history` too — so on those routes these actions dispatched a
+ * CustomEvent into nothing, with no toast and no explanation, which reads as
+ * "August lost export" rather than "you are not looking at a conversation".
+ */
+const CHAT_SCOPED_ACTIONS: ReadonlySet<UiAction> = new Set<UiAction>([
+  'undo_last_turn',
+  'stop_chat',
+  'branch_session',
+  'compact_now',
+  'export_conversation',
+  'export_conversation_pdf',
+  'copy_conversation',
+  'open_model_picker',
+]);
+
+let chatSurfaceClaims = 0;
+
+export function isChatScopedAction(action: UiAction): boolean {
+  return CHAT_SCOPED_ACTIONS.has(action);
+}
+
+/** Register the chat surface as mounted. Refcounted, because more than one
+ *  component claims it and React may mount a subtree twice. */
+export function claimChatSurface(): () => void {
+  chatSurfaceClaims += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    chatSurfaceClaims = Math.max(0, chatSurfaceClaims - 1);
+  };
+}
+
+export function hasChatSurface(): boolean {
+  return chatSurfaceClaims > 0;
+}
