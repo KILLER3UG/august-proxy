@@ -51,6 +51,7 @@ import { setSubagentProposal } from './subagent-proposals-store';
 import { pushNotification } from '@/store/notifications';
 import { publishExecutionState, publishTodos } from '@/store/liveActivity';
 import { setPromptCacheLive } from '@/store/promptCacheLive';
+import { setContextLive } from '@/store/contextLive';
 import { setContextSectionsLive } from '@/store/contextSectionsLive';
 import {
   addRightDrawerSection,
@@ -867,6 +868,13 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // ContextRing live store (before the pressure gate — low pressure is
       // the common case and still carries fresh cache stats).
       setPromptCacheLive(sessionId, promptCache);
+      // The server-accurate occupancy measurement (proper tokenizer chain
+      // over system + tools + messages). These fields used to be
+      // destructured and thrown away, which left the ContextRing on the
+      // persisted session-usage number — stale after a reload/session
+      // switch, and divided by the hardcoded 128k fallback whenever the
+      // model carried no contextWindow of its own.
+      setContextLive(sessionId, { totalTokens, maxContext, remainingTokens, contextUsedPct });
       // Byte sizes of the blocks this turn actually injected, so the context
       // breakdown can report a measurement instead of guessing zero.
       setContextSectionsLive(sessionId, contextSections);

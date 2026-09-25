@@ -524,10 +524,13 @@ def get_usage(sessionId: str) -> dict[str, object]:
 
     Resolves to the session SoT id when the id exists on ``sessions``.
     Returns cumulative totals (for the Usage page) plus ``latestContextTokens``
-    — the ``contextTokens`` of the most recent usage event, which equals the
-    provider-reported inputTokens of the final sub-call of the latest turn
-    (the true current context fill). Also returns the per-event list ordered
-    newest-first so the caller can derive the same value independently.
+    — the ``contextTokens`` of the most recent usage event: the FULL prompt
+    of the final sub-call of the latest turn (uncached + cache-read +
+    cache-creation), i.e. the true current context fill. Earlier rows
+    recorded only the raw ``input_tokens``, which on the Anthropic shape
+    excludes cache tokens and under-reports a warm session. Also returns the
+    per-event list ordered newest-first so the caller can derive the same
+    value independently.
     """
     sessionId = resolve_sot_session_id(sessionId)
     conn = _conn()

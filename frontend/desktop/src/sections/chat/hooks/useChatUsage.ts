@@ -39,28 +39,43 @@ export function useChatUsage(
     }
 
     let cancelled = false;
-    usageApi
-      .session(sotId)
-      .then((data) => {
-        if (cancelled) return;
-        setSessionUsage({
-          total: data.totalTokens,
-          input: data.totalInputTokens,
-          output: data.totalOutputTokens,
-          contextTokens: data.contextTokens ?? 0,
-          totalCost: data.totalCost ?? 0,
-          costEstimated: data.costEstimated ?? true,
-          cacheHitTokens: data.cacheHitTokens ?? 0,
-          cacheMissTokens: data.cacheMissTokens ?? 0,
-          cacheHitRate: data.cacheHitRate ?? 0,
+    // One bounded retry: a single early/transient failure previously nulled
+    // the state and left the ring on the bare local fallback (tool
+    // definitions only) until the next turn flipped the refresh key.
+    let attempt = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const fetchOnce = () => {
+      attempt += 1;
+      usageApi
+        .session(sotId)
+        .then((data) => {
+          if (cancelled) return;
+          setSessionUsage({
+            total: data.totalTokens,
+            input: data.totalInputTokens,
+            output: data.totalOutputTokens,
+            contextTokens: data.contextTokens ?? 0,
+            totalCost: data.totalCost ?? 0,
+            costEstimated: data.costEstimated ?? true,
+            cacheHitTokens: data.cacheHitTokens ?? 0,
+            cacheMissTokens: data.cacheMissTokens ?? 0,
+            cacheHitRate: data.cacheHitRate ?? 0,
+          });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (attempt === 1) {
+            retryTimer = setTimeout(fetchOnce, 1200);
+            return;
+          }
+          setSessionUsage(null);
         });
-      })
-      .catch(() => {
-        if (!cancelled) setSessionUsage(null);
-      });
+    };
+    fetchOnce();
 
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
     };
   }, [sessionId, workbenchSessionId, fallbackWorkbenchId, refreshKey]);
 

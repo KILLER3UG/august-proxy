@@ -26,6 +26,7 @@ import {
   resolveActiveSession,
 } from '@/store/sessions';
 import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
+import { useContextLiveStore, selectContextLive } from '@/store/contextLive';
 import {
   useContextSectionsStore,
   selectSkillsMemoryBytes,
@@ -1137,9 +1138,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     };
   }, [sessionId, streaming]);
 
-  const maxContext = modelForRequest?.contextWindow && modelForRequest.contextWindow > 0
-    ? modelForRequest.contextWindow
-    : 128000;
+  // The backend's per-turn `contextPressure` event is the authoritative
+  // occupancy measurement (proper tokenizer over system + tools + messages).
+  // Prefer it when present; fall back to the model profile, then 128k.
+  const liveContext = useContextLiveStore((s) => selectContextLive(s, sessionId));
+  const maxContext =
+    liveContext?.maxContext && liveContext.maxContext > 0
+      ? liveContext.maxContext
+      : modelForRequest?.contextWindow && modelForRequest.contextWindow > 0
+        ? modelForRequest.contextWindow
+        : 128000;
   const toolCountForBreakdown = workbenchToolCount ?? 30;
   const toolTokenEstimate = workbenchToolTokens;
   const serverContextTokens = sessionUsage?.contextTokens ?? 0;
@@ -1170,13 +1178,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return sum + (m.content?.length ?? 0) + (m.thinking?.length ?? 0);
   }, 0) + input.length;
   const fallbackEstimate = Math.ceil(transcriptChars / 4) + toolOverhead;
-  // While a turn is still streaming, server usage is stale — blend the live
-  // transcript estimate so the ring moves as the session grows.
-  const estTokens = hasServerTruth
-    ? streaming
-      ? Math.max(serverContextTokens, fallbackEstimate)
-      : serverContextTokens
-    : fallbackEstimate;
+  // Take the HIGHEST of every measurement we have. Any one source can be
+  // stale or under-count (the persisted `input_tokens` excluded cache
+  // buckets; the DB row lags the newest messages; the local char/4 estimate
+  // misses the system prompt), so a maximum can only be a more honest
+  // lower bound than trusting one of them alone. The prior idle branch took
+  // the persisted value verbatim, which is what pinned a warm session to a
+  // stable wrong ~10%.
+  const estTokens = Math.max(
+    serverContextTokens,
+    liveContext?.totalTokens ?? 0,
+    fallbackEstimate,
+  );
   const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
 
   // Byte size of the memory + skills blocks the backend injected on the
@@ -1196,7 +1209,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         mcpToolTokens: workbenchMcpTokens ?? undefined,
         coreMemoryBytes: coreMemoryBytes ?? undefined,
         skillsByName,
-        scaleToTotal: hasServerTruth
+        scaleToTotal: hasServerTruth || !!liveContext
           ? estTokens
           : hasContentToSend
             ? undefined
@@ -1211,6 +1224,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       coreMemoryBytes,
       skillsByName,
       hasServerTruth,
+      liveContext,
       estTokens,
       hasContentToSend,
     ],
@@ -1395,6 +1409,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       setThinkingEnabled={setThinkingEnabled}
       voiceActive={voiceActive}
       startVoiceInput={startVoiceInput}
+      scrolledFromBottom={scrolledFromBottom}
+      showNewContentPill={hasNewContentWhileUnpinned}
+      onScrollToBottom={scrollToBottom}
       dropdownApiRef={composerDropdownRef}
     />
     </>
@@ -1592,10 +1609,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 modelPickerActive={modelPickerActive}
                 onDismissModelPicker={() => setModelPickerActive(false)}
                 scrolledFromTop={scrolledFromTop}
-                scrolledFromBottom={scrolledFromBottom}
-                showNewContentPill={hasNewContentWhileUnpinned}
                 scrollRef={scrollRef}
-                onScrollToBottom={scrollToBottom}
                 onRevert={handleRevert}
                 onEdit={handleEdit}
                 onRegenerate={handleRegenerate}

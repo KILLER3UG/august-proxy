@@ -4338,7 +4338,6 @@ async def _sendWorkbenchMessageStreamImpl(
         if respUsage:
             totalInputTokens += as_int(respUsage.get('input_tokens', 0))
             totalOutputTokens += as_int(respUsage.get('output_tokens', 0))
-            finalContextTokens = as_int(respUsage.get('input_tokens', 0))
             # Universal cache split — three provider shapes:
             #   • Anthropic: cache_read_input_tokens / cache_creation_input_tokens
             #     (input_tokens excludes both; uncached = input + creation).
@@ -4378,6 +4377,18 @@ async def _sendWorkbenchMessageStreamImpl(
             else:
                 # Provider reports no cache fields — the input was uncached.
                 totalCacheMissTokens += inputNow
+            # Persist the FULL prompt of the final sub-call, not the raw
+            # `input_tokens`. On the Anthropic shape `input_tokens` excludes
+            # both cache_read_input_tokens and cache_creation_input_tokens, so
+            # recording it verbatim made a warm-cache session persist only its
+            # uncached tail — the context ring then read a stable wrong "~10%"
+            # while idle. missNow + hitNow is the whole prompt on every
+            # provider shape the split above understands: Anthropic
+            # (input+creation+read), DeepSeek (hit+miss, already disjoint),
+            # OpenAI-compatible (input−cached+cached == input).
+            finalContextTokens = (as_int(missNow, 0) if hitNow is not None else inputNow) + (
+                hitNow or 0
+            )
         if isAnthropic:
             assistantMsg: dict[str, object] = {'role': 'assistant', 'content': response.get('content', [])}
             contentBlocks = cast('list[dict[str, object]]', as_list(response.get('content', []), []))

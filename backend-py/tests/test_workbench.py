@@ -685,6 +685,7 @@ class TestWorkbenchCacheSplitRecording:
                     'cache_hit_tokens': cacheHitTokens,
                     'cache_miss_tokens': cacheMissTokens,
                     'input_tokens': inputTokens,
+                    'context_tokens': contextTokens,
                 }
             )
             return 1
@@ -737,6 +738,12 @@ class TestWorkbenchCacheSplitRecording:
         assert rec['cache_hit_tokens'] == 8000
         # Anthropic buckets are disjoint: uncached = plain input + cache write.
         assert rec['cache_miss_tokens'] == 9500
+        # The persisted context numerator is the FULL prompt of the final
+        # sub-call (uncached + cache-read), not the raw `input_tokens`
+        # (which Anthropic excludes cache buckets from). Recording the raw
+        # value made a warm-cache session persist only its uncached tail,
+        # so the idle context ring read a stable wrong "~10%".
+        assert rec['context_tokens'] == 17500  # 9000 input + 500 created + 8000 read
 
     async def testOpenaiPromptTokensDetailsCached(self, monkeypatch):
         """OpenAI-standard gateways stream the split inside
@@ -781,3 +788,6 @@ class TestWorkbenchCacheSplitRecording:
         rec = recorded[0]
         assert rec['cache_hit_tokens'] == 4800
         assert rec['cache_miss_tokens'] == 200
+        # cached_tokens is a SUBSET of prompt_tokens here, so the full
+        # prompt is miss + hit == prompt_tokens, unchanged from raw input.
+        assert rec['context_tokens'] == 5000
