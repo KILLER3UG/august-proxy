@@ -58,9 +58,20 @@ def test_report_when_nothing_requested(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_report_flags_requested_container_without_docker(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The headline honesty case: opt-in on, Docker absent."""
+    """The headline honesty case: opt-in on, Docker absent.
+
+    Seeds `probe` rather than `_probe_cache`. A cache entry stamped 0.0 is
+    judged against `time.monotonic() - 0.0 < _PROBE_TTL_S`, so it is stale on
+    any machine up longer than 60 seconds — and the re-probe then asks the real
+    host, which on a GitHub windows runner has Docker and answers. The test
+    measured uptime and installed software instead of the reporting logic.
+    """
     monkeypatch.setenv('AUGUST_CONTAINER_SANDBOX', '1')
-    container_backend._probe_cache = (0.0, False, 'docker daemon is not answering')
+    monkeypatch.setattr(
+        container_backend,
+        'probe',
+        lambda: (False, 'docker daemon is not answering (start Docker Desktop)'),
+    )
     sandbox_backends.invalidate_backend_cache()
     report = sandbox_backends.enforcement_report()
     assert report['requested'] == 'container'
@@ -73,6 +84,10 @@ def test_report_flags_requested_container_without_docker(monkeypatch: pytest.Mon
 def test_report_container_available_is_not_degraded(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv('AUGUST_CONTAINER_SANDBOX', '1')
     monkeypatch.setattr(container_backend.shutil, 'which', lambda n: 'docker' if n == 'docker' else None)
+    # Stub `probe`, not just `is_available`: enforcement_report calls probe()
+    # directly for the reason, so leaving it live made this pass only on hosts
+    # that actually have a answering Docker daemon.
+    monkeypatch.setattr(container_backend, 'probe', lambda: (True, ''))
     monkeypatch.setattr(container_backend, 'is_available', lambda: True)
     sandbox_backends.invalidate_backend_cache()
     report = sandbox_backends.enforcement_report()
