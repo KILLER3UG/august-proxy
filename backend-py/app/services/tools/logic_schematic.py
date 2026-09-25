@@ -137,7 +137,9 @@ def _parse_expr(expr: str, net: LogicNet, hint: str) -> str:
 
     def is_infix(*forms: str) -> bool:
         tok = peek()
-        return bool(tok) and (tok in forms or tok.lower() in forms)
+        if tok is None:
+            return False
+        return tok in forms or tok.lower() in forms
 
     def and_expr() -> str:
         left = unary_not_and()

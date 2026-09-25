@@ -162,7 +162,7 @@ _COL_STEP = 5
 _ROW_STEP = 6
 
 
-def auto_layout(elements: list[Element]) -> dict[str, dict[str, int]]:
+def auto_layout(elements: list[Element]) -> dict[str, dict[str, float]]:
     """Place parts left-to-right by signal depth, stacking parallel branches
     into rows.
 
@@ -220,7 +220,7 @@ def auto_layout(elements: list[Element]) -> dict[str, dict[str, int]]:
     for ref in refs:  # keep deck order for determinism
         per_column.setdefault(depth[ref], []).append(ref)
 
-    layout: dict[str, dict[str, int]] = {}
+    layout: dict[str, dict[str, float]] = {}
     for col_index, refs_in_col in sorted(per_column.items()):
         span = len(refs_in_col)
         for slot, ref in enumerate(refs_in_col):

@@ -337,7 +337,7 @@ class SubagentSpawnRequest:
         workItems: list[dict[str, Any]],
         mode: str = 'auto',
         emit: Callable[[dict[str, Any]], None] | None = None,
-        fanoutId: str = '',
+        fanout_id: str = '',
     ) -> None:
         self.session = session
         self.workItems = workItems
@@ -349,7 +349,7 @@ class SubagentSpawnRequest:
         # iteration cap — so every consumer that only knows ``harness_job_id``
         # (worker → executeSubAgent) reaches the same ledger without a new
         # parameter on five signatures.
-        self.fanoutId = fanoutId
+        self.fanout_id = fanout_id
         # Optional parent SSE emitter. Live sub-agent output (text / tool
         # calls / tool results) is forwarded to it so the chat thread shows
         # progress instead of only start + done. Start/done events are NOT
@@ -679,7 +679,7 @@ class SubagentOrchestrator:
                     auto_hop=bool(item.get('autoHop') or item.get('auto_hop')),
                     capability=as_str(item.get('capability') or 'standard'),
                     session_semaphore=self._sessionSemaphore(sid, max_concurrent),
-                    fanout_id=request.fanoutId,
+                    fanout_id=request.fanout_id,
                 )
             )
             self._tasks[taskId] = task

@@ -711,7 +711,7 @@ async def _doSpawn(
             ],
             mode='auto',
             emit=emit,
-            fanoutId=fanout_id,
+            fanout_id=fanout_id,
         )
         return await orchestrator.spawn(request)
 

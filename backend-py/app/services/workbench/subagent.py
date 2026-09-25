@@ -66,7 +66,7 @@ _SUBAGENT_NEVER_TOOLS = frozenset(
 _SPAWN_TOOLS = frozenset({'spawn_subagent', 'spawn_subagents'})
 
 
-def _subagent_answer(accumulated: str, lastRound: str) -> str:
+def _subagent_answer(accumulated: str, last_round: str) -> str:
     """The child's answer, decided by ONE rule that every consumer shares.
 
     A model puts its conclusion in the FINAL round, so the all-rounds
@@ -78,7 +78,7 @@ def _subagent_answer(accumulated: str, lastRound: str) -> str:
     subagent output in `assistant-output.ts` rather than re-deriving it per
     call site.
     """
-    trimmed = lastRound.strip()
+    trimmed = last_round.strip()
     return trimmed or accumulated.strip()
 
 
