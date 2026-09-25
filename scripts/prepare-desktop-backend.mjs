@@ -392,7 +392,18 @@ async function ensureNgspice() {
     return;
   }
 
-  const staging = await mkdtemp(join(tmpdir(), 'august-ngspice-'));
+  // Stage on the destination's own volume. The OS temp dir is C:\ and the
+  // checkout can be D:\ (GitHub runners put the workspace on another drive),
+  // and `rename` across devices fails with EXDEV — which is only visible in CI.
+  await mkdir(resourcesDir, { recursive: true });
+  // A run killed mid-way leaves a staging tree inside resources, and
+  // `resources/**/*` would bundle it. Clear those before starting.
+  for (const entry of await readdir(resourcesDir)) {
+    if (entry.startsWith('_ngspice_stage-')) {
+      await rm(join(resourcesDir, entry), { recursive: true, force: true });
+    }
+  }
+  const staging = await mkdtemp(join(resourcesDir, '_ngspice_stage-'));
   try {
     const archive = join(staging, NGSPICE_ARCHIVE);
     await download(NGSPICE_URL, archive, NGSPICE_SHA256);
@@ -467,12 +478,14 @@ async function ensureNgspice() {
       // Park the superseded tree OUTSIDE resources: `tauri.conf.json` bundles
       // `resources/**/*`, so an `ngspice.previous` sibling would ship the old
       // engine too and could win the probe. A hand-dropped tree may also be the
-      // developer's only copy, so move it rather than deleting it.
+      // developer's only copy, so preserve it rather than deleting it — copied,
+      // not renamed, because the temp dir may be on another volume.
       const previous = join(await mkdtemp(join(tmpdir(), 'august-ngspice-')), 'previous');
       try {
-        await rename(ngspiceDir, previous);
+        await cp(ngspiceDir, previous, { recursive: true });
+        await rm(ngspiceDir, { recursive: true, force: true });
         console.warn(
-          `[prepare-backend] previous ngspice moved aside to ${previous} (delete it anytime)`,
+          `[prepare-backend] previous ngspice copied aside to ${previous} (delete it anytime)`,
         );
       } catch (error) {
         // EBUSY/EPERM here means a live backend has the engine mapped — it
