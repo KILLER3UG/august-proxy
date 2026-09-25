@@ -91,10 +91,12 @@ class Element:
 
 def parse_elements(deck_text: str) -> list[Element]:
     """Extract (ref, kind, nodes, value) per element line, skipping
-    comments, dot-cards, ``.control`` blocks and continuations — the same
-    rules ``circuit_tools._parse_components`` / ``lint_netlist`` apply."""
+    comments, dot-cards, ``.control`` and ``.subckt`` bodies and
+    continuations — the same rules ``circuit_tools._parse_components`` /
+    ``lint_netlist`` apply."""
     out: list[Element] = []
     in_control = False
+    in_subckt = False
     for raw in deck_text.splitlines():
         s = raw.strip()
         low = s.lower()
@@ -104,7 +106,16 @@ def parse_elements(deck_text: str) -> list[Element]:
         if low.startswith('.endc'):
             in_control = False
             continue
-        if in_control or not s or s.startswith(('*', '+', '.')):
+        # A subckt's private nodes (i, n1, o …) are not part of the top-level
+        # circuit; the X instance already stands for the whole block. Emitting
+        # its body drew the same subcircuit twice, as free-floating parts.
+        if low.startswith('.subckt'):
+            in_subckt = True
+            continue
+        if low.startswith('.ends'):
+            in_subckt = False
+            continue
+        if in_control or in_subckt or not s or s.startswith(('*', '+', '.')):
             continue
         m = _ELEMENT_LINE_RE.match(s)
         if not m:
@@ -208,11 +219,16 @@ class Component:
         return (self.col * GRID, self.row * GRID)
 
     def pins(self) -> list[tuple[float, float]]:
-        left, right = PIN_OFFSETS.get(self.kind, DEFAULT_OFFSETS)
+        (lx, ly), (rx, ry) = PIN_OFFSETS.get(self.kind, DEFAULT_OFFSETS)
         cx, cy = self.px()
-        if self.rot % 2:  # vertical rung
-            return [(cx, cy + left[1] * GRID), (cx, cy + right[1] * GRID)]
-        return [(cx + left[0] * GRID, cy + right[1] * GRID), (cx + right[0] * GRID, cy + right[1] * GRID)]
+        if self.rot % 2:
+            # Rotate the offsets 90° about the centre: (dx, dy) -> (-dy, dx).
+            # Reading the row offsets alone here returned the centre twice,
+            # so every wire on a vertical part attached to its middle.
+            return [(cx - ly * GRID, cy + lx * GRID),
+                    (cx - ry * GRID, cy + rx * GRID)]
+        return [(cx + lx * GRID, cy + ly * GRID),
+                (cx + rx * GRID, cy + ry * GRID)]
 
 
 @dataclass
@@ -274,14 +290,18 @@ def build_graph(deck_text: str, layout: dict[str, Any]) -> dict[str, Any]:
             # visible instead of leaving every ground pin dangling.
             bus_y: float = max(ys) + 2 * GRID
         else:
-            bus_y = sum(ys) / len(ys)
-        max_x = max(pos[0] for _, _, pos in ordered)
+            # Snap the bus onto the grid — the plain mean of two pin rows
+            # parks every stub on a fractional coordinate.
+            bus_y = round((sum(ys) / len(ys)) / GRID) * GRID
+        # Bus-and-stub: walk the bus to the pin's column, drop a stub onto the
+        # pin, climb back. Stepping straight from the bus to the next pin drew
+        # a diagonal whenever two pins differed in BOTH x and y.
         pts: list[tuple[float, float]] = [(ordered[0][2][0], bus_y)]
-        for _ref, _idx, (px_, py_) in ordered:
+        for i, (_ref, _idx, (px_, py_)) in enumerate(ordered):
+            pts.append((px_, bus_y))
             pts.append((px_, py_))
-            if px_ != max_x:
+            if i < len(ordered) - 1:
                 pts.append((px_, bus_y))
-        pts.append((max_x, bus_y))
         cleaned: list[tuple[float, float]] = []
         for p in pts:
             if not cleaned or p != cleaned[-1]:
@@ -337,9 +357,12 @@ def _symbol_svg(comp: Component, color: str, voltage: float | None,
     stroke = '#334155'
     label = _esc(f'{comp.ref} {comp.value}'.strip())
     if vertical:
-        # rotate the horizontal symbol 90° about the component center
+        # Draw the horizontal symbol at the origin and put it on the grid with
+        # translate-then-rotate. Rotating alone about (cx, cy) also slides the
+        # origin-drawn body by (cy, -cx), which landed vertical parts tens of
+        # pixels away from the pins the wires were routed to.
         cx, cy = comp.px()
-        return [f'<g transform="rotate(90 {cx:.0f} {cy:.0f})">'
+        return [f'<g transform="translate({cx:.0f} {cy:.0f}) rotate(90)">'
                 + '\n'.join(_symbol_svg(Component(comp.ref, comp.kind, comp.nodes,
                                                    comp.value, comp.params, 0, 0, 0), color, voltage, current))
                 + '</g>']
@@ -371,9 +394,13 @@ def _symbol_svg(comp: Component, color: str, voltage: float | None,
             parts.append(f'<line x1="{mid - 4:.0f}" y1="{y0 - 2:.0f}" x2="{mid + 4:.0f}" y2="{y0 - 2:.0f}" stroke="{stroke}" stroke-width="2"/>')
             parts.append(f'<line x1="{mid + 4:.0f}" y1="{y0 - 2:.0f}" x2="{mid:.0f}" y2="{y0 + 6:.0f}" stroke="{stroke}" stroke-width="2"/>')
             parts.append(f'<line x1="{mid:.0f}" y1="{y0 + 6:.0f}" x2="{mid - 4:.0f}" y2="{y0 - 2:.0f}" stroke="{stroke}" stroke-width="2"/>')
-        if comp.nodes and comp.nodes[0] == '0':
+        # Ground belongs on the pin that is actually tied to node '0'. The
+        # unconditional else drew a ground bar on every source, including
+        # floating ones that have no connection to ground at all.
+        zero = next((i for i, n in enumerate(comp.nodes[:2]) if n == '0'), None)
+        if zero == 0:
             parts.append(_ground_svg(x0, y0, -1))
-        else:
+        elif zero == 1:
             parts.append(_ground_svg(x1, y1, 1))
     elif comp.kind == 'subckt':
         w, h = abs(x1 - x0), 24

@@ -310,7 +310,18 @@ function latestWith(
 export function CircuitInstruments({ messages }: { messages?: ChatMessage[] | null }) {
   const sims = useMemo(() => collectSimResults(messages), [messages]);
   const scopeReady = useMemo(() => latestWith(sims, (r) => !!r.traces && Object.keys(r.traces).length > 0), [sims]);
-  const bodeTraceSet = useMemo(() => scopeReady?.traces ?? null, [scopeReady]);
+  // Bode's axes are frequency, so it must not inherit the Scope's newest
+  // traced run whatever produced it — that plotted a .tran sweep against a
+  // Hz axis and relabelled seconds as decades.
+  const bodeReady = useMemo(
+    () =>
+      latestWith(
+        sims,
+        (r) => !!r.traces && Object.values(r.traces).some((t) => t.xunit === 'Hz'),
+      ),
+    [sims],
+  );
+  const bodeTraceSet = useMemo(() => bodeReady?.traces ?? null, [bodeReady]);
   const meterSource = useMemo(() => latestWith(sims, (r) => !!r.measures && Object.keys(r.measures).length > 0), [sims]);
   const rows = useMemo(() => meterRows(meterSource?.measures ?? {}), [meterSource]);
 

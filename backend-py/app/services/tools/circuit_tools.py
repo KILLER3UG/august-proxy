@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import colorsys
+import hashlib
 import json
 import logging
 import math
@@ -597,19 +598,40 @@ def list_netlists(workspace: str = '') -> dict[str, object]:
 # out of sync with the circuit. See ``schematic.py`` for the model.
 
 
+def _deck_text(stripped: str) -> str:
+    """Normalise inline SPICE text into a complete deck."""
+    text = stripped if stripped.lower().startswith('*') else f'* netlist\n{stripped}'
+    if not re.search(r'^\.end\s*$', text, re.M | re.I):
+        text += '\n.end'
+    return text + '\n'
+
+
+def _looks_like_deck_path(s: str) -> bool:
+    """Decide path-vs-inline by SHAPE, not length.
+
+    The old ``'\\n' not in s and len(s) < 260`` test made a one-line deck
+    (``"V1 in 0 5"``) raise ``File not found: V1 in 0 5``, and a genuinely
+    long Windows path silently become netlist text that parsed to an empty
+    graph. A path has a separator or a deck suffix; nothing else does.
+    """
+    if not s or '\n' in s:
+        return False
+    if '/' in s or '\\' in s:
+        return True
+    return Path(s).suffix.lower() in _NETLIST_EXT
+
+
 def _resolve_deck_path(netlist: str, workspace: str, for_write: bool) -> Path:
     """Accept an inline deck or a workspace path; return a real deck file.
 
-    Inline text is written to a scratch ``.cir`` next to the workspace so
-    the sidecar has a stable home; a path is bound and returned as-is.
-    A non-string argument is a caller error — raise a plain message rather
-    than letting ``AttributeError`` leak through the tool boundary.
+    Inline text is written to a scratch ``.cir`` named after its content so
+    the sidecar has a stable home — and so two different inline decks cannot
+    share one layout. Only callers that genuinely mutate pass ``for_write``.
     """
     if not isinstance(netlist, str):
         raise ValueError('netlist must be a string (inline SPICE text or a deck path)')
     stripped = netlist.strip()
-    is_path = bool(stripped) and '\n' not in stripped and len(stripped) < 260
-    if is_path:
+    if _looks_like_deck_path(stripped):
         p = _bind(stripped, workspace, for_write=for_write)
         if not p.exists():
             raise ValueError(f'File not found: {netlist}')
@@ -620,17 +642,30 @@ def _resolve_deck_path(netlist: str, workspace: str, for_write: bool) -> Path:
         raise ValueError('netlist is empty.')
     root = _bind('.', workspace, for_write=True) if workspace else Path(tempfile.gettempdir())
     root = root if root.is_dir() else root.parent
-    target = root / '_schematic_inline.cir'
-    text = stripped if stripped.lower().startswith('*') else f'* netlist\n{stripped}'
-    if not re.search(r'^\.end\s*$', text, re.M | re.I):
-        text += '\n.end'
-    target.write_text(text + '\n', encoding='utf-8')
+    digest = hashlib.sha256(stripped.encode('utf-8')).hexdigest()[:10]
+    target = root / f'_schematic_inline_{digest}.cir'
+    target.write_text(_deck_text(stripped), encoding='utf-8')
     return target
 
 
 def read_schematic(netlist: str, workspace: str = '') -> dict[str, object]:
-    """Return the renderable graph: components (with layout), wires, nodes."""
+    """Return the renderable graph: components (with layout), wires, nodes.
+
+    Reading never touches the disk. A previous revision materialised inline
+    text into the workspace, which is a file appearing from a tool the policy
+    table files under read-only.
+    """
     from app.services.tools import schematic
+
+    stripped = netlist.strip() if isinstance(netlist, str) else ''
+    if isinstance(netlist, str) and not _looks_like_deck_path(stripped) and stripped:
+        graph = schematic.build_graph(_deck_text(stripped), {})
+        payload = schematic.graph_to_wire_payload(graph)
+        payload['path'] = ''
+        payload['layoutPath'] = ''
+        payload['layoutExists'] = False
+        payload['autoLayout'] = True
+        return payload
 
     deck_path = _resolve_deck_path(netlist, workspace, for_write=False)
     deck_text = deck_path.read_text(encoding='utf-8', errors='replace')
@@ -693,10 +728,23 @@ def edit_schematic(
             for node, pts in wire_routes.items():
                 if not isinstance(pts, list) or len(pts) < 2:
                     raise ValueError(f'wireRoutes[{node}] needs at least two [x, y] points')
-                routes[str(node)] = pts
+                clean: list[list[float]] = []
+                for pt in pts:
+                    if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+                        raise ValueError(f'wireRoutes[{node}] points must be [x, y] pairs, got {pt!r}')
+                    try:
+                        clean.append([float(pt[0]), float(pt[1])])
+                    except (TypeError, ValueError):
+                        raise ValueError(
+                            f'wireRoutes[{node}] needs numeric [x, y] points, got {pt!r}'
+                        ) from None
+                routes[str(node)] = clean
             layout['wireRoutes'] = routes
-    layout_path = schematic.write_layout(deck_path, layout)
+    # Build before persisting. The old order wrote the sidecar first, so one
+    # rejected coordinate left a corrupt layout on disk that failed every
+    # subsequent read and edit of that deck.
     graph = schematic.build_graph(deck_text, layout)
+    layout_path = schematic.write_layout(deck_path, layout)
     payload = schematic.graph_to_wire_payload(graph)
     payload['savedTo'] = str(layout_path)
     return payload
@@ -740,6 +788,30 @@ _MEASURE_RE = re.compile(
     r'^\s*([\w][\w().#\-]*)\s*=\s*([-+0-9.eE]+)'
     r'(?:\s+[a-zA-Z_]+=\s*[-+0-9.eE]+)*\s*$'
 )
+
+# Server mode injects ``print all``, and ngspice answers with its built-in
+# constants. For a control-less ``.op`` deck those are the ONLY
+# ``name = value`` lines in the log, so a run that "succeeded" with exitCode 0
+# reported pi, boltz and `yes` as node voltages — which then fed circuit_test
+# assertions and the annotate overlay. Filtered only when the deck never names
+# that node, because `c` and `e` are ordinary net names.
+_NGSPICE_CONSTANTS = frozenset({
+    'pi', 'e', 'boltz', 'planck', 'c', 'echarge', 'kelvin',
+    'yes', 'no', 'true', 'false',
+})
+
+
+def _is_ngspice_constant(name: str, deck_text: str, _cache: dict[str, set[str]] = {}) -> bool:
+    key = name.lower()
+    if key not in _NGSPICE_CONSTANTS:
+        return False
+    nodes = _cache.get(deck_text)
+    if nodes is None:
+        nodes = {n.lower() for n in _deck_node_names(deck_text)}
+        if len(_cache) > 32:
+            _cache.clear()
+        _cache[deck_text] = nodes
+    return key not in nodes
 
 # Batch (``ngspice_con -b -o out.txt``) prints the operating point as a
 # space-ALIGNED table — ``mid   5.000000e+00``, no ``=`` — which _MEASURE_RE
@@ -1557,7 +1629,7 @@ async def simulate_circuit(
         else:
             for line in log.splitlines():
                 m = _MEASURE_RE.match(line)
-                if m:
+                if m and not _is_ngspice_constant(m.group(1), deck_text):
                     try:
                         measures[m.group(1)] = float(m.group(2))
                     except ValueError:
@@ -1629,6 +1701,21 @@ async def simulate_circuit(
                     keep_traces = _bind(f'{base}_traces.json', ws, for_write=True)
                     keep_traces.write_text(json.dumps(traces_out), encoding='utf-8')
                     result['tracesFile'] = str(keep_traces)
+        if (
+            not measures
+            and not errors
+            and sweep_spec is None
+            and re.search(r'^\.op\b', deck_text, re.M | re.I)
+        ):
+            # An empty measures dict is indistinguishable from "every node is
+            # 0 V" unless it says so. Server mode can print no op table at all
+            # (bundled batch mode failing on the user's machine), and the
+            # model must not read that as a dead circuit.
+            result['measureWarnings'] = [
+                'the .op run exited cleanly but printed no node voltages — '
+                'these are absent, not zero; run circuit_env and check the '
+                'ngspice invocation mode'
+            ]
         if trace_warnings:
             result['traceWarnings'] = trace_warnings
         if sweep_spec is not None and sweep_results is not None:
@@ -2560,7 +2647,7 @@ async def circuit_annotate(
         measures: dict[str, float] = {}
         for line in log.splitlines():
             m = _MEASURE_RE.match(line)
-            if m:
+            if m and not _is_ngspice_constant(m.group(1), op_deck):
                 try:
                     measures[m.group(1)] = float(m.group(2))
                 except ValueError:

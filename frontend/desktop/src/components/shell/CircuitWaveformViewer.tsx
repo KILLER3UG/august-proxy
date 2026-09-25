@@ -12,14 +12,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileClock } from 'lucide-react';
 import { whenReady } from '@/api/client';
+import {
+  WAVEFORM_EXT,
+  artifactsForMessages,
+  type CircuitToolEntry,
+} from '@/lib/circuit-artifacts';
 import type { ChatMessage } from '@/types/chat';
 
 const SURFER_URL = 'https://app.surfer-project.org/';
-const WAVEFORM_EXT = /\.(vcd|fst|ghw)$/i;
-// The whole gated /circuit family — circuit_*, firmware_*, hdl_*, vcd_parse,
-// fpga_compile, kicad_checks/render — can leave waveform artifacts.
-const CIRCUIT_TOOLS =
-  /^(circuit_|firmware_|hdl_|vcd_parse|fpga_compile|kicad_)/i;
 
 export interface WaveformArtifact {
   path: string;
@@ -28,47 +28,16 @@ export interface WaveformArtifact {
   ts: number;
 }
 
-/** Newest-first waveform artifacts (vcd/fst/ghw) from circuit tool results. */
+/** Newest-first waveform artifacts (vcd/fst/ghw) from circuit tool results.
+ *  `waveFile` / `vcdFile` are RESULT keys — `hdl_simulate`'s arguments are
+ *  `{source, top, name}`, so the old block-context read never saw one. */
 export function collectWaveformArtifacts(
-  messages?: ChatMessage[] | null,
+  messages?: Array<{ tools?: CircuitToolEntry[] | null }> | null,
 ): WaveformArtifact[] {
-  if (!messages) return [];
-  const seen = new Set<string>();
-  const out: WaveformArtifact[] = [];
-  for (const message of messages) {
-    // Block-level context JSON carries the artifact path as soon as the
-    // tool returns (vcdFile / waveFile / path keys) — no need to parse the
-    // full result.
-    for (const block of message.blocks ?? []) {
-      if (block.type !== 'toolCall' || !block.tool) continue;
-      const name = block.tool.name || '';
-      if (!CIRCUIT_TOOLS.test(name)) continue;
-      let path: string | null = null;
-      try {
-        const parsed = JSON.parse(block.tool.context || '{}') as Record<string, unknown>;
-        for (const key of ['vcdFile', 'waveFile', 'path', 'filePath', 'savedTo']) {
-          const v = parsed[key];
-          if (typeof v === 'string' && v.length > 0 && WAVEFORM_EXT.test(v)) {
-            path = v;
-            break;
-          }
-        }
-      } catch {
-        /* context not JSON */
-      }
-      if (!path) continue;
-      const key = path.replace(/\\/g, '/');
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({
-        path,
-        label: key.split('/').pop() || key,
-        tool: name,
-        ts: block.tool.startedAt ?? 0,
-      });
-    }
-  }
-  return out.sort((a, b) => b.ts - a.ts);
+  return artifactsForMessages(messages)
+    .filter((a) => WAVEFORM_EXT.test(a.path))
+    .map((a) => ({ path: a.path, label: a.label, tool: a.tool, ts: a.startedAt }))
+    .sort((x, y) => y.ts - x.ts);
 }
 
 /** Absolute /files/raw URL for the surfer iframe to fetch (backend base

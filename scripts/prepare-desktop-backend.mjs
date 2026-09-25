@@ -9,7 +9,7 @@
 //   node scripts/prepare-desktop-backend.mjs --release    # release: writes the real sha256 stamp
 //   node scripts/prepare-desktop-backend.mjs --skip-download   # reuse existing python/
 
-import { createWriteStream, createReadStream } from 'node:fs';
+import { createReadStream } from 'node:fs';
 import { mkdir, rm, cp, access, writeFile, readFile, mkdtemp, rename, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -58,6 +58,19 @@ const PYTHON_URL =
   `https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_BUILD}/` +
   `cpython-${PYTHON_VERSION}+${PYTHON_BUILD}-x86_64-pc-windows-msvc-install_only.tar.gz`;
 const PYTHON_SHA256 = 'd15361fd202dd74ae9c3eece1abdab7655f1eba90bf6255cad1d7c53d463ed4d';
+
+// ngspice — the SPICE engine the circuit workbench drives. Nothing used to
+// stage it: `resources/ngspice/**` is gitignored and no script fetched it, so a
+// clean release build silently shipped without a simulator while the docs said
+// it did. Pinned by SHA-256 from the project's own win64 archive.
+const NGSPICE_VERSION = '45.2';
+const NGSPICE_ARCHIVE = `ngspice-${NGSPICE_VERSION}_64.7z`;
+const NGSPICE_URL =
+  `https://sourceforge.net/projects/ngspice/files/ng-spice-rework/old-releases/` +
+  `${NGSPICE_VERSION}/${NGSPICE_ARCHIVE}/download`;
+const NGSPICE_SHA256 =
+  '6a0c44056e7f2aae9bd6b3f5a74d1846fcf1e5d4470b01a89429629cfd0a0942';
+const ngspiceDir = join(resourcesDir, 'ngspice');
 const BUILD_TOOLS_REQUIREMENTS = [
   'setuptools==81.0.0 \\',
   '    --hash=sha256:487b53915f52501f0a79ccfd0c02c165ffe06631443a886740b91af4b7a5845a \\',
@@ -102,7 +115,7 @@ function resolveCommand(command, args) {
 function run(command, args, opts = {}) {
   const resolved = resolveCommand(command, args);
   const result = spawnSync(resolved.command, resolved.args, {
-    stdio: 'inherit',
+    stdio: opts.stdio || 'inherit',
     cwd: opts.cwd || root,
     env: { ...process.env, ...(opts.env || {}) },
     shell: false,
@@ -156,7 +169,13 @@ async function download(url, dest, expectedSha256) {
   const partial = `${dest}.part`;
   await rm(partial, { force: true });
   try {
-    await pipeline(res.body, createWriteStream(partial));
+    // Read the whole body before touching disk. Piping `res.body` into a
+    // writeStream throws an *uncatchable* ERR_ASSERTION (`assert(!this.paused)`)
+    // on SourceForge's mirror redirect under Node 24, which kills the process
+    // mid-release instead of failing the step. These archives are tens of MB.
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (!bytes.length) throw new Error(`download returned 0 bytes: ${url}`);
+    await writeFile(partial, bytes);
     await verifySha256(partial, expectedSha256);
     await rm(dest, { force: true });
     await rename(partial, dest);
@@ -254,6 +273,145 @@ async function ensurePython() {
   await writePythonIntegrityMarker();
   console.log(`[prepare-backend] portable python ready: ${pythonExe}`);
   return pythonExe;
+}
+
+function resolveSevenZip() {
+  for (const candidate of ['7z', '7za', '7zr']) {
+    const resolved = resolveCommand(candidate, []);
+    // resolveCommand hands back the bare name when PATH has nothing, so probe
+    // for the real file rather than trusting a pass-through.
+    if (resolved.command !== candidate && existsSync(resolved.command)) return resolved.command;
+  }
+  throw new Error(
+    'staging ngspice needs a 7z-capable extractor (7z, 7za or 7zr) on PATH. ' +
+      'bsdtar is deliberately not used as a fallback: on this archive it reports ' +
+      '"Archive entry has empty or unreadable filename", skips ~20 entries and ' +
+      'still exits successfully, which would bundle an engine missing the DLLs ' +
+      'it imports.'
+  );
+}
+
+async function verifyNgspiceRuns(exe, version) {
+  const result = spawnSync(exe, ['--version'], { encoding: 'utf8', shell: false });
+  const banner = `${result.stdout || ''}${result.stderr || ''}`;
+  if (result.error || !banner.includes(`ngspice-${version}`)) {
+    throw new Error(
+      `staged ngspice did not report v${version} (exit ${result.status ?? 'error'}): ` +
+        `${banner.trim().slice(0, 200) || result.error?.message || 'no output'}`
+    );
+  }
+}
+
+/** Stage the pinned win64 ngspice into resources so the installer carries a
+ *  working engine. Only the console binary ships: the GUI `ngspice.exe` never
+ *  emits stdout through a pipe, so the backend cannot drive it. */
+async function ensureNgspice() {
+  if (process.platform !== 'win32') {
+    console.warn('[prepare-backend] ngspice staging is win64-only; skipping');
+    return;
+  }
+  const markerPath = join(ngspiceDir, 'staged-from.sha256');
+  if (skipDownload) {
+    if (!existsSync(markerPath)) {
+      throw new Error(
+        `--skip-download needs a staged ngspice at ${ngspiceDir}; run without it once`,
+      );
+    }
+    console.log('[prepare-backend] reusing staged ngspice (--skip-download)');
+    return;
+  }
+  if (
+    existsSync(markerPath)
+    && (await readFile(markerPath, 'utf8')).trim() === NGSPICE_SHA256
+  ) {
+    console.log(`[prepare-backend] ngspice ${NGSPICE_VERSION} already staged`);
+    return;
+  }
+
+  const staging = await mkdtemp(join(tmpdir(), 'august-ngspice-'));
+  try {
+    const archive = join(staging, NGSPICE_ARCHIVE);
+    await download(NGSPICE_URL, archive, NGSPICE_SHA256);
+    const extracted = join(staging, 'extracted');
+    await mkdir(extracted, { recursive: true });
+    run(resolveSevenZip(), ['x', archive, `-o${extracted}`, '-y'], { stdio: 'ignore' });
+
+    const source = join(extracted, 'Spice64');
+    for (const rel of ['bin/ngspice_con.exe', 'bin/libomp140.x86_64.dll', 'share/ngspice']) {
+      if (!existsSync(join(source, ...rel.split('/')))) {
+        // Fail loudly: a partial tree that still contains the exe would pass a
+        // naive existence check and crash on the user's first simulation.
+        throw new Error(`ngspice archive is missing ${rel}`);
+      }
+    }
+
+    const staged = join(staging, 'ngspice');
+    await mkdir(join(staged, 'bin'), { recursive: true });
+    await cp(join(source, 'bin', 'ngspice_con.exe'), join(staged, 'bin', 'ngspice_con.exe'));
+    await cp(join(source, 'bin', 'libomp140.x86_64.dll'), join(staged, 'bin', 'libomp140.x86_64.dll'));
+    await cp(join(source, 'share', 'ngspice'), join(staged, 'share', 'ngspice'), { recursive: true });
+    await cp(join(source, 'docs', 'COPYING'), join(staged, 'LICENSE'));
+    await writeFile(
+      join(staged, 'README.md'),
+      [
+        `# Bundled ngspice (${NGSPICE_VERSION}, win64)`,
+        '',
+        'Generated by `node scripts/prepare-desktop-backend.mjs` — do not edit by',
+        'hand and do not commit (`resources/ngspice/**` is gitignored). The tree',
+        'comes from the single archive pinned as `NGSPICE_URL` below, verified',
+        'against `NGSPICE_SHA256`, and the staged binary is executed with',
+        '`--version` before it is accepted.',
+        '',
+        '- Source: https://sourceforge.net/projects/ngspice/files/',
+        `          ng-spice-rework/old-releases/${NGSPICE_VERSION}/${NGSPICE_ARCHIVE}`,
+        '- License: Modified BSD, copied from the archive\'s `docs/COPYING` to',
+        '  `LICENSE` beside this file.',
+        '- `bin/` holds the console build only. The GUI `ngspice.exe` never',
+        '  writes stdout through a pipe, so the backend cannot drive it.',
+        '',
+        'Set `AUGUST_NGSPICE_EXE` to keep a system install instead; it wins when',
+        'it points at a real file. `circuit_env` reports what was found.',
+        '',
+      ].join('\n'),
+    );
+    // Marker goes in the STAGING tree, never the live one: it reaches
+    // resources/ only via the rename below, so "already staged" can never be
+    // claimed by a tree that was not actually swapped in.
+    await writeFile(join(staged, 'staged-from.sha256'), `${NGSPICE_SHA256}\n`);
+
+    // Accept the engine in its final layout, not in the extract dir: the share
+    // tree is located relative to the executable, so a bad layout only shows
+    // up here.
+    await verifyNgspiceRuns(join(staged, 'bin', 'ngspice_con.exe'), NGSPICE_VERSION);
+
+    if (existsSync(ngspiceDir)) {
+      // Park the superseded tree OUTSIDE resources: `tauri.conf.json` bundles
+      // `resources/**/*`, so an `ngspice.previous` sibling would ship the old
+      // engine too and could win the probe. A hand-dropped tree may also be the
+      // developer's only copy, so move it rather than deleting it.
+      const previous = join(await mkdtemp(join(tmpdir(), 'august-ngspice-')), 'previous');
+      try {
+        await rename(ngspiceDir, previous);
+        console.warn(
+          `[prepare-backend] previous ngspice moved aside to ${previous} (delete it anytime)`,
+        );
+      } catch (error) {
+        // EBUSY/EPERM here means a live backend has the engine mapped — it
+        // spawns ngspice in server mode and keeps it running between turns.
+        throw new Error(
+          `cannot replace ${ngspiceDir}: ${error.code || error.message}. Close the running ` +
+            'August app or dev backend (`npm run dev:desktop`, and any ngspice_con.exe it ' +
+            'started) and run this step again — the bundled engine stays loaded while it runs.',
+          { cause: error },
+        );
+      }
+    }
+    await mkdir(dirname(ngspiceDir), { recursive: true });
+    await rename(staged, ngspiceDir);
+    console.log(`[prepare-backend] staged ngspice ${NGSPICE_VERSION} → ${ngspiceDir}`);
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
 }
 
 async function stageBackendSources() {
@@ -423,12 +581,14 @@ async function main() {
       '# Desktop backend resources',
       '',
       'Generated by `node scripts/prepare-desktop-backend.mjs`.',
-      'Do not commit the python/ / backend-py/ / wheels/ trees — CI/release builds them.',
+      'Do not commit the python/ / backend-py/ / wheels/ / ngspice/ trees —',
+      'CI/release builds them.',
       '',
     ].join('\n'),
   );
 
   const pythonExe = await ensurePython();
+  await ensureNgspice();
   await stageBackendSources();
   await buildWheels(pythonExe);
   await writeManifest(pythonExe);

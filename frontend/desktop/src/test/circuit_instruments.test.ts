@@ -116,61 +116,67 @@ describe('CircuitInstruments data extraction', () => {
   });
 });
 
-/* CircuitWaveformViewer — VCD artifact discovery from block contexts. */
+/* CircuitWaveformViewer — VCD artifact discovery from tool RESULTS.
+ *
+ * These fixtures are shaped the way `makeStreamHandlers` actually writes
+ * `message.tools[]`: `context` is the model's INPUT and the artifact keys
+ * (`vcdFile` / `waveFile` / `savedTo`) live in `result`. Building a block
+ * whose `context` holds a result payload is what let the old fixtures pass
+ * while every real waveform went unseen. */
 import {
   collectWaveformArtifacts,
   rawFileUrl,
 } from '@/components/shell/CircuitWaveformViewer';
 
+/** One assistant message whose `tools[]` mirror a finished tool call. */
+function msg(
+  id: string,
+  name: string,
+  input: Record<string, unknown>,
+  result: Record<string, unknown> | string,
+  startedAt = 0,
+  status = 'done',
+) {
+  return {
+    id,
+    role: 'assistant',
+    content: '',
+    timestamp: '2026-08-29T00:00:00Z',
+    tools: [
+      {
+        id: `${id}-t1`,
+        name,
+        status,
+        startedAt,
+        context: JSON.stringify(input, null, 2),
+        result: typeof result === 'string' ? result : JSON.stringify(result),
+      },
+    ],
+  } as unknown as ChatMessage;
+}
+
 describe('CircuitWaveformViewer artifact discovery', () => {
-  const vcdMsg = {
-    id: 'm1',
-    role: 'assistant',
-    content: '',
-    timestamp: '2026-08-29T00:00:00Z',
-    blocks: [
-      {
-        type: 'toolCall',
-        tool: {
-          name: 'circuit_export_vcd',
-          context: JSON.stringify({ vcdFile: 'C:/ws/digital.vcd', savedTo: 'C:/ws/digital.vcd' }),
-          startedAt: 10,
-        },
-      },
-    ],
-  } as unknown as ChatMessage;
-  const pngMsg = {
-    id: 'm2',
-    role: 'assistant',
-    content: '',
-    timestamp: '2026-08-29T00:00:00Z',
-    blocks: [
-      {
-        type: 'toolCall',
-        tool: {
-          name: 'circuit_render_3d',
-          context: JSON.stringify({ path: 'C:/ws/board.png' }),
-          startedAt: 20,
-        },
-      },
-    ],
-  } as unknown as ChatMessage;
-  const newerVcdMsg = {
-    id: 'm3',
-    role: 'assistant',
-    content: '',
-    timestamp: '2026-08-29T00:00:00Z',
-    blocks: [
-      {
-        type: 'toolCall',
-        tool: {
-          name: 'circuit_export_vcd',
-          context: JSON.stringify({ vcdFile: 'C:/ws/counter.vcd' }),
-          startedAt: 30,
-        },
-      },
-    ],
-  } as unknown as ChatMessage;
+  const vcdMsg = msg(
+    'm1',
+    'circuit_export_vcd',
+    { netlist: 'C:/ws/digital.cir' },
+    { ok: true, vcdFile: 'C:/ws/digital.vcd', savedTo: 'C:/ws/digital.vcd' },
+    10,
+  );
+  const pngMsg = msg(
+    'm2',
+    'circuit_render_3d',
+    { path: 'C:/ws/board.png', netlistOrPath: 'C:/ws/divider.cir' },
+    { path: 'C:/ws/board.png', componentCount: 4 },
+    20,
+  );
+  const newerVcdMsg = msg(
+    'm3',
+    'circuit_export_vcd',
+    { netlist: 'C:/ws/counter.cir' },
+    { ok: true, vcdFile: 'C:/ws/counter.vcd' },
+    30,
+  );
 
   it('collects only vcd/fst/ghw circuit artifacts, newest first, deduped', () => {
     const waves = collectWaveformArtifacts([vcdMsg, pngMsg, newerVcdMsg, vcdMsg]);
@@ -178,18 +184,38 @@ describe('CircuitWaveformViewer artifact discovery', () => {
     expect(waves[0].tool).toBe('circuit_export_vcd');
   });
 
-  it('ignores non-JSON contexts and non-circuit tools', () => {
-    const noise = {
-      id: 'm4',
-      role: 'assistant',
-      content: '',
-      timestamp: '2026-08-29T00:00:00Z',
-      blocks: [
-        { type: 'toolCall', tool: { name: 'run_command', context: JSON.stringify({ path: 'C:/x/a.vcd' }), startedAt: 5 } },
-        { type: 'toolCall', tool: { name: 'circuit_simulate', context: 'not json', startedAt: 6 } },
-      ],
-    } as unknown as ChatMessage;
-    expect(collectWaveformArtifacts([noise])).toHaveLength(0);
+  it('finds the hdl_simulate waveform, whose arguments name no path at all', () => {
+    const hdl = msg(
+      'm5',
+      'hdl_simulate',
+      { source: 'entity tb is begin end;', top: 'tb_counter', name: 'counter' },
+      { ok: true, exitCode: 0, waveFile: 'C:/ws/counter_tb.vcd' },
+      40,
+    );
+    const waves = collectWaveformArtifacts([hdl]);
+    expect(waves).toHaveLength(1);
+    expect(waves[0].path).toBe('C:/ws/counter_tb.vcd');
+    expect(waves[0].tool).toBe('hdl_simulate');
+  });
+
+  it('ignores a failed tool — it wrote nothing', () => {
+    const failed = msg(
+      'm8',
+      'circuit_export_vcd',
+      { netlist: 'C:/ws/a.cir' },
+      { vcdFile: 'C:/ws/a.vcd' },
+      9,
+      'error',
+    );
+    expect(collectWaveformArtifacts([failed])).toHaveLength(0);
+  });
+
+  it('ignores non-circuit tools and a result that is not JSON', () => {
+    const noise = [
+      msg('m4', 'run_command', { command: 'ls' }, { path: 'C:/x/a.vcd' }, 5),
+      msg('m6', 'circuit_simulate', { netlist: 'a.cir' }, 'not json', 6),
+    ];
+    expect(collectWaveformArtifacts(noise)).toHaveLength(0);
   });
 
   it('builds the absolute /files/raw URL with the resolved base', async () => {

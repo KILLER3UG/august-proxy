@@ -207,3 +207,175 @@ def test_schematic_endpoints_404_unknown_session(_client, tmp_path: Path):
     deck = _write_deck(tmp_path)
     r = client.get('/api/workbench/sessions/wb_missing/circuit/schematic', params={'path': str(deck)})
     assert r.status_code == 404
+
+
+# ── Geometry and edit-path regressions ─────────────────────────────────────
+# Each of these was reproduced live in the 2026-09-25 circuit audit and had no
+# test: the bugs survived because the fixtures assumed a shape the code never
+# produced. They assert the drawn geometry, not the internals.
+
+import re  # noqa: E402
+
+
+def _part(col: float, row: float, rot: int, kind: str = 'resistor',
+          nodes: list[str] | None = None) -> schematic.Component:
+    return schematic.Component(
+        'R1', kind, nodes or ['in', 'out'], '1k', '', col, row, rot,
+    )
+
+
+def test_rotated_component_pins_stay_apart():
+    """rot=1 used to read only the row offsets — all zero — and return the
+    centre twice, so every wire on a vertical part attached to its middle."""
+    flat = _part(3, 8, 0).pins()
+    up = _part(3, 8, 1).pins()
+    assert len(set(up)) == 2, f'vertical pins collapsed to {up}'
+    assert flat == [(10.0, 80.0), (50.0, 80.0)]
+    assert up == [(30.0, 60.0), (30.0, 100.0)]
+    # The rotation must be about the layout origin, which is what the wires,
+    # the editor's grab box and the label all pivot on.
+    for pins in (flat, up):
+        centre = (sum(p[0] for p in pins) / 2, sum(p[1] for p in pins) / 2)
+        assert centre == (30.0, 80.0)
+
+
+def test_vertical_symbol_renders_on_its_own_pins():
+    """The rotated group must land where pins() says, or the artifact and the
+    editor draw two different circuits."""
+    comp = _part(3, 8, 1)
+    svg = '\n'.join(schematic._symbol_svg(comp, '#334155', None, None))
+    match = re.search(r'transform="translate\(([-\d.]+) ([-\d.]+)\) rotate\(90\)"', svg)
+    assert match, f'no rotate-90 group in {svg[:200]}'
+    drawn = (float(match.group(1)), float(match.group(2)))
+    assert drawn == comp.px()
+
+    # …and it must be inside the picture: the viewBox is built from pins and
+    # wire points, so a displaced body fell off the canvas entirely.
+    graph = schematic.build_graph(
+        '* t\nR1 a b 1k\n.end\n', {'components': {'R1': {'col': 3, 'row': 8, 'rot': 1}}},
+    )
+    box = [float(v) for v in re.search(
+        r'viewBox="([-\d. ]+)"', schematic.render_svg(graph)
+    ).group(1).split()]
+    assert box[0] <= drawn[0] <= box[0] + box[2]
+    assert box[1] <= drawn[1] <= box[1] + box[3]
+
+
+def _diagonals(points: list[tuple[float, float]]):
+    return [(a, b) for a, b in zip(points, points[1:])
+            if a[0] != b[0] and a[1] != b[1]]
+
+
+def test_auto_routed_wires_are_orthogonal():
+    """build_graph promises "orthogonal (Manhattan) polylines". Stepping from
+    the bus straight to the next pin broke that whenever x AND y both changed —
+    which was true even in a pristine auto layout."""
+    layouts = [
+        {'components': {}},
+        {'components': {'R1': {'col': 3, 'row': 8, 'rot': 0}}},
+        {'components': {'R2': {'col': -2, 'row': 1, 'rot': 1}}},
+    ]
+    for layout in layouts:
+        graph = schematic.build_graph(DECK, layout)
+        for wire in graph['wires']:
+            assert not _diagonals(wire.points), (
+                f'{layout} net {wire.nodes} routed diagonally: {wire.points}'
+            )
+
+
+def _ground_bars(comp: schematic.Component) -> list[float]:
+    """x-centres of the ground bars drawn for a source (bars are stroke-width 1.5)."""
+    svg = '\n'.join(schematic._symbol_svg(comp, '#334155', None, None))
+    return [
+        (float(m.group(1)) + float(m.group(2))) / 2
+        for m in re.finditer(
+            r'<line x1="([-\d.]+)" y1="[-\d.]+" x2="([-\d.]+)" y2="[-\d.]+"[^>]*stroke-width="1\.5"',
+            svg,
+        )
+    ]
+
+
+def test_ground_sits_on_the_pin_that_is_actually_zero():
+    left = schematic.Component('V1', 'voltage', ['0', 'out'], '5', '', 3, 8, 0)
+    right = schematic.Component('V1', 'voltage', ['in', '0'], '5', '', 3, 8, 0)
+    floating = schematic.Component('V1', 'voltage', ['a', 'b'], '5', '', 3, 8, 0)
+
+    assert _ground_bars(left) and _ground_bars(left)[0] == left.pins()[0][0]
+    # `V1 in 0 5` is the common spelling, and the editor used to bar the LEFT
+    # pin for it — the opposite pin to the artifact.
+    assert _ground_bars(right) and _ground_bars(right)[0] == right.pins()[1][0]
+    assert _ground_bars(floating) == [], 'a source with no ground got a ground symbol'
+
+
+def test_subckt_body_is_not_drawn_at_top_level():
+    deck = """* lp
+Vin in 0 5
+X1 in out LPF
+Rload out 0 10k
+.subckt LPF i o
+Rc i n1 1k
+Cc n1 o 1u
+.ends
+.end
+"""
+    refs = {e.ref for e in schematic.parse_elements(deck)}
+    assert refs == {'Vin', 'X1', 'Rload'}
+    # The private nodes stay private, so the box is not joined by free parts.
+    assert not ({'i', 'n1'} & set(schematic.deck_nodes(schematic.parse_elements(deck))))
+
+
+def test_read_schematic_writes_nothing(tmp_path: Path):
+    """`circuit_read_schematic` is filed under read-only ("writes nothing") and
+    is allowed in plan mode; inline text used to materialise a scratch deck."""
+    result = circuit_tools.read_schematic(DECK, workspace=str(tmp_path))
+    assert len(result['components']) == 4
+    # Assert the invariant, not an empty tree — the harness keeps app data here.
+    stray = [p.name for p in tmp_path.iterdir() if p.suffix in {'.cir', '.json'}
+             and (p.name.startswith('_schematic') or p.name.endswith('.layout.json'))]
+    assert stray == [], f'a read wrote into the workspace: {stray}'
+
+
+def test_single_line_inline_deck_is_text_not_a_path(tmp_path: Path):
+    """"V1 in 0 5" is a deck. It used to raise `File not found: V1 in 0 5`
+    because the inline/path decision keyed on the absence of a newline."""
+    result = circuit_tools.read_schematic('V1 in 0 5', workspace=str(tmp_path))
+    assert [c['ref'] for c in result['components']] == ['V1']
+
+
+def test_a_rejected_wire_route_leaves_the_sidecar_untouched(tmp_path: Path):
+    """write_layout ran before build_graph validated the coordinates, so one
+    non-numeric point persisted a corrupt sidecar and every later read and
+    edit of that deck failed until an auto=True reset."""
+    deck = _write_deck(tmp_path)
+    with pytest.raises(ValueError, match='numeric'):
+        circuit_tools.edit_schematic(
+            str(deck), wire_routes={'out': [['a', 'b'], ['c', 'd']]}, workspace=str(tmp_path),
+        )
+    assert not schematic.layout_path_for(deck).exists(), 'failed edit wrote a sidecar'
+    assert len(circuit_tools.read_schematic(str(deck), workspace=str(tmp_path))['components']) == 4
+
+
+def test_inline_decks_do_not_share_one_scratch_layout(tmp_path: Path):
+    """The scratch deck had a fixed name, so a second inline deck inherited the
+    first one's positions through its sidecar."""
+    circuit_tools.edit_schematic(
+        DECK, moves=[{'ref': 'R1', 'col': 7, 'row': 3}], workspace=str(tmp_path),
+    )
+    other = '* other\nIa x 0 2m\nLb x y 10m\n.end\n'
+    graph = circuit_tools.edit_schematic(other, workspace=str(tmp_path))
+    by_ref = {c['ref']: (c['col'], c['row']) for c in graph['components']}
+    assert by_ref['Lb'] != (7.0, 3.0), 'second deck inherited the first deck layout'
+
+
+def test_ngspice_builtin_constants_are_not_measures():
+    """Server mode's `print all` answers with pi, boltz, yes and true. For a
+    deck with no analysis card those were the ONLY matches, so an .op run
+    reported exitCode 0 and physics constants as node voltages."""
+    assert circuit_tools._is_ngspice_constant('pi', DECK) is True
+    assert circuit_tools._is_ngspice_constant('f3db', DECK) is False
+    assert circuit_tools._is_ngspice_constant('boltz', DECK) is True
+    # `c` and `e` are ordinary net names — a deck that nets one keeps its value.
+    node_c = '* c\nV1 a c 5\nR1 c 0 1k\n.end\n'
+    assert circuit_tools._is_ngspice_constant('c', node_c) is False, 'node "c" discarded'
+    assert circuit_tools._is_ngspice_constant('c', DECK) is True
+    assert circuit_tools._is_ngspice_constant('out', DECK) is False

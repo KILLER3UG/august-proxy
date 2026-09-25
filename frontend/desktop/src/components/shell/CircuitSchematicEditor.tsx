@@ -96,9 +96,13 @@ function symbolSvg(c: SchematicComponent): string {
         c.kind === 'voltage'
           ? `<line x1="${mid}" y1="${y0 - 6}" x2="${mid}" y2="${y0 + 6}" stroke="${STROKE}" stroke-width="2"/><line x1="${mid - 4}" y1="${y0}" x2="${mid + 4}" y2="${y0}" stroke="${STROKE}" stroke-width="2"/>`
           : `<line x1="${mid}" y1="${y0 - 6}" x2="${mid + 4}" y2="${y0 - 2}" stroke="${STROKE}" stroke-width="2"/><line x1="${mid - 4}" y1="${y0 - 2}" x2="${mid + 4}" y2="${y0 - 2}" stroke="${STROKE}" stroke-width="2"/><line x1="${mid + 4}" y1="${y0 - 2}" x2="${mid}" y2="${y0 + 6}" stroke="${STROKE}" stroke-width="2"/><line x1="${mid}" y1="${y0 + 6}" x2="${mid - 4}" y2="${y0 - 2}" stroke="${STROKE}" stroke-width="2"/>`;
-      const gnd = c.nodes.includes('0')
-        ? groundBars(x0, y0, -1)
-        : groundBars(x1, y1, 1);
+      // Ground belongs on the pin actually tied to node '0'. The unconditional
+      // else both drew bars on floating sources and picked the LEFT pin for
+      // the common `V1 in 0 5`, where '0' is the right pin — so the editor and
+      // the rendered artifact disagreed about the same circuit.
+      const zeroAt = c.nodes.indexOf('0');
+      const gnd =
+        zeroAt === 0 ? groundBars(x0, y0, -1) : zeroAt === 1 ? groundBars(x1, y1, 1) : '';
       return `<circle cx="${mid}" cy="${y0}" r="${r}" fill="none" stroke="${STROKE}" stroke-width="2"/>${inner}${gnd}`;
     }
     case 'subckt':
@@ -195,11 +199,24 @@ export function CircuitSchematicEditor({
     return () => cancelAnimationFrame(raf);
   }, [flow]);
 
+  /** Where a part sits versus where its pins were drawn. Non-zero only while a
+   *  drag is unacknowledged: `col`/`row` are live state, `pins` are the last
+   *  server-computed geometry, and the backend places pins symmetrically about
+   *  `(col*grid, row*grid)`. Without this the symbol stays put until Save. */
+  const drawOffset = (c: SchematicComponent, grid: number) => ({
+    ox: c.col * grid - (c.pins[0][0] + c.pins[1][0]) / 2,
+    oy: c.row * grid - (c.pins[0][1] + c.pins[1][1]) / 2,
+  });
+
   const bounds = useMemo(() => {
     if (!graph) return null;
+    const grid = graph.grid || 10;
     const xs: number[] = [];
     const ys: number[] = [];
-    for (const c of graph.components) for (const p of c.pins) { xs.push(p[0]); ys.push(p[1]); }
+    for (const c of graph.components) {
+      const { ox, oy } = drawOffset(c, grid);
+      for (const p of c.pins) { xs.push(p[0] + ox); ys.push(p[1] + oy); }
+    }
     for (const w of graph.wires) for (const p of w.points) { xs.push(p[0]); ys.push(p[1]); }
     if (xs.length === 0) return { minx: 0, miny: 0, w: 100, h: 100 };
     const pad = 40;
@@ -367,10 +384,11 @@ export function CircuitSchematicEditor({
           {graph.components.map((c) => {
             const centerX = (c.pins[0][0] + c.pins[1][0]) / 2;
             const centerY = (c.pins[0][1] + c.pins[1][1]) / 2;
+            const { ox, oy } = drawOffset(c, graph.grid || 10);
             return (
               <g
                 key={c.ref}
-                transform={`rotate(${c.rot % 2 ? 90 : 0} ${centerX} ${centerY})`}
+                transform={`translate(${ox} ${oy}) rotate(${c.rot % 2 ? 90 : 0} ${centerX} ${centerY})`}
                 onPointerDown={(e) => onPointerDown(e, c.ref)}
                 className="cursor-grab active:cursor-grabbing"
                 data-testid={`schematic-part-${c.ref}`}

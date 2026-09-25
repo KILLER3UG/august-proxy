@@ -110,7 +110,7 @@ export function AssistantMessageContent({
             per schematic/3D/netlist/simulation output; content opens in the
             right side panel, never inline in chat. */}
         {!(isLast && streaming) && (
-          <CircuitArtifactCard blocks={message.blocks} />
+          <CircuitArtifactCard tools={message.tools} />
         )}
         {/* End-of-turn recap card removed by user request (2026-08-25):
             the chat area stays clean — activity lives in the right panel. */}

@@ -1,11 +1,12 @@
 /* ── RightDrawerCircuitSection ─ /circuit workbench panel ─────────────── */
-/* Shows the session's circuit artifacts (netlists, schematics, 3D board  *
- * renders) pulled from the turn's tool-call blocks — the same derived-   *
- * files pattern the ChangesCard uses, lifted into a dedicated drawer     *
- * section. Images open in the file viewer; netlists reveal in folder.    */
+/* Shows the session's circuit artifacts (netlists, schematics, 3D board    *
+ * renders) read off the turn's tool RESULTS via lib/circuit-artifacts —   *
+ * the same derived-files pattern the ChangesCard uses, lifted into a       *
+ * dedicated drawer section. Images open in the file viewer; netlists and   *
+ * bitstreams reveal in folder.                                             */
 
 import { useMemo, useState } from 'react';
-import { Cpu, FolderOpen, Loader2 } from 'lucide-react';
+import { Cpu, FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { FileIcon } from '@/components/ui/FileIcon';
 import {
@@ -13,87 +14,46 @@ import {
 } from '@/components/shell/RightDrawerState';
 import { ChatAttachmentService } from '@/sections/chat/services/ChatAttachmentService';
 import { revealInFolder } from '@/lib/tauri-shell';
+import {
+  BINARY_ARTIFACT_EXT,
+  NETLIST_EXT,
+  WAVEFORM_EXT,
+  artifactsForMessages,
+  type CircuitArtifact,
+} from '@/lib/circuit-artifacts';
 import { useSessionStream } from '@/sections/chat/hooks/useSessionStream';
 import { CircuitInstruments } from '@/components/shell/CircuitInstruments';
 import { CircuitWaveformViewer } from '@/components/shell/CircuitWaveformViewer';
 import { CircuitSchematicEditor } from '@/components/shell/CircuitSchematicEditor';
-import type { MessageBlock } from '@/types/chat';
 
-const CIRCUIT_TOOLS =
-  /^(circuit_|firmware_|hdl_|vcd_parse|fpga_compile|kicad_)/i;
-const NETLIST_EXT = /\.(cir|net|ckt|sp)$/i;
-// Bitstreams and 3D models have no inline renderer — the file viewer would
-// show their raw bytes as mojibake in a data-URL iframe. Reveal instead.
-const BINARY_ARTIFACT_EXT = /\.(sof|pof|glb|uf2)$/i;
-
-interface CircuitArtifact {
-  path: string;
-  label: string;
-  kind: 'netlist' | 'image' | 'other';
-  tool: string;
-}
-
-function collectCircuitArtifacts(blocks?: MessageBlock[] | null): CircuitArtifact[] {
-  if (!blocks) return [];
-  const seen = new Set<string>();
-  const out: CircuitArtifact[] = [];
-  for (const block of blocks) {
-    if (block.type !== 'toolCall' || !block.tool) continue;
-    const name = block.tool.name || '';
-    if (!CIRCUIT_TOOLS.test(name)) continue;
-    let path: string | null = null;
-    try {
-      const parsed = JSON.parse(block.tool.context || '{}') as Record<string, unknown>;
-      // path/filePath/savedTo cover circuit_* + firmware_stimulus;
-      // waveFile (hdl_simulate), svgFile (hdl_timing_diagram),
-      // junitFile (hdl_test), sofFile (fpga_compile), renderedFile
-      // (kicad_render) are the new family's artifact keys.
-      for (const key of ['path', 'filePath', 'savedTo', 'waveFile', 'svgFile', 'junitFile', 'sofFile', 'renderedFile']) {
-        const v = parsed[key];
-        if (typeof v === 'string' && v.length > 0) {
-          path = v;
-          break;
-        }
-      }
-    } catch {
-      /* context not JSON */
-    }
-    if (!path) continue;
-    const key = path.replace(/\\/g, '/');
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const kind: CircuitArtifact['kind'] = NETLIST_EXT.test(key)
-      ? 'netlist'
-      : /\.png$/i.test(key)
-        ? 'image'
-        : 'other';
-    out.push({
-      path,
-      label: key.split('/').pop() || path,
-      kind,
-      tool: name,
-    });
-  }
-  return out;
+/** Row subtitle. A tool name is not something to show a user; the artifact's
+ *  own kind is. */
+function describeArtifact(art: CircuitArtifact): string {
+  const p = art.path;
+  if (NETLIST_EXT.test(p)) return 'SPICE netlist';
+  if (WAVEFORM_EXT.test(p)) return 'Waveform capture';
+  if (/\.png$/i.test(p)) return 'Board render';
+  if (/\.svg$/i.test(p)) return 'Schematic drawing';
+  if (BINARY_ARTIFACT_EXT.test(p)) return 'Compiled bitstream';
+  if (/\.json$/i.test(p)) return 'Trace data';
+  return 'Circuit artifact';
 }
 
 export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | null }) {
   const stream = useSessionStream(sessionId);
   const messages = stream?.messages ?? [];
-  const artifacts = useMemo(
-    () => messages.flatMap((m) => collectCircuitArtifacts(m.blocks)),
-    [messages],
-  );
+  const artifacts = useMemo(() => artifactsForMessages(messages), [messages]);
   // The schematic editor edits ONE netlist at a time — the newest by
   // default, switchable from the picker.
   const netlists = useMemo(
-    () => artifacts.filter((a) => a.kind === 'netlist'),
+    () => artifacts.filter((a) => NETLIST_EXT.test(a.path)),
     [artifacts],
   );
   const [selectedNetlist, setSelectedNetlist] = useState<string>('');
+  // Fall back to the newest deck, not the oldest, so the label above matches
+  // the behaviour and a deck leaving the list degrades to a real selection.
   const activeNetlist =
-    (netlists.find((n) => n.path === selectedNetlist) ?? netlists[0])?.path ?? '';
-  const busy = false;
+    (netlists.find((n) => n.path === selectedNetlist) ?? netlists[netlists.length - 1])?.path ?? '';
 
   const open = async (path: string) => {
     try {
@@ -161,27 +121,18 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
                 <button
                   type="button"
                   onClick={() => void open(a.path)}
-                  disabled={busy}
                   title={`Open — ${a.path}`}
                   className="group flex w-full items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-2.5 py-2 text-left transition hover:border-primary/40 hover:bg-card"
                 >
-                  {busy ? (
-                    <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-                  ) : (
-                    <span className="grid size-7 shrink-0 place-items-center rounded-md bg-muted/50">
-                      <FileIcon name={a.path} size={14} />
-                    </span>
-                  )}
+                  <span className="grid size-7 shrink-0 place-items-center rounded-md bg-muted/50">
+                    <FileIcon name={a.path} size={14} />
+                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[12px] font-medium text-foreground">
                       {a.label}
                     </span>
                     <span className="block truncate text-[10px] text-muted-foreground">
-                      {a.kind === 'netlist'
-                        ? 'SPICE netlist'
-                        : a.kind === 'image'
-                          ? 'render'
-                          : a.tool.replace(/^circuit_/, '')}
+                      {describeArtifact(a)}
                     </span>
                   </span>
                   <FolderOpen className="size-3 shrink-0 text-muted-foreground/0 group-hover:text-muted-foreground/70" />

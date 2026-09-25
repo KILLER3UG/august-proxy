@@ -237,6 +237,10 @@ export interface ChatMessage {
     preview?: string;
     duration?: number;
     startedAt?: number;
+    /** Full result text written by `makeStreamHandlers.onToolResult` — the
+     *  only copy that carries what a tool produced (`savedTo`, `waveFile`,
+     *  measurement traces). `context` beside it is the tool's INPUT. */
+    result?: string;
     /** For web_search: structured search hits to render below the summary. */
     searchHits?: Array<{ title: string; url: string; snippet?: string }>;
     /** For setup_provider: structured provider config to render an inline key field. */

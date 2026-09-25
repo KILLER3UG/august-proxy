@@ -10,7 +10,13 @@ import { cn } from '@/lib/utils';
 import { openRightDrawerFile, addRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { ChatAttachmentService } from '@/sections/chat/services/ChatAttachmentService';
 import { revealInFolder } from '@/lib/tauri-shell';
-import type { MessageBlock } from '@/types/chat';
+import {
+  BINARY_ARTIFACT_EXT,
+  NETLIST_EXT,
+  collectArtifacts,
+  type CircuitArtifact,
+  type CircuitToolEntry,
+} from '@/lib/circuit-artifacts';
 
 interface CircuitDeliverable {
   path: string;
@@ -19,14 +25,14 @@ interface CircuitDeliverable {
   detail: string;
 }
 
-const NETLIST_EXT = /\.(cir|net|ckt|sp)$/i;
-
 function kindOf(path: string): CircuitDeliverable['kind'] {
   if (NETLIST_EXT.test(path)) return 'netlist';
   if (/\.vcd$/i.test(path)) return 'waveform';
   if (/\.hex$/i.test(path)) return 'firmware';
   if (/\.glb$|3d|board/i.test(path)) return 'board3d';
   if (/_sim\b|sim\.txt|\.csv$|\.xml$/i.test(path)) return 'simulation';
+  // 'schematic' is the catch-all, so an .svg lands here by default. The
+  // per-tool copy under the label is what distinguishes them now.
   return 'schematic';
 }
 
@@ -39,67 +45,58 @@ const KIND_ICON = {
   firmware: Cpu,
 } as const;
 
-const CIRCUIT_TOOLS = /^(circuit_|firmware_|hdl_|vcd_parse|fpga_compile|kicad_)/i;
-// Bitstreams and 3D models have no inline renderer (see RightDrawerCircuitSection).
-const BINARY_ARTIFACT_EXT = /\.(sof|pof|glb|uf2)$/i;
+function num(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
 
-/** Derive circuit deliverables from the turn's circuit-family tool blocks. */
-export function collectCircuitDeliverables(blocks?: MessageBlock[] | null): CircuitDeliverable[] {
-  if (!blocks) return [];
-  const seen = new Set<string>();
-  const out: CircuitDeliverable[] = [];
-  for (const block of blocks) {
-    if (block.type !== 'toolCall' || !block.tool) continue;
-    const name = block.tool.name || '';
-    if (!CIRCUIT_TOOLS.test(name)) continue;
-    let parsed: Record<string, unknown> = {};
-    try {
-      parsed = JSON.parse(block.tool.context || '{}') as Record<string, unknown>;
-    } catch {
-      /* context not JSON — args may still carry path below */
+/** What the card says under the filename. Every count here is a RESULT key
+ *  (`lines`, `componentCount`, `measures`) — reading them off the tool's
+ *  arguments is what made every card render "? lines" / "? components". */
+function detailFor(kind: CircuitDeliverable['kind'], art: CircuitArtifact): string {
+  const d = art.data;
+  switch (kind) {
+    case 'simulation': {
+      const count =
+        num(d.measureCount) ??
+        (d.measures && typeof d.measures === 'object' ? Object.keys(d.measures).length : null);
+      return count != null ? `${count} measure${count === 1 ? '' : 's'}` : 'Simulation run';
     }
-    const path =
-      firstString(parsed.path) ??
-      firstString(parsed.savedTo) ??
-      firstString(parsed.hexFile) ??
-      firstString(parsed.waveFile) ??
-      firstString(parsed.sofFile) ??
-      firstString(parsed.svgFile) ??
-      firstString(parsed.junitFile) ??
-      firstString(parsed.renderedFile) ??
-      null;
-    if (!path) continue;
-    const key = path.replace(/\\/g, '/');
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const kind = kindOf(key);
-    out.push({
-      path,
-      label: key.split('/').pop() || path,
-      kind,
-      detail:
-        kind === 'simulation'
-          ? `${parsed.measureCount ?? Object.keys((parsed.measures as object) ?? {}).length} measures`
-          : kind === 'board3d'
-            ? `${parsed.componentCount ?? '?'} components`
-            : kind === 'netlist'
-              ? `${parsed.lines ?? '?'} lines · SPICE`
-              : kind === 'waveform'
-                ? `${parsed.durationSec != null ? `${parsed.durationSec} s · ` : ''}VCD capture`
-                : kind === 'firmware'
-                  ? 'AVR firmware · HEX'
-                  : 'schemdraw render',
-    });
+    case 'board3d': {
+      const count = num(d.componentCount);
+      return count != null ? `${count} components` : 'Board render';
+    }
+    case 'netlist': {
+      const lines = num(d.lines);
+      return lines != null ? `${lines} lines · SPICE` : 'SPICE netlist';
+    }
+    case 'waveform':
+      return num(d.durationSec) != null ? `${d.durationSec} s · VCD capture` : 'VCD capture';
+    case 'firmware':
+      return 'AVR firmware · HEX';
+    default:
+      return art.tool === 'circuit_render_schematic'
+        ? 'Native schematic'
+        : 'Schematic drawing';
   }
-  return out;
 }
 
-function firstString(v: unknown): string | null {
-  return typeof v === 'string' && v.length > 0 ? v : null;
+/** Derive circuit deliverables from the turn's circuit-family tool results. */
+export function collectCircuitDeliverables(
+  tools?: CircuitToolEntry[] | null,
+): CircuitDeliverable[] {
+  return collectArtifacts(tools).map((art) => {
+    const kind = kindOf(art.path);
+    return {
+      path: art.path,
+      label: art.label,
+      kind,
+      detail: detailFor(kind, art),
+    };
+  });
 }
 
-export function CircuitArtifactCard({ blocks }: { blocks?: MessageBlock[] | null }) {
-  const items = useMemo(() => collectCircuitDeliverables(blocks), [blocks]);
+export function CircuitArtifactCard({ tools }: { tools?: CircuitToolEntry[] | null }) {
+  const items = useMemo(() => collectCircuitDeliverables(tools), [tools]);
   if (items.length === 0) return null;
 
   const open = async (path: string) => {
