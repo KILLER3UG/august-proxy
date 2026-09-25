@@ -51,6 +51,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
         with:
+          # Required by this pinned revision. The action used to be referenced
+          # as @stable, which defaulted it; pinning the SHA without adding the
+          # input made every release fail here with "'toolchain' is a required
+          # input". Keep the pin, state the toolchain.
+          toolchain: stable
           targets: x86_64-pc-windows-msvc
           components: rustfmt
 
