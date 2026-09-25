@@ -536,7 +536,9 @@ fn runPythonSilent(
 /// back to the current directory is exactly what this catches.
 fn isReextractableRuntimePath(path: &Path) -> bool {
     let runtime_leaf = std::ffi::OsStr::new(RUNTIME_DIR_LEAF);
-    path.ancestors().skip(1).any(|parent| parent.file_name() == Some(runtime_leaf))
+    path.ancestors()
+        .skip(1)
+        .any(|parent| parent.file_name() == Some(runtime_leaf))
 }
 
 /// Outcome of wiping a stale bootstrap tree. A wipe that cannot finish is
@@ -1515,10 +1517,7 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                         .and_then(|path| existingAbsolutePath(&path))
                         .is_none()
                     {
-                        if let Some(ng) = resolveResource(
-                            app,
-                            "ngspice/bin/ngspice_con.exe",
-                        ) {
+                        if let Some(ng) = resolveResource(app, "ngspice/bin/ngspice_con.exe") {
                             cmd.env("AUGUST_NGSPICE_EXE", &ng);
                             log::info!(
                                 "[backend] circuit engine: bundled ngspice at {}",
@@ -2505,9 +2504,7 @@ mod copy_payload_tests {
 
 #[cfg(test)]
 mod wipe_stale_tree_tests {
-    use super::{
-        copyDirRecursive, isReextractableRuntimePath, wipeStaleTreeWith, WipeOutcome,
-    };
+    use super::{copyDirRecursive, isReextractableRuntimePath, wipeStaleTreeWith, WipeOutcome};
     use std::cell::Cell;
     use std::fs;
     use std::io;
@@ -2736,15 +2733,12 @@ mod sandbox_env_tests {
         // The regression this guards: AUGUST_CONTAINER_SANDBOX was read by the
         // backend but never forwarded, so a desktop user setting it got soft
         // enforcement with no indication anything was wrong.
-        withVars(
-            vec![("AUGUST_CONTAINER_SANDBOX", "1")],
-            |forwarded| {
-                assert!(
-                    forwarded.iter().any(|e| e == "AUGUST_CONTAINER_SANDBOX=1"),
-                    "container opt-in must be forwarded, got {forwarded:?}"
-                );
-            },
-        );
+        withVars(vec![("AUGUST_CONTAINER_SANDBOX", "1")], |forwarded| {
+            assert!(
+                forwarded.iter().any(|e| e == "AUGUST_CONTAINER_SANDBOX=1"),
+                "container opt-in must be forwarded, got {forwarded:?}"
+            );
+        });
     }
 
     #[test]
@@ -2753,7 +2747,9 @@ mod sandbox_env_tests {
         // backend's truthy check; forwarding it would only muddy the launch log.
         withVars(vec![("AUGUST_SANDBOX_CPUS", "   ")], |forwarded| {
             assert!(
-                !forwarded.iter().any(|e| e.starts_with("AUGUST_SANDBOX_CPUS")),
+                !forwarded
+                    .iter()
+                    .any(|e| e.starts_with("AUGUST_SANDBOX_CPUS")),
                 "blank values must not be forwarded, got {forwarded:?}"
             );
         });

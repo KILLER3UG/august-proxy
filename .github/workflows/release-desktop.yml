@@ -123,6 +123,13 @@ jobs:
       - name: Payload integrity tests
         run: node --test scripts/desktop-backend-payload.test.mjs
 
+      - name: Build web UI
+        # `generate_context!` in src-tauri reads the frontendDist path at compile
+        # time and panics if it is missing. web-dist/ is gitignored, so on a
+        # fresh checkout it exists only once something builds it — and the
+        # release script builds it later than the Rust check below.
+        run: npm run build:web
+
       - name: Rust format and check
         run: |
           cargo fmt --manifest-path frontend/desktop/src-tauri/Cargo.toml --check
