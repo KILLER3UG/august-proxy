@@ -18,6 +18,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+from app.json_narrowing import as_int
 from app.services.memory_conn import conn as _conn
 from app.services.memory_conn import db_path as _db_path
 
@@ -59,9 +60,13 @@ def _merge_fact_value(newRaw: object, oldTitle: str, oldKey: str) -> str:
     return f'{body} {note}'.strip() if body else note
 
 
-def _model_summarize(text: str) -> str:
-    """Q5 flag path: one cheap-model call to summarize a merged entry.
-    Returns '' on any failure — the caller keeps the unsummarized merge."""
+def _model_complete(system: str, user: str) -> str:
+    """One blocking review-model call. '' when no model is configured or
+    anything fails — every caller treats that as "this pass had no opinion".
+
+    Consolidation runs on a worker thread (``asyncio.to_thread`` / the scheduler
+    loop), so it owns a short-lived event loop here rather than assuming one.
+    """
     try:
         from app.services.workbench.providers import make_review_llm_client
 
@@ -69,14 +74,8 @@ def _model_summarize(text: str) -> str:
         if reviewLlm is None:
             return ''
         prompt = [
-            {
-                'role': 'system',
-                'content': (
-                    'Merge the two memory entries into one concise entry. '
-                    'Keep every distinct fact; plain text only; no preamble.'
-                ),
-            },
-            {'role': 'user', 'content': text[:4000]},
+            {'role': 'system', 'content': system},
+            {'role': 'user', 'content': user},
         ]
         loop = asyncio.new_event_loop()
         try:
@@ -84,8 +83,18 @@ def _model_summarize(text: str) -> str:
         finally:
             loop.close()
     except Exception:
-        logger.debug('consolidation model summarize failed', exc_info=True)
+        logger.debug('consolidation model call failed', exc_info=True)
         return ''
+
+
+def _model_summarize(text: str) -> str:
+    """Q5 flag path: one cheap-model call to summarize a merged entry.
+    Returns '' on any failure — the caller keeps the unsummarized merge."""
+    return _model_complete(
+        'Merge the two memory entries into one concise entry. '
+        'Keep every distinct fact; plain text only; no preamble.',
+        text[:4000],
+    )
 
 
 def _expire_facts() -> int:
@@ -524,6 +533,369 @@ def _skill_learning_pass() -> dict[str, object]:
     return out
 
 
+# ── LLM memory review (global facts + every project's notes, one read) ─────
+# The deterministic passes above can only compare rows inside ONE store: they
+# cannot see that a global fact is contradicted by a project note, or that the
+# same preference is stored in two scopes. This pass puts the WHOLE corpus in
+# front of a model once per consolidation cadence and files what it finds.
+# Propose-only, deliberately: an ungated model write to the user's memory is the
+# one failure mode this store cannot recover from, so a human approves in the
+# Review Inbox — the same contract `retire-preference` already keeps.
+_REVIEW_MAX_ENTRIES = 160
+_REVIEW_ENTRY_CHARS = 220
+_REVIEW_MAX_FINDINGS = 8
+_REVIEW_KIND = 'memory-review'
+_REVIEW_SYSTEM = (
+    'You are reviewing everything an AI assistant durably remembers about one '
+    'user: its global facts, and the memory notes it keeps per project. '
+    'Report only defects visible in the listing: entries that contradict each '
+    'other, duplicates of the same fact, an entry contradicted or superseded by '
+    'a newer one, and a project note that is really a global fact about the '
+    'user. Reply with a JSON array and nothing else. Each item: '
+    '{"kind":"duplicate|contradiction|stale|promote","ids":["<id>",...],'
+    '"summary":"one short sentence","action":"the change you recommend"}. '
+    'Use the exact ids from the listing. Return [] when it is consistent.'
+)
+
+
+def _memory_corpus() -> list[dict[str, str]]:
+    """Every active memory a turn can see, global and per project, in one list.
+
+    Bot-scoped facts are left out: they belong to another audience's memory, and
+    folding them into a global review would propose cross-scope merges the
+    deterministic passes already refuse to make.
+    """
+    from app.services import project_memory as _pm
+
+    corpus: list[dict[str, str]] = []
+    for f in _load_active_facts():
+        if str(f.get('scope') or 'global') != 'global':
+            continue
+        body = _fact_body_text(f.get('value'))
+        if not body:
+            continue
+        corpus.append(
+            {
+                'id': str(f.get('key') or ''),
+                'where': 'global',
+                'title': str(f.get('title') or ''),
+                'text': body[:_REVIEW_ENTRY_CHARS],
+            }
+        )
+    try:
+        # The learning side's own authority for "which projects exist" — the
+        # judge never invents a path, and neither does this.
+        from app.services.harness_promote import _known_workspaces
+
+        workspaces = list(_known_workspaces())
+    except Exception:
+        logger.debug('memory review: workspace enumeration failed', exc_info=True)
+        workspaces = []
+    for ws in workspaces:
+        name = os.path.basename(str(ws).rstrip('\\/')) or ws
+        try:
+            entries = list(_pm.read_entries(ws))
+        except Exception:
+            logger.debug('memory review: could not read %s', ws, exc_info=True)
+            continue
+        for e in entries:
+            text = ' '.join((e.title + ' ' + e.body).split())
+            if not text:
+                continue
+            corpus.append(
+                {
+                    'id': f'project:{name}:{e.title}',
+                    'where': f'project:{name}',
+                    'title': e.title,
+                    'text': text[:_REVIEW_ENTRY_CHARS],
+                }
+            )
+    return corpus[:_REVIEW_MAX_ENTRIES]
+
+
+def _review_listing(corpus: list[dict[str, str]]) -> str:
+    return '\n'.join(f'{c["id"]} [{c["where"]}] {c["text"]}' for c in corpus)
+
+
+def _open_review_signatures() -> set[str]:
+    """Signatures of findings already awaiting a decision, so the same model
+    verdict is not filed again on every 24 h pass."""
+    try:
+        from app.services.memory_store import list_proposals
+
+        rows = list_proposals('consolidation', status='pending')
+    except Exception:
+        return set()
+    out: set[str] = set()
+    for r in rows:
+        if str(r.get('proposalType') or '') != _REVIEW_KIND:
+            continue
+        content = r.get('content')
+        if isinstance(content, str):
+            try:
+                content = json.loads(content)
+            except (ValueError, TypeError):
+                continue
+        if isinstance(content, dict):
+            out.add(_finding_signature(content))
+    return out
+
+
+def _finding_signature(finding: dict[str, Any]) -> str:
+    ids = sorted(str(i) for i in (finding.get('ids') or []) if str(i))
+    return f"{str(finding.get('kind') or '')}|{'|'.join(ids)}"
+
+
+def _parse_findings(raw: str) -> list[dict[str, Any]]:
+    """The model's reply as a list of findings. Unparseable output is simply no
+    findings — a bad format must never look like a memory problem."""
+    text = (raw or '').strip()
+    if text.startswith('```'):
+        text = re.sub(r'^```[a-zA-Z]*\s*|\s*```$', '', text).strip()
+    start, end = text.find('['), text.rfind(']')
+    if start == -1 or end <= start:
+        return []
+    try:
+        parsed = json.loads(text[start : end + 1])
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        ids = [str(i).strip() for i in (item.get('ids') or []) if str(i).strip()]
+        summary = str(item.get('summary') or '').strip()
+        if not ids or not summary:
+            continue
+        out.append(
+            {
+                'kind': str(item.get('kind') or 'observation').strip().lower()[:24],
+                'ids': ids[:6],
+                'summary': summary[:300],
+                'action': str(item.get('action') or '').strip()[:300],
+            }
+        )
+    return out[:_REVIEW_MAX_FINDINGS]
+
+
+def _memory_review_pass() -> tuple[int, list[str]]:
+    """One model read across all durable memory. Returns (filed, notes)."""
+    notes: list[str] = []
+    corpus = _memory_corpus()
+    if len(corpus) < 2:
+        # One entry cannot disagree with anything; skip rather than spend a call.
+        return 0, notes
+    listing = _review_listing(corpus)
+    raw = _model_complete(_REVIEW_SYSTEM, listing)
+    if not raw:
+        return 0, notes
+    findings = _parse_findings(raw)
+    if not findings:
+        return 0, notes
+    known = _open_review_signatures()
+    knownIds = {c['id'] for c in corpus}
+    filed = 0
+    from app.services.memory_store import save_proposal
+
+    for f in findings:
+        # An id the model invented must not become a proposal that nothing can
+        # act on when a human approves it.
+        if any(i not in knownIds for i in f['ids']):
+            continue
+        sig = _finding_signature(f)
+        if sig in known:
+            continue
+        try:
+            save_proposal(
+                'consolidation',
+                _REVIEW_KIND,
+                {
+                    **f,
+                    'reason': 'an LLM read across global and project memory flagged this',
+                    'corpusSize': len(corpus),
+                },
+            )
+            filed += 1
+            notes.append(f'memory review: {f["kind"]} — {f["summary"]}')
+        except Exception:
+            logger.debug('memory review proposal failed', exc_info=True)
+    return filed, notes
+
+
+# ── LLM skill review (the whole catalogue in one read) ─────────────────────
+# Skills accumulate the way memory does: several passes each add one, nothing
+# ever looks at the set as a whole. This is the same idea as the memory review,
+# pointed at SKILL.md files.
+_SKILL_REVIEW_MAX = 80
+_SKILL_REVIEW_MAX_FINDINGS = 6
+_SKILL_REVIEW_SYSTEM = (
+    'You are reviewing the whole library of skills an AI assistant loads into '
+    'context when a chat looks relevant. Each line is one skill: its name, the '
+    'description the model sees, its trigger phrase, category and how often it '
+    'has actually been used. Report only defects visible in the listing: a skill '
+    'that overlaps or duplicates another, a trigger that will never match '
+    'anything, a description that does not say when to load it, and a skill that '
+    'is dead weight (never used, superseded by a newer one). Reply with a JSON '
+    'array and nothing else. Each item: {"name":"<exact skill name>",'
+    '"kind":"delete|overlap|bad_description|stale","summary":"one short '
+    'sentence","action":"the change you recommend"}. Use the exact names from the '
+    'listing. Return [] when the library is sound.'
+)
+
+
+def _skill_catalogue() -> list[dict[str, Any]]:
+    try:
+        from app.services import skill_service
+
+        rows = list(skill_service.list_all(None) or [])
+    except Exception:
+        logger.debug('skill review: catalogue read failed', exc_info=True)
+        return []
+    out: list[dict[str, Any]] = []
+    for s in rows:
+        name = str(s.get('name') or '').strip()
+        if not name:
+            continue
+        out.append(
+            {
+                'name': name,
+                'description': str(s.get('description') or '')[:_REVIEW_ENTRY_CHARS],
+                'trigger': str(s.get('trigger') or '')[:80],
+                'category': str(s.get('category') or 'uncategorized'),
+                'scope': str(s.get('scope') or ''),
+                'enabled': bool(s.get('enabled', True)),
+                'usageCount': as_int(s.get('usage_count') or s.get('usageCount'), 0),
+                'lastUsed': str(s.get('last_used') or s.get('lastUsed') or ''),
+            }
+        )
+    return out[:_SKILL_REVIEW_MAX]
+
+
+def _skill_catalogue_listing(skills: list[dict[str, Any]]) -> str:
+    return '\n'.join(
+        f"{s['name']} [{s['category']}/{s['scope'] or 'agent'}"
+        f"{' off' if not s['enabled'] else ''}] used={s['usageCount']}"
+        f" last={s['lastUsed'][:10] or 'never'} — {s['description']}"
+        + (f" · trigger: {s['trigger']}" if s['trigger'] else '')
+        for s in skills
+    )
+
+
+def _open_skill_proposal_names() -> set[str]:
+    """Skills with a proposal already awaiting a decision — a second one for the
+    same skill is noise in the inbox, not a second opinion.
+
+    The harness proposal files spell an undecided row ``status: 'open'``; the
+    brain-DB ``proposals`` table the memory review writes to spells the same
+    state ``'pending'``. Two stores, two words — both are named here rather than
+    guessed at.
+    """
+    try:
+        from app.services.harness_self_improve import list_proposals
+
+        rows = list_proposals(status='open')
+    except Exception:
+        return set()
+    out: set[str] = set()
+    for r in rows:
+        payload = r.get('payload')
+        if isinstance(payload, dict):
+            name = str(payload.get('name') or '').strip()
+            if name:
+                out.add(name)
+    return out
+
+
+def _parse_skill_findings(raw: str) -> list[dict[str, Any]]:
+    text = (raw or '').strip()
+    if text.startswith('```'):
+        text = re.sub(r'^```[a-zA-Z]*\s*|\s*```$', '', text).strip()
+    start, end = text.find('['), text.rfind(']')
+    if start == -1 or end <= start:
+        return []
+    try:
+        parsed = json.loads(text[start : end + 1])
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get('name') or '').strip()
+        summary = str(item.get('summary') or '').strip()
+        if not name or not summary:
+            continue
+        out.append(
+            {
+                'name': name,
+                'kind': str(item.get('kind') or 'stale').strip().lower()[:24],
+                'summary': summary[:300],
+                'action': str(item.get('action') or '').strip()[:400],
+            }
+        )
+    return out[:_SKILL_REVIEW_MAX_FINDINGS]
+
+
+def _skill_review_pass() -> tuple[int, list[str]]:
+    """One model read across the whole skill library. Returns (filed, notes).
+
+    Propose-only, and deliberately narrow about WHICH kind it files: a
+    `delete` finding becomes an approvable ``skill_delete`` proposal (the apply
+    path needs nothing but the name), and everything else becomes an
+    ``observation``. A `skill_patch` would need a complete replacement SKILL.md,
+    and an approval that fails to apply is worse than no proposal at all.
+    """
+    notes: list[str] = []
+    skills = _skill_catalogue()
+    if len(skills) < 2:
+        return 0, notes
+    raw = _model_complete(_SKILL_REVIEW_SYSTEM, _skill_catalogue_listing(skills))
+    if not raw:
+        return 0, notes
+    findings = _parse_skill_findings(raw)
+    if not findings:
+        return 0, notes
+    known = {str(s['name']) for s in skills}
+    pending = _open_skill_proposal_names()
+    filed = 0
+    try:
+        from app.services.harness_self_improve import save_proposal
+    except Exception:
+        logger.debug('skill review: proposal door unavailable', exc_info=True)
+        return 0, notes
+    for f in findings:
+        name = f['name']
+        if name not in known or name in pending:
+            # An invented name cannot be applied, and a second pending proposal
+            # for the same skill is noise.
+            continue
+        delete = f['kind'] in {'delete', 'stale'}
+        try:
+            save_proposal(
+                problem=f'skill review flagged {name!r}: {f["summary"]}',
+                evidence=_skill_catalogue_listing([s for s in skills if s['name'] == name])[:2000]
+                or f'{name} reviewed in the catalogue pass',
+                proposal=f'{f["kind"]}: {f["action"] or f["summary"]}',
+                rollback=(
+                    'reject the proposal; the skill file is untouched until a human approves.'
+                    if not delete
+                    else 'reject the proposal, or re-create the skill from its SKILL.md history.'
+                ),
+                kind='skill_delete' if delete else 'observation',
+                payload={'name': name, 'reviewKind': f['kind'], 'summary': f['summary']},
+                session_id='consolidation',
+            )
+            filed += 1
+            notes.append(f'skill review: {f["kind"]} — {name}')
+        except Exception:
+            logger.debug('skill review proposal failed', exc_info=True)
+    return filed, notes
+
+
 def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
     """One consolidation pass. Synchronous; callers wrap it. Never raises."""
     from app.services.memory_store import record_lifecycle, set_internal_state
@@ -554,6 +926,21 @@ def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
             notes.extend(retireNotes)
         except Exception:
             logger.debug('preference retire pass failed', exc_info=True)
+        # The LLM read across global AND project memory. Propose-only: it files
+        # findings for the Review Inbox and never edits a fact itself.
+        try:
+            reviewFiled, reviewNotes = _memory_review_pass()
+            summary['memoryReviewProposed'] = reviewFiled
+            notes.extend(reviewNotes)
+        except Exception:
+            logger.debug('memory review pass failed', exc_info=True)
+        # The same idea pointed at the skill library. Propose-only.
+        try:
+            skillFiled, skillNotes = _skill_review_pass()
+            summary['skillReviewProposed'] = skillFiled
+            notes.extend(skillNotes)
+        except Exception:
+            logger.debug('skill review pass failed', exc_info=True)
         summary['outcomesSwept'] = sweep_old_outcomes()
         # M-4: episodic_timeline retention sweep (table was unbounded).
         try:

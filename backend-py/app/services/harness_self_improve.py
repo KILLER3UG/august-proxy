@@ -580,12 +580,31 @@ def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
             # per approved patch; status starts active (stale/retired via
             # later proposals); supersedes stamps the lineage.
             version = 1
+            prior: dict[str, str] = {}
             if kind == 'skill_patch' and md.exists():
+                # Read the frontmatter this write replaces. The version bump
+                # needs it, and so does carrying over the fields the proposal
+                # itself is silent about.
                 try:
                     prior = _parse_frontmatter_from_md(md.read_text('utf-8'))
                     version = int(prior.get('version') or 1) + 1
                 except Exception:
                     version = 2
+            # Which skill this one replaced, who wrote it, what it triggers on
+            # and which episodes it came from are properties of the SKILL, not
+            # of one proposal — a v3 patch that restates none of them must not
+            # erase them. (The trigger is what per-turn relevance matching
+            # reads, so losing it silently retires the skill from recall.)
+            supersedes = supersedes or as_str(prior.get('supersedes'), '').strip()
+            trigger = trigger or as_str(prior.get('trigger'), '').strip()
+            if not payload.get('origin'):
+                origin = as_str(prior.get('origin'), '') or origin
+            if not learnedFrom:
+                learnedFrom = [
+                    x.strip()
+                    for x in as_str(prior.get('learned_from'), '').split(',')
+                    if x.strip()
+                ]
             frontmatter = _skill_frontmatter(
                 name,
                 description or 'Created from an approved harness proposal.',

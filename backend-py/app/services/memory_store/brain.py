@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 from app.adapters.case_converters import camelToSnake
 from app.json_narrowing import as_list, as_str
@@ -520,6 +521,33 @@ def brain_store_summary() -> list[dict[str, object]]:
     return out
 
 
+def _readable_value(raw: object) -> object:
+    """Unwrap one stored-text column for the human browse door.
+
+    ``save_fact``/``save_internal`` JSON-encode their value, so the column of a
+    plain sentence is the eight-characters-longer ``"\\"a sentence\\""``. The
+    boot index decodes it (``brain_index_snippet``); browse used to hand the
+    quoting straight to the Memory page, which both displayed it and — because
+    the edit field round-trips what it was shown — added another layer on every
+    save. Only a JSON *string* unwraps: an object value stays verbatim rather
+    than being rendered as ``[object Object]`` in the row that edits it."""
+    if not isinstance(raw, str) or not raw.startswith('"'):
+        return raw
+    try:
+        decoded = json.loads(raw)
+    except ValueError:
+        return raw
+    return decoded if isinstance(decoded, str) else raw
+
+
+def _browse_wire(row: sqlite3.Row) -> dict[str, object]:
+    wire = _row_as_wire(row)
+    for field in ('factValue', 'value'):
+        if field in wire:
+            wire[field] = _readable_value(wire[field])
+    return wire
+
+
 def brain_browse(
     store: str,
     limit: int = 50,
@@ -625,7 +653,7 @@ def brain_browse(
         return {
             'store': resolved,
             'label': as_str(info.get('label')),
-            'rows': [_row_as_wire(r) for r in rows],
+            'rows': [_browse_wire(r) for r in rows],
             'total': total,
             'limit': lim,
             'offset': off,

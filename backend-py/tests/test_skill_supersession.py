@@ -8,6 +8,7 @@ origin/learned_from/version/status frontmatter.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 
@@ -100,6 +101,49 @@ class TestSupersession:
         names = [e['name'] for e in skill_service.catalogue()]
         assert 'legacy-flow-v2' in names and 'legacy-flow' not in names
 
+    def test_a_silent_patch_keeps_the_lineage_the_create_wrote(self, isolated):
+        """A patch restates the body, not the skill's history.
+
+        Without the carry-over, the second approved revision of a learned
+        skill lost ``supersedes`` (so the retired v1 was no longer named
+        anywhere) and flipped ``origin`` from distilled back to human —
+        rewriting a skill as a side effect of improving it.
+        """
+        created = hsi.save_proposal(
+            problem='learn the flow',
+            evidence='e',
+            proposal='create v1',
+            rollback='delete it',
+            kind='skill_create',
+            payload={
+                'name': 'kept-lineage',
+                'description': 'v1',
+                'body': 'Body.',
+                'trigger': 'close timing',
+                'supersedes': 'legacy-flow',
+                'origin': 'distilled',
+                'episodeIds': ['7', '8'],
+            },
+        )
+        assert hsi.decide_proposal(created['id'], 'approve')['status'] == 'applied'
+        patched = hsi.save_proposal(
+            problem='tighten the steps',
+            evidence='e',
+            proposal='patch it',
+            rollback='git restore',
+            kind='skill_patch',
+            payload={'name': 'kept-lineage', 'description': 'v2', 'body': 'Better body.'},
+        )
+        assert hsi.decide_proposal(patched['id'], 'approve')['status'] == 'applied'
+        raw = (isolated / 'agent-skills' / 'kept-lineage' / 'SKILL.md').read_text('utf-8')
+        assert 'supersedes: legacy-flow' in raw
+        assert 'origin: distilled' in raw
+        assert 'learned_from: 7,8' in raw
+        # The trigger is what per-turn relevance matching reads; a patch that
+        # restates only the body used to retire the skill from recall.
+        assert 'trigger: close timing' in raw
+        assert 'version: 2' in raw
+
     def test_patch_bumps_version(self, isolated):
         _writeSkill(isolated, 'versioned-skill', 'v1')
         raw = (isolated / 'agent-skills' / 'versioned-skill' / 'SKILL.md').read_text('utf-8')
@@ -150,3 +194,73 @@ class TestSupersession:
         assert stored is not None
         assert stored['payload']['supersedes'] == 'older'
         assert json.dumps(stored)  # serializable
+
+
+class TestLineageReachesTheHttpRow:
+    """Settings can only show what the routes send.
+
+    Both ``GET /api/skills`` and ``GET /api/skills/{name}`` rebuild their
+    payload field by field from the parse, and the provenance keys live in the
+    unrecognized-frontmatter bag rather than as parsed fields — so a lineage
+    key carried by one endpoint and dropped by the other is a write-only
+    field, which is the failure this repo has already been bitten by once.
+    """
+
+    def _approve_v2(self, isolated) -> None:
+        _writeSkill(isolated, 'legacy-flow', 'v1 of the flow')
+        row = hsi.save_proposal(
+            problem='supersede legacy-flow',
+            evidence='e',
+            proposal='create the v2',
+            rollback='delete the v2',
+            kind='skill_create',
+            payload={
+                'name': 'legacy-flow-v2',
+                'description': 'v2 of the flow',
+                'body': 'Better body.',
+                'supersedes': 'legacy-flow',
+                'origin': 'distilled',
+            },
+        )
+        assert hsi.decide_proposal(row['id'], 'approve')['status'] == 'applied'
+
+    def test_list_and_detail_carry_the_same_stamp(self, isolated):
+        from app.routers import skills as skills_route
+
+        self._approve_v2(isolated)
+        listed = asyncio.run(skills_route.listSkills(q='', category='', workspace=''))
+        rows = {str(s['name']): s for s in listed['skills']}
+        detail = asyncio.run(skills_route.getSkill('legacy-flow-v2', workspace=''))
+        for row in (rows['legacy-flow-v2'], detail):
+            assert row['supersedes'] == 'legacy-flow'
+            assert row['origin'] == 'distilled'
+            assert row['version'] == 1
+            assert row['status'] == 'active'
+
+    def test_the_route_reports_the_bumped_version(self, isolated):
+        """Frontmatter values are strings, so an ``int``-only narrow here read
+        every learned skill as version 1 straight off a file saying 3."""
+        from app.routers import skills as skills_route
+
+        self._approve_v2(isolated)
+        patch = hsi.save_proposal(
+            problem='refine', evidence='e', proposal='improve it', rollback='git restore',
+            kind='skill_patch',
+            payload={'name': 'legacy-flow-v2', 'description': 'v2', 'body': 'Newer body.'},
+        )
+        assert hsi.decide_proposal(patch['id'], 'approve')['status'] == 'applied'
+        row = asyncio.run(skills_route.getSkill('legacy-flow-v2', workspace=''))
+        assert row['version'] == 2
+        assert row['supersedes'] == 'legacy-flow'
+
+    def test_a_hand_written_skill_reads_as_version_one_with_no_lineage(
+        self, isolated
+    ):
+        from app.routers import skills as skills_route
+
+        _writeSkill(isolated, 'plain-skill', 'no provenance frontmatter')
+        row = asyncio.run(skills_route.getSkill('plain-skill', workspace=''))
+        # Absent must not render as "v0", "replaces ", or an error.
+        assert row['supersedes'] == ''
+        assert row['origin'] == ''
+        assert row['version'] == 1

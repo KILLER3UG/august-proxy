@@ -228,6 +228,30 @@ class TestBrainBrowse:
         out = ms.brain_browse('nope_store')
         assert 'error' in out and out['rows'] == []
 
+    # BEHAVIOR CHANGE (not characterization): the browse door decodes a stored
+    # plain string. It used to hand back the JSON text — so the Memory page
+    # rendered “"Prefers the NSIS installer"” with its quotes, and because the
+    # edit field round-trips exactly what it was shown, every save added one
+    # more encoding layer. The boot index already decoded it, so the model and
+    # the human reading the same fact disagreed.
+
+    def test_browse_returns_the_sentence_not_its_json_encoding(self, brain):
+        ms.save_fact('quoted_fact', 'Prefers the NSIS installer.', category='browse')
+        first = ms.brain_browse('facts', limit=10, query='quoted_fact')['rows'][0]
+        assert first['factValue'] == 'Prefers the NSIS installer.'
+        # Saving what the row showed must not deepen the encoding.
+        ms.save_fact('quoted_fact', first['factValue'], category='browse')
+        again = ms.brain_browse('facts', limit=10, query='quoted_fact')['rows'][0]
+        assert again['factValue'] == 'Prefers the NSIS installer.'
+
+    def test_browse_leaves_a_structured_value_verbatim(self, brain):
+        # An object value has no readable single-string form; unwrapping it to
+        # obj['fact'] would drop `details` the moment the row was saved again.
+        ms.save_fact('object_fact', {'fact': 'x', 'details': 'y'}, category='browse')
+        row = ms.brain_browse('facts', limit=10, query='object_fact')['rows'][0]
+        assert row['factValue'].startswith('{')
+        assert '"details": "y"' in row['factValue']
+
     # Server-side sort + equality filters (gaps 3-4)
 
     def test_browse_sorts_oldest_first(self, brain):
