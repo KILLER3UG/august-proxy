@@ -9,7 +9,7 @@
 //   node scripts/prepare-desktop-backend.mjs --release    # release: writes the real sha256 stamp
 //   node scripts/prepare-desktop-backend.mjs --skip-download   # reuse existing python/
 
-import { createReadStream } from 'node:fs';
+import { createReadStream, readFileSync } from 'node:fs';
 import { mkdir, rm, cp, access, writeFile, readFile, mkdtemp, rename, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -70,6 +70,11 @@ const NGSPICE_URL =
   `${NGSPICE_VERSION}/${NGSPICE_ARCHIVE}/download`;
 const NGSPICE_SHA256 =
   '6a0c44056e7f2aae9bd6b3f5a74d1846fcf1e5d4470b01a89429629cfd0a0942';
+// Bumped whenever the staged LAYOUT changes, not just the archive: a marker
+// holding only the source hash would let a tree staged without lib/ngspice
+// claim it was already correct and skip the fix forever.
+const NGSPICE_LAYOUT_REVISION = 'r2-codemodels';
+const NGSPICE_MARKER = `${NGSPICE_SHA256} ${NGSPICE_LAYOUT_REVISION}`;
 const ngspiceDir = join(resourcesDir, 'ngspice');
 const BUILD_TOOLS_REQUIREMENTS = [
   'setuptools==81.0.0 \\',
@@ -110,6 +115,23 @@ function resolveCommand(command, args) {
     }
   }
   return { command, args };
+}
+
+// AGENTS.md documents `uv run pytest`, but uv is not guaranteed to be on the
+// PATH of the shell that runs a release — a venv-local install is invisible
+// there. Look in the project venv first, then PATH.
+function resolveUv() {
+  const venvUv = process.platform === 'win32'
+    ? join(root, 'backend-py', '.venv', 'Scripts', 'uv.exe')
+    : join(root, 'backend-py', '.venv', 'bin', 'uv');
+  if (existsSync(venvUv)) return venvUv;
+  const probed = resolveCommand('uv', []);
+  if (probed.command !== 'uv' && existsSync(probed.command)) return probed.command;
+  throw new Error(
+    `uv is required to export the locked dependency graph from backend-py/uv.lock ` +
+      `but was not found (looked at ${venvUv} and PATH). Install it, or run ` +
+      '`backend-py/.venv/Scripts/python.exe -m pip install uv`.',
+  );
 }
 
 function run(command, args, opts = {}) {
@@ -291,14 +313,54 @@ function resolveSevenZip() {
   );
 }
 
+/** The engine is only usable if it can load its own code models: ngspice
+ *  resolves `../lib/ngspice/*.cm` relative to the executable and spinit sources
+ *  them at startup. Without analog.cm an `.ac` run never solves; without
+ *  digital.cm every XSPICE part the gate workbench needs is dead. `--version`
+ *  reports neither, so the guard is file existence plus a real `.ac` solve
+ *  through the staged binary in its final layout. */
 async function verifyNgspiceRuns(exe, version) {
-  const result = spawnSync(exe, ['--version'], { encoding: 'utf8', shell: false });
-  const banner = `${result.stdout || ''}${result.stderr || ''}`;
-  if (result.error || !banner.includes(`ngspice-${version}`)) {
+  const started = spawnSync(exe, ['--version'], { encoding: 'utf8', shell: false });
+  const banner = `${started.stdout || ''}${started.stderr || ''}`;
+  if (started.error || !banner.includes(`ngspice-${version}`)) {
     throw new Error(
-      `staged ngspice did not report v${version} (exit ${result.status ?? 'error'}): ` +
-        `${banner.trim().slice(0, 200) || result.error?.message || 'no output'}`
+      `staged ngspice did not report v${version}: ` +
+        `${banner.trim().slice(0, 200) || started.error?.message || 'no output'}`
     );
+  }
+
+  const probe = await mkdtemp(join(tmpdir(), 'august-ngspice-probe-'));
+  try {
+    await writeFile(join(probe, 'smoke.cir'), [
+      '* staging smoke test',
+      'Vin in 0 5',
+      'R1 in out 1k',
+      'C1 out 0 1u',
+      '.ac dec 10 1 1meg',
+      '.print ac v(out)',
+      '.end',
+      '',
+    ].join('\n'));
+    const run = spawnSync(exe, ['-b', '-o', 'smoke.out', 'smoke.cir'], {
+      cwd: probe, encoding: 'utf8', shell: false,
+    });
+    if (run.error) throw new Error(`staged ngspice could not start: ${run.error.message}`);
+    const log = existsSync(join(probe, 'smoke.out'))
+      ? readFileSync(join(probe, 'smoke.out'), 'utf8')
+      : '';
+    // Positive proof of a solved sweep: ngspice prints the row count and then a
+    // `frequency v(out)` table. Asserting this rather than scanning for error
+    // wording, which differs between builds.
+    const rows = /No\. of Data Rows\s*:\s*(\d+)/i.exec(log);
+    if (run.status !== 0 || !rows || Number(rows[1]) < 2 || !/frequency/i.test(log)) {
+      throw new Error(
+        `staged ngspice produced no .ac solution (exit ${run.status}, rows ` +
+        `${rows ? rows[1] : 'none'}); this bundle is not usable:\n` +
+        `${log.split('\n').filter(Boolean).slice(0, 8).join('\n')}`
+      );
+    }
+  } finally {
+    await rm(probe, { recursive: true, force: true });
   }
 }
 
@@ -311,19 +373,21 @@ async function ensureNgspice() {
     return;
   }
   const markerPath = join(ngspiceDir, 'staged-from.sha256');
+  const stagedToken = existsSync(markerPath)
+    ? (await readFile(markerPath, 'utf8')).trim()
+    : null;
   if (skipDownload) {
-    if (!existsSync(markerPath)) {
+    if (stagedToken !== NGSPICE_MARKER) {
       throw new Error(
-        `--skip-download needs a staged ngspice at ${ngspiceDir}; run without it once`,
+        `--skip-download refuses ${ngspiceDir}: staged marker is ` +
+        `${stagedToken === null ? 'absent' : `${stagedToken}`}, not ${NGSPICE_MARKER}. ` +
+        'Run once without --skip-download to restage.',
       );
     }
     console.log('[prepare-backend] reusing staged ngspice (--skip-download)');
     return;
   }
-  if (
-    existsSync(markerPath)
-    && (await readFile(markerPath, 'utf8')).trim() === NGSPICE_SHA256
-  ) {
+  if (stagedToken === NGSPICE_MARKER) {
     console.log(`[prepare-backend] ngspice ${NGSPICE_VERSION} already staged`);
     return;
   }
@@ -337,7 +401,14 @@ async function ensureNgspice() {
     run(resolveSevenZip(), ['x', archive, `-o${extracted}`, '-y'], { stdio: 'ignore' });
 
     const source = join(extracted, 'Spice64');
-    for (const rel of ['bin/ngspice_con.exe', 'bin/libomp140.x86_64.dll', 'share/ngspice']) {
+    for (const rel of [
+      'bin/ngspice_con.exe',
+      'bin/libomp140.x86_64.dll',
+      'share/ngspice',
+      'lib/ngspice/analog.cm',
+      'lib/ngspice/digital.cm',
+      'lib/ngspice/spice2poly.cm',
+    ]) {
       if (!existsSync(join(source, ...rel.split('/')))) {
         // Fail loudly: a partial tree that still contains the exe would pass a
         // naive existence check and crash on the user's first simulation.
@@ -350,6 +421,9 @@ async function ensureNgspice() {
     await cp(join(source, 'bin', 'ngspice_con.exe'), join(staged, 'bin', 'ngspice_con.exe'));
     await cp(join(source, 'bin', 'libomp140.x86_64.dll'), join(staged, 'bin', 'libomp140.x86_64.dll'));
     await cp(join(source, 'share', 'ngspice'), join(staged, 'share', 'ngspice'), { recursive: true });
+    // The code models live next to `../lib/ngspice` from the executable's view;
+    // leaving them out silently kills .ac/.tran solves and all XSPICE parts.
+    await cp(join(source, 'lib', 'ngspice'), join(staged, 'lib', 'ngspice'), { recursive: true });
     await cp(join(source, 'docs', 'COPYING'), join(staged, 'LICENSE'));
     await writeFile(
       join(staged, 'README.md'),
@@ -368,6 +442,11 @@ async function ensureNgspice() {
         '  `LICENSE` beside this file.',
         '- `bin/` holds the console build only. The GUI `ngspice.exe` never',
         '  writes stdout through a pipe, so the backend cannot drive it.',
+        '- `lib/ngspice/*.cm` are the code models ngspice loads from',
+        '  `../lib/ngspice` relative to the executable. Missing `analog.cm`',
+        '  silently makes `.ac`/`.tran` runs exit without solving; missing',
+        '  `digital.cm` removes every XSPICE part. Both are required, and the',
+        '  staging step proves they load by running a real `.ac` deck.',
         '',
         'Set `AUGUST_NGSPICE_EXE` to keep a system install instead; it wins when',
         'it points at a real file. `circuit_env` reports what was found.',
@@ -377,7 +456,7 @@ async function ensureNgspice() {
     // Marker goes in the STAGING tree, never the live one: it reaches
     // resources/ only via the rename below, so "already staged" can never be
     // claimed by a tree that was not actually swapped in.
-    await writeFile(join(staged, 'staged-from.sha256'), `${NGSPICE_SHA256}\n`);
+    await writeFile(join(staged, 'staged-from.sha256'), `${NGSPICE_MARKER}\n`);
 
     // Accept the engine in its final layout, not in the extract dir: the share
     // tree is located relative to the executable, so a bad layout only shows
@@ -455,7 +534,7 @@ async function buildWheels(pythonExe) {
     });
 
     // Export the locked runtime graph, including hashes and platform markers.
-    run('uv', [
+    run(resolveUv(), [
       'export',
       '--frozen',
       '--no-dev',
