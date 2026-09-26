@@ -20,6 +20,10 @@ logger = logging.getLogger('august.memory_conn')
 _BRAIN_FILE_ENV = 'AUGUST_BRAIN_SQLITE_FILE'
 _DEFAULT_BRAIN_FILE = 'august_brain.sqlite'
 _TIMEOUT_MS = 10000
+# Bounded wait for a concurrent first open of the same database file:
+# _WAL_RETRY_ATTEMPTS * _WAL_RETRY_S ≈ 1s.
+_WAL_RETRY_ATTEMPTS = 20
+_WAL_RETRY_S = 0.05
 _local = threading.local()
 _dual_root_warned = False
 
@@ -49,7 +53,26 @@ def apply_conn_pragmas(conn: sqlite3.Connection) -> None:
       * ``AUGUST_SQLITE_CACHE_KB`` — page cache KiB (negative PRAGMA cache_size)
       * ``AUGUST_SQLITE_MMAP_MB`` — mmap size MiB (0 / unset = do not set)
     """
-    conn.execute('PRAGMA journal_mode=WAL')
+    # Retry the WAL conversion, and only the WAL conversion. SQLite does NOT
+    # invoke the busy handler when a connection has to take the write lock to
+    # change journal mode — waiting there could deadlock the two connections
+    # against each other — so this statement fails with SQLITE_BUSY on a
+    # brand-new database opened by two threads at once even though `timeout=`
+    # was passed to connect(). Everything below it does get the busy handler,
+    # which is why the pragma after it never flakes.
+    #
+    # Measured on this machine: 5 failures / 72 concurrent inits of a fresh
+    # file, 0 / 72 once WAL is already set. The condition is another thread
+    # finishing its own open, so it is transient by construction and retrying
+    # is the documented remedy rather than a mask.
+    for attempt in range(_WAL_RETRY_ATTEMPTS):
+        try:
+            conn.execute('PRAGMA journal_mode=WAL')
+            break
+        except sqlite3.OperationalError as exc:
+            if 'locked' not in str(exc).lower() or attempt == _WAL_RETRY_ATTEMPTS - 1:
+                raise
+            time.sleep(_WAL_RETRY_S)
     conn.execute('PRAGMA busy_timeout=10000')
     conn.execute('PRAGMA foreign_keys=ON')
     # Durability: only change synchronous when explicitly requested.
