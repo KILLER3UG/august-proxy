@@ -1,6 +1,6 @@
 /* ── useAppUpdate — shared Tauri update check for settings + notifications ─ */
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from '@/lib/tauri-detect';
@@ -97,6 +97,27 @@ export function useAppUpdate() {
     refetchOnWindowFocus: true,
     retry: false,
   });
+  // A download that finished but was never applied stays usable across a
+  // restart: surface it straight as "Restart to update" instead of silently
+  // making the user re-download a ~200 MB installer.
+  useEffect(() => {
+    const version = query.data?.version;
+    if (!isTauri || !version || !isWindowsDesktop()) return;
+    if (useAppUpdateInstallStore.getState().installing) return;
+    let cancelled = false;
+    void invoke<string | null>('downloaded_installer', { version })
+      .then((path) => {
+        if (cancelled || !path) return;
+        pendingInstallerPath = path;
+        setInstalling(true);
+        setProgress({ percent: 100, downloadedBytes: 0, totalBytes: null, phase: 'ready' });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [query.data?.version, setInstalling, setProgress]);
+
   const install = useCallback(async () => {
     if (!isTauri || !query.data) return;
 
@@ -108,13 +129,20 @@ export function useAppUpdate() {
     if (state.installing && state.progress.phase === 'ready') {
       try {
         if (isWindowsDesktop()) {
-          if (!pendingInstallerPath) throw new Error('Downloaded installer is no longer available');
+          // The in-memory handle is gone after a restart; ask Rust for the
+          // installer it already downloaded and verified rather than failing.
+          const installerPath =
+            pendingInstallerPath ??
+            (await invoke<string | null>('downloaded_installer', { version: query.data.version })) ??
+            null;
+          if (!installerPath) throw new Error('Downloaded installer is no longer available');
+          pendingInstallerPath = installerPath;
           await stopBackendBeforeInstall();
           setProgress({ ...state.progress, phase: 'restarting' });
           await new Promise<void>((resolve) => {
             requestAnimationFrame(() => window.setTimeout(resolve, 450));
           });
-          await invoke<string>('launch_installer_and_exit', { path: pendingInstallerPath });
+          await invoke<string>('launch_installer_and_exit', { path: installerPath });
           toast.success('Update started — the installer will guide you through the final step.');
         } else {
           if (!pendingNativeUpdate) throw new Error('Downloaded update is no longer available');

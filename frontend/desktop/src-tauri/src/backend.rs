@@ -2087,6 +2087,14 @@ pub async fn download_release_installer(app: AppHandle, version: String) -> Resu
 
         std::fs::rename(&partial, &dest)
             .map_err(|e| format!("could not finalize the installer download: {e}"))?;
+        // Keep the signature on disk beside the installer. `VERIFIED_INSTALLER`
+        // is a process-lifetime static, so without this a finished ~200 MB
+        // download became uninstallable the moment the app restarted: the
+        // second click could only answer "installer has not been downloaded and
+        // verified by August" and the UI quietly fell back to re-downloading.
+        let sig_path = dir.join(format!("{filename}.sig"));
+        std::fs::write(&sig_path, signature_text.as_bytes())
+            .map_err(|e| format!("could not store the installer signature: {e}"))?;
         let canonical_dest = std::fs::canonicalize(&dest)
             .map_err(|e| format!("could not resolve the installer path: {e}"))?;
         if let Ok(mut verified) = VERIFIED_INSTALLER.lock() {
@@ -2108,6 +2116,54 @@ pub async fn download_release_installer(app: AppHandle, version: String) -> Resu
 pub fn cancel_update_download() -> String {
     UPDATE_DOWNLOAD_CANCEL.store(true, Ordering::SeqCst);
     "cancel_requested".into()
+}
+
+/// The `{temp}/august-updates` directory August downloads installers into.
+fn updateDownloadDir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .temp_dir()
+        .map(|p| p.join("august-updates"))
+        .map_err(|e| format!("could not resolve the temp directory: {e}"))?;
+    Ok(std::fs::canonicalize(&dir).unwrap_or(dir))
+}
+
+/// True only for the exact file `download_release_installer` would have written:
+/// directly inside the updates dir, named `August_<valid version>_x64-setup.exe`.
+/// This is what makes a disk-sourced signature safe to trust — an arbitrary
+/// path can never satisfy it.
+fn isExpectedInstallerPath(dir: &Path, installer: &Path) -> bool {
+    let Ok(parent) = std::fs::canonicalize(installer.parent().unwrap_or(Path::new(""))) else {
+        return false;
+    };
+    if parent != dir {
+        return false;
+    }
+    let Some(name) = installer.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    let Some(rest) = name.strip_prefix("August_") else {
+        return false;
+    };
+    let Some(version) = rest.strip_suffix("_x64-setup.exe") else {
+        return false;
+    };
+    validateReleaseVersion(version).is_ok()
+}
+
+/// An installer already downloaded for `version`, still on disk with its
+/// signature beside it. Lets a finished download survive an app restart
+/// instead of forcing another ~200 MB before the update can be applied.
+#[tauri::command]
+pub fn downloaded_installer(app: AppHandle, version: String) -> Option<String> {
+    let filename = expectedReleaseFilename(&version).ok()?;
+    let dir = updateDownloadDir(&app).ok()?;
+    let dest = dir.join(&filename);
+    let meta = std::fs::metadata(&dest).ok()?;
+    if meta.len() < 1024 * 1024 || !dir.join(format!("{filename}.sig")).exists() {
+        return None;
+    }
+    Some(dest.to_string_lossy().to_string())
 }
 
 /// Launch the downloaded installer in **update mode**, then exit August so the
@@ -2137,12 +2193,30 @@ pub fn launch_installer_and_exit(app: AppHandle, path: String) -> Result<String,
         .lock()
         .map_err(|_| "installer verification state is unavailable".to_string())?
         .clone();
-    let Some((verified_path, signature_text)) = verified else {
-        return Err("installer has not been downloaded and verified by August".into());
+    let signature_text = match verified {
+        Some((verified_path, text)) => {
+            if installer != verified_path {
+                return Err("installer path does not match the verified download".into());
+            }
+            text
+        }
+        // Nothing in memory: the app restarted since the download completed.
+        // Accept only the exact path August writes, and the signature is still
+        // verified against the embedded release key below before anything runs.
+        None => {
+            let dir = updateDownloadDir(&app)?;
+            if !isExpectedInstallerPath(&dir, &installer) {
+                return Err("installer has not been downloaded and verified by August".into());
+            }
+            let name = installer
+                .file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| "installer has no file name".to_string())?;
+            std::fs::read_to_string(dir.join(format!("{name}.sig"))).map_err(|_| {
+                "installer signature is missing — download the update again".to_string()
+            })?
+        }
     };
-    if installer != verified_path {
-        return Err("installer path does not match the verified download".into());
-    }
     verifyInstallerSignature(&installer, signature_text.trim())?;
     // Release python/.pyd locks before NSIS copies over the install dir.
     stopBackendForUpdate(&app);
