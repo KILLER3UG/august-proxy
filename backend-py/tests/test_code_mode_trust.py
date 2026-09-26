@@ -35,6 +35,18 @@ def _as_model(s: WorkbenchSession):
     return currentSessionId.set(s.id)
 
 
+@pytest.fixture(autouse=True, scope='module')
+def _registered_tools():
+    """A code cell's `call_tool` bridge dispatches through the process-global
+    tool registry, which production fills in at app startup. These tests skip
+    startup, so declaring that precondition is on them — it used to be satisfied
+    by whichever sibling test file happened to call `register_all()` first,
+    which only holds while the whole suite shares one process in one order."""
+    from app.services.tool_registrations import register_all
+
+    register_all()
+
+
 # ── Mode escalation ───────────────────────────────────────────────────────
 
 
