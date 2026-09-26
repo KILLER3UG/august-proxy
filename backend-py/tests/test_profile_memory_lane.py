@@ -43,9 +43,22 @@ _LANE_HEADER = 'profile (always included, not keyword-matched):'
 
 
 @pytest.fixture(autouse=True)
-def _fresh_index():
+def _isolated_facts():
+    """Own the facts table for each test.
+
+    Every case here counts rows and spends a character budget against the whole
+    profile lane, so a `profile` fact left behind by another test file sharing
+    the same brain database changes how many of its own twelve fit — and the
+    named-plus-counted arithmetic stops describing the code. It held while the
+    suite ran serially in one process; under xdist the file lands on whichever
+    worker, next to whichever neighbours.
+    """
+    _conn().execute('DELETE FROM facts')
+    _conn().commit()
     invalidate_fact_index()
     yield
+    _conn().execute('DELETE FROM facts')
+    _conn().commit()
     invalidate_fact_index()
 
 
@@ -180,9 +193,25 @@ def test_a_big_drop_list_is_counted_as_well_as_named_never_vanished():
     receipt = next(line for line in lane.splitlines() if 'omitted for budget' in line)
     total = 12 - len(included)
     assert f'profile lane partial: {total} omitted for budget' in receipt
-    named = sum(1 for i in range(12) if f'profile:n{i}' not in included and f'Profile detail {i}' in receipt)
-    counted = int(re.search(r'\(\+(\d+) more\)', receipt).group(1)) if '(+' in receipt else 0
-    assert named + counted == total, f'{named} named + {counted} counted != {total} dropped'
+    # Read the named titles back out of the receipt rather than testing for
+    # each one with `in`. They are `; `-joined, and `Profile detail 1` is a
+    # substring of `Profile detail 10` — so a substring count reported one more
+    # name than the lane actually showed whenever the ranking happened to name
+    # a teens.
+    counted_m = re.search(r'\(\+(\d+) more\)', receipt)
+    counted = int(counted_m.group(1)) if counted_m else 0
+    _, _, shown = receipt.partition('omitted for budget:')
+    assert shown != receipt, f'receipt has no named-title section: {receipt!r}'
+    if counted_m:
+        shown = shown[: shown.find(counted_m.group(0))]
+    named_titles = [t.strip() for t in shown.split(';') if t.strip()]
+    assert len(named_titles) + counted == total, (
+        f'{len(named_titles)} named + {counted} counted != {total} dropped: {receipt!r}'
+    )
+    dropped_titles = {f'Profile detail {i}' for i in range(12) if f'profile:n{i}' not in included}
+    assert set(named_titles) <= dropped_titles, (
+        f'receipt named a fact that was included: {set(named_titles) - dropped_titles}'
+    )
 
 
 def test_hostile_lane_budget_reports_drops_instead_of_omitting_silently():
