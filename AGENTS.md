@@ -198,10 +198,20 @@ cd backend-py && uv run ruff check . && uv run mypy app/ && uv run pytest -q -n 
 
 Always pass `-n auto`. The serial suite is ~2h of 3,500 tests because the slow
 ones shell out to real external toolchains (Quartus, arduino-cli, ngspice) in
-independent temp dirs — measured 2.6x on 4 workers, 8m25s for the whole suite
-on 16 cores. A test that only passes serially is a load-sensitivity bug in that
-test (the one that was, `test_idle_kernel_is_reaped`, polled a shared-loop timer
-from synchronous code); fix the test, don't drop `-n auto`.
+independent temp dirs — measured 2.6x on 4 workers, 8m22s for the whole suite
+on 16 cores, and green on the 4-core CI runners. A test that only passes
+serially is a load-sensitivity bug in that test (the one that was,
+`test_idle_kernel_is_reaped`, polled a shared-loop timer from synchronous code);
+fix the test, don't drop `-n auto`.
+
+On a small machine `-n auto` oversubscribes, and two paths then race rather than
+fail loudly: `isolatedData` can hit `database is locked` swapping the per-test
+brain SQLite out from under a leaked thread, and a turn's off-loop shadow-git
+baseline can blow its 60s join and get cancelled, so `testMutatingRoundSnapshots`
+sees no `turn N start` snapshot. Each was observed once in five 16-worker runs,
+never on the 4-worker CI runners and never in isolation. Both are best-effort by
+design, so a one-off failure there is a contention signal — re-run the file
+alone before reading it as a regression.
 
 ## Version files to bump together on desktop ship
 
