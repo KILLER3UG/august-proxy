@@ -103,7 +103,7 @@ describe('chat deliverable cards report real numbers', () => {
     const items = collectCircuitDeliverables([
       tool('circuit_render_3d', { path: 'C:/ws/board.png', netlistOrPath: 'a.cir' }, { path: 'C:/ws/board.png', componentCount: 7 }),
       tool('circuit_create_netlist', { path: 'C:/ws/div.cir', content: 'x' }, { path: 'C:/ws/div.cir', lines: 12 }),
-      tool('circuit_simulate', { netlist: 'a.cir' }, { savedTo: 'C:/ws/a_sim.txt', measures: { vout: 4.9, i_v1: 0.005 } }),
+      tool('circuit_simulate', { netlist: 'a.cir' }, { savedTo: 'C:/ws/a_sim.txt', measures: { vout: 4.9, iV1: 0.005 } }),
     ]);
     const byLabel = Object.fromEntries(items.map((i) => [i.label, i.detail]));
     expect(byLabel['board.png']).toBe('7 components');
