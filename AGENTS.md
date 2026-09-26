@@ -204,11 +204,12 @@ test (the one that was, `test_idle_kernel_is_reaped`, polled a shared-loop timer
 from synchronous code); fix the test, don't drop `-n auto`.
 
 **One place not to parallelise: the release job.** `uv run pytest` in
-`release-desktop.yml` stays serial on purpose. `-n auto` measured *slower*
-there — 1h36m against 1h26m serial — because that job runs
+`release-desktop.yml` stays serial on purpose. Measured on that exact job and
+runner class, `-n auto` took 1h35m54s for 3534 tests while serial took 44m19s
+for 3535 — parallelism costs ~52 minutes there. It is because that job runs
 `prepare-desktop-backend.mjs --release` first, so it is the only one whose slow
-tests are real ngspice solves, and four workers spawning those subprocesses on
-4 vCPUs contend harder than they overlap.
+tests are real ngspice solves rather than skips, and four workers spawning
+those on 4 vCPUs contend harder than they overlap.
 
 On a small machine `-n auto` oversubscribes, and two paths then race rather than
 fail loudly: `isolatedData` can hit `database is locked` swapping the per-test

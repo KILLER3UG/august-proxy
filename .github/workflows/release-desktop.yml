@@ -119,14 +119,16 @@ jobs:
           uv run ruff check .
           uv run mypy app/
           # Deliberately SERIAL here, unlike every other pytest invocation in
-          # this repo. `-n auto` is a large win on the Ubuntu PR gate (3m43s vs
-          # ~7m) and locally (8m22s vs ~2h), but it measured slower on this
-          # windows-latest job: this step was 1h26m serial on v0.18.12 and
-          # 1h36m with `-n auto` on v0.18.13. The release job is the only one
-          # that runs `prepare-desktop-backend.mjs --release` first, so it is
-          # also the only one whose slow tests are real ngspice solves — four
-          # workers spawning those subprocesses on 4 vCPUs contend harder than
-          # they overlap. Re-measure if the runner class changes.
+          # this repo. Measured on this exact job, same runner class:
+          #   v0.18.13 `pytest -q -n auto`  ->  3534 tests in 1h35m54s
+          #   v0.18.14 `pytest -q`          ->  3535 tests in   44m19s
+          # so `-n auto` costs about 52 minutes here, even though it is a large
+          # win on the Ubuntu PR gate (3m43s vs ~7m) and locally (8m22s vs ~2h).
+          # The release job is the only one that runs
+          # `prepare-desktop-backend.mjs --release` first, so it is the only one
+          # whose slow tests are real ngspice solves rather than skips — four
+          # workers spawning those on 4 vCPUs contend harder than they overlap.
+          # Re-measure if the runner class changes.
           uv run pytest -q
 
       - name: Payload integrity tests
