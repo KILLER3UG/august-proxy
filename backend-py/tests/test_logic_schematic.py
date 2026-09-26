@@ -69,6 +69,52 @@ def test_verilog_structural_subset():
     assert not net.unsupported
 
 
+def test_verilog_primitive_is_emitted_once_and_every_net_has_one_driver():
+    """A gate-level primitive must not be parsed twice.
+
+    `prim_re` and a second, anchored `named_re` both matched `and (y, a, b);`,
+    and `named_re` only ever accepted names `prim_re` had already consumed — so
+    every Verilog primitive drew twice. The test above this one checked which
+    kinds were *present*, never how many gates there were, so the duplication
+    passed.
+
+    The DFF case was worse than a doubled symbol: the second copy drove a
+    different net and a buffer wired it back onto `q`, drawing two drivers on
+    one net — an impossible circuit, rendered tidily.
+    """
+    def drivers(net: L.LogicNet) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for g in net.gates:
+            counts[g.out] = counts.get(g.out, 0) + 1
+        return counts
+
+    for src, expected in (
+        ('and (y, a, b);\n', 2),        # and + the buf that names the output
+        ('nand (y, a, b);\n', 2),
+        ('xor (y, a, b);\n', 2),
+        ('not (y, a);\n', 2),
+        ('dff (q, d, clk);\n', 1),      # a cell, not a wide gate + buf
+    ):
+        net = L.parse_logic(src)
+        assert len(net.gates) == expected, (
+            f'{src.strip()!r} drew {len(net.gates)} gates, expected {expected}: '
+            f'{[(g.kind, g.out) for g in net.gates]}'
+        )
+        multi = {n: c for n, c in drivers(net).items() if c > 1}
+        assert not multi, f'{src.strip()!r} put two drivers on net(s) {multi}'
+
+    # A real two-stage design still composes, with each net singly driven.
+    mux = L.parse_logic(
+        'module mux2(a, b, s, y);\n'
+        '  input a, b, s;\n  output y;\n  wire w1, w2;\n'
+        '  and (w1, a, ~s);\n  and (w2, b, s);\n  or (y, w1, w2);\n'
+        'endmodule\n'
+    )
+    assert not [n for n, c in drivers(mux).items() if c > 1]
+    assert mux.outputs == ['y']
+    assert not mux.unsupported
+
+
 def test_verilog_continuous_assign():
     net = L.parse_logic('module m;\n assign y = a & ~b;\nendmodule\n')
     assert net.source_kind == 'verilog'

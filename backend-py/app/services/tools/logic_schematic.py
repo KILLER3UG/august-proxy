@@ -245,8 +245,6 @@ def parse_logic(source: str) -> LogicNet:
     )
     prim_re = re.compile(
         r'\b(and|or|nand|nor|xor|xnor|not|buf|dff)\s*\(([^)]*)\)', re.I)
-    named_re = re.compile(
-        r'^\s*([A-Za-z_]\w*)\s+\(([^)]*)\)\s*;\s*$', re.M | re.I)
 
     behavioural = re.compile(
         r'\balways\b|\bprocess\b|\bbegin\b\s*$|\bif\b|\bcase\b|\bfor\b|\bwhile\b'
@@ -296,18 +294,6 @@ def parse_logic(source: str) -> LogicNet:
             continue
         if len(args) < 2:
             net.unsupported.append(m.group(0))
-            continue
-        matched_any = True
-        out = _add_wide(kind, [_resolve_arg(a, net, args[0]) for a in args[1:]],
-                        args[0], net)
-        net.gates.append(Gate(out=args[0], kind='buf', inputs=[out], name=args[0]))
-        declared_out.append(args[0])
-
-    for m in named_re.finditer(body):
-        inst, args_raw = m.group(1), m.group(2)
-        args = [a.strip() for a in args_raw.split(',') if a.strip()]
-        kind = inst.lower()
-        if kind not in GATE_KINDS or len(args) < 2:
             continue
         matched_any = True
         out = _add_wide(kind, [_resolve_arg(a, net, args[0]) for a in args[1:]],
