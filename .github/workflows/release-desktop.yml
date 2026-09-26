@@ -118,7 +118,14 @@ jobs:
           uv lock --check --python 3.12
           uv run ruff check .
           uv run mypy app/
-          uv run pytest -q
+          # `-n auto`: the suite is 3,500+ tests and the slow ones drive real
+          # external toolchains (Quartus, arduino-cli, ngspice) in independent
+          # temp dirs — embarrassingly parallel, ~2.6x measured on 4 workers.
+          # This is where the old ~2h went: serial, ~8.5m now. Coverage stays
+          # ON and stays in THIS job — it is a release gate, and moving it to a
+          # sibling would make it advisory, because `publish` needs `build` and
+          # a tag push publishes straight from `build`.
+          uv run pytest -q -n auto
 
       - name: Payload integrity tests
         run: node --test scripts/desktop-backend-payload.test.mjs

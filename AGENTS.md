@@ -174,7 +174,7 @@ exist — corrected Part 25 Phase 7.1.)
 
 | Area | Owns | Validate with |
 |------|------|---------------|
-| `backend-py/` | FastAPI proxy, workbench, Brain, MCP, tools | `cd backend-py && uv run pytest -q` |
+| `backend-py/` | FastAPI proxy, workbench, Brain, MCP, tools | `cd backend-py && uv run pytest -q -n auto` |
 | `frontend/desktop/` | Tauri shell, React UI, Vite build | `npm run test:frontend` |
 | `frontend/mobile/` | Expo mobile app | `npm run test -w frontend/mobile` |
 | `scripts/` | Build/release orchestration (Node) | manual — no test suite |
@@ -193,8 +193,15 @@ exist — corrected Part 25 Phase 7.1.)
 **Fast path for backend-only changes:**
 
 ```bash
-cd backend-py && uv run ruff check . && uv run mypy app/ && uv run pytest -q
+cd backend-py && uv run ruff check . && uv run mypy app/ && uv run pytest -q -n auto
 ```
+
+Always pass `-n auto`. The serial suite is ~2h of 3,500 tests because the slow
+ones shell out to real external toolchains (Quartus, arduino-cli, ngspice) in
+independent temp dirs — measured 2.6x on 4 workers, 8m25s for the whole suite
+on 16 cores. A test that only passes serially is a load-sensitivity bug in that
+test (the one that was, `test_idle_kernel_is_reaped`, polled a shared-loop timer
+from synchronous code); fix the test, don't drop `-n auto`.
 
 ## Version files to bump together on desktop ship
 

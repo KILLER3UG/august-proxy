@@ -72,7 +72,10 @@ jobs:
       # emission during tool stages, proxy inject HTTP, SSRF gates, gateway
       # normalize paths (no live bot credentials required).
       - name: Run pytest
-        run: pytest -q --tb=short
+        # `-n auto`: the slow tests drive external toolchains in per-test temp
+        # dirs, so they parallelise cleanly (~2.6x measured on 4 workers).
+        # Coverage stays on here — this is the PR gate that owns the 55% floor.
+        run: pytest -q --tb=short -n auto
 
   frontend-tsc-eslint:
     name: Frontend — tsc + eslint + vitest
