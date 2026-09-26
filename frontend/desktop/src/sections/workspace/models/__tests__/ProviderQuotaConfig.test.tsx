@@ -36,7 +36,7 @@ function provider(overrides: Partial<Provider> = {}): Provider {
     apiKeySet: true,
     models: [],
     ...overrides,
-  } as Provider;
+  };
 }
 
 function renderForm(p: Provider) {

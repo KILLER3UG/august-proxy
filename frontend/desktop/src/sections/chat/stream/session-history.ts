@@ -76,7 +76,7 @@ function readStructured(row: Record<string, unknown>): Partial<ChatMessage> {
   for (const key of STRUCTURED_FIELDS) {
     if (row[key] !== undefined && row[key] !== null) out[key] = row[key];
   }
-  return out as Partial<ChatMessage>;
+  return out;
 }
 
 function readBlocks(row: Record<string, unknown>): MessageBlock[] | undefined {

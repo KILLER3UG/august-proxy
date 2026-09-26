@@ -37,7 +37,7 @@ function row(overrides: Partial<ModelQuota> = {}): ModelQuota {
 function renderPanel(quotas: ModelQuota[]) {
   vi.mocked(api.get).mockResolvedValue({
     results: [{ provider: 'Test OpenAI', quotas }],
-  } as never);
+  });
   return render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}

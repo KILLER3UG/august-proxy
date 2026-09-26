@@ -39,7 +39,7 @@ describe('QueryErrorState', () => {
 
   it('disables Retry and says so while the retry is in flight', () => {
     render(<QueryErrorState error={new Error('x')} onRetry={vi.fn()} retrying />);
-    const button = screen.getByTestId('query-error-retry') as HTMLButtonElement;
+    const button = screen.getByTestId<HTMLButtonElement>('query-error-retry');
     expect(button.disabled).toBe(true);
     expect(button.textContent).toContain('Retrying');
   });

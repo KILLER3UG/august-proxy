@@ -847,7 +847,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         if (currentSessionRef.current !== requestedSession) return;
         console.warn('[ChatThread] failed to hydrate queue', err);
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-hydrate when the UI session or its resolved workbench id changes
   }, [sessionId, workbenchSession?.id, activeSession?.workbenchSessionId]);
 
   useSessionHistory(sessionId);

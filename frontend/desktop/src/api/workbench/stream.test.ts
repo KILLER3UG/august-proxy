@@ -286,7 +286,7 @@ describe('streamWorkbenchReconnect — retry budget', () => {
         }),
       ),
     );
-    globalThis.fetch = fetchMock as never;
+    globalThis.fetch = fetchMock;
 
     const onError = vi.fn();
     const run = streamWorkbenchReconnect('wb_budget', { onError }, undefined, 0, { maxRetries: 3 });
@@ -324,7 +324,7 @@ describe('streamWorkbenchReconnect — retry budget', () => {
         new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
       );
     });
-    globalThis.fetch = fetchMock as never;
+    globalThis.fetch = fetchMock;
 
     const run = streamWorkbenchReconnect(
       'wb_progress',
@@ -349,7 +349,7 @@ describe('streamWorkbenchReconnect — retry budget', () => {
         sseResponse(['event: text', 'data: {"content":"par"}', 'id: 1']),
       ),
     );
-    globalThis.fetch = fetchMock as never;
+    globalThis.fetch = fetchMock;
 
     const onError = vi.fn();
     const run = streamWorkbenchReconnect(

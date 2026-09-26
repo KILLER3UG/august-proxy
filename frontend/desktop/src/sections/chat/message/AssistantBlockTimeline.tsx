@@ -1251,7 +1251,7 @@ export function AssistantBlockTimeline({
       if (block.type !== 'toolCall' && block.type !== 'command') continue;
       if (!block.tool) continue;
       for (const state of allSubagentStates.values()) {
-        if (state.parentToolId === block.tool!.id) claimed.add(state.jobId);
+        if (state.parentToolId === block.tool.id) claimed.add(state.jobId);
       }
     }
     const orphans = blocks
