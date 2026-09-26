@@ -32,7 +32,7 @@ function doctorWith(check: SandboxCheck) {
     ok: true,
     checks: [check],
     summary: '1/1 checks healthy',
-  } as never);
+  });
 }
 
 const base = {
@@ -86,8 +86,8 @@ describe('AgentSandboxSection enforcement honesty', () => {
   it('reports a working strong backend as OS isolation', async () => {
     doctorWith({
       ...base,
-      detail: 'Linux Landlock · default workspace-write',
-      backend: 'landlock',
+      detail: 'Linux bubblewrap · default workspace-write',
+      backend: 'bwrap',
       requested: 'soft',
       strong: true,
       degraded: false,
@@ -105,7 +105,7 @@ describe('AgentSandboxSection enforcement honesty', () => {
       ok: true,
       checks: [{ id: 'backend', label: 'Backend', ok: true, detail: 'up' }],
       summary: '1/1',
-    } as never);
+    });
     render(<AgentSandboxSection />);
     await waitFor(() => expect(screen.getByTestId('sandbox-backend')).toHaveTextContent('soft'));
   });

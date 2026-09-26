@@ -10,7 +10,6 @@ EnforcementBackend = Literal[
     'container',
     'windows-appcontainer',
     'seatbelt',
-    'landlock',
     'bwrap',
     'soft',
 ]

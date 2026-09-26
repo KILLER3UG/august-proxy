@@ -520,9 +520,15 @@ process env.
 ### Sandbox enforcement tiers and the egress filter
 
 Commands run through the strongest available backend: the container tier
-(when enabled + Docker reachable) → Seatbelt (macOS) → Landlock/bwrap
-(Linux) → AppContainer (Windows, when proven available) → the host policy
-layer (`soft`: path scans, redirect checks, command denylists).
+(when enabled + Docker reachable) → Seatbelt (macOS) → bwrap (Linux, when
+bubblewrap is installed) → AppContainer (Windows, when proven available) →
+the host policy layer (`soft`: path scans, redirect checks, command denylists).
+
+Landlock is **not** a tier even on kernels that support it. Applying a ruleset
+needs a launcher August does not ship, so a "landlock" host is confined exactly
+as little as a `soft` one — reporting it advertised OS isolation that did not
+exist, and switched off the warm code-mode kernel on hosts that had no
+isolation to lose.
 
 `enforcement_report()` returns the distinction that used to be invisible:
 

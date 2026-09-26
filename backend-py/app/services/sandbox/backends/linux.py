@@ -1,4 +1,11 @@
-"""Linux sandbox backend — prefer ``bwrap``, else soft (Landlock tagged when probe ok)."""
+"""Linux sandbox backend — ``bwrap`` when it exists, otherwise soft.
+
+Landlock is deliberately NOT reported as a tier. Applying a ruleset needs a
+launcher August does not ship, so a "landlock" host ran exactly as confined as
+a "soft" one — while `enforcement_report()` advertised real OS isolation and
+`strong_backend_active()` refused the warm code kernel on a host that had no
+isolation to lose. A kernel feature with no enforcer is not enforcement.
+"""
 
 from __future__ import annotations
 
@@ -12,29 +19,15 @@ from app.services.sandbox.backends.fallback import soft_preflight
 from app.services.sandbox.paths import resolve_workspace_root
 from app.services.sandbox.policy import SandboxPolicy, SandboxResult
 
-LinuxBackend = Literal['bwrap', 'landlock', 'soft']
-
-
-def _landlock_probe() -> bool:
-    """Best-effort: Landlock is available on modern kernels (ABI via syscall)."""
-    try:
-        # Full Landlock ruleset application needs a helper; probe host only.
-        uname = getattr(os, 'uname', None)
-        return os.path.exists('/proc/sys/kernel') and uname is not None and uname().sysname == 'Linux'
-    except Exception:
-        return False
+LinuxBackend = Literal['bwrap', 'soft']
 
 
 def is_available() -> bool:
-    return os.name != 'nt' and (shutil.which('bwrap') is not None or _landlock_probe())
+    return os.name != 'nt' and shutil.which('bwrap') is not None
 
 
 def backend_kind() -> LinuxBackend:
-    if shutil.which('bwrap') is not None:
-        return 'bwrap'
-    if _landlock_probe():
-        return 'landlock'
-    return 'soft'
+    return 'bwrap' if shutil.which('bwrap') is not None else 'soft'
 
 
 async def run(command: str, policy: SandboxPolicy, *, timeout: float) -> SandboxResult:
@@ -44,22 +37,16 @@ async def run(command: str, policy: SandboxPolicy, *, timeout: float) -> Sandbox
         return SandboxResult(
             ok=False,
             denial_reason=denial,
-            enforcement='bwrap' if kind == 'bwrap' else 'landlock' if kind == 'landlock' else 'soft',
+            enforcement='bwrap' if kind == 'bwrap' else 'soft',
             sandboxed=True,
         )
 
     if kind == 'bwrap':
         return await _run_bwrap(command, policy, timeout=timeout)
 
-    # Landlock without a dedicated launcher → soft with landlock tag when probe ok
-    # (full Landlock ruleset application needs a small C/Rust helper; soft stays honest).
     from app.services.sandbox.backends.fallback import run_soft
 
-    result = await run_soft(command, policy, timeout=timeout)
-    if kind == 'landlock' and result.denial_reason is None:
-        # Soft enforcement only — do not claim Landlock isolation.
-        result.enforcement = 'soft'
-    return result
+    return await run_soft(command, policy, timeout=timeout)
 
 
 async def _run_bwrap(command: str, policy: SandboxPolicy, *, timeout: float) -> SandboxResult:

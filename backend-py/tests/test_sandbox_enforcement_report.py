@@ -25,6 +25,8 @@ import sys
 import pytest
 from app.services.sandbox import backends as sandbox_backends
 from app.services.sandbox.backends import container as container_backend
+from app.services.sandbox.backends import linux as linux_backend
+from app.services.sandbox.backends import macos as macos_backend
 from app.services.sandbox.backends import windows as windows_backend
 from app.services.workbench import kernel
 
@@ -38,6 +40,13 @@ def _fresh_probes(monkeypatch: pytest.MonkeyPatch):
         'AUGUST_WARM_KERNEL_OFF',
     ):
         monkeypatch.delenv(key, raising=False)
+    # Neutralise the host's own platform tier. `select_backend_name()` reaches
+    # for bwrap on Linux and sandbox-exec on macOS, so leaving them live made
+    # these tests assert on the runner's installed software — a Linux CI worker
+    # answered 'landlock' where the test expected 'soft'.
+    monkeypatch.setattr(linux_backend, 'is_available', lambda: False)
+    monkeypatch.setattr(linux_backend, 'backend_kind', lambda: 'soft')
+    monkeypatch.setattr(macos_backend, 'is_available', lambda: False)
     sandbox_backends.invalidate_backend_cache()
     container_backend._probe_cache = None
     windows_backend.reset_probe()

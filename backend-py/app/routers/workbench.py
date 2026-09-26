@@ -1887,7 +1887,6 @@ async def workbenchDoctor():
         detail_map = {
             'windows-appcontainer': 'Windows AppContainer isolation',
             'seatbelt': 'macOS Seatbelt (sandbox-exec)',
-            'landlock': 'Linux Landlock',
             'bwrap': 'Linux bubblewrap',
             'soft': 'Soft policy (cwd + network/path guards) — not OS isolation',
         }

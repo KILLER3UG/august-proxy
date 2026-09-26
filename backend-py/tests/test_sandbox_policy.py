@@ -197,7 +197,7 @@ def test_policy_from_session_and_grant_key():
     assert p.network is False
     key = unsandboxed_grant_key('npm test')
     assert key.startswith('sandbox:unsandboxed:')
-    assert active_backend() in ('soft', 'seatbelt', 'bwrap', 'landlock', 'windows-appcontainer')
+    assert active_backend() in ('soft', 'seatbelt', 'bwrap', 'windows-appcontainer')
 
 
 def test_full_access_enables_network():

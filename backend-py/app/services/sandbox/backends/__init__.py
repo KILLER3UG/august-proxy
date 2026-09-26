@@ -14,15 +14,17 @@ _select_cache: tuple[float, 'EnforcementBackend'] | None = None
 
 # Tiers that are real OS-level containment. Everything else is policy
 # enforcement in the parent process, which the model shares a session with.
+# Landlock is absent on purpose: August ships no ruleset launcher, so a
+# "landlock" host is a soft host that happens to have a capable kernel.
 STRONG_BACKENDS: frozenset[str] = frozenset(
-    {'container', 'windows-appcontainer', 'seatbelt', 'landlock', 'bwrap'}
+    {'container', 'windows-appcontainer', 'seatbelt', 'bwrap'}
 )
 
 
 def select_backend_name() -> 'EnforcementBackend':
     """Report the best available enforcement backend for this host.
 
-    Probes are memoized for 30s: the platform probes (bwrap/landlock walks,
+    Probes are memoized for 30s: the platform probes (bwrap lookup,
     AppContainer checks) ran on EVERY command through the hot path. The
     container tier is checked first — it is opt-in (AUGUST_CONTAINER_SANDBOX)
     and strictly stronger than the host-policy tiers, so when the user
@@ -152,7 +154,7 @@ async def run_with_best_backend(
         from app.services.sandbox.backends.macos import run as run_macos
 
         return await run_macos(command, policy, timeout=timeout)
-    if name in ('landlock', 'bwrap'):
+    if name == 'bwrap':
         from app.services.sandbox.backends.linux import run as run_linux
 
         return await run_linux(command, policy, timeout=timeout)

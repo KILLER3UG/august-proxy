@@ -2698,7 +2698,7 @@ async def _runFencedCodeBlock(session: WorkbenchSession, text: str, toolRound: i
         #
         # SECURITY: the warm child is spawned directly and does NOT go
         # through the sandbox backends. While a strong backend (container,
-        # AppContainer, seatbelt, landlock, bwrap) is active that would be a
+        # AppContainer, seatbelt, bwrap) is active that would be a
         # hole — everything else confined, code mode wide open. So the warm
         # path is skipped and the cold spawn below runs the cell through
         # run_command, which IS sandboxed. Kernels already alive are killed
