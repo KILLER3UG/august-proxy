@@ -203,13 +203,20 @@ on 16 cores. A test that only passes serially is a load-sensitivity bug in that
 test (the one that was, `test_idle_kernel_is_reaped`, polled a shared-loop timer
 from synchronous code); fix the test, don't drop `-n auto`.
 
-**One place not to parallelise: the release job.** `uv run pytest` in
-`release-desktop.yml` stays serial on purpose. Measured on that exact job and
-runner class, `-n auto` took 1h35m54s for 3534 tests while serial took 44m19s
-for 3535 — parallelism costs ~52 minutes there. It is because that job runs
-`prepare-desktop-backend.mjs --release` first, so it is the only one whose slow
-tests are real ngspice solves rather than skips, and four workers spawning
-those on 4 vCPUs contend harder than they overlap.
+**The release job builds; it does not test.** `release-desktop.yml` runs
+`uv lock --check`, ruff and mypy, then produces the signed installer. The suite
+lives in `Type check`, which runs all 3,540 tests on every push to every branch
+and finishes in ~5 minutes on Ubuntu. Re-running it in the release job cost 45
+minutes of a ~70-minute release, and `-n auto` made it *worse* — 1h35m54s
+against 44m19s serial on the same job and runner class — because that job is the
+only one that stages ngspice first, so its slow tests are real solves contending
+for 4 vCPUs instead of skipping.
+
+Two consequences to know rather than rediscover. `Type check` runs on the tag's
+commit but does not gate publication, so **confirm it is green before pushing the
+tag** — `git push origin master v0.18.16` does not wait for it. And the
+ngspice-dependent circuit tests now run in no CI job at all; they only execute
+locally, where the binary is staged.
 
 On a small machine `-n auto` oversubscribes, and two paths then race rather than
 fail loudly: `isolatedData` can hit `database is locked` swapping the per-test

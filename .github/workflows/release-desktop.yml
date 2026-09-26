@@ -112,24 +112,27 @@ jobs:
       - name: Prepare portable Python and backend resources
         run: node scripts/prepare-desktop-backend.mjs --release
 
-      - name: Backend lint, typecheck, and tests
+      - name: Backend lockfile, lint and typecheck
         working-directory: backend-py
         run: |
           uv lock --check --python 3.12
           uv run ruff check .
           uv run mypy app/
-          # Deliberately SERIAL here, unlike every other pytest invocation in
-          # this repo. Measured on this exact job, same runner class:
-          #   v0.18.13 `pytest -q -n auto`  ->  3534 tests in 1h35m54s
-          #   v0.18.14 `pytest -q`          ->  3535 tests in   44m19s
-          # so `-n auto` costs about 52 minutes here, even though it is a large
-          # win on the Ubuntu PR gate (3m43s vs ~7m) and locally (8m22s vs ~2h).
-          # The release job is the only one that runs
-          # `prepare-desktop-backend.mjs --release` first, so it is the only one
-          # whose slow tests are real ngspice solves rather than skips — four
-          # workers spawning those on 4 vCPUs contend harder than they overlap.
-          # Re-measure if the runner class changes.
-          uv run pytest -q
+
+      # No test suite here on purpose. This job's only work is producing a
+      # signed installer users can download; the 3,540-test suite runs in
+      # `Type check` on every push to every branch and finishes in about five
+      # minutes on Ubuntu. Running it again here cost 45 minutes of the ~70 a
+      # release took, and `-n auto` made it *worse* (1h35m) because this is the
+      # only job that stages ngspice first, so its slow tests are real solves
+      # contending for 4 vCPUs rather than skips.
+      #
+      # The one thing that therefore checks nothing else: the circuit tests that
+      # need a staged ngspice. They run locally and used to run here.
+      #
+      # Release discipline this leaves to the human: `Type check` runs on the
+      # same commit as the tag, so confirm it is green before pushing the tag.
+      # Pushing master and the tag in one command does not wait for it.
 
       - name: Payload integrity tests
         run: node --test scripts/desktop-backend-payload.test.mjs
