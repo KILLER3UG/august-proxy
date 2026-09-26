@@ -130,6 +130,7 @@ class WarmKernel:
         self.proc: asyncio.subprocess.Process | None = None
         self.last_used: float = 0.0
         self._shutdown = False
+        self._busy = False
         self._idle_handle: asyncio.TimerHandle | None = None
 
     async def _boot(self) -> None:
@@ -154,8 +155,12 @@ class WarmKernel:
 
     def _arm_idle_timer(self) -> None:
         """Self-reap: no cell within the idle window ends the process."""
-        if self._idle_handle is not None:
-            self._idle_handle.cancel()
+        self._disarm_idle_timer()
+        if self._busy:
+            # Invariant: no reap timer is ever pending while a cell is in
+            # flight. `_boot` arms, and it also runs on the mid-cell reconnect
+            # path, so the guard has to live here rather than at the call site.
+            return
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -171,6 +176,14 @@ class WarmKernel:
 
         self._idle_handle = loop.call_later(WARM_KERNEL_IDLE_S, _idle_exit)
 
+    def _disarm_idle_timer(self) -> None:
+        """Cancel a pending reap. The window measures IDLE time, so it must not
+        run while a cell is in flight — armed at cell start instead, a cell
+        slower than the window killed its own child mid-execution."""
+        if self._idle_handle is not None:
+            self._idle_handle.cancel()
+            self._idle_handle = None
+
     @property
     def alive(self) -> bool:
         return not self._shutdown and (self.proc is None or self.proc.returncode is None)
@@ -185,8 +198,7 @@ class WarmKernel:
         here.
         """
         self._shutdown = True
-        if self._idle_handle is not None:
-            self._idle_handle.cancel()
+        self._disarm_idle_timer()
         proc = self.proc
         if proc is not None and proc.returncode is None:
             try:
@@ -223,14 +235,29 @@ class WarmKernel:
 
     async def run_cell_source(self, source: str, timeout: float = 60.0) -> CellResult:
         """Execute one full runner-source cell in the warm child."""
-        import json as _json
         import time as _time
 
-        if self.proc is None or self.proc.returncode is not None:
-            await self._boot()
+        self._busy = True
+        self._disarm_idle_timer()
+        try:
+            if self.proc is None or self.proc.returncode is not None:
+                await self._boot()
+            return await self._serve_cell(source, timeout)
+        finally:
+            self._busy = False
+            # The window restarts when the cell ENDS — that, not an arm at cell
+            # start, is what makes it an idle window. `_shutdown` means this
+            # kernel already died (timeout path, or an explicit kill), so there
+            # is nothing left to reap.
+            if not self._shutdown:
+                self.last_used = _time.monotonic()
+                self._arm_idle_timer()
+
+    async def _serve_cell(self, source: str, timeout: float) -> CellResult:
+        """Ship one cell down the line protocol and read back its envelope."""
+        import json as _json
+
         assert self.proc is not None and self.proc.stdin is not None and self.proc.stdout is not None
-        self.last_used = _time.monotonic()
-        self._arm_idle_timer()
         line = _json.dumps({'source': source}) + '\n'
         try:
             self.proc.stdin.write(line.encode('utf-8'))

@@ -271,6 +271,24 @@ class TestWarmBootCost:
 
 
 class TestIdleShutdown:
+    def test_cell_longer_than_the_idle_window_is_not_reaped_mid_flight(self, tmp_path, monkeypatch):
+        """The window measures IDLE time, not cell time. The timer used to be
+        armed when the cell STARTED, so a cell that outlived the window killed
+        its own child mid-execution — invisible at the 900s default, and a
+        guaranteed failure under load once the window is short."""
+        monkeypatch.setattr(kernel, 'WARM_KERNEL_IDLE_S', 0.2)
+        ws = str(tmp_path)
+        kd = _kdir(tmp_path, 'warm-31')
+        k = kernel.acquire_warm_kernel(ws, 'warm-31')
+        try:
+            r = _run(
+                k.run_cell_source(_cell('import time\ntime.sleep(1.5)\nprint("slow cell ok")', ws, kd), timeout=30)
+            )
+            assert 'slow cell ok' in r.stdout, f'cell was cut short: {r.stderr!r}'
+            assert k.alive, 'a cell slower than the idle window reaped its own kernel'
+        finally:
+            k.shutdown()
+
     def test_idle_kernel_is_reaped(self, tmp_path, monkeypatch):
         """A kernel idle beyond the window shuts itself down — no orphaned
         interpreters accumulate."""
@@ -280,10 +298,18 @@ class TestIdleShutdown:
         k = kernel.acquire_warm_kernel(ws, 'warm-30')
         _run(k.run_cell_source(_cell('pass', ws, kd)))
         assert k.alive
-        t0 = time.monotonic()
-        while k.alive and (time.monotonic() - t0) < 5:
-            _run(asyncio.sleep(0.05))
-        assert not k.alive, 'idle kernel was not reaped within 5s'
+        # Wait ON the shared loop. The idle timer is a call_later handle on it,
+        # so it can only fire while that loop actually runs — polling
+        # `k.alive` from synchronous code between separate 50 ms `_run` calls
+        # starves the handle, and under parallel load (xdist) it starves long
+        # enough to blow a fixed wall-clock budget.
+        async def _await_reap():
+            deadline = time.monotonic() + 20
+            while k.alive and time.monotonic() < deadline:
+                await asyncio.sleep(0.05)
+
+        _run(_await_reap())
+        assert not k.alive, 'idle kernel was not reaped within 20s'
         # The registry entry dies with it (reap sweep or next acquire).
         k2 = kernel.acquire_warm_kernel(ws, 'warm-30')
         assert k2 is not k
