@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import AsyncIterator
 
 import pytest
@@ -701,10 +702,22 @@ class TestShadowGitInLoop:
             sessionId=session.id, message='write it', model='stub-claude', emit=_emitTo(events)
         )
         assert 'done' in [e['type'] for e in events]
-        snaps = sg.list_snapshots(session.id, str(tmp_path))
-        messages = [s['message'] for s in snaps]
-        assert any(m.startswith('turn ') for m in messages)
-        assert any(m.startswith('step ') and 'mutation' in m for m in messages)
+        # The turn baseline is committed OFF the event loop — four blocking git
+        # subprocesses, deliberately not on the loop so the model call can start
+        # while it runs — and is only joined at the first mutation under a 60s
+        # best-effort budget. So `done` does not mean it has landed, and on a
+        # loaded runner the join is the thing that slips. Poll for it instead of
+        # asserting instantly; the `step ` snapshot below is committed inline,
+        # which is why only the baseline ever flakes.
+        messages: list[str] = []
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            messages = [s['message'] for s in sg.list_snapshots(session.id, str(tmp_path))]
+            if any(m.startswith('turn ') for m in messages):
+                break
+            await asyncio.sleep(0.25)
+        assert any(m.startswith('turn ') for m in messages), messages
+        assert any(m.startswith('step ') and 'mutation' in m for m in messages), messages
         # The step snapshot captured the written file.
         assert (tmp_path / 'new.txt').read_text(encoding='utf-8') == 'hello\n'
 
