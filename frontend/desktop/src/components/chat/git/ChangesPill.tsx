@@ -18,7 +18,7 @@ import {
   GitBranch,
   GitCommitHorizontal,
   Loader2,
-  Sparkles,
+  Asterisk,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { gitApi, type GitStatus } from '@/api/git';
@@ -402,7 +402,7 @@ function CommitModal({
             {busy === 'generate' ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
-              <Sparkles className="size-4" />
+              <Asterisk className="size-4" />
             )}
           </button>
         </div>

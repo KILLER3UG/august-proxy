@@ -9,7 +9,7 @@ import {
   Boxes,
   Pin,
   Search,
-  Sparkles,
+  Asterisk,
   Server,
   Loader2,
 } from 'lucide-react';
@@ -198,7 +198,7 @@ export function AllModelsTab() {
             {discovering || refreshAll.isPending ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
-              <Sparkles className="size-3.5" />
+              <Asterisk className="size-3.5" />
             )}
             {discovering || refreshAll.isPending ? 'Discovering…' : 'Discover all'}
           </Button>
@@ -218,7 +218,7 @@ export function AllModelsTab() {
           action={
             providersDiscoverable(listQ.data ?? []) ? (
               <Button onClick={startDiscoverAll}>
-                <Sparkles className="size-3.5" /> Discover all
+                <Asterisk className="size-3.5" /> Discover all
               </Button>
             ) : null
           }

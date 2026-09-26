@@ -21,7 +21,7 @@ import {
   RefreshCw,
   Rocket,
   Shield,
-  Sparkles,
+  Asterisk,
   Wand2,
 } from 'lucide-react';
 import { providersApi, type Provider, type ProviderModel } from '@/api/providers';
@@ -430,7 +430,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
               </div>
             </div>
             <ul className="space-y-1.5 text-xs text-muted-foreground">
-              <li className="flex gap-2"><Sparkles className="size-3.5 text-primary shrink-0" /> Chat with tool-calling agents that can read and edit your workspace.</li>
+              <li className="flex gap-2"><Asterisk className="size-3.5 text-primary shrink-0" /> Chat with tool-calling agents that can read and edit your workspace.</li>
               <li className="flex gap-2"><Shield className="size-3.5 text-success shrink-0" /> Safety mode is set to {SANDBOX_OPTIONS.find((o) => o.id === sandboxMode)?.label}.</li>
               <li className="flex gap-2"><Wand2 className="size-3.5 text-primary shrink-0" /> Everything here is changeable later in Settings.</li>
             </ul>

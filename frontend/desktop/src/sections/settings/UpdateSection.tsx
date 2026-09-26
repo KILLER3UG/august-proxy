@@ -13,7 +13,7 @@ import {
   Download,
   ExternalLink,
   RefreshCw,
-  Sparkles,
+  Asterisk,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UpdateProgressBar } from '@/components/ui/UpdateProgressBar';
@@ -52,7 +52,7 @@ export function UpdateSection() {
       {/* Identity header */}
       <div className="flex flex-col items-center pt-2 text-center">
         <div className="grid size-16 place-items-center rounded-2xl border border-white/10 bg-white/[0.04]">
-          <Sparkles className="size-7 text-primary" />
+          <Asterisk className="size-7 text-primary" />
         </div>
         <h1 className="mt-3 text-xl font-semibold tracking-tight text-foreground">August</h1>
         <p className="text-sm text-muted-foreground">Version {currentVersion}</p>

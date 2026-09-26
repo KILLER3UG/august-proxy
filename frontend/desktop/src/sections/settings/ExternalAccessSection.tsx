@@ -20,7 +20,7 @@ import {
   Check,
   AlertTriangle,
   Code2,
-  Sparkles,
+  Asterisk,
   RefreshCw,
 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -358,7 +358,7 @@ export function ExternalAccessSection() {
         <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-4">
           <div className="space-y-1.5">
             <div className="flex items-center gap-1.5">
-              <Sparkles className="size-3 text-muted-foreground" />
+              <Asterisk className="size-3 text-muted-foreground" />
               <span className="text-xs font-medium">OpenAI (Chat Completions)</span>
             </div>
             <CodeBlock code={curlExample} language="bash" />
@@ -367,7 +367,7 @@ export function ExternalAccessSection() {
           </div>
           <div className="space-y-1.5 pt-2 border-t border-white/[0.06]">
             <div className="flex items-center gap-1.5">
-              <Sparkles className="size-3 text-muted-foreground" />
+              <Asterisk className="size-3 text-muted-foreground" />
               <span className="text-xs font-medium">Anthropic (Messages)</span>
             </div>
             <CodeBlock code={anthropicExample} language="bash" />

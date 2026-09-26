@@ -15,7 +15,7 @@
 import type { ComponentType, SVGProps } from 'react';
 import {
   // Lucide — semantic + event-type icons
-  Brain, Search, Pencil, SquareTerminal, Loader2, ListTodo, Sparkles,
+  Brain, Search, Pencil, SquareTerminal, Loader2, ListTodo, Asterisk,
   FileSearch, FilePlus, FilePen, Wrench, Package, Globe, Plug,
 } from 'lucide-react';
 import {
@@ -81,7 +81,7 @@ const ICONS: Record<ToolKind, { Icon: IconComp; color: string; isAnimated?: bool
   ran:        { Icon: SquareTerminal,  color: '#5a8a6a' },
   exploring:  { Icon: Loader2,         color: '#4a8fff', isAnimated: true },
   todo:       { Icon: ListTodo,        color: '#94a3b8' },
-  thinking:   { Icon: Sparkles,        color: '#4a8fff', isAnimated: true },
+  thinking:   { Icon: Asterisk,        color: '#4a8fff', isAnimated: true },
 
   // Generic categories
   read:       { Icon: FileSearch,      color: '#94a3b8' },

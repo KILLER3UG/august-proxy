@@ -11,7 +11,7 @@ import {
   Settings,
   Copy,
   Brain,
-  Sparkles,
+  Asterisk,
   Clock,
   Network,
   Search,
@@ -310,7 +310,7 @@ export function CommandPalette() {
               onSelect={run(() => { void navigate("/settings/skills"); })}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Sparkles className="size-3.5" /> Review pending skills
+              <Asterisk className="size-3.5" /> Review pending skills
             </Command.Item>
             <Command.Item
               value="action subagent runs"

@@ -7,7 +7,7 @@
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Brain, Check, ChevronDown, ChevronRight, Loader2, RotateCcw, Sparkles, X } from 'lucide-react';
+import { Brain, Check, ChevronDown, ChevronRight, Loader2, RotateCcw, Asterisk, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { useModels } from '@/hooks/useModels';
@@ -793,7 +793,7 @@ export function LearningPanel() {
                 <ul className="mt-1 space-y-0.5 text-[10px] text-muted-foreground/80">
                   {refineQ.data!.ledger.slice(-6).reverse().map((row, i) => (
                     <li key={i} className="flex items-center gap-1.5 truncate">
-                      <Sparkles className="size-2.5 shrink-0" />
+                      <Asterisk className="size-2.5 shrink-0" />
                       {row.at} · {row.actor} · {row.action} {row.kind ?? ''} {row.entryId ?? ''}
                     </li>
                   ))}

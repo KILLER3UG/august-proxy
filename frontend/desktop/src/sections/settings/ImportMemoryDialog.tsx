@@ -16,7 +16,7 @@
 /* `imported:<provider>` so the Memory UI can badge imported rows.          */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, FileUp, Loader2, Sparkles, Upload } from 'lucide-react';
+import { ChevronDown, FileUp, Loader2, Asterisk, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
@@ -612,7 +612,7 @@ export function ImportMemoryDialog({
               )}
               data-testid="import-mode-ai"
             >
-              <Sparkles className="size-3.5" /> AI arrange
+              <Asterisk className="size-3.5" /> AI arrange
             </button>
             <button
               type="button"

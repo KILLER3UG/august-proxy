@@ -14,7 +14,7 @@ import {
   Pause,
   Play,
   Radio,
-  Sparkles,
+  Asterisk,
 } from 'lucide-react';
 import {
   getFeatureFlowEvents,
@@ -172,7 +172,7 @@ export function FeatureFlowSection() {
           data-testid="feature-inventory-directory"
         >
           <div className="flex items-center gap-1.5 px-1 pb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            <Sparkles className="size-3.5" />
+            <Asterisk className="size-3.5" />
             Inventory
           </div>
           <button
@@ -267,7 +267,7 @@ export function FeatureFlowSection() {
 
           {filtered.length === 0 ? (
             <div className="text-xs text-muted-foreground text-center py-14 border border-dashed border-white/[0.06] rounded-lg">
-              <Sparkles className="size-4 inline-block mr-2 opacity-40" />
+              <Asterisk className="size-4 inline-block mr-2 opacity-40" />
               No feature-flow events yet — use the proxy or workbench to light up the pipeline.
             </div>
           ) : (

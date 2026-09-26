@@ -4,7 +4,7 @@
  * pick the winner to continue. Supports saved templates (A3, localStorage). */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Bookmark, History, Sparkles, Swords, X } from 'lucide-react';
+import { Bookmark, History, Asterisk, Swords, X } from 'lucide-react';
 import { api } from '@/api/client';
 import type { ModelItem } from '../model-display';
 import { openArenaArchive } from '../arena/arena-store';
@@ -231,7 +231,7 @@ export function ArenaLaunchModal({
         {/* Routing-evidence hint (surpass #1) */}
         {suggestions.length > 0 ? (
           <div className="flex flex-wrap items-center gap-1.5" data-testid="arena-routing-hint">
-            <Sparkles className="size-3 text-primary" />
+            <Asterisk className="size-3 text-primary" />
             {suggestions.slice(0, 2).map((s) => (
               <span
                 key={s.modelId}

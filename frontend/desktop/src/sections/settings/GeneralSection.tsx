@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 
 import {
-  Sparkles,
+  Asterisk,
   GraduationCap,
   Bell,
   Keyboard,
@@ -232,7 +232,7 @@ export function GeneralSection() {
 
         {/* Text size */}
         <SettingsCard
-          icon={Sparkles}
+          icon={Asterisk}
           title="Text size"
           description={
             <span>
@@ -337,7 +337,7 @@ export function GeneralSection() {
 
         {/* App description */}
         <SettingsCard
-          icon={Sparkles}
+          icon={Asterisk}
           title="About August"
           description="What this app does, in one paragraph."
           inert

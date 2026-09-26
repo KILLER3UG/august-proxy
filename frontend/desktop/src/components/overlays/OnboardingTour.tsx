@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Bot, Check, Gavel, Rocket, Sparkles, X } from 'lucide-react';
+import { ArrowRight, Bot, Check, Gavel, Rocket, Asterisk, X } from 'lucide-react';
 import { useSessionsStore } from '@/store/sessions';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 
@@ -35,7 +35,7 @@ export function setOnboardingSeen(seen: boolean): void {
 }
 
 interface TourStep {
-  icon: typeof Sparkles;
+  icon: typeof Asterisk;
   title: string;
   body: string;
   action?: { label: string; to: string };
@@ -43,7 +43,7 @@ interface TourStep {
 
 const STEPS: TourStep[] = [
   {
-    icon: Sparkles,
+    icon: Asterisk,
     title: 'Welcome',
     body: 'A harness that learns you — it remembers your preferences, tracks which models actually win your tasks, and runs arena comparisons and debates so you always pick the best answer.',
   },
