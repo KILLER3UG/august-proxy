@@ -552,6 +552,44 @@ def test_list_netlists_empty_without_workspace():
     assert circuit_tools.list_netlists('') == {'netlists': [], 'count': 0}
 
 
+def test_artifact_writes_land_in_temp_when_no_project_is_open(tmp_path, monkeypatch):
+    """A bare filename with no workspace must still be writable.
+
+    The sandbox refuses workspace-less writes outside the system temp area,
+    which is the right policy — but a circuit artifact is a bare name like
+    `nand.svg`, so it resolved against the backend's own CWD and every render,
+    netlist save and VCD export failed with "Sandbox blocked write outside a
+    workspace" unless the user happened to have a project folder open. Drawing
+    logic in a chat is exactly the case where they don't.
+    """
+    import tempfile
+    from pathlib import Path as P
+
+    fake_temp = tmp_path / 'temp'
+    fake_temp.mkdir()
+    monkeypatch.setattr(tempfile, 'gettempdir', lambda: str(fake_temp))
+
+    bound = circuit_tools._bind('nand.svg', '', for_write=True)
+    assert bound == fake_temp / 'august-circuit' / 'nand.svg'
+    assert str(bound).startswith(str(fake_temp)), 'must stay under the temp root'
+    bound.parent.mkdir(parents=True, exist_ok=True)
+    bound.write_text('<svg/>', encoding='utf-8')
+    assert bound.is_file()
+
+    # An absolute path inside the temp area is honoured as given.
+    elsewhere = fake_temp / 'chosen.svg'
+    assert circuit_tools._bind(str(elsewhere), '', for_write=True) == elsewhere.resolve()
+    # An absolute path OUTSIDE it is still refused. The fallback widens nothing:
+    # a session with no bound folder can write to temp and nowhere else.
+    outside = tmp_path / 'escape.svg'
+    with pytest.raises(ValueError, match='outside a workspace'):
+        circuit_tools._bind(str(outside), '', for_write=True)
+    # And a real workspace still wins — this must not reroute project files.
+    ws = tmp_path / 'ws'
+    ws.mkdir()
+    assert circuit_tools._bind('x.svg', str(ws), for_write=True) == ws / 'x.svg'
+
+
 def test_ngspice_env_override(monkeypatch):
     import sys
 

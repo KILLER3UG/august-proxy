@@ -187,7 +187,24 @@ def _workspace(session: object | None = None) -> str:
     return ''
 
 
+def _artifact_root() -> Path:
+    """Where circuit artifacts go when no project folder is open."""
+    root = Path(tempfile.gettempdir()) / 'august-circuit'
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
 def _bind(path: str, workspace: str, for_write: bool):
+    if for_write and not str(workspace or '').strip():
+        # The sandbox gates workspace-less writes to the system temp area,
+        # which is right: a chat that never bound a folder must not scatter
+        # files across the machine. But a circuit artifact is a bare filename
+        # that resolves against the backend's own CWD, so every render, netlist
+        # and export failed with "Sandbox blocked write outside a workspace"
+        # unless a project happened to be open. Anchor it where the sandbox
+        # already allows writes.
+        if not Path(path).expanduser().is_absolute():
+            workspace = str(_artifact_root())
     bound, err = bind_path(path, workspace, for_write=for_write)
     if err or bound is None:
         raise ValueError(err or f'Invalid path: {path}')
