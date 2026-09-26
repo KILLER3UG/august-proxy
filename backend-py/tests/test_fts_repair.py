@@ -127,3 +127,37 @@ def test_ensure_schema_calls_repair_on_warm_path(brain_conn):
     idx_n = brain_conn.execute('SELECT count(*) FROM memory_store_fts_docsize').fetchone()[0]
     base_n = brain_conn.execute('SELECT count(*) FROM memory_store').fetchone()[0]
     assert idx_n == base_n
+
+
+def test_save_internal_overwriting_a_key_does_not_desync_the_index(brain_conn):
+    """The write door, not just the repair.
+
+    ``save_internal`` used ``INSERT OR REPLACE``. REPLACE removes the
+    conflicting row through a path that does NOT fire ``AFTER DELETE``, so the
+    external-content index kept a posting for a rowid the base table no longer
+    had. Any search matching the superseded value then raised
+    ``fts5: missing row N from content table 'main'.'memory_store'`` — so every
+    routine overwrite of a KV key quietly corrupted memory search.
+
+    ``repair_fts_sync`` self-heals it at the next boot, which is exactly why no
+    existing test caught the writer: by the time anything looked, the symptom
+    was gone.
+    """
+    from app.services.memory_store.kv import save_internal
+
+    save_internal('dup:key', 'alpha')
+    save_internal('dup:key', 'beta')
+
+    idx_n = brain_conn.execute('SELECT count(*) FROM memory_store_fts_docsize').fetchone()[0]
+    base_n = brain_conn.execute('SELECT count(*) FROM memory_store').fetchone()[0]
+    assert idx_n == base_n == 1, f'index drifted from base table: docs={idx_n} rows={base_n}'
+
+    # The stale posting is what raised; it must be gone, not merely uncounted.
+    stale = brain_conn.execute(
+        'SELECT rowid FROM memory_store_fts WHERE memory_store_fts MATCH ?', ('alpha',)
+    ).fetchall()
+    assert stale == [], 'the superseded value is still searchable'
+    live = brain_conn.execute(
+        'SELECT rowid FROM memory_store_fts WHERE memory_store_fts MATCH ?', ('beta',)
+    ).fetchall()
+    assert len(live) == 1, 'the current value must stay searchable'

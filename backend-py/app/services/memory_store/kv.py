@@ -27,8 +27,16 @@ def save_internal(key: str, value: JsonValue) -> None:
     # Surface tests that bypass the autouse isolatedData fixture.
     assertPytestDataDirIsolated('memory_store.save_internal')
     conn = _conn()
+    # An upsert, NOT `INSERT OR REPLACE`. REPLACE removes the conflicting row
+    # without firing its AFTER DELETE trigger, so `memory_store_fts` — an
+    # external-content index, kept in sync by triggers — keeps a posting for a
+    # rowid that no longer exists. The index then raises
+    # `fts5: missing row N from content table` for any search that matches that
+    # stale term, which is every overwrite of an existing key. `set_internal_state`
+    # below already uses this form.
     conn.execute(
-        "INSERT OR REPLACE INTO memory_store (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+        "INSERT INTO memory_store (key, value, updated_at) VALUES (?, ?, datetime('now')) "
+        'ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
         (key, _json(value)),
     )
     conn.commit()
