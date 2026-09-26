@@ -218,14 +218,22 @@ tag** — `git push origin master v0.18.16` does not wait for it. And the
 ngspice-dependent circuit tests now run in no CI job at all; they only execute
 locally, where the binary is staged.
 
-On a small machine `-n auto` oversubscribes, and two paths then race rather than
-fail loudly: `isolatedData` can hit `database is locked` swapping the per-test
-brain SQLite out from under a leaked thread, and a turn's off-loop shadow-git
-baseline can blow its 60s join and get cancelled, so `testMutatingRoundSnapshots`
-sees no `turn N start` snapshot. Each was observed once in five 16-worker runs,
-never on the 4-worker CI runners and never in isolation. Both are best-effort by
-design, so a one-off failure there is a contention signal — re-run the file
-alone before reading it as a regression.
+On a small machine `-n auto` oversubscribes, and two paths raced there rather
+than failing loudly. Both are fixed (2026-09-26), and the reason they are still
+worth knowing is that both looked like generic test flake:
+
+  * `isolatedData` hit `database is locked` swapping the per-test brain SQLite
+    out from under a leaked thread. Cause: `PRAGMA journal_mode=WAL` is the one
+    statement SQLite gives no busy handler — waiting there could deadlock two
+    connections — so `connect(timeout=)` does not cover it. Retried in
+    `memory_conn.apply_conn_pragmas`.
+  * `testMutatingRoundSnapshots` saw no `turn N start` snapshot. Cause: that
+    baseline is committed off the event loop and joined best-effort, so `done`
+    never meant it had landed. The test now waits for it.
+
+The general shape: a statement that gets no busy handler, and a contract that is
+deliberately asynchronous, both surface as load-dependent failures. Fix the
+mechanism, don't drop `-n auto`.
 
 ## Version files to bump together on desktop ship
 
