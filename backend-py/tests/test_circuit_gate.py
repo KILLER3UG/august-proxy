@@ -531,23 +531,47 @@ def test_ngspice_env_override(monkeypatch):
     assert circuit_tools._resolve_ngspice_sync() == sys.executable
 
 
-def test_ngspice_bundled_with_desktop_resources():
-    """The Tauri bundle ships the console build so simulate works on a
-    clean machine instead of degrading to 'not installed'."""
-    bundled = circuit_tools._bundled_ngspice()
-    assert bundled is not None, 'ngspice must be staged under src-tauri/resources'
-    assert Path(bundled).is_file()
-    # Only the console variant is bundled — the GUI build cannot be driven
-    # through pipes.
-    assert Path(bundled).name.startswith('ngspice_con')
+def test_ngspice_bundled_with_desktop_resources(tmp_path):
+    """The Tauri bundle ships the console build so simulate works on a clean
+    machine instead of degrading to 'not installed'.
+
+    Asserted against a fabricated tree rather than the working checkout: on a
+    clean CI checkout `src-tauri/resources/ngspice` does not exist yet, because
+    `prepare-desktop-backend.mjs` stages it later than the suite runs. The old
+    version of this test therefore passed only on a machine that had already
+    staged it, and the shipping property it meant to guard belongs to
+    `npm run test:packaging` anyway.
+    """
+    import os
+
+    name = 'ngspice_con.exe' if os.name == 'nt' else 'ngspice'
+    for i, rel in enumerate(
+        (
+            Path('frontend/desktop/src-tauri/resources/ngspice/bin'),
+            Path('src-tauri/resources/ngspice/bin'),
+        )
+    ):
+        # One root per layout, so this proves each path is searched rather than
+        # only that the first of them wins.
+        base = tmp_path / f'root{i}'
+        bindir = base / rel
+        bindir.mkdir(parents=True)
+        (bindir / name).write_text('')
+        found = circuit_tools._bundled_ngspice(bases=(base,))
+        assert found is not None, f'ngspice must resolve under {rel}'
+        assert Path(found).is_file()
+        # Only the console variant is bundled — the GUI build cannot be driven
+        # through pipes.
+        assert Path(found).name.startswith('ngspice_con' if os.name == 'nt' else 'ngspice')
 
 
-def test_ngspice_resolution_falls_back_to_bundled(monkeypatch):
+def test_ngspice_resolution_falls_back_to_bundled(monkeypatch, tmp_path):
     """A stale/invalid AUGUST_NGSPICE_EXE must not strand the workbench."""
+    fake = tmp_path / 'ngspice_con.exe'
+    fake.write_text('')
     monkeypatch.setenv('AUGUST_NGSPICE_EXE', '/definitely/not/here.exe')
-    resolved = circuit_tools._resolve_ngspice_sync()
-    assert resolved is not None
-    assert Path(resolved).is_file()
+    monkeypatch.setattr(circuit_tools, '_bundled_ngspice', lambda: str(fake))
+    assert circuit_tools._resolve_ngspice_sync() == str(fake)
 
 
 # ── Board brain + search→integrate ────────────────────────────────────────

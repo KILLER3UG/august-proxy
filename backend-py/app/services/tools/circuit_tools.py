@@ -197,18 +197,22 @@ def _bind(path: str, workspace: str, for_write: bool):
 _NETLIST_EXT = ('.cir', '.net', '.ckt', '.sp')
 
 
-def _bundled_ngspice() -> str | None:
+def _bundled_ngspice(bases: 'tuple[Path, ...] | None' = None) -> str | None:
     """Find the ngspice shipped inside the desktop app's resources.
 
     The Tauri bundle stages it at ``resources/ngspice/bin/ngspice_con.exe``;
     in a dev checkout that path sits under ``frontend/desktop/src-tauri``.
     Returns the console binary only — the GUI build cannot be driven through
     pipes.
+
+    ``bases`` exists so a test can stand up that layout somewhere else: on a
+    clean checkout nothing is staged there at all, because
+    ``prepare-desktop-backend.mjs`` runs later than the suite.
     """
     name = 'ngspice_con.exe' if os.name == 'nt' else 'ngspice'
     here = Path(__file__).resolve()
     # backend-py/app/services/tools/circuit_tools.py → repo root is 5 levels up.
-    for base in (here.parents[4], here.parents[5]):
+    for base in (here.parents[4], here.parents[5]) if bases is None else bases:
         for rel in (
             Path('frontend/desktop/src-tauri/resources/ngspice/bin') / name,
             Path('src-tauri/resources/ngspice/bin') / name,
