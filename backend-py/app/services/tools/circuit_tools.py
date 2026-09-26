@@ -998,9 +998,25 @@ def lint_netlist(text: str) -> list[str]:
     min_nodes = {'R': 2, 'C': 2, 'L': 2, 'D': 2, 'V': 2, 'I': 2,
                  'Q': 3, 'J': 3, 'M': 3, 'B': 4, 'X': 0}
     saw_source = False
+    in_control = False
     for raw in text.splitlines():
         line = raw.strip()
-        if not line or line.startswith(('*', '.', '+')):
+        if not line:
+            continue
+        if in_control:
+            # Inside `.control`, these are simulator commands, not device cards.
+            # `op` and `print v(out)` were linted as an O-device and a P-device
+            # with no nodes, so every deck that ran an analysis got two
+            # invented warnings — and `circuit_simulate` echoes `lint` on
+            # success, so a correct circuit reported problems with itself.
+            if line.split()[0].lower() in ('.endc', 'endc'):
+                in_control = False
+            continue
+        if line.startswith(('*', '+')):
+            continue
+        if line.startswith('.'):
+            if line.split()[0].lower() in ('.control', '.c'):
+                in_control = True
             continue
         # Inline comment strip (SPICE $ terminator).
         line = line.split('$')[0].strip()

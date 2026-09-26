@@ -188,6 +188,34 @@ def test_lint_flags_kicad_infix_informational():
     assert clean == []
 
 
+def test_lint_ignores_ngspice_control_block_commands():
+    """`.control` holds simulator commands, not device cards.
+
+    `op` and `print allv` were read as an O-device and a P-device with no
+    nodes, so a perfectly correct deck that ran an analysis reported two
+    problems with itself — and `circuit_simulate` returns `lint` even on
+    success, so the noise reached the model on every simulation.
+    """
+    deck = (
+        '* divider\n'
+        'V1 in 0 DC 5\n'
+        'R1 in mid 1k\n'
+        'R2 mid 0 2k\n'
+        '.control\n'
+        'op\n'
+        'print allv\n'
+        '.endc\n'
+        '.end\n'
+    )
+    assert circuit_tools.lint_netlist(deck) == []
+    # Real faults after `.endc` must still be seen — the block has to close.
+    trailing = deck + 'R9 a b -4\n'
+    assert any('R9' in w for w in circuit_tools.lint_netlist(trailing))
+    # A control block that never closes still must not invent device warnings.
+    unclosed = '* t\nV1 in 0 DC 5\nR1 in 0 1k\n.control\nop\n'
+    assert circuit_tools.lint_netlist(unclosed) == []
+
+
 def test_convergence_ladder_options_injection():
     deck = '* t\nV1 1 0 DC 5\nR1 1 2 1k\nR2 2 0 1k\n.end'
     out = circuit_tools._apply_options(deck, {'gmin': '1e-10'})
