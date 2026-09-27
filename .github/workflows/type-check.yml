@@ -106,6 +106,12 @@ jobs:
       - name: Design drift guardrail
         run: npm run check:design
 
+      # Warning-count ratchet (audit B3): fails when eslint's warning count
+      # exceeds frontend lint-budget.json; a PR that lowers the count lowers
+      # the budget with it.
+      - name: Lint warning ratchet
+        run: npm run lint:ratchet
+
       # Phase 7 UI inventory (Feature Flow, AUG toggle, collaboration banners,
       # marquee titles). Live backend SSE is covered by backend pytest; vitest
       # proves the desktop consumers of that stream.

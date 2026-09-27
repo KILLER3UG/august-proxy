@@ -226,6 +226,58 @@ def _toolTarget(name: str, args: dict[str, object]) -> tuple[str, str]:
     return (name, str(primary)[:120])
 
 
+def _recordWorldDelta(
+    toolName: str,
+    args: dict[str, object],
+    result: object,
+    *,
+    worldPaths: set[str],
+    familyByTarget: dict[tuple[str, str], str],
+) -> bool:
+    """World-delta evidence for the stall detector (audit D4).
+
+    The stall counter used to trust two self-reports: the model's own
+    ``update_state`` phase/step and argument novelty on the assistant surface.
+    Both can be gamed or genuinely flat while nothing in the world moves. This
+    records what the turn actually did to the world, per executed call:
+
+    * a path the turn had not touched before (read or written) — collected
+      from the call's args via ``_bulk_paths_from_args``;
+    * a (tool, target) that was failing with a known error family and now
+      returns a clean result — the shell telling you the truth.
+
+    Returns True when THIS call moved the world; the caller ORs it into the
+    round's flag, and the stall check treats a world-delta round as progress
+    even when phase/step is flat and the surface is argument-stale.
+    """
+    target = _toolTarget(toolName, args or {})
+    delta = False
+    try:
+        collected = list(_bulk_paths_from_args(args or {}))
+        # _bulk_paths_from_args only walks list-valued keys; the single-file
+        # tools (read_file, write_file, edit_lines, …) carry a scalar
+        # path/file_path — the most common touch there is.
+        for key in ('path', 'filePath', 'file_path', 'directory'):
+            val = as_str((args or {}).get(key), '')
+            if val:
+                collected.append(val)
+        for path in collected:
+            if path and path not in worldPaths:
+                worldPaths.add(path)
+                delta = True
+    except Exception:
+        logger.debug('world-delta path collection failed', exc_info=True)
+    if not isinstance(result, str):
+        return delta
+    family = _error_family(result)
+    if family:
+        familyByTarget[target] = family
+    elif target in familyByTarget and not result.startswith('Error'):
+        del familyByTarget[target]
+        delta = True
+    return delta
+
+
 def _pollingTarget(
     targetUses: dict[tuple[str, str], int] | None,
     sig: tuple[str, str],
@@ -3962,6 +4014,12 @@ async def _sendWorkbenchMessageStreamImpl(
     # are collected by skill_service's turn-scoped list and drained by
     # turn_close. Both are once-per-turn, NOT per-round.
     turnErrorFamilies: set[str] = set()
+    # Audit D4: world-delta accumulators for the stall detector (see
+    # _recordWorldDelta) — paths the turn has touched, and the last error
+    # family per (tool, target) so a clean retry counts as progress.
+    worldPaths: set[str] = set()
+    familyByTarget: dict[tuple[str, str], str] = {}
+    roundWorldDelta = {"moved": False}
     try:
         from app.services.skill_service import begin_turn_skill_collection
 
@@ -4083,6 +4141,14 @@ async def _sendWorkbenchMessageStreamImpl(
                     # emitted — is progress even though phase/step is flat.
                     # Only repeated identical calls keep counting.
                     stalledRounds = 0
+                elif roundWorldDelta["moved"]:
+                    # Audit D4: the world moved last round even though the
+                    # self-reports are flat — new paths touched, or a
+                    # (tool, target) that was failing now returns clean.
+                    # Self-report is a tie-breaker, not the arbiter. The flag
+                    # holds the PREVIOUS round's executions (the check runs
+                    # before this round's tools) and is cleared below.
+                    stalledRounds = 0
                 else:
                     stalledRounds += 1
                     if stalledRounds >= MAX_STALLED_ROUNDS and not stallMessageSent:
@@ -4115,6 +4181,10 @@ async def _sendWorkbenchMessageStreamImpl(
                         turnError = turnError or msg
                         turnEndReason = 'stall-stop'
                         break
+            # Audit D4: the stall check above has consumed the previous
+            # round's world-delta; this round's executions now fill the flag
+            # for the next check.
+            roundWorldDelta["moved"] = False
             # Error-family steer: independent of the novelty check above, because
             # six *different* commands failing the same way are one problem and
             # would otherwise read as progress until the round cap eats the turn.
@@ -4311,7 +4381,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         _wireOpenaiTools = []
                     _attemptMessages = currentMessages
                     if not toolsFallbackUsed:
-                        # Hermes-style multimodal turns: user messages that
+                        # Multimodal turns: user messages that
                         # reference stored image attachments carry the image
                         # inline on the wire (storage keeps plain text).
                         try:
@@ -5656,6 +5726,12 @@ async def _sendWorkbenchMessageStreamImpl(
                 stateBlock = _planStateBlock(session)
                 if stateBlock:
                     result = result + '\n\n' + stateBlock
+            # Audit D4: record what this call did to the world, so the stall
+            # detector can credit real movement over self-report.
+            if _recordWorldDelta(
+                toolName, toolInput, result, worldPaths=worldPaths, familyByTarget=familyByTarget
+            ):
+                roundWorldDelta["moved"] = True
             # Record what this session just observed: a successful read
             # (single or bulk report) pins the file versions the model has
             # seen; a successful mutation FORGETS the version so the

@@ -49,7 +49,12 @@ the `AUGUST_VERIFIER_REVIEWER` critic were removed by user request.
 **0 = uncapped** (a cap is opt-in via brain-config `maxWorkbenchToolLoops`;
 the "defaults to 25" claim was stale since `38944632`). A turn whose
 `update_state` phase/step never advances across 8+ stalled rounds gets a
-reflection nudge, then hard-stops. Repetition is judged on a **canonical
+reflection nudge, then hard-stops. Flat phase/step is **not** proof of
+spinning on its own: argument novelty on the assistant surface and world
+delta (a path the turn had not touched before, or a `(tool, target)` that
+was failing with a known family now returning clean — `_recordWorldDelta`)
+both reset the counter, so self-report is a tie-breaker, not the arbiter.
+Repetition is judged on a **canonical
 sorted-key identity** of the call (reordered argument keys are not new work),
 with a `(tool, target)` polling guard so re-reading one file at shifting
 offsets counts as spinning, and an eight-family error taxonomy (`timeout |

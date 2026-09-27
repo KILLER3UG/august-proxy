@@ -356,6 +356,15 @@ async def turnTelemetry(
                     # P3.1: the early-dispatch measurement rides the same
                     # telemetry event (0 = no tool call this turn).
                     'toolArgsReadyToStreamEndMs': totals.toolArgsReadyMs,
+                    # Audit A6: what was injected for THIS answer, next to the
+                    # answer — the same credit-assignment lists the 050 row
+                    # carries, so the transcript chip and the ledger cannot
+                    # disagree. Empty/None → omitted keys, not empty noise.
+                    **(
+                        {'skillsInjected': list(skillsInjected)} if skillsInjected else {}
+                    ),
+                    **({'factsInjected': list(_factsInjected or [])} if _factsInjected else {}),
+                    **({'errorFamilies': list(errorFamilies)} if errorFamilies else {}),
                 }
             )
         # Rare promoted-lesson path (Q2): repeated failures of ONE signature
