@@ -82,8 +82,72 @@ function renderCode(token: Tokens.Code): string {
 
 // ── KaTeX math extension ───────────────────────────────────
 
-const katexCache = new Map<string, string>();
-const MAX_KATEX_CACHE_SIZE = 500;
+/**
+ * A cache bounded by CONTENT SIZE rather than by entry count.
+ *
+ * Both caches below are keyed by markdown source, and markdown source varies
+ * by three orders of magnitude: a one-line paragraph is tens of bytes, a
+ * pasted file is tens of kilobytes. An entry-count cap therefore bounds
+ * nothing that matters — "300 blocks" can be 15 KB or 30 MB depending on what
+ * the user pasted — and these caches are module-level in a long-lived desktop
+ * process, so the entries outlive the conversation that created them. A
+ * session that reads a few large answers walks straight past the old cap and
+ * then holds the memory for the rest of the process's life.
+ *
+ * Budgeting in characters bounds the thing that is actually expensive, and
+ * still holds many ordinary answers: the streaming path re-parses only the
+ * growing tail, so a cache that forgets a settled block costs one re-parse
+ * when that block is next seen, not one per flush.
+ *
+ * Eviction is oldest-first on insertion order, the same policy the count cap
+ * used. A single entry larger than the whole budget is kept rather than
+ * dropped mid-render: it is the one currently being painted, and evicting it
+ * would only make the next frame re-parse it anyway.
+ *
+ * Exported for its own unit test. A budget is only worth having if something
+ * asserts the budget is actually respected, and a test against a COPY of this
+ * class would keep passing after the real one was edited.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export class SizedCache<K, V> {
+  private map = new Map<K, V>();
+  private total = 0;
+
+  constructor(
+    private maxChars: number,
+    private sizeOf: (key: K, value: V) => number,
+  ) {}
+
+  get(key: K): V | undefined {
+    return this.map.get(key);
+  }
+
+  set(key: K, value: V): V {
+    const prior = this.map.get(key);
+    if (prior !== undefined) this.total -= this.sizeOf(key, prior);
+    this.map.set(key, value);
+    this.total += this.sizeOf(key, value);
+    while (this.total > this.maxChars && this.map.size > 1) {
+      const oldest = this.map.keys().next().value;
+      if (oldest === undefined) break;
+      const evicted = this.map.get(oldest);
+      this.map.delete(oldest);
+      if (evicted !== undefined) this.total -= this.sizeOf(oldest, evicted);
+    }
+    return value;
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
+
+  /** Test/diagnostic read — the budget is the thing worth asserting on. */
+  get approxChars(): number {
+    return this.total;
+  }
+}
+
+const katexCache = new SizedCache<string, string>(160_000, (k, v) => k.length + v.length);
 
 function renderMath(body: string, displayMode: boolean): string {
   const cacheKey = `${displayMode ? 'D' : 'I'}:${body}`;
@@ -106,12 +170,7 @@ function renderMath(body: string, displayMode: boolean): string {
     html = `<span class="math-fallback">${escapeHtml(body)}</span>`;
   }
 
-  if (katexCache.size >= MAX_KATEX_CACHE_SIZE) {
-    const firstKey = katexCache.keys().next().value;
-    if (firstKey !== undefined) katexCache.delete(firstKey);
-  }
   katexCache.set(cacheKey, html);
-
   return html;
 }
 
@@ -305,14 +364,17 @@ marked.use({
  */
 function stabilizeLiveTables(src: string): string {
   if (src.endsWith('\n')) return src;
-  // Odd number of fences => we're inside an unclosed code block; leave as-is.
-  if (((src.match(/```/g) || []).length) % 2 === 1) return src;
   const nlIdx = src.lastIndexOf('\n');
   const lastLine = src.slice(nlIdx + 1);
-  if (/^\s*\|/.test(lastLine)) {
-    return src.slice(0, nlIdx + 1);
-  }
-  return src;
+  // Cheap checks first. Fence parity needs a whole-document scan, and the
+  // overwhelming majority of flushes end on an ordinary paragraph or list
+  // line where the answer is "not a table row, leave it alone" — so the
+  // common case is O(last line) instead of O(document). Two pure predicates
+  // in a different order give the same answer; only the cost changed.
+  if (!/^\s*\|/.test(lastLine)) return src;
+  // Odd number of fences => we're inside an unclosed code block; leave as-is.
+  if (((src.match(/```/g) || []).length) % 2 === 1) return src;
+  return src.slice(0, nlIdx + 1);
 }
 
 /**
@@ -339,8 +401,10 @@ function stabilizeLiveTables(src: string): string {
  * React re-parse the block's HTML on every flush (measured ~14x slower in
  * jsdom), which defeats the whole point of the incremental renderer.
  */
-const LIVE_BLOCK_HTML_CACHE = new Map<string, { __html: string }>();
-const MAX_LIVE_BLOCK_CACHE = 300;
+const LIVE_BLOCK_HTML_CACHE = new SizedCache<string, { __html: string }>(
+  400_000,
+  (k, v) => k.length + v.__html.length,
+);
 
 function renderLiveBlock(block: string): { __html: string } {
   const cached = LIVE_BLOCK_HTML_CACHE.get(block);
@@ -352,45 +416,134 @@ function renderLiveBlock(block: string): { __html: string } {
   } finally {
     liveMarkdownParse = false;
   }
-  const prop = { __html: html };
-  if (LIVE_BLOCK_HTML_CACHE.size >= MAX_LIVE_BLOCK_CACHE) {
-    const oldest = LIVE_BLOCK_HTML_CACHE.keys().next().value;
-    if (oldest !== undefined) LIVE_BLOCK_HTML_CACHE.delete(oldest);
-  }
-  LIVE_BLOCK_HTML_CACHE.set(block, prop);
-  return prop;
+  return LIVE_BLOCK_HTML_CACHE.set(block, { __html: html });
 }
 
 /**
- * Split markdown into blocks at blank-line boundaries, keeping fenced code
- * blocks intact (a blank line inside a fence is code, not a separator).
- * `complete` are newline-terminated blocks; `tail` is the still-growing final
- * block (empty when src ends with a newline).
+ * Incremental live-block split (A.1 follow-up).
+ *
+ * The first cut of this cached the PARSE but still re-derived the BLOCKS from
+ * scratch every flush: `split('\n')` over the whole document, three regex
+ * tests per line, then a `join` per block. Parsing was O(new text) but
+ * splitting was O(document), so a 17KB answer over 120 flushes spent
+ * quadratic time scanning text that had not changed since the previous frame
+ * — which is the stutter this renderer exists to remove, just moved from
+ * marked into the splitter.
+ *
+ * A stream only ever APPENDS, so the previous input is a prefix of the next
+ * one. This keeps the offsets and fence state from the last flush and scans
+ * only the bytes that arrived since. The `startsWith` guard is a native
+ * memcmp against the previous prefix and is what makes the fast path
+ * trustworthy: if the content was rewritten rather than appended (an edit to
+ * the turn, a branch switch, a re-render with different text), the guard
+ * fails and the scan restarts from zero rather than producing blocks split at
+ * offsets that no longer mean anything.
+ *
+ * The state is per-instance, held in a ref, NOT module-level: sub-agent
+ * timelines and the main stream can interleave, and one shared cursor would
+ * make two live answers evict each other into a full rescan per frame.
  */
-function splitLiveBlocks(src: string): { complete: string[]; tail: string } {
-  const lines = src.split('\n');
-  const complete: string[] = [];
-  let current: string[] = [];
-  let inFence = false;
-  let fenceMarker = '';
-  for (const line of lines) {
-    if (!inFence) {
+interface LiveSplitState {
+  /** Exact string the offsets below refer to. */
+  input: string;
+  /** Completed blocks, in order. */
+  complete: string[];
+  /** Offset in `input` up to which whole lines have been consumed. */
+  scannedTo: number;
+  /** Offset where the still-growing block's text begins. */
+  blockStart: number;
+  inFence: boolean;
+  fenceMarker: string;
+}
+
+function emptySplitState(): LiveSplitState {
+  return { input: '', complete: [], scannedTo: 0, blockStart: 0, inFence: false, fenceMarker: '' };
+}
+
+// Exported for the equivalence test that pins the incremental splitter
+// against the straightforward algorithm. A caching rewrite is only allowed to
+// be faster if it is also indistinguishable, and that has to be asserted
+// somewhere — the renderer has no other way to fail loudly.
+// eslint-disable-next-line react-refresh/only-export-components
+export function splitLiveBlocksIncremental(
+  src: string,
+  state: LiveSplitState,
+): { complete: string[]; tail: string; state: LiveSplitState } {
+  const resuming = src.length >= state.input.length && src.startsWith(state.input);
+  if (!resuming) {
+    // Not an append (or a different string entirely): start over.
+    state = emptySplitState();
+  }
+  state.input = src;
+
+  // Consume only whole lines from the new region. The trailing partial line
+  // is left for the next flush, which is exactly what a "still growing tail"
+  // means — and it is why `blockStart` is tracked as an offset rather than
+  // rebuilt from an array of lines each time.
+  let lineEnd = src.indexOf('\n', state.scannedTo);
+  while (lineEnd !== -1) {
+    const line = src.slice(state.scannedTo, lineEnd);
+    const lineStart = state.scannedTo;
+    if (!state.inFence) {
       const fenceMatch = /^\s*(```|~~~)/.exec(line);
       if (fenceMatch) {
-        inFence = true;
-        fenceMarker = fenceMatch[1];
-      } else if (/^\s*$/.test(line) && current.length > 0) {
-        complete.push(current.join('\n'));
-        current = [];
+        state.inFence = true;
+        state.fenceMarker = fenceMatch[1];
+      } else if (/^\s*$/.test(line) && lineStart - 1 > state.blockStart) {
+        // The guard is `lineStart - 1 > blockStart`, NOT `blockStart < lineStart`:
+        // the text of a block that would be committed is
+        // src.slice(blockStart, lineStart - 1), and that slice is EMPTY when the
+        // document opens with blank lines (blockStart 0, first blank at index 1
+        // gives slice(0, 0)). The looser guard commits an empty block there,
+        // which renders as a stray empty div — and it also breaks the
+        // double-blank case the naive algorithm handles by refusing to commit
+        // while `current` is empty.
+        // A blank line closes the open block — but ONLY if something follows
+        // it. This is the one place the incremental design cannot simply copy
+        // the straightforward algorithm, and the reason is worth stating
+        // because it reads like an off-by-one and is not.
+        //
+        // `split('\n')` makes content ending in a newline end with a virtual
+        // EMPTY line, so the naive algorithm treats a trailing newline as a
+        // block separator: at 'a\n\nb\n' it has already committed 'b'. One
+        // flush later, at 'a\n\nb\nc', that same block has no blank line after
+        // it any more and falls BACK into the tail. The naive algorithm
+        // un-commits a block as the stream grows. An incremental splitter
+        // cannot: `complete` only grows, and pretending otherwise is how a
+        // paragraph ends up rendered as two separate divs mid-stream.
+        //
+        // So: commit only on a blank line that has content after it, and
+        // leave a trailing blank line unconsumed so the next flush re-decides
+        // it. The last block therefore stays in the tail and is re-parsed
+        // each frame — one block, which is exactly what the pre-incremental
+        // code already paid for its tail.
+        if (lineEnd + 1 >= src.length) {
+          state.scannedTo = lineStart;
+          lineEnd = -1;
+          break;
+        }
+        // The block's text ends at the newline BEFORE the blank line, so the
+        // slice stops one short of lineStart; otherwise every committed block
+        // would carry a trailing '\n' the naive algorithm never includes.
+        state.complete.push(src.slice(state.blockStart, lineStart - 1));
+        state.blockStart = lineEnd + 1;
+        state.scannedTo = lineEnd + 1;
+        lineEnd = src.indexOf('\n', state.scannedTo);
         continue;
       }
     } else {
-      const closeRe = fenceMarker === '```' ? /^\s*`{3,}/ : /^\s*~{3,}/;
-      if (closeRe.test(line)) inFence = false;
+      const closeRe = state.fenceMarker === '```' ? /^\s*`{3,}/ : /^\s*~{3,}/;
+      if (closeRe.test(line)) state.inFence = false;
     }
-    current.push(line);
+    state.scannedTo = lineEnd + 1;
+    lineEnd = src.indexOf('\n', state.scannedTo);
   }
-  return { complete, tail: current.join('\n') };
+
+  return {
+    complete: state.complete,
+    tail: src.slice(state.blockStart),
+    state,
+  };
 }
 
 export function Markdown({
@@ -406,6 +559,9 @@ export function Markdown({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const prevLive = useRef(live);
+  // Per-instance incremental split cursor (see splitLiveBlocksIncremental).
+  // A ref, not module state: two live answers must not share one cursor.
+  const splitState = useRef<LiveSplitState>(emptySplitState());
   const [justSettled, setJustSettled] = useState(false);
 
   useEffect(() => {
@@ -422,10 +578,13 @@ export function Markdown({
     if (!content) return '';
     if (live) {
       // A.1: incremental live render. Complete blocks are cached; only the
-      // still-growing tail block re-parses each flush (see renderLiveBlock).
-      // The settle pass (live=false) below produces the exact full parse.
+      // still-growing tail block re-parses each flush (see renderLiveBlock),
+      // and only the bytes that arrived since the last flush are re-scanned
+      // for block boundaries (see splitLiveBlocksIncremental). The settle
+      // pass (live=false) below produces the exact full parse.
       const stabilized = stabilizeLiveTables(content);
-      const { complete, tail } = splitLiveBlocks(stabilized);
+      const { complete, tail, state } = splitLiveBlocksIncremental(stabilized, splitState.current);
+      splitState.current = state;
       const parts: { __html: string }[] = complete.map(renderLiveBlock);
       if (tail) parts.push(renderLiveBlock(tail));
       return parts;
