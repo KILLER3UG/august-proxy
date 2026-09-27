@@ -116,8 +116,8 @@ def _recordWorldDelta(
     args: dict[str, object],
     result: object,
     *,
-    worldPaths: set[str],
-    familyByTarget: dict[tuple[str, str], str],
+    world_paths: set[str],
+    family_by_target: dict[tuple[str, str], str],
 ) -> bool:
     """World-delta evidence for the stall detector (audit D4).
 
@@ -147,8 +147,8 @@ def _recordWorldDelta(
             if val:
                 collected.append(val)
         for path in collected:
-            if path and path not in worldPaths:
-                worldPaths.add(path)
+            if path and path not in world_paths:
+                world_paths.add(path)
                 delta = True
     except Exception:  # noqa: BLE001 -- moved verbatim from workbench.py BLE001 baseline
         logger.debug('world-delta path collection failed', exc_info=True)
@@ -156,9 +156,9 @@ def _recordWorldDelta(
         return delta
     family = _error_family(result)
     if family:
-        familyByTarget[target] = family
-    elif target in familyByTarget and not result.startswith('Error'):
-        del familyByTarget[target]
+        family_by_target[target] = family
+    elif target in family_by_target and not result.startswith('Error'):
+        del family_by_target[target]
         delta = True
     return delta
 

@@ -4818,7 +4818,7 @@ async def _sendWorkbenchMessageStreamImpl(
             # Audit D4: record what this call did to the world, so the stall
             # detector can credit real movement over self-report.
             if _recordWorldDelta(
-                toolName, toolInput, result, worldPaths=worldPaths, familyByTarget=familyByTarget
+                toolName, toolInput, result, world_paths=worldPaths, family_by_target=familyByTarget
             ):
                 roundWorldDelta["moved"] = True
             # Record what this session just observed: a successful read
