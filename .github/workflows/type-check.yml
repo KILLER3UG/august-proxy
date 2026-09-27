@@ -112,6 +112,26 @@ jobs:
       - name: Build web (tsc + vite)
         run: npm run build:web
 
+      # The committed frontend API types must match the committed schema
+      # (audit P1#7). `gen:api` only reads docs/api/openapi.json, so it needs
+      # no Python — unlike the schema gate, which lives in the backend job.
+      # Regenerating and diffing is the check: a 600 KB generated file that
+      # nothing verifies is just a stale artifact with a confident name, and
+      # the backend job's check:api would still be green while it rotted.
+      - name: Generated API types in sync
+        run: |
+          npm run gen:api
+          # `git status --porcelain`, not `git diff --exit-code`: a DELETED
+          # generated file is untracked after regeneration and would show no
+          # diff at all, so the diff-only form of this check passes vacuously
+          # on exactly the case it exists to catch.
+          if [ -n "$(git status --porcelain -- frontend/desktop/src/api/gen/openapi.ts)" ]; then
+            echo "::error::Generated API types are out of sync with docs/api/openapi.json"
+            echo "Run 'npm run gen:api' and commit the result."
+            git status --porcelain -- frontend/desktop/src/api/gen/openapi.ts
+            exit 1
+          fi
+
       - name: eslint
         run: npm run lint -w frontend/desktop
 

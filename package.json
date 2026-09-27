@@ -40,5 +40,8 @@
   },
   "dependencies": {
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0"
   }
 }

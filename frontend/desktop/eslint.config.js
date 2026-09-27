@@ -28,6 +28,11 @@ export default tseslint.config(
       'tailwind.config.cjs',
       'coverage/**',
       '**/__pycache__/**',
+      // Generated from docs/api/openapi.json by `npm run gen:api`. It is a
+      // build artifact: editing it is pointless (the next regeneration
+      // overwrites it) and its ~21k lines of generated interface declarations
+      // are not hand-written code to hold to the src/ rules.
+      'src/api/gen/**',
     ],
   },
 
