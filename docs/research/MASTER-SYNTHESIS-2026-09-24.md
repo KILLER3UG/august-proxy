@@ -1,3 +1,10 @@
+> **Findings closed — kept as the provenance of that session.** F1–F4 are all in
+> the tree (`tests/test_subagent_worker_output_preservation.py`,
+> `test_auto_turn_rearm.py`, `test_model_tools_bridge_isolation.py`, and
+> `routers/workbench.py:164/223/232`). §2's "biggest remaining gap" was closed by
+> `047_message_blocks.sql` + `sections/chat/stream/subagent-blocks.ts`.
+> _(Added during the docs audit 2026-09-27.)
+
 # Master synthesis — August harness & desktop deep dive
 
 **Date:** 2026-09-24

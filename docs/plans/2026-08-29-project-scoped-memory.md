@@ -1,3 +1,12 @@
+> **Implemented — but §9.1 and §686 route through a deleted API.**
+> `/api/memory/manage` does not exist (there is no `routers/memory.py`); the real
+> door is `POST /api/august/memory/manage` (`app/routers/august.py:435`, router
+> prefix `/api/august`). The substrate is live: `app/services/project_memory.py`
+> and the `.aug/memory` markdown layer. Note the standing design rule, which this
+> plan predates: a `project:<path>` **brain DB scope is refused at the write door
+> on purpose** — workspace memory is the `.aug/memory` layer, not a brain scope.
+> _(Added during the docs audit 2026-09-27.)
+
 # Part 17: Project-Scoped Memory & Skills — per-workspace indexing, project memory files, UI rebuild, global promotion, response latency
 
 Date: 2026-08-29

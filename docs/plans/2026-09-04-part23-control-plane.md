@@ -1,3 +1,10 @@
+> **Still unbuilt — charter stands, anchors do not.** No `microCompact`, no web
+> result TTL cache, no browser dialog handler, no persistent profile, no
+> cache-split aggregates. Before using a citation: `MAX_MANAGED_TOOL_ROUNDS` is
+> now **`0` (uncapped) at `workbench.py:81`**, not "25 at :73";
+> `MAX_TOOL_RESULT_CHARS` is at `workbench.py:363`, not `:361`/`:97`.
+> _(Added during the docs audit 2026-09-27.)
+
 # Part 23 — Agent control plane: the slim build charter
 
 Status: **CHARTER APPROVED 2026-09-04** per the OQ dossier

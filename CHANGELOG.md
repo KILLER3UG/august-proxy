@@ -604,7 +604,7 @@ Smoothness pass — cheap live markdown, terminal reconnect resume, line-buffere
 - `session-stream-store.test.ts` ×3 — persist debounce coalescing + flush-on-end.
 - `ChatMarkdown` +2 — append-only block rendering and fence-safe splitting.
 
-Status ledger: `docs/SMOOTHNESS_PLAN_STATUS.md`.
+Status ledger: `docs/archive/SMOOTHNESS_PLAN_STATUS.md`.
 
 ## 0.16.1 (2026-08-12)
 

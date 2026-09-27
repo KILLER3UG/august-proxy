@@ -26,7 +26,9 @@ lives in [`frontend/mobile/`](frontend/mobile).
   cards** (summary / next / unmet acceptance), spawn DAG with per-lane
   running/done/skipped/failed pills, worker lanes, skills carried on Continue,
   harness jobs. Composer Steer targets the focused worker (or Continue if that
-  thread is idle). Agent modes: `chat` | `agent` | `code`. Verifier is **opt-in**.
+  thread is idle). Agent modes: `chat` | `agent` | `code` | `orchestrator`
+  (`planner` is an alias). There is **no verifier gate** — nothing withholds a
+  final answer, and `update_state(phase=…)` is progress tracking only.
 - **Dual API surface** — `POST /v1/chat/completions`, `POST /v1/messages`,
   `POST /v1/responses` (streaming pass-through where the upstream supports it),
   with format translation. Provider **baseUrl** is used as pasted; August only
@@ -37,12 +39,16 @@ lives in [`frontend/mobile/`](frontend/mobile).
 - **Managed tools** — files, shell/PTY, web search/fetch, Playwright browser,
   desktop automation, memory, MCP, skills, sub-agents, sandbox-gated
   `run_command`.
-- **Brain & memory** — SQLite core / semantic / vector / graph store. Settings
-  **Memory** is one hub (Saved / Recalled / Projects / Store). Chat: `/remember`
-  (pins as always-include), always-include chips above the composer, “Used N
-  memories”, **Review what I remember** (apply only on confirm), Save-this?
-  chips on preference **and correction** phrasing, and Keep/Discard when the
-  sleep-cycle distill proposes cleanup (idle consolidation no longer silent-applies).
+- **Brain & memory** — SQLite core with BM25/FTS recall. **No vector store and no
+  graph store** — `fact_retrieval.py`, `tools/retrieval.py` and
+  `text_similarity.py` each say so; do not add one without deleting those.
+  Settings **Memory** is one flat chronological list across kinds with filter
+  chips (no tabs, no meters, and no "Memory files" card since the 0.18 restyle).
+  The model manages memory through the `remember` / `list_facts` / `forget` core
+  tools. Automatic recall is gated by `memoryAutoInject` (**default off**), but
+  `kind='profile'` facts always ride in — that is what makes August remember who
+  you are without a keyword coincidence. Proposals that need a human surface on
+  the decide queue; approving a retire keeps the row, so it is reversible.
 - **Live / voice** — browser speech by default; optional server STT/TTS;
   `/api/live`.
 - **Platform gateways** — Telegram, Slack, Discord (`/stop`, `/new`, `/approve`, …).
@@ -66,7 +72,7 @@ august-proxy/
 │   │   ├── main.py             # App, lifespan, router registration
 │   │   ├── config.py           # config.json + providers.json + .env
 │   │   ├── adapters/           # OpenAI ↔ Anthropic + dump_*_upstream_body
-│   │   ├── providers/          # Templates, HTTP clients, resolvers
+│   │   ├── providers/          # HTTP clients, resolvers, api_format aliases
 │   │   ├── routers/            # /api/* and /v1/*
 │   │   └── services/           # workbench, harness, memory, skills, tools, …
 │   ├── tests/                  # pytest (isolatedData autouse)
@@ -88,7 +94,7 @@ august-proxy/
 
 | Area | Owns | Validate with |
 |------|------|----------------|
-| `backend-py/` | Proxy, workbench, brain, MCP, tools | `cd backend-py && uv run pytest -q` |
+| `backend-py/` | Proxy, workbench, brain, MCP, tools | `cd backend-py && uv run pytest -q -n auto` |
 | `frontend/desktop/` | Tauri UI | `npm run test:frontend` |
 | `frontend/mobile/` | Expo | `npm run test -w frontend/mobile` |
 | `scripts/` | Install / release | manual |
@@ -202,9 +208,12 @@ Memory / Access / Appearance already follow that pattern.
 ### Tests
 
 ```bash
-cd backend-py && uv run ruff check . && uv run mypy app/ && uv run pytest -q
+cd backend-py && uv run ruff check . && uv run mypy app/ && uv run pytest -q -n auto
 npm run test:frontend
 ```
+
+Always pass `-n auto` — the serial suite is ~2h because the slow tests shell out
+to real external toolchains; parallel measured 2.6x.
 
 `pyproject.toml` sets `--cov-fail-under=55` on the **full** suite. A single
 test file will fail that floor; use `uv run pytest tests/test_foo.py -q --no-cov`
@@ -222,19 +231,27 @@ Touch carefully; regressions break all chat or safety:
 
 ### Version + GitHub release
 
-On desktop ship, **seven** sources must match (`npm run check:version`):
+On desktop ship, **eight** sources must match (`npm run check:version`):
 
 - `package.json`
 - `frontend/desktop/package.json`
 - `frontend/desktop/src-tauri/tauri.conf.json`
 - `frontend/desktop/src-tauri/Cargo.toml`
 - `frontend/desktop/src-tauri/Cargo.lock` (`august-desktop` entry)
-- `package-lock.json` (root + `packages['frontend/desktop']`)
+- `package-lock.json` — top-level `version`, `packages['']`, and
+  `packages['frontend/desktop']` (three separate checks, one file)
 
-Do not bump these unless you are shipping. Release: push `master`, then
-GitHub Actions **Release desktop** (`workflow_dispatch`, version without `v`).
-That job typechecks the SPA (`tsc -b && vite build`), so a missing import
-fails the whole installer.
+Do not bump these unless you are shipping. Release: push the **tag**
+(`git push origin master v0.18.16`) — `release-desktop.yml` triggers on
+`v*.*.*` tag pushes, with a `workflow_dispatch` fallback that takes the version
+without the `v`. Two things to know before you push it:
+
+- The release job **builds; it does not test**. It runs `check:version`,
+  `check:docs`, `check:naming`, the frontend typecheck + vitest,
+  `uv lock --check`, ruff, mypy and the payload integrity tests — but **no pytest
+  suite**. The ~3,500 tests run in the `Type check` workflow instead.
+- `Type check` runs on the tag's commit but **does not gate publication**, so
+  confirm it is green before pushing the tag.
 
 Known product gap: one provider `apiFormat` cannot serve mixed families on
 OpenCode Zen without per-model overrides — details in `AGENTS.md` and

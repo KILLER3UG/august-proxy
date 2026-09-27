@@ -1,3 +1,5 @@
+> **Historical audit record — findings are NOT dispositioned.** This report has no closure line: some findings were fixed, some were deliberately declined, and its `file:line` citations have rotted. Re-verify against the code before treating any row as still true. (Tagged 2026-09-27 during a docs audit.)
+
 # August Harness Research — Agent 5
 
 Comparative study of agent harnesses (Hermes, pi, oh-my-pi, Prime Agent, Codex

@@ -1,3 +1,5 @@
+> **Superseded.** The registry / code is the source of truth; the counts, section lists and "source of truth" claims in this document are stale. Kept only as decision provenance. (Tagged 2026-09-27 during a docs audit.)
+
 # Settings & UX Redesign Roadmap (from the 2026-08 external audit)
 
 Diagnosis + recommended structure. Implementation is staged; this document is

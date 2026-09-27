@@ -1,3 +1,5 @@
+> **Historical audit record — findings are NOT dispositioned.** This report has no closure line: some findings were fixed, some were deliberately declined, and its `file:line` citations have rotted. Re-verify against the code before treating any row as still true. (Tagged 2026-09-27 during a docs audit.)
+
 # FINDINGS — Agent 2 (workbench / tool loop)
 
 Scope: `backend-py/app/services/workbench/`, `tool_registrations/system_tools.py`,

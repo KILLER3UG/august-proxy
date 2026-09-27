@@ -46,8 +46,13 @@ Ensure `.env` exists (copy `.env.example`). Compose maps **`8085:8085`** (not
 `GET /api/health` is defined **once** in `main.py` and returns:
 
 ```json
-{"status":"ok","version":"0.13.1","python":true,"port":8085,"uptime":12.3}
+{"status":"ok","version":"<backend version>","python":true,"port":8085,"uptime":12.3}
 ```
+
+`version` is resolved by `app/version.py:backend_version()` from
+`backend-runtime.json` (installed desktop) or root `package.json`, and falls back
+to the literal `"0.1.0"` when neither is reachable — so a `0.1.0` readout means
+the stamp is missing, not that the build is old.
 
 Use `GET /api/health/detailed` for mode, data dir, external access, brain sync,
 and cognitive snapshots.
@@ -80,20 +85,23 @@ roughly: `config.json` name → `providers.json` apiKey → env patterns. See
 
 ### Model alias not resolving
 
-Aliases are validated when written: the provider must be known (template or
-custom in `providers.json`) and the model non-empty. Edit via Aliases UI or
-`PUT /api/config/model-aliases`.
+Aliases are validated when written: the provider must be a configured entry in
+`providers.json` (there are no templates) and the model non-empty. Edit via the
+Aliases UI or `PUT /api/config/model-aliases`.
 
 ### Custom provider not listed
 
 Confirm `data/providers.json` has `"enabled": true` and a key. Restart is usually
 not required — `settings.reload()` runs after writes.
 
-### Only three templates?
+### "There are no provider templates"
 
-Built-in templates are intentionally thin (`anthropic`, `openai`,
-`openai-compatible`). Most third-party gateways are **custom OpenAI-compatible
-providers**. That is expected, not a missing install step.
+Correct, and by design. There is **no built-in template catalog** —
+`GET /api/providers/templates` is a back-compat shim that always returns `[]`.
+Every provider, including Anthropic and OpenAI, is user-configured: name, base
+URL, wire format, key. Most third-party gateways are **custom OpenAI-compatible
+providers**, and `openaiChat` + the right `baseUrl` covers them. That is not a
+missing install step.
 
 ### Upstream rate limiting (429 / 503)
 
@@ -297,10 +305,23 @@ skills under `data/skills/` can be deleted.
 Names must match the skill service validators (lowercase, length, no marketing
 words in description). See `skill_service` validation helpers.
 
-### Curator archived a skill I need
+### Curator retired a skill I need
 
-Archived under `data/skills/.archive/<name>/`. Restore with
-`POST /api/curator/restore/{name}` or pin with `/pin/{name}`.
+There is no `.archive/` directory and no restore endpoint — curation lifecycle is
+a **`SKILL.md` frontmatter flag** (`active` → `stale` → `retired`/`archived`), and
+the old `POST /api/curator/restore/{name}` / `/pin/{name}` routes never survived
+the curator rewrite.
+
+To bring one back, fix the frontmatter. `PATCH /api/skills/{name}` flips
+`disabled` and rewrites `body` / `description` / `trigger` / `category`, but it
+does **not** accept a `status` field — so the status line is corrected by editing
+the skill file. Beware: `_apply_approved` rewrites frontmatter **wholesale**, so
+any approved patch that does not restate `status`, `trigger`, `supersedes`,
+`origin` and `learned_from` drops them. Losing `trigger` silently retires the
+skill from per-turn relevance matching.
+
+For a curator *proposal* (rather than a lifecycle flag), rollback is
+`POST /api/curator/refine/{entry_id}/rollback`.
 
 ---
 
@@ -324,12 +345,27 @@ Emits fire on proxy / tool / memory paths. Use Settings → Feature Flow
 (advanced) and confirm `/api/monitor/events`. Live logs use
 `WS /api/logs/stream` (Settings → Activity Log).
 
-### Memory review failed / chip does nothing
+### "Memory review" / the review chip
 
-- Needs a selected chat model that can complete a non-streaming generate.
-- `POST /api/memory/review` never writes; apply is `POST /api/memory/review/apply`
-  per accepted row.
-- Toast “Memory review failed” means the selected model or resolver errored.
+There is no memory-review feature any more. `POST /api/memory/review` and
+`/review/apply` were removed along with `routers/memory.py`, and the chat chip
+that called them is gone — so a bookmark or script hitting those paths gets a 404,
+not a bug in your install.
+
+What exists instead:
+
+- The model manages memory through **tools**: `remember` (write/update by key),
+  `list_facts`, `forget`. These are core tools, so progressive disclosure can
+  never hide them and a downgraded model can still correct what it remembers.
+- Automatic recall is the BM25 `<memory>` tail, gated by brain-config
+  **`memoryAutoInject` (default OFF)**. Recall happens when the model calls
+  `brain_query`.
+- `kind='profile'` facts are an **always-in lane** regardless of that gate
+  (rendered first, ~600-char budget). That is what makes August remember who you
+  are without a keyword coincidence.
+- Reviewing what is stored is **Settings → Memory**, one flat chronological list
+  across kinds. There is no "Memory files" card — the 0.18 restyle removed the
+  backup / integrity / restore surface.
 
 ---
 
@@ -380,7 +416,7 @@ inside functions if you hit a cycle.
 
 ### Tests fail only on Windows
 
-Use the project venv / `uv run pytest`. Prefer
+Use the project venv / `uv run pytest -n auto`. Prefer
 `.\scripts\install-git-hooks.ps1` if Device Guard blocks
 `.venv\Scripts\python.exe` for pre-commit.
 

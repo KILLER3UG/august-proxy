@@ -1,3 +1,11 @@
+> **Half shipped — and §0's module map is wrong in three places.**
+> Still unbuilt, verified by zero hits repo-wide for `superseded_by`
+> (M-3), `injected_count` (M-5), `verified_at` (M-7/M-8) and `factBudget`
+> (M-12). Stale in §0: `auto_memories` is not "overlap unresolved (OQ1)" — it was
+> retired by `033_retire_auto_memories.sql`; M-1 `facts_fts` is a won't-build and
+> is absent; and `rest.py:519` is no longer the episodic writer.
+> _(Added during the docs audit 2026-09-27.)
+
 # Part 21 — Memory enhancements (schema + retrieval + hygiene)
 
 Status: **P1 + M-11 LANDED 2026-09-02 (committed cb626b40)** (M-1 usage-decoupling half +

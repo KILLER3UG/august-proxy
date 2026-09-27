@@ -1,3 +1,11 @@
+> **Mostly accurate — one row is now contradicted by in-flight work.** The
+> `rest.py:91-98` refusal text still matches verbatim. But §1.5 calls the error
+> taxonomy "SOLID", and `app/services/error_families.py` (uncommitted as of this
+> tagging) says the loop steered on an eight-family taxonomy while
+> `turn_outcomes.classify_error` wrote its own labels. `memory_conn.py` and
+> `learning_scheduler.py` are cited without their real `app/services/` prefix.
+> _(Added during the docs audit 2026-09-27.)
+
 # August Backend Harness Audit
 
 **Date:** 2026-09-24

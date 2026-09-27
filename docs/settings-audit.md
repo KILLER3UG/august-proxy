@@ -1,8 +1,29 @@
 # Settings IA Audit & Migration Notes
 
 > **Source of truth:** `frontend/desktop/src/settings/settings-registry.ts`.
-> **Current (2026-08-28+): 3 header groups — Settings / Agent Capabilities / Data & Statistics — with an inline tree rail.**
-> Headers are the left rail; the active header expands its sections as tree rows (no pill tab strip). Hidden ids (`ui-designer`, `ai-setup`, `agent-board`, `tool-grants`, `python-sandbox`, `backend-monitor`, `health-simulator`) resolve via `railCanonicalId`; `ui-designer` additionally renders as a visible tree grandchild under Appearance via `RAIL_CHILDREN`.
+> **This page is a 2026-08-28 snapshot and is superseded below that date.** The
+> rail has been restyled since (the 0.18 restyle, among others). Read the
+> registry for anything load-bearing; the numbers corrected here are the ones
+> most often quoted from the stale text below.
+>
+> **As of 2026-09-27:** 3 header groups — ids `basics` (label **Basics**),
+> `capabilities` (**Agent capabilities**), `data` (**Data and statistics**) —
+> holding **44** sections: 15 `basic`, 1 `advanced`, 28 `hidden`. The
+> "3 header groups — Settings / Agent Capabilities / Data & Statistics" naming and
+> the "38 sections" count below are both stale; the per-header section lists are
+> pre-0.18. The single `advanced` tier entry is vestigial —
+> `hooks/useSettingsAdvancedPreference.ts` exists but nothing imports it, so
+> there is no "Show advanced" toggle.
+>
+> Headers are the left rail; the active header expands its sections as tree rows
+> (no pill tab strip). Hidden ids resolve via `railCanonicalId`.
+>
+> **`RAIL_CHILDREN` is dead as a mechanism.** It is exported from
+> `settings-registry.ts` and named in comments in `WorkspaceShell.tsx` and
+> `AppearanceSection.tsx`, but **no module imports it** — so the text below where
+> it says `appearance → ['ui-designer']` "renders a second indented level" is not
+> what the code does. Do not copy that pattern into a new section; check how the
+> rail actually renders before wiring a grandchild.
 
 ## Why this document exists
 

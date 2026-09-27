@@ -1,3 +1,11 @@
+> **Partly shipped — the header's "Phases 5–6 pending" is wrong for Phase 5.1.**
+> `kicad_checks` and `kicad_render` are registered
+> (`app/services/tool_registrations/circuit_tools.py`) and `kicad-cli` is probed
+> in `app/services/tools/circuit_tools.py`. Genuinely absent: 5.2–5.4 and Phase 6
+> (no `model-viewer`, `kicanvas`, `circuit-json` or `renode` anywhere). See also
+> `docs/CIRCUIT_SIMULATION_RESEARCH.md`.
+> _(Added during the docs audit 2026-09-27.)
+
 # August Circuit Workbench — EDA Ecosystem Deep-Dive & Feature Plan
 
 **Date:** 2026-08-28 · **Status:** IMPLEMENTED 2026-08-28/29 — Phases 0–4 committed (`884506bd`, `25e1bb7b`: circuit_env/test/inject_fault/export_vcd, traces/sweep, golden tests). The ModelSim driver + hardened GHDL resolver (`hdl_tools.py`) and its test (`test_hdl_modelsim_driver.py`) — previously noted UNCOMMITTED — landed in `cb626b40` (corrected Part 25 Phase 7.3). Phases 5–6 (Quartus flow, advanced EDA tools) pending · **Scope:** `backend-py` circuit/HDL tools + desktop Circuit panel + FPGA flow

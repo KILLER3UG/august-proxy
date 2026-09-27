@@ -1,3 +1,11 @@
+> **Unverifiable as written — the checkout it cites no longer exists.** Every
+> `path:line` in this document points into
+> `C:/Users/rober/AppData/Local/Temp/ref-repos/…`, which has been cleaned up, so
+> no claim here can be re-checked without re-cloning. Keep as a record of what was
+> *decided*, not as a reference for how the project works. The transfer decisions
+> were consumed into Parts 19–26.
+> _(Added during the docs audit 2026-09-27.)
+
 # oh-my-pi — architecture deep dive for August Proxy
 
 **Repo studied:** `https://github.com/can1357/oh-my-pi.git` — the real repo, no redirect, no rename. The package it actually ships is `@oh-my-pi/pi-coding-agent` (a fork of `pi-mono`), and the repo root is a Bun/TypeScript monorepo plus ~80k lines of Rust native crates.

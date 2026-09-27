@@ -1,3 +1,5 @@
+> **Status: implemented — kept as provenance, not as a plan.** Every phase in this document is in the tree today. Read the code and `docs/ARCHITECTURE.md` for current behaviour; claims below about what is *missing* are stale. (Tagged 2026-09-27 during a docs audit.)
+
 # Part 25 — Harness Optimization & Repo Hygiene (2026-09-04)
 
 **Status: IMPLEMENTED — Phases 0-7 landed in commits 6ce693a4..90de0a21 (Part 25). Follow-up round: `2026-09-04-harness-optimization-v2.md` (Part 26).**

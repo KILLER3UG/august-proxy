@@ -1,3 +1,5 @@
+> **Archived — shipped or superseded.** `docs/archive/README.md` covers this tree: do not restore it as an active plan. Anything below phrased as "ready for implementation", "next steps" or "current status" describes 2026, not today. (Tagged 2026-09-27 during a docs audit.)
+
 # August Proxy — Better Harness Implementation Plan
 
 > **Status:** ALL 6 PHASES SHIPPED — per-feature checkboxes reconciled with the code (partials noted inline)

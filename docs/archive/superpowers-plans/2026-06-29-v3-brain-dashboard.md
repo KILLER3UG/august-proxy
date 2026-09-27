@@ -1,3 +1,5 @@
+> **Archived — shipped or superseded.** `docs/archive/README.md` covers this tree: do not restore it as an active plan. Anything below phrased as "ready for implementation", "next steps" or "current status" describes 2026, not today. (Tagged 2026-09-27 during a docs audit.)
+
 # v3 Brain Dashboard + /Exam — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -1,3 +1,5 @@
+> **Status: implemented — kept as provenance, not as a plan.** Every phase in this document is in the tree today. Read the code and `docs/ARCHITECTURE.md` for current behaviour; claims below about what is *missing* are stale. (Tagged 2026-09-27 during a docs audit.)
+
 # Part 18 — Harness Performance & Smoothness
 
 **Status:** IMPLEMENTED 2026-08-31 — all remaining items landed test-first

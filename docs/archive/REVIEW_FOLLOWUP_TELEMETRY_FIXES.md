@@ -1,3 +1,5 @@
+> **Archived — shipped or superseded.** `docs/archive/README.md` covers this tree: do not restore it as an active plan. Anything below phrased as "ready for implementation", "next steps" or "current status" describes 2026, not today. (Tagged 2026-09-27 during a docs audit.)
+
 # Review Follow-Up: Two Required Fixes (Telemetry Data Flow)
 
 **Context:** Review of `docs/INCREMENT_BENCHMARK_TELEMETRY_SKILLCHIP_PLAN.md`

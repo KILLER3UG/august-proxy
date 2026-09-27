@@ -1,3 +1,10 @@
+> **Findings still open; every anchor has rotted.** No `tauri-plugin-log`, no
+> single-instance plugin, and the `File::create` truncation at
+> `src-tauri/src/backend.rs:496` are all real today. But `taskkill` is cited at
+> :948-951 and is now :1005, and P2-1 cites :1412/:1558 where the code is
+> :496/:1469 — on a file carrying uncommitted edits. Re-anchor before acting.
+> _(Added during the docs audit 2026-09-27.)
+
 # August App Lifecycle Audit
 
 **Date:** 2026-09-24

@@ -1,3 +1,5 @@
+> **Point-in-time snapshot (June–July 2026) — not current status.** This spec was signed off in a past session. Its paths, line numbers and Settings/IA descriptions have since moved. Do not implement against it as if it were live. (Tagged 2026-09-27 during a docs audit.)
+
 # August Full Access — Design
 
 **Date:** 2026-06-19

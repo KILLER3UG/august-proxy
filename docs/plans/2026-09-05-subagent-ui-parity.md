@@ -1,3 +1,5 @@
+> **Status: implemented — kept as provenance, not as a plan.** Every phase in this document is in the tree today. Read the code and `docs/ARCHITECTURE.md` for current behaviour; claims below about what is *missing* are stale. (Tagged 2026-09-27 during a docs audit.)
+
 # Part 27 — Subagent & transcript UI parity, memory/skills readability, bots UI, test-data hygiene
 
 Date: 2026-09-05 · Status: **IMPLEMENTED (A,B,C,D,E,G + F1–F6) — Fully Delivered** · Owner: desktop frontend + backend-py

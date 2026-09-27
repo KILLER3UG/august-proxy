@@ -24,7 +24,7 @@ Isolation: `isolatedData` is **autouse** — full pytest must not touch live bra
 
 | Suite | Command | CI job |
 |---|---|---|
-| Backend pytest | `pytest -q` in `backend-py/` | `backend-mypy` |
+| Backend pytest | `pytest -q -n auto` in `backend-py/` | `backend-mypy` |
 | Phase 7 gate | `pytest tests/test_phase7_e2e_inventory.py -q` | (part of full pytest) |
 | Desktop vitest | `npm run test -w frontend/desktop` | `frontend-tsc-eslint` |
 | Mobile | `npm run test -w frontend/mobile` | `mobile-typecheck` |

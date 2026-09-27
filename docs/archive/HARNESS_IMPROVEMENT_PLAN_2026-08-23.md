@@ -1,3 +1,5 @@
+> **Archived — shipped or superseded.** `docs/archive/README.md` covers this tree: do not restore it as an active plan. Anything below phrased as "ready for implementation", "next steps" or "current status" describes 2026, not today. (Tagged 2026-09-27 during a docs audit.)
+
 # August Harness Master Plan — 2026-08-23
 
 > **North star (`IDEA.md`):** an agent harness in the class of Codex, Hermes agent, DeepSeek harness, and Claude Code. Every phase below is judged against that bar.

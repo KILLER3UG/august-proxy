@@ -1,3 +1,14 @@
+> **Header says "DRAFT awaiting ruling" — most of it has since shipped.**
+> Landed: `_frozen_vcs` and the date line removed from the prompt
+> (`workbench.py:1242-1246`), `load_layered` mtime cache
+> (`aug_directive_service.py:151-164`), the `AUGUST_AUTO_PROFILE` comment gone,
+> `write_files` in `GATED_EDIT_TOOLS` (`read_before_edit.py:49`), sub-agent
+> observation (`workbench/subagent.py:1155,1208`), and the bridge gate + ledger
+> (`kernel.py:591-608`). Still open: §2.1 (auto-trust is retained —
+> `read_before_edit.py:231-241`) and §3's comment sweep, which still has ~55
+> `Part 2x` tags. Re-rule or retire the header rather than leaving it "DRAFT".
+> _(Added during the docs audit 2026-09-27.)
+
 # Harness Maintenance — Prompt Cache, Edit Gate Hardening, Comment Tags
 Date: 2026-09-05 · Status: DRAFT awaiting ruling · Continues the numbered plan series (Part 27 was 2026-09-05-subagent-ui-parity.md)
 

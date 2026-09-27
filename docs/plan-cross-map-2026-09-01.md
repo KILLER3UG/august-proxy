@@ -1,3 +1,5 @@
+> **Superseded.** The registry / code is the source of truth; the counts, section lists and "source of truth" claims in this document are stale. Kept only as decision provenance. (Tagged 2026-09-27 during a docs audit.)
+
 # Plan review: August-proxy, all plan directories
 
 **Date:** 2026-09-01

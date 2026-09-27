@@ -4,6 +4,57 @@ Living list. Prefer fixing code first, then ticking items off here.
 
 ---
 
+## Closed (2026-09-27 — docs audit against the tree)
+
+A full sweep of `docs/`, `README.md`, `CHANGELOG.md` and the scattered markdown
+against the working tree. The pattern: **`AGENTS.md`, `CONFIGURATION.md` and
+`GAPS_AND_BUGS.md` had been kept current; the older reference docs had not.**
+
+| Item | Resolution |
+|------|------------|
+| `ARCHITECTURE.md` memory-subsystem table named 15 modules | **14 did not exist.** Rewritten against the real `services/memory_store/` package (`brain`, `consolidation`, `fact_retrieval`, `kv`, `messages`, `rest`, `sessions`, `transcript_blocks`, `wire`) + `memory_conn` / `memory_schema` |
+| `ARCHITECTURE.md` "Brain write classes": `db_writer.enqueue_write(must_succeed=…)`, `brain_write_facade` | **No such module, symbol or kwarg anywhere.** Replaced with what exists: direct `memory_store` txn + `deferred_writes.defer_commit(conn, window_s=2.0)` coalescing + `best_effort(site)`. `AUGUST_DB_WRITER_LOW_DROP_S` was also dead in `DEVELOPER_GUIDE.md` |
+| "`Vector / graph` SQLite tables" | **There is no vector store and no graph store** — `fact_retrieval.py`, `tools/retrieval.py` and `text_similarity.py` each state it. Recall is BM25/FTS. `august_graph_memory.json` is read by nothing |
+| `/api/memory/*` (incl. `/review` + `/review/apply`) documented as live | **Router deleted.** Was repeated in FOUR live docs (`ARCHITECTURE`, `CONFIGURATION`, `TROUBLESHOOTING`, plus `README`'s "Review what I remember" chip). All replaced with the real surface: `remember`/`list_facts`/`forget` tools, `/api/brain/consolidation/*`, `/api/august/memory/proposals[/{id}/decide]` |
+| `POST /api/curator/{pin,unpin,archive,restore}` + `GET /api/curator/usage` | **None exist.** Curation lifecycle is a `SKILL.md` **frontmatter flag**, not an endpoint and not a `.archive/` move. Fixed in `API_REFERENCE` and `TROUBLESHOOTING` |
+| Provider **templates** still documented as shipped | `GET /api/providers/templates` returns `[]`. Fixed in `SETUP`, `TROUBLESHOOTING` (whole "Only three templates?" section), `API_REFERENCE`, `DEVELOPER_GUIDE` and `README`'s tree |
+| **`gateway.guard_mode` silently ignored** | `runner.py:52` reads `cfg.get('guardMode')`. The doc example used `guard_mode` **and** the code default equals the documented value, so it looked like it worked. Fixed + a casing warning added to `CONFIGURATION.md` |
+| `/api/usage` documented as `POST`, `?period=`, `?sessionId=` | Route is GET-only; the param is `range`; `/session` takes `id`. `currentStreak` is now genuinely computed (the old "placeholder" note was stale) |
+| SSE event table in snake_case | `emit_types.py` is canonical and camelCase (`finalOutput`, `toolCall`, `toolResult`, `planProposed`); the snake forms are legacy-accept-only. Table completed with `turn_end`, `recovery`, `subagent*`, `checkpoint` etc. |
+| `GET /api/brain/harness/evals`, `GET /api/perf/db-writer`, `/api/skills/*/files`, `POST /api/mcp/harness` | All dead or mis-pathed (the MCP harness router has **no `/api` prefix**). `harness/evals` also contradicted the same doc's own removal note |
+| `ARCHITECTURE.md`: Settings "8 hubs", `ChatRunHeader`, `TimelineRail`, `SubagentLaunchList`, `get_curator`, `send_workbench_message_stream` | Registry is 3 headers (`basics`/`capabilities`/`data`, 44 sections); those components do not exist; symbol is `sendWorkbenchMessageStream` in `services/workbench/workbench.py` |
+| `DEVELOPER_GUIDE.md` debugging tips pointed at `/api/brain/{status,diagnostics,events/stream}` | None exist. Replaced with the real `/api/brain/*` set |
+| `uv run pytest -q` without `-n auto` | In `README` (×2), `SETUP`, `DEVELOPER_GUIDE`, `FEATURE_INVENTORY_TEST_MATRIX`. `AGENTS.md` mandates it (serial ≈ 2 h; 8 m 22 s parallel) |
+| `README.md` said "seven" version sources and "Verifier is opt-in" | `check-version-sync.mjs` guards **8**; the verifier gate was removed 2026-08-24. Release flow also corrected: `release-desktop.yml` triggers on a `v*.*.*` **tag**, builds without running pytest, and `Type check` does not gate publication |
+| `.env.example` referenced a "claude profile + bookmarks" / "codex profile" | No profile or bookmark machinery exists in `app/`. Keys resolve generically via `providers.json` → `{NAME}_API_KEY` |
+| 48 dated docs read as live guidance | Tagged with an explicit provenance banner: shipped plans, June–July specs, `audit-2026-08/` reports with **no disposition**, and `archive/` files whose bodies still said "Ready for implementation" |
+| Dead prose path references into moved files | `CHANGELOG.md` → `docs/archive/SMOOTHNESS_PLAN_STATUS.md`; `REFACTOR_HANDOFF_PROMPT.md` × 6 → `docs/archive/PHASE8_…`. `check-doc-links.mjs` cannot catch these — it only validates resolving markdown link syntax, not inline-code paths |
+| `settings-audit.md` claimed "38 sections", header id `settings` | 44 sections, id `basics`. Banner added. **`RAIL_CHILDREN` is exported but imported by nothing** despite `WorkspaceShell.tsx` comments naming it as the grandchild mechanism |
+| `skills/charts/SKILL.md` told the model to plot `simulate_circuit` output | **Live product defect** — the registered tool is `circuit_simulate`; `simulate_circuit` is an internal function only. Every other skill used the right name. Fixed |
+| `IDENTITY.md`, `USER.md`, `frontend/desktop/AUDIT-FINDINGS.md` | Deleted. First two are unhooked **AutoClaw** template remnants (`autoclaw.schema` has zero hits in `backend-py/`) with placeholder values; the third is a 2025-07-17 audit, ~50% resolved, citations rotted. `IDEA.md` **kept** — `archive/HARNESS_IMPROVEMENT_PLAN_2026-08-23.md` cites it as the product north star |
+
+### Still open
+
+- **`CHANGELOG.md` has no entry newer than `0.17.0 (2026-08-24)`** while the tree
+  is `0.18.15` — 15 tags shipped as two undated "Unreleased (working tree)"
+  blocks. Not cosmetic: `/api/whats-new` falls back to this file offline, so the
+  desktop app titles everything "Unreleased". Needs a decision, not a sweep.
+- **`docs/releases/` covers 15 of 68 tags** — but nothing reads the directory, so
+  this is archaeology, not a bug (recorded in `DOCUMENTATION.md` now).
+- Per-model **pricing** (`priceInPerM` / `priceOutPerM`), **bot mode**
+  (`services/bot_mode/`) and the **circuit workbench** have effectively no
+  user-facing doc outside `AGENTS.md` and one env-var line.
+- ~20 env vars are read by code but documented nowhere (`AUGUST_CORS_ORIGINS`,
+  `AUGUST_TOOL_TIMEOUT_S`, `AUGUST_{CONNECT,TTFB}_TIMEOUT_S`,
+  `AUGUST_ANTHROPIC_CACHE`, `AUGUST_QUOTA_OBSERVATION_TTL_S`, the
+  `cognitive_config` group, `AUGUST_{GHDL,MODELSIM,FIRMWARE_MCU}`, …).
+  `.env.example` shares only 2 of ~30 runtime vars with `CONFIGURATION.md`.
+- `memoryAutoInject` — default OFF, the gate `AGENTS.md` calls load-bearing — is
+  absent from `CONFIGURATION.md`'s key list.
+- Dual naming, mobile docs, gateway platform UI: unchanged from below.
+
+---
+
 ## Closed (2026-08-01)
 
 | Item | Resolution |

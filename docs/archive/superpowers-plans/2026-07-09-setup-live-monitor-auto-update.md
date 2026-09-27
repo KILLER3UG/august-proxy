@@ -1,3 +1,5 @@
+> **Archived — shipped or superseded.** `docs/archive/README.md` covers this tree: do not restore it as an active plan. Anything below phrased as "ready for implementation", "next steps" or "current status" describes 2026, not today. (Tagged 2026-09-27 during a docs audit.)
+
 # Setup Script, Live Monitor, Backend Supervisor & Auto-Update — Implementation Plan
 
 > **Status note (2026-07-25):** The checkboxes in this plan were never

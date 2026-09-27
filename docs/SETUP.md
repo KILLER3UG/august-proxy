@@ -83,8 +83,10 @@ uv run playwright install chromium
 # Run the server with hot reload
 uv run uvicorn app.main:app --reload --port 8085
 
-# Tests (always via uv / the project venv so the interpreter is 3.12+)
-uv run pytest -q
+# Tests (always via uv / the project venv so the interpreter is 3.12+).
+# Always pass -n auto: the serial suite is ~2h because the slow tests shell out
+# to real external toolchains; -n auto measured 2.6x faster (8m22s on 16 cores).
+uv run pytest -q -n auto
 # or from repo root: npm run test:backend
 ```
 
@@ -142,13 +144,11 @@ to the real model. Manage them from the **desktop app** or
 
 ### 3. Add a custom / OpenAI-compatible provider
 
-Built-in **templates** (see `GET /api/providers/templates`) are currently:
+There is **no built-in template catalog** — `GET /api/providers/templates` is a
+back-compat shim that always returns `[]`. Every provider is user-configured:
+name, base URL, wire format and key, with no defaults invented for you.
 
-- `anthropic` — Anthropic Messages API
-- `openai` — OpenAI Chat Completions
-- `openai-compatible` — any OpenAI-compatible base URL
-
-Add further providers from **Settings → Models & Providers** or by editing
+Add providers from **Settings → Models & Providers** or by editing
 `data/providers.json`:
 
 ```json
@@ -165,6 +165,13 @@ Add further providers from **Settings → Models & Providers** or by editing
   ]
 }
 ```
+
+`apiFormat` is one of `openaiChat`, `anthropicMessages`, `openaiResponses`.
+**baseUrl is used exactly as pasted** — August only appends the API-format leaf
+(`chat/completions` / `v1/messages` / `responses`), it never adds `/v1` to the
+base. OpenAI-compatible hosts therefore need `/v1` in the paste when the host
+wants it. An unrecognized `apiFormat` falls back to `openaiChat` with a logged
+warning; `gemini` / `bedrock` / `minimax` are accepted aliases, not formats.
 
 See [`CONFIGURATION.md`](CONFIGURATION.md) for every field.
 

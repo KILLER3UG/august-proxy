@@ -2,12 +2,12 @@
 ### (Production Refactor Edition — August Proxy)
 
 > **Handoff snapshot:** 2026-07-14 · live tracker: `docs/REFACTOR_PROGRESS.md` · tip: `git rev-parse HEAD`  
-> **Phases 0–8 + Phase P COMPLETE** · sign-off: `docs/PHASE8_FINAL_DELIVERABLES.md`  
+> **Phases 0–8 + Phase P COMPLETE** · sign-off: `docs/archive/PHASE8_FINAL_DELIVERABLES.md`  
 > Paste this entire document into a new session. Then **verify it against the repo** (Ground Rule 1) before coding.
 
 Act as a Senior Principal Software Architect and Lead Developer for **August Proxy** — Tauri + React 19 desktop, Expo mobile, FastAPI Python backend.
 
-**The multi-phase refactor is signed off (Phase 8).** Do not restart Phases 0–7 or Phase P. New work is product features, ops, or **optional** polish only with explicit go-ahead. Verify against `docs/REFACTOR_PROGRESS.md` and `docs/PHASE8_FINAL_DELIVERABLES.md`.
+**The multi-phase refactor is signed off (Phase 8).** Do not restart Phases 0–7 or Phase P. New work is product features, ops, or **optional** polish only with explicit go-ahead. Verify against `docs/REFACTOR_PROGRESS.md` and `docs/archive/PHASE8_FINAL_DELIVERABLES.md`.
 
 **Authoritative live tracker:** `docs/REFACTOR_PROGRESS.md` (not repo root). Prefer it over any older chat paste if they disagree — but still verify both against the repo.
 
@@ -166,7 +166,7 @@ Live Slack/Discord *network* bots and real LLM soaks stay env-gated (optional se
 
 ## Phase 8 — Final Deliverables (**SIGNED OFF**)
 
-Pack: [`docs/PHASE8_FINAL_DELIVERABLES.md`](archive/PHASE8_FINAL_DELIVERABLES.md).
+Pack: [`docs/archive/PHASE8_FINAL_DELIVERABLES.md`](archive/PHASE8_FINAL_DELIVERABLES.md).
 
 ### Definition of Done (final)
 
@@ -192,7 +192,7 @@ Because this is a large codebase, work iteratively.
 **Current step:** Refactor **complete**. New work = product features / ops / optional polish with go-ahead only.
 
 **On session start:**
-1. Read `docs/REFACTOR_PROGRESS.md` + `docs/PHASE8_FINAL_DELIVERABLES.md`; verify against repo.
+1. Read `docs/REFACTOR_PROGRESS.md` + `docs/archive/PHASE8_FINAL_DELIVERABLES.md`; verify against repo.
 2. Confirm working tree clean.
 3. Do **not** reopen Phases 0–8 or Phase P without cause.
 4. **Wait for approval** before auth/data migrations/shared-state risk or large-file splits.
@@ -201,7 +201,7 @@ Because this is a large codebase, work iteratively.
 
 ## Progress Log (verify this, don't just read it — see Ground Rule 1)
 
-*Last updated 2026-07-14 (Phases 0–8 + Phase P **SIGNED OFF**). Tip: verify `git rev-parse HEAD` + `docs/PHASE8_FINAL_DELIVERABLES.md`.*
+*Last updated 2026-07-14 (Phases 0–8 + Phase P **SIGNED OFF**). Tip: verify `git rev-parse HEAD` + `docs/archive/PHASE8_FINAL_DELIVERABLES.md`.*
 
 ### Merge Status (historical queue — CLOSED)
 
@@ -387,6 +387,6 @@ Matrix + suite baselines recorded. Phase 7 fully automated E2E proven. Phase 8 s
 
 ## Session close note (for the next model)
 
-Stop state: **Phases 0–8 + Phase P complete.** Sign-off pack: `docs/PHASE8_FINAL_DELIVERABLES.md`. Evidence: 748 pytest · 547 vitest · Phase 7 gate · six indexes. Keep Ground Rule 1.
+Stop state: **Phases 0–8 + Phase P complete.** Sign-off pack: `docs/archive/PHASE8_FINAL_DELIVERABLES.md`. Evidence: 748 pytest · 547 vitest · Phase 7 gate · six indexes. Keep Ground Rule 1.
 
 Are you ready to begin? Verify the progress tracker against the repo, then take **user-directed product work** (not a phase restart).

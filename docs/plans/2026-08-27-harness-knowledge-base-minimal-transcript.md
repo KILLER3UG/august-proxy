@@ -1,3 +1,13 @@
+> **Largely shipped — corrections below before you reuse anything here.**
+> Migrations `023_memory_hygiene_purge` / `025_memory_state_separation` /
+> `026_knowledge_base_redesign` are all in the tree. Stale parts: the Part 11
+> surface table names `TimelineRail.tsx` (does not exist) and lists
+> `hdl_simulate` / `vcd_parse` as not-registered (both ARE registered in
+> `app/services/tool_registrations/`); the "8-hub / 39-section" Settings IA is
+> now 3 headers and 44 sections (`settings-registry.ts`). The one item with no
+> code and no ruling is Part 11 Phase 4 (sidebar temporal grouping).
+> _(Added during the docs audit 2026-09-27.)
+
 # August Harness — Knowledge-Base Overhaul & Minimal-Output Design
 
 **Date:** 2026-08-27 · **Status:** RULED — all 15 open questions decided (§8 records the rulings; Q2/Q5 conditions folded into §3.6/§3.5); "orcacode" corrected to OrcaCode Review (Part 10); cross-reference audit applied 2026-08-27 (#8→T1, #10→T5 merged; #12→P2; #3 stage order fixed) · **Scope:** backend-py memory/skills/sessions + desktop transcript UI + benchmark-top strategy (Part 9) + code-review feature (Part 10)

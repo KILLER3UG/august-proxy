@@ -1,3 +1,9 @@
+> **Provenance only — fully dispatched.** Every ask was ruled on 2026-09-04 (§9)
+> into Parts 21 / 23 / 24, and T-1, D-1, D-2, S-1 and M-11 landed. Nothing here is
+> an open question. The rulings themselves are mirrored in
+> `2026-09-04-oq-recommendations.md`.
+> _(Added during the docs audit 2026-09-27.)
+
 # Part 22 — Capability research: the next expansion batch
 
 Status: **RESEARCH + recommendations — RULINGS RECORDED 2026-09-04 (§9); user approved the

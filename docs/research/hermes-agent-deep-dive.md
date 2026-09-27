@@ -1,3 +1,11 @@
+> **Unverifiable as written — the checkout it cites no longer exists.** Every
+> `path:line` in this document points into
+> `C:/Users/rober/AppData/Local/Temp/ref-repos/…`, which has been cleaned up, so
+> no claim here can be re-checked without re-cloning. Keep as a record of what was
+> *decided*, not as a reference for how the project works. The transfer decisions
+> were consumed into Parts 19–26.
+> _(Added during the docs audit 2026-09-27.)
+
 # hermes-agent — architectural deep dive for August Proxy
 
 **Repo:** `https://github.com/NousResearch/hermes-agent.git`

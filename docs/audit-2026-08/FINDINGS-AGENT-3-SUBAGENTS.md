@@ -1,3 +1,5 @@
+> **Historical audit record — findings are NOT dispositioned.** This report has no closure line: some findings were fixed, some were deliberately declined, and its `file:line` citations have rotted. Re-verify against the code before treating any row as still true. (Tagged 2026-09-27 during a docs audit.)
+
 # Sub-Agent System Audit (Agent 3 of 6)
 
 All repros below run against `backend-py/tests/test_audit_agent3_subagents.py` and

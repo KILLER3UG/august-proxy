@@ -1,3 +1,12 @@
+> **Still open (Phases 1–6) — but §2 contradicts its own Phase 0.**
+> §2 says "no authz at all"; Phase 0 shipped and is listed as implemented in the
+> header: `app/services/gateway/pairing.py` + `tests/test_gateway_pairing.py`
+> (allowlist + pairing codes, default-deny). Still genuinely absent: chunking,
+> markdown and streaming in `platforms/telegram.py`, and a Settings → Bot-mode
+> section. Anchors have drifted (`main.py:186-191` is now 232-237; `base.py:28` is
+> now :31) and §7 cites `tests/test_harness_evals.py`, which was deleted.
+> _(Added during the docs audit 2026-09-27.)
+
 # Part 20 — Messaging Gateway: August present in chat platforms
 
 Status: **Phase 0 (trust gate) IMPLEMENTED 2026-09-02 (committed cb626b40)** — allowlist

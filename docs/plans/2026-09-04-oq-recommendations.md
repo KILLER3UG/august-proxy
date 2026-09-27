@@ -1,3 +1,5 @@
+> **Status: implemented — kept as provenance, not as a plan.** Every phase in this document is in the tree today. Read the code and `docs/ARCHITECTURE.md` for current behaviour; claims below about what is *missing* are stale. (Tagged 2026-09-27 during a docs audit.)
+
 # OQ Recommendations Dossier — all open questions across the four 2026-09-01 plans
 
 **Date:** 2026-09-04 · **Method:** four read-only research subagents (one per plan), each verifying options against the working tree at `cb626b40` + the installed Hermes reference (`%LOCALAPPDATA%\hermes\hermes-agent`), with file:line evidence per verdict. No code was changed.
