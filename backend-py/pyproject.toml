@@ -339,6 +339,12 @@ ignore = [
 "app/services/workbench/edit_verification.py" = ["BLE001"]
 "app/services/workbench/image_parts.py" = ["BLE001"]
 "app/services/workbench/kernel.py" = ["BLE001"]
+# loop/recovery.py (P1#11 split) carries, verbatim, the blind excepts that used
+# to live in workbench.py — splitting a baselined file keeps both halves on the
+# list until the swallows migrate to best_effort().
+"app/services/workbench/loop/exec.py" = ["BLE001"]
+"app/services/workbench/loop/recovery.py" = ["BLE001"]
+"app/services/workbench/loop/surface.py" = ["BLE001"]
 "app/services/workbench/prompt_build.py" = ["BLE001"]
 "app/services/workbench/providers.py" = ["BLE001"]
 "app/services/workbench/pty_io.py" = ["BLE001"]

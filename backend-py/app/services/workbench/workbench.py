@@ -46,6 +46,13 @@ from app.services.workbench.effort import (
 from app.services.workbench.permissions import COMMAND_TOOLS as _COMMAND_TOOLS
 from app.services.workbench.permissions import ApprovalPolicy as _ApprovalPolicy
 from app.services.workbench.read_before_edit import GATED_EDIT_TOOLS as _GATED_EDIT_TOOLS
+
+# The hash-anchored-edit rejection that composes STALE_WRITE_HEADLINE now lives
+# in loop/exec.py (P1#11 split), but the wording is re-imported here: this file
+# must keep naming the shared sentence rather than a bespoke copy, and
+# tests/test_learning_loop_wiring.py::TestStaleWordingSingleSource scans THIS
+# file's source text to prove the retired phrasing did not creep back.
+from app.services.workbench.read_before_edit import STALE_WRITE_HEADLINE as STALE_WRITE_HEADLINE
 from app.services.workbench.read_before_edit import check_read_before_edit as _readBeforeEditGate
 from app.services.workbench.read_before_edit import (
     observe_after_mutation as _observeMutatedFile,
@@ -69,7 +76,6 @@ from app.services.workbench.tool_protocol import (
     reconcile_tool_results as _reconcileToolResults,
 )
 from app.services.workbench.validator import validationErrorText
-from app.type_aliases import JsonValue
 
 logger = logging.getLogger('workbench')
 # Tool-round cap. DISABLED by default (0 = unlimited): a hard 25-round cap
@@ -119,21 +125,6 @@ def service_turn_in_flight(sessionId: str) -> bool:
     lock = _turnLocks.get(sessionId)
     return lock is not None and lock.locked()
 
-# Stall detection: if the session's execution phase/step has not advanced for
-# this many consecutive rounds (and the turn is already deep), stop and ask
-# the model to reflect instead of letting it spin on repeated tool calls.
-MAX_STALLED_ROUNDS = 8
-# 12 + 8 (nudge at 20, hard-stop 22) nearly consumed the default
-# 25-round cap before stall protection engaged. Fire the check from round 8:
-# nudge at 16, hard-stop at 18 — real self-correction room stays.
-MIN_ROUNDS_BEFORE_STALL_CHECK = 8
-
-
-# A round that keeps hammering one (tool, target) past this many calls is not
-# progress however its arguments are spelled — re-reading one file at shifting
-# offsets, or re-running one probe with a jittered flag, is a polling loop.
-_POLL_TARGET_REPEATS = 6
-
 # Error families: six different commands failing for one reason is one problem,
 # but full-argument novelty alone calls it progress and never intervenes. The
 # rules, advice, and classifier live in app/services/error_families.py — the
@@ -141,10 +132,34 @@ _POLL_TARGET_REPEATS = 6
 # historical names stay importable from here for tests and callers.
 from app.services.error_families import ERROR_FAMILY_ADVICE as _ERROR_FAMILY_ADVICE  # noqa: E402, F401
 from app.services.error_families import ERROR_FAMILY_RULES as _ERROR_FAMILY_RULES  # noqa: E402, F401
-from app.services.error_families import classify_family as _error_family  # noqa: E402
 from app.services.message_sources import SOURCE_HARNESS_NUDGE, SOURCE_QUEUED_USER  # noqa: E402
 
-_ERROR_FAMILY_WINDOW = 6
+# Stall/novelty guards live in loop/guards.py (P1#11 split): the stall
+# constants, canonical-argument identity, (tool, target) polling keys,
+# world-delta recording, the recent error-family tally and the shared
+# turn-end verdict — plus _bulk_paths_from_args (pure args-walker shared
+# with the exec layer). Re-exported under the original names so the loop
+# body below, subagent.py and the tests (wb._recordWorldDelta,
+# wb._recent_error_families, …) keep resolving them on this module.
+from app.services.workbench.loop.guards import (  # noqa: E402
+    _ERROR_FAMILY_WINDOW,  # noqa: F401 -- re-export: guard helper (tests / callers read wb._ERROR_FAMILY_WINDOW)
+    _POLL_TARGET_REPEATS,  # noqa: F401 -- re-export: guard helper (tests / callers read wb._POLL_TARGET_REPEATS)
+    MAX_STALLED_ROUNDS,
+    MIN_ROUNDS_BEFORE_STALL_CHECK,
+    _assistant_round_is_novel,
+    _bulk_paths_from_args,  # noqa: F401 -- re-export: its callers moved to loop/exec.py
+    _canonicalArgs,  # noqa: F401 -- re-export: guard helper (tests / callers read wb._canonicalArgs)
+    _countTarget,  # noqa: F401 -- re-export: guard helper (tests / callers read wb._countTarget)
+    _error_family,  # noqa: F401 -- re-export: historical name stays importable (tests)
+    _finalTurnEndReason,
+    _pollingTarget,  # noqa: F401 -- re-export: guard helper (tests / callers read wb._pollingTarget)
+    _recent_error_families,
+    _recordWorldDelta,
+    _toolResultText,  # noqa: F401 -- re-export: guard helper (tests / callers read wb._toolResultText)
+    _toolSig,  # noqa: F401 -- re-export: guard helper (tests / callers read wb._toolSig)
+    _toolTarget,  # noqa: F401 -- re-export: guard helper (tests / callers read wb._toolTarget)
+)
+
 _ERROR_FAMILY_STREAK = 3
 # Every injected reminder is runtime-only. Without this line a model files the
 # nudge itself as a durable "lesson" and the memory store fills with the harness
@@ -155,231 +170,16 @@ _REMINDER_FOOTER = (
 )
 
 
-def _toolResultText(msg: dict[str, object]) -> str:
-    content = msg.get('content')
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return '\n'.join(
-            as_str(b.get('text'), '')
-            for b in content
-            if isinstance(b, dict) and as_str(b.get('type'), '') == 'text'
-        )
-    return ''
-
-
-def _recent_error_families(
-    messages: list[dict[str, object]], window: int = _ERROR_FAMILY_WINDOW
-) -> dict[str, int]:
-    """Family tally over the last ``window`` tool results of this turn."""
-    counts: dict[str, int] = {}
-    for msg in [m for m in messages if as_str(m.get('role'), '') == 'tool'][-window:]:
-        family = _error_family(_toolResultText(as_dict(msg, {})))
-        if family:
-            counts[family] = counts.get(family, 0) + 1
-    return counts
-
-
-def _finalTurnEndReason(reason: str, *, errored: bool, cancelledNow: bool) -> str:
-    """The one rule that turns a loop reason into the verdict a turn ends with.
-
-    Shared by the ``turn_end`` event and the telemetry row, which is written a
-    few statements earlier: duplicating the two overrides there would let the
-    transcript and the ledger disagree about how a turn ended.
-    """
-    if reason == 'finished' and cancelledNow:
-        # A mid-round cancel drops the dangling tool calls and falls through the
-        # plain-text break, so the loop never reaches the top-of-round cancel
-        # check that would have tagged it.
-        return 'interrupted'
-    if errored and reason == 'finished':
-        return 'error'
-    return reason
-
-
-def _canonicalArgs(args: dict[str, object]) -> str:
-    """Order-insensitive identity for one call's arguments.
-
-    Key insertion order is a transport accident: the same command spelled
-    ``{command, timeout}`` once and ``{timeout, command}`` the next used to look
-    like two different actions, so a model re-running one failing command with
-    reordered keys reset the stall counter forever.
-    """
-    try:
-        return json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)[:200]
-    except (TypeError, ValueError):
-        return str(sorted(args.items(), key=lambda kv: str(kv[0])))[:200]
-
-
-def _toolSig(name: str, args: dict[str, object]) -> tuple[str, str]:
-    return (name, _canonicalArgs(args))
-
-
-def _toolTarget(name: str, args: dict[str, object]) -> tuple[str, str]:
-    """(tool, its first argument) — the "same target" key for polling loops.
-
-    Full-argument identity alone would call it progress when a model re-reads
-    one file at shifting offsets or re-runs one probe 20 times with a jittered
-    flag. The target key catches that the *subject* never changed.
-    """
-    primary = next(iter(args.values()), None) if args else None
-    return (name, str(primary)[:120])
-
-
-def _recordWorldDelta(
-    toolName: str,
-    args: dict[str, object],
-    result: object,
-    *,
-    worldPaths: set[str],
-    familyByTarget: dict[tuple[str, str], str],
-) -> bool:
-    """World-delta evidence for the stall detector (audit D4).
-
-    The stall counter used to trust two self-reports: the model's own
-    ``update_state`` phase/step and argument novelty on the assistant surface.
-    Both can be gamed or genuinely flat while nothing in the world moves. This
-    records what the turn actually did to the world, per executed call:
-
-    * a path the turn had not touched before (read or written) — collected
-      from the call's args via ``_bulk_paths_from_args``;
-    * a (tool, target) that was failing with a known error family and now
-      returns a clean result — the shell telling you the truth.
-
-    Returns True when THIS call moved the world; the caller ORs it into the
-    round's flag, and the stall check treats a world-delta round as progress
-    even when phase/step is flat and the surface is argument-stale.
-    """
-    target = _toolTarget(toolName, args or {})
-    delta = False
-    try:
-        collected = list(_bulk_paths_from_args(args or {}))
-        # _bulk_paths_from_args only walks list-valued keys; the single-file
-        # tools (read_file, write_file, edit_lines, …) carry a scalar
-        # path/file_path — the most common touch there is.
-        for key in ('path', 'filePath', 'file_path', 'directory'):
-            val = as_str((args or {}).get(key), '')
-            if val:
-                collected.append(val)
-        for path in collected:
-            if path and path not in worldPaths:
-                worldPaths.add(path)
-                delta = True
-    except Exception:
-        logger.debug('world-delta path collection failed', exc_info=True)
-    if not isinstance(result, str):
-        return delta
-    family = _error_family(result)
-    if family:
-        familyByTarget[target] = family
-    elif target in familyByTarget and not result.startswith('Error'):
-        del familyByTarget[target]
-        delta = True
-    return delta
-
-
-def _pollingTarget(
-    targetUses: dict[tuple[str, str], int] | None,
-    sig: tuple[str, str],
-    args: dict[str, object],
-) -> bool:
-    """True once this (tool, target) has been hammered past the poll budget."""
-    if targetUses is None:
-        return False
-    return targetUses.get(_toolTarget(sig[0], args), 0) >= _POLL_TARGET_REPEATS
-
-
-def _countTarget(
-    targetUses: dict[tuple[str, str], int] | None,
-    sig: tuple[str, str],
-    args: dict[str, object],
-) -> None:
-    if targetUses is None:
-        return
-    key = _toolTarget(sig[0], args)
-    targetUses[key] = targetUses.get(key, 0) + 1
-
-
-def _assistant_round_is_novel(
-    messages: list[dict[str, object]],
-    seenToolSigs: set[tuple[str, str]],
-    targetUses: dict[tuple[str, str], int] | None = None,
-) -> bool:
-    """Did the most recent assistant round do genuinely new work?
-
-    The phase/step stall signature punishes deep investigation exactly as
-    hard as real spinning: many ``search_files``/``read_file`` calls on
-    *different* files never advance phase/step. Treat a round as progress
-    when it emitted user-visible text or called a tool with a
-    canonical (name, arguments) signature not already seen this turn — the
-    nudge then fires only on genuine repetition (same command re-run, no
-    prose). When ``targetUses`` is supplied, a round that keeps hammering the
-    same (tool, target) past ``_POLL_TARGET_REPEATS`` is not progress either,
-    however its arguments are spelled.
-    Handles both wire shapes: Anthropic content blocks and OpenAI
-    ``tool_calls``.
-    """
-    last = next(
-        (m for m in reversed(messages) if as_str(m.get('role'), '') == 'assistant'),
-        None,
-    )
-    if last is None:
-        return False
-    novel = False
-    content = last.get('content')
-    if isinstance(content, str):
-        novel = bool(content.strip())
-    elif isinstance(content, list):
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            btype = as_str(block.get('type'), '')
-            if btype == 'text' and as_str(block.get('text'), '').strip():
-                novel = True
-            elif btype == 'tool_use':
-                args = as_dict(block.get('input'), {})
-                sig = _toolSig(as_str(block.get('name'), ''), args)
-                if sig not in seenToolSigs and not _pollingTarget(targetUses, sig, args):
-                    novel = True
-                seenToolSigs.add(sig)
-                _countTarget(targetUses, sig, args)
-    toolCalls = as_list(last.get('tool_calls'), [])
-    for call in toolCalls:
-        fn = as_dict(as_dict(call).get('function'), {})
-        argsRaw = as_str(fn.get('arguments'), '')
-        try:
-            args = as_dict(json.loads(argsRaw), {}) if argsRaw else {}
-        except (json.JSONDecodeError, TypeError):
-            args = {}
-        sig = _toolSig(as_str(fn.get('name'), ''), args)
-        if sig not in seenToolSigs and not _pollingTarget(targetUses, sig, args):
-            novel = True
-        seenToolSigs.add(sig)
-        _countTarget(targetUses, sig, args)
-    return novel
-
-
 # Code-mode (fenced python) execution cap.
 _CODE_RUN_TIMEOUT_S = 60
 # Tool dispatch cap: a hung MCP server or registry handler must not hold a
 # turn (and a sub-agent semaphore slot) forever. Env-overridable. Guarded so a
 # non-numeric AUGUST_TOOL_TIMEOUT_S falls back to the default instead of
 # raising at module import and taking down the whole workbench.
-def _envTimeoutSeconds(default: int = 300) -> int:
-    try:
-        return max(30, int(os.environ.get('AUGUST_TOOL_TIMEOUT_S', str(default))))
-    except (TypeError, ValueError):
-        return max(30, default)
 
-
-_TOOL_EXEC_TIMEOUT_S = _envTimeoutSeconds()
 # Clean rounds on the bare surface before the full tool set is restored
 # (reversible downgrade — A6).
 _DOWNGRADE_RECOVERY_ROUNDS = 3
-# Auto-compact when estimated history reaches this fraction of the model window.
-# Fallback window when a model's real contextWindow cannot be resolved.
-# Three sites hardcoded this value independently; one constant now.
-DEFAULT_CONTEXT_WINDOW = 128000
 
 
 def tailSectionSizes(
@@ -411,8 +211,7 @@ def tailSectionSizes(
             name: size for name, size in (skillsByName or {}).items() if name and size > 0
         },
     }
-# Cap tool results stored in the transcript (SSE already truncates separately).
-MAX_TOOL_RESULT_CHARS = 64 * 1024
+
 
 # Session API re-exports (explicit bindings so external importers keep working;
 # ruff F401 would strip pure unused imports from the import list above).
@@ -467,27 +266,6 @@ _supportsThinking = _providers_mod.supports_thinking
 _callAnthropicWorkbench = _providers_mod.call_anthropic_workbench
 _callOpenaiWorkbench = _providers_mod.call_openai_workbench
 _callResponsesWorkbench = _providers_mod.call_responses_workbench
-
-
-def normalizeGuardMode(mode: str) -> str:
-    """Normalize guard mode to one of: plan, ask, edit, full."""
-    lower = mode.strip().lower().replace('_', '-').replace(' ', '-')
-    aliases = {
-        'plan': 'plan',
-        'plan-only': 'plan',
-        'plan-mode': 'plan',
-        'ask': 'ask',
-        'ask-before': 'ask',
-        'ask-before-changes': 'ask',
-        'edit': 'edit',
-        'edit-auto': 'edit',
-        'edit-automatically': 'edit',
-        'auto': 'edit',
-        'full': 'full',
-        'full-access': 'full',
-        'make-changes': 'full',
-    }
-    return aliases.get(lower, 'full')
 
 
 # ── Model-call retry policy (rate limits & transient upstream failures) ──
@@ -651,308 +429,34 @@ def _replayVetoReason(
     return None
 
 
-# ── Tools-fallback retry ────────────────────────────────────
-# A gateway that rejects the request WITH tools (deterministic 500s on
-# unknown/aggregator models — the reported "always 500 while other harnesses
-# work" class) will reject every identical retry too. One stripped retry
-# gives the turn a way out. The model is told why tools vanished so it
-# answers in plain text instead of narrating calls it cannot make.
-
-_TOOLS_FALLBACK_NOTE = (
-    '[Proxy Self-Heal] The tool transport failed upstream for this model, so tools '
-    'are unavailable for this reply. Answer in plain text; if action is needed, '
-    'describe the exact commands or edits for the user to run.'
+# Request-surface text shaping — the tools-fallback note, the strip-tools
+# rewrite, tool-result truncation + the stage-B output spill, the tool-use
+# refusal detector, the [TOOLCALL] text tool protocol and the assistant-text
+# setter — lives in loop/prompt.py (P1#11 split). Re-exported under the
+# original names so the loop body and the tests (which read the spill
+# constants through `wb.`) keep resolving them on this module.
+from app.services.workbench.loop.prompt import (  # noqa: E402
+    _REFUSAL_RE,  # noqa: F401 -- re-export: old name kept
+    _SPILL_HEAD_CHARS,  # noqa: F401 -- re-export: test_output_spill_stage_b reads it via wb
+    _SPILL_HEAD_LINES,  # noqa: F401 -- re-export: test_output_spill_stage_b reads it via wb
+    _SPILL_RETRIEVAL_TOOLS,
+    _SPILL_TAIL_CHARS,  # noqa: F401 -- re-export: test_output_spill_stage_b reads it via wb
+    _SPILL_TAIL_LINES,  # noqa: F401 -- re-export: test_output_spill_stage_b reads it via wb
+    _SPILL_THRESHOLD_CHARS,
+    _TEXT_TOOLCALL_RE,  # noqa: F401 -- re-export: old name kept
+    _TOOLS_FALLBACK_NOTE,  # noqa: F401 -- re-export: old name kept
+    SPILL_FILE_DIR,  # noqa: F401 -- re-export: old name kept
+    _isToolRefusal,
+    _parseTextToolCalls,
+    _setAssistantText,
+    _spillToolResult,
+    _splitSpillPreview,  # noqa: F401 -- re-export: test_output_spill_stage_b reads it via wb
+    _stripTextToolCallLines,
+    _stripToolsFromHistory,  # noqa: F401 -- re-export: old name kept
+    _toolBlockText,  # noqa: F401 -- re-export: old name kept
+    _truncateToolOutput,
+    spill_file_relpath,  # noqa: F401 -- re-export: old name kept
 )
-
-
-def _toolBlockText(content: object) -> str:
-    """Best-effort flat text for a tool result's inner content."""
-    if isinstance(content, list):
-        parts = [
-            as_str(b.get('text'), '')
-            for b in content
-            if isinstance(b, dict) and b.get('type') == 'text'
-        ]
-        return '\n'.join(p for p in parts if p) or json.dumps(content, default=str)
-    if isinstance(content, str):
-        return content
-    return json.dumps(content, default=str) if content is not None else ''
-
-
-def _stripToolsFromHistory(messages: list[dict[str, object]]) -> list[dict[str, object]]:
-    """Flatten tool-call history for a tools-fallback retry.
-
-    Strict gateways reject tool-role messages / tool_use blocks when no
-    ``tools`` array is declared, so the stripped request must carry a
-    tool-less history too: tool results become user-role text, assistant
-    ``tool_calls``/``tool_use`` blocks are dropped. The original working list
-    is not mutated — the flattened copy feeds the wire request only. The
-    self-heal note is merged into the last user message (Anthropic requires
-    strict role alternation; a trailing user note must not sit beside another).
-    """
-    out: list[dict[str, object]] = []
-    for msg in messages:
-        if not isinstance(msg, dict):
-            continue
-        role = as_str(msg.get('role'), '')
-        content = msg.get('content')
-        if role == 'tool':
-            toolId = as_str(msg.get('tool_use_id'), '') or as_str(msg.get('tool_call_id'), '') or 'tool'
-            out.append(
-                {
-                    'role': 'user',
-                    'content': f"[tool result for {toolId}]\n{_toolBlockText(content)}",
-                }
-            )
-            continue
-        if role == 'assistant':
-            if msg.get('tool_calls'):
-                cleaned = {k: v for k, v in msg.items() if k != 'tool_calls'}
-                cleaned['content'] = as_str(content, '')
-                out.append(cleaned)
-                continue
-            if isinstance(content, list):
-                kept = [
-                    b
-                    for b in content
-                    if isinstance(b, dict) and as_str(b.get('type'), '') not in ('tool_use', 'tool_result')
-                ]
-                out.append({**msg, 'content': kept})
-                continue
-            out.append(dict(msg))
-            continue
-        if role == 'user' and isinstance(content, list):
-            if any(
-                isinstance(b, dict) and as_str(b.get('type'), '') == 'tool_result'
-                for b in content
-            ):
-                texts: list[str] = []
-                for b in content:
-                    if not isinstance(b, dict):
-                        continue
-                    if as_str(b.get('type'), '') == 'tool_result':
-                        texts.append(f"[tool result]\n{_toolBlockText(b.get('content'))}")
-                    elif as_str(b.get('type'), '') == 'text':
-                        texts.append(as_str(b.get('text'), ''))
-                out.append({'role': 'user', 'content': '\n\n'.join(t for t in texts if t) or '[tool result]'})
-                continue
-        out.append(dict(msg))
-    for m in reversed(out):
-        if as_str(m.get('role')) == 'user':
-            c = m.get('content')
-            if isinstance(c, list):
-                m['content'] = [*c, {'type': 'text', 'text': _TOOLS_FALLBACK_NOTE}]
-            else:
-                m['content'] = f"{as_str(c, '')}\n\n{_TOOLS_FALLBACK_NOTE}"
-            break
-    else:
-        out.append({'role': 'user', 'content': _TOOLS_FALLBACK_NOTE})
-    return out
-
-
-def _truncateToolOutput(text: str, cap: int) -> tuple[str, bool]:
-    """Bounded head+tail tool-output truncation.
-
-    Keeps a bounded HEAD and TAIL of the output with an explicit omission
-    marker between them — the tail carries final results (test summaries,
-    exit codes, last error) that a head-only cut discards. Prefers
-    newline/JSON-boundary cuts so the fragments stay parseable.
-    Single-line overrun guard (a documented field incident: one line longer
-    than the byte budget made the truncation routine return empty): when the
-    boundary cut would leave almost nothing, fall back to the hard cut — a
-    mid-token fragment beats no content, and the marker always states how
-    many characters were omitted. Returns ``(trimmed, truncated)``.
-    """
-    if len(text) <= cap:
-        return text, False
-    markerReserve = 80
-    budget = max(cap - markerReserve, cap // 2)
-    headBudget = (budget * 3) // 4
-    tailBudget = budget - headBudget
-    headCut = text[:headBudget]
-    boundary = max(headCut.rfind('\n'), headCut.rfind('\r'))
-    if boundary <= headBudget // 2:
-        for ch in (',', '}'):
-            idx = headCut.rfind(ch)
-            if idx > headBudget // 2:
-                boundary = idx
-                break
-    head = headCut[:boundary] if boundary > 0 else headCut
-    if len(head) < min(64, max(1, headBudget // 16)):
-        # T16(c) overrun guard: no usable boundary — degrade to the hard
-        # head cut rather than emitting a near-empty fragment.
-        return text[:cap], True
-    tailSlice = text[-tailBudget:] if tailBudget > 0 else ''
-    newline = tailSlice.find('\n')
-    if 0 <= newline < len(tailSlice) // 2:
-        tailSlice = tailSlice[newline + 1 :]
-    omitted = len(text) - len(head) - len(tailSlice)
-    marker = f'\n[... {omitted} characters omitted ...]\n'
-    return head + marker + tailSlice, True
-
-
-# ── Output-cap discipline, stage B: spill ──
-# A fresh tool result larger than the threshold is stored verbatim in a
-# session-scoped file and replaced inline by a head/tail preview that fits
-# the 30 KB / 2000-line model-facing budget. Stage B runs on FRESH results
-# only; historical results are pruned at compaction time (stage A, #2).
-_SPILL_THRESHOLD_CHARS = 50 * 1024
-# Tools that can still get the full bytes back after a spill. A spilled file is
-# only worth spilling when the model holding the receipt can open it (or hand
-# off to something that can), so this is the checklist for stage B — kept here,
-# next to the threshold it conditions, rather than as a second copy elsewhere.
-_SPILL_RETRIEVAL_TOOLS = frozenset({'read_file', 'read_files', 'list_directory', 'spawn_subagents'})
-_SPILL_HEAD_CHARS = 15 * 1024
-_SPILL_TAIL_CHARS = 15 * 1024
-_SPILL_HEAD_LINES = 1000
-_SPILL_TAIL_LINES = 1000
-SPILL_FILE_DIR = '.aug/spill'
-
-
-def spill_file_relpath(sessionId: str, seq: int, toolName: str) -> str:
-    """Workspace-relative spill path for one session's Nth spilled result."""
-    safe = re.sub(r'[^A-Za-z0-9_.-]', '_', as_str(sessionId or '').strip()) or 'session'
-    safeTool = re.sub(r'[^A-Za-z0-9_.-]', '_', as_str(toolName or '').strip()) or 'tool'
-    return f'{SPILL_FILE_DIR}/{safe}/{seq:04d}-{safeTool}.txt'
-
-
-def _splitSpillPreview(text: str) -> tuple[str, str, int]:
-    """Head/tail preview within the char+line budgets (stage B).
-
-    Works in code points and never splits a surrogate pair: a dangling high
-    surrogate at the head cut (or low surrogate at the tail cut) is dropped.
-    Returns ``(head, tail, omittedChars)``.
-    """
-    head = text[:_SPILL_HEAD_CHARS]
-    headLines = head.split('\n')
-    if len(headLines) > _SPILL_HEAD_LINES:
-        head = '\n'.join(headLines[:_SPILL_HEAD_LINES])
-    tail = text[-_SPILL_TAIL_CHARS:]
-    tailLines = tail.split('\n')
-    if len(tailLines) > _SPILL_TAIL_LINES:
-        tail = '\n'.join(tailLines[-_SPILL_TAIL_LINES:])
-    if head and '\ud800' <= head[-1] <= '\udbff':
-        head = head[:-1]
-    if tail and '\udc00' <= tail[0] <= '\udfff':
-        tail = tail[1:]
-    omitted = len(text) - len(head) - len(tail)
-    return head, tail, omitted
-
-
-def _spillToolResult(
-    session: WorkbenchSession, toolName: str, result: str, retrievable: bool = True
-) -> str | None:
-    """Stage B: spill an oversized fresh result to a session-scoped file.
-
-    Returns the inline replacement (head/tail preview + one notice line with
-    the omitted byte count, the storage locator, and a retrieval hint), or
-    None when spilling is not possible (no workspace, write failure) so the
-    caller falls through to ordinary truncation.
-
-    ``retrievable`` is the caller's answer to "can this model still read the
-    file back?" A receipt that names a path is a trap when the offered tool
-    surface has no reader and no subagent: the model spends a round trying to
-    obey it, then concludes the output is gone. Without a retrieval route there
-    is nothing to spill *for*, so the caller truncates honestly instead.
-    """
-    if not retrievable:
-        return None
-    workspace = as_str(getattr(session, 'workspacePath', None) or '').strip()
-    if not workspace:
-        return None
-    try:
-        seq = int(getattr(session, '_spillSeq', 0) or 0) + 1
-        # Claim the sequence number BEFORE writing, so two oversized
-        # results in one batch can't compute the same seq and overwrite each
-        # other's file (the preview's "stored at …" then pointed at wrong bytes).
-        session._spillSeq = seq  # type: ignore[attr-defined]
-        relPath = spill_file_relpath(as_str(getattr(session, 'id', '') or ''), seq, toolName)
-        absPath = os.path.normpath(os.path.join(workspace, *relPath.split('/')))
-        os.makedirs(os.path.dirname(absPath), exist_ok=True)
-        with open(absPath, 'w', encoding='utf-8', errors='replace', newline='') as f:
-            f.write(result)
-    except OSError:
-        logger.debug('tool-result spill failed session=%s tool=%s', getattr(session, 'id', ''), toolName, exc_info=True)
-        return None
-    head, tail, omitted = _splitSpillPreview(result)
-    notice = (
-        f'[... {omitted} characters omitted — full output stored at {relPath}. '
-        'Retrieve it with read_file on that path, or delegate scanning it to an explore subagent. '
-        'Until you do, this preview is the only part you have seen: do not report the omitted '
-        'portion as evidence.]'
-    )
-    return f'{head}\n{notice}\n{tail}'
-
-
-# Refusal patterns: a model claiming it cannot use tools despite being
-# offered them (or hosted on a gateway that silently drops `tools`). Narrow
-# by design — "as an AI" prose must not false-positive.
-_REFUSAL_RE = re.compile(
-    r"((?:i|we) (?:can't|cannot|am|are) (?:unable to|not able to|not allowed to) (?:use|run|execute|access) tools?"
-    r"|(?:i|we) (?:don't|do not|can't|cannot) (?:have|get) (?:access to|to use) tools?"
-    r"|no tools? (?:are )?available"
-    r"|tool (?:use|access|usage) (?:is|isn't|is not) (?:not )?(?:available|enabled|supported)"
-    r"|i have no tools?)",
-    re.IGNORECASE,
-)
-
-
-def _isToolRefusal(text: str) -> bool:
-    """True when the assistant text reads as a tool-use refusal."""
-    return bool(_REFUSAL_RE.search(text or ''))
-
-
-# Text tool protocol: models that ignore native `tools` (or gateways that
-# silently drop them) call tools via `[TOOLCALL] name|json` lines — one per
-# line, mirroring smolagents text-protocol patterns.
-_TEXT_TOOLCALL_RE = re.compile(
-    r'^\[TOOLCALL\]\s+([A-Za-z0-9_.-]+)\s*\|\s*(.*)$', re.IGNORECASE | re.MULTILINE
-)
-
-
-def _parseTextToolCalls(text: str) -> list[tuple[str, dict[str, object]]]:
-    """Parse ``[TOOLCALL] name|json`` protocol lines into (name, args) pairs."""
-    calls: list[tuple[str, dict[str, object]]] = []
-    if not text:
-        return calls
-    for m in _TEXT_TOOLCALL_RE.finditer(text):
-        name = m.group(1)
-        raw = m.group(2).strip()
-        from app.services.workbench.json_salvage import salvage_json_object
-
-        saved = salvage_json_object(raw) if raw else {}
-        if saved is not None:
-            calls.append((name, saved))
-        else:
-            # Unsalvageable garbage must never execute as {} — mark it so the
-            # loop's validation path surfaces an error (mirrors the native
-            # tool-call _raw handling; audit finding).
-            calls.append((name, {'_raw': raw}))
-    return calls
-
-
-def _stripTextToolCallLines(text: str) -> str:
-    """Remove protocol lines from assistant text before it enters history."""
-    lines = [
-        ln for ln in (text or '').splitlines() if not _TEXT_TOOLCALL_RE.match(ln.strip())
-    ]
-    return '\n'.join(lines).strip()
-
-
-def _setAssistantText(
-    assistantMsg: dict[str, object],
-    text: str,
-    isAnthropic: bool,
-    contentBlocks: list[dict[str, object]] | None = None,
-) -> None:
-    """Replace the assistant message's text payload (both wire formats)."""
-    if isAnthropic and contentBlocks is not None:
-        for b in contentBlocks:
-            if isinstance(b, dict) and as_str(b.get('type'), '') == 'text':
-                b['text'] = text
-        assistantMsg['content'] = cast(JsonValue, contentBlocks)
-    else:
-        assistantMsg['content'] = text
 
 
 def _modelRetryPolicy() -> dict[str, int]:
@@ -978,93 +482,31 @@ def _modelRetryPolicy() -> dict[str, int]:
     return policy
 
 
-_CONTEXT_OVERFLOW_MARKERS = (
-    'context length',
-    'context window',
-    'maximum context',
-    'context_length',
-    'context_window',
-    'too many tokens',
-    'token limit',
-    'max_tokens',
-    'prompt is too long',
-    'input is too long',
+# Recovery/telemetry event frames live in loop/events.py (P1#11 split): the
+# one unified recovery frame every self-correction rescue emits (audit
+# P0#6 / D9). Re-exported under the original name so the loop body and any
+# external reader keep resolving it on this module.
+# Context-overflow detection, the reactive prune-then-compact rescue, the turn
+# budget ladder and its compaction rung live in loop/recovery.py (P1#11 split),
+# together with the transcript landmark pins the compaction paths share.
+# Re-exported under the original names so the loop body, subagent.py and the
+# tests keep resolving them on this module.
+from app.services.workbench.loop.events import _emitRecovery  # noqa: E402
+from app.services.workbench.loop.recovery import (  # noqa: E402
+    _BUDGET_FINAL_DIRECTIVE,  # noqa: F401 -- re-export: loop appends it to the system text
+    _BUDGET_LADDER,
+    _CONTEXT_OVERFLOW_MARKERS,  # noqa: F401 -- re-export: readers introspect the marker list
+    _budgetBreached,
+    _budgetTriggeredCompaction,
+    _is_failing_receipt,  # noqa: F401 -- re-export: subagent.py compaction pins
+    _is_update_state_transition,  # noqa: F401 -- re-export: subagent.py compaction pins
+    _isContextOverflowError,
+    _msgTextLower,  # noqa: F401 -- re-export: old name kept
+    _nextBudgetStep,
+    _reactiveContextReduction,
+    _turnBudget,
+    _turnSpendUsd,
 )
-
-
-def _isContextOverflowError(response: dict[str, object]) -> bool:
-    """True when the failure is a context-window overflow (promotable)."""
-    msg = as_str(response.get('error')).lower()
-    return any((marker in msg for marker in _CONTEXT_OVERFLOW_MARKERS))
-
-
-def _emitRecovery(
-    emit: Callable[[dict[str, object]], None] | None,
-    kind: str,
-    attempt: int,
-    outcome: str,
-    degraded: bool,
-) -> None:
-    """One unified frame per self-correction rescue (audit P0#6 / D9).
-
-    Every path that rescues a turn mid-flight — length continuation, reactive
-    context reduction, auto-compact, the budget ladder — emits
-    ``recovery {kind, attempt, outcome, degraded}`` so the event log shows
-    what was rescued and whether the answer shipped degraded. ``degraded=True``
-    is the trust signal: the turn looks complete but was truncated or rescued
-    into a reduced surface.
-    """
-    if not emit:
-        return
-    emit(
-        {
-            'type': 'recovery',
-            'kind': kind,
-            'attempt': int(attempt),
-            'outcome': outcome,
-            'degraded': bool(degraded),
-        }
-    )
-
-
-async def _reactiveContextReduction(
-    messages: list[dict[str, object]], contextWindow: int, session: WorkbenchSession
-) -> list[dict[str, object]] | None:
-    """Reactive prune-then-compact for a context-overflow error.
-
-    Runs the same reduction as pre-turn (projection prune, then summarize
-    with the token-budgeted verbatim tail) and returns the reduced list only
-    when the surface actually advanced (token count dropped). None means the
-    caller should fall through to context promotion / the fallback chain.
-    The reduced transcript gets the plan-state block re-injected (T7
-    mid-turn policy) so orientation survives the rewrite.
-    """
-    from app.providers.clients.base import estimateTokens
-    from app.services.workbench.context_compressor import compressMessages, pruneToolOutputs
-
-    before = estimateTokens(messages)
-    try:
-        reduced = pruneToolOutputs(messages)
-        threshold = max(4096, int(contextWindow * 0.55)) if contextWindow else before - 1
-        reduced = await compressMessages(
-            reduced,
-            threshold=threshold,
-            head_count=4,
-            tail_count=6,
-            contextWindow=contextWindow or None,
-            goalHint=as_str(getattr(session, 'goal', '') or ''),
-            schema=True,
-            pin_predicates=[_is_update_state_transition, _is_failing_receipt],
-        )
-        reduced = _injectPlanState(reduced, session)
-    except Exception:
-        logger.debug('reactive context reduction failed', exc_info=True)
-        return None
-    after = estimateTokens(reduced)
-    if after >= before:
-        return None
-    logger.info('workbench reactive context reduction: %d→%d tokens', before, after)
-    return reduced
 
 
 def _chatFallbackChain() -> list[str]:
@@ -1110,180 +552,6 @@ def _managedToolLoopCap() -> int:
     return MAX_MANAGED_TOOL_ROUNDS
 
 
-# Turn budget ladder (audit P1#12). A turn that outgrows its soft budget is
-# DEGRADED in steps rather than cut off: bare tool surface, then compaction,
-# then one tool-free answer — and the turn ends as turn_end{reason: 'budget'}.
-# The rungs are ordered cheapest-to-act on first, so a budget that is only
-# slightly over buys a cheaper round instead of a truncation.
-_BUDGET_LADDER = ('surface', 'compaction', 'final')
-
-
-def _turnBudget() -> tuple[float, int, int]:
-    """(soft USD, soft tokens, wall-clock seconds) armed for this turn.
-
-    Mirrors ``_managedToolLoopCap``: brain-config overrides, an absent key (or
-    0) leaves that arm off, and all-off means the ladder never runs. These are
-    SOFT ceilings — a breach degrades the turn, it does not abort it.
-    """
-    try:
-        from app.services.brain_config_service import getRuntimeConfig
-
-        cfg = getRuntimeConfig()
-        return (
-            max(0.0, as_float(cfg.get('budgetSoftUsd'), 0.0)),
-            max(0, as_int(cfg.get('budgetSoftTokens'), 0)),
-            max(0, as_int(cfg.get('budgetWallClockSec'), 0)),
-        )
-    except Exception:
-        logger.debug('turn budget read failed; ladder stays off', exc_info=True)
-        return (0.0, 0, 0)
-
-
-def _budgetBreached(
-    arms: tuple[float, int, int],
-    *,
-    spend_usd: float = 0.0,
-    tokens: int = 0,
-    elapsed_sec: float = 0.0,
-) -> bool:
-    """True when any ARMED soft budget has been met.
-
-    A 0 arm is switched off, not met — with every arm off this is always False,
-    so an unconfigured install never walks the ladder.
-    """
-    soft_usd, soft_tokens, wall_sec = arms
-    if soft_usd > 0 and spend_usd >= soft_usd:
-        return True
-    if soft_tokens > 0 and tokens >= soft_tokens:
-        return True
-    return wall_sec > 0 and elapsed_sec >= wall_sec
-
-
-def _nextBudgetStep(current: int) -> int:
-    """The rung a fresh breach escalates to, clamped at the last one.
-
-    A turn that stays over budget after the final rung does not keep
-    escalating — it ends, which is the whole point of the last rung.
-    """
-    return min(int(current) + 1, len(_BUDGET_LADDER))
-
-
-def _turnSpendUsd(model_id: str, cache_hit: int, cache_miss: int, out_tokens: int) -> float:
-    """This turn's spend so far, in USD.
-
-    Routed through cost_estimator — the single pricing source — so the budget
-    arm and the composer chip / Usage page can never disagree. The cache split
-    is already resolved by the loop, and when it is known ``total_in`` is
-    ignored upstream, so the same cache-aware arithmetic applies.
-    """
-    try:
-        from app.services.cost_estimator import session_cost_usd
-
-        return session_cost_usd(
-            model_id=model_id,
-            total_in=cache_miss,
-            total_out=out_tokens,
-            cache_hit=cache_hit,
-            cache_miss=cache_miss,
-        )
-    except Exception:
-        # A budget that cannot be priced must not fail the turn it is
-        # measuring; the other arms still work.
-        logger.debug('turn spend estimate failed; cost arm reads 0', exc_info=True)
-        return 0.0
-
-
-async def _budgetTriggeredCompaction(
-    session: object,
-    sessionId: str,
-    messages: list[dict[str, object]],
-    *,
-    contextWindow: int,
-    emit: Callable[[dict[str, object]], None] | None,
-    resolvedProvider: dict[str, object] | None,
-    resolvedModel: str,
-    currentTurn: int,
-) -> list[dict[str, object]] | None:
-    """Mid-turn compaction forced by the budget ladder.
-
-    Deliberately the SAME compaction the pre-turn auto-compact runs (same
-    prune → summarize → persist, same landmark pins) — a budget rescue that
-    summarized differently would be a second, subtly different context policy
-    for the same session. Returns the reduced list only when the surface
-    actually shrank; None means the caller keeps what it had.
-    """
-    from app.providers.clients.base import estimateTokens
-    from app.services.workbench.context_compressor import (
-        REPLAY_USER_BUDGET_BYTES,
-        acquireCompactionLock,
-        compressMessages,
-        pruneToolOutputs,
-        releaseCompactionLock,
-    )
-
-    if not acquireCompactionLock(session):
-        logger.info('workbench budget-compact skipped — lock held session=%s', sessionId)
-        return None
-    try:
-        pruned = pruneToolOutputs(list(messages))
-        originalTokens = estimateTokens(pruned)
-        threshold = max(4096, int((contextWindow or 0) * 0.55)) if contextWindow else 4096
-        summarizer = None
-        try:
-            from app.services.cognitive_config import get_features
-            from app.services.workbench.providers import make_compactor_llm_client
-
-            if get_features().get('llm_compactor', False):
-                summarizer = make_compactor_llm_client(resolvedProvider, resolvedModel)
-        except Exception:
-            summarizer = None
-        compressed = await compressMessages(
-            pruned,
-            threshold=threshold,
-            head_count=4,
-            tail_count=6,
-            summarizer=summarizer,
-            pin_predicates=[_is_update_state_transition, _is_failing_receipt],
-            contextWindow=contextWindow or None,
-            goalHint=as_str(getattr(session, 'goal', '') or ''),
-            schema=summarizer is None,
-            replayUserBytes=REPLAY_USER_BUDGET_BYTES,
-        )
-        compressedTokens = estimateTokens(compressed)
-        if compressedTokens >= originalTokens:
-            return None
-        session.messages = list(compressed)  # type: ignore[attr-defined]
-        session.messageCount = len(compressed)  # type: ignore[attr-defined]
-        session._last_compaction_turn = currentTurn  # type: ignore[attr-defined]
-        if emit:
-            emit(
-                {
-                    'type': 'compaction',
-                    'originalTokens': originalTokens,
-                    'compressedTokens': compressedTokens,
-                    'compressedCount': len(pruned) - len(compressed),
-                    'headCount': 4,
-                    'tailCount': 6,
-                    'threshold': threshold,
-                    'contextWindow': contextWindow,
-                    'underThreshold': False,
-                }
-            )
-        return compressed
-    except Exception:
-        # A failed rescue must not take the turn with it — the caller keeps
-        # the surface it had and the ladder moves on.
-        logger.warning('workbench budget-compact failed session=%s', sessionId, exc_info=True)
-        return None
-    finally:
-        releaseCompactionLock(session)
-
-
-_BUDGET_FINAL_DIRECTIVE = (
-    '\n\n<turn_budget>\nThis turn has reached its configured budget. Tool calls are no longer '
-    'available for this round. Answer NOW in plain text: state what you completed, what you '
-    'did not, and what the user should do next. Do not start new work.\n</turn_budget>'
-)
 
 
 def _modelRetryDelayMs(attempt: int, response: dict[str, object], policy: dict[str, int]) -> int:
@@ -1860,19 +1128,6 @@ def buildSystemPrompt(
     return '\n\n'.join(p for p in parts if p)
 
 
-def _resolveModelContextWindow(
-    resolvedModel: str, resolvedProvider: dict[str, object] | None
-) -> int:
-    """Model context window for auto-compact (never the legacy 2M workbench budget)."""
-    try:
-        from app.services.model_service import _getContextWindow
-
-        window = int(_getContextWindow(resolvedModel, resolvedProvider) or 0)
-        if window > 0:
-            return max(8192, window)
-    except Exception:
-        logger.debug('resolveModelContextWindow failed', exc_info=True)
-    return DEFAULT_CONTEXT_WINDOW
 
 
 def _shouldAutoCompact(
@@ -1890,56 +1145,6 @@ def _shouldAutoCompact(
     return attention_pressure in ('high', 'critical') and turns_since_compaction >= 2
 
 
-def _msgTextLower(msg: dict[str, object]) -> str:
-    """Lowercased text of a workbench message (string or text blocks)."""
-    content = msg.get('content', '')
-    if isinstance(content, str):
-        return content.lower()
-    if isinstance(content, list):
-        parts: list[str] = []
-        for b in content:
-            if isinstance(b, dict) and b.get('type') in ('text', 'output_text'):
-                parts.append(str(b.get('text', '')))
-        return '\n'.join(parts).lower()
-    return ''
-
-
-def _is_update_state_transition(msg: dict[str, object]) -> bool:
-    """Landmark (P4): an update_state tool call or its 'State updated' receipt.
-
-    The phase/step the model last recorded is key state — a middle-summary
-    must not drop it.
-    """
-    role = msg.get('role', '')
-    if role == 'tool':
-        lower = _msgTextLower(msg)
-        return 'state updated' in lower and 'phase=' in lower
-    if role == 'assistant':
-        content = msg.get('content', '')
-        if isinstance(content, list):
-            for b in content:
-                if isinstance(b, dict) and b.get('type') == 'tool_use' and b.get('name') == 'update_state':
-                    return True
-        for tc in as_list(msg.get('tool_calls'), []):
-            if isinstance(tc, dict):
-                fn = as_dict(tc.get('function'), {})
-                if as_str(fn.get('name'), '') == 'update_state':
-                    return True
-    return False
-
-
-def _is_failing_receipt(msg: dict[str, object]) -> bool:
-    """Landmark (P4): a tool result showing a failing run (test/lint/build).
-
-    The latest failure output is exactly what the model needs to fix the
-    task — a 120-char summary line can drop the actual error string.
-    """
-    if msg.get('role') != 'tool':
-        return False
-    lower = _msgTextLower(msg)
-    if 'failed' in lower or 'error:' in lower:
-        return True
-    return bool(re.search(r'exit code:\s*[1-9]\d*', lower))
 
 
 # State-block renderers live in state_blocks.py (Part 22 split): the
@@ -1967,7 +1172,7 @@ from app.services.workbench.prompt_build import (  # noqa: E402
     queue_memory_habit_nudge,  # noqa: F401 -- re-export: tests + turn_close resolve via wb
 )
 from app.services.workbench.state_blocks import (  # noqa: E402
-    _injectPlanState,
+    _injectPlanState,  # noqa: F401 -- re-export: test_plan_state_t7 resolves it via wb
     _planStateBlock,
     _session_cost_usd,
     _sessionStateBlock,
@@ -2000,6 +1205,52 @@ def effortToPromptInstruction(effort: str) -> str:
 
 def effortToOpenaiReasoningEffort(effort: str) -> str:
     return effort_to_openai_reasoning_effort(effort)
+
+
+# Auto-compact when estimated history reaches this fraction of the model window.
+# Fallback window when a model's real contextWindow cannot be resolved.
+# Three sites hardcoded this value independently; one constant now.
+# This one and the resolver below stay in THIS file on purpose:
+# tests/test_compaction_threshold_authority.py reads this file's source text
+# and asserts the fallback window appears exactly once in it.
+DEFAULT_CONTEXT_WINDOW = 128000
+
+
+def _resolveModelContextWindow(
+    resolvedModel: str, resolvedProvider: dict[str, object] | None
+) -> int:
+    """Model context window for auto-compact (never the legacy 2M workbench budget)."""
+    try:
+        from app.services.model_service import _getContextWindow
+
+        window = int(_getContextWindow(resolvedModel, resolvedProvider) or 0)
+        if window > 0:
+            return max(8192, window)
+    except Exception:
+        logger.debug('resolveModelContextWindow failed', exc_info=True)
+    return DEFAULT_CONTEXT_WINDOW
+
+
+# Per-model tool surface: the guard-mode normalizer, the transcript result
+# cap, the capability profile (full/reduced/bare/text) and the MCP tool tails
+# live in loop/surface.py (P1#11 split). Re-exported under the original names.
+# The two BUILDER functions below stay here on purpose: tests monkeypatch the
+# module-level `_resolveModelContextWindow` on THIS module and expect the
+# builders to read it from here.
+from app.services.workbench.loop.surface import (  # noqa: E402
+    _BARE_TOOL_ALLOW,
+    _CAPABILITY_PROFILE_TTL_S,  # noqa: F401 -- re-export: the TTL is asserted via wb
+    MAX_TOOL_RESULT_CHARS,  # noqa: F401 -- re-export: old name kept
+    _applyModelCapabilityProfile,  # noqa: F401 -- re-export: test_harness_fixes calls it via wb
+    _capability_profile_cache,  # noqa: F401 -- re-export: the memo is cleared through wb
+    _finalize_session_tools,
+    _mcpToolDefinitionsAnthropic,
+    _mcpToolDefinitionsOpenai,
+    _modelCapabilityProfile,  # noqa: F401 -- re-export: old name kept
+    _toolDefName,
+    _toolResultCap,
+    normalizeGuardMode,
+)
 
 
 def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
@@ -2107,133 +1358,6 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     return _finalize_session_tools(session, tools)
 
 
-# Per-model capability profiles (harness adaptation): a weak model gets a
-# smaller tool surface and tighter result caps; a strong model keeps the full
-# set. Configurable per model in Model settings.
-_HEAVY_TOOL_PREFIXES = ('web_', 'browser', 'voice', 'notion', 'slack', 'discord', 'search', 'fetch')
-_BARE_TOOL_ALLOW = frozenset(
-    {
-        # Names MUST match registered tools exactly (see
-        # tests::test_bare_tool_allowlist_matches_registry). A stale name here
-        # silently vanishes from the bare surface — e.g. the old 'edit_file' /
-        # 'list_files' entries left weak models with no editor and no listing.
-        'read_file',
-        'read_files',
-        'list_directory',
-        'write_file',
-        'edit_lines',
-        'run_command',
-        'update_state',
-        'submit_todos',
-        'update_todos',
-        'write_scratchpad',
-        'diagnose_proxy',
-        # Memory CRUD has to arrive as a set. The `<memory_policy>` block tells
-        # even the weakest model to "revise an existing fact under the same
-        # key" and to "forget one that is wrong" — with only `remember`
-        # offered, that instruction is unreachable and the store can only grow.
-        # These three are the whole door: write, enumerate keys, retire.
-        'remember',
-        'list_facts',
-        'forget',
-    }
-)
-
-
-def _toolDefName(t: dict[str, object]) -> str:
-    """Extract a tool definition's name (Anthropic or OpenAI shape)."""
-    fn = as_dict(t.get('function'), {})
-    return as_str(t.get('name') or fn.get('name'), '')
-
-
-_capability_profile_cache: dict[tuple[str, str], tuple[float, dict[str, object]]] = {}
-_CAPABILITY_PROFILE_TTL_S = 5.0
-
-
-def _modelCapabilityProfile(session: WorkbenchSession) -> dict[str, object]:
-    """Per-model tool profile from the provider config (never raises).
-
-    Memoized on a 5s TTL per (model, provider): the uncached body walked
-    getProvidersAsModels() — a full providers.json read + typed rebuild —
-    and the tool-surface path hits it 2–3× per turn for the same pair.
-    Provider edits apply within 5 seconds, which is fine for a tool
-    surface; the config UI reloads the page anyway.
-    """
-    import time as _time
-
-    modelId = as_str(getattr(session, 'model', '') or '')
-    providerName = as_str(getattr(session, 'provider', '') or '')
-    if not modelId:
-        return {}
-    cacheKey = (modelId, providerName)
-    cached = _capability_profile_cache.get(cacheKey)
-    now = _time.monotonic()
-    if cached is not None and now - cached[0] < _CAPABILITY_PROFILE_TTL_S:
-        return cached[1]
-    profile: dict[str, object] = {}
-    try:
-        from app.services import config_service
-
-        for p in config_service.getProvidersAsModels():
-            if p.name != providerName and p.id != providerName:
-                continue
-            for m in p.models:
-                if m.id == modelId:
-                    profile = {
-                        'tool_surface': m.tool_surface or 'full',
-                        'max_tools': int(m.max_tools or 0),
-                        'max_tool_result_chars': int(m.max_tool_result_chars or 0),
-                    }
-                    break
-            if profile:
-                break
-    except Exception:
-        pass
-    _capability_profile_cache[cacheKey] = (now, profile)
-    return profile
-
-
-def _finalize_session_tools(
-    session: WorkbenchSession, tools: list[dict[str, object]]
-) -> list[dict[str, object]]:
-    tools = _applyModelCapabilityProfile(session, tools)
-    from app.services.harness_mode import (
-        filter_planner_tools,
-        is_orchestrator_mode,
-    )
-
-    if is_orchestrator_mode(session):
-        return filter_planner_tools(tools)
-    return tools
-
-
-def _applyModelCapabilityProfile(
-    session: WorkbenchSession, tools: list[dict[str, object]]
-) -> list[dict[str, object]]:
-    """Filter the tool surface by the session model's capability profile."""
-    profile = _modelCapabilityProfile(session)
-    surface = as_str(profile.get('tool_surface'), 'full')
-    if surface == 'text':
-        # Text tool protocol: no native tools are offered (models that
-        # ignore `tools` must not be tempted); the model calls tools via
-        # `[TOOLCALL] name|json` lines parsed by the turn loop.
-        setattr(session, '_text_tool_protocol', True)
-        return []
-    if surface == 'bare':
-        tools = [t for t in tools if _toolDefName(t) in _BARE_TOOL_ALLOW]
-    elif surface == 'reduced':
-        tools = [t for t in tools if not _toolDefName(t).startswith(_HEAVY_TOOL_PREFIXES)]
-    maxTools = as_int(profile.get('max_tools'), 0)
-    if maxTools > 0 and len(tools) > maxTools:
-        tools = tools[:maxTools]
-    return tools
-
-
-def _toolResultCap(session: WorkbenchSession) -> int:
-    """Per-model tool-result truncation cap (falls back to the harness default)."""
-    profile = _modelCapabilityProfile(session)
-    cap = as_int(profile.get('max_tool_result_chars'), 0)
-    return cap if cap > 0 else MAX_TOOL_RESULT_CHARS
 
 
 def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
@@ -2365,33 +1489,6 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     return _finalize_session_tools(session, tools)
 
 
-def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, object]]:
-    """Real MCP server tools in Anthropic format, deduped against ``seen``."""
-    from app.adapters.proxy_tools import openai_to_anthropic_tool_definition
-    from app.services.tools.mcp_client import getMcpToolDefinitionsSync
-
-    out: list[dict[str, object]] = []
-    for raw in getMcpToolDefinitionsSync():
-        t = openai_to_anthropic_tool_definition(raw)
-        name = as_str(t.get('name', ''))
-        if name and name not in seen:
-            seen.add(name)
-            out.append(t)
-    return out
-
-
-def _mcpToolDefinitionsOpenai(seen: set[str]) -> list[dict[str, object]]:
-    """Real MCP server tools in OpenAI format, deduped against ``seen``."""
-    from app.services.tools.mcp_client import getMcpToolDefinitionsSync
-
-    out: list[dict[str, object]] = []
-    for raw in getMcpToolDefinitionsSync():
-        fn = as_dict(raw.get('function', {})) if raw.get('type') == 'function' else {}
-        name = as_str(fn.get('name', ''))
-        if name and name not in seen:
-            seen.add(name)
-            out.append(raw)
-    return out
 
 
 def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[str, object]:
@@ -3131,14 +2228,6 @@ async def _scheduleTurnBaselineSnapshot(session_id: str, workspace: str, message
     return _turnBaselineSnapshotTask(session_id, workspace, message)
 
 
-async def _awaitBaselineSnapshot(fut: 'asyncio.Future[str] | None') -> str:
-    """Best-effort join at the first-mutation boundary (never blocks >60s)."""
-    if fut is None:
-        return ''
-    try:
-        return str(await asyncio.wait_for(fut, 60.0) or '')
-    except Exception:
-        return ''
 
 
 async def _sendWorkbenchMessageStreamImpl(
@@ -6207,390 +5296,25 @@ async def _sendWorkbenchMessageStreamImpl(
     )
 
 
-
-
-async def _executeTool(
-    toolName: str, args: dict[str, object], session: WorkbenchSession, toolUseId: str = ''
-) -> str:
-    """Execute a workbench tool by dispatching to the correct handler.
-
-    Two dispatch paths:
-      * ``mcp__<server_id>__<tool>`` names route to the MCP client
-        (``execute_mcp_tool_call``), which talks to the relevant MCP
-        server subprocess over JSON-RPC.
-      * everything else dispatches through ``tool_registry``.
-
-    ``toolUseId`` (the parent tool call id) is published as a ContextVar so
-    tool handlers can stamp their emitted events (e.g. subagentStart) with
-    the parent call — the UI nests sub-agent blocks under it.
-    """
-    from app.services.tool_registry import dispatch as dispatchTool
-    from app.services.workbench.context import currentSessionId, currentToolUseId
-
-    token = currentSessionId.set(session.id)
-    toolToken = currentToolUseId.set(toolUseId or '')
-    try:
-        from app.services.tools.mcp_client import executeMcpToolCall, isMcpToolName
-
-        if isMcpToolName(toolName):
-            try:
-                return str(
-                    await asyncio.wait_for(
-                        executeMcpToolCall(toolName, args), timeout=_TOOL_EXEC_TIMEOUT_S
-                    )
-                )
-            except asyncio.TimeoutError:
-                return f'Error: MCP tool {toolName} timed out after {_TOOL_EXEC_TIMEOUT_S}s.'
-
-        # Hash-anchored edits (surpass #5): mutating tools may carry the
-        # sha256 of the file as read (the read tool reports it). A mismatch
-        # means the file changed and the patch would corrupt it — reject and
-        # tell the model to re-read instead of applying stale edits.
-        # The old `\b(?:write|edit|…)\b` regex was DEAD for every
-        # real tool — `_` is a word char, so `\bwrite\b` never matched
-        # `write_file`/`edit_lines`/`apply_patch` (the only registered
-        # fileHash-carrying tools). That silently disabled both the stale-write
-        # hash gate AND the pre-mutation baseline join below. Use the canonical
-        # args-aware predicate instead (same authority the worker + tracker use).
-        from app.services.harness_mode import is_mutating_tool
-
-        if is_mutating_tool(toolName, args):
-            # Latency fix (2026-09-02): the turn-start shadow-git baseline runs
-            # OFF the event loop; the FIRST mutating tool joins it here so the
-            # snapshot still captures strictly-pre-mutation state. Read-only
-            # tools and text-only turns never pay this join.
-            _baselineFut = getattr(session, '_pendingBaselineSnapshot', None)
-            if _baselineFut is not None:
-                session._pendingBaselineSnapshot = None  # type: ignore[attr-defined]
-                await _awaitBaselineSnapshot(_baselineFut)
-            expected = as_str(args.get('fileHash') or args.get('file_hash') or '', '')
-            if expected:
-                target = as_str(
-                    args.get('path')
-                    or args.get('filePath')
-                    or args.get('file_path')
-                    or args.get('file')
-                    or '',
-                    '',
-                )
-                if target:
-                    import hashlib
-                    from pathlib import Path
-
-                    try:
-                        # Expand ~ and resolve symlinks before hashing — a raw
-                        # Path('~/x') is never a real file, so `~`-relative
-                        # targets silently skipped the stale-write guard
-                        # (audit finding), and unresolved symlinks read the
-                        # wrong bytes.
-                        p = Path(target).expanduser()
-                        if not p.is_absolute():
-                            ws = as_str(getattr(session, 'workspacePath', '') or '')
-                            p = Path(ws) / p if ws else p
-                        p = p.resolve()
-                        if p.is_file():
-                            actual = hashlib.sha256(p.read_bytes()).hexdigest()
-                            if actual != expected.lower():
-                                from app.services.workbench.read_before_edit import (
-                                    STALE_WRITE_HEADLINE,
-                                )
-
-                                return (
-                                    f'Error: File {STALE_WRITE_HEADLINE}. Read it again '
-                                    'before attempting to write it — the fileHash from '
-                                    'your last read_file no longer matches the bytes '
-                                    'on disk.'
-                                )
-                    except OSError:
-                        pass
-
-        # Lifecycle hooks: PRE_TOOL_USE (can deny or modify)
-        try:
-            from app.services.hooks import HookContext, HookEvent
-            from app.services.hooks import registry as hook_registry
-
-            pre_ctx = HookContext(
-                event=HookEvent.PRE_TOOL_USE,
-                session_id=session.id,
-                tool_name=toolName,
-                tool_args=args,
-                workspace_path=getattr(session, 'workspacePath', None),
-            )
-            pre_results = await hook_registry.emit(HookEvent.PRE_TOOL_USE, pre_ctx)
-            for r in pre_results:
-                if r.action == 'deny':
-                    return f'[BLOCKED by hook] {r.message or "Tool call denied by policy."}'
-                if r.action == 'modify' and r.modified_args is not None:
-                    args = r.modified_args
-        except Exception as exc:
-            # A PRE hook that raised cannot vet the call — the registered
-            # pre-tool hooks are security guards (secret_guard, sensitive_code),
-            # so failing CLOSED is the safe default: a broken hook must not
-            # silently allow a credential write. The message names the hook
-            # failure so the user can fix the hook config.
-            logger.warning('PRE_TOOL_USE hook failed for %s — denying: %s', toolName, exc)
-            return f'[BLOCKED by hook] Pre-tool hook failed to evaluate the call: {exc}'
-
-        try:
-            # The command runner's own max timeout equals _TOOL_EXEC_TIMEOUT_S
-            # (300s) — give run_command-style tools grace past the harness cap
-            # so a legitimately long command isn't cancelled mid-write at the
-            # exact moment its own timeout expires (audit finding).
-            toolTimeout = _TOOL_EXEC_TIMEOUT_S
-            if toolName in ('run_command', 'bash', 'safe_python', 'terminal_command'):
-                toolTimeout = _TOOL_EXEC_TIMEOUT_S + 30
-            result = await asyncio.wait_for(dispatchTool(toolName, args), timeout=toolTimeout)
-        except asyncio.TimeoutError:
-            return f'Error: tool {toolName} timed out after {toolTimeout}s.'
-        result_str = str(result)
-
-        # Lifecycle hooks: POST_TOOL_USE (can modify result)
-        try:
-            from app.services.hooks import HookContext as HC2
-            from app.services.hooks import HookEvent as HE2
-            from app.services.hooks import registry as hr2
-
-            post_ctx = HC2(
-                event=HE2.POST_TOOL_USE,
-                session_id=session.id,
-                tool_name=toolName,
-                tool_args=args,
-                tool_result=result_str,
-                workspace_path=getattr(session, 'workspacePath', None),
-            )
-            post_results = await hr2.emit(HE2.POST_TOOL_USE, post_ctx)
-            for r in post_results:
-                if r.action == 'modify' and r.modified_result is not None:
-                    result_str = r.modified_result
-        except Exception as exc:
-            # POST hooks observe/modify an already-executed tool — a failure
-            # here cannot roll the tool back, so log and continue (unlike the
-            # PRE hook, which fails closed above).
-            logger.warning('POST_TOOL_USE hook failed for %s: %s', toolName, exc)
-
-        try:
-            from app.services.post_observation import capture_after_tool
-
-            await capture_after_tool(toolName, result_str)
-        except Exception:
-            pass
-        return result_str
-    except Exception as exc:
-        import traceback as _tb
-
-        tbList = _tb.extract_tb(exc.__traceback__)
-        lastFrame = tbList[-1] if tbList else None
-        feedback = {
-            'tool': toolName,
-            'error_type': type(exc).__name__,
-            'error_message': str(exc),
-            'file': lastFrame.filename if lastFrame else None,
-            'line': lastFrame.lineno if lastFrame else None,
-            'function': lastFrame.name if lastFrame else None,
-            'offending_code': lastFrame.line if lastFrame else None,
-        }
-        session._failure_feedback = feedback
-        session._failure_feedback_age = 0
-        return f'Tool {toolName} failed: {feedback["error_type"]}: {feedback["error_message"]}'
-    finally:
-        currentSessionId.reset(token)
-        currentToolUseId.reset(toolToken)
-
-
-def _bulk_paths_from_args(args: dict[str, object]) -> list[str]:
-    """Collect path-like identifiers from bulk tool args for grants/previews."""
-    paths: list[str] = []
-    for key in ('paths', 'sessionIds', 'daemonIds', 'urls', 'names'):
-        raw = args.get(key)
-        if isinstance(raw, list):
-            paths.extend(str(x).strip() for x in raw if str(x).strip())
-    files = args.get('files') or args.get('renames') or args.get('items')
-    if isinstance(files, list):
-        for entry in files:
-            if not isinstance(entry, dict):
-                continue
-            p = (
-                as_str(entry.get('path'))
-                or as_str(entry.get('sessionId'))
-                or as_str(entry.get('filePath'))
-                or as_str(entry.get('url'))
-                or as_str(entry.get('name'))
-            )
-            if p:
-                paths.append(p)
-    # Deduplicate, keep order
-    seen: set[str] = set()
-    out: list[str] = []
-    for p in paths:
-        if p in seen:
-            continue
-        seen.add(p)
-        out.append(p)
-    return out
-
-
-def _mutation_grant_key(toolName: str, args: dict[str, object] | None) -> str:
-    """Stable key for once/session/always grants (tool + primary path)."""
-    args = args or {}
-    # Sandbox escape grants use a fingerprint path so Once/This chat/Always work.
-    path = as_str(args.get('path'))
-    if path.startswith('sandbox:unsandboxed:') or as_bool(args.get('sandboxEscape')):
-        if path.startswith('sandbox:unsandboxed:'):
-            return f'{toolName}:{path}'
-        try:
-            from app.services.sandbox import unsandboxed_grant_key
-
-            return f'{toolName}:{unsandboxed_grant_key(as_str(args.get("command")))}'
-        except Exception:
-            return f'{toolName}:sandbox:unsandboxed:*'
-    # Command grants are keyed by the EXACT command text (fingerprinted)
-    # so a one-shot approval covers exactly the asked action — the old
-    # 'run_command:*' fallback would have approved every later command.
-    if toolName in _COMMAND_TOOLS:
-        cmd = as_str(args.get('command'), '').strip()
-        if cmd:
-            from app.services.sandbox.runner import command_fingerprint
-
-            return f'{toolName}:cmd:{command_fingerprint(cmd)}'
-    bulk_paths = _bulk_paths_from_args(args)
-    if bulk_paths:
-        # Grant is scoped to this exact set of targets (sorted for stability).
-        joined = ','.join(sorted(bulk_paths)[:40])
-        return f'{toolName}:{joined}'
-    path = (
-        path
-        or as_str(args.get('file_path'))
-        or as_str(args.get('filePath'))
-        or as_str(args.get('file'))
-        or as_str(args.get('target'))
-        or '*'
-    )
-    return f'{toolName}:{path}'
-
-
-def _mutation_preview(toolName: str, args: dict[str, object] | None) -> str:
-    """Short human preview for the approval UI (file content snippet, command, …)."""
-    args = args or {}
-    name = toolName.lower()
-    op = as_str(args.get('operation')).lower()
-    bulk_paths = _bulk_paths_from_args(args)
-    if bulk_paths and (
-        name in {'bulk', 'write_files', 'delete_sessions', 'rename_sessions', 'kill_daemons'}
-        or op in {'write_files', 'delete_sessions', 'rename_sessions', 'kill_daemons'}
-        or 'write_files' in name
-        or 'delete_sessions' in name
-    ):
-        label = op or name
-        listing = '\n'.join(f'• {p}' for p in bulk_paths[:25])
-        more = f'\n…and {len(bulk_paths) - 25} more' if len(bulk_paths) > 25 else ''
-        return f'Bulk {label} ({len(bulk_paths)} item(s)):\n{listing}{more}'
-    path = (
-        as_str(args.get('path'))
-        or as_str(args.get('file_path'))
-        or as_str(args.get('filePath'))
-        or as_str(args.get('file'))
-    )
-    if any(m in name for m in ('write', 'edit', 'create', 'patch', 'str_replace')):
-        content = (
-            as_str(args.get('content'))
-            or as_str(args.get('new_str'))
-            or as_str(args.get('new_string'))
-            or as_str(args.get('text'))
-        )
-        head = content[:1200] if content else ''
-        if path and head:
-            return f'Write {path}\n\n{head}{"…" if len(content) > 1200 else ""}'
-        if path:
-            return f'Modify {path}'
-        return f'{toolName} (file change)'
-    if any(m in name for m in ('bash', 'shell', 'command', 'exec', 'terminal')):
-        cmd = as_str(args.get('command')) or as_str(args.get('cmd')) or as_str(args.get('input'))
-        return f'Run: {cmd[:500]}' if cmd else f'Run {toolName}'
-    if path:
-        return f'{toolName} → {path}'
-    return toolName
-
-
-def _mutation_categories(
-    toolName: str,
-    args: dict[str, object] | None,
-    workspace_path: str = '',
-) -> list[str]:
-    """Permission-axis categories for a pending call (sorted, may be empty).
-
-    Same classifier the approval axis itself uses, so the value the UI reads to
-    decide whether to offer a durable grant cannot drift from the value the
-    policy clamps on. Non-command tools carry no categories — the durable-scope
-    rule is about what a command can do.
-    """
-    if toolName not in _COMMAND_TOOLS:
-        return []
-    cmd = as_str(as_dict(args or {}).get('command'), '').strip()
-    if not cmd:
-        return []
-    try:
-        from app.services.workbench.permissions import classify_command
-
-        return sorted(classify_command(cmd, workspace_path or ''))
-    except Exception:
-        logger.debug('mutation category classification failed', exc_info=True)
-        return []
-
-
-def _get_tool_grants(session: WorkbenchSession) -> dict[str, list[str]]:
-    meta = as_dict(session.metadata) if session.metadata else {}
-    raw = as_dict(meta.get('toolGrants')) if meta.get('toolGrants') is not None else {}
-    return {
-        'once': [str(x) for x in as_list(raw.get('once'))],
-        'session': [str(x) for x in as_list(raw.get('session'))],
-        'always': [str(x) for x in as_list(raw.get('always'))],
-    }
-
-
-def _set_tool_grants(session: WorkbenchSession, grants: dict[str, list[str]]) -> None:
-    meta = dict(as_dict(session.metadata) if session.metadata else {})
-    meta['toolGrants'] = {
-        'once': list(grants.get('once') or []),
-        'session': list(grants.get('session') or []),
-        'always': list(grants.get('always') or []),
-    }
-    session.metadata = meta
-
-
-def _load_always_grants_for_workspace(workspace_path: str) -> list[str]:
-    if not workspace_path:
-        return []
-    try:
-        from app.services.config_service import getConfig
-
-        cfg = getConfig()
-        store = as_dict(cfg.get('toolAlwaysGrants')) if cfg.get('toolAlwaysGrants') is not None else {}
-        # Normalize path keys loosely
-        for key, vals in store.items():
-            if str(key).replace('\\', '/').rstrip('/').lower() == workspace_path.replace('\\', '/').rstrip('/').lower():
-                return [str(v) for v in as_list(vals)]
-        return [str(v) for v in as_list(store.get(workspace_path))]
-    except Exception:
-        return []
-
-
-def _save_always_grant(workspace_path: str, key: str) -> None:
-    if not workspace_path or not key:
-        return
-    try:
-        from app.services.config_service import getConfig, saveConfig
-
-        cfg = getConfig()
-        store = as_dict(cfg.get('toolAlwaysGrants')) if cfg.get('toolAlwaysGrants') is not None else {}
-        existing = [str(v) for v in as_list(store.get(workspace_path))]
-        if key not in existing:
-            existing.append(key)
-        store[workspace_path] = existing
-        # Also store tool:* wildcard companion if user chose path-specific
-        cfg['toolAlwaysGrants'] = store
-        saveConfig(cfg)
-    except Exception:
-        logger.debug('failed to persist always grant', exc_info=True)
+# Managed-tool dispatch lives in loop/exec.py (P1#11 split, HIGH RISK): the
+# `_executeTool` dispatcher and its immediate private helpers moved VERBATIM,
+# together with the two exec-only support symbols it reads (the
+# AUGUST_TOOL_TIMEOUT_S constant and the baseline-snapshot join). Re-exported
+# under the original names so the loop body, the grant API below and the
+# tests that monkeypatch `wb._executeTool` keep resolving them here.
+from app.services.workbench.loop.exec import (  # noqa: E402
+    _TOOL_EXEC_TIMEOUT_S,  # noqa: F401 -- re-export: old name kept
+    _awaitBaselineSnapshot,  # noqa: F401 -- re-export: old name kept
+    _envTimeoutSeconds,  # noqa: F401 -- re-export: old name kept
+    _executeTool,
+    _get_tool_grants,
+    _load_always_grants_for_workspace,  # noqa: F401 -- re-export: old name kept
+    _mutation_categories,  # noqa: F401 -- re-export: old name kept
+    _mutation_grant_key,  # noqa: F401 -- re-export: old name kept
+    _mutation_preview,  # noqa: F401 -- re-export: old name kept
+    _save_always_grant,  # noqa: F401 -- re-export: old name kept
+    _set_tool_grants,  # noqa: F401 -- re-export: old name kept
+)
 
 
 def list_always_grants() -> dict[str, object]:
