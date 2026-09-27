@@ -87,6 +87,66 @@ def _skillRoots(
 
 _NAMEPattern = re.compile('^[a-z0-9][a-z0-9._-]*$')
 _NAMEMax = 64
+
+# ── Skill lifecycle (audit P2#13) ────────────────────────────────────────
+# One `status:` frontmatter value, ABSENT = active. This is a LABEL, not an
+# authority: `superseded`/`retired` record a decision a human already made
+# (the applier that wrote it is the only thing that may set it), and nothing
+# reads it to hide a skill from the catalogue. Promotion and retirement both
+# go through the proposal queue — `retire` is an approvable kind, and
+# approving it is what writes `status: retired`.
+SKILL_STATUSES: tuple[str, ...] = ('draft', 'active', 'superseded', 'retired')
+SKILL_STATUS_DEFAULT = 'active'
+
+
+def skill_status(meta_or_text: object) -> str:
+    """Normalize a raw ``status:`` value to the vocabulary above.
+
+    Accepts the parse's dict (frontmatter bag) or a raw string; anything
+    unrecognised — including absent — reads as ``active``, because a skill
+    written before this field existed is not a draft.
+    """
+    raw: object
+    if isinstance(meta_or_text, dict):
+        raw = meta_or_text.get('status')
+    else:
+        raw = meta_or_text
+    value = str(raw or '').strip().lower()
+    return value if value in SKILL_STATUSES else SKILL_STATUS_DEFAULT
+
+
+# Search keywords generated at write time (audit P2#15). Stored as a
+# comma-separated scalar for the same reason `learned_from` is one: the
+# frontmatter parser here is a flat `key: value` reader, so a YAML block list
+# would be re-parsed as a nested shape it has no support for. Accept the
+# bracketed form too, because a hand edit will eventually write one.
+_KEYWORDMax = 10
+_KEYWORDMaxLen = 40
+
+
+def parse_keywords(raw: object) -> list[str]:
+    """The ``keywords:`` frontmatter value as a clean list (possibly empty)."""
+    text = str(raw or '').strip()
+    if text.startswith('[') and text.endswith(']'):
+        text = text[1:-1]
+    out: list[str] = []
+    seen: set[str] = set()
+    for part in text.replace('\n', ',').split(','):
+        kw = part.strip().strip('"\'').lower()
+        if not kw or kw in seen or len(kw) > _KEYWORDMaxLen:
+            continue
+        seen.add(kw)
+        out.append(kw)
+        if len(out) >= _KEYWORDMax:
+            break
+    return out
+
+
+def render_keywords(keywords: Iterable[str]) -> str:
+    """Serialize keywords for the frontmatter scalar (``''`` when empty)."""
+    return ', '.join(parse_keywords(list(keywords)))
+
+
 _flat_migrate_done = False
 # Catalogue memoization (latency pass 0.16.8): keyed on skill-root dir mtimes
 # so create/patch/delete invalidates automatically without explicit busts.
@@ -255,9 +315,18 @@ def _parseSkill(path: Path) -> Optional[dict[str, object]]:
         'category': frontmatter.get('category', 'uncategorized'),
         'enabled': frontmatter.get('disabled', 'false').lower() != 'true',
         'created_by': frontmatter.get('created_by', ''),
+        # Lifecycle label (audit P2#13), surfaced RAW. `status:` is a shared
+        # key — the curator report already has its own vocabulary (stale /
+        # archived) built on it — so the parse hands the value through
+        # untouched and `skill_status` is what narrows it to the lifecycle
+        # set (absent = active) for the surfaces that promise one. It also
+        # stays in `meta` below, so the round-trip write and the router's
+        # lineage read both still see it.
+        'status': str(meta.get('status') or '').strip(),
         # M6 item 3: unrecognized frontmatter keys round-trip instead of
         # being silently dropped on the next patch/setEnabled write.
         'meta': meta,
+        'keywords': parse_keywords(frontmatter.get('keywords', '')),
         'instructions': body,
         'path': str(path),
         'updatedAt': stat.st_mtime,
@@ -484,6 +553,12 @@ def catalogue(
             'created_by': s.get('created_by', ''),
             'enabled': True,
             'scope': scope or 'global',
+            # Rebuilt field by field, so anything the ranking reads has to be
+            # named HERE as well as in the parse — a key missing from this
+            # dict is silently absent from the catalogue, and the catalogue is
+            # what the per-turn relevance pass scores.
+            'status': skill_status(s.get('status')),
+            'keywords': s.get('keywords', []),
         }
         if shadowed:
             entry['overrides'] = shadowed
@@ -731,7 +806,7 @@ def _renderSkillMd(frontmatter: dict[str, str], body: str) -> str:
     keys round-trip after them (M6 item 3 — unknown frontmatter survives)."""
     lines = ['---']
     written: set[str] = set()
-    for key in ('name', 'description', 'trigger', 'category', 'created_by', 'disabled'):
+    for key in ('name', 'description', 'trigger', 'category', 'created_by', 'status', 'keywords', 'disabled'):
         val = frontmatter.get(key)
         if val:
             lines.append(f'{key}: {val}')
@@ -784,6 +859,115 @@ def _ensureAgentRoot() -> Path:
     return root
 
 
+# ── Search-keyword expansion (audit P2#15) — DEFAULT OFF ─────────────────
+# A skill is found by BM25 over name+description+trigger. Those three are what
+# the AUTHOR wrote, and an author describing what a skill DOES rarely uses the
+# words a user's message uses — the vocabulary gap is exactly why a good skill
+# sits unranked. Keyword expansion closes it by asking a cheap model for the
+# words a user would actually type, once, at write time.
+#
+# It is DEFAULT OFF (`skillKeywordExpansion`) because it costs a model call on
+# the write path. The contract when it is on is still best-effort: any failure
+# — no provider, no key, a bad answer, a timeout — leaves the skill written
+# with NO keywords, which is the pre-existing behavior.
+_KEYWORD_CALL_TIMEOUT_S = 12.0
+_KEYWORD_SYSTEM = (
+    'You write search keywords for a skill library. Given a skill, return 5-10 '
+    'short lowercase keywords (1-2 words each) that a user might type when they '
+    'need this skill: synonyms, tool names, file formats, error names, and the '
+    'task verbs it serves. No sentences, no punctuation, no duplicates, no '
+    'explanation. Reply with a JSON array of strings and nothing else.'
+)
+
+
+def keyword_expansion_enabled() -> bool:
+    """Gate: brain-config ``skillKeywordExpansion`` (default OFF)."""
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        return bool(getRuntimeConfig().get('skillKeywordExpansion', False))
+    except Exception:
+        return False
+
+
+async def generate_keywords(
+    name: str, description: str, body: str, trigger: str = ''
+) -> list[str]:
+    """Ask a cheap review model for 5-10 search keywords. ``[]`` on any failure.
+
+    Uses the same ``make_review_llm_client`` the lesson review and the episode
+    distiller use, so a keyless install resolves the same "no reviewer
+    available" answer they do rather than a second, divergent provider lookup.
+    """
+    try:
+        from app.services.workbench.providers import make_review_llm_client
+
+        client = make_review_llm_client(None, '')
+        if client is None:
+            return []
+        prompt = [
+            {'role': 'system', 'content': _KEYWORD_SYSTEM},
+            {
+                'role': 'user',
+                'content': (
+                    f'skill name: {name}\n'
+                    f'description: {description}\n'
+                    f'trigger: {trigger or "(none)"}\n\n'
+                    f'{(body or "")[:1500]}'
+                ),
+            },
+        ]
+        raw = (await client(prompt)).strip()
+    except Exception as exc:
+        logger.debug('skill keywords: generation failed for %r: %s', name, exc)
+        return []
+    if raw.startswith('```'):
+        raw = re.sub(r'^```[a-zA-Z]*\s*|\s*```$', '', raw).strip()
+    start, end = raw.find('['), raw.rfind(']')
+    if start == -1 or end <= start:
+        return []
+    try:
+        parsed = json.loads(raw[start : end + 1])
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return parse_keywords([str(x) for x in parsed])
+
+
+def expand_keywords_best_effort(
+    name: str, description: str, body: str, trigger: str = ''
+) -> list[str]:
+    """Sync door onto :func:`generate_keywords` for the write paths.
+
+    The write doors (``createSkill``, the proposal applier) are synchronous and
+    must stay that way. This mirrors the distiller's judge bridge: with a live
+    loop in this thread the call is offloaded to a worker thread that owns a
+    fresh one, and the join is bounded — a hung reviewer costs the grace
+    window and then the skill is written WITHOUT keywords, which is the
+    pre-existing behavior.
+    """
+    import asyncio
+    import threading
+
+    box: dict[str, list[str]] = {}
+
+    async def _call() -> list[str]:
+        return await generate_keywords(name, description, body, trigger)
+
+    def _worker() -> None:
+        try:
+            box['result'] = asyncio.run(asyncio.wait_for(_call(), _KEYWORD_CALL_TIMEOUT_S))
+        except Exception as exc:
+            logger.debug('skill keywords: expansion call failed for %r: %s', name, exc)
+            box['result'] = []
+
+    thread = threading.Thread(target=_worker, daemon=True, name=f'august-skill-keywords-{name}')
+    thread.start()
+    thread.join(_KEYWORD_CALL_TIMEOUT_S + 5.0)
+    return box.get('result') or []
+
+
 def _copyOnWrite(name: str) -> Path:
     """If a skill only exists in the bundled root, copy it to the agent root
     so it can be patched/extended without mutating built-ins. Returns the
@@ -819,12 +1003,18 @@ def createSkill(
     category: str = 'uncategorized',
     created_by: str = 'agent',
     workspace: str | Path | None = None,
+    keywords: Optional[Iterable[str]] = None,
 ) -> dict[str, object]:
     """Create a new agent-authored skill.
 
     Part 17 Phase B: with a non-home ``workspace`` the skill lands in the
     project root ``<ws>/.aug/skills/`` (created on demand) — project scope
     by choice, global otherwise.
+
+    ``keywords`` is the search-keyword list (P2#15). Callers may pass one
+    explicitly; when they do not and ``skillKeywordExpansion`` is on, a cheap
+    model is asked for it here. Either way it is best-effort metadata: a
+    failure leaves the skill written with no keywords rather than unwritten.
     """
     _validateName(name)
     _validateDescription(description)
@@ -846,21 +1036,35 @@ def createSkill(
             raise SkillValidationError(f"Skill '{name}' already exists.") from exc
         # Usage-only leftover directory (the sidecar resolver always lands
         # under the agent root) — authoring the skill reuses it.
-    frontmatter = {
-        'name': name,
-        'description': description.strip(),
-        'trigger': trigger.strip(),
-        'category': category.strip() or 'uncategorized',
-        'created_by': created_by,
-    }
     normalized = _ensure_canonical_body(
         body,
         name=name,
         description=description,
         is_learned=created_by in ('agent', 'harness-proposal'),
     )
+    resolved = parse_keywords(list(keywords or []))
+    if not resolved and keyword_expansion_enabled():
+        resolved = expand_keywords_best_effort(name, description, normalized, trigger)
+    frontmatter = {
+        'name': name,
+        'description': description.strip(),
+        'trigger': trigger.strip(),
+        'category': category.strip() or 'uncategorized',
+        'created_by': created_by,
+        'status': SKILL_STATUS_DEFAULT,
+    }
+    if resolved:
+        frontmatter['keywords'] = render_keywords(resolved)
     md = skill_dir / 'SKILL.md'
-    md.write_text(_renderSkillMd(frontmatter, normalized), 'utf-8')
+    content = _renderSkillMd(frontmatter, normalized)
+    # A create has no previous SKILL.md, so the snapshot is a no-op here — it
+    # is still called so the write sites cannot drift apart.
+    from app.services.skill_versions import snapshot_before_write
+
+    snapshot_before_write(
+        skill_dir, content, actor='user', rationale=f'created skill {name!r}'
+    )
+    md.write_text(content, 'utf-8')
     parsed = _parseSkill(md)
     _bust_prompt_skills_cache()
     return parsed or {'name': name, 'description': description}
@@ -928,6 +1132,10 @@ def patchSkill(
         else:
             frontmatter['disabled'] = 'true'
     frontmatter.setdefault('created_by', 'agent')
+    # Lifecycle (P2#13): a patch NEVER writes a status it was not asked for.
+    # An absent `status:` already means active, so materializing one here
+    # would only add a byte-diff to every unrelated toggle. `setStatus` is
+    # the single door that writes the field.
     is_learned = frontmatter.get('created_by', 'agent') in ('agent', 'harness-proposal')
     if body is None:
         # PATCH didn't change the body — preserve verbatim so a single-field
@@ -942,7 +1150,23 @@ def patchSkill(
             description=as_str(frontmatter.get('description', ''), ''),
             is_learned=is_learned,
         )
-    md.write_text(_renderSkillMd(frontmatter, new_body), 'utf-8')
+    # A body edit is the one moment a new vocabulary is worth buying: when
+    # expansion is on and the skill has no keywords yet, ask for them (P2#15).
+    # Best-effort — an empty list just leaves the frontmatter as it was.
+    if body is not None and not parse_keywords(frontmatter.get('keywords', '')) and keyword_expansion_enabled():
+        expanded = expand_keywords_best_effort(
+            name, as_str(frontmatter.get('description', ''), ''), new_body,
+            as_str(frontmatter.get('trigger', ''), ''),
+        )
+        if expanded:
+            frontmatter['keywords'] = render_keywords(expanded)
+    content = _renderSkillMd(frontmatter, new_body)
+    from app.services.skill_versions import snapshot_before_write
+
+    snapshot_before_write(
+        md.parent, content, actor='user', rationale=f'patched skill {name!r}'
+    )
+    md.write_text(content, 'utf-8')
     parsed = _parseSkill(md)
     _bust_prompt_skills_cache()
     return parsed or {'name': name, 'description': frontmatter.get('description', '')}
@@ -1225,4 +1449,45 @@ def setEnabled(name: str, *, enabled: bool) -> dict[str, object]:
     over ``patchSkill`` so both paths share one single-write implementation.
     """
     return patchSkill(name, enabled=enabled)
+
+
+def setStatus(name: str, status: str, *, actor: str = 'user', rationale: str = '') -> dict[str, object]:
+    """Set a skill's lifecycle label (``draft|active|superseded|retired``).
+
+    Non-destructive by construction: it rewrites ONE frontmatter key and
+    leaves the body, the other provenance keys and the usage sidecar exactly
+    as they were — a retired skill keeps its history and its counters, so
+    flipping it back to ``active`` restores it without a rewrite. It snapshots
+    the previous file first like every other content write.
+
+    This is the ONLY door onto ``status``. Nothing auto-retires: the
+    consolidation pass files a ``retire`` PROPOSAL, and a human approving it
+    is what reaches this function.
+    """
+    value = str(status or '').strip().lower()
+    if value not in SKILL_STATUSES:
+        raise SkillValidationError(
+            f'status must be one of {" | ".join(SKILL_STATUSES)} (got {status!r}).'
+        )
+    agent_dir = _copyOnWrite(name)
+    md = agent_dir / 'SKILL.md'
+    text = md.read_text('utf-8')
+    m = re.match('^---\\s*\\n(.*?)\\n---\\s*\\n(.*)', text, re.DOTALL)
+    if not m:
+        raise SkillValidationError(f"Skill '{name}' has malformed frontmatter.")
+    frontmatter = _parse_frontmatter_block(m.group(1))
+    frontmatter['status'] = value
+    content = _renderSkillMd(frontmatter, m.group(2).strip())
+    from app.services.skill_versions import snapshot_before_write
+
+    snapshot_before_write(
+        agent_dir,
+        content,
+        actor=actor,
+        rationale=rationale or f'status {name!r} -> {value}',
+    )
+    md.write_text(content, 'utf-8')
+    _bust_prompt_skills_cache()
+    parsed = _parseSkill(md)
+    return parsed or {'name': name, 'status': value}
 

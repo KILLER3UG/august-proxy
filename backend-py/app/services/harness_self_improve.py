@@ -28,12 +28,18 @@ import json
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 
 # Kinds a deterministic applier may execute on approval.
-APPROVABLE_KINDS = frozenset({'brain_config', 'skill_create', 'skill_patch', 'skill_delete'})
+# `retire` (audit P2#13) is a LIFECYCLE label, not a delete: approving it
+# writes `status: retired` into the skill's frontmatter and leaves the file,
+# its version history and its counters in place. It is approvable — and only
+# approvable — because the scheduled passes can only ever file it.
+APPROVABLE_KINDS = frozenset(
+    {'brain_config', 'skill_create', 'skill_patch', 'skill_delete', 'retire'}
+)
 # Analysis-only kinds — always safe to store, never auto-applied.
 OBSERVATION_KINDS = frozenset({'tool_bucket', 'tool_description', 'flow_map', 'observation'})
 # Filed by the outcome ledger (harness_outcome) when a learning write measures
@@ -490,10 +496,18 @@ def _skill_frontmatter(
     learnedFrom: list[str] | None = None,
     version: int = 1,
     supersedes: str = '',
+    status: str = 'active',
+    keywords: list[str] | None = None,
 ) -> str:
     """Learned-skill frontmatter with Part 16 Phase D provenance:
     origin (human|distilled|amended), learned_from (episode ids), version,
-    status, and the supersedes lineage stamp."""
+    status, and the supersedes lineage stamp.
+
+    ``status`` and ``keywords`` are carried from the file this write replaces:
+    this render REPLACES the whole frontmatter block, so a field the caller
+    does not restate is gone. ``keywords`` is the P2#15 search-keyword list,
+    and ``status`` is the P2#13 lifecycle label — both are properties of the
+    skill, not of one proposal."""
     lines = ['---', f'name: {name}', f'description: "{description}"']
     if trigger:
         lines.append(f'trigger: {trigger}')
@@ -503,10 +517,13 @@ def _skill_frontmatter(
         f'origin: {origin}',
         f'learned_from: {",".join(learnedFrom or [])}',
         f'version: {version}',
-        'status: active',
+        f'status: {status or "active"}',
     ]
     if supersedes:
         lines.append(f'supersedes: {supersedes}')
+    rendered_keywords = render_keywords(keywords or [])
+    if rendered_keywords:
+        lines.append(f'keywords: {rendered_keywords}')
     lines += ['---', '']
     return '\n'.join(lines)
 
@@ -525,177 +542,309 @@ def _parse_frontmatter_from_md(text: str) -> dict[str, str]:
     return out
 
 
-def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
-    """Deterministic applier — the ONLY path from proposal to live change."""
+def render_keywords(keywords: list[str]) -> str:
+    """The frontmatter scalar for a search-keyword list.
+
+    Delegates to ``skill_service`` rather than re-parsing the string here: the
+    corpus reader in ``capabilities_prompt`` parses it back with the same
+    helper, and a second parser is how a keyword list starts reading as one
+    token named "a, b, c".
+    """
+    from app.services.skill_service import render_keywords as _render
+
+    return _render(keywords)
+
+
+# ── The applier registry (C4) ────────────────────────────────────────────
+# Each handler takes the WHOLE proposal row and returns the result dict the
+# decision journal records. They are plain functions, not methods, so a new
+# kind is one function plus one dict entry.
+
+
+def _apply_brain_config(row: dict[str, Any]) -> dict[str, Any]:
+    payload = as_dict(row.get('payload'))
+    patch = payload.get('patch')
+    if not isinstance(patch, dict):
+        return {'ok': False, 'error': 'brain_config proposals need payload.patch (object)'}
+    try:
+        from app.services.brain_config_service import saveBrainConfig, validatePatch
+
+        ok, err = validatePatch(patch)
+        if not ok:
+            return {'ok': False, 'error': f'config validation failed: {err}'}
+        ok2, err2, _cfg = saveBrainConfig(patch)
+        return {'ok': bool(ok2), 'error': err2}
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc)}
+
+
+def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
+    """``skill_create`` / ``skill_patch`` — one handler, because the two
+    differ only in whether an existing file must be there first."""
     kind = as_str(row.get('kind'), '')
     payload = as_dict(row.get('payload'))
+    name = as_str(payload.get('name'), '').strip()
+    body = as_str(payload.get('body'), '')
+    description = as_str(payload.get('description'), '')
+    trigger = as_str(payload.get('trigger'), '')
+    supersedes = as_str(payload.get('supersedes'), '').strip()
+    origin = as_str(payload.get('origin'), '') or 'human'
+    learnedFrom = payload.get('episodeIds') or payload.get('learned_from') or []
+    if not name:
+        return {'ok': False, 'error': 'skill proposals need payload.name'}
+    if kind == 'skill_patch' and not body.strip():
+        # A body-less patch would render _ensure_canonical_body's
+        # all-placeholder text over the real SKILL.md on approval. Refuse.
+        return {'ok': False, 'error': 'skill_patch proposals need payload.body'}
+    try:
+        from app.services.skill_service import (
+            _agentSkillsDir,
+            _ensure_canonical_body,
+            _validateDescription,
+            _validateName,
+        )
 
-    if kind == 'brain_config':
-        patch = payload.get('patch')
-        if not isinstance(patch, dict):
-            return {'ok': False, 'error': 'brain_config proposals need payload.patch (object)'}
-        try:
-            from app.services.brain_config_service import saveBrainConfig, validatePatch
-
-            ok, err = validatePatch(patch)
-            if not ok:
-                return {'ok': False, 'error': f'config validation failed: {err}'}
-            ok2, err2, _cfg = saveBrainConfig(patch)
-            return {'ok': bool(ok2), 'error': err2}
-        except Exception as exc:
-            return {'ok': False, 'error': str(exc)}
-
-    if kind in ('skill_create', 'skill_patch'):
-        name = as_str(payload.get('name'), '').strip()
-        body = as_str(payload.get('body'), '')
-        description = as_str(payload.get('description'), '')
-        trigger = as_str(payload.get('trigger'), '')
-        supersedes = as_str(payload.get('supersedes'), '').strip()
-        origin = as_str(payload.get('origin'), '') or 'human'
-        learnedFrom = payload.get('episodeIds') or payload.get('learned_from') or []
-        if not name:
-            return {'ok': False, 'error': 'skill proposals need payload.name'}
-        if kind == 'skill_patch' and not body.strip():
-            # A body-less patch would render _ensure_canonical_body's
-            # all-placeholder text over the real SKILL.md on approval. Refuse.
-            return {'ok': False, 'error': 'skill_patch proposals need payload.body'}
-        try:
-            from app.services.skill_service import (
-                _agentSkillsDir,
-                _ensure_canonical_body,
-                _validateDescription,
-                _validateName,
-            )
-
-            _validateName(name)
-            _validateDescription(description or 'Created from an approved harness proposal.')
-            root = _agentSkillsDir()
-            skill_dir = root / name
-            md = skill_dir / 'SKILL.md'
-            if kind == 'skill_patch' and not md.exists():
-                return {'ok': False, 'error': f'skill {name!r} does not exist; use skill_create'}
-            skill_dir.mkdir(parents=True, exist_ok=True)
-            normalized = _ensure_canonical_body(
-                body,
-                name=name,
-                description=description or 'Created from an approved harness proposal.',
-                is_learned=True,
-            )
-            # Part 16 Phase D step 2: learned-skill provenance. version bumps
-            # per approved patch; status starts active (stale/retired via
-            # later proposals); supersedes stamps the lineage.
-            version = 1
-            prior: dict[str, str] = {}
-            if kind == 'skill_patch' and md.exists():
-                # Read the frontmatter this write replaces. The version bump
-                # needs it, and so does carrying over the fields the proposal
-                # itself is silent about.
-                try:
-                    prior = _parse_frontmatter_from_md(md.read_text('utf-8'))
-                    version = int(prior.get('version') or 1) + 1
-                except Exception:
-                    version = 2
-            # Which skill this one replaced, who wrote it, what it triggers on
-            # and which episodes it came from are properties of the SKILL, not
-            # of one proposal — a v3 patch that restates none of them must not
-            # erase them. (The trigger is what per-turn relevance matching
-            # reads, so losing it silently retires the skill from recall.)
-            supersedes = supersedes or as_str(prior.get('supersedes'), '').strip()
-            trigger = trigger or as_str(prior.get('trigger'), '').strip()
-            if not payload.get('origin'):
-                origin = as_str(prior.get('origin'), '') or origin
-            if not learnedFrom:
-                learnedFrom = [
-                    x.strip()
-                    for x in as_str(prior.get('learned_from'), '').split(',')
-                    if x.strip()
-                ]
-            frontmatter = _skill_frontmatter(
-                name,
-                description or 'Created from an approved harness proposal.',
-                trigger,
-                origin=origin if origin in ('human', 'distilled', 'amended') else 'human',
-                learnedFrom=[str(x) for x in learnedFrom] if isinstance(learnedFrom, list) else [],
-                version=version,
-                supersedes=supersedes,
-            )
-            md.write_text(frontmatter + normalized, encoding='utf-8')
-            # Part 16 Phase D step 2 supersession: an approved v2 disables
-            # the v1 it supersedes in the SAME write — no double injection.
-            supersededResult = ''
-            if supersedes and supersedes != name:
-                try:
-                    from app.services.skill_service import setEnabled
-
-                    setEnabled(supersedes, enabled=False)
-                    supersededResult = f'; disabled {supersedes!r}'
-                except Exception as exc:
-                    supersededResult = f'; failed to disable {supersedes!r}: {exc}'
+        _validateName(name)
+        _validateDescription(description or 'Created from an approved harness proposal.')
+        root = _agentSkillsDir()
+        skill_dir = root / name
+        md = skill_dir / 'SKILL.md'
+        if kind == 'skill_patch' and not md.exists():
+            return {'ok': False, 'error': f'skill {name!r} does not exist; use skill_create'}
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        normalized = _ensure_canonical_body(
+            body,
+            name=name,
+            description=description or 'Created from an approved harness proposal.',
+            is_learned=True,
+        )
+        # Part 16 Phase D step 2: learned-skill provenance. version bumps
+        # per approved patch; status starts active (stale/retired via
+        # later proposals); supersedes stamps the lineage.
+        version = 1
+        prior: dict[str, str] = {}
+        if kind == 'skill_patch' and md.exists():
+            # Read the frontmatter this write replaces. The version bump
+            # needs it, and so does carrying over the fields the proposal
+            # itself is silent about.
             try:
-                from app.services.skill_service import _bust_prompt_skills_cache
+                prior = _parse_frontmatter_from_md(md.read_text('utf-8'))
+                version = int(prior.get('version') or 1) + 1
+            except Exception:
+                version = 2
+        # Which skill this one replaced, who wrote it, what it triggers on
+        # and which episodes it came from are properties of the SKILL, not
+        # of one proposal — a v3 patch that restates none of them must not
+        # erase them. (The trigger is what per-turn relevance matching
+        # reads, so losing it silently retires the skill from recall.)
+        supersedes = supersedes or as_str(prior.get('supersedes'), '').strip()
+        trigger = trigger or as_str(prior.get('trigger'), '').strip()
+        if not payload.get('origin'):
+            origin = as_str(prior.get('origin'), '') or origin
+        if not learnedFrom:
+            learnedFrom = [
+                x.strip()
+                for x in as_str(prior.get('learned_from'), '').split(',')
+                if x.strip()
+            ]
+        # A retired skill that gets a new body is back in service — an
+        # approved patch is the explicit act of reviving it.
+        status = as_str(prior.get('status'), '') or 'active'
+        try:
+            from app.services.skill_service import parse_keywords
 
-                _bust_prompt_skills_cache()
+            keywords = parse_keywords(prior.get('keywords', ''))
+        except Exception:
+            keywords = []
+        if not keywords:
+            try:
+                from app.services.skill_service import (
+                    expand_keywords_best_effort,
+                    keyword_expansion_enabled,
+                )
+
+                if keyword_expansion_enabled():
+                    keywords = expand_keywords_best_effort(
+                        name,
+                        description or 'Created from an approved harness proposal.',
+                        normalized,
+                        trigger,
+                    )
+            except Exception:
+                # Keyword expansion is metadata, never a reason to fail an
+                # approval a human already granted.
+                keywords = []
+        frontmatter = _skill_frontmatter(
+            name,
+            description or 'Created from an approved harness proposal.',
+            trigger,
+            origin=origin if origin in ('human', 'distilled', 'amended') else 'human',
+            learnedFrom=[str(x) for x in learnedFrom] if isinstance(learnedFrom, list) else [],
+            version=version,
+            supersedes=supersedes,
+            status=status,
+            keywords=keywords,
+        )
+        content = frontmatter + normalized
+        # P2#13: preserve the file this write replaces before it lands.
+        from app.services.skill_versions import snapshot_before_write
+
+        snapshot_before_write(
+            skill_dir,
+            content,
+            actor='distiller',
+            rationale=f'approved {kind} for {name!r}',
+        )
+        md.write_text(content, encoding='utf-8')
+        # Part 16 Phase D step 2 supersession: an approved v2 disables
+        # the v1 it supersedes in the SAME write — no double injection.
+        supersededResult = ''
+        if supersedes and supersedes != name:
+            try:
+                from app.services.skill_service import setEnabled
+
+                setEnabled(supersedes, enabled=False)
+                supersededResult = f'; disabled {supersedes!r}'
+            except Exception as exc:
+                supersededResult = f'; failed to disable {supersedes!r}: {exc}'
+        try:
+            from app.services.skill_service import _bust_prompt_skills_cache
+
+            _bust_prompt_skills_cache()
+        except Exception:
+            pass
+        return {
+            'ok': True,
+            'action': 'patched' if kind == 'skill_patch' else 'created',
+            'name': name,
+            'version': version,
+            'status': status,
+            'superseded': supersededResult,
+        }
+    except ValueError as exc:
+        return {'ok': False, 'error': str(exc)}
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc)}
+
+
+def _apply_skill_delete(row: dict[str, Any]) -> dict[str, Any]:
+    payload = as_dict(row.get('payload'))
+    name = as_str(payload.get('name'), '').strip()
+    if not name:
+        return {'ok': False, 'error': 'skill_delete proposals need payload.name'}
+    try:
+        import shutil
+
+        from app.services.skill_service import _agentSkillsDir, _validateName
+
+        _validateName(name)  # §9 F-2: same guard as create/patch — no traversal past the agent root
+        skill_dir = _agentSkillsDir() / name
+        # SKILL.md, not the directory, is the skill. A bundled skill that
+        # has simply been loaded leaves a usage-only folder in the agent
+        # root; rmtree on that "succeeds" a delete of a skill that is still
+        # installed, which is the worst kind of green proposal.
+        if not (skill_dir / 'SKILL.md').is_file():
+            return {'ok': False, 'error': f'skill {name!r} not found in agent skills'}
+        shutil.rmtree(skill_dir)
+        try:
+            from app.services.skill_service import _bust_prompt_skills_cache
+
+            _bust_prompt_skills_cache()
+        except Exception:
+            pass
+        # A retired fingerprint's clock stops here — mark it so
+        # the resolution pass never re-suggests what a human retired.
+        fp = as_str(payload.get('fingerprint'), '')
+        if fp:
+            try:
+                from app.services.episode_miner import set_fingerprint_status
+
+                set_fingerprint_status(fp, 'retired')
             except Exception:
                 pass
+        return {'ok': True, 'action': 'deleted', 'name': name}
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc)}
+
+
+def _apply_skill_retire(row: dict[str, Any]) -> dict[str, Any]:
+    """``retire`` — write ``status: retired``. Non-destructive and reversible.
+
+    Retirement here is a LABEL, never a delete: the SKILL.md, its version
+    history and its usage sidecar all stay on disk, and approving a later
+    patch sets the status back to ``active``. Reaching this handler already
+    required a human to approve the proposal — nothing in the scheduled pass
+    can call it, which is why the pass only ever files.
+    """
+    payload = as_dict(row.get('payload'))
+    name = as_str(payload.get('name'), '').strip()
+    if not name:
+        return {'ok': False, 'error': 'retire proposals need payload.name'}
+    try:
+        from app.services.skill_service import _agentSkillsDir, _validateName, setStatus
+
+        _validateName(name)
+        if not (_agentSkillsDir() / name / 'SKILL.md').is_file():
+            return {'ok': False, 'error': f'skill {name!r} not found in agent skills'}
+        setStatus(
+            name,
+            'retired',
+            actor='curator',
+            rationale=as_str(payload.get('rationale'), '') or f'retire proposal approved for {name!r}',
+        )
+        return {'ok': True, 'action': 'retired', 'name': name, 'status': 'retired'}
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc)}
+
+
+def _apply_promote(row: dict[str, Any]) -> dict[str, Any]:
+    # Copy-on-write promotion (global fact or global
+    # skill with provenance) — the deterministic applier lives in
+    # harness_promote so the enumeration/judge code stays separate.
+    from app.services.harness_promote import apply_promotion
+
+    return apply_promotion(as_dict(row.get('payload')))
+
+
+# The applier registry (C4). One entry per kind a human approval can execute;
+# ``_apply_approved`` is the dispatcher and nothing else. Adding a kind is a
+# dict entry plus a handler, so a new branch can no longer be buried in the
+# middle of a 180-line if-chain where the dispatch order is the only
+# documentation.
+_APPROVERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    'brain_config': _apply_brain_config,
+    'skill_create': _apply_skill_write,
+    'skill_patch': _apply_skill_write,
+    'skill_delete': _apply_skill_delete,
+    'retire': _apply_skill_retire,
+    'promote': _apply_promote,
+}
+
+
+def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic applier — the ONLY path from proposal to live change.
+
+    A pure dispatcher over :data:`_APPROVERS`. A kind with no handler is not
+    an error to swallow: the observation/revert kinds are registered as
+    valid on purpose and are human-only by design, and an unregistered kind
+    is a caller bug worth naming.
+    """
+    kind = as_str(row.get('kind'), '')
+    handler = _APPROVERS.get(kind)
+    if handler is None:
+        if kind in OBSERVATION_KINDS | REVERT_KINDS:
             return {
-                'ok': True,
-                'action': 'patched' if kind == 'skill_patch' else 'created',
-                'name': name,
-                'version': version,
-                'superseded': supersededResult,
+                'ok': False,
+                'error': f'kind {kind!r} is human-only — nothing applies automatically',
             }
-        except ValueError as exc:
-            return {'ok': False, 'error': str(exc)}
-        except Exception as exc:
-            return {'ok': False, 'error': str(exc)}
-
-    if kind == 'skill_delete':
-        name = as_str(payload.get('name'), '').strip()
-        if not name:
-            return {'ok': False, 'error': 'skill_delete proposals need payload.name'}
-        try:
-            import shutil
-
-            from app.services.skill_service import _agentSkillsDir, _validateName
-
-            _validateName(name)  # §9 F-2: same guard as create/patch — no traversal past the agent root
-            skill_dir = _agentSkillsDir() / name
-            # SKILL.md, not the directory, is the skill. A bundled skill that
-            # has simply been loaded leaves a usage-only folder in the agent
-            # root; rmtree on that "succeeds" a delete of a skill that is still
-            # installed, which is the worst kind of green proposal.
-            if not (skill_dir / 'SKILL.md').is_file():
-                return {'ok': False, 'error': f'skill {name!r} not found in agent skills'}
-            shutil.rmtree(skill_dir)
-            try:
-                from app.services.skill_service import _bust_prompt_skills_cache
-
-                _bust_prompt_skills_cache()
-            except Exception:
-                pass
-            # A retired fingerprint's clock stops here — mark it so
-            # the resolution pass never re-suggests what a human retired.
-            fp = as_str(payload.get('fingerprint'), '')
-            if fp:
-                try:
-                    from app.services.episode_miner import set_fingerprint_status
-
-                    set_fingerprint_status(fp, 'retired')
-                except Exception:
-                    pass
-            return {'ok': True, 'action': 'deleted', 'name': name}
-        except Exception as exc:
-            return {'ok': False, 'error': str(exc)}
-
-    if kind == 'promote':
-        # Copy-on-write promotion (global fact or global
-        # skill with provenance) — the deterministic applier lives in
-        # harness_promote so the enumeration/judge code stays separate.
-        from app.services.harness_promote import apply_promotion
-
-        return apply_promotion(payload)
-
-    return {'ok': False, 'error': f'kind {kind!r} is human-only — nothing applies automatically'}
+        return {
+            'ok': False,
+            'error': (
+                f'kind {kind!r} has no applier; known appliable kinds are '
+                f'{sorted(_APPROVERS)}'
+            ),
+        }
+    return handler(row)
 
 
 # ── Scheduled introspection ───────────────────────────────────────────────

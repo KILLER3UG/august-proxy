@@ -896,6 +896,141 @@ def _skill_review_pass() -> tuple[int, list[str]]:
     return filed, notes
 
 
+# ── Never-loaded skill retirement (audit P2#13) — PROPOSAL ONLY ───────────
+# The skill review above is a MODEL's opinion of the library. This is the
+# mechanical counterpart, and it only ever counts two facts that cannot be
+# argued with: the skill has not been loaded, and no turn measurement says
+# it helps. Together they are the case for retiring it.
+#
+# PROPOSE-ONLY, deliberately, and the difference from deletion is the whole
+# point: the pass files a `retire` proposal whose approval writes
+# `status: retired` into the frontmatter. The SKILL.md, its version history
+# and its usage counters all stay on disk, and an approved patch sets the
+# status back. NOTHING here retires a skill on its own.
+_SKILL_RETIRE_DAYS = 30
+# The inbox is a decision queue, not a dump. A library that grew a dozen dead
+# skills at once gets the five worst; the rest surface on the next cadence.
+_SKILL_RETIRE_MAX = 5
+
+
+def _skill_retire_candidates() -> list[dict[str, Any]]:
+    """Agent-scope skills with no loads in the window and no measured lift.
+
+    Bundled and project entries are excluded: the applier that would act on
+    the proposal edits the AGENT root, so proposing retirement for a skill
+    that lives in the install tree would file something that cannot be applied
+    honestly. Disabled skills are excluded too — ``disabled: true`` is already
+    the human's way of saying "not this one right now".
+    """
+    from app.services import skill_service
+
+    try:
+        rows = list(skill_service.list_all(None) or [])
+    except Exception:
+        logger.debug('skill retire: catalogue read failed', exc_info=True)
+        return []
+    try:
+        from app.services.turn_outcomes import skill_lift
+
+        lifts = skill_lift(_SKILL_RETIRE_DAYS)
+    except Exception:
+        logger.debug('skill retire: lift read failed', exc_info=True)
+        lifts = {}
+    cutoff = datetime.now(timezone.utc).timestamp() - _SKILL_RETIRE_DAYS * 86400
+    out: list[dict[str, Any]] = []
+    for s in rows:
+        name = str(s.get('name') or '').strip()
+        if not name or str(s.get('scope') or '') != 'agent':
+            continue
+        if not s.get('enabled', True):
+            continue
+        if skill_service.skill_status(s.get('status')) in ('retired', 'superseded'):
+            continue
+        try:
+            usage = skill_service.read_skill_usage(name)
+        except Exception:
+            continue
+        count = as_int(usage.get('count'), 0)
+        last_used = str(usage.get('lastUsed') or '')
+        if count > 0:
+            # The sidecar carries a total, not a series: a skill with loads
+            # that all predate the window is "loaded once, long ago" and is
+            # not the same evidence as never loaded. Only an out-of-window
+            # timestamp qualifies.
+            if not last_used:
+                continue
+            try:
+                stamp = datetime.fromisoformat(last_used).timestamp()
+            except Exception:
+                continue
+            if stamp >= cutoff:
+                continue
+        # No evidence of help. Absent from the lift map means UNMEASURED,
+        # which is not on its own a reason to retire — but zero loads already
+        # carries the case, and a positive lift cancels it outright.
+        lift = float(lifts.get(name, 0.0))
+        if lift > 0:
+            continue
+        out.append({'name': name, 'loads': count, 'lift': lift, 'lastUsed': last_used})
+    return out
+
+
+def _skill_retire_pass() -> tuple[int, list[str]]:
+    """File a `retire` proposal per never-loaded, never-lifted skill.
+
+    Returns (filed, notes). Never applies anything.
+    """
+    notes: list[str] = []
+    candidates = _skill_retire_candidates()
+    if not candidates:
+        return 0, notes
+    try:
+        from app.services.harness_self_improve import save_proposal
+    except Exception:
+        logger.debug('skill retire: proposal door unavailable', exc_info=True)
+        return 0, notes
+    pending = _open_skill_proposal_names()
+    filed = 0
+    for cand in candidates[:_SKILL_RETIRE_MAX]:
+        name = str(cand.get('name') or '')
+        if not name or name in pending:
+            continue
+        try:
+            save_proposal(
+                problem=(
+                    f"Skill '{name}' has no measured effect: "
+                    f"{cand['loads']} recorded load(s) and a turn-lift of {cand['lift']}."
+                ),
+                evidence=(
+                    f'{name}: loads={cand["loads"]} lastUsed={cand["lastUsed"] or "never"} '
+                    f'lift={cand["lift"]} over {_SKILL_RETIRE_DAYS}d (turn_outcomes.skills_injected)'
+                ),
+                proposal=(
+                    f"Retire '{name}': set status: retired in its frontmatter. "
+                    'The file, its version history and its counters stay; an approved '
+                    'patch restores it to active.'
+                ),
+                rollback=(
+                    'Reject the proposal, or approve a later skill_patch for this skill — '
+                    'the patch sets status back to active.'
+                ),
+                kind='retire',
+                expected_metric='the skill stops being offered in <relevant_skills> rankings',
+                payload={
+                    'name': name,
+                    'loads': cand['loads'],
+                    'lift': cand['lift'],
+                    'lastUsed': cand['lastUsed'],
+                },
+                session_id='consolidation',
+            )
+            filed += 1
+            notes.append(f'skill retire proposed — {name}')
+        except Exception:
+            logger.debug('skill retire proposal failed', exc_info=True)
+    return filed, notes
+
+
 def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
     """One consolidation pass. Synchronous; callers wrap it. Never raises."""
     from app.services.memory_store import record_lifecycle, set_internal_state
@@ -941,6 +1076,14 @@ def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
             notes.extend(skillNotes)
         except Exception:
             logger.debug('skill review pass failed', exc_info=True)
+        # Never-loaded, never-lifted skills get a RETIRE proposal (P2#13).
+        # Still propose-only: approving it is what writes the status.
+        try:
+            retireFiled, retireNotes = _skill_retire_pass()
+            summary['skillRetireProposed'] = retireFiled
+            notes.extend(retireNotes)
+        except Exception:
+            logger.debug('skill retire pass failed', exc_info=True)
         summary['outcomesSwept'] = sweep_old_outcomes()
         # M-4: episodic_timeline retention sweep (table was unbounded).
         try:

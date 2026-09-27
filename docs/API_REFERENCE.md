@@ -308,6 +308,22 @@ Snapshot, alias CRUD, settings put — operator convenience surface.
 | `POST /api/skills` | Create agent-authored |
 | `PATCH /api/skills/{name}` | Patch (copy-on-write for bundled). A patch rewrites frontmatter **wholesale** — anything it does not restate is lost, so `trigger`, `supersedes`, `origin` and `learned_from` are read back off the file first |
 | `DELETE /api/skills/{name}?workspace=` | Delete agent-authored |
+| `GET /api/skills/{name}/versions?workspace=` | Version history → `{versions: [{ts, actor, rationale, sha}]}`, newest first. `ts` is the unixts id the snapshot is stored under; `sha` is the SHA-256 of that snapshot's content |
+| `GET /api/skills/{name}/versions/{ts}/diff?workspace=` | `{diff}` — a `difflib.unified_diff` of that version against the **current** `SKILL.md` |
+
+Both version routes 404 for an unknown skill, or for a version id that is not
+retained. Snapshots are taken automatically by every `SKILL.md` content write
+(user patch, approved proposal) into `<dataDir>/skills/<name>/.versions/`,
+capped at the 20 most recent — a create is not a change, so a brand-new skill
+has no history.
+
+Skills also carry a lifecycle label, `status: draft|active|superseded|retired`
+in frontmatter (absent = `active`); it rides `GET /api/skills` and
+`GET /api/skills/{name}` as `status`. Retirement is **proposal-only**: the
+consolidation pass files a `retire` harness proposal for a skill with no loads
+in 30 days and no measured lift, and a human approving it is what writes
+`status: retired`. The file, its version history and its usage counters all
+stay on disk, and an approved `skill_patch` sets the status back to `active`.
 
 There are no per-skill support-file routes (`…/files`) — support files travel
 inside the skill directory that `SKILL.md` describes. Bundled skills are listed

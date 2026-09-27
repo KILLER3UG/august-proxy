@@ -256,6 +256,28 @@ and harness jobs (`/api/subagents/workstreams*`, `/api/harness/*`, MCP
 (`verifierEnforced` / composer shield) and the `AUGUST_VERIFIER_REVIEWER`
 critic were **removed** (2026-08-24) — answers are never withheld.
 
+### Skill relevance knobs
+
+- `skillRelevanceMatch` (**default `true`**) gates the per-turn
+  `<relevant_skills>` BM25 pass; `AUGUST_SKILL_RELEVANCE=0` forces it off.
+- `skillKeywordExpansion` (**default `false`**) asks a cheap review model for
+  5-10 search keywords when a skill is **written** (a `POST /api/skills` create,
+  a `PATCH` that changes the body, or an approved harness skill proposal), stores
+  them in the `keywords:` frontmatter line, and ranks on them alongside
+  name/description/trigger. It is off by default because it costs one model call
+  on the write path; it is best-effort in outcome — no provider, no key, a bad
+  answer or a timeout all leave the skill written with no keywords, which is the
+  pre-existing behavior. Only the cheap `make_review_llm_client` resolver is
+  used, so a keyless install declines exactly like the lesson review does.
+- A separate, always-on **demotion prior** applies to the same ranking: a skill
+  whose turns measurably do *worse* than the same turns without it (the
+  aggregation behind `GET /api/brain/skills/suggestions`, cached per process for
+  60s) loses up to **0.5** BM25 points. A skill with no measurement is absent
+  from that map and pays nothing — "unmeasured" and "measured, no effect" are
+  different facts, and only the second one may move a ranking. The prior is a
+  tiebreaker-sized demotion, never a filter.
+- Retirement is proposal-only: see `docs/API_REFERENCE.md` → `/api/skills`.
+
 ### `auxiliary.session_json_export`
 
 Optional continuous backup of sessions to `workbench-sessions.json`.

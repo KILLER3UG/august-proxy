@@ -500,6 +500,61 @@ def sweep_old_outcomes(days: int = _RETENTION_DAYS) -> int:
         return 0
 
 
+def skill_lift(days: int = 30) -> dict[str, float]:
+    """Per-skill measured lift: ok-rate on turns that carried the skill minus
+    ok-rate on turns that did not, over the window.
+
+    ONE aggregation for two consumers: ``GET /api/brain/skills/suggestions``
+    (the human read) and the per-turn demotion prior in
+    ``capabilities_prompt`` (the ranking read). They must not be able to
+    disagree — a skill the UI shows at ``+0.2`` and the ranker treats as
+    harmful is a bug, not two opinions.
+
+    A skill with no measurable denominator is ABSENT from the map, not 0.0:
+    "no evidence" and "measured, no effect" are different facts, and only the
+    second one may move a ranking. A DB without migration 050 (or without
+    ``json_each``) degrades to an empty map.
+    """
+    window_days = max(1, min(int(days or 30), _RETENTION_DAYS))
+    try:
+        rows = _conn().execute(
+            """
+            WITH windowed AS (
+                SELECT ok, skills_injected FROM turn_outcomes
+                WHERE ts >= datetime('now', ?) AND skills_injected IS NOT NULL
+            ),
+            total AS (SELECT COUNT(*) AS n, SUM(ok) AS ok_n FROM windowed),
+            per AS (
+                SELECT je.value AS skill, COUNT(*) AS n, SUM(w.ok) AS ok_n
+                FROM windowed w, json_each(w.skills_injected) je
+                GROUP BY je.value
+            )
+            SELECT per.skill AS skill, per.n AS with_turns, per.ok_n AS ok_with,
+                   total.n AS total_turns, total.ok_n AS ok_total
+            FROM per, total
+            """
+            ,
+            (f'-{window_days} days',),
+        ).fetchall()
+    except Exception:
+        logger.debug('skill_lift aggregate failed', exc_info=True)
+        return {}
+    out: dict[str, float] = {}
+    for r in rows:
+        name = str(r['skill'] or '').strip()
+        with_turns = int(r['with_turns'] or 0)
+        total_turns = int(r['total_turns'] or 0)
+        without_turns = max(0, total_turns - with_turns)
+        if not name or not with_turns or not without_turns:
+            # No denominator on one side means the difference is undefined;
+            # a 0.0 here would read as "measured, no effect".
+            continue
+        ok_rate_with = int(r['ok_with'] or 0) / with_turns
+        ok_rate_without = (int(r['ok_total'] or 0) - int(r['ok_with'] or 0)) / without_turns
+        out[name] = round(ok_rate_with - ok_rate_without, 3)
+    return out
+
+
 def error_rate_by_model(days: int = 7) -> list[dict[str, object]]:
     """Per-model/provider turn stats for Observability + self-improve."""
     try:

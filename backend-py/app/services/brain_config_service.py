@@ -47,6 +47,7 @@ from app.type_aliases import BrainConfigDict
 boolKeys: tuple[str, ...] = (
     'enabled',
     'skillRelevanceMatch',
+    'skillKeywordExpansion',
     'modelMemoryRead',
     'memoryAutoInject',
     'modelMemoryWrites',
@@ -127,6 +128,11 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # Per-turn skill relevance gating (Tier-1 compact index + Tier-3
     # <relevant_skills>). Default on; AUGUST_SKILL_RELEVANCE=0 also forces off.
     ('skillRelevanceMatch', 'skill_relevance_match', True, 'bool'),
+    # Search-keyword expansion (audit P2#15): ask a cheap model for 5-10
+    # search keywords when a skill is WRITTEN, store them in frontmatter, and
+    # rank on them. Default OFF — it costs a model call on the write path, and
+    # best-effort failure just leaves the skill as it was pre-P2#15.
+    ('skillKeywordExpansion', 'skill_keyword_expansion', False, 'bool'),
     ('maxAgentDepth', 'max_agent_depth', DEFAULT_FEATURES.get('max_agent_depth', 4), 'num'),
     # Tool-round cap: DISABLED by default (0 = unlimited) — the old 25-round
     # cap killed long legitimate runs. Set > 0 in Settings → Brain to opt in;
@@ -264,7 +270,7 @@ def getDefaults() -> BrainConfigDict:
 
 def getDelegationLimits() -> dict[str, object]:
     """Global subagent delegation limits (Settings → Subagents), already
-    clamped to the Hermes-style ranges the orchestrator enforces. One source
+    clamped to the ranges the orchestrator enforces. One source
     of truth shared by the /api/subagents/config router and the spawn path
     (subagent_orchestrator) for sessions without a per-session override.
 

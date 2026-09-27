@@ -22,6 +22,8 @@ _ALLCamelKeys = {
     'enabled',
     # Per-turn skill relevance gating (compact Tier-1 index + Tier-3 picks).
     'skillRelevanceMatch',
+    # Search-keyword expansion at skill write time (audit P2#15, default off).
+    'skillKeywordExpansion',
     'maxAgentDepth',
     'maxWorkbenchToolLoops',
     # Turn budget ladder arms (each 0 = off by default).

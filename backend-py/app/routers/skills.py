@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import difflib
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import Field
 
 from app.models.camel_base import CamelModel
-from app.services import skill_service
+from app.services import skill_service, skill_versions
 from app.services.skill_service import SkillValidationError
 
 router = APIRouter(prefix='/api/skills')
@@ -68,7 +71,10 @@ def _lineage_fields(skill: dict[str, object]) -> dict[str, object]:
     return {
         'supersedes': str(meta.get('supersedes') or '').strip(),
         'origin': str(meta.get('origin') or '').strip(),
-        'status': str(meta.get('status') or '').strip(),
+        # Lifecycle (P2#13). The parse already normalizes an absent value to
+        # 'active' — a skill written before the field existed is not a draft —
+        # so the UI never has to distinguish "draft" from "never set".
+        'status': skill_service.skill_status(skill.get('status') or meta.get('status')),
         'version': int(digits) if digits.isdigit() else 1,
     }
 
@@ -122,6 +128,61 @@ async def getSkill(name: str, workspace: str = Query('')):
         **_lineage_fields(skill),
         **_usage_fields(str(skill.get('name') or name)),
     }
+
+
+def _skill_dir_or_404(name: str, workspace: str = '') -> Path:
+    """The on-disk directory holding a skill's SKILL.md, or a 404.
+
+    Version history lives beside the file it versions, so the directory has
+    to come from the SAME resolution ``get`` uses (bot > project > agent >
+    bundled) — a history read from any other root would answer honestly about
+    a file nobody edits.
+    """
+    skill = skill_service.get(name, workspace or None)
+    if not skill:
+        raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
+    raw = str(skill.get('path') or '')
+    if not raw:
+        raise HTTPException(status_code=404, detail=f"Skill '{name}' has no file on disk")
+    return Path(raw).parent
+
+
+@router.get('/{name}/versions')
+async def listSkillVersions(name: str, workspace: str = Query('')):
+    """Version history for one skill: ``{versions: [{ts, actor, rationale, sha}]}``.
+
+    ``ts`` is the unixts id the snapshot is stored under and is what the diff
+    endpoint takes. ``sha`` is the SHA-256 of the snapshotted content, so a
+    caller can tell "this version is what is live now" from "this version has
+    been edited since" without reading the body.
+    """
+    skill_dir = _skill_dir_or_404(name, workspace)
+    return {'versions': skill_versions.list_versions(skill_dir)}
+
+
+@router.get('/{name}/versions/{ts}/diff')
+async def diffSkillVersion(name: str, ts: str, workspace: str = Query('')):
+    """Unified diff of one version against the CURRENT SKILL.md.
+
+    Always against the live file, never against the next-newer snapshot: the
+    question a reader has is "what did I lose when this was replaced", and
+    the live file is the only honest other end of that diff.
+    """
+    skill_dir = _skill_dir_or_404(name, workspace)
+    previous = skill_versions.read_version(skill_dir, ts)
+    if previous is None:
+        raise HTTPException(status_code=404, detail=f"Version '{ts}' not found for skill '{name}'")
+    try:
+        current = (skill_dir / 'SKILL.md').read_text('utf-8')
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail=f"Skill '{name}' file unreadable: {exc}") from exc
+    diff = difflib.unified_diff(
+        previous.splitlines(keepends=True),
+        current.splitlines(keepends=True),
+        fromfile=f'{name}@{ts}',
+        tofile=f'{name} (current)',
+    )
+    return {'diff': ''.join(diff)}
 
 
 @router.post('')

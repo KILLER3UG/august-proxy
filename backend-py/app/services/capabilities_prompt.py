@@ -11,6 +11,7 @@ the caution level of their primary bucket (read / write / destructive / …).
 from __future__ import annotations
 
 import logging
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
@@ -306,6 +307,50 @@ _MIN_RELEVANCE_SCORE = 1.5
 # when nothing has been loaded yet.
 _SKILL_USAGE_BOOST_PER_USE = 0.05
 _SKILL_USAGE_BOOST_MAX_USES = 20
+# Measured-effect demotion prior (audit P2#15). A skill whose turns measurably
+# do WORSE than the same turns without it loses up to half a BM25 point — a
+# tiebreaker-sized demotion, never a filter. The bound is the point: a skill
+# is never removed from the ranking on a measurement, it is outranked by a
+# clearly better match, which is the same contract the usage boost keeps on
+# the other side. A skill with no measurement is absent from the map and pays
+# nothing (see turn_outcomes.skill_lift).
+_SKILL_DEMOTION_MAX = 0.5
+# The lift map is a per-process cache: the ranking path runs on EVERY turn and
+# the aggregate is a full scan of the turn ledger. 60s is short enough that a
+# demotion is visible within a couple of turns of the measurement landing.
+_SKILL_LIFT_TTL_S = 60.0
+_skill_lift_cache: tuple[float, dict[str, float]] | None = None
+
+
+def _skill_lift_map() -> dict[str, float]:
+    """``{skill: lift}`` from the turn ledger, memoized for ~60s per process.
+
+    A failure yields an empty map — i.e. pure relevance ranking, the behavior
+    of an install whose ledger has no skill column at all.
+    """
+    global _skill_lift_cache
+
+    now = time.monotonic()
+    cached = _skill_lift_cache
+    if cached is not None and now - cached[0] < _SKILL_LIFT_TTL_S:
+        return cached[1]
+    try:
+        from app.services.turn_outcomes import skill_lift
+
+        lifts = dict(skill_lift())
+    except Exception as exc:
+        logger.warning('skills relevance: lift lookup failed (%s) — ranking without it', exc)
+        lifts = {}
+    _skill_lift_cache = (now, lifts)
+    return lifts
+
+
+def _skill_demotion_penalty(skill_name: str) -> float:
+    """How much this skill's measured negative lift costs it, in BM25 points."""
+    lift = _skill_lift_map().get((skill_name or '').strip())
+    if lift is None or lift >= 0:
+        return 0.0
+    return min(_SKILL_DEMOTION_MAX, max(0.0, -lift))
 
 _SKILL_STOP_TOKENS = frozenset(
     {
@@ -537,7 +582,13 @@ def render_relevant_skills(
             build_entries: list[dict[str, object]] = []
             for s in catalogue:
                 name = as_str(s.get('name'), '')
-                text = f"{name.replace('-', ' ').replace('.', ' ')} {as_str(s.get('description'), '')} {as_str(s.get('trigger'), '')}"
+                # Keywords (P2#15) ride the same corpus string as the name,
+                # description and trigger: they are the words a USER types,
+                # and the whole point of generating them is to make the index
+                # match the message instead of the author's phrasing.
+                keywords = s.get('keywords')
+                kwText = ' '.join(str(k) for k in keywords) if isinstance(keywords, list) else ''
+                text = f"{name.replace('-', ' ').replace('.', ' ')} {as_str(s.get('description'), '')} {as_str(s.get('trigger'), '')} {kwText}"
                 tokens = _tokenize(text)
                 if not tokens:
                     continue
@@ -556,13 +607,19 @@ def render_relevant_skills(
                 scored.append((score, s))
         if not scored:
             return '', detail
-        # Relevance first, usage second: the bonus is applied AFTER BM25 and
-        # only over the scored>0 candidates, so the cached index stays
-        # usage-free (a load never invalidates it) and an all-zero usage
-        # profile reproduces the pure-BM25 order exactly (+0.0 for every
-        # skill, stable sort, same input order).
+        # Relevance first, usage second, measurement last: both adjustments are
+        # applied AFTER BM25 and only over the scored>0 candidates, so the
+        # cached index stays usage-free (a load never invalidates it) and an
+        # all-zero usage profile with no measurements reproduces the pure-BM25
+        # order exactly (+0.0 for every skill, stable sort, same input order).
         ranked: list[tuple[float, dict[str, object]]] = [
-            (score + _skill_usage_boost(as_str(s.get('name'), '')), s) for score, s in scored
+            (
+                score
+                + _skill_usage_boost(as_str(s.get('name'), ''))
+                - _skill_demotion_penalty(as_str(s.get('name'), '')),
+                s,
+            )
+            for score, s in scored
         ]
         ranked.sort(key=lambda pair: pair[0], reverse=True)
         lines: list[str] = ['<relevant_skills>']
