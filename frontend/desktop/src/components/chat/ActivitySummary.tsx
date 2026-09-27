@@ -316,7 +316,7 @@ export function ActivitySummary({
                 </span>
               )}
               {durationLabel && !showLiveOnly ? (
-                <span className="activity-summary-duration shrink-0 font-mono text-[11px] opacity-70" aria-hidden>
+                <span className="activity-summary-duration shrink-0 font-mono text-2xs opacity-70" aria-hidden>
                   {durationLabel}
                 </span>
               ) : null}

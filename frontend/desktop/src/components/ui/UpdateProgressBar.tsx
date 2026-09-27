@@ -65,7 +65,7 @@ export function UpdateProgressBar({
 
       {showLabel && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span className="select-none text-[11px] font-bold tracking-[0.28em] text-foreground/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]">
+          <span className="select-none text-2xs font-bold tracking-[0.28em] text-foreground/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]">
             {restarting ? '…' : 'AUG'}
           </span>
         </div>

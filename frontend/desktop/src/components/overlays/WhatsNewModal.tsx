@@ -117,7 +117,7 @@ export function WhatsNewModal({ open, onClose }: Props) {
 
           {(releases.length > 0) && (
             <section className="space-y-2">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <h3 className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {releaseSource === 'changelog' ? 'Recent versions (from bundled changelog)' : 'Releases'}
               </h3>
               <ul className="space-y-2">
@@ -134,12 +134,12 @@ export function WhatsNewModal({ open, onClose }: Props) {
                             {rel.name}
                           </span>
                           {rel.prerelease && (
-                            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-3xs font-medium text-amber-600 dark:text-amber-400">
                               pre
                             </span>
                           )}
                         </div>
-                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        <p className="mt-0.5 text-2xs text-muted-foreground">
                           {rel.tag}
                           {rel.date ? ` · ${formatTimeAgo(rel.date)}` : ''}
                         </p>
@@ -151,7 +151,7 @@ export function WhatsNewModal({ open, onClose }: Props) {
                         {rel.url && (
                           <button
                             type="button"
-                            className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                            className="mt-1.5 inline-flex items-center gap-1 text-2xs text-primary hover:underline"
                             onClick={() => void openExternal(rel.url)}
                           >
                             View release <ExternalLink className="size-3" />
@@ -167,7 +167,7 @@ export function WhatsNewModal({ open, onClose }: Props) {
 
           {(data?.commits.length ?? 0) > 0 && (
             <section className="space-y-2">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <h3 className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Commits
               </h3>
               <ul className="space-y-1.5">
@@ -181,7 +181,7 @@ export function WhatsNewModal({ open, onClose }: Props) {
                       <GitCommitHorizontal className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm text-foreground">{c.message || '(no message)'}</p>
-                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        <p className="mt-0.5 text-2xs text-muted-foreground">
                           <span className="font-mono">{c.sha}</span>
                           {c.author ? ` · ${c.author}` : ''}
                           {c.date ? ` · ${formatTimeAgo(c.date)}` : ''}
@@ -195,7 +195,7 @@ export function WhatsNewModal({ open, onClose }: Props) {
           )}
 
           {(data?.errors?.length ?? 0) > 0 && (
-            <p className="text-[11px] text-muted-foreground/70">
+            <p className="text-2xs text-muted-foreground/70">
               Partial load: {data!.errors.join('; ')}
             </p>
           )}

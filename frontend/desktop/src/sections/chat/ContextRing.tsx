@@ -180,7 +180,7 @@ export function ContextRing({
             style={{ transition: 'stroke-dasharray 0.3s ease, stroke 0.3s ease' }}
           />
         </svg>
-        <span className="font-mono text-[10.5px] tabular-nums">{clamped}%</span>
+        <span className="font-mono text-[0.65625rem] tabular-nums">{clamped}%</span>
       </button>
 
       {tooltipPos && createPortal(
@@ -200,7 +200,7 @@ export function ContextRing({
             <span className="text-sm font-semibold" style={{ color: 'var(--dt-popover-foreground)' }}>
               Context windows
             </span>
-            <span className="font-mono tabular-nums text-[12px]" style={{ color: 'var(--dt-muted-foreground)' }}>
+            <span className="font-mono tabular-nums text-[0.75rem]" style={{ color: 'var(--dt-muted-foreground)' }}>
               {formatTokens(estTokens)}/{formatTokens(maxContext)} ({clamped}%)
             </span>
           </div>
@@ -220,7 +220,7 @@ export function ContextRing({
               {rows.map((r) => (
                 <div
                   key={r.label}
-                  className={'flex items-center gap-2.5 py-[5px] text-[13px]' + (r.indent ? ' pl-3.5' : '')}
+                  className={'flex items-center gap-2.5 py-[5px] text-[0.8125rem]' + (r.indent ? ' pl-3.5' : '')}
                 >
                   <span
                     className="w-[7px] h-[7px] rounded-full shrink-0"
@@ -233,7 +233,7 @@ export function ContextRing({
                     {r.label}
                     {r.sub && <span className="opacity-60"> ↳</span>}
                   </span>
-                  <span className="ml-auto font-mono tabular-nums text-[12px]" style={{ color: 'var(--dt-muted-foreground)' }}>
+                  <span className="ml-auto font-mono tabular-nums text-[0.75rem]" style={{ color: 'var(--dt-muted-foreground)' }}>
                     {r.tokens == null ? 'not measured' : `${r.pct.toFixed(1)}%`}
                   </span>
                 </div>
@@ -242,10 +242,10 @@ export function ContextRing({
           )}
           {promptCache && (
             <div className="mt-2 pt-3 border-t flex items-center justify-between" style={{ borderColor: 'var(--dt-border)' }}>
-              <span className="text-[13px]" style={{ color: 'var(--dt-muted-foreground)' }}>
+              <span className="text-[0.8125rem]" style={{ color: 'var(--dt-muted-foreground)' }}>
                 Average cache hit rate
               </span>
-              <span className="font-mono tabular-nums text-[12px]" style={{ color: tone }}>
+              <span className="font-mono tabular-nums text-[0.75rem]" style={{ color: tone }}>
                 {Math.round(cacheRate * 100)}%
               </span>
             </div>

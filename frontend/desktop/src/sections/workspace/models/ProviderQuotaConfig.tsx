@@ -103,14 +103,14 @@ export function ProviderQuotaConfig({ provider, onSave, pending }: Props) {
       >
         {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
         Quota endpoint
-        <span className="text-[10px] text-muted-foreground font-normal">
+        <span className="text-3xs text-muted-foreground font-normal">
           {provider.quotaEndpoint?.url ? provider.quotaEndpoint.url : 'not configured'}
         </span>
       </button>
 
       {open && (
         <>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-2xs text-muted-foreground">
             Optional. August shows a provider-reported quota only when the provider states one —
             from its own rate-limit headers, or from the endpoint below. A relative path is joined
             onto the base URL exactly as pasted (no <span className="font-mono">/v1</span> is added).
@@ -179,7 +179,7 @@ export function ProviderQuotaConfig({ provider, onSave, pending }: Props) {
 
           <div className="space-y-2">
             <p className="text-xs font-medium text-foreground/80">JSON paths</p>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-2xs text-muted-foreground">
               Dotted paths into the response, e.g. <span className="font-mono">data.quota.limit</span> or{' '}
               <span className="font-mono">data.items[0].remaining</span>. Leave a path blank when the
               provider does not state that value — blanks are never read as zero.

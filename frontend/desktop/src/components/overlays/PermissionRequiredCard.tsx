@@ -167,13 +167,13 @@ export function PermissionRequiredCard({
             {PERMISSION_COPY.title}
           </div>
           {description ? (
-            <p className="mt-0.5 text-[13px] text-muted-foreground leading-snug">
+            <p className="mt-0.5 text-[0.8125rem] text-muted-foreground leading-snug">
               {description}
             </p>
           ) : null}
         </div>
         <div
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-warning/30 bg-warning/10 px-2 py-1 text-[11px] font-medium text-warning"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-warning/30 bg-warning/10 px-2 py-1 text-2xs font-medium text-warning"
           data-testid="permission-awaiting-badge"
         >
           <Clock className="size-3 opacity-80" aria-hidden />
@@ -209,7 +209,7 @@ export function PermissionRequiredCard({
                 data-testid={`permission-choice-${choiceId}`}
                 data-selected={isSelected ? 'true' : 'false'}
                 className={cn(
-                  'flex w-full items-baseline gap-2 rounded-md px-2.5 py-2 text-left text-[13px] transition-colors',
+                  'flex w-full items-baseline gap-2 rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition-colors',
                   isSelected
                     ? 'bg-accent text-accent-foreground'
                     : 'text-foreground hover:bg-muted',
@@ -239,7 +239,7 @@ export function PermissionRequiredCard({
                     placeholder={PERMISSION_COPY.instructionsPlaceholder}
                     className={cn(
                       'w-full rounded-md border border-input bg-background px-2.5 py-1.5',
-                      'text-[13px] text-foreground outline-none placeholder:text-muted-foreground',
+                      'text-[0.8125rem] text-foreground outline-none placeholder:text-muted-foreground',
                       'focus-visible:ring-2 focus-visible:ring-ring',
                     )}
                     onChange={(e) => setInstructions(e.target.value)}
@@ -266,7 +266,7 @@ export function PermissionRequiredCard({
       {/* Why a durable grant is missing — stated rather than silently dropped. */}
       {!choices.includes('always') ? (
         <p
-          className="flex items-start gap-1.5 border-t border-border px-4 py-2 text-[11px] text-muted-foreground leading-snug"
+          className="flex items-start gap-1.5 border-t border-border px-4 py-2 text-2xs text-muted-foreground leading-snug"
           data-testid="permission-always-withheld"
         >
           <ShieldOff className="mt-0.5 size-3 shrink-0 opacity-70" aria-hidden />
@@ -280,7 +280,7 @@ export function PermissionRequiredCard({
       ) : null}
 
       <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5">
-        <p className="flex min-w-0 items-start gap-1.5 text-[11px] text-muted-foreground leading-snug">
+        <p className="flex min-w-0 items-start gap-1.5 text-2xs text-muted-foreground leading-snug">
           <Info className="mt-0.5 size-3 shrink-0 opacity-70" aria-hidden />
           <span>{PERMISSION_COPY.confirmHint}</span>
         </p>

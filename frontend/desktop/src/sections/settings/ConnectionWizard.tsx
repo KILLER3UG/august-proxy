@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Circle, ExternalLink, Loader2, Plug, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
 import { useConnectAccount } from './useIntegrations';
 
@@ -36,8 +37,8 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch(`/api/service-connections/${provider}/scopes`)
-      .then((r) => r.json() as Promise<ScopesResponse>)
+    void api
+      .get<ScopesResponse>(`/api/service-connections/${provider}/scopes`)
       .then((data) => {
         if (cancelled) return;
         const list = Array.isArray(data.scopes) ? data.scopes : [];
@@ -67,19 +68,14 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
         provider === 'github'
           ? { token: token.trim() }
           : { botToken: token.trim(), channel: channel.trim() };
-      const res = await fetch(path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = (await res.json()) as {
+      const data = await api.post<{
         ok?: boolean;
         error?: string;
         detail?: string;
         login?: string;
         testSend?: boolean;
         testSendError?: string;
-      };
+      }>(path, body);
       if (!data.ok) {
         setError(data.error || 'Test failed');
       } else {
@@ -133,7 +129,7 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
             href={helpUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+            className="inline-flex items-center gap-1 text-2xs text-primary hover:underline"
           >
             Docs <ExternalLink className="size-3" />
           </a>
@@ -141,7 +137,7 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
       </div>
 
       {guide.length > 0 && (
-        <ol className="list-decimal space-y-1 pl-4 text-[11px] text-muted-foreground">
+        <ol className="list-decimal space-y-1 pl-4 text-2xs text-muted-foreground">
           {guide.map((step) => (
             <li key={step}>{step}</li>
           ))}
@@ -150,13 +146,13 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
 
       {scopes.length > 0 && (
         <div className="space-y-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <p className="text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
             Scopes checklist
           </p>
           <ul className="max-h-36 space-y-1 overflow-auto rounded-md border border-white/[0.06] p-2">
             {scopes.map((scope) => (
               <li key={scope}>
-                <label className="flex cursor-pointer items-center gap-2 text-[11px]">
+                <label className="flex cursor-pointer items-center gap-2 text-2xs">
                   <button
                     type="button"
                     className="shrink-0 text-primary"
@@ -237,9 +233,9 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
       </div>
 
       {testResult && (
-        <p className={cn('text-right text-[11px] text-emerald-400')}>{testResult}</p>
+        <p className={cn('text-right text-2xs text-emerald-400')}>{testResult}</p>
       )}
-      {error && <p className="text-right text-[11px] text-destructive">{error}</p>}
+      {error && <p className="text-right text-2xs text-destructive">{error}</p>}
     </form>
   );
 }

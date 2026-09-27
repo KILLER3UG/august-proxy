@@ -9,6 +9,7 @@ export const TURN_END_PHRASE: Record<string, string> = {
   length: 'hit output limit',
   cap: 'tool-round cap',
   'stall-stop': 'stalled then stopped',
+  budget: 'budget reached',
   error: 'errored',
   interrupted: 'you stopped it',
   'awaiting-input': 'waiting on your input',

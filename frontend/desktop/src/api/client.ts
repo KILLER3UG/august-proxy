@@ -163,17 +163,34 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Multipart / binary upload: passes `body` through untouched (the browser
+ *  sets the multipart boundary), unlike `api.post` which JSON-encodes. */
+async function requestRaw<T>(path: string, body: BodyInit, init?: RequestInit): Promise<T> {
+  await ready;
+  const url = baseUrl ? `${baseUrl}${path}` : path;
+  const res = await fetch(url, { ...init, body });
+  if (!res.ok) throw new ApiError(res.status, 'unknown', res.statusText);
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
 export const api = {
-  get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
+  get: <T>(path: string, init?: RequestInit) => request<T>(path, init),
+  post: <T>(path: string, body?: unknown, headers?: Record<string, string>, init?: RequestInit) =>
     request<T>(path, {
       method: 'POST',
       body: body !== undefined ? JSON.stringify(body) : undefined,
       headers,
+      ...init,
     }),
+  postRaw: <T>(path: string, body: BodyInit, init?: RequestInit) => requestRaw<T>(path, body, init),
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PUT', body: body !== undefined ? JSON.stringify(body) : undefined }),
-  patch: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined }),
+  patch: <T>(path: string, body?: unknown, init?: RequestInit) =>
+    request<T>(path, {
+      method: 'PATCH',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      ...init,
+    }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };

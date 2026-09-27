@@ -29,6 +29,7 @@ from typing import Any, cast
 from app.json_narrowing import as_int
 from app.lib.paths import assertPytestDataDirIsolated
 from app.services.memory_conn import conn as _conn
+from app.services.message_sources import MACHINE_SOURCES as _MACHINE_SOURCES
 
 logger = logging.getLogger(__name__)
 
@@ -139,10 +140,25 @@ def _isMachineInjected(text: str) -> bool:
     return any(stripped.startswith(p) for p in _INJECTION_PREFIXES)
 
 
+def _isMachineRow(source: str, text: str) -> bool:
+    """Provenance-first machine filter (audit C3/D7, migration 049).
+
+    The ``messages.source`` column is the authority: the loop tags its
+    plumbing once at write time (``harness_nudge``, ``queued_user``,
+    ``subagent_results``), so no prefix list has to chase new block shapes.
+    The legacy prefix filter remains ONLY for pre-049 rows whose source is
+    NULL — messages have no retention, so old sessions keep their injected
+    rows indefinitely and dropping the fallback would re-admit them.
+    """
+    if source:
+        return source in _MACHINE_SOURCES
+    return _isMachineInjected(text)
+
+
 # ── window extraction ─────────────────────────────────────────
 
 
-def _extractEvents(role: str, text: str) -> list[dict[str, str]]:
+def _extractEvents(role: str, text: str, source: str = '') -> list[dict[str, str]]:
     """Typed events observable in one stored message.
 
     §12 F-1: tool-role messages are where error receipts actually live in
@@ -160,7 +176,7 @@ def _extractEvents(role: str, text: str) -> list[dict[str, str]]:
                 'excerpt': stripped[:_MAX_EXCERPT],
             }
         )
-    if role != 'user' or _isMachineInjected(stripped):
+    if role != 'user' or _isMachineRow(source, stripped):
         # Harness-injected user-role blocks are not human speech.
         return events
     if _CORRECTION_RE.search(stripped):
@@ -198,22 +214,23 @@ def extract_episodes(sessionId: str) -> list[dict[str, Any]]:
       * abandoned_approach — user abandon marker → continuation
     """
     rows = _conn().execute(
-        'SELECT id, role, content FROM messages WHERE session_id = ? ORDER BY id',
+        'SELECT id, role, content, source FROM messages WHERE session_id = ? ORDER BY id',
         (sessionId,),
     ).fetchall()
     # Content is parsed defensively — raw-text rows are real
     # (sessions.py stores str payloads verbatim) and must never abort mining.
     parsed = [_loadContent(r['content']) for r in rows]
-    msgs: list[tuple[int, str, str]] = [
-        (int(r['id']), str(r['role']), _messageText(p)) for r, p in zip(rows, parsed)
+    msgs: list[tuple[int, str, str, str]] = [
+        (int(r['id']), str(r['role']), _messageText(p), str(r['source'] or ''))
+        for r, p in zip(rows, parsed)
     ]
     clean: list[bool] = [
         bool(_innerText(p)) and not _TOOL_ERROR_RE.search(_innerText(p)) for p in parsed
     ]
     episodes: list[dict[str, Any]] = []
     n = len(msgs)
-    for i, (mid, role, text) in enumerate(msgs):
-        events = _extractEvents(role, text)
+    for i, (mid, role, text, source) in enumerate(msgs):
+        events = _extractEvents(role, text, source)
         if not events:
             continue
         kinds = {e['type'] for e in events}
@@ -224,8 +241,8 @@ def extract_episodes(sessionId: str) -> list[dict[str, Any]]:
             outcome = 'unresolved'
             end = mid
             for j in range(i + 1, n):
-                _, r2, t2 = msgs[j]
-                if r2 == 'user' and _RESCUE_RE.search(t2) and not _isMachineInjected(t2):
+                _, r2, t2, s2 = msgs[j]
+                if r2 == 'user' and _RESCUE_RE.search(t2) and not _isMachineRow(s2, t2):
                     outcome = 'rescued'
                     end = msgs[j][0]
                     break
@@ -233,7 +250,7 @@ def extract_episodes(sessionId: str) -> list[dict[str, Any]]:
                     outcome = 'resolved'
                     end = msgs[j][0]
                     break
-                if r2 == 'user' and _ABANDON_RE.search(t2) and not _isMachineInjected(t2):
+                if r2 == 'user' and _ABANDON_RE.search(t2) and not _isMachineRow(s2, t2):
                     outcome = 'unresolved'
                     end = msgs[j][0]
                     break
@@ -249,17 +266,19 @@ def extract_episodes(sessionId: str) -> list[dict[str, Any]]:
         elif role == 'user' and 'user_correction' in kinds:
             # correction_accepted: an assistant reply follows and the user
             # does not immediately re-correct (within the next 2 user turns).
-            assistantReplied = any(r2 == 'assistant' for _, r2, _ in msgs[i + 1 : i + 3])
+            assistantReplied = any(r2 == 'assistant' for _, r2, _, _ in msgs[i + 1 : i + 3])
             reCorrections = sum(
                 1
-                for _, r2, t2 in msgs[i + 1 : i + 6]
-                if r2 == 'user' and not _isMachineInjected(t2) and _CORRECTION_RE.search(t2)
+                for _, r2, t2, s2 in msgs[i + 1 : i + 6]
+                if r2 == 'user' and not _isMachineRow(s2, t2) and _CORRECTION_RE.search(t2)
             )
             episodes.append(
                 {
                     'kind': 'correction_accepted',
                     'start_message_id': mid,
-                    'end_message_id': next((m for m, r2, _ in msgs[i + 1 :] if r2 == 'assistant'), mid),
+                    'end_message_id': next(
+                        (m for m, r2, _, _ in msgs[i + 1 :] if r2 == 'assistant'), mid
+                    ),
                     'events': events,
                     'outcome': 'resolved' if (assistantReplied and reCorrections == 0) else 'unresolved',
                 }
@@ -267,12 +286,14 @@ def extract_episodes(sessionId: str) -> list[dict[str, Any]]:
         elif role == 'user' and 'abandoned_approach' in kinds:
             # abandoned_approach: the pivot itself is the window; whether the
             # session continued cleanly after decides the outcome.
-            continued = any(r2 == 'assistant' for _, r2, _ in msgs[i + 1 :])
+            continued = any(r2 == 'assistant' for _, r2, _, _ in msgs[i + 1 :])
             episodes.append(
                 {
                     'kind': 'abandoned_approach',
                     'start_message_id': mid,
-                    'end_message_id': next((m for m, r2, _ in msgs[i + 1 :] if r2 == 'assistant'), mid),
+                    'end_message_id': next(
+                        (m for m, r2, _, _ in msgs[i + 1 :] if r2 == 'assistant'), mid
+                    ),
                     'events': events,
                     'outcome': 'resolved' if continued else 'unresolved',
                 }

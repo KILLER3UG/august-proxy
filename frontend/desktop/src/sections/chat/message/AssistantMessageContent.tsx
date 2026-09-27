@@ -120,7 +120,7 @@ export function AssistantMessageContent({
             character reveal is the in-flight feedback now. */}
         {isLast && !streaming && message.usage && message.usage.outputTokens > 0 && message.usage.durationMs && message.usage.durationMs > 0 ? (
           <div
-            className="text-[11px] tabular-nums text-tier-2"
+            className="text-2xs tabular-nums text-tier-2"
             title={`${message.usage.outputTokens.toLocaleString()} output tokens in ${(message.usage.durationMs / 1000).toFixed(1)}s of model generation`}
             data-testid="final-rate-chip"
           >
@@ -131,7 +131,7 @@ export function AssistantMessageContent({
             each attempt, cleared when the turn finalizes. The dots animate
             (travel) rather than the whole line fading. */}
         {message.retryNotice && (
-          <div className="flex items-center gap-1 text-[11px] text-warning/90" data-testid="retry-notice">
+          <div className="flex items-center gap-1 text-2xs text-warning/90" data-testid="retry-notice">
             <span>Reconnecting</span>
             <span className="inline-flex items-center gap-0.5" aria-hidden>
               <span className="reconnect-dot size-1 rounded-full bg-current" style={{ animationDelay: '0ms' }} />
@@ -144,11 +144,20 @@ export function AssistantMessageContent({
         {/* Fallback chip (D8): a chain/promotion switch answered this turn. */}
         {!(isLast && streaming) && message.usedFallback ? (
           <div
-            className="text-[10px] text-muted-foreground/60"
+            className="text-3xs text-muted-foreground/60"
             title="The primary model failed; this model answered the turn"
             data-testid="fallback-chip"
           >
             answered via {message.usedFallback}
+          </div>
+        ) : null}
+        {/* Truncated answer (audit P0#6): turn_end reason `length` means the
+            model hit the output cap with its continuation budget spent — the
+            text above LOOKS complete but isn't. The recovery event log
+            carries the attempt detail (recovery{kind, attempt, degraded}). */}
+        {!(isLast && streaming) && message.turnEnd?.reason === 'length' ? (
+          <div className="text-3xs text-warning/90" data-testid="truncated-answer-note">
+            cut off at the output limit — the answer above is incomplete
           </div>
         ) : null}
         {/* turn_end badge: why the tool loop stopped + round count. A clean
@@ -159,7 +168,7 @@ export function AssistantMessageContent({
           message.turnEnd &&
           message.turnEnd.reason !== 'finished' ? (
           <div
-            className={`text-[10px] ${
+            className={`text-3xs ${
               message.turnEnd.error
                 ? 'text-rose-400/90'
                 : 'text-warning/90'

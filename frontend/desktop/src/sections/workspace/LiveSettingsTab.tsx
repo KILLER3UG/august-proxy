@@ -144,7 +144,7 @@ export function LiveSettingsTab() {
             provider (with API key) for real server Whisper STT and TTS.
           </p>
           <div
-            className="mt-2 flex flex-wrap gap-2 text-[11px]"
+            className="mt-2 flex flex-wrap gap-2 text-2xs"
             data-testid="live-readiness-badges"
           >
             <span

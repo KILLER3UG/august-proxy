@@ -71,7 +71,7 @@ export function SettingsTooltip({
           role="tooltip"
           id={id}
           className={cn(
-            'absolute z-50 w-56 rounded-lg border border-border bg-popover px-3 py-2 text-[11px] leading-4 text-popover-foreground shadow-md',
+            'absolute z-50 w-56 rounded-lg border border-border bg-popover px-3 py-2 text-2xs leading-4 text-popover-foreground shadow-md',
             'pointer-events-none',
             side === 'top'
               ? 'bottom-full left-1/2 mb-1.5 -translate-x-1/2'

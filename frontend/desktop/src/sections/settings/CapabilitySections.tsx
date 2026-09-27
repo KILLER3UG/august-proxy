@@ -172,7 +172,7 @@ export function SubagentsSection() {
               )}
             </Card>
           </div>
-          {saving && <p className="mt-2 text-[11px] text-muted-foreground">Saving…</p>}
+          {saving && <p className="mt-2 text-2xs text-muted-foreground">Saving…</p>}
         </>
       )}
     </div>
@@ -248,7 +248,7 @@ export function PluginsSection() {
           ) : (
             skills.data!.skills.slice(0, 12).map((s) => (
               <Row key={s.name} label={s.name} hint={s.description?.slice(0, 90)}>
-                {s.source ? <span className="text-[10px] uppercase text-muted-foreground">{s.source}</span> : null}
+                {s.source ? <span className="text-3xs uppercase text-muted-foreground">{s.source}</span> : null}
               </Row>
             ))
           )}
@@ -319,7 +319,7 @@ export function BrowserUseSection() {
           ) : (
             browserTools.map((t) => (
               <Row key={t.name} label={t.name} hint={t.description?.slice(0, 110)}>
-                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-px text-[10px] text-emerald-400">
+                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-px text-3xs text-emerald-400">
                   on
                 </span>
               </Row>

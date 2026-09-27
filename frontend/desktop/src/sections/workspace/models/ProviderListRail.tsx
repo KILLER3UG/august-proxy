@@ -29,7 +29,7 @@ export function ProviderListRail({
   return (
     <div className="rounded-xl border border-border/60 bg-card/60 flex flex-col overflow-hidden md:max-h-[calc(100vh-9rem)]">
       <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between shrink-0">
-        <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">
+        <p className="text-3xs uppercase tracking-widest text-muted-foreground/70 font-semibold">
           Providers
         </p>
         <button
@@ -43,7 +43,7 @@ export function ProviderListRail({
       <div className="min-h-0 flex-1 overflow-y-auto p-1 space-y-0.5">
         {error ? (
           <p
-            className="px-3 py-4 text-[11px] text-destructive text-center"
+            className="px-3 py-4 text-2xs text-destructive text-center"
             data-testid="providers-rail-error"
           >
             Couldn't load providers

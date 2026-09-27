@@ -8,6 +8,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { IntegrationCatalogEntry } from '../integrationDirectory';
@@ -72,11 +73,9 @@ export function CatalogDetail({
     setSmokeBusy(true);
     setSmoke(null);
     try {
-      const res = await fetch('/api/mcp/servers');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as {
+      const data = await api.get<{
         servers?: Array<{ name?: string; id?: string; status?: string; running?: boolean }>;
-      };
+      }>('/api/mcp/servers');
       const servers = data.servers ?? [];
       const needle = (entry.packageName || entry.name || '').toLowerCase();
       const hit = servers.find((s) => {
@@ -119,10 +118,10 @@ export function CatalogDetail({
             <h3 className="text-xl font-semibold text-foreground">{entry.name}</h3>
             {entry.verified && <BadgeCheck className="size-4 text-muted-foreground" />}
             {entry.isNew && (
-              <span className="text-[11px] font-medium text-rose-400/90">New</span>
+              <span className="text-2xs font-medium text-rose-400/90">New</span>
             )}
             {entry.isCommunity && (
-              <Badge variant="outline" className="text-[10px]">
+              <Badge variant="outline" className="text-3xs">
                 Community
               </Badge>
             )}
@@ -150,7 +149,7 @@ export function CatalogDetail({
         Developed by <span className="text-foreground/80">{entry.developer}</span>
       </p>
 
-      <div className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+      <div className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-2xs leading-relaxed text-muted-foreground">
         <AlertTriangle className="mb-1 inline size-3.5 text-amber-400/90" /> Only use extensions
         from developers you trust. August does not control third-party MCP tools.
       </div>
@@ -165,13 +164,13 @@ export function CatalogDetail({
             {shown.map((t) => (
               <li
                 key={t}
-                className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 font-mono text-[11px] text-foreground/90"
+                className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 font-mono text-2xs text-foreground/90"
               >
                 {t}
               </li>
             ))}
             {more > 0 && (
-              <li className="rounded-md px-2 py-0.5 text-[11px] text-muted-foreground">
+              <li className="rounded-md px-2 py-0.5 text-2xs text-muted-foreground">
                 +{more} more
               </li>
             )}
@@ -189,13 +188,13 @@ export function CatalogDetail({
       {envFields.length > 0 && !installed && (
         <div className="space-y-3 rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
           <p className="text-xs font-semibold text-foreground">Configuration</p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-2xs text-muted-foreground">
             These are saved to the MCP server env and shared MCP env so Sign in with Google
             can open a browser immediately after install.
           </p>
           {envFields.map((field) => (
             <div key={field.key} className="space-y-1">
-              <label className="block text-[11px] font-medium text-muted-foreground">
+              <label className="block text-2xs font-medium text-muted-foreground">
                 {field.label}
                 {field.required !== false ? (
                   <span className="text-destructive"> *</span>
@@ -212,7 +211,7 @@ export function CatalogDetail({
                 className={cn('w-full px-3 py-2 font-mono text-xs', FIELD)}
               />
               {field.help && (
-                <p className="text-[10px] text-muted-foreground">{field.help}</p>
+                <p className="text-3xs text-muted-foreground">{field.help}</p>
               )}
             </div>
           ))}
@@ -221,7 +220,7 @@ export function CatalogDetail({
               href={entry.helpUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex text-[11px] text-primary hover:underline"
+              className="inline-flex text-2xs text-primary hover:underline"
             >
               Setup guide →
             </a>
@@ -231,7 +230,7 @@ export function CatalogDetail({
 
       <div className="flex flex-wrap gap-1.5">
         {entry.categories.map((c) => (
-          <Badge key={c} variant="outline" className="text-[10px]">
+          <Badge key={c} variant="outline" className="text-3xs">
             {c}
           </Badge>
         ))}

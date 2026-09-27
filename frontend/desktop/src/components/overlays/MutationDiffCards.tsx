@@ -142,12 +142,12 @@ function previewFromMutation(m: PendingMutationItem): ReactNode {
   if (cmd) {
     // Terminal-style block: `$ command` on its own line, output below it.
     return (
-      <div className="px-3 py-2.5 font-mono text-[12px] leading-relaxed">
+      <div className="px-3 py-2.5 font-mono text-[0.75rem] leading-relaxed">
         <div className="whitespace-pre-wrap break-all">
           <span className="select-none text-muted-foreground">$ </span>
           {cmd}
         </div>
-        <div className="mt-2 text-[11px] text-muted-foreground">No output.</div>
+        <div className="mt-2 text-2xs text-muted-foreground">No output.</div>
       </div>
     );
   }
@@ -164,14 +164,14 @@ function previewFromMutation(m: PendingMutationItem): ReactNode {
 
   if (m.preview) {
     return (
-      <pre className="whitespace-pre-wrap px-3 py-2 font-mono text-[11px] leading-relaxed">
+      <pre className="whitespace-pre-wrap px-3 py-2 font-mono text-2xs leading-relaxed">
         {m.preview}
       </pre>
     );
   }
 
   return (
-    <div className="px-3 py-2.5 text-[12px] text-muted-foreground">
+    <div className="px-3 py-2.5 text-[0.75rem] text-muted-foreground">
       No preview available.
     </div>
   );

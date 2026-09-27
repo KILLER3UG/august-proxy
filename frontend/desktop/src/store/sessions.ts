@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
+import { api } from '@/api/client';
 import { deleteWorkbenchSession, stopWorkbenchChat } from '@/api/workbench';
 import { deleteManageSession, setManageSessionArchived } from '@/api/api-client';
 import { chatRuntime } from '@/sections/chat/chat-runtime';
@@ -268,13 +269,11 @@ export function renameSession(id: string, newTitle: string) {
   // Persist to workbench SoT so reconcile / other tabs keep the title.
   const backendId = sess?.workbenchSessionId || (id.startsWith('wb_') ? id : '');
   if (backendId) {
-    void fetch(`/api/workbench/sessions/${encodeURIComponent(backendId)}/title`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
-    }).catch(() => {
-      // Best-effort — local title already applied.
-    });
+    void api
+      .patch(`/api/workbench/sessions/${encodeURIComponent(backendId)}/title`, { title })
+      .catch(() => {
+        // Best-effort — local title already applied.
+      });
   }
 }
 

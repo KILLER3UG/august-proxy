@@ -85,7 +85,7 @@ export const ThinkingDisclosure = memo(function ThinkingDisclosure({
 
   return (
     <div
-      className="text-[12.5px] text-muted-foreground/70"
+      className="text-[0.78125rem] text-muted-foreground/70"
       data-slot="thinking-disclosure"
     >
       <DisclosureRow
@@ -96,7 +96,7 @@ export const ThinkingDisclosure = memo(function ThinkingDisclosure({
           {icon}
           <span
             className={cn(
-              'text-[12.5px] font-normal italic leading-5',
+              'text-[0.78125rem] font-normal italic leading-5',
               pending
                 ? 'text-muted-foreground/85 shimmer thinking-content-generating'
                 : 'text-muted-foreground/55',
@@ -142,7 +142,7 @@ export const ThinkingDisclosure = memo(function ThinkingDisclosure({
                 type="button"
                 onClick={() => setExpanded((v) => !v)}
                 data-testid="thinking-show-more"
-                className="mb-0.5 text-[11px] text-muted-foreground/60 hover:text-primary"
+                className="mb-0.5 text-2xs text-muted-foreground/60 hover:text-primary"
               >
                 {expanded ? 'Show less' : 'Show more'}
               </button>

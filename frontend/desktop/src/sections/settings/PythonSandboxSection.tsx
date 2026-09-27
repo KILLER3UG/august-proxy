@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Code2, Loader2, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { api } from '@/api/client';
 import { BackgroundTaskRegistry } from '@/store/background-tasks';
 import { OsNotifyService } from '@/lib/os-notify';
 
@@ -36,17 +37,11 @@ export function PythonSandboxSection() {
       status: 'running',
     });
     try {
-      const res = await fetch('/api/workbench/sandbox/python', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code,
-          cwd: cwd.trim() || undefined,
-          timeoutMs: 3000,
-        }),
+      const data = await api.post<SandboxResult>('/api/workbench/sandbox/python', {
+        code,
+        cwd: cwd.trim() || undefined,
+        timeoutMs: 3000,
       });
-      const data = (await res.json()) as SandboxResult;
-      if (!res.ok) throw new Error((data as { detail?: string }).detail || `HTTP ${res.status}`);
       setResult(data);
       if (data.ok) {
         BackgroundTaskRegistry.markDone(taskId, `ok in ${data.elapsedMs ?? '?'}ms`);

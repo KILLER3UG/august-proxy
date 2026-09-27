@@ -573,6 +573,7 @@ export function useChatSend(opts: UseChatSendOptions) {
           // Tie-break: the poller may be stale (backend just came back).
           const ctrl = new AbortController();
           const timer = setTimeout(() => ctrl.abort(), 2000);
+          // raw fetch: bootstrap readiness probe — must not await the client's ready gate, which only resolves once the backend is healthy.
           const res = await fetch('/api/health', { signal: ctrl.signal });
           clearTimeout(timer);
           if (!res.ok) throw new Error('backend unhealthy');

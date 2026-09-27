@@ -118,14 +118,14 @@ export function PermissionToast({
           <div className="truncate text-warning/90" title={label}>
             {label}
           </div>
-          <p className="mt-0.5 text-[10px] text-muted-foreground">{PERMISSION_COPY.subtitle}</p>
+          <p className="mt-0.5 text-3xs text-muted-foreground">{PERMISSION_COPY.subtitle}</p>
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-1.5">
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-[11px] text-warning hover:bg-warning/15"
+          className="h-7 px-2 text-2xs text-warning hover:bg-warning/15"
           disabled={!!deciding}
           onClick={() => {
             void decide(true);
@@ -138,7 +138,7 @@ export function PermissionToast({
         <Button
           size="sm"
           variant="outline"
-          className="h-7 px-2 text-[11px]"
+          className="h-7 px-2 text-2xs"
           disabled={!!deciding}
           onClick={() => {
             void decide(false, 'once');
@@ -151,7 +151,7 @@ export function PermissionToast({
         <Button
           size="sm"
           variant="outline"
-          className="h-7 px-2 text-[11px]"
+          className="h-7 px-2 text-2xs"
           disabled={!!deciding}
           onClick={() => {
             void decide(false, 'session');
@@ -163,7 +163,7 @@ export function PermissionToast({
         {allowAlways ? (
           <Button
             size="sm"
-            className="h-7 px-2 text-[11px] bg-warning text-black hover:bg-warning/90"
+            className="h-7 px-2 text-2xs bg-warning text-black hover:bg-warning/90"
             disabled={!!deciding}
             onClick={() => {
               void decide(false, 'always');
@@ -176,7 +176,7 @@ export function PermissionToast({
         ) : null}
       </div>
       {!allowAlways ? (
-        <p className="text-[10px] text-muted-foreground" data-testid="permission-toast-always-withheld">
+        <p className="text-3xs text-muted-foreground" data-testid="permission-toast-always-withheld">
           {PERMISSION_COPY.alwaysWithheldHint}
         </p>
       ) : null}

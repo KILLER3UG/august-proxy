@@ -198,7 +198,7 @@ export function ArenaView() {
                     <button
                       type="button"
                       onClick={() => void replayGroup(g)}
-                      className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[10px] text-primary hover:bg-primary/20 shrink-0"
+                      className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-3xs text-primary hover:bg-primary/20 shrink-0"
                       title="Re-run these models on the same prompt"
                       data-testid={`arena-replay-${g.sessionId}`}
                     >
@@ -212,7 +212,7 @@ export function ArenaView() {
                     <span
                       key={`${r.model}-${i}`}
                       className={cn(
-                        'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px]',
+                        'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-3xs',
                         r.won
                           ? 'bg-emerald-500/15 text-emerald-500'
                           : 'bg-muted/60 text-muted-foreground',
@@ -337,7 +337,7 @@ export function ArenaView() {
               const b = finishedLanes[1];
               setDiffPair(a && b ? [a, b] : null);
             }}
-            className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[11px] text-primary hover:bg-primary/20 shrink-0"
+            className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-2xs text-primary hover:bg-primary/20 shrink-0"
             title="Line-diff the two oldest finished answers"
             data-testid="arena-diff-open"
           >
@@ -345,7 +345,7 @@ export function ArenaView() {
             Diff answers
           </button>
         ) : null}
-        <span className="text-[10px] text-muted-foreground/70 shrink-0">
+        <span className="text-3xs text-muted-foreground/70 shrink-0">
           other lanes keep running after you pick
         </span>
         <button
@@ -392,7 +392,7 @@ export function ArenaView() {
             <div className="flex items-center gap-2">
               <FileDiff className="size-4 text-primary" />
               <h3 className="font-medium text-sm">Answer diff</h3>
-              <span className="text-[10px] text-muted-foreground/70 ml-auto">
+              <span className="text-3xs text-muted-foreground/70 ml-auto">
                 {diffPair[0].modelName} → {diffPair[1].modelName}
               </span>
               <button

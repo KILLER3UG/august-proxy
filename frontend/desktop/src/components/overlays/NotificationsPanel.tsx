@@ -120,7 +120,7 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
               <Bell className="size-3.5 shrink-0 text-muted-foreground" />
               <div className="min-w-0">
                 <h2 className="text-sm font-semibold text-foreground">Notifications</h2>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-2xs text-muted-foreground">
                   Updates and recent activity
                 </p>
               </div>
@@ -169,7 +169,7 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
                   </span>
                 </div>
                 <UpdateProgressBar progress={progress} />
-                <p className="text-[10px] tabular-nums text-muted-foreground">
+                <p className="text-3xs tabular-nums text-muted-foreground">
                   {progress.totalBytes != null && progress.totalBytes > 0
                     ? `${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}`
                     : progress.downloadedBytes > 0
@@ -191,7 +191,7 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
               <div className="px-3.5 py-8 text-center">
                 <Bell className="mx-auto mb-2 size-5 text-muted-foreground/40" />
                 <p className="text-sm text-muted-foreground">You&apos;re all caught up</p>
-                <p className="mt-1 text-[11px] text-muted-foreground/70">
+                <p className="mt-1 text-2xs text-muted-foreground/70">
                   App updates and recent repo activity will show up here.
                 </p>
               </div>
@@ -308,15 +308,15 @@ function NotificationRow({
                 {item.title}
               </span>
               {item.kind === 'release' && item.prerelease && (
-                <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-3xs font-medium text-amber-600 dark:text-amber-400">
                   pre
                 </span>
               )}
             </div>
-            <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+            <p className="mt-0.5 line-clamp-2 text-2xs leading-snug text-muted-foreground">
               {item.detail}
             </p>
-            <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground/70">
+            <div className="mt-1 flex items-center gap-2 text-3xs text-muted-foreground/70">
               {item.when ? <span>{formatTimeAgo(item.when)}</span> : null}
               {item.kind === 'update' && (
                 <span className="font-medium text-amber-500">

@@ -77,7 +77,7 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
       <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
         <Cpu className="size-3.5 text-muted-foreground/70" />
         <span className="truncate text-xs font-semibold text-foreground">Circuit workbench</span>
-        <span className="ml-auto rounded bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+        <span className="ml-auto rounded bg-muted/40 px-1.5 py-0.5 text-3xs text-muted-foreground">
           {artifacts.length}
         </span>
       </div>
@@ -88,7 +88,7 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
               <select
                 value={activeNetlist}
                 onChange={(e) => setSelectedNetlist(e.target.value)}
-                className="mb-2 w-full rounded-md border border-border/60 bg-card/60 px-2 py-1 text-[11px] text-foreground"
+                className="mb-2 w-full rounded-md border border-border/60 bg-card/60 px-2 py-1 text-2xs text-foreground"
                 aria-label="Schematic netlist"
               >
                 {netlists.map((n) => (
@@ -108,7 +108,7 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
         <CircuitInstruments messages={messages} />
         <CircuitWaveformViewer messages={messages} sessionId={sessionId} />
         {artifacts.length === 0 ? (
-          <p className="px-1 py-6 text-center text-[11px] leading-relaxed text-muted-foreground/70">
+          <p className="px-1 py-6 text-center text-2xs leading-relaxed text-muted-foreground/70">
             No circuit artifacts yet.
             <br />
             Ask August to build a netlist, simulate it, or render the 3D board —
@@ -128,10 +128,10 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
                     <FileIcon name={a.path} size={14} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12px] font-medium text-foreground">
+                    <span className="block truncate text-[0.75rem] font-medium text-foreground">
                       {a.label}
                     </span>
-                    <span className="block truncate text-[10px] text-muted-foreground">
+                    <span className="block truncate text-3xs text-muted-foreground">
                       {describeArtifact(a)}
                     </span>
                   </span>

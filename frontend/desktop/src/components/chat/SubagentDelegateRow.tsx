@@ -118,7 +118,7 @@ export function SubagentDelegateRow({
       data-subagent-status={status}
       data-expanded={expanded && hasTranscript ? 'true' : 'false'}
     >
-      <div className="group flex w-full min-w-0 items-center gap-2 rounded-md px-1 py-0.5 text-left text-[13px] leading-5 transition-colors hover:bg-white/[0.03]">
+      <div className="group flex w-full min-w-0 items-center gap-2 rounded-md px-1 py-0.5 text-left text-[0.8125rem] leading-5 transition-colors hover:bg-white/[0.03]">
         {hasTranscript ? (
           <button
             type="button"
@@ -151,23 +151,23 @@ export function SubagentDelegateRow({
               {task || role}
             </span>
             {running && (
-              <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/60">
+              <span className="shrink-0 text-2xs tabular-nums text-muted-foreground/60">
                 {fmtElapsed(elapsed)}
               </span>
             )}
             {failed && (
-              <span className="shrink-0 text-[11px] text-destructive/80 underline decoration-dotted underline-offset-2">
+              <span className="shrink-0 text-2xs text-destructive/80 underline decoration-dotted underline-offset-2">
                 Failed
               </span>
             )}
             {cancelled && (
-              <span className="shrink-0 text-[11px] text-muted-foreground/60 underline decoration-dotted underline-offset-2">
+              <span className="shrink-0 text-2xs text-muted-foreground/60 underline decoration-dotted underline-offset-2">
                 Cancelled
               </span>
             )}
             {partial && (
               <span
-                className="shrink-0 text-[11px] text-warning/90 underline decoration-dotted underline-offset-2"
+                className="shrink-0 text-2xs text-warning/90 underline decoration-dotted underline-offset-2"
                 title="The worker stopped before finishing — what you see is part of its answer, not all of it."
                 data-testid="subagent-delegate-partial"
               >
@@ -201,23 +201,23 @@ export function SubagentDelegateRow({
               {task || role}
             </span>
             {running && (
-              <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/60">
+              <span className="shrink-0 text-2xs tabular-nums text-muted-foreground/60">
                 {fmtElapsed(elapsed)}
               </span>
             )}
             {failed && (
-              <span className="shrink-0 text-[11px] text-destructive/80 underline decoration-dotted underline-offset-2">
+              <span className="shrink-0 text-2xs text-destructive/80 underline decoration-dotted underline-offset-2">
                 Failed
               </span>
             )}
             {cancelled && (
-              <span className="shrink-0 text-[11px] text-muted-foreground/60 underline decoration-dotted underline-offset-2">
+              <span className="shrink-0 text-2xs text-muted-foreground/60 underline decoration-dotted underline-offset-2">
                 Cancelled
               </span>
             )}
             {partial && (
               <span
-                className="shrink-0 text-[11px] text-warning/90 underline decoration-dotted underline-offset-2"
+                className="shrink-0 text-2xs text-warning/90 underline decoration-dotted underline-offset-2"
                 title="The worker stopped before finishing — what you see is part of its answer, not all of it."
                 data-testid="subagent-delegate-partial"
               >

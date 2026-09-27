@@ -128,7 +128,7 @@ export function CircuitArtifactCard({ tools }: { tools?: CircuitToolEntry[] | nu
 
   return (
     <div className="mt-2.5" data-slot="circuit-artifact-card">
-      <span className="mb-1 block text-[10px] uppercase tracking-widest font-semibold text-muted-foreground/60">
+      <span className="mb-1 block text-3xs uppercase tracking-widest font-semibold text-muted-foreground/60">
         Circuit
       </span>
       <div className="flex flex-wrap gap-2">
@@ -150,15 +150,15 @@ export function CircuitArtifactCard({ tools }: { tools?: CircuitToolEntry[] | nu
                 <Icon className="size-4" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12.5px] font-medium text-foreground">
+                <span className="block truncate text-[0.78125rem] font-medium text-foreground">
                   {item.label}
                 </span>
-                <span className="block truncate text-[10.5px] text-muted-foreground">
+                <span className="block truncate text-[0.65625rem] text-muted-foreground">
                   {item.detail}
                 </span>
               </span>
               <span
-                className="shrink-0 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-[10px] font-medium text-muted-foreground transition group-hover:border-primary/40 group-hover:text-primary"
+                className="shrink-0 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-3xs font-medium text-muted-foreground transition group-hover:border-primary/40 group-hover:text-primary"
                 title="Open in the right side panel"
               >
                 Open panel ↗
@@ -169,7 +169,7 @@ export function CircuitArtifactCard({ tools }: { tools?: CircuitToolEntry[] | nu
         <button
           type="button"
           onClick={() => addRightDrawerSection('circuit')}
-          className="self-center rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground/70 hover:bg-muted/40 hover:text-foreground"
+          className="self-center rounded-md px-1.5 py-0.5 text-3xs text-muted-foreground/70 hover:bg-muted/40 hover:text-foreground"
           title="Open the Circuit workbench panel"
         >
           Open workbench

@@ -71,7 +71,7 @@ export function RecurringTasksSection() {
       </div>
 
       <Card className="p-4 space-y-2">
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-2xs text-muted-foreground">
           <span className="font-medium text-foreground">Trigger grammar:</span>{' '}
           <code className="font-mono">every 2 hours</code> ·{' '}
           <code className="font-mono">every 30 minutes</code> ·{' '}
@@ -106,7 +106,7 @@ export function RecurringTasksSection() {
           type="button"
           disabled={addTask.isPending || !trigger.trim() || !message.trim()}
           onClick={() => addTask.mutate()}
-          className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-[11px] text-primary-foreground disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-2xs text-primary-foreground disabled:opacity-50"
           data-testid="reminder-add"
         >
           <Plus className="size-3" />
@@ -131,16 +131,16 @@ export function RecurringTasksSection() {
           {tasks.map((t) => (
             <li key={t.id} className="rounded-lg border border-border p-3 text-xs space-y-1">
               <div className="flex items-center gap-2">
-                <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+                <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-3xs text-muted-foreground">
                   {t.trigger}
                 </span>
                 <span className="ml-auto flex items-center gap-1">
                   {t.last_fired_at ? (
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-3xs text-muted-foreground">
                       last fired {new Date(t.last_fired_at).toLocaleString()}
                     </span>
                   ) : (
-                    <span className="text-[10px] text-muted-foreground">never fired</span>
+                    <span className="text-3xs text-muted-foreground">never fired</span>
                   )}
                   <button
                     type="button"

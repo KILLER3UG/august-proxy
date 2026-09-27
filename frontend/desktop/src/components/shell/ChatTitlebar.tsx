@@ -167,7 +167,7 @@ export function ChatTitlebar({
                   title="Session menu"
                   data-testid="titlebar-session-trigger"
                 >
-                  <h1 className="text-[13px] font-medium text-foreground/90 min-w-0 truncate">
+                  <h1 className="text-[0.8125rem] font-medium text-foreground/90 min-w-0 truncate">
                     <MarqueeTitle
                       text={barTitle}
                       data-testid="session-bar-title"
@@ -208,7 +208,7 @@ export function ChatTitlebar({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <h1 className="text-[13px] font-medium text-foreground/90 min-w-0 flex-1 px-1">
+            <h1 className="text-[0.8125rem] font-medium text-foreground/90 min-w-0 flex-1 px-1">
               <MarqueeTitle
                 text={barTitle}
                 data-testid="session-bar-title"
@@ -222,7 +222,7 @@ export function ChatTitlebar({
             <button
               type="button"
               onClick={() => { void revealInFolder(session.workspacePath || ''); }}
-              className="shrink-0 inline-flex items-center gap-1 h-6 px-1.5 rounded-md text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              className="shrink-0 inline-flex items-center gap-1 h-6 px-1.5 rounded-md text-2xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
               title={session.workspacePath}
               aria-label="Open workspace folder"
               data-testid="titlebar-folder-chip"

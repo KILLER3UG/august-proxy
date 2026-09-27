@@ -13,7 +13,7 @@ export function StreamLinkBanner({ sessionId }: { sessionId?: string | null }) {
     <div
       role="status"
       data-testid="stream-reconnecting"
-      className="mb-1.5 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-[11px] text-warning"
+      className="mb-1.5 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-2xs text-warning"
     >
       <RefreshCw className="size-3 shrink-0 animate-spin" />
       <span className="flex-1 min-w-0">

@@ -193,7 +193,7 @@ export function UpdateSection() {
             </span>
           </div>
           <UpdateProgressBar progress={progress} />
-          <p className="text-[11px] tabular-nums text-muted-foreground">
+          <p className="text-2xs tabular-nums text-muted-foreground">
             {progress.totalBytes != null && progress.totalBytes > 0
               ? `${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}`
               : progress.downloadedBytes > 0
@@ -265,7 +265,7 @@ function BackendDepsCard({
           <p className={`mt-1 text-xs ${proxyCls}`}>{proxyLabel}</p>
           <p className={`mt-0.5 text-xs ${syncCls}`}>{syncLabel}</p>
           {backend.lastError && (
-            <p className="mt-1 text-[11px] text-red-400/80 break-words">
+            <p className="mt-1 text-2xs text-red-400/80 break-words">
               Last error: {backend.lastError}
             </p>
           )}

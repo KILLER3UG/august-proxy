@@ -212,7 +212,7 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
           const groupStart = flatItems.indexOf(group.items[0]);
           return (
             <div key={group.provider} role="presentation">
-              <div className="px-4 py-1.5 text-[11px] uppercase tracking-wide text-muted-foreground font-semibold bg-muted/10">
+              <div className="px-4 py-1.5 text-2xs uppercase tracking-wide text-muted-foreground font-semibold bg-muted/10">
                 {group.provider}
               </div>
               {group.items.map((model, idx) => {
@@ -276,13 +276,13 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
         })}
         {unavailableGroups.length > 0 && (
           <details className="border-t border-border/60">
-            <summary className="px-4 py-1.5 text-[11px] uppercase tracking-wide text-muted-foreground/60 font-semibold cursor-pointer hover:text-muted-foreground flex items-center justify-between gap-2">
+            <summary className="px-4 py-1.5 text-2xs uppercase tracking-wide text-muted-foreground/60 font-semibold cursor-pointer hover:text-muted-foreground flex items-center justify-between gap-2">
               <span>
                 Unavailable providers ({unavailableGroups.reduce((n, g) => n + g.items.length, 0)})
               </span>
               <button
                 type="button"
-                className="normal-case tracking-normal text-[11px] text-primary hover:underline"
+                className="normal-case tracking-normal text-2xs text-primary hover:underline"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();

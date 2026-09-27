@@ -55,7 +55,7 @@ export function Section({
       >
         <div
           className={cn(
-            'mb-0.5 text-[10px] uppercase tracking-widest font-semibold',
+            'mb-0.5 text-3xs uppercase tracking-widest font-semibold',
             tone === 'error' ? 'text-destructive' : 'text-muted-foreground/60',
           )}
         >
@@ -106,7 +106,7 @@ export function FormattedSection({
       >
         <div
           className={cn(
-            'mb-0.5 flex items-center gap-1 text-[10px] uppercase tracking-widest font-semibold',
+            'mb-0.5 flex items-center gap-1 text-3xs uppercase tracking-widest font-semibold',
             tone === 'error'
               ? 'text-destructive'
               : isSuccess
@@ -161,9 +161,9 @@ export function FormattedErrorSection({ toolName, raw }: { toolName: string; raw
 
   return (
     <div className="mt-1.5 flex gap-3">
-      <span className="text-[10px] shrink-0 w-16 pt-0.5 text-destructive">error</span>
+      <span className="text-3xs shrink-0 w-16 pt-0.5 text-destructive">error</span>
       <div className="flex-1 min-w-0">
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-[11.5px] leading-relaxed">
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-[0.71875rem] leading-relaxed">
           <div className="flex items-start gap-1.5">
             <AlertCircle className="size-3 shrink-0 mt-0.5 text-destructive" />
             <div className="min-w-0 flex-1">
@@ -171,7 +171,7 @@ export function FormattedErrorSection({ toolName, raw }: { toolName: string; raw
                 {message}
               </div>
               {detail && (
-                <div className="mt-0.5 text-destructive/80 text-[11px] font-mono whitespace-pre-wrap break-words">
+                <div className="mt-0.5 text-destructive/80 text-2xs font-mono whitespace-pre-wrap break-words">
                   {detail}
                 </div>
               )}
@@ -182,14 +182,14 @@ export function FormattedErrorSection({ toolName, raw }: { toolName: string; raw
               <button
                 type="button"
                 onClick={() => setShowRaw(v => !v)}
-                className="inline-flex items-center gap-0.5 text-[10px] text-destructive/70 hover:text-destructive transition-colors"
+                className="inline-flex items-center gap-0.5 text-3xs text-destructive/70 hover:text-destructive transition-colors"
                 title={showRaw ? 'Hide raw error' : 'Show raw error'}
               >
                 <Code2 className="size-2.5" />
                 {showRaw ? 'Hide raw' : 'Show raw'}
               </button>
               {showRaw && (
-                <pre className="flex-1 max-h-40 overflow-auto rounded border border-destructive/20 bg-black/30 px-2 py-1 text-[10.5px] leading-relaxed font-mono whitespace-pre-wrap wrap-break-word text-muted-foreground/85">
+                <pre className="flex-1 max-h-40 overflow-auto rounded border border-destructive/20 bg-black/30 px-2 py-1 text-[0.65625rem] leading-relaxed font-mono whitespace-pre-wrap wrap-break-word text-muted-foreground/85">
                   {tryPrettyJson(raw)}
                 </pre>
               )}

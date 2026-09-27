@@ -318,14 +318,14 @@ export function CircuitSchematicEditor({
     <div className={cn('flex flex-col gap-1.5', className)} data-testid="circuit-schematic-editor">
       <div className="flex items-center gap-1.5">
         <Waves className="size-3.5 text-muted-foreground/70" />
-        <span className="truncate text-[11px] font-semibold text-foreground">Schematic</span>
-        <span className="truncate text-[10px] text-muted-foreground/70">{netlistPath.split(/[\\/]/).pop()}</span>
+        <span className="truncate text-2xs font-semibold text-foreground">Schematic</span>
+        <span className="truncate text-3xs text-muted-foreground/70">{netlistPath.split(/[\\/]/).pop()}</span>
         <span className="ml-auto flex items-center gap-1">
           <button
             type="button"
             onClick={() => setFlow((f) => !f)}
             className={cn(
-              'rounded px-1.5 py-0.5 text-[10px] transition',
+              'rounded px-1.5 py-0.5 text-3xs transition',
               flow ? 'bg-primary/15 text-primary' : 'text-muted-foreground/70 hover:bg-muted/50',
             )}
             title="Animate current flow along the wires"
@@ -357,9 +357,9 @@ export function CircuitSchematicEditor({
       </div>
 
       {error ? (
-        <p className="px-1 py-3 text-[11px] text-destructive">{error}</p>
+        <p className="px-1 py-3 text-2xs text-destructive">{error}</p>
       ) : loading && !graph ? (
-        <p className="px-1 py-3 text-[11px] text-muted-foreground/70">Loading schematic…</p>
+        <p className="px-1 py-3 text-2xs text-muted-foreground/70">Loading schematic…</p>
       ) : graph && bounds ? (
         <svg
           ref={svgRef}
@@ -417,10 +417,10 @@ export function CircuitSchematicEditor({
           })}
         </svg>
       ) : (
-        <p className="px-1 py-3 text-[11px] text-muted-foreground/70">No components in this deck.</p>
+        <p className="px-1 py-3 text-2xs text-muted-foreground/70">No components in this deck.</p>
       )}
       {dirty ? (
-        <p className="px-1 text-[10px] text-muted-foreground/70">
+        <p className="px-1 text-3xs text-muted-foreground/70">
           Unsaved layout — saving writes the sidecar only; the netlist is untouched.
         </p>
       ) : null}

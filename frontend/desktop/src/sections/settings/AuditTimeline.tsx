@@ -189,8 +189,8 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
 function JsonBlock({ label, value }: { label: string; value: unknown }) {
     return (
         <div className="rounded-md border border-white/[0.06] bg-background/40 p-2">
-            <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">{label}</div>
-            <pre className="text-[11px] leading-snug whitespace-pre-wrap break-all font-mono">
+            <div className="text-3xs uppercase tracking-widest text-muted-foreground mb-1">{label}</div>
+            <pre className="text-2xs leading-snug whitespace-pre-wrap break-all font-mono">
                 {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
             </pre>
         </div>

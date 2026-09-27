@@ -186,7 +186,7 @@ function ProgressPopover({ todos }: { todos: WorkbenchTodo[] }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/20 px-2 py-0.5 text-[11px] text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+        className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/20 px-2 py-0.5 text-2xs text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
         data-testid="subagent-progress-chip"
       >
         <ListTodo className="size-3" />
@@ -199,25 +199,25 @@ function ProgressPopover({ todos }: { todos: WorkbenchTodo[] }) {
           data-testid="subagent-progress-popover"
         >
           {done > 0 && (
-            <div className="mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <div className="mb-1 flex items-center gap-1.5 text-2xs text-muted-foreground">
               <ChevronDown className="size-3 -rotate-90" />
               {done} completed
             </div>
           )}
           {current && (
-            <div className="flex items-start gap-1.5 py-0.5 text-[12px] text-foreground">
+            <div className="flex items-start gap-1.5 py-0.5 text-[0.75rem] text-foreground">
               <ArrowRight className="mt-0.5 size-3 shrink-0 text-primary/80" />
               <span className="min-w-0">{current.content}</span>
             </div>
           )}
           {pending.map((t) => (
-            <div key={t.id} className="flex items-start gap-1.5 py-0.5 text-[12px] text-muted-foreground/80">
+            <div key={t.id} className="flex items-start gap-1.5 py-0.5 text-[0.75rem] text-muted-foreground/80">
               <Circle className="mt-0.5 size-3 shrink-0 text-muted-foreground/40" />
               <span className="min-w-0">{t.content}</span>
             </div>
           ))}
           {done === 0 && !current && pending.length === 0 && (
-            <p className="px-1 py-0.5 text-[11px] italic text-muted-foreground/60">No steps yet.</p>
+            <p className="px-1 py-0.5 text-2xs italic text-muted-foreground/60">No steps yet.</p>
           )}
         </div>
       )}
@@ -271,15 +271,15 @@ function TabSearchDropdown({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search tabs…"
-              className="min-w-0 flex-1 bg-transparent text-[12px] text-foreground outline-none placeholder:text-muted-foreground/50"
+              className="min-w-0 flex-1 bg-transparent text-[0.75rem] text-foreground outline-none placeholder:text-muted-foreground/50"
             />
           </div>
-          <p className="px-1.5 pb-0.5 pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+          <p className="px-1.5 pb-0.5 pt-1 text-3xs font-medium uppercase tracking-wide text-muted-foreground/60">
             Open tabs
           </p>
           <div className="max-h-64 overflow-y-auto">
             {filtered.length === 0 && (
-              <p className="px-2 py-1.5 text-[11.5px] italic text-muted-foreground/60">No matching tabs.</p>
+              <p className="px-2 py-1.5 text-[0.71875rem] italic text-muted-foreground/60">No matching tabs.</p>
             )}
             {filtered.map((t) => (
               <button
@@ -290,11 +290,11 @@ function TabSearchDropdown({
                   setOpen(false);
                   setQ('');
                 }}
-                className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-[12px] text-foreground/85 transition hover:bg-white/[0.05]"
+                className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-[0.75rem] text-foreground/85 transition hover:bg-white/[0.05]"
               >
                 <span className="min-w-0 flex-1 truncate">{t.label}</span>
                 {typeof t.elapsed === 'number' && (
-                  <span className="shrink-0 text-[10.5px] tabular-nums text-muted-foreground/55">
+                  <span className="shrink-0 text-[0.65625rem] tabular-nums text-muted-foreground/55">
                     {fmtElapsed(t.elapsed)}
                   </span>
                 )}
@@ -512,7 +512,7 @@ export function RightDrawerSubagentsSection({
                   {t.label}
                 </button>
                 {typeof t.elapsed === 'number' && (
-                  <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/50">
+                  <span className="shrink-0 text-3xs tabular-nums text-muted-foreground/50">
                     {fmtElapsed(t.elapsed)}
                   </span>
                 )}
@@ -614,11 +614,11 @@ export function RightDrawerSubagentsSection({
               <Markdown content={run.resultText} />
             </div>
           ) : selectedAgent.status === 'failed' || run?.error ? (
-            <p className="text-[13px] leading-relaxed text-danger/85">
+            <p className="text-[0.8125rem] leading-relaxed text-danger/85">
               {run?.error || 'The worker failed before producing a response.'}
             </p>
           ) : (
-            <p className="text-[13px] italic leading-relaxed text-muted-foreground/70">
+            <p className="text-[0.8125rem] italic leading-relaxed text-muted-foreground/70">
               Waiting for output…
             </p>
           )}
@@ -660,7 +660,7 @@ export function RightDrawerSubagentsSection({
       {tabsStrip}
       <div className="min-h-0 flex-1 overflow-y-auto">
       {entries.length === 0 ? (
-        <p className="px-4 py-6 text-center text-[13px] text-muted-foreground/60">
+        <p className="px-4 py-6 text-center text-[0.8125rem] text-muted-foreground/60">
           No subagents yet. Delegate a task and it will show up here like a second conversation.
         </p>
       ) : (
@@ -675,7 +675,7 @@ export function RightDrawerSubagentsSection({
                 data-testid={`right-drawer-subagent-${key}`}
               >
                 <StatusGlyph status={agent.status} />
-                <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/90">
+                <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-foreground/90">
                   {displayLabels.get(key) || getAgentRoleLabel(agent.agentId) || 'Agent'}
                 </span>
                 <span className="shrink-0 text-xs text-muted-foreground/55">
@@ -715,7 +715,7 @@ export function RightDrawerSubagentsSection({
               if (ok) stopAll.mutate(workbenchSessionId ?? sessionId ?? undefined);
             })}
             disabled={stopAll.isPending}
-            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition hover:text-danger"
+            className="inline-flex items-center gap-1 text-2xs text-muted-foreground transition hover:text-danger"
             data-testid="stop-all-subagents"
           >
             <Square className="size-2.5" />

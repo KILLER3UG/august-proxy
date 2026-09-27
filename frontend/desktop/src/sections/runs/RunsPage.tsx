@@ -117,9 +117,9 @@ function fmtCost(c?: number): string {
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-xl border border-white/[0.06] bg-card/60 p-3.5">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-3xs uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="mt-1 text-xl font-semibold text-foreground">{value}</p>
-      {hint ? <p className="mt-0.5 text-[10px] text-muted-foreground/70">{hint}</p> : null}
+      {hint ? <p className="mt-0.5 text-3xs text-muted-foreground/70">{hint}</p> : null}
     </div>
   );
 }
@@ -280,7 +280,7 @@ export function RunsPage() {
             key={f.id}
             type="button"
             onClick={() => setFilter(f.id)}
-            className={`rounded-full px-3 py-1 text-[11px] transition-colors ${
+            className={`rounded-full px-3 py-1 text-2xs transition-colors ${
               filter === f.id
                 ? 'bg-primary/15 text-primary border border-primary/30'
                 : 'bg-muted/40 text-muted-foreground border border-transparent hover:text-foreground'
@@ -290,7 +290,7 @@ export function RunsPage() {
             {f.label}
           </button>
         ))}
-        <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-muted-foreground/70">
+        <span className="ml-auto inline-flex items-center gap-1 text-3xs text-muted-foreground/70">
           <RefreshCw className={`size-3 ${isFetching ? 'animate-spin' : ''}`} />
           {isFetching ? 'Refreshing…' : 'Live'}
         </span>
@@ -330,7 +330,7 @@ export function RunsPage() {
                 data-testid={`run-row-${run.id}`}
               >
                 <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full shrink-0 ${phase.tone}`}
+                  className={`text-3xs px-2 py-0.5 rounded-full shrink-0 ${phase.tone}`}
                   data-testid={`run-status-${run.id}`}
                 >
                   {phase.label}
@@ -339,17 +339,17 @@ export function RunsPage() {
                   <p className="text-sm font-medium truncate">
                     {run.title || 'Untitled run'}
                     {run.model ? (
-                      <span className="ml-2 text-[10px] text-muted-foreground font-mono">
+                      <span className="ml-2 text-3xs text-muted-foreground font-mono">
                         {run.model}
                         {run.provider ? ` @ ${run.provider}` : ''}
                       </span>
                     ) : null}
                   </p>
-                  <p className="text-[11px] text-muted-foreground/80 truncate">
+                  <p className="text-2xs text-muted-foreground/80 truncate">
                     {run.goal || run.workspacePath || `${run.messageCount} messages · ${run.turnCount} turns`}
                   </p>
                 </div>
-                <div className="flex items-center gap-4 text-[11px] text-muted-foreground shrink-0">
+                <div className="flex items-center gap-4 text-2xs text-muted-foreground shrink-0">
                   <span className="inline-flex items-center gap-1" title="Messages / turns">
                     <MessageSquare className="size-3" />
                     {run.messageCount} / {run.turnCount}
@@ -372,7 +372,7 @@ export function RunsPage() {
                     <button
                       type="button"
                       onClick={() => cancelRun(run)}
-                      className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-[11px] text-foreground hover:bg-rose-500/15 hover:text-rose-400"
+                      className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-2xs text-foreground hover:bg-rose-500/15 hover:text-rose-400"
                       title="Stop the active stream"
                       data-testid={`run-cancel-${run.id}`}
                     >
@@ -384,7 +384,7 @@ export function RunsPage() {
                       type="button"
                       disabled={retryingId === run.id}
                       onClick={() => void retryRun(run)}
-                      className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-[11px] text-foreground hover:bg-muted disabled:opacity-50"
+                      className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-2xs text-foreground hover:bg-muted disabled:opacity-50"
                       title="Re-send the last user message"
                       data-testid={`run-retry-${run.id}`}
                     >
@@ -395,7 +395,7 @@ export function RunsPage() {
                   <button
                     type="button"
                     onClick={() => navigate(`/c/${resolveUiSessionId(run.id)}`)}
-                    className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-[11px] text-foreground hover:bg-muted"
+                    className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-2xs text-foreground hover:bg-muted"
                     data-testid={`run-open-${run.id}`}
                   >
                     <ExternalLink className="size-3" />

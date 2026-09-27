@@ -225,11 +225,11 @@ export function DebateView({
         <div className="flex items-center gap-2">
           <Gavel className="size-4 text-primary" />
           <h3 className="text-xs font-semibold">Debate</h3>
-          <p className="text-[11px] text-muted-foreground truncate flex-1 min-w-0">
+          <p className="text-2xs text-muted-foreground truncate flex-1 min-w-0">
             {run.models.map((m) => m.modelName).join(' vs ')}
             {run.judge ? ` · judged by ${run.judge.modelName}` : ''}
           </p>
-          <span className="text-[10px] text-muted-foreground/70 shrink-0">
+          <span className="text-3xs text-muted-foreground/70 shrink-0">
             round {Math.min(run.round, run.maxRounds)}/{run.maxRounds}
             {run.judge ? ' + judge' : ''}
           </span>
@@ -253,7 +253,7 @@ export function DebateView({
             <button
               type="button"
               onClick={start}
-              className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-[11px] text-primary-foreground"
+              className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-2xs text-primary-foreground"
               data-testid="debate-start"
             >
               <Play className="size-3" />
@@ -264,7 +264,7 @@ export function DebateView({
               <button
                 type="button"
                 onClick={stop}
-                className="inline-flex items-center gap-1 rounded-md bg-muted px-2.5 py-1.5 text-[11px] text-muted-foreground hover:text-danger"
+                className="inline-flex items-center gap-1 rounded-md bg-muted px-2.5 py-1.5 text-2xs text-muted-foreground hover:text-danger"
                 data-testid="debate-stop"
               >
                 <Square className="size-3" />
@@ -273,13 +273,13 @@ export function DebateView({
               <button
                 type="button"
                 onClick={toggleAuto}
-                className="inline-flex items-center gap-1 rounded-md bg-muted px-2.5 py-1.5 text-[11px] text-muted-foreground"
+                className="inline-flex items-center gap-1 rounded-md bg-muted px-2.5 py-1.5 text-2xs text-muted-foreground"
                 data-testid="debate-auto"
               >
                 {run.auto ? <Pause className="size-3" /> : <Play className="size-3" />}
                 {run.auto ? 'Auto on' : 'Auto off'}
               </button>
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-2xs text-muted-foreground">
                 {run.awaitingTurn
                   ? `${debater?.modelName} is arguing…`
                   : 'turn dispatched…'}
@@ -291,13 +291,13 @@ export function DebateView({
                 type="button"
                 onClick={nextRound}
                 disabled={finished}
-                className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-[11px] text-primary-foreground disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-2xs text-primary-foreground disabled:opacity-50"
                 data-testid="debate-next"
               >
                 <Play className="size-3" />
                 Next round ({nextDebater(run).modelName})
               </button>
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-2xs text-muted-foreground">
                 {finished
                   ? 'Debate finished.'
                   : 'Manual mode — advance when ready.'}
@@ -308,20 +308,20 @@ export function DebateView({
 
         {finished && !winnerRecorded ? (
           <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-white/[0.06]">
-            <span className="text-[10px] text-muted-foreground/70">Who made the better case?</span>
+            <span className="text-3xs text-muted-foreground/70">Who made the better case?</span>
             {run.models.map((m) => (
               <button
                 key={m.modelId}
                 type="button"
                 disabled={postingWinner !== null}
                 onClick={() => void recordWinner(m)}
-                className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-1 text-[10px] text-foreground hover:bg-muted disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-1 text-3xs text-foreground hover:bg-muted disabled:opacity-50"
                 data-testid={`debate-winner-${m.modelId}`}
               >
                 {postingWinner === m.modelId ? 'Recording…' : m.modelName}
               </button>
             ))}
-            <span className="text-[10px] text-muted-foreground/50">
+            <span className="text-3xs text-muted-foreground/50">
               Feeds the routing-evidence loop.
             </span>
           </div>

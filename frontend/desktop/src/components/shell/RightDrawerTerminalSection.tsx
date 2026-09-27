@@ -334,7 +334,7 @@ export function RightDrawerTerminalSection() {
           <AlertCircle className="size-8 text-destructive" />
           <div className="max-w-xs">
             <p className="text-sm font-medium text-foreground">Shell failed to start</p>
-            <p className="mt-1 whitespace-pre-wrap break-words text-[11px] text-muted-foreground">
+            <p className="mt-1 whitespace-pre-wrap break-words text-2xs text-muted-foreground">
               {spawnError || active?.error || 'The shell process exited unexpectedly.'}
             </p>
           </div>
@@ -380,7 +380,7 @@ export function RightDrawerTerminalSection() {
       />
 
       {showConnectingOverlay && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] text-muted-foreground">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-2xs text-muted-foreground">
           {isLoading || createSession.isPending ? 'Starting real terminal…' : 'Connecting to shell…'}
         </div>
       )}
@@ -388,7 +388,7 @@ export function RightDrawerTerminalSection() {
       {!active && !isLoading && !createSession.isPending && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center text-muted-foreground">
           <Inbox className="size-6 text-muted-foreground/40" />
-          <div className="mt-2 text-[11px]">Click + to start a terminal session.</div>
+          <div className="mt-2 text-2xs">Click + to start a terminal session.</div>
         </div>
       )}
     </div>
@@ -406,17 +406,17 @@ function ApprovalList({
 }) {
   return (
     <div className="rounded-md border border-warning/30 bg-warning/5 p-2 space-y-1.5 shadow">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-warning font-semibold">
+      <div className="flex items-center gap-1.5 text-3xs uppercase tracking-wider text-warning font-semibold">
         <ShieldAlert className="size-3" />
         {approvals.length} approval{approvals.length > 1 ? 's' : ''} required
       </div>
       {approvals.map((approval) => (
         <div key={approval.requestId} className="flex items-start justify-between gap-2 rounded-md border border-warning/20 bg-card/70 p-1.5">
           <div className="min-w-0">
-            <pre className="whitespace-pre-wrap break-all text-[10.5px] font-mono text-foreground/85">
+            <pre className="whitespace-pre-wrap break-all text-[0.65625rem] font-mono text-foreground/85">
               {approval.command || approval.inputPreview || '(no command)'}
             </pre>
-            <div className="mt-0.5 text-[10px] text-muted-foreground">{approval.reason || approval.cwd}</div>
+            <div className="mt-0.5 text-3xs text-muted-foreground">{approval.reason || approval.cwd}</div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <Button size="sm" onClick={() => approve.mutate(approval.requestId)} disabled={approve.isPending}>

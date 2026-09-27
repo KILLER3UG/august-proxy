@@ -684,7 +684,7 @@ export function SessionList({
                           <button
                             type="button"
                             onClick={() => setUncategorizedCollapsed((v) => !v)}
-                            className="pl-1.5 py-1 text-[11px] text-muted-foreground/60 hover:text-foreground"
+                            className="pl-1.5 py-1 text-2xs text-muted-foreground/60 hover:text-foreground"
                           >
                             {uncategorizedCollapsed ? `Show ${unfiledSessions.length - 5} more` : 'Show less'}
                           </button>
@@ -704,7 +704,7 @@ export function SessionList({
                   <button
                     type="button"
                     onClick={() => openConversationSearch()}
-                    className="text-[11.5px] text-sidebar-foreground/50 hover:text-sidebar-foreground transition"
+                    className="text-[0.71875rem] text-sidebar-foreground/50 hover:text-sidebar-foreground transition"
                   >
                     View all
                   </button>
@@ -754,9 +754,9 @@ export function SessionList({
                     {dropdownUser.avatar ? (
                       <AvatarImage src={dropdownUser.avatar} alt={dropdownUser.name} />
                     ) : null}
-                    <AvatarFallback className="text-[10px]">{dropdownUser.initials}</AvatarFallback>
+                    <AvatarFallback className="text-3xs">{dropdownUser.initials}</AvatarFallback>
                   </Avatar>
-                  <div className="min-w-0 flex-1 truncate text-[12.5px]">
+                  <div className="min-w-0 flex-1 truncate text-[0.78125rem]">
                     <span className="font-medium text-sidebar-foreground">{dropdownUser.name}</span>
                     <span className="text-muted-foreground/60 ml-1">· Free</span>
                   </div>

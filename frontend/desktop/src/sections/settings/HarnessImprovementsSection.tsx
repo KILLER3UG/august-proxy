@@ -26,6 +26,7 @@ import {
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
+import { qk } from '@/lib/query-keys';
 import { invalidateReviewInboxCount } from '@/lib/useReviewInboxCount';
 import { cn, formatTimeAgo } from '@/lib/utils';
 
@@ -110,7 +111,7 @@ export function HarnessImprovementsSection() {
   const [checked, setChecked] = useState<Set<string>>(new Set());
 
   const harnessQ = useQuery({
-    queryKey: ['harness-proposals', filter],
+    queryKey: qk.harnessProposals(filter),
     queryFn: () =>
       api.get<ProposalsResponse>(
         `/api/harness/proposals${filter === 'open' ? '?status=open' : ''}`,
@@ -128,7 +129,7 @@ export function HarnessImprovementsSection() {
   });
 
   const refresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['harness-proposals'] });
+    void queryClient.invalidateQueries({ queryKey: qk.harnessProposals() });
     void queryClient.invalidateQueries({ queryKey: ['memory-proposals'] });
     invalidateReviewInboxCount(queryClient);
   }, [queryClient]);
@@ -143,7 +144,14 @@ export function HarnessImprovementsSection() {
     } catch {
       memory = []; // a malformed memory row must not blank the harness queue
     }
-    return [...harness, ...memory].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    return [...harness, ...memory].sort((a, b) => {
+      // A measured regression is the one row here that carries its own
+      // evidence of harm, so it outranks recency — everything else is still
+      // newest-first.
+      if (a.kind === 'revert') return b.kind === 'revert' ? (a.createdAt < b.createdAt ? 1 : -1) : -1;
+      if (b.kind === 'revert') return 1;
+      return a.createdAt < b.createdAt ? 1 : -1;
+    });
   }, [harnessQ.data, memoryQ.data]);
 
   const selected = rows.find((r) => rowKey(r) === selectedId) ?? null;
@@ -334,31 +342,41 @@ export function HarnessImprovementsSection() {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="font-mono text-[11px] text-muted-foreground">{selected.id}</span>
-                  <Badge variant="outline" className="text-[10px] uppercase">{selected.kind}</Badge>
+                  <span className="font-mono text-2xs text-muted-foreground">{selected.id}</span>
+                  <Badge variant="outline" className="text-3xs uppercase">{selected.kind}</Badge>
                   <Badge
                     variant="outline"
                     className={cn(
-                      'flex items-center gap-1 text-[10px]',
+                      'flex items-center gap-1 text-3xs',
                       selected.queue === 'memory' ? 'text-violet-400 border-violet-500/30' : 'text-muted-foreground',
                     )}
                   >
                     {selected.queue === 'memory' ? <Database className="size-3" /> : <HeartPulse className="size-3" />}
                     {selected.queue}
                   </Badge>
-                  <Badge className={cn('border text-[10px]', STATUS_META[selected.status].className)}>
+                  <Badge className={cn('border text-3xs', STATUS_META[selected.status].className)}>
                     {STATUS_META[selected.status].label}
                   </Badge>
                   {selected.queue === 'harness' && !APPROVABLE.has(selected.kind) && selected.status === 'open' && (
-                    <Badge className="border border-sky-500/30 bg-sky-500/10 text-[10px] text-sky-400">
-                      human-only — records findings
+                    <Badge
+                      data-testid="measured-regression-tag"
+                      className={cn(
+                        'border text-3xs',
+                        selected.kind === 'revert'
+                          ? 'border-rose-500/30 bg-rose-500/10 text-rose-400'
+                          : 'border-sky-500/30 bg-sky-500/10 text-sky-400',
+                      )}
+                    >
+                      {selected.kind === 'revert'
+                        ? 'measured regression — the rollback below is yours to run'
+                        : 'human-only — records findings'}
                     </Badge>
                   )}
                 </div>
-                <p className="mt-2 text-[13px] leading-relaxed text-foreground">{selected.problem}</p>
+                <p className="mt-2 text-[0.8125rem] leading-relaxed text-foreground">{selected.problem}</p>
               </div>
               {selected.decidedAt && (
-                <span className="shrink-0 text-[11px] text-muted-foreground">
+                <span className="shrink-0 text-2xs text-muted-foreground">
                   {formatTimeAgo(selected.decidedAt)}
                 </span>
               )}
@@ -402,7 +420,9 @@ export function HarnessImprovementsSection() {
                         ? 'Retire the fact (reversible in the memory UI)'
                         : APPROVABLE.has(selected.kind)
                           ? 'Run the deterministic applier'
-                          : 'This kind is recorded only — approval does not apply anything'
+                          : selected.kind === 'revert'
+                            ? 'A measured regression is undone by hand — run the rollback, then reject or dismiss'
+                            : 'This kind is recorded only — approval does not apply anything'
                     }
                     className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
                     data-testid="proposal-approve"
@@ -470,7 +490,7 @@ export function HarnessImprovementsSection() {
             </div>
           )}
           {rows.length > 0 && openRows.length > 1 && (
-            <label className="flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
+            <label className="flex items-center gap-2 px-1 text-2xs text-muted-foreground">
               <input
                 type="checkbox"
                 className="size-3 accent-primary"
@@ -519,25 +539,33 @@ export function HarnessImprovementsSection() {
                   className="min-w-0 flex-1 text-left"
                 >
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge className={cn('border text-[9px] uppercase', STATUS_META[p.status].className)}>
+                    <Badge className={cn('border text-3xs uppercase', STATUS_META[p.status].className)}>
                       {STATUS_META[p.status].label}
                     </Badge>
-                    <Badge variant="outline" className="text-[9px] uppercase">{p.kind}</Badge>
+                    <Badge variant="outline" className="text-3xs uppercase">{p.kind}</Badge>
+                    {p.kind === 'revert' && (
+                      <Badge
+                        data-testid="measured-regression-tag"
+                        className="border border-rose-500/30 bg-rose-500/10 text-3xs text-rose-400"
+                      >
+                        measured regression
+                      </Badge>
+                    )}
                     <span
                       className={cn(
-                        'text-[9px] uppercase tracking-wide',
+                        'text-3xs uppercase tracking-wide',
                         p.queue === 'memory' ? 'text-violet-400/80' : 'text-muted-foreground/70',
                       )}
                     >
                       {p.queue === 'memory' ? <Database className="mr-0.5 inline size-2.5" /> : null}
                       {p.queue}
                     </span>
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-3xs text-muted-foreground">
                       {p.createdAt ? formatTimeAgo(p.createdAt) : ''}
                     </span>
                   </div>
-                  <p className="mt-1 line-clamp-1 text-[13px] font-medium text-foreground">{p.problem}</p>
-                  <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">{p.evidence}</p>
+                  <p className="mt-1 line-clamp-1 text-[0.8125rem] font-medium text-foreground">{p.problem}</p>
+                  <p className="mt-0.5 line-clamp-1 text-2xs text-muted-foreground">{p.evidence}</p>
                 </button>
               </div>
             </div>
@@ -552,10 +580,10 @@ function InfoRow({ label, body, mono }: { label: string; body: string; mono: boo
   if (!body?.trim()) return null;
   return (
     <div>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-3xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
       <pre
         className={cn(
-          'mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border/40 bg-muted/20 px-3 py-2 text-[12px] leading-relaxed text-foreground/90',
+          'mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border/40 bg-muted/20 px-3 py-2 text-[0.75rem] leading-relaxed text-foreground/90',
           mono ? 'font-mono' : 'font-sans',
         )}
       >
@@ -615,13 +643,13 @@ function EvidenceRow({ label, body }: { label: string; body: string }) {
   const { sections, structured } = parseEvidence(body);
   return (
     <div>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-3xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
       {structured ? (
         <div data-testid="evidence-chips" className="mt-1 max-h-52 space-y-2 overflow-y-auto">
           {sections.map((sec, i) => (
             <div key={i} data-testid="evidence-section">
               {sec.title ? (
-                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                <p className="text-3xs font-medium uppercase tracking-wide text-muted-foreground/80">
                   {sec.title}
                 </p>
               ) : null}
@@ -631,7 +659,7 @@ function EvidenceRow({ label, body }: { label: string; body: string }) {
                     key={j}
                     data-testid="evidence-chip"
                     title={item}
-                    className="max-w-full truncate rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-[11px] text-foreground/90"
+                    className="max-w-full truncate rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-2xs text-foreground/90"
                   >
                     {item}
                   </span>
@@ -641,7 +669,7 @@ function EvidenceRow({ label, body }: { label: string; body: string }) {
           ))}
         </div>
       ) : (
-        <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border/40 bg-muted/20 px-3 py-2 text-[12px] leading-relaxed text-foreground/90">
+        <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border/40 bg-muted/20 px-3 py-2 text-[0.75rem] leading-relaxed text-foreground/90">
           {body}
         </pre>
       )}

@@ -126,6 +126,9 @@ class BrainConfigDict(TypedDict, total=False):
     reviewLearnedGuidelines: bool
     maxAgentDepth: int
     maxWorkbenchToolLoops: int
+    budgetSoftUsd: float
+    budgetSoftTokens: int
+    budgetWallClockSec: int
     autoRouteMinSamples: int
     modelMemoryRead: bool
     memoryAutoInject: bool

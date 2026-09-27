@@ -226,9 +226,9 @@ export function ModelPickerDropdown({ models, value, onChange, disabled }: Model
               ) : (
                 grouped.map(({ provider, visible, isExpanded, total, showCollapse }) => (
                   <div key={provider}>
-                    <div className="px-2 py-1 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold sticky top-0 bg-popover/95 backdrop-blur z-20 flex justify-between items-center">
+                    <div className="px-2 py-1 text-3xs uppercase tracking-widest text-muted-foreground/70 font-semibold sticky top-0 bg-popover/95 backdrop-blur z-20 flex justify-between items-center">
                       <span>{provider}</span>
-                      <span className="text-[10px] lowercase font-mono text-muted-foreground/60">({total})</span>
+                      <span className="text-3xs lowercase font-mono text-muted-foreground/60">({total})</span>
                     </div>
                     {visible.map(m => {
                       const { name, tag } = modelDisplayParts(m.id);
@@ -249,10 +249,10 @@ export function ModelPickerDropdown({ models, value, onChange, disabled }: Model
                           <span className="truncate flex-1 font-sans">
                             {name}
                             {tag && (
-                              <span className="ml-1.5 text-[10px] text-muted-foreground/50 font-normal">{tag}</span>
+                              <span className="ml-1.5 text-3xs text-muted-foreground/50 font-normal">{tag}</span>
                             )}
                           </span>
-                          <span className="text-[10px] text-muted-foreground/60 shrink-0 tabular-nums">
+                          <span className="text-3xs text-muted-foreground/60 shrink-0 tabular-nums">
                             {formatContextWindow(m.contextWindow)}
                           </span>
                         </button>
@@ -268,7 +268,7 @@ export function ModelPickerDropdown({ models, value, onChange, disabled }: Model
                             return next;
                           });
                         }}
-                        className="w-full text-left px-2.5 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-white/5 transition"
+                        className="w-full text-left px-2.5 py-1 text-3xs text-muted-foreground hover:text-foreground hover:bg-white/5 transition"
                       >
                         {isExpanded ? '▲ Show less' : '▼ Show ' + (total - 5) + ' more'}
                       </button>
@@ -299,7 +299,7 @@ export function ModelPickerDropdown({ models, value, onChange, disabled }: Model
       >
         {selected ? (
           <>
-            <span className="text-[10px] bg-primary/10 text-primary px-1 py-0.5 rounded uppercase font-semibold tracking-wider scale-90 origin-left shrink-0 leading-none">
+            <span className="text-3xs bg-primary/10 text-primary px-1 py-0.5 rounded uppercase font-semibold tracking-wider scale-90 origin-left shrink-0 leading-none">
               {selected.provider === 'openai-api' ? 'openai' : selected.provider}
             </span>
             <span className="truncate max-w-[140px] font-medium text-foreground transition-all duration-200 leading-none">

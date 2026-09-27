@@ -147,7 +147,7 @@ export function ModelVisibilityModal({ open, onClose, models, loading, hiddenMod
               ) : (
                 grouped.map(([provider, providerModels]) => (
                   <div key={provider} className="mb-3">
-                    <div className="px-2 py-1 text-[10px] uppercase tracking-widest text-muted-foreground/50 font-semibold">
+                    <div className="px-2 py-1 text-3xs uppercase tracking-widest text-muted-foreground/50 font-semibold">
                       {provider}
                     </div>
                     {providerModels.map(m => {
@@ -172,9 +172,9 @@ export function ModelVisibilityModal({ open, onClose, models, loading, hiddenMod
                           </span>
                           <span className="truncate flex-1 text-xs font-sans">
                             {name}
-                            {tag && <span className="ml-1 text-muted-foreground/50 text-[10px]">{tag}</span>}
+                            {tag && <span className="ml-1 text-muted-foreground/50 text-3xs">{tag}</span>}
                           </span>
-                          <span className="text-[10px] text-muted-foreground/40 font-mono shrink-0">
+                          <span className="text-3xs text-muted-foreground/40 font-mono shrink-0">
                             {m.isFree ? 'free' : ''}
                           </span>
                         </button>

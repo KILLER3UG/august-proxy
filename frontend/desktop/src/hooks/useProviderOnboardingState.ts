@@ -4,6 +4,7 @@
 
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { api } from '@/api/client';
 import { providersApi, type Provider } from '@/api/providers';
 import { getWorkbenchDoctor, type DoctorReport } from '@/api/workbench';
 import { useSessionsStore } from '@/store/sessions';
@@ -32,9 +33,9 @@ export function useProviderOnboardingState() {
   }>({
     queryKey: ['integrations-connections'],
     queryFn: () =>
-      fetch('/api/service-connections').then((r) => r.json()) as Promise<{
+      api.get<{
         connections?: Record<string, { connected?: boolean; hasClientId?: boolean }>;
-      }>,
+      }>('/api/service-connections'),
     staleTime: 30_000,
     retry: false,
   });

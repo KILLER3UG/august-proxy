@@ -104,7 +104,7 @@ export function TaskProgressPill({ sessionId, className }: TaskProgressPillProps
               {files.length} {files.length === 1 ? 'file' : 'files'} changed
             </span>
             {(added > 0 || removed > 0) && (
-              <span className="font-mono text-[10.5px]">
+              <span className="font-mono text-[0.65625rem]">
                 {added > 0 && <span className="text-emerald-500 font-semibold">+{added}</span>}
                 {removed > 0 && (
                   <span className={cn('text-rose-500 font-semibold', added > 0 && 'ml-0.5')}>
@@ -130,7 +130,7 @@ export function TaskProgressPill({ sessionId, className }: TaskProgressPillProps
           >
             {totalTodos > 0 && (
               <div className="mb-2.5">
-                <div className="flex items-center justify-between pb-1.5 border-b border-border/30 text-[11px] font-semibold text-foreground/75 uppercase tracking-wider">
+                <div className="flex items-center justify-between pb-1.5 border-b border-border/30 text-2xs font-semibold text-foreground/75 uppercase tracking-wider">
                   <span>{todos?.title || 'Planned Steps'}</span>
                   <span className="tabular-nums text-muted-foreground font-mono">
                     {todosDone}/{totalTodos}
@@ -173,7 +173,7 @@ export function TaskProgressPill({ sessionId, className }: TaskProgressPillProps
 
             {files.length > 0 && (
               <div className={cn(totalTodos > 0 && 'pt-2 border-t border-border/30')}>
-                <div className="flex items-center justify-between pb-1 text-[11px] font-semibold text-foreground/75 uppercase tracking-wider">
+                <div className="flex items-center justify-between pb-1 text-2xs font-semibold text-foreground/75 uppercase tracking-wider">
                   <span>Modified Files</span>
                   <span className="tabular-nums text-muted-foreground font-mono">
                     {files.length}
@@ -185,13 +185,13 @@ export function TaskProgressPill({ sessionId, className }: TaskProgressPillProps
                       <span className="truncate max-w-[200px]" title={f.path}>
                         {f.path.split(/[/\\]/).pop()}
                       </span>
-                      <span className="text-[10px] uppercase opacity-70">
+                      <span className="text-3xs uppercase opacity-70">
                         {f.status}
                       </span>
                     </div>
                   ))}
                   {files.length > 12 && (
-                    <div className="text-[10.5px] text-muted-foreground/60 italic pt-0.5">
+                    <div className="text-[0.65625rem] text-muted-foreground/60 italic pt-0.5">
                       +{files.length - 12} more files
                     </div>
                   )}

@@ -65,9 +65,9 @@ function ObservationCard({ item, onOpen }: { item: PostObservation; onOpen: () =
                     ) : (
                         <StatusPill label="(no focused app)" variant="muted" />
                     )}
-                    {item.audit?.action && <Badge variant="outline" className="text-[10px]">{item.audit.action}</Badge>}
+                    {item.audit?.action && <Badge variant="outline" className="text-3xs">{item.audit.action}</Badge>}
                 </div>
-                <div className="text-[10px] text-muted-foreground font-mono">
+                <div className="text-3xs text-muted-foreground font-mono">
                     {formatTimeAgo(new Date(item.capturedAt))}
                 </div>
             </div>
@@ -122,7 +122,7 @@ function ObservationModal({ item, onClose }: { item: PostObservation; onClose: (
 function Detail({ k, v }: { k: string; v: React.ReactNode }) {
     return (
         <div>
-            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{k}</div>
+            <div className="text-3xs uppercase tracking-widest text-muted-foreground">{k}</div>
             <div className="font-mono text-foreground/80 truncate mt-0.5">{v}</div>
         </div>
     );

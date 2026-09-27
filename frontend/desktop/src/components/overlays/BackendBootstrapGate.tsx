@@ -192,7 +192,7 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
             {detail}
           </p>
           {lastError && lastError !== detail ? (
-            <p className="mx-auto mt-2 max-h-28 max-w-md overflow-y-auto break-words rounded-lg bg-black/30 p-2 text-left text-[11px] text-red-400/90">
+            <p className="mx-auto mt-2 max-h-28 max-w-md overflow-y-auto break-words rounded-lg bg-black/30 p-2 text-left text-2xs text-red-400/90">
               {lastError}
             </p>
           ) : null}

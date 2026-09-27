@@ -443,7 +443,7 @@ function SectionChooser({ openSections }: { openSections: RightDrawerSectionId[]
       className="flex h-full min-h-0 flex-col items-center overflow-y-auto px-4 py-10 chat-scroll"
     >
       <h2 className="text-center text-xl font-semibold tracking-tight text-foreground">Open tab</h2>
-      <p className="mt-1 text-center text-[13px] text-muted-foreground">
+      <p className="mt-1 text-center text-[0.8125rem] text-muted-foreground">
         Choose a tab to open in the side pane.
       </p>
       <div role="listbox" aria-label="Sections" className="mt-8 grid w-full max-w-[340px] grid-cols-2 gap-3">
@@ -468,7 +468,7 @@ function SectionChooser({ openSections }: { openSections: RightDrawerSectionId[]
               )}
             >
               <Icon className="size-6 shrink-0 opacity-80" />
-              <span className="text-[13px] font-medium">
+              <span className="text-[0.8125rem] font-medium">
                 {isBottomTerminal ? 'Terminal (bottom)' : meta.label}
               </span>
             </button>

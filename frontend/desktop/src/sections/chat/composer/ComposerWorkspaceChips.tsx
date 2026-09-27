@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronDown, Folder, FolderPlus } from 'lucide-react';
 import { toast } from 'sonner';
+import { api } from '@/api/client';
 import { openFolderViaTauri, folderNameFromPath } from '@/api/folder';
 import { WorkspaceBranchChip } from '@/components/workspace/WorkspaceBranchChip';
 import { useWorkspacesStore } from '@/store/workspaces';
@@ -87,13 +88,9 @@ export function ComposerWorkspaceChips({
       const wbId = session.workbenchSessionId || workbenchSessionId || '';
       if (wbId) {
         try {
-          await fetch('/api/workbench/sandbox-mode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sessionId: wbId,
-              workspacePath: session.workspacePath || normalized,
-            }),
+          await api.post('/api/workbench/sandbox-mode', {
+            sessionId: wbId,
+            workspacePath: session.workspacePath || normalized,
           });
         } catch {
           /* best-effort — the next send re-syncs the workspace */
@@ -167,11 +164,11 @@ export function ComposerWorkspaceChips({
               {picking ? 'Choosing folder…' : 'Open folder…'}
             </button>
             <div className="mx-1.5 my-1 border-t border-border/40" />
-            <div className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <div className="px-2 pb-1 pt-0.5 text-3xs font-semibold uppercase tracking-wider text-muted-foreground/70">
               Projects
             </div>
             {options.length === 0 ? (
-              <div className="px-2.5 py-2 text-[11px] text-muted-foreground">
+              <div className="px-2.5 py-2 text-2xs text-muted-foreground">
                 No folders yet — open one to start.
               </div>
             ) : (
@@ -199,7 +196,7 @@ export function ComposerWorkspaceChips({
                       <span className="block truncate text-xs text-foreground/90">
                         {w.name || workspaceBaseName(w.path)}
                       </span>
-                      <span className="block truncate font-mono text-[10px] text-muted-foreground/70">
+                      <span className="block truncate font-mono text-3xs text-muted-foreground/70">
                         {w.path}
                       </span>
                     </span>

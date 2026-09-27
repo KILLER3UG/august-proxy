@@ -158,7 +158,7 @@ export function PlanProposalBanner({
             >
               <Send className="size-3" />
               Send
-              <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-[10px] font-mono">↵</kbd>
+              <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-3xs font-mono">↵</kbd>
             </BannerButton>
           ) : (
             <>
@@ -167,7 +167,7 @@ export function PlanProposalBanner({
               </BannerButton>
               <BannerButton primary onClick={() => { void onAcceptAndImplement(); }} disabled={sending} className="ml-auto">
                 Accept and allow edits
-                <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-[10px] font-mono">Ctrl ↵</kbd>
+                <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-3xs font-mono">Ctrl ↵</kbd>
               </BannerButton>
             </>
           )}

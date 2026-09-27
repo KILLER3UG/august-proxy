@@ -64,7 +64,7 @@ export function SessionListNav({
       >
         <div className="flex min-w-0 items-center gap-2 px-0.5">
           <span
-            className="truncate text-[13.5px] font-semibold tracking-[-0.01em] text-sidebar-foreground"
+            className="truncate text-[0.84375rem] font-semibold tracking-[-0.01em] text-sidebar-foreground"
             title={brandLabel}
           >
             {brandLabel}
@@ -86,7 +86,7 @@ export function SessionListNav({
         <motion.button
           type="button"
           onClick={onNew}
-          className="w-full flex items-center gap-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] px-3 py-1.5 text-left text-[13px] font-medium text-sidebar-foreground transition-colors shadow-sm"
+          className="w-full flex items-center gap-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] px-3 py-1.5 text-left text-[0.8125rem] font-medium text-sidebar-foreground transition-colors shadow-sm"
           initial="rest"
           whileHover="hover"
           whileTap="tap"
@@ -113,7 +113,7 @@ export function SessionListNav({
             // drawer is reverted by ChatLayout's sync effect — a dead button.
             addRightDrawerSection('artifacts');
           }}
-          className="w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[12.5px] text-sidebar-foreground/70 hover:bg-white/[0.04] hover:text-sidebar-foreground transition-colors"
+          className="w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[0.78125rem] text-sidebar-foreground/70 hover:bg-white/[0.04] hover:text-sidebar-foreground transition-colors"
         >
           <FileText className="size-3.5 text-muted-foreground shrink-0" />
           <span>Artifacts</span>
@@ -123,7 +123,7 @@ export function SessionListNav({
           type="button"
           onClick={() => onNavigate('/settings')}
           className={cn(
-            'w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[12.5px] transition-colors',
+            'w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[0.78125rem] transition-colors',
             isActive('/settings')
               ? 'bg-white/[0.08] text-sidebar-foreground font-medium'
               : 'text-sidebar-foreground/70 hover:bg-white/[0.04] hover:text-sidebar-foreground',

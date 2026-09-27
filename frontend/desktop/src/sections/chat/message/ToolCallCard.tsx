@@ -98,11 +98,11 @@ export function ToolCallCard({
               )}
             </span>
           </span>
-          {tool.status === 'done' && <span className="text-primary/80 text-[12px]">done</span>}
-          {tool.status === 'error' && <span className="text-destructive text-[12px]">error</span>}
+          {tool.status === 'done' && <span className="text-primary/80 text-[0.75rem]">done</span>}
+          {tool.status === 'error' && <span className="text-destructive text-[0.75rem]">error</span>}
           {isCommand && typeof tool.result === 'string' && tool.result.includes('[sandbox:') && (
             <span
-              className="text-[10px] uppercase tracking-wide text-muted-foreground/80 border border-border/50 rounded px-1"
+              className="text-3xs uppercase tracking-wide text-muted-foreground/80 border border-border/50 rounded px-1"
               title={tool.result.includes('|unsandboxed]') ? 'Ran outside sandbox (approved)' : 'Ran inside sandbox'}
             >
               {tool.result.includes('|unsandboxed]') ? 'unsandboxed' : 'sandboxed'}
@@ -121,7 +121,7 @@ export function ToolCallCard({
         return (
           <div className="ml-3 mt-0.5 mb-1 space-y-0.5 chat-rail pl-2" aria-label="Tool progress" data-tool-progress>
             {visible.map((entry) => (
-              <div key={entry.path} className="flex items-center gap-1.5 text-[11.5px] truncate" title={entry.path}>
+              <div key={entry.path} className="flex items-center gap-1.5 text-[0.71875rem] truncate" title={entry.path}>
                 <span className="w-2.5 shrink-0 inline-flex justify-center">
                   {entry.status === 'reading' ? (
                     <Loader2 size={10} className="animate-spin text-info" />
@@ -141,7 +141,7 @@ export function ToolCallCard({
               </div>
             ))}
             {overflow > 0 && (
-              <div className="text-[10px] text-muted-foreground/50 italic pl-4">+ {overflow} more</div>
+              <div className="text-3xs text-muted-foreground/50 italic pl-4">+ {overflow} more</div>
             )}
           </div>
         );

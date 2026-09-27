@@ -189,7 +189,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
             <li key={s.id} className="flex-1 min-w-0">
               <div className={`flex items-center gap-1.5 ${current ? 'text-primary' : done ? 'text-success' : 'text-muted-foreground/50'}`}>
                 <span
-                  className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-semibold border ${
+                  className={`grid size-5 shrink-0 place-items-center rounded-full text-3xs font-semibold border ${
                     current ? 'border-primary/50 bg-primary/15'
                     : done ? 'border-success/40 bg-success/15'
                     : 'border-white/[0.08] bg-muted/30'
@@ -198,7 +198,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                 >
                   {done ? <Check className="size-3" /> : i + 1}
                 </span>
-                <span className={`text-[11px] truncate ${current ? 'font-medium' : ''}`}>{s.label}</span>
+                <span className={`text-2xs truncate ${current ? 'font-medium' : ''}`}>{s.label}</span>
               </div>
               {i < STEPS.length - 1 && <div className="mx-2 h-px flex-1 bg-white/[0.06] mt-2" />}
             </li>
@@ -221,7 +221,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                     <Check className="size-3.5 text-success shrink-0" />
                     <span className="font-medium">{p.name}</span>
                     <span className="text-muted-foreground font-mono">{p.apiFormat}</span>
-                    <span className={`ml-auto text-[10px] ${p.apiKeySet ? 'text-success' : 'text-amber-500'}`}>
+                    <span className={`ml-auto text-3xs ${p.apiKeySet ? 'text-success' : 'text-amber-500'}`}>
                       {p.apiKeySet ? 'Key set' : 'No key yet'}
                     </span>
                   </div>
@@ -259,7 +259,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
-                <span className="text-[11px] text-muted-foreground">Provider</span>
+                <span className="text-2xs text-muted-foreground">Provider</span>
                 <select
                   value={provider?.id ?? ''}
                   onChange={(e) => { setProviderId(e.target.value); setModelId(''); setTestResult(null); }}
@@ -272,7 +272,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                 </select>
               </label>
               <label className="block">
-                <span className="text-[11px] text-muted-foreground">Model</span>
+                <span className="text-2xs text-muted-foreground">Model</span>
                 <select
                   value={selectedModel?.id ?? ''}
                   onChange={(e) => { setModelId(e.target.value); setTestResult(null); }}
@@ -362,7 +362,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                     >
                       <span className={`size-3 rounded-full border ${(defaultModel?.id ?? selectedModel?.id) === m.id ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`} />
                       <span className="font-mono">{m.id}</span>
-                      {m.free ? <span className="ml-auto text-[10px] text-success">free</span> : null}
+                      {m.free ? <span className="ml-auto text-3xs text-success">free</span> : null}
                     </button>
                   </li>
                 ))}
@@ -393,7 +393,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                   <span className={`mt-0.5 size-3 shrink-0 rounded-full border ${sandboxMode === opt.id ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`} />
                   <span>
                     <span className="block text-xs font-medium text-foreground">{opt.label}</span>
-                    <span className="block text-[11px] text-muted-foreground">{opt.description}</span>
+                    <span className="block text-2xs text-muted-foreground">{opt.description}</span>
                   </span>
                 </button>
               ))}
@@ -407,7 +407,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                 <button
                   type="button"
                   onClick={() => window.dispatchEvent(new CustomEvent('august:open-folder'))}
-                  className="ml-auto inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-[11px] text-foreground hover:bg-muted"
+                  className="ml-auto inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-2xs text-foreground hover:bg-muted"
                   data-testid="wizard-open-folder"
                 >
                   <FolderOpen className="size-3" />
@@ -477,7 +477,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
         <button
           type="button"
           onClick={() => { onboarding.skip(); navigate('/'); }}
-          className="text-[11px] text-muted-foreground/60 hover:text-muted-foreground"
+          className="text-2xs text-muted-foreground/60 hover:text-muted-foreground"
           data-testid="wizard-skip"
         >
           Skip setup

@@ -117,11 +117,11 @@ export function SubagentTimeline({
             <Markdown content={state.task} variant="assistant" />
           </div>
         ) : null}
-        <div className="text-[12px] text-muted-foreground/70 italic">
+        <div className="text-[0.75rem] text-muted-foreground/70 italic">
           {isRunning ? `${friendlyRole} is starting…` : 'No output recorded.'}
         </div>
         {isFailed && state.error ? (
-          <div className="rounded-md border border-danger/30 bg-danger/5 px-2 py-1.5 text-[11px] text-danger">
+          <div className="rounded-md border border-danger/30 bg-danger/5 px-2 py-1.5 text-2xs text-danger">
             {state.error}
           </div>
         ) : null}
@@ -166,12 +166,12 @@ export function SubagentTimeline({
           <Markdown content={finalOutput.content} />
         </div>
       ) : !isFailed ? (
-        <div className="text-[12px] text-muted-foreground/70 italic">
+        <div className="text-[0.75rem] text-muted-foreground/70 italic">
           No final response recorded.
         </div>
       ) : null}
       {isFailed && state.error ? (
-        <div className="rounded-md border border-danger/30 bg-danger/5 px-2 py-1.5 text-[11px] text-danger">
+        <div className="rounded-md border border-danger/30 bg-danger/5 px-2 py-1.5 text-2xs text-danger">
           {state.error}
         </div>
       ) : null}
@@ -191,7 +191,7 @@ function NestedAgentRows({
   if (agents.length === 0) return null;
   return (
     <div className="mt-1 space-y-1" data-slot="subagent-nested-list">
-      <div className="text-[12.5px] text-muted-foreground/70 px-0.5">Workers</div>
+      <div className="text-[0.78125rem] text-muted-foreground/70 px-0.5">Workers</div>
       <ul className="flex flex-col gap-2" role="list">
         {agents.map((agent) => {
           const title = agent.task?.trim() || getAgentRoleLabel(agent.agentId);
@@ -204,20 +204,20 @@ function NestedAgentRows({
                 data-subagent-id={agent.jobId}
               >
                 <span
-                  className="col-start-1 row-start-1 mt-[2px] text-[13px] leading-5 text-muted-foreground/70 select-none"
+                  className="col-start-1 row-start-1 mt-[2px] text-[0.8125rem] leading-5 text-muted-foreground/70 select-none"
                   aria-hidden
                 >
                   •
                 </span>
-                <span className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2 text-[13px] leading-5">
+                <span className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2 text-[0.8125rem] leading-5">
                   <span className="min-w-0 truncate text-foreground/90">{title}</span>
                   {modelLabel ? (
-                    <span className="ml-auto shrink-0 text-[12px] text-muted-foreground/55">
+                    <span className="ml-auto shrink-0 text-[0.75rem] text-muted-foreground/55">
                       {modelLabel}
                     </span>
                   ) : null}
                 </span>
-                <span className="col-start-2 row-start-2 text-[12px] leading-4 text-muted-foreground/70">
+                <span className="col-start-2 row-start-2 text-[0.75rem] leading-4 text-muted-foreground/70">
                   {SUBAGENT_STATUS_LABEL[agent.status]}
                 </span>
               </button>
@@ -247,7 +247,7 @@ function SubagentInnerBlock({
   if (block.type === 'thinking') {
     return (
       <ThinkingDisclosure pending={false}>
-        <div className="pl-3 chat-rail py-1 chat-thought-text text-[11px]">
+        <div className="pl-3 chat-rail py-1 chat-thought-text text-2xs">
           <Markdown content={block.content || ''} />
         </div>
       </ThinkingDisclosure>
@@ -258,7 +258,7 @@ function SubagentInnerBlock({
     return (
       <div
         data-testid="chat-system-notice"
-        className="flex items-start gap-1.5 py-0.5 text-[11px] leading-relaxed text-muted-foreground/70"
+        className="flex items-start gap-1.5 py-0.5 text-2xs leading-relaxed text-muted-foreground/70"
       >
         <span aria-hidden="true" className="shrink-0">
           ⚙
@@ -269,7 +269,7 @@ function SubagentInnerBlock({
   }
   if (block.type === 'finalOutput') {
     return (
-      <div className="text-[13px] text-foreground/90 chat-message-text">
+      <div className="text-[0.8125rem] text-foreground/90 chat-message-text">
         <Markdown content={block.content || ''} />
       </div>
     );

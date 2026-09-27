@@ -32,14 +32,15 @@ august-proxy/
 │   │   ├── main.py              # FastAPI app + lifespan + /api/health
 │   │   ├── config.py            # Settings (config.json + providers.json + .env)
 │   │   ├── adapters/            # Anthropic/OpenAI translation, proxy tools
-│   │   ├── providers/           # templates JSON, clients, resolvers
+│   │   ├── providers/           # clients, resolvers, api_format aliases
 │   │   ├── routers/             # HTTP routes (/api/* and /v1/*)
+│   │   ├── migrations/          # numbered brain SQLite .sql migrations (NNN_name.sql)
 │   │   ├── services/            # workbench, gateway, memory, skills, tools, …
 │   │   │   ├── memory_store/    # brain SQLite domain package
 │   │   │   └── memory_conn.py   # thread-local conn + PRAGMA defaults
 │   │   └── lib/                 # paths, secrets, retry, tokens, health
 │   ├── tests/                   # pytest suite (isolatedData autouse)
-│   ├── scripts/                 # brain DB verification, migrations, generators
+│   ├── scripts/                 # one-off verification, generators, codemods
 │   └── pyproject.toml           # ruff + pytest; requires-python >=3.12
 ├── frontend/
 │   ├── desktop/                 # React + Vite + Tauri SPA
@@ -115,11 +116,16 @@ Docker: `docker compose up --build -d` (port `8085:8085`).
 
 ```bash
 cd backend-py
-uv run pytest -q
-uv run pytest tests/test_workbench.py --no-cov
-uv run pytest -k plan_mode --no-cov
+uv run pytest -q -n auto
+uv run pytest tests/test_workbench.py --no-cov -n auto
+uv run pytest -k plan_mode --no-cov -n auto
 uv run pytest --lf
 
+# Always pass -n auto. The serial suite is ~2h across ~3,500 tests because the
+# slow ones shell out to real external toolchains (Quartus, arduino-cli, ngspice)
+# in independent temp dirs; -n auto measured 2.6x on 4 workers (8m22s on 16
+# cores). A test that only passes serially is load-sensitive — fix the test.
+#
 # Full suite applies --cov-fail-under=55. A single file will miss that floor
 # unless you pass --no-cov.
 
@@ -184,6 +190,33 @@ Gaps to be aware of:
 - Tool handlers return **strings** (JSON or plain text), never raise into the
   model loop.
 - Background fire-and-forget tasks wrap bodies in `try/except`.
+- **A swallow must be named.** New best-effort blocks go through
+  `with best_effort('session.title-backfill'):` (`app/services/best_effort.py`)
+  instead of a bare `except Exception: pass`, so `rg 'best_effort\['` finds
+  every one and each logs with a traceback. Set `AUGUST_STRICT_BEST_EFFORT=1`
+  in test runs and the same block re-raises instead — what production would
+  have eaten then fails the suite. The ruff `BLE001` ratchet keeps new blind
+  excepts out while the existing ones migrate file by file.
+
+### Design conventions (enforced by `npm run check:design`)
+
+`scripts/check-design.mjs` is a **ratchet**, not a cleanup: it fails only on
+violations missing from `scripts/design-baseline.json`, so existing debt stays
+visible and shrinkable while new drift cannot merge. It walks
+`frontend/desktop/src/**/*.{ts,tsx}` for five habits:
+
+| Rule | What it catches | Why |
+|------|-----------------|-----|
+| `px-type` | `text-[12px]`, `text-[10.5px]` | px font sizes ignore the `data-text-size` root scaling in `styles.css`. Use the rem scale (`text-3xs` / `text-2xs` / `text-xs` / …) or an exact rem value. eslint bans this too |
+| `hex-color` | `#[0-9a-fA-F]{6}` / 8-digit | Use theme tokens so light and dark stay in step |
+| `raw-button` | `<button` outside `src/components/ui/` | Use the `Button` primitive — focus ring, variants, size scale |
+| `raw-fetch` | `fetch(` outside `src/api/` | Use `api.get` / `api.post` — it owns base URL, auth, error normalization |
+| `inline-style` | `style={{` | Inline objects cannot use theme tokens or the variant system |
+
+Baseline identity is `path:match` **without** the line number, so an unrelated
+edit above a baselined violation cannot fail an unrelated PR; the failure
+output still prints the line. Use `--update` only after an intentional sweep,
+never to silence a finding.
 
 ### Persistence
 
@@ -337,7 +370,11 @@ Note: prefer direct `memory_store` transactions for user-facing SoT.
 - **Activity:** `GET /api/activity`
 - **Logs:** `GET /api/logs/recent`, `WS /api/logs/stream`
 - **Feature flow:** `GET /api/monitor/events` (+ stream)
-- **Brain:** `GET /api/brain/status`, `/diagnostics`, `/events/stream`
+- **Brain:** `GET /api/brain/config`, `/api/brain/stores` (+ `/stores/{name}`),
+  `GET /api/brain/integrity` (memory health), `/api/brain/backups`,
+  `/api/brain/turn-outcomes`, `/api/brain/memory/metrics`,
+  `/api/brain/memory/preview`, `/api/brain/state-lookup`,
+  `/api/brain/consolidation/log`
 - **Perf:** `GET /api/perf/recent` with `AUGUST_PERF_TIMING=1`
 - **Frontend stream marks:** `localStorage.august_stream_perf=1`
 - **Stale workbench state:** sessions live in SQLite; optional delete of
@@ -358,8 +395,19 @@ Note: prefer direct `memory_store` transactions for user-facing SoT.
 | `AUGUST_SQLITE_CACHE_KB` | Opt-in page cache KiB |
 | `AUGUST_SQLITE_MMAP_MB` | Opt-in mmap MiB |
 | `AUGUST_SQLITE_SYNC` | Opt-in only: `NORMAL` / `FULL` / `OFF` (default leaves SQLite FULL) |
-| `AUGUST_DB_WRITER_LOW_DROP_S` | Age before low-pri queue items drop |
 | `AUGUST_SESSION_JSON_EXPORT` | Session JSON backup toggle |
+| `AUGUST_TOOL_TIMEOUT_S` | Per-tool execution timeout |
+| `AUGUST_CONNECT_TIMEOUT_S` / `AUGUST_TTFB_TIMEOUT_S` | Upstream connect / time-to-first-byte |
+| `AUGUST_ANTHROPIC_CACHE=0` | Master kill-switch for Anthropic prompt caching |
+| `AUGUST_STRICT_BEST_EFFORT=1` | Make `best_effort(...)` swallows **re-raise** so tests surface what production would eat |
+| `AUGUST_CORS_ORIGINS` | Extra explicit origins (the default allowlist is localhost/tauri only) |
+| `AUGUST_ENABLE_DOCS` | Serve FastAPI `/docs` |
+| `AUGUST_HEADLESS` | Run without a UI surface |
+
+> `AUGUST_DB_WRITER_LOW_DROP_S` is **gone** — there is no `db_writer` queue and no
+> priority/age-drop parameter. Commit batching is
+> `services/deferred_writes.defer_commit(conn, window_s=…)`; see
+> [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 Stage boundaries: `app/services/workbench/chat_stages.py`.
 SSE coalesce: `app/lib/batched_emit.py`.

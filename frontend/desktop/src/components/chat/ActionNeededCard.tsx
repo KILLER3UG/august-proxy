@@ -100,12 +100,12 @@ export function ActionNeededCard({
     >
       <div className="mb-1 flex items-center gap-2">
         <Monitor className="size-3.5 text-amber-400/90" />
-        <span className="text-[13px] font-semibold text-foreground">Computer</span>
-        <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">
+        <span className="text-[0.8125rem] font-semibold text-foreground">Computer</span>
+        <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-3xs font-medium text-amber-300">
           Action needed
         </span>
       </div>
-      <p className="mb-2 text-[13px] leading-relaxed text-foreground/90">
+      <p className="mb-2 text-[0.8125rem] leading-relaxed text-foreground/90">
         {payload.instruction || 'The agent needs you to sign in to continue.'}
       </p>
       {imgSrc && (
@@ -120,7 +120,7 @@ export function ActionNeededCard({
         <button
           type="button"
           onClick={takeOver}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition hover:opacity-90"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[0.78125rem] font-medium text-background transition hover:opacity-90"
           data-testid="action-needed-take-over"
         >
           <MousePointerClick className="size-3.5" /> Take over
@@ -128,7 +128,7 @@ export function ActionNeededCard({
         <button
           type="button"
           onClick={() => void imDone()}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-1.5 text-[12.5px] text-foreground transition hover:bg-muted/40"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-1.5 text-[0.78125rem] text-foreground transition hover:bg-muted/40"
           data-testid="action-needed-im-done"
         >
           <Check className="size-3.5" /> I&apos;m done

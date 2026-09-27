@@ -64,7 +64,7 @@ export function SubagentProposalBar({ sessionId }: { sessionId: string | null })
         <button
           type="button"
           disabled={decide.isPending}
-          className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-[11px] text-primary-foreground disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-2xs text-primary-foreground disabled:opacity-50"
           data-testid="proposal-launch"
           onClick={() => decide.mutate({ proposalId: proposal.proposalId, approved: true })}
         >
@@ -74,7 +74,7 @@ export function SubagentProposalBar({ sessionId }: { sessionId: string | null })
         <button
           type="button"
           disabled={decide.isPending}
-          className="inline-flex items-center gap-1 rounded-md bg-muted px-2.5 py-1.5 text-[11px] text-muted-foreground disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded-md bg-muted px-2.5 py-1.5 text-2xs text-muted-foreground disabled:opacity-50"
           data-testid="proposal-reject"
           onClick={() => decide.mutate({ proposalId: proposal.proposalId, approved: false })}
         >

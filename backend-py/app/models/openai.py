@@ -10,6 +10,7 @@ from typing import cast
 
 from app.adapters.case_converters import strip_none_deep
 from app.models.base import ExtraAllowBaseModel, JsonValue
+from app.services.message_sources import strip_august_message_keys
 
 # ── Strict models (the proxy reads/constructs these) ──────────────────────
 
@@ -73,6 +74,8 @@ def dump_openai_upstream_body(
         dumped = cast('dict[str, object]', strip_none_deep(dict(body)))
     for key in _AUGUST_ONLY_OPENAI_KEYS:
         dumped.pop(key, None)
+    if 'messages' in dumped:
+        dumped['messages'] = strip_august_message_keys(dumped['messages'])
     return dumped
 
 

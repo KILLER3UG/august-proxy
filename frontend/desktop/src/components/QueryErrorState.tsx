@@ -70,13 +70,13 @@ export function QueryErrorState({
       >
         <AlertTriangle className={compact ? 'size-3.5' : 'size-5'} />
       </div>
-      <p className={cn('font-medium text-foreground', compact ? 'mt-1.5 text-[11px]' : 'mt-2.5 text-sm')}>
+      <p className={cn('font-medium text-foreground', compact ? 'mt-1.5 text-2xs' : 'mt-2.5 text-sm')}>
         {title}
       </p>
       <p
         className={cn(
           'text-muted-foreground break-words',
-          compact ? 'mt-0.5 text-[10.5px]' : 'mx-auto mt-1 max-w-md text-xs',
+          compact ? 'mt-0.5 text-[0.65625rem]' : 'mx-auto mt-1 max-w-md text-xs',
         )}
         data-testid="query-error-message"
       >
@@ -86,7 +86,7 @@ export function QueryErrorState({
         <p
           className={cn(
             'text-muted-foreground/70',
-            compact ? 'mt-0.5 text-[10px]' : 'mx-auto mt-1 max-w-md text-[11px]',
+            compact ? 'mt-0.5 text-3xs' : 'mx-auto mt-1 max-w-md text-2xs',
           )}
         >
           {note}
@@ -100,7 +100,7 @@ export function QueryErrorState({
           data-testid="query-error-retry"
           className={cn(
             'mt-3 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 font-medium text-foreground transition hover:bg-muted disabled:opacity-60',
-            compact ? 'px-2 py-1 text-[10.5px]' : 'px-3 py-1.5 text-xs',
+            compact ? 'px-2 py-1 text-[0.65625rem]' : 'px-3 py-1.5 text-xs',
           )}
         >
           <RefreshCw className={cn('size-3', retrying && 'animate-spin')} />

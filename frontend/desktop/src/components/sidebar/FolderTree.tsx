@@ -36,11 +36,11 @@ export function Section({
     <div className="august-sidebar-section">
       <div className="august-sidebar-section-header flex items-center justify-between mb-1 px-2">
         <div className="flex items-center gap-1">
-          <h3 className="text-[11px] text-sidebar-foreground/45 font-medium tracking-wide uppercase">
+          <h3 className="text-2xs text-sidebar-foreground/45 font-medium tracking-wide uppercase">
             {title}
           </h3>
           {count > 0 && (
-            <span className="text-[10px] text-sidebar-foreground/30 tabular-nums">
+            <span className="text-3xs text-sidebar-foreground/30 tabular-nums">
               {count}
             </span>
           )}
@@ -82,7 +82,7 @@ export function Section({
         )}
       </div>
       {count === 0 && title === "Pinned" ? (
-        <p className="px-2 py-0.5 text-[11px] text-sidebar-foreground/30">
+        <p className="px-2 py-0.5 text-2xs text-sidebar-foreground/30">
           {empty ?? "No items"}
         </p>
       ) : (
@@ -143,11 +143,11 @@ export function FolderHeader({
             aria-hidden
           />
         )}
-        <span className="truncate text-[12.5px] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80">
+        <span className="truncate text-[0.78125rem] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80">
           {folder.name}
         </span>
         {count > 0 && (
-          <span className="text-[10px] text-sidebar-foreground/25 tabular-nums shrink-0">
+          <span className="text-3xs text-sidebar-foreground/25 tabular-nums shrink-0">
             {count}
           </span>
         )}
@@ -223,13 +223,13 @@ export function UncategorizedHeader({
           <ChevronRight className="size-3" />
         </span>
         <span
-          className="truncate text-[12.5px] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80"
+          className="truncate text-[0.78125rem] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80"
           title={workspaceHint ? `Tasks — ${workspaceHint}` : "Tasks"}
         >
           Tasks
         </span>
         {count > 0 && (
-          <span className="text-[10px] text-sidebar-foreground/25 tabular-nums shrink-0">
+          <span className="text-3xs text-sidebar-foreground/25 tabular-nums shrink-0">
             {count}
           </span>
         )}

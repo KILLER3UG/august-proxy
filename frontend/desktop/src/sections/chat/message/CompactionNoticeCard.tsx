@@ -54,10 +54,10 @@ export function CompactionNoticeCard({ info }: { info: CompactionNoticeInfo }) {
           >
             <Archive className="size-3.5 text-primary/80" />
           </motion.span>
-          <span className="text-[12.5px] font-medium leading-5 text-foreground/80">
+          <span className="text-[0.78125rem] font-medium leading-5 text-foreground/80">
             {label}
           </span>
-          <span className="text-[11px] text-muted-foreground/70 tabular-nums shrink-0">
+          <span className="text-2xs text-muted-foreground/70 tabular-nums shrink-0">
             {formatTokens(info.originalTokens)} → {formatTokens(info.compressedTokens)}
             {saved > 0 ? ` (−${formatTokens(saved)})` : ''}
           </span>
@@ -70,7 +70,7 @@ export function CompactionNoticeCard({ info }: { info: CompactionNoticeInfo }) {
           transition={t.smooth}
           className={cn(
             'ml-5 mt-1 mb-1 rounded-lg border border-border/50 bg-muted/20 px-3 py-2',
-            'text-[12.5px] leading-relaxed text-muted-foreground/85',
+            'text-[0.78125rem] leading-relaxed text-muted-foreground/85',
           )}
         >
           Kept the first {info.headCount} and last {info.tailCount} messages; summarized{' '}

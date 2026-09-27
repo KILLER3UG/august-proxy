@@ -64,10 +64,10 @@ export function IntegrationCard({ item, onOpen, onPrimaryAction, busy }: Integra
               />
             )}
             {item.isNew && (
-              <span className="rounded text-[10px] font-medium text-rose-400/90">New</span>
+              <span className="rounded text-3xs font-medium text-rose-400/90">New</span>
             )}
             {item.isCommunity && (
-              <span className="rounded border border-border bg-muted/40 px-1.5 py-px text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+              <span className="rounded border border-border bg-muted/40 px-1.5 py-px text-3xs font-medium uppercase tracking-wide text-muted-foreground">
                 Community
               </span>
             )}

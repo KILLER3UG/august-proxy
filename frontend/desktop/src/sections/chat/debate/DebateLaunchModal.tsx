@@ -104,7 +104,7 @@ export function DebateLaunchModal({
         <div className="flex items-center gap-2">
           <Gavel className="size-4 text-primary" />
           <h3 className="font-medium text-sm">Structured debate</h3>
-          <span className="text-[10px] text-muted-foreground/70 ml-auto">
+          <span className="text-3xs text-muted-foreground/70 ml-auto">
             alternating turns in this chat
           </span>
           <button
@@ -127,7 +127,7 @@ export function DebateLaunchModal({
               setJudgeId(last.judge);
               setRounds(last.rounds);
             }}
-            className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] hover:text-primary"
+            className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-3xs hover:text-primary"
             data-testid="debate-resume-last"
           >
             <Bookmark className="size-2.5" />
@@ -172,7 +172,7 @@ export function DebateLaunchModal({
           >
             <Plus className="size-3" />
           </button>
-          <span className="text-[10px] text-muted-foreground ml-1">
+          <span className="text-3xs text-muted-foreground ml-1">
             {rounds} round{rounds === 1 ? '' : 's'} of alternating argument
             {judge ? ' + judge summary' : ''}
           </span>

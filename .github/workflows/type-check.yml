@@ -99,6 +99,13 @@ jobs:
       - name: eslint
         run: npm run lint -w frontend/desktop
 
+      # Design-drift ratchet (audit P0#2): px font sizes, raw hex, raw <button>
+      # outside components/ui, bare fetch() outside src/api, inline style
+      # objects. Baselined, so it fails only on NEW drift — eslint bans the px
+      # case too, and this covers the four habits lint has no rule for.
+      - name: Design drift guardrail
+        run: npm run check:design
+
       # Phase 7 UI inventory (Feature Flow, AUG toggle, collaboration banners,
       # marquee titles). Live backend SSE is covered by backend pytest; vitest
       # proves the desktop consumers of that stream.

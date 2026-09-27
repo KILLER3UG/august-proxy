@@ -58,7 +58,7 @@ function CopyButton({ value, label = 'copy' }: { value: string; label?: string }
   return (
     <button
       onClick={copy}
-      className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-background px-2 py-1 text-[10px] font-mono hover:bg-accent transition shrink-0"
+      className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-background px-2 py-1 text-3xs font-mono hover:bg-accent transition shrink-0"
       title="Copy"
     >
       {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
@@ -71,12 +71,12 @@ function CodeBlock({ code, language = 'bash' }: { code: string; language?: strin
   return (
     <div className="rounded-md border border-white/[0.06] bg-black/40 overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-white/[0.06] bg-white/[0.02]">
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
+        <span className="text-3xs uppercase tracking-wider text-muted-foreground font-mono">
           {language}
         </span>
         <CopyButton value={code} />
       </div>
-      <pre className="overflow-x-auto p-3 text-[11px] font-mono text-foreground/90 leading-relaxed">
+      <pre className="overflow-x-auto p-3 text-2xs font-mono text-foreground/90 leading-relaxed">
         <code>{code}</code>
       </pre>
     </div>
@@ -269,7 +269,7 @@ export function ExternalAccessSection() {
               {hasKey ? 'Regenerate key' : 'Generate key'}
             </Button>
             {cfg.source && (
-              <span className="text-[10px] font-mono text-muted-foreground">
+              <span className="text-3xs font-mono text-muted-foreground">
                 source: {cfg.source}
               </span>
             )}
@@ -316,7 +316,7 @@ export function ExternalAccessSection() {
             )}
           </div>
           {!healthy && (
-            <p className="mt-2 text-[11px] text-muted-foreground">
+            <p className="mt-2 text-2xs text-muted-foreground">
               Requests on <code className="font-mono">/v1/*</code> will be
               rejected{!hasKey && enabled ? ' with 503 (no key configured)' : enabled ? ' with 401' : ' with 403'}.
             </p>
@@ -375,7 +375,7 @@ export function ExternalAccessSection() {
         </div>
       </section>
 
-      <p className="text-[10px] text-muted-foreground/80 font-mono">
+      <p className="text-3xs text-muted-foreground/80 font-mono">
         🔒 The proxy server binds to your local network. Anyone able to reach
         the port can attempt authentication — keep{' '}
         <code>GATEWAY_API_KEY</code> private.
@@ -393,8 +393,8 @@ function EndpointRow({ url, label, hint }: { url: string; label: string; hint: s
         <span className="text-sm font-medium">{label}</span>
         <CopyButton value={url} />
       </div>
-      <code className="block mt-1.5 text-[11px] font-mono text-foreground break-all">{url}</code>
-      <p className="text-[10px] text-muted-foreground mt-1">{hint}</p>
+      <code className="block mt-1.5 text-2xs font-mono text-foreground break-all">{url}</code>
+      <p className="text-3xs text-muted-foreground mt-1">{hint}</p>
     </div>
   );
 }

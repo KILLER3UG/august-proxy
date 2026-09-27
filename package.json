@@ -31,7 +31,8 @@
     "check:version": "node scripts/check-version-sync.mjs",
     "check:docs": "node scripts/check-docs-sync.mjs",
     "check:doc-links": "node scripts/check-doc-links.mjs",
-    "check:naming": "node scripts/check-naming.mjs"
+    "check:naming": "node scripts/check-naming.mjs",
+    "check:design": "node scripts/check-design.mjs"
   },
   "dependencies": {
     "zod": "^3.25.76"

@@ -26,7 +26,7 @@ export function WorkspaceField({ label, hint, error, children, className, badge 
       </div>
       {children}
       {(error || hint) && (
-        <p className={cn('text-[11px]', error ? 'text-destructive' : 'text-muted-foreground')}>
+        <p className={cn('text-2xs', error ? 'text-destructive' : 'text-muted-foreground')}>
           {error || hint}
         </p>
       )}

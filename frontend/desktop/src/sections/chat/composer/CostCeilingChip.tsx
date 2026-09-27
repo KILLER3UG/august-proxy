@@ -54,7 +54,7 @@ export function CostCeilingChip({
 
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-mono tabular-nums"
+      className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-3xs font-mono tabular-nums"
       title={
         ceiling > 0
           ? `Per-session spend ceiling: $${cost.toFixed(3)} of $${ceiling.toFixed(2)} used${
@@ -112,7 +112,7 @@ export function CostCeilingChip({
           }}
           placeholder="0.00"
           inputMode="decimal"
-          className="w-14 rounded border border-primary/40 bg-background px-1 py-0 text-[10px] font-mono outline-none"
+          className="w-14 rounded border border-primary/40 bg-background px-1 py-0 text-3xs font-mono outline-none"
           aria-label="Cost ceiling in USD"
         />
       )}

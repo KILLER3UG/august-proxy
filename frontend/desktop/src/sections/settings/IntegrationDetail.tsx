@@ -16,6 +16,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { api } from '@/api/client';
 import { openExternal } from '@/lib/tauri-shell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -61,7 +62,7 @@ export function IntegrationDetail({ item, onBack, onRemove }: IntegrationDetailP
               <h1 className="text-xl font-semibold tracking-tight text-foreground">{item.name}</h1>
               {item.verified && <BadgeCheck className="size-4 text-muted-foreground" />}
               {item.isNew && (
-                <span className="ml-1 rounded text-[11px] font-medium text-rose-400/90">New</span>
+                <span className="ml-1 rounded text-2xs font-medium text-rose-400/90">New</span>
               )}
             </div>
             <p className="mt-1 text-sm text-muted-foreground">{item.tagline}</p>
@@ -102,7 +103,7 @@ export function IntegrationDetail({ item, onBack, onRemove }: IntegrationDetailP
             {tools.map((t) => (
               <span
                 key={t}
-                className="rounded-md border border-border/50 bg-muted/30 px-2 py-1 font-mono text-[11px] text-foreground/80"
+                className="rounded-md border border-border/50 bg-muted/30 px-2 py-1 font-mono text-2xs text-foreground/80"
               >
                 {t}
               </span>
@@ -121,7 +122,7 @@ export function IntegrationDetail({ item, onBack, onRemove }: IntegrationDetailP
       {item.categories.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {item.categories.map((c) => (
-            <Badge key={c} variant="outline" className="text-[10px]">
+            <Badge key={c} variant="outline" className="text-3xs">
               {c}
             </Badge>
           ))}
@@ -229,7 +230,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
           .fetchQuery({
             queryKey: ['integrations-connections'],
             queryFn: () =>
-              fetch('/api/service-connections').then((r) => r.json()) as Promise<{
+              api.get<{
                 connections: Record<
                   string,
                   {
@@ -238,7 +239,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
                     facets?: Record<string, { connected?: boolean }>;
                   }
                 >;
-              }>,
+              }>('/api/service-connections'),
             staleTime: 0,
           })
           .catch(() => null);
@@ -278,16 +279,12 @@ function AccountAction({ item }: { item: IntegrationItem }) {
     setSavingClientId(true);
     setError(null);
     try {
-      await fetch('/api/mcp-env', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          merge: true,
-          env: {
-            GOOGLE_OAUTH_CLIENT_ID: id,
-            OAUTHLIB_INSECURE_TRANSPORT: '1',
-          },
-        }),
+      await api.post('/api/mcp-env', {
+        merge: true,
+        env: {
+          GOOGLE_OAUTH_CLIENT_ID: id,
+          OAUTHLIB_INSECURE_TRANSPORT: '1',
+        },
       });
       void qc.invalidateQueries({ queryKey: ['integrations-connections'] });
       await startBrowserOAuth();
@@ -309,7 +306,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
           <CheckCircle2 className="mr-1 size-3" /> Connected
         </Badge>
         {conn?.account && (
-          <span className="font-mono text-[11px] text-muted-foreground">{conn.account}</span>
+          <span className="font-mono text-2xs text-muted-foreground">{conn.account}</span>
         )}
         <Button
           variant="outline"
@@ -327,7 +324,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
           Disconnect {serviceLabel}
         </Button>
         {provider === 'google' && (
-          <p className="max-w-[14rem] text-right text-[10px] text-muted-foreground">
+          <p className="max-w-[14rem] text-right text-3xs text-muted-foreground">
             Disconnects {item.name} only. Other Google services stay connected if you enabled them separately.
           </p>
         )}
@@ -341,8 +338,8 @@ function AccountAction({ item }: { item: IntegrationItem }) {
         <>
           {needsClientId && (
             <div className="w-72 space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3 text-left">
-              <p className="text-[11px] font-medium text-foreground">One-time Google setup</p>
-              <p className="text-[10px] leading-relaxed text-muted-foreground">
+              <p className="text-2xs font-medium text-foreground">One-time Google setup</p>
+              <p className="text-3xs leading-relaxed text-muted-foreground">
                 Create an OAuth <span className="text-foreground/80">Desktop app</span> in Google
                 Cloud Console. Copy the Client ID only — no secret needed (secure PKCE). Enable
                 Gmail/Calendar/Drive APIs and add yourself as a test user if the app is in Testing.
@@ -353,10 +350,10 @@ function AccountAction({ item }: { item: IntegrationItem }) {
                 value={clientIdDraft}
                 onChange={(e) => setClientIdDraft(e.target.value)}
                 placeholder="….apps.googleusercontent.com"
-                className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-2xs text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
               />
               {conn?.redirectUri && (
-                <p className="break-all font-mono text-[9px] text-muted-foreground">
+                <p className="break-all font-mono text-3xs text-muted-foreground">
                   Redirect: {conn.redirectUri}
                 </p>
               )}
@@ -385,11 +382,11 @@ function AccountAction({ item }: { item: IntegrationItem }) {
                 )}
                 {waiting ? 'Waiting for sign-in…' : `Sign in with ${item.name}`}
               </Button>
-              <p className="max-w-[14rem] text-right text-[10px] text-muted-foreground">
+              <p className="max-w-[14rem] text-right text-3xs text-muted-foreground">
                 One-click browser sign-in (Desktop OAuth + PKCE). Only requests access for{' '}
                 {item.name}.
               </p>
-              <details className="max-w-[18rem] text-right text-[10px] text-muted-foreground">
+              <details className="max-w-[18rem] text-right text-3xs text-muted-foreground">
                 <summary className="cursor-pointer hover:text-foreground">
                   Use a different Client ID
                 </summary>
@@ -400,7 +397,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
                     value={clientIdDraft}
                     onChange={(e) => setClientIdDraft(e.target.value)}
                     placeholder="….apps.googleusercontent.com"
-                    className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                    className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-2xs text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
                   />
                   <Button
                     size="sm"
@@ -420,13 +417,13 @@ function AccountAction({ item }: { item: IntegrationItem }) {
             </div>
           )}
           {waiting && (
-            <p className="max-w-xs text-right text-[10px] text-muted-foreground">
+            <p className="max-w-xs text-right text-3xs text-muted-foreground">
               Complete Google consent in your browser. This screen updates automatically when
               sign-in finishes.
             </p>
           )}
           {error && (
-            <p className="max-w-xs whitespace-pre-wrap text-right text-[11px] text-destructive">
+            <p className="max-w-xs whitespace-pre-wrap text-right text-2xs text-destructive">
               {error}
             </p>
           )}
@@ -459,10 +456,8 @@ function McpAction({ item }: { item: IntegrationItem }) {
   const restart = async () => {
     setBusy(true);
     try {
-      await fetch(`/api/mcp/servers/${encodeURIComponent(sid)}/stop`, { method: 'POST' }).catch(
-        () => null,
-      );
-      await fetch(`/api/mcp/servers/${encodeURIComponent(sid)}/start`, { method: 'POST' });
+      await api.post(`/api/mcp/servers/${encodeURIComponent(sid)}/stop`).catch(() => null);
+      await api.post(`/api/mcp/servers/${encodeURIComponent(sid)}/start`);
       void qc.invalidateQueries({ queryKey: ['integrations-mcp'] });
     } finally {
       setBusy(false);
@@ -472,7 +467,7 @@ function McpAction({ item }: { item: IntegrationItem }) {
   const start = async () => {
     setBusy(true);
     try {
-      await fetch(`/api/mcp/servers/${encodeURIComponent(sid)}/start`, { method: 'POST' });
+      await api.post(`/api/mcp/servers/${encodeURIComponent(sid)}/start`);
       void qc.invalidateQueries({ queryKey: ['integrations-mcp'] });
     } finally {
       setBusy(false);
@@ -482,7 +477,7 @@ function McpAction({ item }: { item: IntegrationItem }) {
   const stop = async () => {
     setBusy(true);
     try {
-      await fetch(`/api/mcp/servers/${encodeURIComponent(sid)}/stop`, { method: 'POST' });
+      await api.post(`/api/mcp/servers/${encodeURIComponent(sid)}/stop`);
       void qc.invalidateQueries({ queryKey: ['integrations-mcp'] });
     } finally {
       setBusy(false);
@@ -542,23 +537,16 @@ function McpServerDetails({ server }: { server: McpServer }) {
         if (eq <= 0) continue;
         env[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
       }
-      const res = await fetch(`/api/mcp/servers/${encodeURIComponent(server.id ?? server.name)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          command: command.trim(),
-          args: argsText.split(/\s+/).filter(Boolean),
-          env,
-          url: url.trim(),
-          transport: server.transport ?? 'stdio',
-          enabled: server.enabled ?? true,
-        }),
+      // ApiError already surfaces the backend's `detail` on !ok.
+      await api.patch(`/api/mcp/servers/${encodeURIComponent(server.id ?? server.name)}`, {
+        name: name.trim(),
+        command: command.trim(),
+        args: argsText.split(/\s+/).filter(Boolean),
+        env,
+        url: url.trim(),
+        transport: server.transport ?? 'stdio',
+        enabled: server.enabled ?? true,
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error((body as { detail?: string } | null)?.detail || `PATCH failed (${res.status})`);
-      }
       void qc.invalidateQueries({ queryKey: ['integrations-mcp'] });
       void qc.invalidateQueries({ queryKey: ['integrations'] });
       setEditing(false);

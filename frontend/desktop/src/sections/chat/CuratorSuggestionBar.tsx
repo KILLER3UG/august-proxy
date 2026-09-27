@@ -41,7 +41,7 @@ export function CuratorSuggestionBar() {
         onClick={run}
         disabled={running}
         data-testid="curator-chip"
-        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:border-primary/40 transition disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-2xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition disabled:opacity-50"
       >
           {running ? (
             <Loader2 className="size-3 animate-spin" />
@@ -69,15 +69,15 @@ export function CuratorSuggestionBar() {
       className="inline-flex flex-wrap items-center gap-1.5 animate-in fade-in slide-in-from-bottom-1 duration-150"
       data-testid="curator-report"
     >
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
+      <span className="text-3xs uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
         <Wand2 className="size-3 text-primary" />
         Curation
       </span>
-      <span className="rounded-full border border-border bg-muted/30 px-2.5 py-1 text-[11px]">
+      <span className="rounded-full border border-border bg-muted/30 px-2.5 py-1 text-2xs">
         {summary || 'All skills healthy'}
       </span>
       {staled.slice(0, 3).map((n) => (
-        <span key={n} className="rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-[10px] text-warning" title="Stale skill">
+        <span key={n} className="rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-3xs text-warning" title="Stale skill">
           {n}
         </span>
       ))}

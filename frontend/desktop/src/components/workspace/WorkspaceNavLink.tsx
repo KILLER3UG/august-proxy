@@ -43,7 +43,7 @@ export function WorkspaceNavLink({
       whileTap="tap"
       variants={rowMotion}
       className={cn(
-        'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors',
+        'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[0.8125rem] transition-colors',
         active
           ? 'bg-white/[0.07] font-medium text-foreground'
           : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground',
@@ -60,7 +60,7 @@ export function WorkspaceNavLink({
       </motion.span>
       <span className="truncate flex-1">{label}</span>
       {badge ? (
-        <span className="shrink-0 rounded-sm bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
+        <span className="shrink-0 rounded-sm bg-amber-500/20 px-1.5 py-0.5 text-3xs font-medium text-amber-400">
           {badge}
         </span>
       ) : null}

@@ -77,7 +77,7 @@ export function SettingsTabs({
               <span className="min-w-0">
                 <span className="block text-xs font-medium leading-tight">{tabLabel}</span>
                 {description && (
-                  <span className="mt-0.5 block text-[10px] text-muted-foreground line-clamp-2">
+                  <span className="mt-0.5 block text-3xs text-muted-foreground line-clamp-2">
                     {description}
                   </span>
                 )}

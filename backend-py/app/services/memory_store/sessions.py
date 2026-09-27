@@ -286,8 +286,15 @@ def save_workbench_session_sot(
         except Exception:
             client_rows = {}
             has_client_column = False
+        # 049: message provenance (audit C3). Same honesty rule as 048 — a DB
+        # without the column saves without it; source is telemetry, not payload.
+        try:
+            conn.execute('SELECT source FROM messages LIMIT 0')
+            has_source_column = True
+        except Exception:
+            has_source_column = False
         conn.execute('DELETE FROM messages WHERE session_id = ?', (sid,))
-        rows: list[tuple[str, str, str, str | None, str | None]] = []
+        rows: list[tuple[str, str, str, str | None, str | None, str | None]] = []
         # The unique index would reject a duplicate id inside this batch and
         # roll the whole save back; the first claim wins instead.
         seen_client_ids: set[str] = set()
@@ -305,6 +312,18 @@ def save_workbench_session_sot(
             else:
                 payload = content
             content_str = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+            # 049 (audit C3/D7): a tail-patched user message persists as the
+            # user's text alone. The per-turn <memory>/<relevant_skills>/
+            # <session_state> tail is re-injected fresh every turn, so a
+            # persisted copy is stale context the model should not trust (and
+            # mining noise). Trim at the recorded boundary — the in-memory
+            # surface the current turn still talks on is NOT mutated, so the
+            # provider prefix cache stays stable. The marker keys themselves
+            # never persist (the upstream dumps strip them per message too).
+            if msg.get('_tailPatched') and isinstance(content_str, str):
+                tailFrom = as_int(msg.get('_tailFrom'), -1)
+                if 0 <= tailFrom < len(content_str):
+                    content_str = content_str[:tailFrom].rstrip()
             # 047: the structured timeline (blocks / thinking / tools /
             # attachments / todos …) rides beside `content`, which stays the
             # FTS-indexed text. NULL for a message with nothing structured.
@@ -329,24 +348,25 @@ def save_workbench_session_sot(
                 client_id = None
             if client_id is not None:
                 seen_client_ids.add(client_id)
-            rows.append((sid, role, content_str, blocks_json, client_id))
+            # 049: provenance written by the loop's machine-injection sites
+            # (harness nudges, queued composites) — see message_sources.py.
+            # Untagged rows persist as NULL (not recorded), never ''.
+            source = as_str(msg.get('source'), '') or None
+            rows.append((sid, role, content_str, blocks_json, client_id, source))
         # One executemany instead of a per-row execute: the active session's
         # full transcript is re-written on every debounced save, so O(N)
         # round-trips were the dominant write cost on long sessions.
         if rows:
+            cols = ['session_id', 'role', 'content', 'blocks_json']
             if has_client_column:
-                conn.executemany(
-                    'INSERT INTO messages'
-                    ' (session_id, role, content, blocks_json, client_message_id)'
-                    ' VALUES (?, ?, ?, ?, ?)',
-                    rows,
-                )
-            else:  # pre-048 database: the pre-048 shape, no identity column
-                conn.executemany(
-                    'INSERT INTO messages (session_id, role, content, blocks_json)'
-                    ' VALUES (?, ?, ?, ?)',
-                    [r[:4] for r in rows],
-                )
+                cols.append('client_message_id')
+            if has_source_column:
+                cols.append('source')
+            conn.executemany(
+                f"INSERT INTO messages ({', '.join(cols)})"
+                f' VALUES ({", ".join(["?"] * len(cols))})',
+                [r[: len(cols)] for r in rows],
+            )
         conn.commit()
     except Exception:
         conn.rollback()

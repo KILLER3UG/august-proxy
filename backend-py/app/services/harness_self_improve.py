@@ -36,11 +36,16 @@ from app.json_narrowing import as_dict, as_int, as_list, as_str
 APPROVABLE_KINDS = frozenset({'brain_config', 'skill_create', 'skill_patch', 'skill_delete'})
 # Analysis-only kinds — always safe to store, never auto-applied.
 OBSERVATION_KINDS = frozenset({'tool_bucket', 'tool_description', 'flow_map', 'observation'})
+# Filed by the outcome ledger (harness_outcome) when a learning write measures
+# as a regression, carrying that change's own rollback text. Human-only for the
+# same reason the observations are: undoing what the harness learned is a call
+# a person makes, so _apply_approved falls through to its "human-only" branch.
+REVERT_KINDS = frozenset({'revert'})
 # Cross-project promotion. Filed by harness_promote's judge
 # pass (≥2-project bar); approved via the same human gate, applied
 # copy-on-write by harness_promote.apply_promotion with provenance.
 PROMOTION_KINDS = frozenset({'promote'})
-VALID_KINDS = APPROVABLE_KINDS | OBSERVATION_KINDS | PROMOTION_KINDS
+VALID_KINDS = APPROVABLE_KINDS | OBSERVATION_KINDS | PROMOTION_KINDS | REVERT_KINDS
 
 _MAX_PROPOSAL_FILES = 200
 

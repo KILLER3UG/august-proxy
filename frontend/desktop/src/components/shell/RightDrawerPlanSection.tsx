@@ -40,7 +40,7 @@ export function RightDrawerPlanSection({
     <div className="h-full p-3 chat-message-text text-foreground/90 space-y-3 max-w-none">
       <Markdown content={body} variant="assistant" />
       {plan.planPath && (
-        <div className="text-[10px] font-mono text-muted-foreground/50">{plan.planPath}</div>
+        <div className="text-3xs font-mono text-muted-foreground/50">{plan.planPath}</div>
       )}
     </div>
   );

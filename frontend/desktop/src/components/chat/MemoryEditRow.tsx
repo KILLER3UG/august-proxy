@@ -123,17 +123,17 @@ export function MemoryEditRow({
         {isOpen ? (
           <div id={panelId} className="edit-rail-panel">
             {fact ? (
-              <div className="whitespace-pre-wrap break-words rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] leading-relaxed text-foreground/85">
+              <div className="whitespace-pre-wrap break-words rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[0.75rem] leading-relaxed text-foreground/85">
                 {fact}
               </div>
             ) : null}
             {key ? (
-              <div className="mt-1 font-mono text-[10.5px] text-muted-foreground/70">
+              <div className="mt-1 font-mono text-[0.65625rem] text-muted-foreground/70">
                 {key}
               </div>
             ) : null}
             {errored && tool.error ? (
-              <div className="mt-1 whitespace-pre-wrap break-words font-mono text-[11px] text-rose-400">
+              <div className="mt-1 whitespace-pre-wrap break-words font-mono text-2xs text-rose-400">
                 {tool.error}
               </div>
             ) : null}

@@ -163,19 +163,19 @@ export function AllModelsTab() {
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
         <div className="flex items-center gap-6 flex-wrap">
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">All models</p>
+            <p className="text-3xs uppercase tracking-wider text-muted-foreground">All models</p>
             <p className="text-xl font-semibold tabular-nums">{totalModels.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Discovered</p>
+            <p className="text-3xs uppercase tracking-wider text-muted-foreground">Discovered</p>
             <p className="text-xl font-semibold tabular-nums text-blue-400">{fetchedCount.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Manual</p>
+            <p className="text-3xs uppercase tracking-wider text-muted-foreground">Manual</p>
             <p className="text-xl font-semibold tabular-nums">{manualCount.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Reasoning</p>
+            <p className="text-3xs uppercase tracking-wider text-muted-foreground">Reasoning</p>
             <p className="text-xl font-semibold tabular-nums text-warning">{reasoningCount.toLocaleString()}</p>
           </div>
         </div>
@@ -239,13 +239,13 @@ export function AllModelsTab() {
                   <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {first.providerName}
                   </h4>
-                  <span className="text-[10px] font-mono text-muted-foreground/60">{providerId}</span>
+                  <span className="text-3xs font-mono text-muted-foreground/60">{providerId}</span>
                   {!first.enabled && (
-                    <span className="rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    <span className="rounded-md bg-white/[0.05] px-1.5 py-0.5 text-3xs text-muted-foreground">
                       disabled
                     </span>
                   )}
-                  <span className="ml-auto text-[10px] font-mono text-muted-foreground/70">
+                  <span className="ml-auto text-3xs font-mono text-muted-foreground/70">
                     {providerRows.length} model{providerRows.length === 1 ? '' : 's'}
                   </span>
                 </div>
@@ -295,22 +295,22 @@ function AllModelCard({ row }: { row: AllModelRow }) {
         {row.name || row.id}
       </p>
       {row.name && row.name !== row.id && (
-        <p className="mt-0.5 text-[10px] font-mono text-muted-foreground/70 truncate">{row.id}</p>
+        <p className="mt-0.5 text-3xs font-mono text-muted-foreground/70 truncate">{row.id}</p>
       )}
       <div className="mt-2.5 flex flex-wrap gap-1.5">
         {row.pinned && (
-          <span className="rounded-md border border-primary/30 px-1.5 py-0.5 text-[10px] text-primary">
+          <span className="rounded-md border border-primary/30 px-1.5 py-0.5 text-3xs text-primary">
             pinned
           </span>
         )}
         {ctx && (
-          <span className="rounded-md bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+          <span className="rounded-md bg-white/[0.04] px-1.5 py-0.5 text-3xs font-mono text-muted-foreground">
             {ctx} ctx
           </span>
         )}
         <span
           className={cn(
-            'rounded-md px-1.5 py-0.5 text-[10px] font-mono',
+            'rounded-md px-1.5 py-0.5 text-3xs font-mono',
             row.source === 'fetched'
               ? 'bg-sky-500/15 text-sky-300'
               : 'bg-white/[0.04] text-muted-foreground',
@@ -319,12 +319,12 @@ function AllModelCard({ row }: { row: AllModelRow }) {
           {row.source}
         </span>
         {row.reasoning && (
-          <span className="rounded-md bg-warning/15 px-1.5 py-0.5 text-[10px] font-mono text-warning">
+          <span className="rounded-md bg-warning/15 px-1.5 py-0.5 text-3xs font-mono text-warning">
             reasoning
           </span>
         )}
         {row.free && (
-          <span className="rounded-md border border-success/30 px-1.5 py-0.5 text-[10px] text-success">
+          <span className="rounded-md border border-success/30 px-1.5 py-0.5 text-3xs text-success">
             free
           </span>
         )}

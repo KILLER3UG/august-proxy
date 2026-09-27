@@ -24,6 +24,10 @@ _ALLCamelKeys = {
     'skillRelevanceMatch',
     'maxAgentDepth',
     'maxWorkbenchToolLoops',
+    # Turn budget ladder arms (each 0 = off by default).
+    'budgetSoftUsd',
+    'budgetSoftTokens',
+    'budgetWallClockSec',
     # Routing introspection: autoRoute/MinWinRate/WinGap are
     # removed — no turn-loop reader ever existed; MinSamples stays for the
     # harness flow map.

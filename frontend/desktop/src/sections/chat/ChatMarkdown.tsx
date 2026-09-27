@@ -69,7 +69,7 @@ function renderCode(token: Tokens.Code): string {
   return (
     `<div class="markdown-code-block relative group">` +
       `<div class="markdown-code-header flex items-center justify-between px-3.5 py-1.5 bg-muted/30 border-b border-border/30 text-xs font-mono text-muted-foreground select-none">` +
-        `<span class="uppercase tracking-wider text-[11px] font-medium opacity-80">${escapeHtml(displayLang)}</span>` +
+        `<span class="uppercase tracking-wider text-2xs font-medium opacity-80">${escapeHtml(displayLang)}</span>` +
         `<button type="button" ${COPY_PLACEHOLDER_ATTR} ${COPY_CODE_ATTR}="${code}" ` +
           `class="markdown-copy-btn inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">` +
           `${copyIconSvg}<span class="copy-text">Copy</span>` +

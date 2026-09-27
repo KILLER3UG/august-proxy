@@ -164,9 +164,9 @@ export function SubagentSpawnModal({
         </div>
         <div className="space-y-3 px-4 py-3">
           <div>
-            <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-goals">
-              One work item per line — <code className="text-[10px]">name: goal</code> or{' '}
-              <code className="text-[10px]">name after:dep: goal</code>
+            <label className="text-2xs font-medium text-muted-foreground" htmlFor="spawn-goals">
+              One work item per line — <code className="text-3xs">name: goal</code> or{' '}
+              <code className="text-3xs">name after:dep: goal</code>
             </label>
             <textarea
               id="spawn-goals"
@@ -179,7 +179,7 @@ export function SubagentSpawnModal({
             />
           </div>
           {waves.length > 0 ? (
-            <div className="rounded-md border border-border/50 bg-muted/15 px-2 py-1.5 text-[11px]" data-testid="spawn-wave-preview">
+            <div className="rounded-md border border-border/50 bg-muted/15 px-2 py-1.5 text-2xs" data-testid="spawn-wave-preview">
               {waves.map((w, i) => (
                 <p key={i} className="text-muted-foreground">
                   Wave {i + 1}: <span className="font-mono text-foreground/80">{w.join(', ')}</span>
@@ -188,7 +188,7 @@ export function SubagentSpawnModal({
             </div>
           ) : null}
           <div>
-            <span className="text-[11px] font-medium text-muted-foreground">Preload skills</span>
+            <span className="text-2xs font-medium text-muted-foreground">Preload skills</span>
             <div className="mt-1 flex flex-wrap gap-1">
               {skillRows.slice(0, 12).map((s) => {
                 const name = s.name;
@@ -202,7 +202,7 @@ export function SubagentSpawnModal({
                       setSkillPick((prev) => (on ? prev.filter((x) => x !== name) : [...prev, name]))
                     }
                     className={cn(
-                      'rounded-full border px-2 py-0.5 text-[10px]',
+                      'rounded-full border px-2 py-0.5 text-3xs',
                       on ? 'border-primary/50 bg-primary/15 text-foreground' : 'border-border/60 text-muted-foreground',
                     )}
                   >
@@ -213,8 +213,8 @@ export function SubagentSpawnModal({
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-[11px] font-medium text-muted-foreground">Mode</span>
-            <label className="inline-flex items-center gap-1 text-[11px]">
+            <span className="text-2xs font-medium text-muted-foreground">Mode</span>
+            <label className="inline-flex items-center gap-1 text-2xs">
               <input
                 type="radio"
                 name="spawn-mode"
@@ -224,7 +224,7 @@ export function SubagentSpawnModal({
               />
               Auto — launch immediately
             </label>
-            <label className="inline-flex items-center gap-1 text-[11px]">
+            <label className="inline-flex items-center gap-1 text-2xs">
               <input
                 type="radio"
                 name="spawn-mode"
@@ -237,7 +237,7 @@ export function SubagentSpawnModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-agent">
+              <label className="text-2xs font-medium text-muted-foreground" htmlFor="spawn-agent">
                 Agent role
               </label>
               <select
@@ -254,7 +254,7 @@ export function SubagentSpawnModal({
               </select>
             </div>
             <div>
-              <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-effort">
+              <label className="text-2xs font-medium text-muted-foreground" htmlFor="spawn-effort">
                 Reasoning effort
               </label>
               <select
@@ -271,7 +271,7 @@ export function SubagentSpawnModal({
               </select>
             </div>
             <div>
-              <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-model">
+              <label className="text-2xs font-medium text-muted-foreground" htmlFor="spawn-model">
                 Model
               </label>
               <select
@@ -290,7 +290,7 @@ export function SubagentSpawnModal({
             </div>
           </div>
           {!sessionId && (
-            <p className="text-[11px] text-amber-600">
+            <p className="text-2xs text-amber-600">
               No active chat session — agents will not stream into a transcript.
             </p>
           )}
@@ -298,7 +298,7 @@ export function SubagentSpawnModal({
             <button
               type="button"
               onClick={() => setShowAdvanced((v) => !v)}
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+              className="inline-flex items-center gap-1 text-2xs font-medium text-muted-foreground hover:text-foreground"
               data-testid="spawn-advanced-toggle"
             >
               <ChevronDown className={cn('size-3 transition-transform', showAdvanced && 'rotate-180')} />
@@ -307,7 +307,7 @@ export function SubagentSpawnModal({
             {showAdvanced && (
               <div className="mt-2 space-y-2.5 rounded-md border border-border/60 bg-background/50 p-2.5">
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-context">
+                  <label className="text-2xs font-medium text-muted-foreground" htmlFor="spawn-context">
                     Shared context
                   </label>
                   <textarea
@@ -319,7 +319,7 @@ export function SubagentSpawnModal({
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-restrict">
+                  <label className="text-2xs font-medium text-muted-foreground" htmlFor="spawn-restrict">
                     Restricted tools (denylist)
                   </label>
                   <input
@@ -330,7 +330,7 @@ export function SubagentSpawnModal({
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground" htmlFor="spawn-schema">
+                  <label className="text-2xs font-medium text-muted-foreground" htmlFor="spawn-schema">
                     yieldSchema JSON
                   </label>
                   <textarea
@@ -338,10 +338,10 @@ export function SubagentSpawnModal({
                     value={yieldSchema}
                     onChange={(e) => setYieldSchema(e.target.value)}
                     rows={3}
-                    className="mt-1 w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-[11px] outline-none"
+                    className="mt-1 w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-2xs outline-none"
                   />
                   {schemaInvalid && (
-                    <p className="mt-1 text-[10px] text-danger">Invalid JSON — the schema will not be sent.</p>
+                    <p className="mt-1 text-3xs text-danger">Invalid JSON — the schema will not be sent.</p>
                   )}
                 </div>
               </div>

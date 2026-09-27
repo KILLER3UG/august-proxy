@@ -116,14 +116,14 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
       data-testid="queue-pills"
     >
       <div className="flex items-center justify-between px-0.5">
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+        <span className="text-3xs uppercase tracking-wider text-muted-foreground font-semibold">
           Queue ({items.length})
         </span>
         {items.length > 1 && (
           <button
             type="button"
             onClick={clearAll}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-3xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
             title="Clear all queued messages"
           >
             <Trash2 className="size-3" />
@@ -146,7 +146,7 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
           }}
           onDrop={() => onDrop(q.id)}
           className={cn(
-            'flex items-center gap-2 px-2 py-1.5 rounded-xl border text-[11px] transition',
+            'flex items-center gap-2 px-2 py-1.5 rounded-xl border text-2xs transition',
             q.kind === 'steer'
               ? 'border-primary/35 bg-primary/10'
               : 'border-warning/30 bg-warning/5',
@@ -182,7 +182,7 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
                   }
                   if (e.key === 'Escape') setEditingId(null);
                 }}
-                className="flex-1 min-w-0 rounded border border-border bg-background px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-primary"
+                className="flex-1 min-w-0 rounded border border-border bg-background px-1.5 py-0.5 text-2xs outline-none focus:ring-1 focus:ring-primary"
                 autoFocus
               />
               <button

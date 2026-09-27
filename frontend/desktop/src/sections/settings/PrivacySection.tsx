@@ -59,7 +59,7 @@ function fmtBytes(b?: number): string {
 function StatCard({ label, value, icon: Icon }: { label: string; value: string; icon: typeof Database }) {
   return (
     <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-3xs uppercase tracking-wider text-muted-foreground">
         <Icon className="size-3" />
         {label}
       </div>
@@ -284,7 +284,7 @@ export function PrivacySection() {
             />
           </div>
 
-          <p className="text-[11px] text-muted-foreground/60 flex items-center gap-1.5">
+          <p className="text-2xs text-muted-foreground/60 flex items-center gap-1.5">
             <HardDrive className="size-3" />
             All data lives in the local backend database — nothing is sent anywhere unless you explicitly connect an external service.
           </p>

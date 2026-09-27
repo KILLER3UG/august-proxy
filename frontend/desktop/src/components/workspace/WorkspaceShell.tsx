@@ -332,7 +332,7 @@ function ProfileRailRow() {
           {account.initials || account.displayName.slice(0, 2).toUpperCase()}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium text-sidebar-foreground">
+          <span className="block truncate text-[0.8125rem] font-medium text-sidebar-foreground">
             {account.displayName}
           </span>
           <span className="block truncate text-xs text-sidebar-foreground/55">

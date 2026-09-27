@@ -67,18 +67,18 @@ export function ChatEmptyState({
         {harness === 'orchestrator' ? (
           <>
             <div className="flex flex-col items-center gap-3 text-center">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 backdrop-blur px-2.5 py-1 text-[11px] font-medium tracking-wide text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 backdrop-blur px-2.5 py-1 text-2xs font-medium tracking-wide text-muted-foreground">
                 <GitBranch className="size-3 opacity-60" />
                 Orchestrator
               </span>
-              <h1 className="text-[26px] font-[650] tracking-[-0.03em] leading-tight text-foreground">
+              <h1 className="text-[1.625rem] font-[650] tracking-[-0.03em] leading-tight text-foreground">
                 Plan a wave, then dispatch
               </h1>
-              <p className="max-w-md text-[13.5px] leading-relaxed text-muted-foreground">
+              <p className="max-w-md text-[0.84375rem] leading-relaxed text-muted-foreground">
                 in <span className="font-mono text-foreground/70">{project}</span> — you stay here, workers edit and run.
               </p>
             </div>
-            <ol className="flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-muted-foreground/70">
+            <ol className="flex items-center gap-1.5 text-2xs font-medium tracking-wide text-muted-foreground/70">
               <li className="rounded-full bg-muted/40 px-2.5 py-1 border border-border/30">Plan</li>
               <li className="opacity-30">→</li>
               <li className="rounded-full bg-muted/40 px-2.5 py-1 border border-border/30">Dispatch</li>
@@ -95,8 +95,8 @@ export function ChatEmptyState({
                     window.dispatchEvent(new CustomEvent('august:open-spawn', { detail: { goals: ex.goals } }));
                   }}
                 >
-                  <span className="block text-[12.5px] font-medium tracking-tight text-foreground/90">{ex.label}</span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{ex.hint}</span>
+                  <span className="block text-[0.78125rem] font-medium tracking-tight text-foreground/90">{ex.label}</span>
+                  <span className="mt-0.5 block text-2xs leading-snug text-muted-foreground">{ex.hint}</span>
                 </button>
               ))}
             </div>
@@ -113,10 +113,10 @@ export function ChatEmptyState({
           </>
         ) : (
           <div className="flex flex-col items-center gap-2 text-center">
-            <h1 className="text-[30px] font-[620] tracking-[-0.03em] leading-tight text-foreground">
+            <h1 className="text-[1.875rem] font-[620] tracking-[-0.03em] leading-tight text-foreground">
               What should we work on?
             </h1>
-            <p className="text-[13px] text-muted-foreground/60">
+            <p className="text-[0.8125rem] text-muted-foreground/60">
               in <span className="font-mono text-foreground/55">{project}</span>
             </p>
           </div>

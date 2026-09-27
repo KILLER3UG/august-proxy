@@ -92,7 +92,7 @@ export function ConversationSearchModal() {
             data-testid="conversation-search-input"
           />
           {searching ? (
-            <span className="text-[11px] text-muted-foreground animate-pulse">searching…</span>
+            <span className="text-2xs text-muted-foreground animate-pulse">searching…</span>
           ) : null}
           <button
             type="button"

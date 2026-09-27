@@ -211,7 +211,7 @@ export function DiffView({ diff, oldContent, newContent, maxLines = 40, classNam
   return (
     <div
       className={cn(
-        'rounded-md overflow-x-auto my-1.5 font-mono text-[11px] leading-[1.55]',
+        'rounded-md overflow-x-auto my-1.5 font-mono text-2xs leading-[1.55]',
         'bg-black/30 border border-white/[0.04]',
         className
       )}
@@ -234,7 +234,7 @@ export function DiffView({ diff, oldContent, newContent, maxLines = 40, classNam
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="w-full text-[10px] text-zinc-500 hover:text-zinc-300 text-center py-1.5 select-none cursor-pointer transition-colors"
+          className="w-full text-3xs text-zinc-500 hover:text-zinc-300 text-center py-1.5 select-none cursor-pointer transition-colors"
         >
           ─── Show {hidden} more line{hidden === 1 ? '' : 's'} ───
         </button>
@@ -243,7 +243,7 @@ export function DiffView({ diff, oldContent, newContent, maxLines = 40, classNam
         <button
           type="button"
           onClick={() => setExpanded(false)}
-          className="w-full text-[10px] text-zinc-500 hover:text-zinc-300 text-center py-1.5 select-none cursor-pointer transition-colors"
+          className="w-full text-3xs text-zinc-500 hover:text-zinc-300 text-center py-1.5 select-none cursor-pointer transition-colors"
         >
           ─── Show less ───
         </button>
@@ -294,7 +294,7 @@ function DiffLineRow({ line, anchors, idPrefix }: { line: DiffLine; anchors?: Di
           key={i}
           title={a.title}
           data-testid="diff-line-anchor"
-          className="shrink-0 self-center ml-2 mr-2 max-w-[14rem] truncate rounded border border-destructive/40 bg-destructive/15 px-1 py-0.5 text-[9px] font-semibold text-destructive/90"
+          className="shrink-0 self-center ml-2 mr-2 max-w-[14rem] truncate rounded border border-destructive/40 bg-destructive/15 px-1 py-0.5 text-3xs font-semibold text-destructive/90"
         >
           {a.tag} {a.title}
         </span>

@@ -1,6 +1,8 @@
 /* ── Project rules discovery (walk-up) ────────────────────────────────── */
 /* Finds AUG.md / CLAUDE.md / AGENTS.md from workspace roots.             */
 
+import { api } from '@/api/client';
+
 export type ProjectRulesFile = {
   name: string;
   path: string;
@@ -21,19 +23,14 @@ export async function discoverProjectRules(
 
   // Direct children of workspace root
   try {
-    const res = await fetch(
-      `/api/workspace/files?path=${encodeURIComponent(root)}`,
-    );
-    if (res.ok) {
-      const data = (await res.json()) as {
-        files?: Array<{ name: string; path: string; isDir?: boolean }>;
-      };
-      for (const f of data.files ?? []) {
-        if (f.isDir) continue;
-        const base = f.name || f.path.split(/[/\\]/).pop() || '';
-        if (RULE_NAMES.some((n) => n.toLowerCase() === base.toLowerCase())) {
-          found.push({ name: base, path: f.path || `${root}/${base}` });
-        }
+    const data = await api.get<{
+      files?: Array<{ name: string; path: string; isDir?: boolean }>;
+    }>(`/api/workspace/files?path=${encodeURIComponent(root)}`);
+    for (const f of data.files ?? []) {
+      if (f.isDir) continue;
+      const base = f.name || f.path.split(/[/\\]/).pop() || '';
+      if (RULE_NAMES.some((n) => n.toLowerCase() === base.toLowerCase())) {
+        found.push({ name: base, path: f.path || `${root}/${base}` });
       }
     }
   } catch {
@@ -42,16 +39,13 @@ export async function discoverProjectRules(
 
   // AUG API context (authoritative for AUG.md)
   try {
-    const res = await fetch(
+    const data = await api.get<{ exists?: boolean; path?: string }>(
       `/api/aug/context?workspacePath=${encodeURIComponent(root)}`,
     );
-    if (res.ok) {
-      const data = (await res.json()) as { exists?: boolean; path?: string };
-      if (data.exists && data.path) {
-        const name = data.path.split(/[/\\]/).pop() || 'AUG.md';
-        if (!found.some((x) => x.path === data.path)) {
-          found.unshift({ name, path: data.path });
-        }
+    if (data.exists && data.path) {
+      const name = data.path.split(/[/\\]/).pop() || 'AUG.md';
+      if (!found.some((x) => x.path === data.path)) {
+        found.unshift({ name, path: data.path });
       }
     }
   } catch {

@@ -104,7 +104,7 @@ export function SandboxModeSelector({ selectedMode, onChange, className }: Sandb
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'h-7 px-2 rounded-full text-[11px] font-medium inline-flex items-center gap-1 transition',
+          'h-7 px-2 rounded-full text-2xs font-medium inline-flex items-center gap-1 transition',
           'border border-border/50 bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted/70',
           className,
         )}
@@ -124,7 +124,7 @@ export function SandboxModeSelector({ selectedMode, onChange, className }: Sandb
             style={{ top: pos.top, right: pos.right }}
             data-testid="sandbox-mode-menu"
           >
-            <div className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+            <div className="px-2 py-1.5 text-3xs uppercase tracking-wider text-muted-foreground font-semibold">
               Sandbox
             </div>
             {options.map((option) => (
@@ -143,7 +143,7 @@ export function SandboxModeSelector({ selectedMode, onChange, className }: Sandb
                 )}
               >
                 <div className="font-medium">{option.label}</div>
-                <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                <div className="text-2xs text-muted-foreground mt-0.5 leading-snug">
                   {option.description}
                 </div>
               </button>

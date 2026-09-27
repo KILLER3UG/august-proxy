@@ -73,7 +73,7 @@ export function ObservabilityOverview({
           />
         </div>
 
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-[0.8125rem] text-muted-foreground">
           Token counts, heatmaps, and per-model share live in{' '}
           <Link to="/settings/usage" className="text-foreground/90 underline-offset-2 hover:underline">
             Usage &amp; Limits
@@ -130,7 +130,7 @@ function StatCard({
           <Icon className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
+          <div className="text-3xs uppercase tracking-widest text-muted-foreground">{label}</div>
           <div className={`mt-1 text-lg font-semibold truncate ${accent || ''}`}>{value}</div>
         </div>
       </CardContent>

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { FolderLock, Loader2, ShieldOff, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageLoader } from '@/components/PageLoader';
+import { api } from '@/api/client';
 import { toast } from 'sonner';
 
 type Grant = { key: string; tool: string; path: string };
@@ -18,9 +19,7 @@ export function ToolGrantsSection() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/workbench/tool-grants');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { workspaces?: WorkspaceGrants[] };
+      const data = await api.get<{ workspaces?: WorkspaceGrants[] }>('/api/workbench/tool-grants');
       setRows(Array.isArray(data.workspaces) ? data.workspaces : []);
     } catch (e) {
       toast.error(`Could not load grants: ${(e as Error).message}`);
@@ -36,13 +35,12 @@ export function ToolGrantsSection() {
   const revoke = async (workspacePath: string, key: string) => {
     setBusyKey(key);
     try {
-      const res = await fetch('/api/workbench/tool-grants', {
+      // api.delete carries no body, so the JSON payload rides `init` (the
+      // client's request() spreads it verbatim — same wire shape as before).
+      const data = await api.get<{ workspaces?: WorkspaceGrants[] }>('/api/workbench/tool-grants', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspacePath, key }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { workspaces?: WorkspaceGrants[] };
       setRows(Array.isArray(data.workspaces) ? data.workspaces : []);
       toast.success('Grant revoked');
     } catch (e) {
@@ -91,14 +89,14 @@ export function ToolGrantsSection() {
                     <ShieldOff className="size-3.5 shrink-0 text-warning" />
                     <div className="min-w-0 flex-1">
                       <div className="font-medium truncate">{g.tool}</div>
-                      <div className="text-[11px] text-muted-foreground truncate font-mono">
+                      <div className="text-2xs text-muted-foreground truncate font-mono">
                         {g.path}
                       </div>
                     </div>
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 text-[11px] text-destructive hover:text-destructive"
+                      className="h-7 text-2xs text-destructive hover:text-destructive"
                       disabled={busyKey === g.key}
                       onClick={() => {
                         void revoke(ws.workspacePath, g.key);

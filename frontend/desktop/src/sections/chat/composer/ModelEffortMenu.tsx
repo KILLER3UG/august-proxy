@@ -452,7 +452,7 @@ export function ModelEffortMenu({
         role="button"
         tabIndex={0}
         data-testid="model-option"
-        className="group flex w-full cursor-pointer items-center gap-1.5 py-[8px] pl-3 pr-2 text-left text-[14px] hover:bg-muted/50"
+        className="group flex w-full cursor-pointer items-center gap-1.5 py-[8px] pl-3 pr-2 text-left text-[0.875rem] hover:bg-muted/50"
         onClick={() => {
           onSelect(m);
           closeAll();
@@ -502,7 +502,7 @@ export function ModelEffortMenu({
         {...chipTrigger}
         onClick={() => (pane === 'models' ? closeAll() : setPane('models'))}
         className={cn(
-          'relative inline-flex items-center gap-1 text-[12px] outline-none cursor-pointer h-7 max-w-[240px]',
+          'relative inline-flex items-center gap-1 text-[0.75rem] outline-none cursor-pointer h-7 max-w-[240px]',
           'text-muted-foreground hover:text-foreground transition-colors duration-200',
           'bg-muted/30 hover:bg-muted/50 rounded-lg px-2 py-0.5',
         )}
@@ -529,7 +529,7 @@ export function ModelEffortMenu({
         {...chipTrigger}
         onClick={() => (pane === 'effort' ? closeAll() : setPane('effort'))}
         className={cn(
-          'relative inline-flex items-center gap-1 text-[12px] outline-none cursor-pointer h-7',
+          'relative inline-flex items-center gap-1 text-[0.75rem] outline-none cursor-pointer h-7',
           'text-muted-foreground hover:text-foreground transition-colors duration-200',
           'bg-muted/30 hover:bg-muted/50 rounded-lg px-2 py-0.5',
         )}
@@ -571,10 +571,10 @@ export function ModelEffortMenu({
                     reference's "Z.ai / GLM-5.3-Flash" block. */}
                 <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/40 py-2.5 pl-3 pr-1.5">
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[15px] font-semibold leading-5 text-foreground">
+                    <div className="truncate text-[0.9375rem] font-semibold leading-5 text-foreground">
                       {selected?.provider || 'Provider'}
                     </div>
-                    <div className="truncate text-[13px] leading-5 text-foreground/80">
+                    <div className="truncate text-[0.8125rem] leading-5 text-foreground/80">
                       {selected ? getModelDisplayName(selected.id) : 'No model selected'}
                     </div>
                   </div>
@@ -602,7 +602,7 @@ export function ModelEffortMenu({
                   className="py-1 overflow-y-auto min-h-0 flex-1 chat-scroll"
                 >
                   {groups.length === 0 && (
-                    <div className="px-3 py-2 text-[13px] text-muted-foreground">
+                    <div className="px-3 py-2 text-[0.8125rem] text-muted-foreground">
                       {loading ? 'Loading…' : 'No providers.'}
                     </div>
                   )}
@@ -621,7 +621,7 @@ export function ModelEffortMenu({
                           updateFlyoutPos(e.currentTarget);
                         }}
                         className={cn(
-                          'mx-1.5 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2 rounded-md px-2.5 py-[10px] text-left text-[15px] transition-colors',
+                          'mx-1.5 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2 rounded-md px-2.5 py-[10px] text-left text-[0.9375rem] transition-colors',
                           isActive
                             ? 'bg-muted/60 text-foreground'
                             : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
@@ -648,7 +648,7 @@ export function ModelEffortMenu({
                         closeAll();
                         onEditModels();
                       }}
-                      className="mx-1.5 mb-1.5 w-[calc(100%-12px)] cursor-pointer rounded-md px-2.5 py-[10px] text-left text-[15px] text-foreground/90 hover:bg-muted/40"
+                      className="mx-1.5 mb-1.5 w-[calc(100%-12px)] cursor-pointer rounded-md px-2.5 py-[10px] text-left text-[0.9375rem] text-foreground/90 hover:bg-muted/40"
                       data-testid="manage-models"
                     >
                       Manage models
@@ -703,7 +703,7 @@ export function ModelEffortMenu({
                         data-testid={`effort-option-${o.triggerLabel}`}
                         onClick={() => onEffortChange(o.value)}
                         className={cn(
-                          'flex w-full cursor-pointer items-center justify-between px-3 py-[7px] text-left text-[13px] transition-colors',
+                          'flex w-full cursor-pointer items-center justify-between px-3 py-[7px] text-left text-[0.8125rem] transition-colors',
                           isSel
                             ? 'text-foreground'
                             : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
@@ -716,7 +716,7 @@ export function ModelEffortMenu({
                   })}
                 </div>
                 <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/40 px-3 py-2">
-                  <span className="text-[11px] text-muted-foreground">Extended thinking</span>
+                  <span className="text-2xs text-muted-foreground">Extended thinking</span>
                   <ThinkingSwitch checked={thinkingEnabled} onChange={onThinkingChange} />
                 </div>
               </motion.div>

@@ -202,6 +202,23 @@ export default tseslint.config(
       '@typescript-eslint/no-namespace': 'off',
       '@typescript-eslint/triple-slash-reference': 'off',
 
+      // Absolute-px font-size classes ignore the `data-text-size` root
+      // font-size scaling (styles.css) — Comfortable/Spacious only ever moved
+      // the rem-based minority. The 2026-09-26 codemod retired all 926 px
+      // literals onto the rem scale (3xs/2xs tokens or exact rem
+      // equivalents); this keeps them retired. The `(\.\d+)?` is load-bearing:
+      // an integer-only pattern let 113 FRACTIONAL values (10.5px, 12.5px, …)
+      // through the codemod and through this rule. scripts/check-design.mjs
+      // is the second net for the same regression.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "Literal[value=/text-\\[\\d+(\\.\\d+)?px\\]/]",
+          message:
+            'Use the rem type scale (3xs/2xs/xs/sm/…) or a rem arbitrary value — text-[Npx] ignores data-text-size.',
+        },
+      ],
+
       // React Refresh (HMR) — only require for entry components; we let it warn
       'react-refresh/only-export-components': [
         'warn',

@@ -46,7 +46,7 @@ const SHORTCUT_GROUPS: Array<{
 
 function KeyCap({ children }: { children: string }) {
   return (
-    <kbd className="inline-flex min-w-[1.4rem] items-center justify-center rounded border border-border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] font-medium text-foreground/80 shadow-xs">
+    <kbd className="inline-flex min-w-[1.4rem] items-center justify-center rounded border border-border bg-muted/60 px-1.5 py-0.5 font-mono text-3xs font-medium text-foreground/80 shadow-xs">
       {children}
     </kbd>
   );
@@ -93,7 +93,7 @@ export function ShortcutsModal() {
         <div className="max-h-[60vh] overflow-y-auto p-4 space-y-4">
           {SHORTCUT_GROUPS.map((group) => (
             <div key={group.heading}>
-              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <p className="mb-1.5 text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {group.heading}
               </p>
               <div className="space-y-1">
@@ -107,7 +107,7 @@ export function ShortcutsModal() {
                       {item.keys.map((key, i) => (
                         <span key={key} className="flex items-center gap-1">
                           {i > 0 && (
-                            <span className="text-[10px] text-muted-foreground/60">+</span>
+                            <span className="text-3xs text-muted-foreground/60">+</span>
                           )}
                           <KeyCap>{key}</KeyCap>
                         </span>
@@ -118,7 +118,7 @@ export function ShortcutsModal() {
               </div>
             </div>
           ))}
-          <p className="pt-1 text-center text-[11px] text-muted-foreground/70">
+          <p className="pt-1 text-center text-2xs text-muted-foreground/70">
             Ctrl = ⌘ on macOS
           </p>
         </div>

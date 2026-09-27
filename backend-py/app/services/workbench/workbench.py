@@ -136,30 +136,16 @@ _POLL_TARGET_REPEATS = 6
 
 # Error families: six different commands failing for one reason is one problem,
 # but full-argument novelty alone calls it progress and never intervenes. The
-# table is deliberately first-match-wins and coarse — it steers the nudge, it
-# never decides whether the turn continues.
-_ERROR_FAMILY_RULES: tuple[tuple[str, str], ...] = (
-    ('timeout', r'\btime[d]? ?out\b|deadline exceeded|timed out'),
-    ('rate_limit', r'rate[ _-]?limit|\b429\b|too many requests|quota'),
-    ('auth', r'\b401\b|unauthorized|invalid api key|authentication'),
-    ('permission', r'\b403\b|permission denied|\beacces\b|not allowed'),
-    ('not_found', r'\b404\b|no such file|not found|cannot find'),
-    ('network', r'connection (refused|reset|closed|aborted)|\beconn|getaddrinfo|unreachable'),
-    ('invalid_argument', r'\b400\b|validation error|invalid (input|argument|json)|required field'),
-    ('process_exit', r'exit code: [1-9]|exited with code|traceback \(most recent call last\)'),
-)
+# rules, advice, and classifier live in app/services/error_families.py — the
+# one vocabulary shared with the turn_outcomes recorder (audit D8); the
+# historical names stay importable from here for tests and callers.
+from app.services.error_families import ERROR_FAMILY_ADVICE as _ERROR_FAMILY_ADVICE  # noqa: E402, F401
+from app.services.error_families import ERROR_FAMILY_RULES as _ERROR_FAMILY_RULES  # noqa: E402, F401
+from app.services.error_families import classify_family as _error_family  # noqa: E402
+from app.services.message_sources import SOURCE_HARNESS_NUDGE, SOURCE_QUEUED_USER  # noqa: E402
+
 _ERROR_FAMILY_WINDOW = 6
 _ERROR_FAMILY_STREAK = 3
-_ERROR_FAMILY_ADVICE = {
-    'timeout': 'run a smaller unit of work, or raise the timeout deliberately',
-    'rate_limit': 'stop issuing calls — wait, or answer from what you already have',
-    'auth': 'the credential is wrong or missing; re-asking the same call cannot fix it',
-    'permission': 'pick a path/approach the policy allows instead of retrying this one',
-    'not_found': 'verify the path or name exists before relying on it',
-    'network': 'the endpoint is unreachable; say so instead of retrying silently',
-    'invalid_argument': 're-read the tool signature and fix the arguments, not the retry',
-    'process_exit': 'read the failing output; the same invocation fails the same way',
-}
 # Every injected reminder is runtime-only. Without this line a model files the
 # nudge itself as a durable "lesson" and the memory store fills with the harness
 # talking to itself.
@@ -167,17 +153,6 @@ _REMINDER_FOOTER = (
     'This is a runtime reminder for the current turn only — do not save it into '
     'memory, skills, or any persistent instruction file.'
 )
-
-
-def _error_family(text: str) -> str:
-    """Classify one tool failure into a family, or '' when it is not a failure."""
-    if not text:
-        return ''
-    low = text[:4000].lower()
-    for family, pattern in _ERROR_FAMILY_RULES:
-        if re.search(pattern, low):
-            return family
-    return ''
 
 
 def _toolResultText(msg: dict[str, object]) -> str:
@@ -971,6 +946,35 @@ def _isContextOverflowError(response: dict[str, object]) -> bool:
     return any((marker in msg for marker in _CONTEXT_OVERFLOW_MARKERS))
 
 
+def _emitRecovery(
+    emit: Callable[[dict[str, object]], None] | None,
+    kind: str,
+    attempt: int,
+    outcome: str,
+    degraded: bool,
+) -> None:
+    """One unified frame per self-correction rescue (audit P0#6 / D9).
+
+    Every path that rescues a turn mid-flight — length continuation, reactive
+    context reduction, auto-compact, the budget ladder — emits
+    ``recovery {kind, attempt, outcome, degraded}`` so the event log shows
+    what was rescued and whether the answer shipped degraded. ``degraded=True``
+    is the trust signal: the turn looks complete but was truncated or rescued
+    into a reduced surface.
+    """
+    if not emit:
+        return
+    emit(
+        {
+            'type': 'recovery',
+            'kind': kind,
+            'attempt': int(attempt),
+            'outcome': outcome,
+            'degraded': bool(degraded),
+        }
+    )
+
+
 async def _reactiveContextReduction(
     messages: list[dict[str, object]], contextWindow: int, session: WorkbenchSession
 ) -> list[dict[str, object]] | None:
@@ -1052,6 +1056,182 @@ def _managedToolLoopCap() -> int:
     # 38944632. This line used to claim 25 in both the docstring and here,
     # which is what AGENTS.md then repeated (audit finding 2026-09-15 #6).
     return MAX_MANAGED_TOOL_ROUNDS
+
+
+# Turn budget ladder (audit P1#12). A turn that outgrows its soft budget is
+# DEGRADED in steps rather than cut off: bare tool surface, then compaction,
+# then one tool-free answer — and the turn ends as turn_end{reason: 'budget'}.
+# The rungs are ordered cheapest-to-act on first, so a budget that is only
+# slightly over buys a cheaper round instead of a truncation.
+_BUDGET_LADDER = ('surface', 'compaction', 'final')
+
+
+def _turnBudget() -> tuple[float, int, int]:
+    """(soft USD, soft tokens, wall-clock seconds) armed for this turn.
+
+    Mirrors ``_managedToolLoopCap``: brain-config overrides, an absent key (or
+    0) leaves that arm off, and all-off means the ladder never runs. These are
+    SOFT ceilings — a breach degrades the turn, it does not abort it.
+    """
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        cfg = getRuntimeConfig()
+        return (
+            max(0.0, as_float(cfg.get('budgetSoftUsd'), 0.0)),
+            max(0, as_int(cfg.get('budgetSoftTokens'), 0)),
+            max(0, as_int(cfg.get('budgetWallClockSec'), 0)),
+        )
+    except Exception:
+        logger.debug('turn budget read failed; ladder stays off', exc_info=True)
+        return (0.0, 0, 0)
+
+
+def _budgetBreached(
+    arms: tuple[float, int, int],
+    *,
+    spend_usd: float = 0.0,
+    tokens: int = 0,
+    elapsed_sec: float = 0.0,
+) -> bool:
+    """True when any ARMED soft budget has been met.
+
+    A 0 arm is switched off, not met — with every arm off this is always False,
+    so an unconfigured install never walks the ladder.
+    """
+    soft_usd, soft_tokens, wall_sec = arms
+    if soft_usd > 0 and spend_usd >= soft_usd:
+        return True
+    if soft_tokens > 0 and tokens >= soft_tokens:
+        return True
+    return wall_sec > 0 and elapsed_sec >= wall_sec
+
+
+def _nextBudgetStep(current: int) -> int:
+    """The rung a fresh breach escalates to, clamped at the last one.
+
+    A turn that stays over budget after the final rung does not keep
+    escalating — it ends, which is the whole point of the last rung.
+    """
+    return min(int(current) + 1, len(_BUDGET_LADDER))
+
+
+def _turnSpendUsd(model_id: str, cache_hit: int, cache_miss: int, out_tokens: int) -> float:
+    """This turn's spend so far, in USD.
+
+    Routed through cost_estimator — the single pricing source — so the budget
+    arm and the composer chip / Usage page can never disagree. The cache split
+    is already resolved by the loop, and when it is known ``total_in`` is
+    ignored upstream, so the same cache-aware arithmetic applies.
+    """
+    try:
+        from app.services.cost_estimator import session_cost_usd
+
+        return session_cost_usd(
+            model_id=model_id,
+            total_in=cache_miss,
+            total_out=out_tokens,
+            cache_hit=cache_hit,
+            cache_miss=cache_miss,
+        )
+    except Exception:
+        # A budget that cannot be priced must not fail the turn it is
+        # measuring; the other arms still work.
+        logger.debug('turn spend estimate failed; cost arm reads 0', exc_info=True)
+        return 0.0
+
+
+async def _budgetTriggeredCompaction(
+    session: object,
+    sessionId: str,
+    messages: list[dict[str, object]],
+    *,
+    contextWindow: int,
+    emit: Callable[[dict[str, object]], None] | None,
+    resolvedProvider: dict[str, object] | None,
+    resolvedModel: str,
+    currentTurn: int,
+) -> list[dict[str, object]] | None:
+    """Mid-turn compaction forced by the budget ladder.
+
+    Deliberately the SAME compaction the pre-turn auto-compact runs (same
+    prune → summarize → persist, same landmark pins) — a budget rescue that
+    summarized differently would be a second, subtly different context policy
+    for the same session. Returns the reduced list only when the surface
+    actually shrank; None means the caller keeps what it had.
+    """
+    from app.providers.clients.base import estimateTokens
+    from app.services.workbench.context_compressor import (
+        REPLAY_USER_BUDGET_BYTES,
+        acquireCompactionLock,
+        compressMessages,
+        pruneToolOutputs,
+        releaseCompactionLock,
+    )
+
+    if not acquireCompactionLock(session):
+        logger.info('workbench budget-compact skipped — lock held session=%s', sessionId)
+        return None
+    try:
+        pruned = pruneToolOutputs(list(messages))
+        originalTokens = estimateTokens(pruned)
+        threshold = max(4096, int((contextWindow or 0) * 0.55)) if contextWindow else 4096
+        summarizer = None
+        try:
+            from app.services.cognitive_config import get_features
+            from app.services.workbench.providers import make_compactor_llm_client
+
+            if get_features().get('llm_compactor', False):
+                summarizer = make_compactor_llm_client(resolvedProvider, resolvedModel)
+        except Exception:
+            summarizer = None
+        compressed = await compressMessages(
+            pruned,
+            threshold=threshold,
+            head_count=4,
+            tail_count=6,
+            summarizer=summarizer,
+            pin_predicates=[_is_update_state_transition, _is_failing_receipt],
+            contextWindow=contextWindow or None,
+            goalHint=as_str(getattr(session, 'goal', '') or ''),
+            schema=summarizer is None,
+            replayUserBytes=REPLAY_USER_BUDGET_BYTES,
+        )
+        compressedTokens = estimateTokens(compressed)
+        if compressedTokens >= originalTokens:
+            return None
+        session.messages = list(compressed)  # type: ignore[attr-defined]
+        session.messageCount = len(compressed)  # type: ignore[attr-defined]
+        session._last_compaction_turn = currentTurn  # type: ignore[attr-defined]
+        if emit:
+            emit(
+                {
+                    'type': 'compaction',
+                    'originalTokens': originalTokens,
+                    'compressedTokens': compressedTokens,
+                    'compressedCount': len(pruned) - len(compressed),
+                    'headCount': 4,
+                    'tailCount': 6,
+                    'threshold': threshold,
+                    'contextWindow': contextWindow,
+                    'underThreshold': False,
+                }
+            )
+        return compressed
+    except Exception:
+        # A failed rescue must not take the turn with it — the caller keeps
+        # the surface it had and the ladder moves on.
+        logger.warning('workbench budget-compact failed session=%s', sessionId, exc_info=True)
+        return None
+    finally:
+        releaseCompactionLock(session)
+
+
+_BUDGET_FINAL_DIRECTIVE = (
+    '\n\n<turn_budget>\nThis turn has reached its configured budget. Tool calls are no longer '
+    'available for this round. Answer NOW in plain text: state what you completed, what you '
+    'did not, and what the user should do next. Do not start new work.\n</turn_budget>'
+)
 
 
 def _modelRetryDelayMs(attempt: int, response: dict[str, object], policy: dict[str, int]) -> int:
@@ -2171,7 +2351,7 @@ def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[st
     are follow-ups for later.
     """
     if not entries:
-        return {'role': 'user', 'content': ''}
+        return {'role': 'user', 'content': '', 'source': SOURCE_QUEUED_USER}
 
     def _kind_rank(e: dict[str, object]) -> int:
         k = as_str(e.get('kind'), 'queue')
@@ -2244,7 +2424,15 @@ def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[st
             parts.append(text)
             parts.append('</queued_message>')
             parts.append('')
-    return {'role': 'user', 'content': '\n'.join(parts).strip()}
+    # The whole composite is queue-drain plumbing (it may embed steer notes
+    # and [SUBAGENT RESULTS …] receipts) — one provenance value covers it for
+    # mining and persist trimming; the audit's subagent_results kind is kept
+    # in the vocabulary for any future pure-receipt row.
+    return {
+        'role': 'user',
+        'source': SOURCE_QUEUED_USER,
+        'content': '\n'.join(parts).strip(),
+    }
 
 
 def enqueueUserMessage(
@@ -3385,6 +3573,7 @@ async def _sendWorkbenchMessageStreamImpl(
                                     'underThreshold': False,
                                 }
                             )
+                        _emitRecovery(emit, 'auto-compact', currentTurn, 'compacted', False)
                         logger.info(
                             'workbench auto-compact session=%s tokens=%d→%d ratio=%.2f window=%d',
                             sessionId,
@@ -3417,6 +3606,10 @@ async def _sendWorkbenchMessageStreamImpl(
     # names never bound, and reading them at emit time would raise into the
     # emit's own except and silently drop the whole meter.
     _contextSections = tailSectionSizes(None, None, None, None)
+    # Same pre-bind rule: the injected-skill names (the <relevant_skills>
+    # detail keys) feed the turn's credit-assignment row (migration 050) and
+    # must stay bound even when the injection block fails early.
+    _skillsInjectedNames: list[str] = []
     try:
         from app.services import session_scope as _session_scope
         from app.services.capabilities_prompt import render_relevant_skills
@@ -3577,9 +3770,17 @@ async def _sendWorkbenchMessageStreamImpl(
                 # (bloat + stale <session_state>/<memory_nudge> blocks the
                 # model may trust + phantom "user_correction" episodes in the
                 # miner, whose injection filter is prefix-only).
+                # _tailFrom is the pre-tail content length — the boundary the
+                # persist path trims at (save_workbench_session_sot). Both
+                # marker keys are stripped from upstream bodies (see
+                # AUGUST_MESSAGE_ONLY_KEYS in message_sources.py).
                 _patched['_tailPatched'] = True
+                _patched['_tailFrom'] = len(_userText)
                 currentMessages[_lastUserIdx] = _patched
             if _memoryBlock:
+                # Audit D1: the detail keys ARE the injected skill names —
+                # they ride the turn row so per-skill effect can be measured.
+                _skillsInjectedNames = list(_skillsDetail.keys())
                 session._injected_facts = _injectedFacts
     except Exception:
         logger.debug('M3 memory injection failed', exc_info=True)
@@ -3674,6 +3875,15 @@ async def _sendWorkbenchMessageStreamImpl(
     # one structured turn_outcomes row with it).
     _turnStartMs = int(time.time() * 1000)
     managedToolLoopCap = _managedToolLoopCap()
+    # Turn budget ladder (audit P1#12). `_budgetStep` counts rungs already
+    # spent; `_budgetFinalFired` marks that the one tool-free round is spent
+    # too, which is the signal to end the turn as reason='budget'.
+    _budgetArms = _turnBudget()
+    _budgetStep = 0
+    _budgetFinalFired = False
+    # Monotonic, not time.time(): a wall-clock adjustment mid-turn must not
+    # make a long turn look short (or a short one look over budget).
+    _turnStartMono = time.monotonic()
     # Trace-store bookkeeping: tool names dispatched this turn + self-heal
     # counters (recorded with the turn trace for replay/drift analysis).
     calledTools: set[str] = set()
@@ -3746,6 +3956,18 @@ async def _sendWorkbenchMessageStreamImpl(
     chainModels = _chatFallbackChain()
     promotionModel = _chatContextPromotionModel()
     promotionUsed = False
+    # Audit D1 (migration 050): the turn's credit-assignment accumulators.
+    # Families ride the per-round steering scan (the union of each round's
+    # window covers every tool failure the steering ever saw); loaded skills
+    # are collected by skill_service's turn-scoped list and drained by
+    # turn_close. Both are once-per-turn, NOT per-round.
+    turnErrorFamilies: set[str] = set()
+    try:
+        from app.services.skill_service import begin_turn_skill_collection
+
+        begin_turn_skill_collection()
+    except Exception:
+        logger.debug('turn skill collection open failed', exc_info=True)
     while True:
         toolRound += 1
         mutationsBeforeRound = getattr(session, 'mutationCount', 0)
@@ -3764,6 +3986,80 @@ async def _sendWorkbenchMessageStreamImpl(
             turnError = turnError or msg
             turnEndReason = 'cap'
             break
+        # The budget ladder's last rung already had its one tool-free round.
+        if _budgetFinalFired:
+            logger.info('workbench %s ended on turn budget after %d rounds', sessionId, toolRound)
+            turnEndReason = 'budget'
+            break
+        # Turn budget ladder, rung by rung (audit P1#12). Checked once per
+        # round: a breach spends ONE rung and reports it, so an over-budget
+        # turn degrades in visible steps rather than being cut off mid-flight.
+        if _budgetBreached(
+            _budgetArms,
+            spend_usd=_turnSpendUsd(resolvedModel, totalCacheHitTokens, totalCacheMissTokens, totalOutputTokens),
+            # hit+miss is the whole prompt on every provider shape (Anthropic
+            # excludes both from input_tokens) — adding input_tokens too would
+            # double-count exactly the turns the cache made cheap.
+            tokens=totalCacheHitTokens + totalCacheMissTokens + totalOutputTokens,
+            elapsed_sec=time.monotonic() - _turnStartMono,
+        ):
+            _budgetStep = _nextBudgetStep(_budgetStep)
+            _rung = _BUDGET_LADDER[_budgetStep - 1]
+            if _rung == 'surface' and not surfaceDowngraded:
+                tools = [t for t in toolDefinitions(session) if _toolDefName(t) in _BARE_TOOL_ALLOW]
+                openaiTools = [
+                    t for t in openaiToolDefinitions(session) if _toolDefName(t) in _BARE_TOOL_ALLOW
+                ]
+                surfaceDowngraded = True
+                cleanRoundsSinceDowngrade = 0
+                systemText = _buildSystemText(session, tools if isAnthropic else openaiTools)
+                _emitRecovery(emit, 'budget', _budgetStep, 'degraded', True)
+                if emit:
+                    emit(
+                        {
+                            'type': 'warning',
+                            'message': (
+                                'Turn budget reached — narrowing the tool surface to the essential '
+                                'set for the rest of this turn.'
+                            ),
+                        }
+                    )
+            elif _rung == 'compaction':
+                _compacted = await _budgetTriggeredCompaction(
+                    session,
+                    sessionId,
+                    currentMessages,
+                    contextWindow=contextWindow,
+                    emit=emit,
+                    resolvedProvider=resolvedProvider,
+                    resolvedModel=resolvedModel,
+                    currentTurn=getattr(session, 'turnCount', 0),
+                )
+                if _compacted:
+                    currentMessages = _compacted
+                _emitRecovery(emit, 'budget', _budgetStep, 'degraded', True)
+                if emit:
+                    emit(
+                        {
+                            'type': 'warning',
+                            'message': 'Turn budget reached — compacting context to buy headroom.',
+                        }
+                    )
+            else:  # 'final' — one tool-free answer, then the turn ends
+                _budgetFinalFired = True
+                turnEndReason = 'budget'
+                systemText = f'{systemText}{_BUDGET_FINAL_DIRECTIVE}'
+                _emitRecovery(emit, 'budget', _budgetStep, 'stopped', True)
+                if emit:
+                    emit(
+                        {
+                            'type': 'warning',
+                            'message': (
+                                'Turn budget spent — this round answers in text only, and the turn '
+                                'ends after it.'
+                            ),
+                        }
+                    )
         # Stall detection: a turn that never advances phase/step is a weak
         # model spinning on repeated tool calls. Inject a reflection prompt
         # (the model answers on the next round); hard-stop if it ignores it.
@@ -3794,6 +4090,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         currentMessages.append(
                             {
                                 'role': 'user',
+                                'source': SOURCE_HARNESS_NUDGE,
                                 'content': (
                                     f'[Proxy Self-Heal] {stalledRounds} tool rounds have elapsed without '
                                     'advancing your execution phase/step. Reflect on what is blocking '
@@ -3822,6 +4119,7 @@ async def _sendWorkbenchMessageStreamImpl(
             # six *different* commands failing the same way are one problem and
             # would otherwise read as progress until the round cap eats the turn.
             # Advisory only — it never ends the turn and never gates an answer.
+            turnErrorFamilies.update(_recent_error_families(currentMessages))
             for family, hits in _recent_error_families(currentMessages).items():
                 if hits < _ERROR_FAMILY_STREAK or family in familyNudged:
                     continue
@@ -3829,6 +4127,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 currentMessages.append(
                     {
                         'role': 'user',
+                        'source': SOURCE_HARNESS_NUDGE,
                         'content': (
                             f'[Proxy Self-Heal] The last {hits} tool results all failed as '
                             f'"{family}". Repeating the call unchanged will fail unchanged: '
@@ -3999,9 +4298,15 @@ async def _sendWorkbenchMessageStreamImpl(
                     # Chat/code mode never executes tools, so the
                     # full tool array rode upstream for zero benefit — the
                     # dominant 500-aggravator on weak gateways. Ship none.
+                    # The budget ladder's final rung is the same situation:
+                    # that round is a text-only answer, so advertising tools
+                    # would only invite calls the turn will not run.
                     _wireTools = tools
                     _wireOpenaiTools = openaiTools
-                    if as_str(getattr(session, 'agent_mode', '') or '') in ('chat', 'code'):
+                    if (
+                        as_str(getattr(session, 'agent_mode', '') or '') in ('chat', 'code')
+                        or _budgetFinalFired
+                    ):
                         _wireTools = []
                         _wireOpenaiTools = []
                     _attemptMessages = currentMessages
@@ -4129,7 +4434,9 @@ async def _sendWorkbenchMessageStreamImpl(
                                         ),
                                     }
                                 )
+                            _emitRecovery(emit, 'context-reduction', 1, 'reduced', False)
                             continue
+                        _emitRecovery(emit, 'context-reduction', 1, 'failed', True)
                     break
                 if retryAttempt >= retryPolicy['maxRetries'] or _isCancelled():
                     break
@@ -4309,6 +4616,7 @@ async def _sendWorkbenchMessageStreamImpl(
             currentMessages.append(
                 {
                     'role': 'user',
+                    'source': SOURCE_HARNESS_NUDGE,
                     'content': (
                         '[Proxy Self-Heal] Stop narrating tool calls in prose. When you need a '
                         'tool, emit it as an actual tool call; do not describe it in text. '
@@ -4544,7 +4852,13 @@ async def _sendWorkbenchMessageStreamImpl(
                             'One tool call per line. The harness executes it and returns the '
                             'result as a tool message.'
                         )
-                    currentMessages.append({'role': 'user', 'content': reminder})
+                    currentMessages.append(
+                        {
+                            'role': 'user',
+                            'source': SOURCE_HARNESS_NUDGE,
+                            'content': reminder,
+                        }
+                    )
                     if emit:
                         emit(
                             {
@@ -4583,6 +4897,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     currentMessages.append(
                         {
                             'role': 'user',
+                            'source': SOURCE_HARNESS_NUDGE,
                             'content': (
                                 '[Proxy Self-Heal] Your last message was cut off by the '
                                 'output token limit mid-sentence. Continue EXACTLY where it '
@@ -4603,10 +4918,12 @@ async def _sendWorkbenchMessageStreamImpl(
                                 ),
                             }
                         )
+                    _emitRecovery(emit, 'length-continuation', _lengthContinuations, 'retrying', False)
                     continue
                 # Budget spent and still truncated: say so instead of letting
                 # the clipped text pass as a complete answer.
                 turnEndReason = 'length'
+                _emitRecovery(emit, 'length-continuation', _MAX_LENGTH_CONTINUATIONS, 'exhausted', True)
                 logger.warning(
                     'workbench final text still truncated after %d continuations — '
                     'delivering the partial answer (stop_reason=%s)',
@@ -5746,6 +6063,12 @@ async def _sendWorkbenchMessageStreamImpl(
         ),
         parseFailures=parseFailures,
         surfaceDowngraded=surfaceDowngraded,
+        # Audit D1 (migration 050): credit assignment. skillsInjected comes
+        # from the <relevant_skills> detail keys; errorFamilies from the
+        # per-round steering scan union. skills_loaded and facts_injected
+        # are drained inside turnTelemetry (it owns those authorities).
+        skillsInjected=_skillsInjectedNames,
+        errorFamilies=sorted(turnErrorFamilies),
     )
     try:
         logger.debug('workbench turn complete: %d rounds, in=%d out=%d', toolRound, totalInputTokens, totalOutputTokens)

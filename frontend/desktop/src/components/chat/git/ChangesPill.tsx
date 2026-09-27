@@ -21,6 +21,7 @@ import {
   Asterisk,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { api } from '@/api/client';
 import { gitApi, type GitStatus } from '@/api/git';
 import { cn } from '@/lib/utils';
 import { BranchMenuBody } from '@/components/workspace/WorkspaceBranchChip';
@@ -138,7 +139,7 @@ export function ChangesPill({
             </div>
           ) : (
             <>
-              <div className="px-3 pb-1 pt-2.5 text-[13px] font-semibold text-foreground">
+              <div className="px-3 pb-1 pt-2.5 text-[0.8125rem] font-semibold text-foreground">
                 Git tools
               </div>
               {/* Changes — totals, expandable per-file list. */}
@@ -146,11 +147,11 @@ export function ChangesPill({
                 type="button"
                 data-testid="git-tools-changes"
                 onClick={() => setShowFiles((v) => !v)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-foreground/90 transition hover:bg-muted/50"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8125rem] text-foreground/90 transition hover:bg-muted/50"
               >
                 <FileDiff className="size-3.5 shrink-0 text-muted-foreground" />
                 Changes
-                <span className="ml-auto font-mono tabular-nums text-[11px]">
+                <span className="ml-auto font-mono tabular-nums text-2xs">
                   <span className="text-emerald-500">+{added}</span>{' '}
                   <span className="text-red-400">-{removed}</span>
                 </span>
@@ -160,7 +161,7 @@ export function ChangesPill({
                   {files.map((f) => (
                     <div
                       key={f.path}
-                      className="flex items-center gap-2 px-3 py-1 pl-6 text-[11px]"
+                      className="flex items-center gap-2 px-3 py-1 pl-6 text-2xs"
                       title={`${f.status} · ${f.path}`}
                     >
                       <span className="min-w-0 flex-1 truncate font-mono text-foreground/75">
@@ -177,7 +178,7 @@ export function ChangesPill({
                 type="button"
                 data-testid="git-tools-branch"
                 onClick={() => setView('branches')}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-foreground/90 transition hover:bg-muted/50"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8125rem] text-foreground/90 transition hover:bg-muted/50"
               >
                 <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate font-mono">{current || '—'}</span>
@@ -191,7 +192,7 @@ export function ChangesPill({
                   setOpen(false);
                   setCommitOpen(true);
                 }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-foreground/90 transition hover:bg-muted/50"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8125rem] text-foreground/90 transition hover:bg-muted/50"
               >
                 <GitCommitHorizontal className="size-3.5 shrink-0 text-muted-foreground" />
                 Commit or push
@@ -202,7 +203,7 @@ export function ChangesPill({
                 <>
                   <div className="mx-3 my-1 border-t border-border/40" />
                   <div
-                    className="flex items-center justify-between px-3 pb-1 pt-1.5 text-[11px] text-muted-foreground"
+                    className="flex items-center justify-between px-3 pb-1 pt-1.5 text-2xs text-muted-foreground"
                     data-testid="git-tools-progress"
                   >
                     <span>Progress</span>
@@ -210,7 +211,7 @@ export function ChangesPill({
                   </div>
                   <div className="max-h-40 overflow-y-auto pb-1 chat-scroll">
                     {planSteps.map((s, i) => (
-                      <div key={i} className="flex items-start gap-2 px-3 py-1 text-[12px] text-foreground/80">
+                      <div key={i} className="flex items-start gap-2 px-3 py-1 text-[0.75rem] text-foreground/80">
                         <Circle className="mt-1 size-2 shrink-0 text-muted-foreground/50" />
                         <span className="min-w-0 flex-1">{s}</span>
                       </div>
@@ -222,10 +223,10 @@ export function ChangesPill({
               {agents.length > 0 && (
                 <>
                   <div className="mx-3 my-1 border-t border-border/40" />
-                  <div className="px-3 pb-1 pt-1.5 text-[11px] text-muted-foreground">Agents</div>
+                  <div className="px-3 pb-1 pt-1.5 text-2xs text-muted-foreground">Agents</div>
                   <div className="max-h-36 overflow-y-auto pb-1.5 chat-scroll">
                     {agents.map((a) => (
-                      <div key={a.jobId} className="flex items-center gap-2 px-3 py-1 text-[12px]">
+                      <div key={a.jobId} className="flex items-center gap-2 px-3 py-1 text-[0.75rem]">
                         {a.status === 'running' ? (
                           <Loader2 className="size-3 shrink-0 animate-spin text-primary" />
                         ) : (
@@ -234,7 +235,7 @@ export function ChangesPill({
                         <span className="min-w-0 flex-1 truncate text-foreground/80">
                           {a.task || a.agentId}
                         </span>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">{a.status}</span>
+                        <span className="shrink-0 text-3xs text-muted-foreground">{a.status}</span>
                       </div>
                     ))}
                   </div>
@@ -277,17 +278,14 @@ function CommitModal({
   const generateMessage = async (): Promise<string> => {
     setBusy('generate');
     try {
-      const res = await fetch('/api/workbench/btw', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await api.post<{ output?: string; answer?: string; text?: string }>(
+        '/api/workbench/btw',
+        {
           sessionId,
           question:
             'Write a git commit message for the current working-tree changes. Reply with ONLY the subject line plus an optional short body — no quotes, no backticks, no commentary.',
-        }),
-      });
-      if (!res.ok) throw new Error(`generate failed: ${res.status}`);
-      const data = (await res.json()) as { output?: string; answer?: string; text?: string };
+        },
+      );
       const text = (data.output || data.answer || data.text || '').trim();
       if (!text) throw new Error('empty suggestion');
       return text.slice(0, 500);
@@ -407,7 +405,7 @@ function CommitModal({
           </button>
         </div>
 
-        <label className="mt-3 flex w-full cursor-pointer items-center gap-2 py-1 text-[13px] text-foreground/90">
+        <label className="mt-3 flex w-full cursor-pointer items-center gap-2 py-1 text-[0.8125rem] text-foreground/90">
           <input
             type="checkbox"
             checked={includeUnstaged}
@@ -416,7 +414,7 @@ function CommitModal({
             className="size-3.5 accent-[var(--dt-primary)]"
           />
           Include unstaged changes
-          <span className="ml-auto text-[11px] text-muted-foreground">
+          <span className="ml-auto text-2xs text-muted-foreground">
             {files.length} {files.length === 1 ? 'file' : 'files'}
           </span>
         </label>
@@ -427,7 +425,7 @@ function CommitModal({
             data-testid="commit-action"
             disabled={busy !== null}
             onClick={() => void doCommit(false)}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-2.5 text-left text-[13px] text-foreground transition hover:bg-muted/60 disabled:opacity-50"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-2.5 text-left text-[0.8125rem] text-foreground transition hover:bg-muted/60 disabled:opacity-50"
           >
             <GitCommitHorizontal className="size-4 shrink-0 text-muted-foreground" />
             Commit
@@ -437,11 +435,11 @@ function CommitModal({
             data-testid="commit-push-action"
             disabled={busy !== null}
             onClick={() => void doCommit(true)}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-2.5 text-left text-[13px] text-foreground transition hover:bg-muted/60 disabled:opacity-50"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-2.5 text-left text-[0.8125rem] text-foreground transition hover:bg-muted/60 disabled:opacity-50"
           >
             <ArrowUp className="size-4 shrink-0 text-muted-foreground" />
             Commit and push
-            <span className="ml-auto rounded border border-border/60 px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+            <span className="ml-auto rounded border border-border/60 px-1 py-0.5 font-mono text-3xs text-muted-foreground">
               Ctrl+↵
             </span>
           </button>
@@ -450,7 +448,7 @@ function CommitModal({
             data-testid="push-action"
             disabled={busy !== null}
             onClick={() => void doPush()}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-2.5 text-left text-[13px] text-muted-foreground transition hover:bg-muted/60 hover:text-foreground disabled:opacity-50"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-2.5 text-left text-[0.8125rem] text-muted-foreground transition hover:bg-muted/60 hover:text-foreground disabled:opacity-50"
           >
             <ArrowUp className="size-4 shrink-0" />
             Push

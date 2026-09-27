@@ -105,7 +105,7 @@ export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string |
       <div className="shrink-0 p-3 border-b border-border/40 space-y-2">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-semibold tracking-wide uppercase text-muted-foreground">Artifacts</h3>
-          <span className="text-[11px] tabular-nums text-muted-foreground/60">{artifacts.length} items</span>
+          <span className="text-2xs tabular-nums text-muted-foreground/60">{artifacts.length} items</span>
         </div>
         <div className="relative">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground/40" />
@@ -129,7 +129,7 @@ export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string |
               key={k}
               type="button"
               onClick={() => setActiveKind(k)}
-              className={`flex-1 rounded-md px-2 py-1 text-[11px] font-medium capitalize transition ${activeKind === k ? 'bg-primary text-primary-foreground' : 'bg-muted/40 text-muted-foreground hover:bg-muted'}`}
+              className={`flex-1 rounded-md px-2 py-1 text-2xs font-medium capitalize transition ${activeKind === k ? 'bg-primary text-primary-foreground' : 'bg-muted/40 text-muted-foreground hover:bg-muted'}`}
             >
               {k === 'all' ? 'All' : k === 'file' ? 'Files' : k === 'image' ? 'Images' : 'Links'} <span className="opacity-60">· {counts[k] ?? 0}</span>
             </button>
@@ -147,7 +147,7 @@ export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string |
             <p className="text-xs font-medium text-muted-foreground/70">
               {artifacts.length === 0 ? 'No artifacts yet' : 'No matches'}
             </p>
-            <p className="mt-1 text-[11px] leading-snug text-muted-foreground/50 px-6">
+            <p className="mt-1 text-2xs leading-snug text-muted-foreground/50 px-6">
               {artifacts.length === 0
                 ? 'Files you edit and links the agent shares will appear here for quick jump-back.'
                 : 'Try a different term or clear the kind filter.'}
@@ -161,13 +161,13 @@ export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string |
             >
               <KindIcon kind={a.kind} href={a.href} />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[12.5px] font-medium leading-tight text-foreground/90" title={a.href}>
+                <div className="truncate text-[0.78125rem] font-medium leading-tight text-foreground/90" title={a.href}>
                   {a.label}
                 </div>
-                <div className="truncate text-[11px] leading-tight text-muted-foreground/70" title={a.href}>
+                <div className="truncate text-2xs leading-tight text-muted-foreground/70" title={a.href}>
                   {a.kind === 'link' ? a.meta : a.snippet}
                 </div>
-                <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground/50">
+                <div className="mt-0.5 flex items-center gap-1 text-3xs text-muted-foreground/50">
                   <Clock className="size-2.5" />
                   <span>{timeAgo(a.timestamp)}</span>
                   <span className="opacity-40">·</span>

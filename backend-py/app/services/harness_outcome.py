@@ -15,6 +15,11 @@ resolved=1.0, rescued=0.5 weighting, matching the distiller's rubric.
 Nothing here touches a live turn; all writes are best-effort and never raise
 into the caller that records them (a lost measurement row must not fail an
 otherwise-successful approval).
+
+A ``regressed`` verdict also FILES a ``revert`` proposal carrying the
+regressing change's own rollback text (audit P1#9) — the loop used to record
+that a change hurt and then leave the undo to be rediscovered by hand. Filing
+is where it stops: the proposal waits in the same human queue as every other.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.json_narrowing import as_dict, as_int, as_str
+from app.services.best_effort import best_effort
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +216,7 @@ def measure_pending() -> dict[str, Any]:
     conn = _conn()
     cutoff = (now - timedelta(days=days)).strftime(_TS)
     rows = conn.execute(
-        'SELECT id, source, kind, target, fingerprint, applied_at, expected, before_json '
+        'SELECT id, key, source, kind, target, fingerprint, applied_at, expected, before_json '
         'FROM harness_outcome WHERE measured_at IS NULL AND applied_at <= ? '
         'ORDER BY applied_at LIMIT 50',
         (cutoff,),
@@ -236,8 +242,90 @@ def measure_pending() -> dict[str, Any]:
             (now.strftime(_TS), days, json.dumps(after, ensure_ascii=False), verdict, r['id']),
         )
         verdicts[verdict] += 1
+        if verdict == 'regressed':
+            with best_effort('learning.revert-proposal'):
+                _file_revert_proposal(r, before, after, days)
     conn.commit()
     return {'measured': len(rows), **{f'v_{k}': v for k, v in verdicts.items()}}
+
+
+def _source_change(key: str) -> tuple[str, str]:
+    """(what the change was, how to undo it) for the row an outcome booked.
+
+    Prefers the source's OWN rollback text over anything invented here — a
+    revert proposal is only as good as the undo the author wrote for it.
+    Returns empty strings when the source is no longer on file.
+    """
+    from app.services import harness_self_improve as hsi
+
+    parts = key.split(':')
+    if parts[0] == 'proposal' and len(parts) > 1:
+        src = hsi.get_proposal(parts[1]) or {}
+        rollback = as_str(src.get('rollback'), '').strip()
+        if rollback:
+            return as_str(src.get('proposal'), '').strip() or f'proposal {parts[1]}', rollback
+    elif parts[0] == 'refine' and len(parts) > 2:
+        # A refine entry is append-only and its own undo is by entry id, which
+        # restores the previous version. There is no separate rollback string.
+        return f'refine entry {parts[2]}', f'refine: undo entry {parts[2]} (restores its previous version)'
+    return '', ''
+
+
+def _file_revert_proposal(r: Any, before: dict[str, Any], after: dict[str, Any], days: int) -> None:
+    """File a human-reviewable revert proposal for a measured regression.
+
+    A 'regressed' verdict is the ledger's one unambiguous negative signal: the
+    change it booked measurably hurt. Undoing a learning write is not a call
+    the machine may make on its own, so the ledger only *files* — carrying the
+    source's own rollback text and a payload link back to this outcome row so
+    the reviewer can check the numbers behind the verdict.
+
+    Never raises (the caller's best_effort site is the backstop).
+    """
+    from app.services import harness_self_improve as hsi
+
+    key = as_str(r['key'], '')
+    source = as_str(r['source'], '')
+    kind = as_str(r['kind'], '')
+    target = as_str(r['target'], '') or key
+    change, rollback = _source_change(key)
+    if not rollback:
+        # The source row is gone (pruned proposal file). Say so rather than
+        # inventing an undo we cannot stand behind.
+        rollback = (
+            f'undo the {kind} change on {target} by hand — the original rollback text is '
+            'no longer on file'
+        )
+    subject = change or f'the {kind} change on {target}'
+    problem = f'Measured regression — revert {subject}?'
+    evidence = json.dumps(
+        {'verdict': 'regressed', 'windowDays': days, 'before': before, 'after': after},
+        ensure_ascii=False,
+    )
+    proposal = (
+        f'Revert the change booked as outcome {key} (source={source}, kind={kind}, '
+        f'target={target}). The measurement job classified it regressed over a '
+        f'{days}-day window. Undoing it is a human decision: this proposal only '
+        'carries the evidence and the rollback the original author wrote.'
+    )
+    hsi.save_proposal(
+        problem=problem,
+        evidence=evidence,
+        proposal=proposal,
+        rollback=rollback,
+        kind='revert',
+        expected_metric='resolved rate recovers toward the pre-change window',
+        payload={
+            'outcomeId': r['id'],
+            'outcomeKey': key,
+            'source': source,
+            'changeKind': kind,
+            'target': target,
+            'windowDays': days,
+            'before': before,
+            'after': after,
+        },
+    )
 
 
 def _classify(before: dict[str, Any], after: dict[str, Any], targeted: bool = False) -> str:

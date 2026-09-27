@@ -59,7 +59,7 @@ export function WorkspaceInspectorSection() {
             Read a request as a conversation, inspect raw bodies, or view the model&apos;s thinking.
           </p>
         </div>
-        <div className="flex items-center gap-1 text-[10px]">
+        <div className="flex items-center gap-1 text-3xs">
           <span className="text-muted-foreground/70 uppercase tracking-wider mr-1">Period</span>
           {PERIODS.map((p) => (
             <button
@@ -128,8 +128,8 @@ export function WorkspaceInspectorSection() {
                     <span className="text-sm font-medium truncate flex-1">{r.clientType}</span>
                     {r.hasThinking && <Brain className="size-3 text-warning shrink-0" />}
                   </div>
-                  <p className="text-[10px] text-muted-foreground font-mono truncate mt-1">{r.reqId}</p>
-                  <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-muted-foreground">
+                  <p className="text-3xs text-muted-foreground font-mono truncate mt-1">{r.reqId}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5 text-3xs text-muted-foreground">
                     <span>{r.date ? formatTimeAgo(r.date) : '—'}</span>
                     <span>·</span>
                     <span className="truncate">{r.model}</span>
@@ -166,8 +166,8 @@ function ReadableTab({ conversation }: { conversation: import('@/sections/settin
       {conversation.error && (
         <Card className="border-destructive/50">
           <CardContent className="p-3">
-            <p className="text-[10px] uppercase tracking-wider text-destructive mb-1 font-semibold">Error</p>
-            <pre className="text-[11px] font-mono whitespace-pre-wrap break-all bg-destructive/5 text-destructive p-2 rounded">{conversation.error}</pre>
+            <p className="text-3xs uppercase tracking-wider text-destructive mb-1 font-semibold">Error</p>
+            <pre className="text-2xs font-mono whitespace-pre-wrap break-all bg-destructive/5 text-destructive p-2 rounded">{conversation.error}</pre>
           </CardContent>
         </Card>
       )}
@@ -175,14 +175,14 @@ function ReadableTab({ conversation }: { conversation: import('@/sections/settin
         <div key={i} className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}>
           <Card className={cn('max-w-[85%]', m.role === 'user' ? 'bg-white/[0.04]' : 'bg-card')}>
             <CardContent className="py-2.5 px-3">
-              <div className="text-[10px] text-muted-foreground font-mono mb-1 font-semibold">{m.role}</div>
+              <div className="text-3xs text-muted-foreground font-mono mb-1 font-semibold">{m.role}</div>
               <p className="text-sm whitespace-pre-wrap break-words">{m.content}</p>
             </CardContent>
           </Card>
         </div>
       ))}
       {conversation.finishReason && (
-        <p className="text-[10px] text-muted-foreground font-mono px-1">finish_reason: {conversation.finishReason}</p>
+        <p className="text-3xs text-muted-foreground font-mono px-1">finish_reason: {conversation.finishReason}</p>
       )}
     </div>
   );
@@ -197,16 +197,16 @@ function RawTab({ detail, safeStringify }: { detail: import('@/api/api-client').
       {detail.error && (
         <Card className="border-destructive/50">
           <CardContent className="p-3">
-            <p className="text-[10px] uppercase tracking-wider text-destructive mb-1 font-semibold">Error</p>
-            <pre className="text-[11px] font-mono whitespace-pre-wrap break-all bg-destructive/5 text-destructive p-2 rounded">{detail.error}</pre>
+            <p className="text-3xs uppercase tracking-wider text-destructive mb-1 font-semibold">Error</p>
+            <pre className="text-2xs font-mono whitespace-pre-wrap break-all bg-destructive/5 text-destructive p-2 rounded">{detail.error}</pre>
           </CardContent>
         </Card>
       )}
       <SettingsCard title="Request body" description="Sanitized request payload.">
-        <pre className="text-[11px] font-mono whitespace-pre-wrap break-all bg-white/[0.04] p-3 rounded">{safeStringify(detail.requestBody) || <span className="text-muted-foreground italic">Not captured</span>}</pre>
+        <pre className="text-2xs font-mono whitespace-pre-wrap break-all bg-white/[0.04] p-3 rounded">{safeStringify(detail.requestBody) || <span className="text-muted-foreground italic">Not captured</span>}</pre>
       </SettingsCard>
       <SettingsCard title="Response body" description="Sanitized response payload.">
-        <pre className="text-[11px] font-mono whitespace-pre-wrap break-all bg-white/[0.04] p-3 rounded">{safeStringify(detail.responseBody) || <span className="text-muted-foreground italic">Pending or not captured</span>}</pre>
+        <pre className="text-2xs font-mono whitespace-pre-wrap break-all bg-white/[0.04] p-3 rounded">{safeStringify(detail.responseBody) || <span className="text-muted-foreground italic">Pending or not captured</span>}</pre>
       </SettingsCard>
     </div>
   );
@@ -221,7 +221,7 @@ function ThinkingTab({ trace, safeStringify }: { trace: import('@/sections/setti
       icon={Brain}
       title={trace.finishReason ? 'Thinking trace' : 'Thinking (in progress)'}
       description="The reasoning the model produced before its final answer."
-      status={<Badge variant={trace.finishReason ? 'success' : 'warning'} className="text-[9px]">{trace.finishReason ? 'done' : 'active'}</Badge>}
+      status={<Badge variant={trace.finishReason ? 'success' : 'warning'} className="text-3xs">{trace.finishReason ? 'done' : 'active'}</Badge>}
     >
       <pre className="text-xs font-mono whitespace-pre-wrap break-words bg-white/[0.04] p-3 rounded leading-relaxed">
         {safeStringify(trace.thinking)}

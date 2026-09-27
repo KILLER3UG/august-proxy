@@ -396,7 +396,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
       {/* Offline compose banner (C9) */}
       {offlineCount > 0 ? (
         <div
-          className="mb-1.5 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-[11px] text-warning"
+          className="mb-1.5 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-2xs text-warning"
           data-testid="offline-banner"
         >
           <WifiOff className="size-3 shrink-0" />
@@ -469,7 +469,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
 
             {sendKind === 'steer' || sendKind === 'continue' ? (
               <div
-                className="px-4 pt-2 text-[11px] text-muted-foreground"
+                className="px-4 pt-2 text-2xs text-muted-foreground"
                 data-testid="composer-harness-chip"
               >
                 {sendKind === 'steer'
@@ -511,7 +511,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
                 aria-label="Message preview"
                 data-testid="composer-preview"
               >
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1.5 font-semibold">
+                <div className="text-3xs uppercase tracking-wider text-muted-foreground/70 mb-1.5 font-semibold">
                   Preview
                 </div>
                 <Markdown content={input} />
@@ -584,7 +584,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
         />
       </div>
 
-      <div className="mt-2 text-center text-[11px] text-muted-foreground/60 select-none">
+      <div className="mt-2 text-center text-2xs text-muted-foreground/60 select-none">
         August is an AI assistant and can make mistakes. Please double-check responses.
       </div>
 

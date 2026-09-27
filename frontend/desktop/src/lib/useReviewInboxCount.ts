@@ -8,6 +8,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
+import { qk } from '@/lib/query-keys';
 
 export interface InboxCount {
   harness: number;
@@ -15,7 +16,7 @@ export interface InboxCount {
   total: number;
 }
 
-export const REVIEW_INBOX_QUERY_KEY = ['review-inbox-count'] as const;
+export const REVIEW_INBOX_QUERY_KEY = qk.reviewInboxCount;
 
 export function useReviewInboxCount(enabled = true): InboxCount {
   const query = useQuery({

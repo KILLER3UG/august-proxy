@@ -12,6 +12,7 @@
 
 import { create } from 'zustand';
 import { toast } from 'sonner';
+import { api } from '@/api/client';
 
 export type KanbanColumnId = 'backlog' | 'doing' | 'review' | 'done';
 
@@ -98,12 +99,8 @@ function toCard(raw: unknown): KanbanCard {
 /** Parsed response body, or null when the request failed. */
 async function call(path: string, init?: RequestInit): Promise<Record<string, unknown> | null> {
   try {
-    const res = await fetch(`/api/kanban${path}`, {
-      headers: { 'Content-Type': 'application/json' },
-      ...init,
-    });
-    if (!res.ok) throw new Error(String(res.status));
-    return (await res.json()) as Record<string, unknown>;
+    const data = await api.get<Record<string, unknown>>(`/api/kanban${path}`, init);
+    return data ?? null;
   } catch (err) {
     console.warn('[kanban] request failed', path, err);
     return null;

@@ -281,6 +281,22 @@ export const WorkbenchWarningEventSchema = WorkbenchBaseSchema.extend({
   message: z.string().optional(),
 });
 
+/** Self-correction rescue paths (2026-09-26 audit P0#6): length continuation,
+ *  reactive context reduction, and auto-compact each emit one `recovery`
+ *  frame — { kind, attempt, outcome, degraded } — so the event log records
+ *  what the loop rescued and whether the answer shipped degraded (truncated,
+ *  or delivered despite an unresolved context overflow). degraded=true is the
+ *  trust signal: the turn LOOKS complete but wasn't. No dedicated streamEvents
+ *  case yet — accepted here so the frame doesn't trip the mismatch warning,
+ *  same as turnTelemetry. */
+export const WorkbenchRecoveryEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('recovery'),
+  kind: z.string().optional(),
+  attempt: z.number().optional(),
+  outcome: z.string().optional(),
+  degraded: z.boolean().optional(),
+});
+
 /** User-message-injected event (from queued messages) */
 export const WorkbenchUserMessageInjectedEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('userMessageInjected'),
@@ -432,6 +448,7 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchSubagentDoneEventSchema,
   WorkbenchSubagentProposedEventSchema,
   WorkbenchWarningEventSchema,
+  WorkbenchRecoveryEventSchema,
   WorkbenchUserMessageInjectedEventSchema,
   WorkbenchExecutionStateEventSchema,
   WorkbenchRecurringTaskEventSchema,

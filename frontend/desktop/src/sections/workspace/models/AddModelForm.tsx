@@ -24,7 +24,7 @@ export function ModelModalField({
 }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-[13px] font-medium text-foreground">{label}</span>
+      <span className="mb-1.5 block text-[0.8125rem] font-medium text-foreground">{label}</span>
       {children}
     </label>
   );
@@ -46,7 +46,7 @@ export function ModalityPills({
   };
   return (
     <div>
-      <span className="mb-1.5 block text-[13px] font-medium text-foreground">{label}</span>
+      <span className="mb-1.5 block text-[0.8125rem] font-medium text-foreground">{label}</span>
       <div className="flex flex-wrap items-center gap-2">
         {MODALITIES.map((m) => {
           const checked = value.includes(m);
@@ -57,7 +57,7 @@ export function ModalityPills({
               onClick={() => toggle(m)}
               aria-pressed={checked}
               className={
-                'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[13px] transition ' +
+                'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[0.8125rem] transition ' +
                 (checked
                   ? 'border-primary/50 bg-primary/10 text-foreground'
                   : 'border-border/60 bg-card/60 text-muted-foreground hover:border-border hover:text-foreground')
@@ -66,7 +66,7 @@ export function ModalityPills({
               <span
                 aria-hidden
                 className={
-                  'grid size-3.5 place-items-center rounded-sm border text-[9px] ' +
+                  'grid size-3.5 place-items-center rounded-sm border text-3xs ' +
                   (checked
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-border bg-transparent')

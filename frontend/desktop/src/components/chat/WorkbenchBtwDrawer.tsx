@@ -29,7 +29,7 @@ export function WorkbenchBtwDrawer({
             <Bot className="size-3.5 text-primary" />
             Workbench BTW
           </div>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
+          <p className="mt-0.5 text-2xs text-muted-foreground">
             Side question answered without leaving the current chat.
           </p>
         </div>

@@ -100,7 +100,7 @@ function AgentCard({ agent }: { agent: AgentData }) {
             <CardTitle className="text-sm flex items-center gap-2">
               <span className="font-mono">{agent.id}</span>
               {agent.team && (
-                <Badge variant="secondary" className="text-[9px]">
+                <Badge variant="secondary" className="text-3xs">
                   <Users className="size-2.5 mr-0.5" /> team
                 </Badge>
               )}
@@ -110,24 +110,24 @@ function AgentCard({ agent }: { agent: AgentData }) {
             </p>
           </div>
           {agent.goal && (
-            <Badge variant="outline" className="text-[9px] shrink-0">{agent.goal}</Badge>
+            <Badge variant="outline" className="text-3xs shrink-0">{agent.goal}</Badge>
           )}
         </div>
       </CardHeader>
       <CardContent className="space-y-3 text-xs">
         {scopes.length > 0 && (
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Scopes</p>
+            <p className="text-3xs uppercase tracking-wider text-muted-foreground mb-1">Scopes</p>
             <div className="flex flex-wrap gap-1">
               {scopes.map((s: string) => (
-                <Badge key={s} variant="outline" className="text-[9px]">{s}</Badge>
+                <Badge key={s} variant="outline" className="text-3xs">{s}</Badge>
               ))}
             </div>
           </div>
         )}
 
         {agent.inheritedFrom && (
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
+          <div className="flex items-center gap-1.5 text-2xs text-muted-foreground font-mono">
             <GitBranch className="size-3" />
             inherits from <span className="text-foreground">{agent.inheritedFrom}</span>
           </div>
@@ -135,10 +135,10 @@ function AgentCard({ agent }: { agent: AgentData }) {
 
         {teamSkills.length > 0 && (
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Team skills</p>
+            <p className="text-3xs uppercase tracking-wider text-muted-foreground mb-1">Team skills</p>
             <div className="space-y-1">
               {teamSkills.slice(0, 4).map((sk: { name: string; description: string; trigger?: string; category?: string }, i: number) => (
-                <div key={sk.name || i} className="text-[11px]">
+                <div key={sk.name || i} className="text-2xs">
                   <span className="font-mono text-foreground">{sk.name}</span>
                   <span className="text-muted-foreground"> — {sk.description}</span>
                 </div>
@@ -149,10 +149,10 @@ function AgentCard({ agent }: { agent: AgentData }) {
 
         {Object.keys(effectivePerms).length > 0 && (
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">
+            <p className="text-3xs uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">
               <ShieldAlert className="size-2.5" /> Effective permissions
             </p>
-            <pre className="text-[10px] font-mono whitespace-pre-wrap break-all bg-muted/40 rounded p-2">
+            <pre className="text-3xs font-mono whitespace-pre-wrap break-all bg-muted/40 rounded p-2">
               {JSON.stringify(effectivePerms, null, 2)}
             </pre>
           </div>
@@ -160,8 +160,8 @@ function AgentCard({ agent }: { agent: AgentData }) {
 
         {tools.length > 0 && (
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{tools.length} tools</p>
-            <p className="text-[11px] text-muted-foreground font-mono truncate">
+            <p className="text-3xs uppercase tracking-wider text-muted-foreground mb-1">{tools.length} tools</p>
+            <p className="text-2xs text-muted-foreground font-mono truncate">
               {tools.slice(0, 6).join(', ')}{tools.length > 6 ? ` +${tools.length - 6}` : ''}
             </p>
           </div>

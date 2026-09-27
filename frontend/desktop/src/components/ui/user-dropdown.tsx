@@ -238,7 +238,7 @@ export function UserDropdown({
         badge: {
           text: 'Update',
           className:
-            'rounded-sm border-0 bg-amber-500/20 text-amber-400 text-[10px] px-1.5 py-0',
+            'rounded-sm border-0 bg-amber-500/20 text-amber-400 text-3xs px-1.5 py-0',
         },
       };
     }
@@ -255,7 +255,7 @@ export function UserDropdown({
             badge: {
               text: 'New',
               className:
-                'rounded-sm border-0 bg-amber-500/20 text-amber-400 text-[10px] px-1.5 py-0',
+                'rounded-sm border-0 bg-amber-500/20 text-amber-400 text-3xs px-1.5 py-0',
             },
           },
         ]
@@ -355,7 +355,7 @@ export function UserDropdown({
         )}
       >
         <AvatarImage src={user.avatar} alt={user.name} />
-        <AvatarFallback className="text-[10px]">{user.initials}</AvatarFallback>
+        <AvatarFallback className="text-3xs">{user.initials}</AvatarFallback>
       </Avatar>
     </button>
   );
@@ -416,7 +416,7 @@ export function UserDropdown({
               </div>
             </div>
             <Badge
-              className={`${getStatusColor(user.status)} rounded-sm border-[0.5px] text-[11px] capitalize`}
+              className={`${getStatusColor(user.status)} rounded-sm border-[0.5px] text-2xs capitalize`}
             >
               {user.status}
             </Badge>

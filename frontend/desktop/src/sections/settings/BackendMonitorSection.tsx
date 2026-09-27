@@ -310,7 +310,7 @@ export function BackendMonitorSection() {
                                 key={cat}
                                 onClick={() => toggleCategory(cat)}
                                 className={cn(
-                                    'rounded-md border px-2 py-1 text-[10px] font-mono uppercase tracking-wider transition',
+                                    'rounded-md border px-2 py-1 text-3xs font-mono uppercase tracking-wider transition',
                                     on ? m.chip : 'bg-muted/40 text-muted-foreground/50 border-transparent hover:bg-muted',
                                 )}
                             >
@@ -322,7 +322,7 @@ export function BackendMonitorSection() {
                         type="button"
                         onClick={() => setHttpOnly((v) => !v)}
                         className={cn(
-                            'rounded-md border px-2 py-1 text-[10px] font-mono uppercase tracking-wider transition',
+                            'rounded-md border px-2 py-1 text-3xs font-mono uppercase tracking-wider transition',
                             httpOnly
                                 ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                                 : 'bg-muted/40 text-muted-foreground/50 border-transparent hover:bg-muted',
@@ -345,7 +345,7 @@ export function BackendMonitorSection() {
 
                 <div
                     ref={parentRef}
-                    className="relative max-h-[60vh] overflow-auto rounded-md border border-border/60 bg-zinc-950/50 font-mono text-[11px]"
+                    className="relative max-h-[60vh] overflow-auto rounded-md border border-border/60 bg-zinc-950/50 font-mono text-2xs"
                 >
                     {status === 'connecting' && events.length === 0 ? (
                         <div className="space-y-1 p-2" data-testid="backend-monitor-skeleton">
@@ -395,13 +395,13 @@ export function BackendMonitorSection() {
                                             )}
                                         >
                                             <span className="shrink-0 text-muted-foreground/70 w-28 tabular-nums">{formatTime(event.timestamp)}</span>
-                                            <span className={cn('shrink-0 rounded border px-1.5 py-px text-[9px] uppercase tracking-wider w-20 text-center', m.chip)}>
+                                            <span className={cn('shrink-0 rounded border px-1.5 py-px text-3xs uppercase tracking-wider w-20 text-center', m.chip)}>
                                                 {m.label}
                                             </span>
                                             {pill ? (
                                                 <span
                                                     className={cn(
-                                                        'shrink-0 rounded border px-1.5 py-px text-[9px] font-semibold tracking-wide w-[4.5rem] text-center',
+                                                        'shrink-0 rounded border px-1.5 py-px text-3xs font-semibold tracking-wide w-[4.5rem] text-center',
                                                         pill.cls,
                                                     )}
                                                     data-testid="http-status-pill"
@@ -415,7 +415,7 @@ export function BackendMonitorSection() {
                                             <span className={cn('flex-1 whitespace-pre-wrap break-all', m.row)}>{event.message}</span>
                                         </button>
                                         {isExpanded && (
-                                            <div className="border-b border-border/30 bg-black/30 px-3 py-2 text-[10px] text-muted-foreground space-y-1">
+                                            <div className="border-b border-border/30 bg-black/30 px-3 py-2 text-3xs text-muted-foreground space-y-1">
                                                 <div className="grid grid-cols-[80px_1fr] gap-2">
                                                     <span className="text-muted-foreground/70 uppercase tracking-wider">ID</span>
                                                     <span className="text-foreground/80 break-all">{event.id}</span>
@@ -445,7 +445,7 @@ export function BackendMonitorSection() {
                     )}
                 </div>
 
-                <p className="pt-2 text-[9px] text-muted-foreground font-mono">
+                <p className="pt-2 text-3xs text-muted-foreground font-mono">
                     Secret-shaped fields (keys, tokens, cookies) are redacted on export. Up to 10,000 events are retained; the ring is FIFO.
                 </p>
             </SettingsCard>
@@ -456,9 +456,9 @@ export function BackendMonitorSection() {
 function Stat({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: string }) {
     return (
         <div className="rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
-            <div className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">{label}</div>
+            <div className="text-3xs uppercase tracking-widest text-muted-foreground/70 font-semibold">{label}</div>
             <div className={cn('mt-0.5 text-base font-semibold tabular-nums', accent || 'text-foreground')}>{value}</div>
-            {sub && <div className="text-[9px] text-muted-foreground/60 truncate">{sub}</div>}
+            {sub && <div className="text-3xs text-muted-foreground/60 truncate">{sub}</div>}
         </div>
     );
 }

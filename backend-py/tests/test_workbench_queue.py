@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from app.services.message_sources import SOURCE_QUEUED_USER
 from app.services.workbench import workbench as wb
 
 
@@ -182,7 +183,7 @@ class TestDrain:
 class TestFormatter:
     def testEmptyEntriesReturnEmpty(self):
         result = wb._formatQueuedMessagesAsUserTurn([])
-        assert result == {'role': 'user', 'content': ''}
+        assert result == {'role': 'user', 'content': '', 'source': SOURCE_QUEUED_USER}
 
     def testSingleEntryHasPreambleAndTag(self):
         entry = {'id': 'qm_x', 'text': 'use postgres', 'attachments': [], 'queuedAt': '2026-07-01T00:00:00Z'}
@@ -192,6 +193,10 @@ class TestFormatter:
         assert '<queued_message timestamp="2026-07-01T00:00:00Z">' in result['content']
         assert 'use postgres' in result['content']
         assert '</queued_message>' in result['content']
+        # Migration 049: the composite is provenance-tagged so the miner and
+        # the transcript can tell a queued follow-up from something the user
+        # typed as the turn's own message.
+        assert result['source'] == SOURCE_QUEUED_USER
 
     def testMultipleEntriesAllTagged(self):
         entries = [

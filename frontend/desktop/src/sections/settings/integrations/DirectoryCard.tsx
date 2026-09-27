@@ -42,7 +42,7 @@ export function DirectoryCard({
               <BadgeCheck className="size-3.5 shrink-0 text-muted-foreground" />
             )}
             {installed && (
-              <span className="rounded bg-emerald-500/15 px-1.5 py-px text-[10px] font-medium text-emerald-400">
+              <span className="rounded bg-emerald-500/15 px-1.5 py-px text-3xs font-medium text-emerald-400">
                 Added
               </span>
             )}
@@ -53,12 +53,12 @@ export function DirectoryCard({
         </div>
       </div>
       <div className="mt-3 flex items-center justify-between gap-2">
-        <span className="text-[10px] text-muted-foreground">
+        <span className="text-3xs text-muted-foreground">
           {entry.kind === 'mcp-extension' ? 'MCP' : 'Account'} · {entry.developer}
         </span>
         <span
           className={cn(
-            'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium',
+            'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-2xs font-medium',
             installed
               ? 'bg-white/[0.06] text-muted-foreground'
               : 'bg-primary/15 text-primary',

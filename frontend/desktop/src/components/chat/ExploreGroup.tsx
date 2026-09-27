@@ -50,13 +50,13 @@ export function ExploreGroup({
         type="button"
         onClick={() => toggle(!open)}
         aria-expanded={open}
-        className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-[13px] leading-5 text-foreground/80 transition-colors hover:bg-white/[0.03]"
+        className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-[0.8125rem] leading-5 text-foreground/80 transition-colors hover:bg-white/[0.03]"
         data-testid="explore-group-head"
       >
         <Search className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
         <span className="shrink-0 font-medium">{label}</span>
         {running && (
-          <span className="shrink-0 text-[10px] italic text-muted-foreground/70">working…</span>
+          <span className="shrink-0 text-3xs italic text-muted-foreground/70">working…</span>
         )}
         <ChevronDown
           className={cn(

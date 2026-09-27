@@ -118,14 +118,14 @@ export function Conversations() {
             >
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-medium truncate flex-1">{it.clientType}</p>
-                <Badge variant={it.status === 'error' ? 'destructive' : 'secondary'} className="text-[9px]">
+                <Badge variant={it.status === 'error' ? 'destructive' : 'secondary'} className="text-3xs">
                   {it.status.slice(0, 8)}
                 </Badge>
               </div>
-              <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+              <p className="text-2xs text-muted-foreground truncate mt-0.5">
                 {it.messages[it.messages.length - 1]?.content || it.model}
               </p>
-              <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground font-mono">
+              <div className="flex items-center gap-2 mt-1 text-3xs text-muted-foreground font-mono">
                 <span>{it.date ? formatTimeAgo(it.date) : '—'}</span>
                 <span>·</span>
                 <span><MessageSquare className="inline size-2.5" /> {it.messages.length}</span>
@@ -159,7 +159,7 @@ function ConversationDetail({ item }: { item: ConversationItem }) {
         title={item.clientType}
         subtitle={`${item.model} · ${item.status} · ${item.date ? formatTimeAgo(item.date) : ''}`}
         actions={
-          <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
+          <div className="flex items-center gap-2 text-3xs font-mono text-muted-foreground">
             <span>{item.messages.length} messages</span>
             <span>·</span>
             <span className="font-mono">{item.reqId}</span>
@@ -170,7 +170,7 @@ function ConversationDetail({ item }: { item: ConversationItem }) {
       {item.error && (
         <Card>
           <CardContent className="p-4">
-            <p className="text-[10px] uppercase tracking-wider text-destructive mb-1">Error</p>
+            <p className="text-3xs uppercase tracking-wider text-destructive mb-1">Error</p>
             <pre className="text-xs font-mono whitespace-pre-wrap break-all text-destructive">{item.error}</pre>
           </CardContent>
         </Card>
@@ -188,7 +188,7 @@ function ConversationDetail({ item }: { item: ConversationItem }) {
             <div key={i} className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}>
               <Card className={cn('max-w-[85%]', m.role === 'user' ? 'bg-secondary' : 'bg-card')}>
                 <CardContent className="py-2.5 px-3">
-                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mb-1 font-mono">
+                  <div className="flex items-center gap-1.5 text-3xs text-muted-foreground mb-1 font-mono">
                     <span className="font-semibold">{m.role}</span>
                   </div>
                   <p className="text-sm whitespace-pre-wrap break-words">{m.content}</p>
@@ -200,7 +200,7 @@ function ConversationDetail({ item }: { item: ConversationItem }) {
       )}
 
       {item.finishReason && (
-        <p className="text-[10px] text-muted-foreground font-mono px-1">
+        <p className="text-3xs text-muted-foreground font-mono px-1">
           finish_reason: {item.finishReason}
         </p>
       )}

@@ -70,12 +70,12 @@ export function ProviderSetupWidget({ setup }: { setup: ProviderSetupResult }) {
 
   return (
     <div className="mt-2 rounded-md border border-primary/25 bg-card/70 p-3 space-y-2.5">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-primary/80 font-semibold">
+      <div className="flex items-center gap-1.5 text-3xs uppercase tracking-widest text-primary/80 font-semibold">
         <ShieldCheck className="size-3" />
         Provider ready — paste your API key
       </div>
 
-      <div className="grid grid-cols-1 gap-1.5 rounded-md bg-background/60 p-2 text-[11px]">
+      <div className="grid grid-cols-1 gap-1.5 rounded-md bg-background/60 p-2 text-2xs">
         <div className="flex items-center justify-between gap-2">
           <span className="text-muted-foreground">Name</span>
           <span className="font-medium text-foreground truncate">{formatLabel(setup.name || setup.suggestedName)}</span>
@@ -122,7 +122,7 @@ export function ProviderSetupWidget({ setup }: { setup: ProviderSetupResult }) {
 
           <div className="flex items-center justify-end gap-2">
             {status === 'err' && (
-              <span className="text-[10px] text-destructive truncate mr-auto">{message}</span>
+              <span className="text-3xs text-destructive truncate mr-auto">{message}</span>
             )}
             <Button type="button" size="sm" onClick={() => void apply()} disabled={!canApply}>
               {applying ? <Loader2 className="size-3 mr-1 animate-spin" /> : <Key className="size-3 mr-1" />}

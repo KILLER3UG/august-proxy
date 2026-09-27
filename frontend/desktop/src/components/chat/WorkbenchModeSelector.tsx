@@ -329,7 +329,7 @@ export function WorkbenchModeSelector({
                     <span className="block text-sm font-semibold text-foreground leading-snug">
                       {option.label}
                     </span>
-                    <span className="block mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                    <span className="block mt-0.5 text-2xs leading-snug text-muted-foreground">
                       {option.description}
                     </span>
                   </span>
@@ -405,7 +405,7 @@ export function WorkbenchModeSelector({
         >
           {flyout === 'harness' ? (
             <>
-              <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
+              <div className="px-3 pt-2.5 pb-1.5 text-2xs leading-snug text-muted-foreground">
                 Who acts in this chat. Orchestrator dispatches workers.
               </div>
               <div className="py-0.5 pb-1">
@@ -438,7 +438,7 @@ export function WorkbenchModeSelector({
                         </span>
                         {selected && <Check className="size-3.5 shrink-0" />}
                       </div>
-                      <p className="mt-0.5 pl-5 text-[11px] leading-snug text-muted-foreground">
+                      <p className="mt-0.5 pl-5 text-2xs leading-snug text-muted-foreground">
                         {option.description}
                       </p>
                     </motion.button>
@@ -448,7 +448,7 @@ export function WorkbenchModeSelector({
             </>
           ) : (
             <>
-          <div className="px-3 pt-2.5 pb-1.5 text-[11px] leading-snug text-muted-foreground">
+          <div className="px-3 pt-2.5 pb-1.5 text-2xs leading-snug text-muted-foreground">
             Where shell/files can go. Separate from agent mode approvals.
           </div>
           <div className="py-0.5 pb-1">
@@ -477,7 +477,7 @@ export function WorkbenchModeSelector({
                     <span className="text-sm font-medium">{option.label}</span>
                     {selected && <Check className="size-3.5 shrink-0" />}
                   </div>
-                  <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                  <p className="mt-0.5 text-2xs leading-snug text-muted-foreground">
                     {option.description}
                   </p>
                 </motion.button>
@@ -505,7 +505,7 @@ export function WorkbenchModeSelector({
           }
         }}
         className={cn(
-          'h-8 px-2.5 py-1 rounded-full text-[11px] font-medium bg-muted hover:bg-muted/70 text-foreground border border-border/50 inline-flex items-center gap-1.5 max-w-[240px]',
+          'h-8 px-2.5 py-1 rounded-full text-2xs font-medium bg-muted hover:bg-muted/70 text-foreground border border-border/50 inline-flex items-center gap-1.5 max-w-[240px]',
           harness === 'orchestrator' && 'border-primary/35 bg-primary/10',
         )}
         title={`${harnessMeta.label}. ${guard.description}\nTool reach: ${sandbox.description}`}

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileText, RefreshCw, ArrowRight, Check, Undo2, Loader2, SearchCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -218,7 +219,7 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {file.status && <Badge variant="secondary" className="text-[10px]">{file.status}</Badge>}
+                  {file.status && <Badge variant="secondary" className="text-3xs">{file.status}</Badge>}
                   <span className="font-mono text-xs text-success">+{file.added}</span>
                   <span className="font-mono text-xs text-danger">-{file.removed}</span>
                   <ArrowRight className="size-3 text-muted-foreground/50" />
@@ -272,17 +273,14 @@ function CommitComposer({ sessionId, onCommitted }: { sessionId: string; onCommi
     if (generating) return;
     setGenerating(true);
     try {
-      const res = await fetch('/api/workbench/btw', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await api.post<{ output?: string; answer?: string; text?: string }>(
+        '/api/workbench/btw',
+        {
           sessionId,
           question:
             'Write a git commit message for the current working-tree changes. Reply with ONLY the subject line plus an optional short body — no quotes, no backticks, no commentary.',
-        }),
-      });
-      if (!res.ok) throw new Error(`generate failed: ${res.status}`);
-      const data = await res.json() as { output?: string; answer?: string; text?: string };
+        },
+      );
       const text = (data.output || data.answer || data.text || '').trim();
       if (text) setMessage(text.slice(0, 500));
       else throw new Error('empty suggestion');
@@ -345,7 +343,7 @@ function CommitComposer({ sessionId, onCommitted }: { sessionId: string; onCommi
           {generating ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
           Generate
         </Button>
-        <span className="ml-auto text-[10px] text-muted-foreground">
+        <span className="ml-auto text-3xs text-muted-foreground">
           Commits staged + unstaged changes
         </span>
       </div>

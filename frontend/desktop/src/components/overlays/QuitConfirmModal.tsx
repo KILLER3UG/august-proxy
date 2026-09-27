@@ -99,11 +99,11 @@ export function QuitConfirmModal() {
       >
         <h2
           id="quit-confirm-title"
-          className="text-[15px] font-semibold tracking-tight text-foreground"
+          className="text-[0.9375rem] font-semibold tracking-tight text-foreground"
         >
           {hasActive ? 'Agent is still working' : 'Quit app?'}
         </h2>
-        <p className="mt-1.5 text-[13px] text-muted-foreground leading-relaxed">
+        <p className="mt-1.5 text-[0.8125rem] text-muted-foreground leading-relaxed">
           {hasActive
             ? 'Stopping now will cancel the current task.'
             : 'The app will close and stop the local backend.'}
@@ -114,7 +114,7 @@ export function QuitConfirmModal() {
             {activeSessions.map((s) => (
               <li
                 key={s.id}
-                className="flex items-center gap-2 text-[13px] text-foreground/90"
+                className="flex items-center gap-2 text-[0.8125rem] text-foreground/90"
               >
                 <span className="text-muted-foreground/70 select-none" aria-hidden>
                   ::
@@ -131,19 +131,19 @@ export function QuitConfirmModal() {
             onClick={onCancel}
             disabled={quitting}
             className={cn(
-              'rounded-lg border border-border px-3.5 py-1.5 text-[13px] font-medium',
+              'rounded-lg border border-border px-3.5 py-1.5 text-[0.8125rem] font-medium',
               'text-foreground/90 hover:bg-accent transition',
             )}
           >
             Cancel
-            <span className="ml-1.5 text-muted-foreground/60 text-[11px]">Esc</span>
+            <span className="ml-1.5 text-muted-foreground/60 text-2xs">Esc</span>
           </button>
           <button
             type="button"
             onClick={() => { void onQuitAnyway(); }}
             disabled={quitting}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[13px] font-medium',
+              'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.8125rem] font-medium',
               'bg-rose-600 text-white hover:bg-rose-500 transition',
               'disabled:opacity-60',
             )}

@@ -91,7 +91,7 @@ export function RightDrawerPreviewSection({
         <div className="text-xs text-muted-foreground">
           Run a local dev server and inspect the browser preview
         </div>
-        <Badge variant="secondary" className="text-[10px]">
+        <Badge variant="secondary" className="text-3xs">
           <Globe className="size-3" />
           local preview
         </Badge>
@@ -141,7 +141,7 @@ export function RightDrawerPreviewSection({
                 <span className="truncate font-mono text-xs">{session.title || session.id}</span>
               </div>
               <div className={cn(
-                'mt-0.5 truncate text-[10px]',
+                'mt-0.5 truncate text-3xs',
                 active?.id === session.id ? 'text-primary-foreground/70' : 'text-muted-foreground/55'
               )}>
                 {session.status}
@@ -156,7 +156,7 @@ export function RightDrawerPreviewSection({
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
-                    <Badge variant="secondary" className="text-[10px]">{active.id}</Badge>
+                    <Badge variant="secondary" className="text-3xs">{active.id}</Badge>
                     <span>{active.status}</span>
                   </div>
                   <div className="mt-1 truncate text-xs text-muted-foreground/70">{active.cwd}</div>
@@ -204,7 +204,7 @@ export function RightDrawerPreviewSection({
               ) : (
                 <div className="flex h-[180px] flex-col items-center justify-center rounded-lg border border-border/50 bg-card/40 text-center text-muted-foreground">
                   <Activity className="size-6 text-muted-foreground/40" />
-                  <div className="mt-2 text-[11px]">
+                  <div className="mt-2 text-2xs">
                     {active.status === 'running' ? 'Waiting for a local preview URL…' : 'Start a preview to see the browser target.'}
                   </div>
                 </div>
@@ -213,16 +213,16 @@ export function RightDrawerPreviewSection({
           ) : (
             <div className="flex h-full min-h-[260px] flex-col items-center justify-center rounded-lg border border-border/50 bg-card/40 text-center text-muted-foreground">
               <Play className="size-6 text-muted-foreground/40" />
-              <div className="mt-2 text-[11px]">{isLoading ? 'Loading previews…' : 'Start a local dev server preview.'}</div>
+              <div className="mt-2 text-2xs">{isLoading ? 'Loading previews…' : 'Start a local dev server preview.'}</div>
             </div>
           )}
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Logs</div>
-              {activePreview?.logLength ? <span className="font-mono text-[10px] text-muted-foreground">{activePreview.logLength}</span> : null}
+              <div className="text-3xs uppercase tracking-wider text-muted-foreground font-semibold">Logs</div>
+              {activePreview?.logLength ? <span className="font-mono text-3xs text-muted-foreground">{activePreview.logLength}</span> : null}
             </div>
-            <div className="max-h-[120px] overflow-auto rounded-lg bg-black/80 p-3 font-mono text-[10px] leading-relaxed text-success/90">
+            <div className="max-h-[120px] overflow-auto rounded-lg bg-black/80 p-3 font-mono text-3xs leading-relaxed text-success/90">
               <pre className="whitespace-pre-wrap break-all">
                 {activePreview?.log || active?.status === 'running' ? 'Waiting for preview logs…' : 'No preview logs yet.'}
               </pre>
@@ -247,17 +247,17 @@ function PreviewApprovalList({
 }) {
   return (
     <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 space-y-2">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-warning font-semibold">
+      <div className="flex items-center gap-1.5 text-3xs uppercase tracking-wider text-warning font-semibold">
         <ShieldAlert className="size-3" />
         {approvals.length} approval{approvals.length > 1 ? 's' : ''} required
       </div>
       {approvals.map((approval) => (
         <div key={approval.requestId} className="flex items-start justify-between gap-2 rounded-md border border-warning/20 bg-card/70 p-2">
           <div className="min-w-0">
-            <pre className="whitespace-pre-wrap break-all text-[10.5px] font-mono text-foreground/85">
+            <pre className="whitespace-pre-wrap break-all text-[0.65625rem] font-mono text-foreground/85">
               {approval.command || '(no command)'}
             </pre>
-            <div className="mt-0.5 text-[10px] text-muted-foreground">{approval.reason || approval.cwd}</div>
+            <div className="mt-0.5 text-3xs text-muted-foreground">{approval.reason || approval.cwd}</div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <Button size="sm" onClick={() => approve.mutate(approval.requestId)} disabled={approve.isPending}>
@@ -277,7 +277,7 @@ function NetworkList({ requests }: { requests: RequestEntry[] }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Network</div>
+        <div className="text-3xs uppercase tracking-wider text-muted-foreground font-semibold">Network</div>
         <Activity className="size-3 text-muted-foreground/60" />
       </div>
       {requests.length === 0 && (
@@ -289,15 +289,15 @@ function NetworkList({ requests }: { requests: RequestEntry[] }) {
         {requests.map((request) => (
           <div key={request.reqId} className="rounded-md border border-border/50 bg-card/40 px-2.5 py-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="truncate font-mono text-[10.5px]">{request.endpoint}</span>
+              <span className="truncate font-mono text-[0.65625rem]">{request.endpoint}</span>
               <span className={cn(
-                'font-mono text-[10px]',
+                'font-mono text-3xs',
                 request.status === 'success' || request.status === 'completed' ? 'text-success' : 'text-danger'
               )}>
                 {Math.round(request.durationMs)}ms
               </span>
             </div>
-            <div className="mt-0.5 text-[10px] text-muted-foreground/65 truncate">
+            <div className="mt-0.5 text-3xs text-muted-foreground/65 truncate">
               {request.model || request.clientType}
             </div>
           </div>

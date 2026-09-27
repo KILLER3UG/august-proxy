@@ -133,7 +133,7 @@ export function WorkspaceTrendChart({ data, className }: Props) {
   return (
     <div className={cn('space-y-4', className)} ref={containerRef}>
       {/* Model legend in chart header */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11.5px]">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[0.71875rem]">
         {allModels.map((model) => (
           <div key={model} className="flex items-center gap-1.5 text-muted-foreground">
             <span
@@ -243,7 +243,7 @@ export function WorkspaceTrendChart({ data, className }: Props) {
                 y={H - 8}
                 textAnchor="middle"
                 className={cn(
-                  'text-[10px] transition-colors',
+                  'text-3xs transition-colors',
                   isHovered ? 'fill-foreground font-semibold' : 'fill-muted-foreground/70',
                 )}
               >
@@ -300,7 +300,7 @@ export function WorkspaceTrendChart({ data, className }: Props) {
                         className="size-2 rounded-full shrink-0"
                         style={{ backgroundColor: modelColor(m.model) }}
                       />
-                      <span className="truncate text-muted-foreground font-mono text-[11px]">
+                      <span className="truncate text-muted-foreground font-mono text-2xs">
                         {m.model}
                       </span>
                     </div>

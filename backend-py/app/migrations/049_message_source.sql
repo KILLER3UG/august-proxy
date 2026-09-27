@@ -1,0 +1,24 @@
+-- 049: message provenance (audit C3/D7, 2026-09-26).
+--
+-- Machine plumbing (harness nudges, queued-user composites, subagent result
+-- receipts) was injected as user-role message content, so episode mining had
+-- to detect it from text prefixes — a hand-maintained denylist that grows
+-- forever and lets one missed prefix turn the harness talking to itself into
+-- a learned "user correction". ``source`` records the provenance once at
+-- write time instead:
+--
+--   * NULL for every pre-049 row and any writer that never learned the
+--     column — consumers fall back to the legacy prefix filter for those
+--     rows only (see episode_miner and app/services/message_sources.py).
+--   * ``user`` / ``assistant`` / ``tool`` stay untagged by the workbench
+--     (role already says it); only the machine kinds are written:
+--     ``harness_nudge``, ``queued_user``, ``subagent_results``.
+--   * No DEFAULT: an invented source would read as recorded provenance that
+--     does not exist, same honesty rule as blocks_json (047).
+--
+-- The per-turn <memory>/<relevant_skills>/<session_state> tail appended to
+-- the human's last message is NOT a source of its own — it is a rider on a
+-- user message, and the persist path now strips it using the _tailPatched /
+-- _tailFrom markers, so the stored copy is the user's text alone.
+
+ALTER TABLE messages ADD COLUMN source TEXT;

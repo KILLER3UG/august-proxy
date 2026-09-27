@@ -114,7 +114,7 @@ function ColorSwatch({ token }: { token: ColorToken }) {
       />
       <div className="px-3 py-2 text-xs">
         <p className="font-medium text-foreground">{token.name}</p>
-        <p className="font-mono text-[10px] text-muted-foreground">{token.cssVar}</p>
+        <p className="font-mono text-3xs text-muted-foreground">{token.cssVar}</p>
       </div>
     </div>
   );
@@ -129,7 +129,7 @@ function SwatchGrid() {
 
   const Section = ({ title, items }: { title: string; items: ColorToken[] }) => (
     <section className="space-y-3">
-      <h3 className="text-[11px] font-semibold uppercase tracking-caps text-muted-foreground">{title}</h3>
+      <h3 className="text-2xs font-semibold uppercase tracking-caps text-muted-foreground">{title}</h3>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
         {items.map(token => <ColorSwatch key={token.cssVar} token={token} />)}
       </div>
@@ -154,7 +154,7 @@ function RadiiGrid() {
         <div key={r.name} className="rounded-lg border border-border bg-card p-4 text-center">
           <div className="mx-auto mb-3 size-12 bg-primary/20 border border-primary/40" style={{ borderRadius: r.value }} />
           <p className="text-sm font-medium text-foreground">{r.name}</p>
-          <p className="font-mono text-[10px] text-muted-foreground">{r.value}</p>
+          <p className="font-mono text-3xs text-muted-foreground">{r.value}</p>
         </div>
       ))}
     </div>
@@ -168,7 +168,7 @@ function ShadowsGrid() {
         <div key={s.name} className="rounded-lg border border-border bg-card p-6">
           <div className="mx-auto mb-4 size-16 rounded-md bg-card" style={{ boxShadow: s.value }} />
           <p className="text-sm font-medium text-foreground">{s.name}</p>
-          <p className="font-mono text-[10px] text-muted-foreground break-all">{s.value}</p>
+          <p className="font-mono text-3xs text-muted-foreground break-all">{s.value}</p>
         </div>
       ))}
     </div>
@@ -182,7 +182,7 @@ function TypeScale() {
         <div key={token.name} className="rounded-lg border border-border bg-card px-4 py-3 grid grid-cols-[12rem_1fr] gap-4 items-baseline">
           <div>
             <p className="text-sm font-medium text-foreground">{token.name}</p>
-            <p className="font-mono text-[10px] text-muted-foreground">.{token.className}</p>
+            <p className="font-mono text-3xs text-muted-foreground">.{token.className}</p>
           </div>
           <p className={token.className}>{token.sample}</p>
         </div>
@@ -197,7 +197,7 @@ function TrackingTokens() {
       {TRACKING_TOKENS.map(t => (
         <div key={t.name} className="rounded-lg border border-border bg-card px-4 py-3 grid grid-cols-[10rem_8rem_1fr] gap-4 items-baseline">
           <p className="text-sm font-medium text-foreground">{t.name}</p>
-          <p className="font-mono text-[11px] text-muted-foreground">{t.value}</p>
+          <p className="font-mono text-2xs text-muted-foreground">{t.value}</p>
           <p className="text-lg" style={{ letterSpacing: t.value }}>The quick brown fox jumps over the lazy dog</p>
         </div>
       ))}
@@ -222,7 +222,7 @@ function ThemeSwitcher() {
   return (
     <div className="rounded-xl border border-border bg-card p-4 space-y-4">
       <div>
-        <p className="text-[11px] uppercase tracking-caps font-semibold text-muted-foreground mb-2">Theme</p>
+        <p className="text-2xs uppercase tracking-caps font-semibold text-muted-foreground mb-2">Theme</p>
         <div className="flex gap-2">
           {modes.map(m => (
             <button
@@ -236,7 +236,7 @@ function ThemeSwitcher() {
         </div>
       </div>
       <div>
-        <p className="text-[11px] uppercase tracking-caps font-semibold text-muted-foreground mb-2">Text size — current: {size} (×{size === 'compact' ? '0.92' : size === 'default' ? '1.00' : size === 'comfortable' ? '1.08' : '1.18'})</p>
+        <p className="text-2xs uppercase tracking-caps font-semibold text-muted-foreground mb-2">Text size — current: {size} (×{size === 'compact' ? '0.92' : size === 'default' ? '1.00' : size === 'comfortable' ? '1.08' : '1.18'})</p>
         <div className="flex gap-2">
           {sizes.map(s => (
             <button
@@ -258,7 +258,7 @@ export function DesignRoute() {
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-6xl px-6 py-10 space-y-10">
         <header className="space-y-3">
-          <p className="text-[11px] uppercase tracking-caps font-semibold text-muted-foreground">Dev only</p>
+          <p className="text-2xs uppercase tracking-caps font-semibold text-muted-foreground">Dev only</p>
           <h1 className="hero-display font-light">August Design System</h1>
           <p className="hero-subtitle text-muted-foreground max-w-2xl">
             Live inspector for every token in <code className="text-code-inline">styles.css</code> and <code className="text-code-inline">tailwind.config.cjs</code>.
@@ -308,7 +308,7 @@ export function DesignRoute() {
                 <p className="bubble-body">Can you summarize the changes you made to the design system?</p>
                 <div className="flex items-center justify-between gap-2 mt-2 pt-1.5 border-t border-border/30">
                   <span className="bubble-footer-text text-muted-foreground/70 font-medium">06:43 PM</span>
-                  <span className="text-[10px] text-muted-foreground/70">copied</span>
+                  <span className="text-3xs text-muted-foreground/70">copied</span>
                 </div>
               </div>
             </div>

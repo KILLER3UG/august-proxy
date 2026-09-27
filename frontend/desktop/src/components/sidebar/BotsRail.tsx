@@ -714,7 +714,7 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
                 setProfileBot(null);
                 void openChat(b);
               }}
-              className="mt-4 rounded-lg bg-primary px-4 py-1.5 text-[13px] font-medium text-primary-foreground transition hover:opacity-90"
+              className="mt-4 rounded-lg bg-primary px-4 py-1.5 text-[0.8125rem] font-medium text-primary-foreground transition hover:opacity-90"
               data-testid="bot-profile-open-chat"
             >
               Open chat

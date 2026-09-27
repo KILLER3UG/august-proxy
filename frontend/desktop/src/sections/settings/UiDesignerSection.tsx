@@ -90,7 +90,7 @@ export function UiDesignerSection() {
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             {dirty && (
-              <Badge variant="outline" className="font-mono text-[10px]">
+              <Badge variant="outline" className="font-mono text-3xs">
                 unsaved draft
               </Badge>
             )}
@@ -207,12 +207,12 @@ export function UiDesignerSection() {
                                 {t.label}
                               </span>
                               {overridden && (
-                                <span className="text-[10px] uppercase tracking-wider text-primary font-semibold">
+                                <span className="text-3xs uppercase tracking-wider text-primary font-semibold">
                                   custom
                                 </span>
                               )}
                             </div>
-                            <p className="text-[11px] text-muted-foreground truncate">
+                            <p className="text-2xs text-muted-foreground truncate">
                               {t.description}
                             </p>
                           </div>
@@ -225,13 +225,13 @@ export function UiDesignerSection() {
                               if (!v) resetDraftToken(t.id);
                               else setDraftToken(t.id, v);
                             }}
-                            className="w-[6.5rem] shrink-0 rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] text-foreground outline-none focus:border-primary/50"
+                            className="w-[6.5rem] shrink-0 rounded-md border border-border bg-background px-2 py-1 font-mono text-2xs text-foreground outline-none focus:border-primary/50"
                             spellCheck={false}
                             aria-label={`${t.label} hex`}
                           />
                           <button
                             type="button"
-                            className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-30"
+                            className="text-2xs text-muted-foreground hover:text-foreground disabled:opacity-30"
                             disabled={!overridden}
                             onClick={() => resetDraftToken(t.id)}
                           >
@@ -251,7 +251,7 @@ export function UiDesignerSection() {
             <div className="flex items-center justify-between gap-2">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Live preview</h3>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-2xs text-muted-foreground">
                   Reflects draft colors only — not the real app until Apply.
                 </p>
               </div>
@@ -282,12 +282,12 @@ export function UiDesignerSection() {
                     borderColor: 'var(--dt-sidebar-border)',
                   }}
                 >
-                  <div className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider opacity-70">
+                  <div className="px-3 py-2.5 text-3xs font-semibold uppercase tracking-wider opacity-70">
                     Sessions
                   </div>
                   <div className="space-y-1 px-2">
                     <div
-                      className="rounded-lg px-2.5 py-2 text-[12px] font-medium"
+                      className="rounded-lg px-2.5 py-2 text-[0.75rem] font-medium"
                       style={{
                         background: 'var(--dt-sidebar-accent)',
                         color: 'var(--dt-sidebar-accent-foreground, var(--dt-sidebar-foreground))',
@@ -295,10 +295,10 @@ export function UiDesignerSection() {
                     >
                       Current chat
                     </div>
-                    <div className="rounded-lg px-2.5 py-2 text-[12px] opacity-75">
+                    <div className="rounded-lg px-2.5 py-2 text-[0.75rem] opacity-75">
                       Older session
                     </div>
-                    <div className="rounded-lg px-2.5 py-2 text-[12px] opacity-55">
+                    <div className="rounded-lg px-2.5 py-2 text-[0.75rem] opacity-55">
                       Archive note
                     </div>
                   </div>
@@ -308,7 +308,7 @@ export function UiDesignerSection() {
                 <div className="flex min-w-0 flex-1 flex-col" style={{ background: 'var(--dt-chat-background)' }}>
                   <div className="flex-1 space-y-2 overflow-hidden p-3">
                     <div
-                      className="ml-auto max-w-[85%] rounded-xl border px-3 py-2 text-[11px]"
+                      className="ml-auto max-w-[85%] rounded-xl border px-3 py-2 text-2xs"
                       style={{
                         background: 'var(--dt-user-bubble)',
                         borderColor: 'var(--dt-border)',
@@ -318,7 +318,7 @@ export function UiDesignerSection() {
                       User message preview
                     </div>
                     <div
-                      className="max-w-[90%] rounded-xl border px-3 py-2 text-[11px]"
+                      className="max-w-[90%] rounded-xl border px-3 py-2 text-2xs"
                       style={{
                         background: 'var(--dt-muted)',
                         borderColor: 'var(--dt-border)',
@@ -329,7 +329,7 @@ export function UiDesignerSection() {
                       Recap and tools use these surfaces.
                     </div>
                     <div
-                      className="inline-flex items-center rounded-md px-2 py-1 text-[10px] font-medium"
+                      className="inline-flex items-center rounded-md px-2 py-1 text-3xs font-medium"
                       style={{
                         background: 'var(--dt-primary)',
                         color: 'var(--dt-primary-foreground)',
@@ -342,7 +342,7 @@ export function UiDesignerSection() {
                   {/* Composer mock */}
                   <div className="border-t p-2.5" style={{ borderColor: 'var(--dt-border)' }}>
                     <div
-                      className="rounded-xl border px-3 py-2.5 text-[11px]"
+                      className="rounded-xl border px-3 py-2.5 text-2xs"
                       style={{
                         borderColor: 'var(--dt-input)',
                         background: 'var(--dt-chat-input-bg)',
@@ -364,11 +364,11 @@ export function UiDesignerSection() {
                   background: 'var(--dt-muted)',
                 }}
               >
-                <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--dt-muted-foreground)' }}>
+                <div className="text-3xs font-semibold uppercase tracking-wider" style={{ color: 'var(--dt-muted-foreground)' }}>
                   Settings card
                 </div>
                 <div
-                  className="mt-1.5 rounded-lg border px-3 py-2 text-[11px]"
+                  className="mt-1.5 rounded-lg border px-3 py-2 text-2xs"
                   style={{
                     background: 'var(--dt-card)',
                     borderColor: 'var(--dt-border)',
@@ -380,7 +380,7 @@ export function UiDesignerSection() {
               </div>
             </div>
 
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
+            <p className="text-2xs leading-relaxed text-muted-foreground">
               Tip: pick colors in the draft, confirm in the preview, then <span className="text-foreground/80">Apply</span>.
               Custom colors override light/dark theme tokens until you use <span className="text-foreground/80">Reset app</span>.
             </p>

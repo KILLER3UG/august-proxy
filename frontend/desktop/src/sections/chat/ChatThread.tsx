@@ -547,13 +547,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     const syncTitleToBackend = (wbId: string, backendTitle?: string) => {
       if (localTitle && !isPlaceholderTitle(localTitle) && isPlaceholderTitle(backendTitle)) {
-        void fetch(`/api/workbench/sessions/${encodeURIComponent(wbId)}/title`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: localTitle }),
-        }).catch(() => {
-          /* best-effort */
-        });
+        void api
+          .patch(`/api/workbench/sessions/${encodeURIComponent(wbId)}/title`, { title: localTitle })
+          .catch(() => {
+            /* best-effort */
+          });
       }
     };
 
@@ -571,16 +569,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         // cached system prompt on this change, so the model and the tools agree.
         if (uiWs && loaded.workspacePath !== uiWs) {
           try {
-            const res = await fetch('/api/workbench/sandbox-mode', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                sessionId: loaded.id,
-                workspacePath: uiWs,
-                sandboxMode: loaded.sandboxMode || 'workspace-write',
-              }),
+            // On failure the ApiError is swallowed and `loaded` stays as-is.
+            loaded = await api.post<typeof loaded>('/api/workbench/sandbox-mode', {
+              sessionId: loaded.id,
+              workspacePath: uiWs,
+              sandboxMode: loaded.sandboxMode || 'workspace-write',
             });
-            if (res.ok) loaded = (await res.json()) as typeof loaded;
           } catch {
             /* best-effort */
           }

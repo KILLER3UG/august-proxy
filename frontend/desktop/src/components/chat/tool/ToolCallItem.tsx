@@ -175,7 +175,7 @@ export const ToolCallItem = memo(function ToolCallItem({
               // per-character shimmer animation: animating 100+ chars with a
               // 100ms stagger is visually noisy. Render as a plain monospace
               // span with a `title` tooltip for the full text.
-              <span className="font-mono text-[11.5px] text-foreground/85 wrap-anywhere break-words">
+              <span className="font-mono text-[0.71875rem] text-foreground/85 wrap-anywhere break-words">
                 {displayLabel}
               </span>
             ) : (

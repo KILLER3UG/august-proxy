@@ -199,7 +199,7 @@ function PlanPhaseGroup({
         type="button"
         onClick={() => onToggle(!expanded)}
         aria-expanded={expanded}
-        className="flex w-full min-w-0 items-center gap-1.5 rounded-xs px-1 py-0.5 text-left text-[12px] font-medium text-foreground/75 hover:bg-accent hover:text-foreground"
+        className="flex w-full min-w-0 items-center gap-1.5 rounded-xs px-1 py-0.5 text-left text-[0.75rem] font-medium text-foreground/75 hover:bg-accent hover:text-foreground"
         data-testid="plan-phase-head"
       >
         <ChevronDown
@@ -218,7 +218,7 @@ function PlanPhaseGroup({
           ) : null}
         </span>
         {active ? (
-          <span className="shrink-0 text-[10px] italic text-muted-foreground/70">
+          <span className="shrink-0 text-3xs italic text-muted-foreground/70">
             working…
           </span>
         ) : null}
@@ -1025,7 +1025,7 @@ export function AssistantBlockTimeline({
             <div
               key={block.id || `memory_${ti}`}
               data-testid="memory-notice-chip"
-              className="mx-3 my-1 inline-flex max-w-full items-center gap-1.5 rounded-full border border-sky-500/25 bg-sky-500/8 px-2.5 py-1 text-[11px] text-sky-300/90"
+              className="mx-3 my-1 inline-flex max-w-full items-center gap-1.5 rounded-full border border-sky-500/25 bg-sky-500/8 px-2.5 py-1 text-2xs text-sky-300/90"
               title={block.content || undefined}
             >
               <span aria-hidden="true" className="opacity-70">
@@ -1055,7 +1055,7 @@ export function AssistantBlockTimeline({
             <details
               key={block.id || `recall_${ti}`}
               data-testid="recalled-memories-block"
-              className="mx-3 my-1 max-w-full rounded border border-sky-500/20 bg-sky-500/5 px-2.5 py-1 text-[11px] text-sky-300/90"
+              className="mx-3 my-1 max-w-full rounded border border-sky-500/20 bg-sky-500/5 px-2.5 py-1 text-2xs text-sky-300/90"
             >
               <summary className="cursor-pointer select-none list-none">
                 <span aria-hidden="true" className="mr-1 opacity-70">
@@ -1069,8 +1069,8 @@ export function AssistantBlockTimeline({
                     <span
                       className={
                         m.scope === 'project'
-                          ? 'shrink-0 rounded bg-emerald-500/15 px-1 text-[9px] uppercase tracking-wide text-emerald-300/90'
-                          : 'shrink-0 rounded bg-sky-500/15 px-1 text-[9px] uppercase tracking-wide text-sky-300/90'
+                          ? 'shrink-0 rounded bg-emerald-500/15 px-1 text-3xs uppercase tracking-wide text-emerald-300/90'
+                          : 'shrink-0 rounded bg-sky-500/15 px-1 text-3xs uppercase tracking-wide text-sky-300/90'
                       }
                       title={m.scope === 'project' ? 'Project memory' : 'Global memory'}
                     >
@@ -1226,7 +1226,7 @@ export function AssistantBlockTimeline({
         <div
           key={key}
           data-testid="chat-system-notice"
-          className="mt-1 flex w-full max-w-3xl items-start gap-2 text-[11px] leading-relaxed text-muted-foreground/80"
+          className="mt-1 flex w-full max-w-3xl items-start gap-2 text-2xs leading-relaxed text-muted-foreground/80"
         >
           <span aria-hidden="true" className="mt-px shrink-0">
             ⚙
@@ -1297,7 +1297,7 @@ export function AssistantBlockTimeline({
         >
           <span
             aria-hidden="true"
-            className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-rose-500/30 bg-rose-500/15 text-[13px] text-rose-400"
+            className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-rose-500/30 bg-rose-500/15 text-[0.8125rem] text-rose-400"
           >
             !
           </span>
@@ -1313,15 +1313,15 @@ export function AssistantBlockTimeline({
                 ✕
               </button>
             ) : null}
-            <div className="pr-5 text-[13px] leading-relaxed text-rose-200">
+            <div className="pr-5 text-[0.8125rem] leading-relaxed text-rose-200">
               {block.content || 'Generation failed.'}
             </div>
             {raw ? (
-              <details className="mt-1.5 text-[12px] text-rose-300/80">
+              <details className="mt-1.5 text-[0.75rem] text-rose-300/80">
                 <summary className="cursor-pointer select-none">
                   Show provider details
                 </summary>
-                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-rose-950/40 p-2 font-mono text-[10px]">
+                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-rose-950/40 p-2 font-mono text-3xs">
                   {raw}
                 </pre>
               </details>
@@ -1333,7 +1333,7 @@ export function AssistantBlockTimeline({
                     type="button"
                     onClick={onRetryTurn}
                     data-testid="chat-error-retry"
-                    className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2.5 py-1 text-[11px] font-medium text-rose-100 transition hover:bg-rose-500/25"
+                    className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2.5 py-1 text-2xs font-medium text-rose-100 transition hover:bg-rose-500/25"
                   >
                     ↻ Try again
                   </button>
@@ -1342,7 +1342,7 @@ export function AssistantBlockTimeline({
                   <button
                     type="button"
                     onClick={onSwitchModel}
-                    className="rounded-lg border border-rose-500/30 px-2.5 py-1 text-[11px] font-medium text-rose-200 transition hover:bg-rose-500/10"
+                    className="rounded-lg border border-rose-500/30 px-2.5 py-1 text-2xs font-medium text-rose-200 transition hover:bg-rose-500/10"
                   >
                     Switch model
                   </button>

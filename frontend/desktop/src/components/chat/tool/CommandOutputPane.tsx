@@ -128,7 +128,7 @@ export function CommandOutputPane({
           design, ZCode parity 2026-09-08). */}
       <div className="flex items-start gap-2 px-4 py-2.5">
         <span
-          className="min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-[11.5px] leading-5 text-foreground/80"
+          className="min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-[0.71875rem] leading-5 text-foreground/80"
           title={command}
         >
           <span className="select-none text-muted-foreground/50">$ </span>
@@ -136,7 +136,7 @@ export function CommandOutputPane({
         </span>
         {!running && contentTruncated && (
           <span
-            className="inline-flex shrink-0 items-center rounded-full bg-amber-500/10 px-1.5 py-px text-[10px] font-medium text-amber-400"
+            className="inline-flex shrink-0 items-center rounded-full bg-amber-500/10 px-1.5 py-px text-3xs font-medium text-amber-400"
             title={
               contentFullLength
                 ? `Result cut at 100 KB — full output was ${contentFullLength.toLocaleString()} bytes`
@@ -151,7 +151,7 @@ export function CommandOutputPane({
           <button
             type="button"
             onClick={() => setShowOutput((v) => !v)}
-            className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-px text-[10px] text-muted-foreground hover:text-foreground"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-px text-3xs text-muted-foreground hover:text-foreground"
             aria-expanded={showOutput}
             data-testid="command-output-toggle"
           >
@@ -165,7 +165,7 @@ export function CommandOutputPane({
       </div>
       {isError && errorLine && (
         <div
-          className="truncate border-t border-border/50 px-4 py-1.5 font-mono text-[11px] text-rose-400"
+          className="truncate border-t border-border/50 px-4 py-1.5 font-mono text-2xs text-rose-400"
           title={errorLine}
           data-testid="command-error-line"
         >
@@ -174,7 +174,7 @@ export function CommandOutputPane({
       )}
       {showFull && running && previewDropped && (
         <div
-          className="border-t border-border/50 px-4 py-1 font-mono text-[10.5px] text-muted-foreground"
+          className="border-t border-border/50 px-4 py-1 font-mono text-[0.65625rem] text-muted-foreground"
           data-testid="command-preview-dropped"
         >
           … earlier output dropped — showing the last 80 KB …
@@ -183,7 +183,7 @@ export function CommandOutputPane({
       {showFull && (
         <pre
           ref={scrollRef}
-          className="tool-result-scroll m-0 max-h-60 overflow-y-auto overscroll-contain px-4 pb-3 pt-2 font-mono text-[11px] leading-5 whitespace-pre-wrap break-words text-foreground/75"
+          className="tool-result-scroll m-0 max-h-60 overflow-y-auto overscroll-contain px-4 pb-3 pt-2 font-mono text-2xs leading-5 whitespace-pre-wrap break-words text-foreground/75"
           data-testid="command-full-output"
           onWheel={(e) => {
             if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) e.stopPropagation();

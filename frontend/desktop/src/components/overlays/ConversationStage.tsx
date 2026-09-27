@@ -48,7 +48,7 @@ function LiveRow({ ready, label, detail }: { ready: boolean; label?: string; det
         {ready ? 'Ready' : label || 'Starting'}
       </span>
       {!ready && detail ? (
-        <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground/70">{detail}</span>
+        <span className="min-w-0 truncate font-mono text-2xs text-muted-foreground/70">{detail}</span>
       ) : null}
     </div>
   );
@@ -63,9 +63,9 @@ function BulletList({ items }: { items: string[] }) {
           initial={{ opacity: 0, x: -6 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.12 + i * 0.12, duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-          className="flex items-start gap-2 text-[12.5px] leading-snug text-foreground/90"
+          className="flex items-start gap-2 text-[0.78125rem] leading-snug text-foreground/90"
         >
-          <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded bg-primary/15 text-[9px] font-bold text-primary">
+          <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded bg-primary/15 text-3xs font-bold text-primary">
             ✦
           </span>
           <span className="min-w-0">{it}</span>
@@ -98,7 +98,7 @@ function Bubble({
   if (beat.role === 'user') {
     return (
       <motion.div {...rise} className="flex justify-end" data-testid="conv-user">
-        <div className="max-w-[80%] rounded-2xl bg-user-bubble px-3.5 py-2 text-[13.5px] leading-snug text-foreground">
+        <div className="max-w-[80%] rounded-2xl bg-user-bubble px-3.5 py-2 text-[0.84375rem] leading-snug text-foreground">
           {beat.text}
         </div>
       </motion.div>
@@ -109,11 +109,11 @@ function Bubble({
     <motion.div {...rise} className="flex items-start gap-2.5" data-testid="conv-assistant">
       <span
         aria-hidden
-        className="mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-[7px] border border-border bg-elevated text-[10px] font-bold text-primary"
+        className="mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-[7px] border border-border bg-elevated text-3xs font-bold text-primary"
       >
         A
       </span>
-      <div className="min-w-0 flex-1 pt-0.5 text-[13.5px] leading-relaxed text-foreground/90">
+      <div className="min-w-0 flex-1 pt-0.5 text-[0.84375rem] leading-relaxed text-foreground/90">
         {beat.text}
         {beat.bullets ? <BulletList items={beat.bullets} /> : null}
         {beat.live ? <LiveRow ready={ready} label={liveLabel} detail={liveDetail} /> : null}
@@ -208,12 +208,12 @@ export function ConversationStage({
       <div className="flex items-center gap-2 border-b border-border/60 bg-card/40 px-4 py-2.5">
         <span
           aria-hidden
-          className="grid size-5 place-items-center rounded-md border border-border bg-elevated text-[11px] font-bold text-primary"
+          className="grid size-5 place-items-center rounded-md border border-border bg-elevated text-2xs font-bold text-primary"
         >
           A
         </span>
-        <span className="text-[13px] font-semibold text-foreground">August</span>
-        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-[10.5px] text-muted-foreground">
+        <span className="text-[0.8125rem] font-semibold text-foreground">August</span>
+        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-[0.65625rem] text-muted-foreground">
           <span className={cn('size-1.5 rounded-full', pillState === 'ok' ? 'bg-success' : 'bg-primary')} />
           {pillText}
         </span>
@@ -248,13 +248,13 @@ export function ConversationStage({
 
       {/* Composer + skip */}
       <div className="flex items-center gap-2 px-3 pb-3">
-        <div className="flex-1 rounded-xl border border-border bg-card/50 px-3 py-2 text-[12.5px] text-muted-foreground/70">
+        <div className="flex-1 rounded-xl border border-border bg-card/50 px-3 py-2 text-[0.78125rem] text-muted-foreground/70">
           {composerHint}
         </div>
         <button
           type="button"
           onClick={skip}
-          className="shrink-0 rounded-lg px-2.5 py-2 text-[12px] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          className="shrink-0 rounded-lg px-2.5 py-2 text-[0.75rem] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
           data-testid="conversation-skip"
         >
           Skip →

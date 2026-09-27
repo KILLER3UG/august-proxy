@@ -182,16 +182,8 @@ export function BotCreateModal({
     try {
       const form = new FormData();
       form.append('file', file);
-      const res = await fetch('/api/agents/bots/avatar-upload', { method: 'POST', body: form });
-      if (res.status === 404) {
-        setUploadStatus('unsupported');
-        return;
-      }
-      if (!res.ok) {
-        setUploadStatus('unsupported');
-        return;
-      }
-      const data = (await res.json()) as { salt?: string };
+      // postRaw: multipart body passes through untouched (no JSON encoding).
+      const data = await api.postRaw<{ salt?: string }>('/api/agents/bots/avatar-upload', form);
       if (data.salt) {
         setSalt(data.salt);
         setLocked(true);
@@ -214,7 +206,7 @@ export function BotCreateModal({
         data-testid="bot-create-modal"
       >
         <div className="mb-1 flex items-start justify-between gap-3">
-          <h2 className="text-[15px] font-semibold text-foreground">New Bot</h2>
+          <h2 className="text-[0.9375rem] font-semibold text-foreground">New Bot</h2>
           <button
             type="button"
             onClick={onClose}
@@ -224,7 +216,7 @@ export function BotCreateModal({
             <X className="size-4" />
           </button>
         </div>
-        <p className="mb-4 text-[12px] leading-relaxed text-muted-foreground">
+        <p className="mb-4 text-[0.75rem] leading-relaxed text-muted-foreground">
           A named teammate with its own memory, skills, and chat. It can message your other agents.
         </p>
 
@@ -251,7 +243,7 @@ export function BotCreateModal({
                 aria-selected={avatarTab === key}
                 onClick={() => setAvatarTab(key)}
                 className={cn(
-                  'flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] transition',
+                  'flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-2xs transition',
                   avatarTab === key
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground',
@@ -285,7 +277,7 @@ export function BotCreateModal({
                   )}
                 >
                   {i === 0 ? (
-                    <span className="flex size-8 items-center justify-center text-[9px] text-muted-foreground">
+                    <span className="flex size-8 items-center justify-center text-3xs text-muted-foreground">
                       Auto
                     </span>
                   ) : (
@@ -306,13 +298,13 @@ export function BotCreateModal({
               <button
                 type="button"
                 onClick={() => setSalt(Math.random().toString(36).slice(2, 8))}
-                className="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] hover:bg-white/5"
+                className="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-2xs hover:bg-white/5"
                 data-testid="bot-create-shuffle"
               >
                 <Shuffle className="size-3" />
                 {salt ? 'Reshuffle' : 'Shuffle face'}
               </button>
-              <p className="text-[10px] text-muted-foreground/70">
+              <p className="text-3xs text-muted-foreground/70">
                 Roll until you find one. Lock freezes the pick from re-hashing on rename.
               </p>
             </div>
@@ -327,7 +319,7 @@ export function BotCreateModal({
                   <Upload className="size-4" />
                 </div>
               )}
-              <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] hover:bg-white/5">
+              <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-2xs hover:bg-white/5">
                 <Upload className="size-3" />
                 {uploadStatus === 'ok' ? 'Replace image' : 'Choose image'}
                 <input
@@ -343,20 +335,20 @@ export function BotCreateModal({
                 />
               </label>
               {uploadStatus === 'unsupported' && (
-                <p className="text-center text-[10px] text-muted-foreground/70">
+                <p className="text-center text-3xs text-muted-foreground/70">
                   Upload not yet wired on this build — pick a Shape or Shuffle instead.
                 </p>
               )}
               {uploadStatus === 'uploading' && (
-                <p className="text-[10px] text-muted-foreground/70">Uploading {uploadFileName}…</p>
+                <p className="text-3xs text-muted-foreground/70">Uploading {uploadFileName}…</p>
               )}
               {uploadStatus === 'ok' && (
-                <p className="text-[10px] text-muted-foreground/70">Saved {uploadFileName}.</p>
+                <p className="text-3xs text-muted-foreground/70">Saved {uploadFileName}.</p>
               )}
             </div>
           )}
 
-          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-3 text-2xs text-muted-foreground">
             <button
               type="button"
               onClick={() => {
@@ -394,7 +386,7 @@ export function BotCreateModal({
 
         <div className="space-y-2.5">
           <label className="block">
-            <span className="mb-1 block text-[11px] font-medium text-foreground/80">Name</span>
+            <span className="mb-1 block text-2xs font-medium text-foreground/80">Name</span>
             <input
               autoFocus
               value={name}
@@ -404,7 +396,7 @@ export function BotCreateModal({
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-[11px] font-medium text-foreground/80">Title</span>
+            <span className="mb-1 block text-2xs font-medium text-foreground/80">Title</span>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -413,7 +405,7 @@ export function BotCreateModal({
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-[11px] font-medium text-foreground/80">Description</span>
+            <span className="mb-1 block text-2xs font-medium text-foreground/80">Description</span>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -426,7 +418,7 @@ export function BotCreateModal({
           <button
             type="button"
             onClick={() => setAdvanced((v) => !v)}
-            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            className="inline-flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground"
           >
             {advanced ? <Check className="size-3" /> : null} Advanced
           </button>
@@ -447,13 +439,13 @@ export function BotCreateModal({
                 />
               </div>
               <div>
-                <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                <span className="mb-1 block text-3xs font-medium uppercase tracking-wide text-muted-foreground/70">
                   Skills
                 </span>
                 {skillsQuery.isLoading ? (
-                  <p className="text-[11px] text-muted-foreground/60">Loading…</p>
+                  <p className="text-2xs text-muted-foreground/60">Loading…</p>
                 ) : (skillsQuery.data?.skills ?? []).length === 0 ? (
-                  <p className="text-[11px] text-muted-foreground/60">No skills installed.</p>
+                  <p className="text-2xs text-muted-foreground/60">No skills installed.</p>
                 ) : (
                   <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
                     {(skillsQuery.data?.skills ?? []).map((s) => {
@@ -464,7 +456,7 @@ export function BotCreateModal({
                           type="button"
                           onClick={() => toggleSkill(s.name)}
                           className={cn(
-                            'rounded-md border px-1.5 py-0.5 text-[10.5px] transition',
+                            'rounded-md border px-1.5 py-0.5 text-[0.65625rem] transition',
                             active
                               ? 'border-primary/60 bg-primary/15 text-foreground'
                               : 'border-border/60 text-muted-foreground hover:text-foreground',
@@ -479,7 +471,7 @@ export function BotCreateModal({
                 )}
               </div>
               <div>
-                <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                <span className="mb-1 block text-3xs font-medium uppercase tracking-wide text-muted-foreground/70">
                   Memory scope
                 </span>
                 <div className="flex gap-1">
@@ -489,7 +481,7 @@ export function BotCreateModal({
                       type="button"
                       onClick={() => setMemoryScope(scope)}
                       className={cn(
-                        'flex-1 rounded-md border px-1.5 py-1 text-[11px] transition',
+                        'flex-1 rounded-md border px-1.5 py-1 text-2xs transition',
                         memoryScope === scope
                           ? 'border-primary/60 bg-primary/10 text-foreground'
                           : 'border-border/60 text-muted-foreground hover:text-foreground',
@@ -503,7 +495,7 @@ export function BotCreateModal({
                   <select
                     value={workspacePath}
                     onChange={(e) => setWorkspacePath(e.target.value)}
-                    className="mt-1.5 w-full rounded-md border border-border/60 bg-background/60 px-2 py-1 text-[11px] outline-none focus:border-primary/50"
+                    className="mt-1.5 w-full rounded-md border border-border/60 bg-background/60 px-2 py-1 text-2xs outline-none focus:border-primary/50"
                   >
                     <option value="">Choose a project…</option>
                     {(workspacesQuery.data?.workspaces ?? []).map((w) => (
@@ -522,7 +514,7 @@ export function BotCreateModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground hover:text-foreground"
+            className="rounded-lg px-3 py-1.5 text-[0.8125rem] text-muted-foreground hover:text-foreground"
           >
             Cancel
           </button>
@@ -530,7 +522,7 @@ export function BotCreateModal({
             type="button"
             disabled={!canCreate || create.isPending}
             onClick={() => create.mutate()}
-            className="rounded-lg bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-40"
+            className="rounded-lg bg-primary px-3 py-1.5 text-[0.8125rem] font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-40"
             data-testid="bot-create-submit"
           >
             {create.isPending ? 'Creating…' : 'Create Bot'}

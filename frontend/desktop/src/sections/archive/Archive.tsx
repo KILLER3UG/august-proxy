@@ -128,7 +128,7 @@ export function Archive() {
                   <div className="flex items-center gap-1.5 text-foreground/80 px-1 font-semibold text-xs border-b border-border/10 pb-1">
                     <FolderIcon className="size-3.5 text-muted-foreground/75" />
                     <span>📁 {folder.name}</span>
-                    <span className="text-[10px] text-muted-foreground/50 font-normal">({folderSessions.length})</span>
+                    <span className="text-3xs text-muted-foreground/50 font-normal">({folderSessions.length})</span>
                   </div>
                   <div className="grid grid-cols-1 gap-1.5">
                     <AnimatePresence initial={false} mode="popLayout">
@@ -156,7 +156,7 @@ export function Archive() {
                   <div className="flex items-center gap-1.5 text-foreground/80 px-1 font-semibold text-xs border-b border-border/10 pb-1">
                     <MessageSquare className="size-3.5 text-muted-foreground/75" />
                     <span>Other Chats</span>
-                    <span className="text-[10px] text-muted-foreground/50 font-normal">({uncategorizedSessions.length})</span>
+                    <span className="text-3xs text-muted-foreground/50 font-normal">({uncategorizedSessions.length})</span>
                   </div>
                   <div className="grid grid-cols-1 gap-1.5">
                     <AnimatePresence initial={false} mode="popLayout">
@@ -208,7 +208,7 @@ function ArchiveRow({
     >
       <div className="min-w-0 flex-1 pr-4">
         <h4 className="text-xs font-semibold text-foreground/90 truncate">{session.title}</h4>
-        <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground font-mono">
+        <div className="flex items-center gap-2 mt-1 text-3xs text-muted-foreground font-mono">
           <span>Started {formatTimeAgo(session.startedAt)}</span>
           <span>·</span>
           <span>{session.messageCount} messages</span>

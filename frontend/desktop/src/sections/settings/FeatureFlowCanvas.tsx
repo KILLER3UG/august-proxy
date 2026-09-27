@@ -170,7 +170,7 @@ function PixelWorker({
         <span className="absolute top-[38%] right-[20%] w-[3px] h-[3px] rounded-full bg-black/85" />
       </div>
       <div
-        className="absolute left-1/2 -translate-x-1/2 rounded-[2px] flex items-center justify-center text-[8px] font-bold text-white/90"
+        className="absolute left-1/2 -translate-x-1/2 rounded-[2px] flex items-center justify-center text-[0.5rem] font-bold text-white/90"
         style={{
           top: size * 0.34,
           width: size * 0.52,
@@ -204,7 +204,7 @@ function PixelWorker({
         transition={running ? { duration: 0.28, repeat: Infinity } : undefined}
       />
       {error && (
-        <span className="absolute -top-0.5 -right-0.5 text-[9px] text-danger font-bold leading-none">
+        <span className="absolute -top-0.5 -right-0.5 text-3xs text-danger font-bold leading-none">
           !
         </span>
       )}
@@ -319,7 +319,7 @@ export function FeatureFlowCanvas({
         </div>
 
         {/* Wall whiteboard / status ticker */}
-        <div className="absolute top-3 right-3 z-20 max-w-[45%] rounded-md border border-white/10 bg-black/50 px-2 py-1 text-[10px] font-mono text-muted-foreground truncate">
+        <div className="absolute top-3 right-3 z-20 max-w-[45%] rounded-md border border-white/10 bg-black/50 px-2 py-1 text-3xs font-mono text-muted-foreground truncate">
           {ticker ? (
             <span className="text-sky-200">{ticker}</span>
           ) : (
@@ -420,7 +420,7 @@ export function FeatureFlowCanvas({
         className="rounded-xl border border-white/[0.06] bg-card/50 px-3 py-2.5"
         data-testid="feature-flow-legend"
       >
-        <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="mb-2 text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
           Team legend · {dept.name}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -430,7 +430,7 @@ export function FeatureFlowCanvas({
               <div
                 key={j.stage}
                 className={cn(
-                  'inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px]',
+                  'inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-2xs',
                   st === 'running'
                     ? 'border-sky-400/40 bg-sky-500/10 text-sky-100'
                     : st === 'ok'
@@ -441,13 +441,13 @@ export function FeatureFlowCanvas({
                 )}
               >
                 <span
-                  className="grid size-5 place-items-center rounded text-[9px] font-bold text-white"
+                  className="grid size-5 place-items-center rounded text-3xs font-bold text-white"
                   style={{ background: `hsl(${j.hue} 60% 42%)` }}
                 >
                   {j.glyph.slice(0, 1)}
                 </span>
                 <span className="font-medium text-foreground/90">{j.title}</span>
-                <span className="font-mono text-[9px] opacity-60">{j.stage}</span>
+                <span className="font-mono text-3xs opacity-60">{j.stage}</span>
               </div>
             );
           })}

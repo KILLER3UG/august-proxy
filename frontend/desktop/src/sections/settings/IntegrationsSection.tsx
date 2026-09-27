@@ -9,6 +9,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { openExternal } from '@/lib/tauri-shell';
@@ -129,12 +130,8 @@ export function IntegrationsSection() {
       if (item.status === 'error') {
         setBusyId(item.id);
         try {
-          await fetch(`/api/mcp/servers/${encodeURIComponent(sid)}/stop`, {
-            method: 'POST',
-          }).catch(() => null);
-          await fetch(`/api/mcp/servers/${encodeURIComponent(sid)}/start`, {
-            method: 'POST',
-          });
+          await api.post(`/api/mcp/servers/${encodeURIComponent(sid)}/stop`).catch(() => null);
+          await api.post(`/api/mcp/servers/${encodeURIComponent(sid)}/start`);
           toast.success(`Restarted ${item.name}`);
           refetch();
         } catch (e) {
@@ -153,9 +150,7 @@ export function IntegrationsSection() {
       ) {
         setBusyId(item.id);
         try {
-          await fetch(`/api/mcp/servers/${encodeURIComponent(sid)}/start`, {
-            method: 'POST',
-          });
+          await api.post(`/api/mcp/servers/${encodeURIComponent(sid)}/start`);
           toast.success(`Started ${item.name}`);
           refetch();
         } catch (e) {
@@ -405,7 +400,7 @@ function Section({
           {icon}
           <h2 className="text-sm font-semibold text-foreground">{title}</h2>
           {count && (
-            <span className="rounded-full border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+            <span className="rounded-full border border-border bg-muted/40 px-1.5 py-0.5 text-3xs font-mono text-muted-foreground">
               {count}
             </span>
           )}

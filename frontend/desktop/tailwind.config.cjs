@@ -78,6 +78,16 @@ module.exports = {
         xl: '16px',
         '2xl': '20px',
       },
+      // Rem-based type scale below the tailwind defaults. Plain strings (no
+      // lineHeight pair) so swapping `text-[10px]` for `text-3xs` keeps the
+      // inherited line-height untouched — the codemod that retired the px
+      // literals relied on that. Being rem-based, these scale with the
+      // `data-text-size` root font-size (styles.css), which absolute px
+      // classes silently ignored (2026-09-26 audit P0#1).
+      fontSize: {
+        '3xs': '0.625rem',
+        '2xs': '0.6875rem',
+      },
       boxShadow: {
         overlay: '0 24px 48px -12px rgb(0 0 0 / 0.45)',
         soft:    '0 1px 2px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.10)',

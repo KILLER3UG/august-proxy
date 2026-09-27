@@ -11,6 +11,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Check, ArrowRight, Circle, CheckSquare, ListTodo, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
 import type { WorkbenchSession, WorkbenchTodo } from '@/types/workbench';
 
@@ -29,13 +30,10 @@ async function toggleTodoStatus(
         }
       : t,
   );
-  const res = await fetch('/api/workbench/todos', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, todos: next }),
+  const data = await api.patch<{ todos?: WorkbenchTodo[] }>('/api/workbench/todos', {
+    sessionId,
+    todos: next,
   });
-  if (!res.ok) throw new Error(`toggle failed: ${res.status}`);
-  const data = (await res.json()) as { todos?: WorkbenchTodo[] };
   return data.todos ?? next;
 }
 
@@ -153,7 +151,7 @@ export function RightDrawerTasksSection({
         } as const;
         return (
           <div key={section} className="space-y-1">
-            <div className="flex items-center gap-1.5 px-0.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
+            <div className="flex items-center gap-1.5 px-0.5 text-3xs uppercase tracking-wider text-muted-foreground/70 font-semibold">
               <span className="size-1.5 rounded-full bg-current" />
               {labels[section]}
               <span className="ml-auto font-mono tabular-nums opacity-70">{items.length}</span>

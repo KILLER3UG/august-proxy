@@ -301,7 +301,7 @@ export function ComposerToolbar({
       <div className="flex items-center gap-1 shrink-0">
         {handoffPreparing && (
           <span
-            className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70 px-1"
+            className="inline-flex items-center gap-1 text-3xs text-muted-foreground/70 px-1"
             aria-live="polite"
           >
             <Loader2 className="size-3 animate-spin" />
@@ -388,7 +388,7 @@ export function ComposerToolbar({
       </div>
 
       <div
-        className="flex items-center gap-1 overflow-x-auto px-2 pb-1.5 pt-0.5 text-[11px] text-muted-foreground scrollbar-none"
+        className="flex items-center gap-1 overflow-x-auto px-2 pb-1.5 pt-0.5 text-2xs text-muted-foreground scrollbar-none"
         data-testid="composer-island-footer"
       >
         {/* Tool reach (read-only / workspace / full access) lives in the
@@ -406,7 +406,7 @@ export function ComposerToolbar({
         <button
           type="button"
           onClick={() => addRightDrawerSection('artifacts')}
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] leading-none text-muted-foreground/50 hover:bg-muted/40 hover:text-foreground/80 transition"
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-3xs leading-none text-muted-foreground/50 hover:bg-muted/40 hover:text-foreground/80 transition"
           title="Artifacts — files, images, links from this chat"
         >
           <GalleryVertical className="size-3 opacity-70" />

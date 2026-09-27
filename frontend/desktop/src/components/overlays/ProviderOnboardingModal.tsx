@@ -172,7 +172,7 @@ export function ProviderOnboardingModal() {
                           <p className="text-sm font-medium">
                             {item.label}
                             {item.optional && (
-                              <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
+                              <span className="ml-1.5 text-3xs font-normal text-muted-foreground">
                                 optional
                               </span>
                             )}

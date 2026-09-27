@@ -32,7 +32,7 @@ export function DocumentBadge({
       className={cn(
         'grid shrink-0 place-items-center rounded-xl border border-white/[0.06] font-semibold tracking-tight',
         TONE_CLASSES[tone],
-        text.length > 2 ? 'text-[13px]' : 'text-[17px]',
+        text.length > 2 ? 'text-[0.8125rem]' : 'text-[1.0625rem]',
         className,
       )}
       style={{ width: size, height: size }}

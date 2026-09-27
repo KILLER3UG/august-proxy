@@ -196,7 +196,7 @@ export function ToolStepRow({
   const showLiveTimer = running && elapsedMs !== undefined && elapsedMs >= 1000;
   const liveTimer = showLiveTimer ? (
     <span
-      className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/60"
+      className="shrink-0 font-mono text-3xs tabular-nums text-muted-foreground/60"
       data-testid="tool-live-timer"
     >
       · {fmtElapsed(elapsedMs)}
@@ -317,7 +317,7 @@ export function ToolStepRow({
                 {liveTimer}
                 {commandText ? (
                   <span
-                    className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted-foreground/65"
+                    className="min-w-0 flex-1 truncate font-mono text-[0.71875rem] text-muted-foreground/65"
                     title={commandText}
                     data-testid="command-inline-cmd"
                   >
@@ -359,7 +359,7 @@ export function ToolStepRow({
             )}
             {showReadDuration && (
               <span
-                className="shrink-0 text-[10px] tabular-nums text-muted-foreground/60"
+                className="shrink-0 text-3xs tabular-nums text-muted-foreground/60"
                 data-testid="tool-read-duration"
               >
                 {(tool.duration! / 1000).toFixed(1)}s
@@ -367,7 +367,7 @@ export function ToolStepRow({
             )}
             {commandErrorLine && (
               <span
-                className="min-w-0 truncate font-mono text-[10.5px] text-rose-400"
+                className="min-w-0 truncate font-mono text-[0.65625rem] text-rose-400"
                 title={commandErrorLine}
                 data-testid="tool-error-line"
               >

@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
+import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -41,22 +42,12 @@ const EMPTY: ModelFamily = {
 };
 
 async function fetchFamilies(): Promise<FamiliesResponse> {
-  const res = await fetch('/api/config/model-params');
-  if (!res.ok) throw new Error(`Could not read model capability families (${res.status})`);
-  return (await res.json()) as FamiliesResponse;
+  return api.get<FamiliesResponse>('/api/config/model-params');
 }
 
 async function saveFamilies(families: ModelFamily[]): Promise<FamiliesResponse> {
-  const res = await fetch('/api/config/model-params', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ families }),
-  });
-  if (!res.ok) {
-    const detail = (await res.json().catch(() => null)) as { detail?: { message?: string } } | null;
-    throw new Error(detail?.detail?.message || `Could not save families (${res.status})`);
-  }
-  return (await res.json()) as FamiliesResponse;
+  // ApiError already surfaces the backend's detail.message on !ok.
+  return api.put<FamiliesResponse>('/api/config/model-params', { families });
 }
 
 const list = (text: string): string[] =>
@@ -81,22 +72,21 @@ function FamilyResolver() {
   const trimmed = modelId.trim();
   const { data, isFetching } = useQuery({
     queryKey: ['model-params', 'resolve', trimmed],
-    queryFn: async (): Promise<ResolveResponse> => {
-      const res = await fetch(`/api/config/model-params/resolve?modelId=${encodeURIComponent(trimmed)}`);
-      if (!res.ok) throw new Error('Could not resolve this model id');
-      return (await res.json()) as ResolveResponse;
-    },
+    queryFn: () =>
+      api.get<ResolveResponse>(
+        `/api/config/model-params/resolve?modelId=${encodeURIComponent(trimmed)}`,
+      ),
     enabled: trimmed.length > 0,
   });
 
   return (
     <div className="space-y-1.5">
       <label className="block space-y-1 max-w-md">
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-2xs text-muted-foreground">
           Check what a model id gets — paste one from your provider
         </span>
         <input
-          className="w-full rounded-md border border-border bg-background px-2 py-1 text-[12px] font-mono outline-none focus:ring-1 focus:ring-primary"
+          className="w-full rounded-md border border-border bg-background px-2 py-1 text-[0.75rem] font-mono outline-none focus:ring-1 focus:ring-primary"
           value={modelId}
           onChange={(e) => setModelId(e.target.value)}
           placeholder="deepseek-reasoner"
@@ -104,7 +94,7 @@ function FamilyResolver() {
         />
       </label>
       {trimmed && !isFetching && data ? (
-        <p className="text-[12px] text-muted-foreground" data-testid="family-resolution">
+        <p className="text-[0.75rem] text-muted-foreground" data-testid="family-resolution">
           {data.family ? (
             <>
               <span className="font-mono text-foreground">{data.family.id}</span>{' '}
@@ -219,7 +209,7 @@ export function ModelFamiliesSection() {
               return (
                 <div
                   key={family.id}
-                  className="flex items-center gap-3 rounded-md border border-border/60 px-2.5 py-1.5 text-[12px]"
+                  className="flex items-center gap-3 rounded-md border border-border/60 px-2.5 py-1.5 text-[0.75rem]"
                 >
                   <span className="font-medium w-44 truncate">{family.id}</span>
                   <span className="text-muted-foreground flex-1 min-w-0 truncate font-mono">
@@ -260,7 +250,7 @@ function FamilyRow({
   onRemove: () => void;
 }) {
   const field =
-    'rounded-md border border-border bg-background px-2 py-1 text-[12px] outline-none focus:ring-1 focus:ring-primary';
+    'rounded-md border border-border bg-background px-2 py-1 text-[0.75rem] outline-none focus:ring-1 focus:ring-primary';
   return (
     <Card>
       <CardContent className="p-3 space-y-2">
@@ -277,7 +267,7 @@ function FamilyRow({
           </Button>
         </div>
         <label className="block space-y-1">
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-2xs text-muted-foreground">
             Model-id substrings (comma-separated)
           </span>
           <input
@@ -289,7 +279,7 @@ function FamilyRow({
           />
         </label>
         <label className="block space-y-1">
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-2xs text-muted-foreground">
             Excluded substrings — win over the matches above
           </span>
           <input
@@ -300,7 +290,7 @@ function FamilyRow({
             aria-label="Excluded substrings"
           />
         </label>
-        <div className="flex flex-wrap items-center gap-4 text-[12px]">
+        <div className="flex flex-wrap items-center gap-4 text-[0.75rem]">
           <label className="flex items-center gap-1.5">
             <input
               type="checkbox"

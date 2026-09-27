@@ -87,7 +87,7 @@ export function SearchResultsList({ hits }: { hits: SearchHit[] }) {
                 </span>
               )}
               {host ? (
-                <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground/60">{host}</span>
+                <span className="shrink-0 font-mono text-[0.65625rem] text-muted-foreground/60">{host}</span>
               ) : null}
             </li>
           );
@@ -152,7 +152,7 @@ export function SearchResultsTask({
               ) : null}
             </span>
             <span className="ml-2 flex shrink-0 items-center gap-2">
-              <span className="font-mono text-[10.5px] text-muted-foreground/60">
+              <span className="font-mono text-[0.65625rem] text-muted-foreground/60">
                 {count} result{count === 1 ? '' : 's'}
               </span>
               {open ? (

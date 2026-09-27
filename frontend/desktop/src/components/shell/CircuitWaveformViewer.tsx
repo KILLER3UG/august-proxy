@@ -106,13 +106,13 @@ export function CircuitWaveformViewer({
       <div className="flex items-center gap-2">
         <FileClock className="size-3.5 shrink-0 text-muted-foreground/70" />
         <span className="shrink-0 text-xs font-semibold text-foreground">Waveforms</span>
-        <span className="truncate text-[10px] text-muted-foreground">
+        <span className="truncate text-3xs text-muted-foreground">
           Digital captures open in the embedded waveform viewer.
         </span>
       </div>
 
       {waves.length === 0 ? (
-        <p className="px-1 py-3 text-[11px] leading-relaxed text-muted-foreground/70">
+        <p className="px-1 py-3 text-2xs leading-relaxed text-muted-foreground/70">
           No waveform captures yet — circuit_export_vcd writes .vcd files that
           render here with full pan/zoom/cursors.
         </p>
@@ -126,7 +126,7 @@ export function CircuitWaveformViewer({
                   type="button"
                   onClick={() => setSelected(w.path)}
                   aria-pressed={(activePath ?? '') === w.path}
-                  className={`truncate rounded-md border px-2 py-1 text-left font-mono text-[10px] transition ${
+                  className={`truncate rounded-md border px-2 py-1 text-left font-mono text-3xs transition ${
                     activePath === w.path
                       ? 'border-primary/50 bg-primary/10 text-foreground'
                       : 'border-border/50 bg-card/50 text-muted-foreground hover:border-primary/30'

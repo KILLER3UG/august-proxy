@@ -48,7 +48,7 @@ export function CommandHelpCard({
       <div className="text-sm font-semibold text-foreground">{title}</div>
       {categories.map(cat => (
         <div key={cat} className="space-y-1">
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">{cat}</div>
+          <div className="text-2xs uppercase tracking-wide text-muted-foreground font-semibold">{cat}</div>
           <div className="grid gap-1">
             {grouped.get(cat)!.map(cmd => (
               <div key={cmd.name} className="grid grid-cols-[140px_1fr] gap-3 text-xs">
@@ -56,7 +56,7 @@ export function CommandHelpCard({
                 <div className="space-y-0.5">
                   <div className="text-foreground/90">{cmd.desc}</div>
                   {cmd.usage && (
-                    <div className="text-[11px] text-muted-foreground">
+                    <div className="text-2xs text-muted-foreground">
                       <span className="font-mono">{cmd.usage}</span>
                       {cmd.example && cmd.example !== cmd.usage && (
                         <span className="ml-2">e.g. <span className="font-mono">{cmd.example}</span></span>

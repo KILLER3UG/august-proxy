@@ -188,7 +188,7 @@ export function ModelFleetTab() {
                       type="button"
                       onClick={() => setEditFleet({ ...active, [key]: '' })}
                       disabled={active[key] === '' || active[key] === undefined}
-                      className="text-[11px] text-muted-foreground hover:text-foreground underline disabled:opacity-30 disabled:cursor-not-allowed"
+                      className="text-2xs text-muted-foreground hover:text-foreground underline disabled:opacity-30 disabled:cursor-not-allowed"
                       data-testid={`fleet-${key}-clear`}
                     >
                       Clear
@@ -207,7 +207,7 @@ export function ModelFleetTab() {
                       type="button"
                       onClick={() => setEditFleet({ ...active, [key]: '' })}
                       disabled={active[key] === '' || active[key] === undefined}
-                      className="text-[11px] text-muted-foreground hover:text-foreground underline disabled:opacity-30 disabled:cursor-not-allowed"
+                      className="text-2xs text-muted-foreground hover:text-foreground underline disabled:opacity-30 disabled:cursor-not-allowed"
                       data-testid={`fleet-${key}-clear`}
                     >
                       Clear (use session model)

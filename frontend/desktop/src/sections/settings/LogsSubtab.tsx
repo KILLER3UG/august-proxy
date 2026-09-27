@@ -29,7 +29,7 @@ const LEVEL_FILTERS: { key: 'all' | 'info' | 'warn' | 'error'; label: string }[]
 
 function FilterChips<T extends string>({ items, value, onChange, label }: { items: { key: T; label: string }[]; value: T; onChange: (v: T) => void; label: string }) {
     return (
-        <div className="flex items-center gap-1 text-[10px]">
+        <div className="flex items-center gap-1 text-3xs">
             <span className="flex items-center gap-1 px-1 text-muted-foreground/70 uppercase tracking-wider">
                 {label}
             </span>
@@ -96,7 +96,7 @@ export function LogsSubtab({ showPeriod = true }: { showPeriod?: boolean }) {
                 title="Log feed"
                 description="Activity events, request lifecycle, and pending requests merged into one chronological stream."
                 status={
-                    <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                    <div className="flex items-center gap-1.5 text-3xs font-mono">
                         <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">{counts.info} info</span>
                         <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-600">{counts.warn} warn</span>
                         <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-destructive">{counts.error} error</span>
@@ -104,7 +104,7 @@ export function LogsSubtab({ showPeriod = true }: { showPeriod?: boolean }) {
                 }
             >
                 <div className="flex flex-wrap items-center gap-2 pb-2">
-                    <div className="flex items-center gap-1 text-[10px]">
+                    <div className="flex items-center gap-1 text-3xs">
                         {LEVEL_FILTERS.map((f) => (
                             <button
                                 key={f.key}
@@ -139,7 +139,7 @@ export function LogsSubtab({ showPeriod = true }: { showPeriod?: boolean }) {
                         className="py-8"
                     />
                 ) : (
-                    <div className="max-h-[60vh] overflow-auto font-mono text-[11px] divide-y divide-border/40">
+                    <div className="max-h-[60vh] overflow-auto font-mono text-2xs divide-y divide-border/40">
                         {visible.map((l) => (
                             <div key={l.id} className="flex items-start gap-2 px-2 py-1.5 hover:bg-accent/20 group">
                                 <span className="text-muted-foreground/70 shrink-0 w-28">{formatTimeAgo(l.time)}</span>
@@ -160,7 +160,7 @@ export function LogsSubtab({ showPeriod = true }: { showPeriod?: boolean }) {
                     </div>
                 )}
             </SettingsCard>
-            <p className="text-[9px] text-muted-foreground font-mono">
+            <p className="text-3xs text-muted-foreground font-mono">
                 🔒 Secret-shaped fields (keys, tokens, cookies) are redacted on copy. Pending requests surface as warnings.
             </p>
         </div>

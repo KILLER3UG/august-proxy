@@ -170,7 +170,7 @@ function ScopeView({ traces }: { traces: Record<string, TraceData> }) {
   return (
     <div className="flex flex-col gap-1" data-testid="circuit-scope">
       <div ref={ref} className="w-full" />
-      <p className="text-[10px] leading-relaxed text-muted-foreground/80">
+      <p className="text-3xs leading-relaxed text-muted-foreground/80">
         Drag horizontally to zoom a time window — legend values follow the
         cursor for Δ measurements.
       </p>
@@ -234,7 +234,7 @@ function BodeView({ traces }: { traces: Record<string, TraceData> }) {
   const ref = useUPlot(opts, data);
   if (!mag) {
     return (
-      <p className="px-1 py-4 text-[11px] text-muted-foreground/70" data-testid="circuit-bode-empty">
+      <p className="px-1 py-4 text-2xs text-muted-foreground/70" data-testid="circuit-bode-empty">
         No frequency response yet — simulate an .ac deck with a vdb(out) trace
         (e.g. traces=['vdb(out)']) to see the Bode plot.
       </p>
@@ -252,7 +252,7 @@ function BodeView({ traces }: { traces: Record<string, TraceData> }) {
 function MeterView({ rows }: { rows: MeterRow[] }) {
   if (rows.length === 0) {
     return (
-      <p className="px-1 py-4 text-[11px] text-muted-foreground/70" data-testid="circuit-meter-empty">
+      <p className="px-1 py-4 text-2xs text-muted-foreground/70" data-testid="circuit-meter-empty">
         No operating point yet — simulate with a .op card; every node voltage
         and source current lands here like a multimeter readout.
       </p>
@@ -263,8 +263,8 @@ function MeterView({ rows }: { rows: MeterRow[] }) {
       <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 px-1">
         {rows.map((r) => (
           <div key={r.label} className="contents">
-            <span className="truncate font-mono text-[11px] text-foreground/90">{r.label}</span>
-            <span className="text-right font-mono text-[11px] tabular-nums text-foreground">
+            <span className="truncate font-mono text-2xs text-foreground/90">{r.label}</span>
+            <span className="text-right font-mono text-2xs tabular-nums text-foreground">
               {fmtExp(r.value)}
               {r.label.startsWith('i(') ? ' A' : ' V'}
             </span>
@@ -333,7 +333,7 @@ export function CircuitInstruments({ messages }: { messages?: ChatMessage[] | nu
       <div className="flex items-center gap-2">
         <active.icon className="size-3.5 shrink-0 text-muted-foreground/70" />
         <span className="shrink-0 text-xs font-semibold text-foreground">Instruments</span>
-        <span className="truncate text-[10px] text-muted-foreground">{active.hint}</span>
+        <span className="truncate text-3xs text-muted-foreground">{active.hint}</span>
       </div>
 
       {/* Vertical rail — no horizontal pill tabs (design directive). */}
@@ -355,7 +355,7 @@ export function CircuitInstruments({ messages }: { messages?: ChatMessage[] | nu
               data-testid={`instrument-${k}`}
             >
               <meta.icon className="size-3.5 shrink-0" />
-              <span className="text-[11px] font-medium">{meta.label}</span>
+              <span className="text-2xs font-medium">{meta.label}</span>
             </button>
           );
         })}
@@ -363,7 +363,7 @@ export function CircuitInstruments({ messages }: { messages?: ChatMessage[] | nu
 
       <div className="min-h-0 rounded-lg border border-border/40 bg-card/40 p-1.5">
         {sims.length === 0 && (
-          <p className="px-1 py-4 text-[11px] leading-relaxed text-muted-foreground/70">
+          <p className="px-1 py-4 text-2xs leading-relaxed text-muted-foreground/70">
             No simulation yet. Ask August to simulate a deck — its traces and
             measures feed these instruments automatically.
           </p>
@@ -372,7 +372,7 @@ export function CircuitInstruments({ messages }: { messages?: ChatMessage[] | nu
           scopeReady ? (
             <ScopeView traces={scopeReady.traces!} />
           ) : (
-            <p className="px-1 py-4 text-[11px] text-muted-foreground/70">
+            <p className="px-1 py-4 text-2xs text-muted-foreground/70">
               Latest run had no traces — pass traces=['v(out)', 'i(r1)'] to
               circuit_simulate for scope data.
             </p>

@@ -410,7 +410,7 @@ export function SkillsSection() {
       {mode === 'list' && (
         <div className="flex shrink-0 items-center gap-2" data-testid="skills-scope-row">
           <FolderTree className="size-3.5 text-muted-foreground/70" />
-          <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">Scope</span>
+          <span className="text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">Scope</span>
           <div className="max-w-xs flex-1">
             <WorkspaceSelect
               value={wsScope}
@@ -421,7 +421,7 @@ export function SkillsSection() {
             />
           </div>
           {wsScope && (
-            <span className="text-[10.5px] text-muted-foreground/70">
+            <span className="text-[0.65625rem] text-muted-foreground/70">
               Project skills shadow same-named global ones
             </span>
           )}
@@ -467,13 +467,13 @@ export function SkillsSection() {
                 if (group.length === 0) return null;
                 return (
                   <section key={key} data-testid={`skill-group-${key}`}>
-                    <h3 className="flex items-baseline gap-2 pb-0.5 text-[10.5px] font-semibold uppercase tracking-widest text-muted-foreground/55">
+                    <h3 className="flex items-baseline gap-2 pb-0.5 text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55">
                       {label}
-                      <span className="text-[10px] font-normal normal-case tracking-normal text-muted-foreground/60">
+                      <span className="text-3xs font-normal normal-case tracking-normal text-muted-foreground/60">
                         {group.length}
                       </span>
                     </h3>
-                    {note && <p className="pb-1 text-[11px] text-muted-foreground/70">{note}</p>}
+                    {note && <p className="pb-1 text-2xs text-muted-foreground/70">{note}</p>}
                     <div className="divide-y divide-white/[0.06]">
                       {group.map((s) => (
                         <SkillRow key={s.name} skill={s} onOpen={() => openDetail(s.name)} />
@@ -514,17 +514,17 @@ export function SkillsSection() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[15px] font-semibold text-foreground">{selected.name}</span>
-                    <span className="inline-flex cursor-default items-center gap-1 text-[11px] text-muted-foreground">
+                    <span className="text-[0.9375rem] font-semibold text-foreground">{selected.name}</span>
+                    <span className="inline-flex cursor-default items-center gap-1 text-2xs text-muted-foreground">
                       <Info className="size-3" />
                       {selected.createdBy ? `by ${selected.createdBy}` : 'bundled'}
                     </span>
-                    <Badge variant="outline" className="text-[10px] capitalize">{selected.category}</Badge>
+                    <Badge variant="outline" className="text-3xs capitalize">{selected.category}</Badge>
                     {/* C-2: scope + overrides badges */}
                     {selected.scope && (
                       <span
                         className={cn(
-                          'rounded-md border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide',
+                          'rounded-md border px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide',
                           selected.scope === 'project'
                             ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
                             : 'border-border/50 bg-muted/30 text-muted-foreground',
@@ -536,14 +536,14 @@ export function SkillsSection() {
                     )}
                     {selected.overrides && (
                       <span
-                        className="rounded-md border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-sky-400"
+                        className="rounded-md border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide text-sky-400"
                         data-testid="skill-overrides-badge"
                       >
                         overrides {selected.overrides}
                       </span>
                     )}
                   </div>
-                  <p className={cn('mt-1 text-[12.5px] leading-relaxed text-muted-foreground', !seeMore && 'line-clamp-2')}>
+                  <p className={cn('mt-1 text-[0.78125rem] leading-relaxed text-muted-foreground', !seeMore && 'line-clamp-2')}>
                     {selected.description || 'No description.'}
                     {!seeMore && selected.description.length > 140 && (
                       <button
@@ -559,7 +559,7 @@ export function SkillsSection() {
                     <button
                       type="button"
                       onClick={() => setSeeMore(false)}
-                      className="text-[11px] font-medium text-primary hover:underline"
+                      className="text-2xs font-medium text-primary hover:underline"
                     >
                       See less
                     </button>
@@ -567,7 +567,7 @@ export function SkillsSection() {
                 </div>
                 <div className="flex shrink-0 items-center gap-2 pt-1">
                   <span
-                    className="text-[11px] text-muted-foreground"
+                    className="text-2xs text-muted-foreground"
                     id={`skill-enabled-label-${selected.name}`}
                   >
                     {selected.enabled === false ? 'Disabled' : 'Enabled'}
@@ -641,7 +641,7 @@ export function SkillsSection() {
               </div>
 
               <section>
-                <h3 className="mb-2 text-[10.5px] font-semibold uppercase tracking-widest text-muted-foreground/55">
+                <h3 className="mb-2 text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55">
                   Instructions
                 </h3>
                 <Markdown content={selected.instructions || '_No instructions body._'} />
@@ -779,7 +779,7 @@ function UsageChip({ skill }: { skill: SkillSummary }) {
   const lastMs = skill.lastUsed ? Date.parse(skill.lastUsed) : NaN;
   return (
     <span
-      className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground"
+      className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide text-muted-foreground"
       data-testid="skill-usage-badge"
       title={
         Number.isFinite(lastMs)
@@ -796,10 +796,10 @@ function UsageChip({ skill }: { skill: SkillSummary }) {
 function SkillFact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-baseline gap-3 py-2">
-      <span className="w-[52px] shrink-0 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/55">
+      <span className="w-[52px] shrink-0 text-3xs font-semibold uppercase tracking-widest text-muted-foreground/55">
         {label}
       </span>
-      <span className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-muted-foreground">
+      <span className="min-w-0 flex-1 text-[0.78125rem] leading-relaxed text-muted-foreground">
         {children}
       </span>
     </div>
@@ -877,27 +877,27 @@ function SkillRow({ skill, onOpen }: { skill: SkillSummary; onOpen: () => void }
     >
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
-          <span className="truncate text-[13px] font-medium text-foreground/90">{skill.name}</span>
+          <span className="truncate text-[0.8125rem] font-medium text-foreground/90">{skill.name}</span>
           {skill.enabled === false && (
-            <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 py-0.5 text-[9px] uppercase tracking-wide text-amber-400">
+            <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 py-0.5 text-3xs uppercase tracking-wide text-amber-400">
               disabled
             </span>
           )}
           {skill.overrides && (
             <span
-              className="shrink-0 rounded border border-sky-500/30 bg-sky-500/10 px-1 py-0.5 text-[9px] uppercase tracking-wide text-sky-400"
+              className="shrink-0 rounded border border-sky-500/30 bg-sky-500/10 px-1 py-0.5 text-3xs uppercase tracking-wide text-sky-400"
               data-testid="skill-row-overrides"
             >
               overrides {skill.overrides}
             </span>
           )}
         </span>
-        <span className="mt-0.5 block truncate text-[11.5px] text-muted-foreground/75">
+        <span className="mt-0.5 block truncate text-[0.71875rem] text-muted-foreground/75">
           {skill.description || 'No description'}
         </span>
       </span>
       {skill.createdBy && (
-        <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/50">
+        <span className="shrink-0 text-3xs uppercase tracking-wide text-muted-foreground/50">
           {skill.createdBy}
         </span>
       )}

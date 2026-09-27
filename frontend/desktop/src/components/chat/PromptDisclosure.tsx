@@ -30,7 +30,7 @@ export function PromptDisclosure({ content, tokens, label = 'PROMPT', className 
         type="button"
         onClick={() => setOpen(o => !o)}
         className={cn(
-          'group inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.07em]',
+          'group inline-flex items-center gap-1 text-[0.65625rem] uppercase tracking-[0.07em]',
           'text-muted-foreground/70 hover:text-foreground transition-colors'
         )}
         aria-expanded={open}
@@ -46,7 +46,7 @@ export function PromptDisclosure({ content, tokens, label = 'PROMPT', className 
       </button>
       {open && (
         <pre
-          className="mt-1 max-h-96 overflow-auto rounded-md border border-white/[0.06] bg-black/30 px-3 py-2 text-[11px] leading-relaxed font-mono whitespace-pre-wrap wrap-break-word text-muted-foreground/85"
+          className="mt-1 max-h-96 overflow-auto rounded-md border border-white/[0.06] bg-black/30 px-3 py-2 text-2xs leading-relaxed font-mono whitespace-pre-wrap wrap-break-word text-muted-foreground/85"
         >
           {content}
         </pre>

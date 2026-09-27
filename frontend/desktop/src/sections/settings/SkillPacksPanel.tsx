@@ -80,10 +80,10 @@ export function SkillPacksPanel() {
     >
       <div className="flex items-center gap-2">
         <Package className="size-3.5 text-muted-foreground/70" />
-        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+        <span className="text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">
           Skill packs
         </span>
-        <span className="text-[10.5px] text-muted-foreground/70">
+        <span className="text-[0.65625rem] text-muted-foreground/70">
           install skill folders from a GitHub repo or an https zip
         </span>
       </div>
@@ -111,7 +111,7 @@ export function SkillPacksPanel() {
             <li key={p.pack} className="flex items-center justify-between gap-2 rounded-lg bg-muted/30 px-2.5 py-1.5">
               <div className="min-w-0">
                 <span className="text-xs font-medium text-foreground">{p.pack}</span>
-                <span className="ml-2 text-[10.5px] text-muted-foreground/80">
+                <span className="ml-2 text-[0.65625rem] text-muted-foreground/80">
                   {p.source} · {p.skills.length} skill{p.skills.length === 1 ? '' : 's'} · {p.skills.slice(0, 4).join(', ')}
                   {p.skills.length > 4 ? '…' : ''}
                 </span>

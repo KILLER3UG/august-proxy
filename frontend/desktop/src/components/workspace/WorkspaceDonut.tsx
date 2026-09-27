@@ -148,8 +148,8 @@ export function WorkspaceDonut({
                   style={{ backgroundColor: color }}
                 />
                 <div className="min-w-0">
-                  <div className="truncate font-mono text-[11.5px] text-foreground">{s.label}</div>
-                  <div className="text-[10.5px] text-muted-foreground/70">{formattedVal}</div>
+                  <div className="truncate font-mono text-[0.71875rem] text-foreground">{s.label}</div>
+                  <div className="text-[0.65625rem] text-muted-foreground/70">{formattedVal}</div>
                 </div>
               </div>
               <span className="text-muted-foreground/80 font-mono text-xs tabular-nums shrink-0">

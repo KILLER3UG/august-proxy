@@ -162,7 +162,7 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     openModelsPane();
     const row = document.querySelector('[data-testid="provider-row-KiloCode"]') as HTMLElement;
     expect(row.className).toContain('py-[10px]');
-    expect(row.className).toContain('text-[15px]');
+    expect(row.className).toContain('text-[0.9375rem]');
   });
 
   it('effort chip opens the effort pane with the list + thinking switch', () => {

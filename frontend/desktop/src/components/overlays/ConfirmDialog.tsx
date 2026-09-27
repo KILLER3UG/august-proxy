@@ -66,11 +66,11 @@ export function ConfirmDialog({
       >
         <h2
           id="confirm-dialog-title"
-          className="text-[15px] font-semibold tracking-tight text-foreground"
+          className="text-[0.9375rem] font-semibold tracking-tight text-foreground"
         >
           {title}
         </h2>
-        <p className="mt-1.5 text-[13px] text-muted-foreground leading-relaxed">
+        <p className="mt-1.5 text-[0.8125rem] text-muted-foreground leading-relaxed">
           {message}
         </p>
 
@@ -79,19 +79,19 @@ export function ConfirmDialog({
             type="button"
             onClick={onCancel}
             className={cn(
-              'rounded-lg border border-border px-3.5 py-1.5 text-[13px] font-medium',
+              'rounded-lg border border-border px-3.5 py-1.5 text-[0.8125rem] font-medium',
               'text-foreground/90 hover:bg-accent transition',
             )}
           >
             {cancelLabel}
-            <span className="ml-1.5 text-muted-foreground/60 text-[11px]">Esc</span>
+            <span className="ml-1.5 text-muted-foreground/60 text-2xs">Esc</span>
           </button>
           <button
             ref={confirmRef}
             type="button"
             onClick={handleConfirm}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[13px] font-medium transition',
+              'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.8125rem] font-medium transition',
               variant === 'destructive'
                 ? 'bg-rose-600 text-white hover:bg-rose-500'
                 : 'bg-primary text-primary-foreground hover:bg-primary/90',

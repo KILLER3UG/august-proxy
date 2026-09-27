@@ -33,7 +33,7 @@ export function SettingsSectionShell({
         <div className="min-w-0">
           <h2 className="text-xl font-semibold tracking-[-0.02em] text-foreground">{title}</h2>
           {subtitle && (
-            <p className="mt-1.5 max-w-2xl text-[13px] leading-5 text-muted-foreground/80">{subtitle}</p>
+            <p className="mt-1.5 max-w-2xl text-[0.8125rem] leading-5 text-muted-foreground/80">{subtitle}</p>
           )}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}

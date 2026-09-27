@@ -195,6 +195,8 @@ async def turnTelemetry(
     turnEndReason: str | None = None,
     parseFailures: int | None = None,
     surfaceDowngraded: bool | int | None = None,
+    skillsInjected: list[str] | None = None,
+    errorFamilies: list[str] | None = None,
     **extra: object,
 ) -> None:
     """M3 usage feedback + M5 turn telemetry (moved verbatim from
@@ -298,6 +300,21 @@ async def turnTelemetry(
             sessionId, _utcStamp(turnStartMs)
         )
         _editVerifyFails = _edit_verify_streak(session)
+        # Audit D1 (migration 050): credit assignment. facts_injected comes
+        # from the session list the usage bump above just drained (the tail
+        # injection is its only writer); skills_loaded from the turn-scoped
+        # collector the load door appends to. Both None when their authority
+        # never ran — NULL on the row means NOT RECORDED, not zero.
+        _skillsLoaded: list[str] | None = None
+        try:
+            from app.services.skill_service import drain_turn_loaded_skills
+
+            _skillsLoaded = drain_turn_loaded_skills()
+        except Exception:
+            logger.debug('turn skill collector drain failed', exc_info=True)
+        _factsInjected: list[str] | None = (
+            [str(k) for k, _t in injectedFacts] if injectedFacts else None
+        )
         turn_outcomes.record_turn_outcome(
             model=resolvedModel or '',
             provider=_telemetryProvider,
@@ -318,6 +335,10 @@ async def turnTelemetry(
             surface_downgraded=_counterValue(_downgraded),
             edit_verify_fails=_editVerifyFails,
             guardrail_classes=_guardrailDigest,
+            skills_injected=skillsInjected,
+            skills_loaded=_skillsLoaded,
+            facts_injected=_factsInjected,
+            error_families=errorFamilies,
         )
         # Surface the per-turn latency/cache numbers as one SSE event
         # (Observability; the transcript can show a cache-hit chip) — turns

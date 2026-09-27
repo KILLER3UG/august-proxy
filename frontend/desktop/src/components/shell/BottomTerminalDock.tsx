@@ -335,7 +335,7 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
       {/* Header: label + tabs left, actions right (reference layout). */}
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-border/60 px-3">
         <div className="flex min-w-0 items-center gap-2 overflow-x-auto">
-          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span className="shrink-0 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
             Terminal
           </span>
           {sessions.map((session) => (
@@ -394,7 +394,7 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
             <AlertCircle className="size-8 text-destructive" />
             <div className="max-w-xs">
               <p className="text-sm font-medium text-foreground">Shell failed to start</p>
-              <p className="mt-1 whitespace-pre-wrap break-words text-[11px] text-muted-foreground">
+              <p className="mt-1 whitespace-pre-wrap break-words text-2xs text-muted-foreground">
                 {spawnError || active?.error || 'The shell process exited unexpectedly.'}
               </p>
             </div>
@@ -424,7 +424,7 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
         <div ref={containerRef} className="absolute inset-0 overflow-hidden" />
 
         {showConnectingOverlay && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] text-muted-foreground">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-2xs text-muted-foreground">
             {isLoading || createSession.isPending ? 'Starting real terminal…' : 'Connecting to shell…'}
           </div>
         )}
@@ -432,7 +432,7 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
         {!active && !isLoading && !createSession.isPending && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center text-muted-foreground">
             <Inbox className="size-6 text-muted-foreground/40" />
-            <div className="mt-2 text-[11px]">Click + to start a terminal session.</div>
+            <div className="mt-2 text-2xs">Click + to start a terminal session.</div>
           </div>
         )}
       </div>
@@ -451,17 +451,17 @@ function ApprovalList({
 }) {
   return (
     <div className="rounded-md border border-warning/30 bg-warning/5 p-2 shadow-lg space-y-1.5">
-      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-warning">
+      <div className="flex items-center gap-1.5 text-3xs font-semibold uppercase tracking-wider text-warning">
         <ShieldAlert className="size-3" />
         {approvals.length} approval{approvals.length > 1 ? 's' : ''} required
       </div>
       {approvals.map((approval) => (
         <div key={approval.requestId} className="flex items-start justify-between gap-2 rounded-md border border-warning/20 bg-card/70 p-1.5">
           <div className="min-w-0">
-            <pre className="whitespace-pre-wrap break-all font-mono text-[10.5px] text-foreground/85">
+            <pre className="whitespace-pre-wrap break-all font-mono text-[0.65625rem] text-foreground/85">
               {approval.command || approval.inputPreview || '(no command)'}
             </pre>
-            <div className="mt-0.5 text-[10px] text-muted-foreground">{approval.reason || approval.cwd}</div>
+            <div className="mt-0.5 text-3xs text-muted-foreground">{approval.reason || approval.cwd}</div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <Button size="sm" onClick={() => approve.mutate(approval.requestId)} disabled={approve.isPending}>

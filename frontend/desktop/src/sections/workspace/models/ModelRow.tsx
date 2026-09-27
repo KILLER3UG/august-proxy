@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { api } from '@/api/client';
 import { providersApi, type ApiFormat, type Provider } from '@/api/providers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -100,17 +101,12 @@ export function ModelRow({
   // same endpoint the harness uses keeps this a report, not a second guess.
   const { data: familyAnswer } = useQuery({
     queryKey: ['model-params', 'resolve', model.id],
-    queryFn: async () => {
-      const res = await fetch(
-        `/api/config/model-params/resolve?modelId=${encodeURIComponent(model.id)}`,
-      );
-      if (!res.ok) throw new Error('Could not resolve the capability family');
-      return (await res.json()) as {
+    queryFn: () =>
+      api.get<{
         family?: { id: string; source: string } | null;
         reasoningEffort?: boolean;
         extendedThinking?: boolean;
-      };
-    },
+      }>(`/api/config/model-params/resolve?modelId=${encodeURIComponent(model.id)}`),
     enabled: editing && reasoningEffortSupport === '',
     staleTime: 60_000,
   });
@@ -276,7 +272,7 @@ if (editing) {
           {/* Fields — reference layout */}
           <div className="space-y-3.5 px-5 py-4">
             <label className="block">
-              <span className="mb-1.5 block text-[13px] font-medium text-foreground">Display name</span>
+              <span className="mb-1.5 block text-[0.8125rem] font-medium text-foreground">Display name</span>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -286,7 +282,7 @@ if (editing) {
               />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-[13px] font-medium text-foreground">Context window</span>
+              <span className="mb-1.5 block text-[0.8125rem] font-medium text-foreground">Context window</span>
               <Input
                 value={contextWindow}
                 onChange={(e) => setContextWindow(e.target.value)}
@@ -298,7 +294,7 @@ if (editing) {
               />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-[13px] font-medium text-foreground">Max output tokens</span>
+              <span className="mb-1.5 block text-[0.8125rem] font-medium text-foreground">Max output tokens</span>
               <Input
                 value={maxOutputTokens}
                 onChange={(e) => setMaxOutputTokens(e.target.value)}
@@ -315,7 +311,7 @@ if (editing) {
             {/* Advanced wire/harness controls — collapsed so the modal matches
                 the reference's simple field stack. */}
             <details className="rounded-lg border border-border/60 bg-background/40 px-3 py-2">
-              <summary className="cursor-pointer select-none text-[13px] font-medium text-foreground/90">
+              <summary className="cursor-pointer select-none text-[0.8125rem] font-medium text-foreground/90">
                 Advanced settings
               </summary>
               <div className="mt-3 space-y-3">
@@ -346,7 +342,7 @@ if (editing) {
                       value={format}
                       onChange={(e) => setFormat(e.target.value as ApiFormat | '')}
                       aria-label="Request format override"
-                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-2xs font-mono"
                     >
                       <option value="">Auto (provider format)</option>
                       {API_FORMATS.map((f) => (
@@ -357,7 +353,7 @@ if (editing) {
                     </select>
                   </label>
                   {!format && suggestModelApiFormat(model.id) && (
-                    <p className="text-[11px] text-amber-500/90">
+                    <p className="text-2xs text-amber-500/90">
                       {model.id} looks like an Anthropic model — multi-format gateways
                       (e.g. OpenCode Zen) need{' '}
                       <button
@@ -376,7 +372,7 @@ if (editing) {
                       value={reasoningEffortSupport}
                       onChange={(e) => setReasoningEffortSupport(e.target.value as '' | 'yes' | 'no')}
                       aria-label="Supports reasoning_effort"
-                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-2xs font-mono"
                     >
                       <option value="">Auto (heuristic)</option>
                       <option value="yes">Yes — always send</option>
@@ -384,7 +380,7 @@ if (editing) {
                     </select>
                   </label>
                   {editing && reasoningEffortSupport === '' && familyAnswer ? (
-                    <p className="text-[10px] text-muted-foreground" data-testid="model-family-hint">
+                    <p className="text-3xs text-muted-foreground" data-testid="model-family-hint">
                       {familyAnswer.family
                         ? `Auto resolves to the “${familyAnswer.family.id}” family (${
                             familyAnswer.family.source === 'config' ? 'your table' : 'built-in'
@@ -400,7 +396,7 @@ if (editing) {
                       value={toolSurface}
                       onChange={(e) => setToolSurface(e.target.value as 'full' | 'reduced' | 'bare' | '')}
                       aria-label="Tool surface"
-                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-2xs font-mono"
                     >
                       <option value="">Full (default)</option>
                       <option value="reduced">Reduced — drop heavy tools</option>
@@ -416,7 +412,7 @@ if (editing) {
                       onChange={(e) => setMaxTools(e.target.value)}
                       aria-label="Max tools"
                       placeholder="0 = no cap"
-                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-2xs font-mono"
                     />
                   </label>
                   <label className="flex items-center gap-2 text-xs">
@@ -428,7 +424,7 @@ if (editing) {
                       onChange={(e) => setMaxToolResultChars(e.target.value)}
                       aria-label="Max tool result chars"
                       placeholder="0 = 64 KB default"
-                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-2xs font-mono"
                     />
                   </label>
                   <label className="flex items-center gap-2 text-xs">
@@ -437,7 +433,7 @@ if (editing) {
                       value={maxReasoningEffort}
                       onChange={(e) => setMaxReasoningEffort(e.target.value)}
                       aria-label="Max reasoning effort"
-                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono"
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-2xs font-mono"
                     >
                       <option value="">Auto (no cap)</option>
                       <option value="low">low</option>
@@ -468,7 +464,7 @@ if (editing) {
                       onChange={(e) => setPriceIn(e.target.value)}
                       aria-label="Price per million input tokens"
                       placeholder={free ? 'free' : 'blank = August estimates'}
-                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono disabled:opacity-50"
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-2xs font-mono disabled:opacity-50"
                     />
                   </label>
                   <label className="flex items-center gap-2 text-xs">
@@ -482,10 +478,10 @@ if (editing) {
                       onChange={(e) => setPriceOut(e.target.value)}
                       aria-label="Price per million output tokens"
                       placeholder={free ? 'free' : 'blank = August estimates'}
-                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-[11px] font-mono disabled:opacity-50"
+                      className="h-7 flex-1 rounded border border-input bg-background px-2 text-2xs font-mono disabled:opacity-50"
                     />
                   </label>
-                  <p className="text-[10px] text-muted-foreground" data-testid="model-price-hint">
+                  <p className="text-3xs text-muted-foreground" data-testid="model-price-hint">
                     {free
                       ? 'Marked free, so spend for this model always reads $0 — a local host charges the electricity, not the API.'
                       : 'Blank leaves August guessing from its model-family table, and the spend readout says “estimated”. Set 0 for a local or free-tier host.'}
@@ -546,12 +542,12 @@ if (editing) {
             {model.pinned && (
               <Pin className="size-3 inline mr-1 -mt-0.5 text-primary" aria-label="Pinned" />
             )}
-            <span className="font-mono text-[13px]">{model.name || model.id}</span>
+            <span className="font-mono text-[0.8125rem]">{model.name || model.id}</span>
           </span>
         </div>
         {ctxLabel && (
           <span
-            className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground"
+            className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-3xs font-mono text-muted-foreground"
             title={`Context window: ${(model.contextWindow ?? 128000).toLocaleString()} tokens`}
           >
             {ctxLabel}
@@ -559,7 +555,7 @@ if (editing) {
         )}
         <span
           className={cn(
-            'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-mono',
+            'inline-flex items-center rounded px-1.5 py-0.5 text-3xs font-mono',
             model.source === 'fetched'
               ? 'bg-blue-500/15 text-blue-400'
               : 'bg-muted text-muted-foreground',
@@ -570,7 +566,7 @@ if (editing) {
         </span>
         {model.apiFormat && (
           <span
-            className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-mono bg-primary/10 text-primary"
+            className="inline-flex items-center rounded px-1.5 py-0.5 text-3xs font-mono bg-primary/10 text-primary"
             title="Per-model wire-format override (overrides the provider format)"
           >
             {apiFormatShortLabel(model.apiFormat)}
@@ -640,7 +636,7 @@ if (editing) {
       {testResult && (
         <div
           className={cn(
-            'flex items-start gap-1.5 text-[11px] mt-1.5 pl-0.5',
+            'flex items-start gap-1.5 text-2xs mt-1.5 pl-0.5',
             testResult.ok ? 'text-success' : 'text-danger',
           )}
           role={testResult.ok ? 'status' : 'alert'}
@@ -672,7 +668,7 @@ if (editing) {
       {probeResult && (
         <div
           className={cn(
-            'flex items-start gap-1.5 text-[11px] mt-1.5 pl-0.5',
+            'flex items-start gap-1.5 text-2xs mt-1.5 pl-0.5',
             probeResult.toolOk ? 'text-success' : 'text-amber-500',
           )}
           data-testid="model-probe-result"

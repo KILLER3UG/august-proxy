@@ -36,13 +36,13 @@ function AugWordmark() {
       {LETTERS.map((letter, i) => (
         <span
           key={i}
-          className="aug-letter text-[11px] font-semibold tracking-[0.18em] text-muted-foreground/80"
+          className="aug-letter text-2xs font-semibold tracking-[0.18em] text-muted-foreground/80"
           style={{ animationDelay: `${i * 0.12}s` }}
         >
           {letter}
         </span>
       ))}
-      <span className="aug-caret ml-0.5 text-[11px] font-semibold text-primary/70">|</span>
+      <span className="aug-caret ml-0.5 text-2xs font-semibold text-primary/70">|</span>
     </span>
   );
 }
@@ -53,7 +53,7 @@ function Dots({ tone = 'text-muted-foreground/70' }: { tone?: string }) {
       {[0, 1, 2].map((i) => (
         <motion.span
           key={i}
-          className="text-[12px] leading-none"
+          className="text-[0.75rem] leading-none"
           animate={{ opacity: [0.15, 0.9, 0.15] }}
           transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.22, ease: 'easeInOut' }}
         >
@@ -134,7 +134,7 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
               type="button"
               onClick={() => setTodosOpen((v) => !v)}
               aria-expanded={todosOpen}
-              className="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-px text-[10px] font-medium tracking-wide text-primary transition-colors hover:bg-primary/15"
+              className="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-px text-3xs font-medium tracking-wide text-primary transition-colors hover:bg-primary/15"
               data-testid="working-todos-toggle"
             >
               <span className="max-w-[240px] truncate">{todos?.title || 'Plan'}</span>
@@ -151,7 +151,7 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
                 {todoList.map((t) => (
                   <div
                     key={t.id}
-                    className="flex items-start gap-2 py-0.5 text-[11px] leading-4"
+                    className="flex items-start gap-2 py-0.5 text-2xs leading-4"
                     data-testid="working-todo-row"
                     data-status={t.status}
                   >
@@ -183,7 +183,7 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
               </div>
             ) : todoCurrent ? (
               <div
-                className="max-w-md truncate text-center text-[11px] text-muted-foreground"
+                className="max-w-md truncate text-center text-2xs text-muted-foreground"
                 data-testid="working-todo-current"
                 title={todoCurrent.content}
               >
@@ -193,7 +193,7 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
           </div>
         ) : execution ? (
           <div
-            className="rounded-full border border-primary/25 bg-primary/10 px-2 py-px text-[10px] font-medium uppercase tracking-wide text-primary"
+            className="rounded-full border border-primary/25 bg-primary/10 px-2 py-px text-3xs font-medium uppercase tracking-wide text-primary"
             data-testid="working-phase"
           >
             {execution.phase}
@@ -204,7 +204,7 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
           {idle ? (
             <div
               key="idle-line"
-              className="flex items-baseline justify-center gap-1 text-[11.5px] italic leading-4 text-muted-foreground/70"
+              className="flex items-baseline justify-center gap-1 text-[0.71875rem] italic leading-4 text-muted-foreground/70"
             >
               <span>Thinking</span>
               <Dots />
@@ -221,7 +221,7 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
                 return (
                   <div
                     key={`slot-${i}`}
-                    className={`truncate text-center text-[11.5px] leading-4 transition-opacity duration-150 ${opacityClass}`}
+                    className={`truncate text-center text-[0.71875rem] leading-4 transition-opacity duration-150 ${opacityClass}`}
                   >
                     <span>{line}</span>
                     {isLast && <Dots tone="text-primary/60" />}

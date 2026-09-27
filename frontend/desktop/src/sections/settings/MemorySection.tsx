@@ -399,12 +399,12 @@ function MemoryGroup({
       data-testid={testId}
     >
       <div className="flex items-baseline gap-3 pb-0.5">
-        <h2 className="text-[10.5px] font-semibold uppercase tracking-widest text-muted-foreground/55">
+        <h2 className="text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55">
           {title}
         </h2>
         {aside && (
           <span
-            className="ml-auto shrink-0 text-[10.5px] tabular-nums text-muted-foreground/70"
+            className="ml-auto shrink-0 text-[0.65625rem] tabular-nums text-muted-foreground/70"
             data-testid={`${testId}-aside`}
           >
             {aside}
@@ -820,8 +820,8 @@ export function MemorySection({ active }: { active: { id: string } }) {
       ) : (
         <>
       <div className="pb-1">
-        <h1 className="text-[22px] font-semibold tracking-tight text-foreground">{PAGE_TITLE}</h1>
-        <p className="mt-1 text-[13px] text-muted-foreground">{PAGE_BLURB}</p>
+        <h1 className="text-[1.375rem] font-semibold tracking-tight text-foreground">{PAGE_TITLE}</h1>
+        <p className="mt-1 text-[0.8125rem] text-muted-foreground">{PAGE_BLURB}</p>
       </div>
 
       {/* Global memory opens as its own pane, exactly like a project does: the
@@ -992,7 +992,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
               onClick={exportStore}
               disabled={flatEntries.length === 0}
               title="Export as Markdown"
-              className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-[11px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
             >
               <Download className="size-3.5" /> Export
             </button>
@@ -1026,13 +1026,13 @@ export function MemorySection({ active }: { active: { id: string } }) {
                 {/* C-6: bulk bar appears when rows are checked. */}
                 {checked.size > 0 && (
                   <>
-                    <span className="ml-2 text-[11px] text-muted-foreground" data-testid="memory-bulk-count">
+                    <span className="ml-2 text-2xs text-muted-foreground" data-testid="memory-bulk-count">
                       {checked.size} selected
                     </span>
                     <button
                       type="button"
                       onClick={() => void bulkExport()}
-                      className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1 text-[11px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
+                      className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
                       data-testid="memory-bulk-export"
                     >
                       <Download className="size-3" /> Export selected
@@ -1040,7 +1040,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
                     <button
                       type="button"
                       onClick={() => void bulkDelete()}
-                      className="inline-flex items-center gap-1 rounded-lg border border-destructive/40 bg-destructive/10 px-2 py-1 text-[11px] text-destructive transition hover:bg-destructive/20"
+                      className="inline-flex items-center gap-1 rounded-lg border border-destructive/40 bg-destructive/10 px-2 py-1 text-2xs text-destructive transition hover:bg-destructive/20"
                       data-testid="memory-bulk-delete"
                     >
                       <Trash2 className="size-3" /> Delete selected
@@ -1053,7 +1053,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
                   facts ride along on every turn instead of being recalled by
                   keyword, so a row in it costs context continuously. */}
               {kindCounts.profile > 0 && (
-                <p className="text-[10.5px] text-muted-foreground/70" data-testid="memory-profile-explainer">
+                <p className="text-[0.65625rem] text-muted-foreground/70" data-testid="memory-profile-explainer">
                   profile · always in the model’s context on every turn, not recalled by keyword.
                   Use a row’s ⋯ menu to add or remove entries.
                 </p>
@@ -1127,7 +1127,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
                     <button
                       type="button"
                       onClick={() => setUnifiedShown((n) => n + UNIFIED_RENDER)}
-                      className="w-full py-2 text-center text-[11px] text-muted-foreground transition hover:text-foreground"
+                      className="w-full py-2 text-center text-2xs text-muted-foreground transition hover:text-foreground"
                       data-testid="memory-show-more"
                     >
                       +{filteredEntries.length - unifiedShown} more
@@ -1195,7 +1195,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
       >
         {projectsWithMemory.length === 0 ? (
           <p
-            className="py-3 text-[11.5px] text-muted-foreground"
+            className="py-3 text-[0.71875rem] text-muted-foreground"
             data-testid="memory-project-group-empty"
           >
             No project memories yet. Open a project and chat with August — its memory folder
@@ -1305,15 +1305,15 @@ function PaneHeader({
       <button
         type="button"
         onClick={onBack}
-        className="-ml-1 mt-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[11.5px] text-muted-foreground transition hover:text-foreground"
+        className="-ml-1 mt-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[0.71875rem] text-muted-foreground transition hover:text-foreground"
         data-testid={`${testId}-back`}
       >
         <ChevronLeft className="size-3.5" /> {backLabel}
       </button>
       <div className="min-w-0 flex-1">
-        <h2 className="truncate text-[17px] font-semibold tracking-tight text-foreground">{title}</h2>
+        <h2 className="truncate text-[1.0625rem] font-semibold tracking-tight text-foreground">{title}</h2>
         {subtitle && (
-          <p className="mt-0.5 truncate text-[11.5px] text-muted-foreground" title={subtitle}>
+          <p className="mt-0.5 truncate text-[0.71875rem] text-muted-foreground" title={subtitle}>
             {subtitle}
           </p>
         )}
@@ -1346,15 +1346,15 @@ function MemoryRow({
   const body = (
     <>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] text-foreground/90">{title}</span>
+        <span className="block truncate text-[0.8125rem] text-foreground/90">{title}</span>
         {detail && (
-          <span className="mt-0.5 block truncate text-[11.5px] text-muted-foreground/75" title={detail}>
+          <span className="mt-0.5 block truncate text-[0.71875rem] text-muted-foreground/75" title={detail}>
             {detail}
           </span>
         )}
       </span>
       {meta && (
-        <span className="shrink-0 text-[10.5px] tabular-nums text-muted-foreground/60">{meta}</span>
+        <span className="shrink-0 text-[0.65625rem] tabular-nums text-muted-foreground/60">{meta}</span>
       )}
       {actions && <span className="flex shrink-0 items-center gap-1">{actions}</span>}
     </>
@@ -1459,7 +1459,7 @@ function ProjectMemoryPane({
       {listQ.isLoading ? (
         <PageLoader label="Loading project memory…" variant="card" className="py-6" />
       ) : listQ.isError ? (
-        <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+        <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-2xs text-destructive">
           {(listQ.error as Error | null)?.message ?? 'Could not read this project’s memory.'}
         </p>
       ) : (
@@ -1470,18 +1470,18 @@ function ProjectMemoryPane({
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Search this project’s memory…"
-              className="w-full border-b border-white/[0.08] bg-transparent py-1.5 pl-6 pr-2 text-[12.5px] text-foreground outline-none transition focus:border-primary/40"
+              className="w-full border-b border-white/[0.08] bg-transparent py-1.5 pl-6 pr-2 text-[0.78125rem] text-foreground outline-none transition focus:border-primary/40"
               data-testid="memory-project-search"
             />
           </div>
 
           <section className="border-t border-white/[0.07] pt-2" data-testid="memory-project-files">
-            <h3 className="pb-0.5 text-[10.5px] font-semibold uppercase tracking-widest text-muted-foreground/55">
+            <h3 className="pb-0.5 text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55">
               Files
             </h3>
             <div className="divide-y divide-white/[0.06]">
               {files.length === 0 ? (
-                <p className="py-3 text-[11.5px] text-muted-foreground">
+                <p className="py-3 text-[0.71875rem] text-muted-foreground">
                   No memory files yet in this project.
                 </p>
               ) : (
@@ -1500,12 +1500,12 @@ function ProjectMemoryPane({
           </section>
 
           <section className="border-t border-white/[0.07] pt-2" data-testid="memory-project-entries">
-            <h3 className="pb-0.5 text-[10.5px] font-semibold uppercase tracking-widest text-muted-foreground/55">
+            <h3 className="pb-0.5 text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55">
               Entries
             </h3>
             <div className="divide-y divide-white/[0.06]">
               {entries.length === 0 ? (
-                <p className="py-3 text-[11.5px] text-muted-foreground">
+                <p className="py-3 text-[0.71875rem] text-muted-foreground">
                   {q ? `Nothing here matches “${filter.trim()}”.` : 'No entries yet.'}
                 </p>
               ) : (
@@ -1594,16 +1594,16 @@ function ProjectFilePane({
       {fileQ.isLoading ? (
         <PageLoader label="Loading file…" variant="card" className="py-6" />
       ) : fileQ.isError ? (
-        <p className="text-[12px] text-destructive">
+        <p className="text-[0.75rem] text-destructive">
           {(fileQ.error as Error | null)?.message ?? 'Could not read this file.'}
         </p>
       ) : !fileQ.data?.ok ? (
-        <p className="text-[12px] text-destructive">
+        <p className="text-[0.75rem] text-destructive">
           {fileQ.data?.error ?? 'Could not read this file.'}
         </p>
       ) : (
         <div
-          className="markdown-content text-[13px] leading-relaxed text-foreground/90"
+          className="markdown-content text-[0.8125rem] leading-relaxed text-foreground/90"
           data-testid="memory-file-text"
         >
           <Markdown content={fileQ.data.text ?? ''} />
@@ -1644,7 +1644,7 @@ function BottomAddBar({
             if (e.key === 'Enter' && value.trim() && !pending) onSubmit();
           }}
           placeholder={placeholder}
-          className="min-w-0 flex-1 bg-transparent text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground/60"
+          className="min-w-0 flex-1 bg-transparent text-[0.78125rem] text-foreground outline-none placeholder:text-muted-foreground/60"
           data-testid={`${testId}-input`}
         />
         <button
@@ -1678,7 +1678,7 @@ function KindChip({
       type="button"
       onClick={onClick}
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10.5px] transition',
+        'inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[0.65625rem] transition',
         active
           ? 'border-primary/50 bg-primary/10 text-foreground'
           : 'border-border/60 bg-card/40 text-muted-foreground hover:border-primary/30 hover:text-foreground',
@@ -1686,7 +1686,7 @@ function KindChip({
       data-testid={`memory-kind-chip-${label}`}
     >
       {label}
-      <span className="tabular-nums text-[9.5px] opacity-70">{count}</span>
+      <span className="tabular-nums text-[0.59375rem] opacity-70">{count}</span>
     </button>
   );
 }
@@ -1742,7 +1742,7 @@ function FlatEntryRow({
       />
       <span
         className={cn(
-          'w-14 shrink-0 rounded-md border px-1 py-0.5 text-center text-[9px] font-medium uppercase tracking-wide',
+          'w-14 shrink-0 rounded-md border px-1 py-0.5 text-center text-3xs font-medium uppercase tracking-wide',
           kind.className,
         )}
         data-testid="memory-kind-label"
@@ -1755,28 +1755,28 @@ function FlatEntryRow({
         className="min-w-0 flex-1 text-left"
         title={entry.summary || entry.title}
       >
-        <span className="block truncate text-[12.5px] text-foreground/90">
+        <span className="block truncate text-[0.78125rem] text-foreground/90">
           “{entry.title}”
         </span>
       </button>
       {/* C-2: source badge — imported:<provider> and remember/user visible. */}
       {entry.source && (
         <span
-          className="shrink-0 rounded border border-border/50 bg-muted/30 px-1 py-0.5 text-[8.5px] font-medium uppercase tracking-wide text-muted-foreground"
+          className="shrink-0 rounded border border-border/50 bg-muted/30 px-1 py-0.5 text-[0.53125rem] font-medium uppercase tracking-wide text-muted-foreground"
           data-testid="memory-source-badge"
         >
           {entry.source}
         </span>
       )}
       {entry.legacy && (
-        <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 py-0.5 text-[8.5px] font-medium uppercase text-amber-400">
+        <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 py-0.5 text-[0.53125rem] font-medium uppercase text-amber-400">
           legacy
         </span>
       )}
       {entry.expired ? (
         // C-8: expired rows show the absolute date, dimmed.
         <span
-          className="shrink-0 rounded border border-destructive/30 bg-destructive/10 px-1 py-0.5 text-[8.5px] font-medium uppercase text-destructive"
+          className="shrink-0 rounded border border-destructive/30 bg-destructive/10 px-1 py-0.5 text-[0.53125rem] font-medium uppercase text-destructive"
           title={`Expired: ${str(entry.row.expiresAt)}`}
           data-testid="memory-expired-badge"
         >
@@ -1784,7 +1784,7 @@ function FlatEntryRow({
         </span>
       ) : entry.expiring ? (
         <span
-          className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1 py-0.5 text-[8.5px] font-medium uppercase text-warning"
+          className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1 py-0.5 text-[0.53125rem] font-medium uppercase text-warning"
           title={`Expires: ${str(entry.row.expiresAt)}`}
           data-testid="memory-expiring-badge"
         >
@@ -1792,7 +1792,7 @@ function FlatEntryRow({
         </span>
       ) : null}
       <span
-        className="shrink-0 text-[10px] tabular-nums text-muted-foreground/60"
+        className="shrink-0 text-3xs tabular-nums text-muted-foreground/60"
         title={absoluteDate(asUtc(entry.updated)) || entry.updated}
       >
         {timeAgo(asUtc(entry.updated))}
@@ -1963,7 +1963,7 @@ function HealthFooter({
 
   return (
     <div
-      className="flex items-center gap-2 border-t border-white/[0.06] pt-2.5 text-[10.5px] text-muted-foreground/70"
+      className="flex items-center gap-2 border-t border-white/[0.06] pt-2.5 text-[0.65625rem] text-muted-foreground/70"
       data-testid="memory-health-footer"
     >
       {lastPass ? (
@@ -1980,7 +1980,7 @@ function HealthFooter({
         type="button"
         onClick={onRunNow}
         disabled={consolidating}
-        className="rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
+        className="rounded-md border border-border/60 px-1.5 py-0.5 text-3xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
         title="Run one consolidation pass now (expire, merge duplicates, supersede contradictions)"
         data-testid="memory-consolidate-now"
       >
@@ -2045,7 +2045,7 @@ function DetailView({
           <button
             type="button"
             onClick={onBack}
-            className="mb-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground transition hover:text-foreground"
+            className="mb-1 inline-flex items-center gap-1 text-2xs text-muted-foreground transition hover:text-foreground"
           >
             <ChevronLeft className="size-3.5" /> Back to {store}
           </button>
@@ -2053,33 +2053,33 @@ function DetailView({
             {title}
           </h2>
           {entryKey && entryKey !== title && (
-            <p className="mt-0.5 truncate text-[11px] text-muted-foreground/55" data-testid="memory-detail-key">
+            <p className="mt-0.5 truncate text-2xs text-muted-foreground/55" data-testid="memory-detail-key">
               {entryKey}
             </p>
           )}
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {category && (
-              <span className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+              <span className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide text-muted-foreground">
                 {category}
               </span>
             )}
             {source && (
               <span
-                className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground"
+                className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide text-muted-foreground"
                 data-testid="memory-detail-source"
               >
                 {source}
               </span>
             )}
             {meta.legacy && (
-              <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-amber-400">
+              <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide text-amber-400">
                 legacy
               </span>
             )}
             {expiresAt && (
               <span
                 className={cn(
-                  'rounded-md border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide',
+                  'rounded-md border px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide',
                   expired
                     ? 'border-destructive/30 bg-destructive/10 text-destructive'
                     : 'border-warning/30 bg-warning/10 text-warning',
@@ -2096,7 +2096,7 @@ function DetailView({
             <button
               type="button"
               onClick={onStartEdit}
-              className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2 py-1.5 text-[11px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
+              className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2 py-1.5 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
             >
               <Pencil className="size-3.5" /> Edit
             </button>
@@ -2104,7 +2104,7 @@ function DetailView({
           <button
             type="button"
             onClick={onExport}
-            className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2 py-1.5 text-[11px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
+            className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2 py-1.5 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
           >
             <Download className="size-3.5" /> Export
           </button>
@@ -2112,7 +2112,7 @@ function DetailView({
             <button
               type="button"
               onClick={onDelete}
-              className="inline-flex items-center gap-1 rounded-lg border border-destructive/40 px-2 py-1.5 text-[11px] text-destructive transition hover:bg-destructive/10"
+              className="inline-flex items-center gap-1 rounded-lg border border-destructive/40 px-2 py-1.5 text-2xs text-destructive transition hover:bg-destructive/10"
             >
               <Trash2 className="size-3.5" /> Delete
             </button>
@@ -2126,7 +2126,7 @@ function DetailView({
             <div key={f}>
               <label
                 htmlFor={`memory-edit-${f}`}
-                className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+                className="mb-1 block text-2xs font-medium uppercase tracking-wide text-muted-foreground"
               >
                 {f}
               </label>
@@ -2179,7 +2179,7 @@ function DetailView({
               {details && <Markdown content={details} />}
             </div>
           )}
-          <p className="text-[10px] text-muted-foreground/80">
+          <p className="text-3xs text-muted-foreground/80">
             {[
               source ? `source: ${source}` : '',
               confidence ? `confidence: ${confidence}` : '',

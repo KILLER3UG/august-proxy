@@ -60,7 +60,7 @@ export function CameraPopover({
           Camera
           {isStreaming && (
             <span
-              className="inline-flex items-center gap-1 rounded-full bg-success/15 text-success px-1.5 py-0.5 text-[9px] font-medium border border-success/20"
+              className="inline-flex items-center gap-1 rounded-full bg-success/15 text-success px-1.5 py-0.5 text-3xs font-medium border border-success/20"
               data-testid="composer-camera-active-badge"
             >
               <CircleDot className="size-2.5" /> live
@@ -70,7 +70,7 @@ export function CameraPopover({
         <button
           type="button"
           onClick={onClose}
-          className="text-[10px] text-muted-foreground hover:text-foreground"
+          className="text-3xs text-muted-foreground hover:text-foreground"
           aria-label="Close camera"
         >
           Esc
@@ -93,21 +93,21 @@ export function CameraPopover({
         {status === 'idle' && (
           <div className="text-center px-3">
             <Camera className="size-5 text-muted-foreground/60 mx-auto" />
-            <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
+            <p className="text-3xs text-muted-foreground mt-1.5 leading-snug">
               Click Start to enable the webcam. Frames stay on this device — nothing is uploaded
               until you capture and send.
             </p>
           </div>
         )}
         {status === 'requesting' && (
-          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-2 text-3xs text-muted-foreground">
             <Loader2 className="size-3 animate-spin" />
             requesting camera…
           </div>
         )}
         {(status === 'error' || status === 'denied') && (
           <div className="text-center px-3">
-            <p className="text-[10px] text-warning leading-snug">
+            <p className="text-3xs text-warning leading-snug">
               {errorMessage || 'Camera unavailable.'}
             </p>
           </div>

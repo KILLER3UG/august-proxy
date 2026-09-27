@@ -154,9 +154,9 @@ export function RoutinesPane({ agentId, botName }: RoutinesPaneProps) {
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-1 text-sidebar-foreground/50">
           <CalendarClock className="size-3" />
-          <span className="text-[11px]">Routines</span>
+          <span className="text-2xs">Routines</span>
           {routines.length > 0 && (
-            <span className="text-[10px] text-sidebar-foreground/30 tabular-nums">{routines.length}</span>
+            <span className="text-3xs text-sidebar-foreground/30 tabular-nums">{routines.length}</span>
           )}
         </div>
         <button
@@ -195,7 +195,7 @@ export function RoutinesPane({ agentId, botName }: RoutinesPaneProps) {
                 type="button"
                 onClick={() => setFreq(f)}
                 className={cn(
-                  'rounded px-1.5 py-0.5 text-[10.5px] capitalize border transition',
+                  'rounded px-1.5 py-0.5 text-[0.65625rem] capitalize border transition',
                   freq === f
                     ? 'border-primary/50 bg-primary/15 text-primary'
                     : 'border-transparent text-sidebar-foreground/50 hover:bg-white/5',
@@ -298,16 +298,16 @@ export function RoutinesPane({ agentId, botName }: RoutinesPaneProps) {
               title={j.paused ? 'paused' : 'enabled'}
             />
             <div className="min-w-0 flex-1 flex flex-col">
-              <span className="truncate text-[12px] text-sidebar-foreground/80" title={j.prompt}>
+              <span className="truncate text-[0.75rem] text-sidebar-foreground/80" title={j.prompt}>
                 {(j.name || '').replace(/^\[bot:[^\]]+\]\s*/, '')}
               </span>
-              <span className="truncate text-[10px] text-sidebar-foreground/35">
+              <span className="truncate text-3xs text-sidebar-foreground/35">
                 {prettySchedule(j)} · {lastRunLabel(j)}
               </span>
             </div>
             {incidentCountByJob.has(j.id) && (
               <span
-                className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-[10px] text-amber-500/90"
+                className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-3xs text-amber-500/90"
                 title={`Open incident${(incidentCountByJob.get(j.id) ?? 0) > 1 ? 's' : ''} — repeated failures`}
                 data-testid={`routine-incident-${j.id}`}
               >
@@ -328,7 +328,7 @@ export function RoutinesPane({ agentId, botName }: RoutinesPaneProps) {
               <button
                 type="button"
                 onClick={() => togglePause.mutate(j)}
-                className="rounded px-1 py-0.5 text-[10px] text-sidebar-foreground/40 hover:text-sidebar-foreground/90 border border-sidebar-border/40"
+                className="rounded px-1 py-0.5 text-3xs text-sidebar-foreground/40 hover:text-sidebar-foreground/90 border border-sidebar-border/40"
                 title={j.paused ? 'Resume' : 'Pause'}
               >
                 {j.paused ? '▶' : '❙❙'}
@@ -346,7 +346,7 @@ export function RoutinesPane({ agentId, botName }: RoutinesPaneProps) {
           </div>
         ))}
         {routines.length === 0 && !showNew && (
-          <p className="px-2 py-1 text-[11px] text-sidebar-foreground/30 italic" data-testid="routines-empty">
+          <p className="px-2 py-1 text-2xs text-sidebar-foreground/30 italic" data-testid="routines-empty">
             No routines — give this Bot a schedule.
           </p>
         )}

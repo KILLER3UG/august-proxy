@@ -312,7 +312,7 @@ export function ClarifyTool({
                 className={cn(
                   'flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-150',
                   'border-border/70 bg-muted/20 hover:bg-muted/50 hover:border-border',
-                  'text-[15px] leading-snug text-foreground/90',
+                  'text-[0.9375rem] leading-snug text-foreground/90',
                   'disabled:cursor-not-allowed disabled:opacity-50',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   (selectedChoice === choice || multiSelections.has(choice)) &&
@@ -400,7 +400,7 @@ export function ClarifyTool({
             rows={3}
             className={cn(
               'w-full resize-none rounded-xl border border-border bg-muted/40',
-              'px-3.5 py-3 text-[15px] text-foreground placeholder:text-muted-foreground/55',
+              'px-3.5 py-3 text-[0.9375rem] text-foreground placeholder:text-muted-foreground/55',
               'outline-none transition focus:border-primary/60',
               'disabled:opacity-50',
             )}
@@ -420,14 +420,14 @@ export function ClarifyTool({
             >
               <Send className="size-3.5" />
               {submitting ? 'Sending…' : 'Send answer'}
-              <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-[10px] font-mono">
+              <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-3xs font-mono">
                 ↵
               </kbd>
             </BannerButton>
           </div>
         </form>
 
-        <div className="mt-3 select-none text-[11px] text-muted-foreground/55">
+        <div className="mt-3 select-none text-2xs text-muted-foreground/55">
           {current.choices && current.choices.length > 0
             ? isMultiSelect
               ? 'Tap to select multiple · Confirm when done · Esc to skip'

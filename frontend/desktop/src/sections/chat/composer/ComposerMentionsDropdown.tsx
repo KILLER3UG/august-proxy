@@ -84,12 +84,12 @@ export function ComposerMentionsDropdown({
       }}
       className="z-50 w-80 max-h-72 overflow-auto bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
     >
-      <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-semibold flex items-center justify-between">
+      <div className="px-2 py-1 text-3xs text-muted-foreground uppercase font-semibold flex items-center justify-between">
         <span>{mentionQuery !== null ? 'Mentions' : 'Skills & tools'}</span>
         {skillsLoading && <Loader2 className="size-3 animate-spin" />}
       </div>
       {mentionQuery !== null && mentionItems.length === 0 && !skillsLoading && (
-        <div className="px-2.5 py-2 text-[11px] text-muted-foreground">
+        <div className="px-2.5 py-2 text-2xs text-muted-foreground">
           No skills match “{mentionQuery}”. Try another name or pick a tool.
         </div>
       )}
@@ -99,7 +99,7 @@ export function ComposerMentionsDropdown({
         return (
           <div key={`${item.kind}-${item.name}`}>
             {showHeader && (
-              <div className="px-2.5 pb-0.5 pt-1.5 text-[9.5px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              <div className="px-2.5 pb-0.5 pt-1.5 text-[0.59375rem] font-semibold uppercase tracking-wider text-muted-foreground/60">
                 {KIND_SECTION[item.kind]}
               </div>
             )}
@@ -123,10 +123,10 @@ export function ComposerMentionsDropdown({
                 {item.kind === 'skill' ? `@${item.name}` : item.name}
               </span>
               <span className="flex shrink-0 items-center gap-1.5">
-                <span className="rounded border border-border/50 bg-muted/30 px-1 py-px text-[9px] uppercase tracking-wide text-muted-foreground">
+                <span className="rounded border border-border/50 bg-muted/30 px-1 py-px text-3xs uppercase tracking-wide text-muted-foreground">
                   {KIND_CHIP[item.kind]}
                 </span>
-                <span className="max-w-[45%] truncate text-[10px] text-muted-foreground">
+                <span className="max-w-[45%] truncate text-3xs text-muted-foreground">
                   {item.desc}
                 </span>
               </span>
@@ -135,7 +135,7 @@ export function ComposerMentionsDropdown({
         );
       })}
       {mentionQuery === null && skillMentions.length === 0 && !skillsLoading && (
-        <div className="px-2.5 py-1.5 text-[11px] text-muted-foreground">
+        <div className="px-2.5 py-1.5 text-2xs text-muted-foreground">
           Type <span className="font-mono text-foreground/80">@</span> to search
           skills, or pick a tool below.
         </div>

@@ -98,16 +98,23 @@ aliases/cost helpers under `/api/models/*`).
 | `WS /api/logs/stream` | Live log stream (Activity Log; hidden Backend Monitor deep-link) |
 | `GET /api/host-agent/health` | Host-agent availability |
 | `GET /api/perf/recent` | Perf ring buffer (when `AUGUST_PERF_TIMING=1`) |
-| `GET /api/perf/db-writer` | db_writer lag stats |
 | `GET /api/audit` / `GET /api/audit/stats` | Audit listing |
-| `POST /api/usage` | Record a usage event |
-| `GET /api/usage/session?sessionId=` | Per-session usage |
-| `GET /api/usage/stats?period=` | Aggregate usage (totals, sessions, messages, activeDays, favoriteModel…) — `currentStreak` is a placeholder, see [`GAPS_AND_BUGS.md`](GAPS_AND_BUGS.md) |
-| `GET /api/usage/heatmap?period=` | Usage heatmap |
-| `GET /api/usage/by-model?period=` | Usage grouped by model |
-| `GET /api/usage/by-day?period=` | Usage grouped by day |
-| `GET /api/usage` | List-all usage records |
+| `GET /api/usage?limit=` | List recent raw usage events (newest first; `limit` 1-1000, default 200) |
+| `GET /api/usage/session?id=` | Per-session usage |
+| `GET /api/usage/stats?range=` | Aggregate usage (totals, sessions, messages, activeDays, favoriteModel, currentStreak, longestStreak). `currentStreak` is genuinely computed by walking active days backwards |
+| `GET /api/usage/heatmap?range=` | Usage heatmap |
+| `GET /api/usage/by-model?range=` | Usage grouped by model |
+| `GET /api/usage/by-day?range=` | Usage grouped by day |
 | `GET /api/whats-new` | Changelog / what's-new feed for the desktop app |
+
+> Every `/api/usage/*` aggregate route takes **`range`** (`7d` / `30d` / …), not
+> `period`. `period` is only correct on the monitoring router's `/api/stats`,
+> `/api/details`, `/api/conversations` and `/api/requests`.
+>
+> `/api/usage` is **read-only** — usage events are recorded server-side by the
+> workbench and proxy paths, never posted by clients. There is no
+> `GET /api/perf/db-writer`; `db_writer` does not exist (see
+> [`ARCHITECTURE.md`](ARCHITECTURE.md)).
 
 > Historical note: an earlier dual registration of `/api/health` dropped the
 > `python` field. That collision is **fixed** — only `main.py` defines health,
@@ -192,8 +199,12 @@ All paths below are relative to `/api/workbench`.
 | `GET /api/subagents/workstreams/{name}/episodes` | Episode history for Continue |
 | `POST /api/subagents/workstreams/{name}/continue` | Fresh worker on that thread |
 | `GET /api/subagents/jobs` · `POST /api/subagents/jobs/{jobId}/cancel` | Long-running harness jobs |
-| `GET /api/harness/*` · `GET /api/brain/harness/evals` | Trends + golden loop evals |
-| `POST /api/mcp/harness` | MCP tools: `harness_list_workstreams`, `harness_spawn`, `harness_steer`, `harness_continue`, `harness_list_jobs`, `harness_cancel_job` |
+| `GET /api/harness/proposals` · `/inbox/count` · `/{pid}` · `POST /{pid}/decide` · `POST /promotion/run` | Harness improvement proposal queue |
+| `POST /mcp/harness` | MCP tools: `harness_list_workstreams`, `harness_spawn`, `harness_steer`, `harness_continue`, `harness_list_jobs`, `harness_cancel_job`. Note the path — this router is mounted **without** the `/api` prefix |
+
+> There is no `GET /api/brain/harness/evals` and no `/api/harness/trends`. The
+> loop-level golden evals (`tests/test_harness_evals.py`) were removed; harness
+> outcomes now surface through `proposals` and `GET /api/brain/turn-outcomes`.
 
 ---
 
@@ -226,7 +237,7 @@ All paths below are relative to `/api/workbench`.
 | Method & path | Purpose |
 |---------------|---------|
 | `GET /api/providers` | List configured providers |
-| `GET /api/providers/templates` | Built-in templates |
+| `GET /api/providers/templates` | **Deprecated shim** — always returns `[]`. Templates were removed; providers are user-configured data only |
 | `POST /api/providers` | Add provider |
 | `POST /api/providers/import-config` | Import config |
 | `GET/PUT/PATCH/DELETE /api/providers/{id}` | CRUD |
@@ -292,21 +303,30 @@ Snapshot, alias CRUD, settings put — operator convenience surface.
 
 | Method & path | Purpose |
 |---------------|---------|
-| `GET /api/skills?q=&category=` | Search/list |
-| `GET /api/skills/{name}` | Full skill |
+| `GET /api/skills?q=&category=&workspace=` | Search/list (`q` matches name, description **and** `trigger`; `workspace` merges that project's `.aug/skills` root) |
+| `GET /api/skills/{name}?workspace=` | Full skill |
 | `POST /api/skills` | Create agent-authored |
-| `PATCH /api/skills/{name}` | Patch (copy-on-write for bundled) |
-| `DELETE /api/skills/{name}` | Delete agent-authored |
-| `POST/DELETE …/files` | Support files |
+| `PATCH /api/skills/{name}` | Patch (copy-on-write for bundled). A patch rewrites frontmatter **wholesale** — anything it does not restate is lost, so `trigger`, `supersedes`, `origin` and `learned_from` are read back off the file first |
+| `DELETE /api/skills/{name}?workspace=` | Delete agent-authored |
+
+There are no per-skill support-file routes (`…/files`) — support files travel
+inside the skill directory that `SKILL.md` describes. Bundled skills are listed
+separately under `/api/skills/packs`.
 
 ### `/api/curator`
 
 | Method & path | Purpose |
 |---------------|---------|
-| `GET /api/curator/usage` | Usage telemetry |
-| `POST /api/curator/pin/{name}` · `/unpin/{name}` | Pin control |
-| `POST /api/curator/archive/{name}` · `/restore/{name}` | Lifecycle |
-| `POST /api/curator/run?dry_run=` | Run curation pass |
+| `POST /api/curator/run?dry_run=` | Run a curation pass |
+| `GET /api/curator/report` · `/outcomes` · `/episodes` | Curation results and flagged episodes |
+| `GET /api/curator/refine` · `POST /refine/config` · `POST /refine/run` | Refine proposal set |
+| `POST /api/curator/refine/{entry_id}/rollback` · `DELETE /refine/{entry_id}` | Proposal lifecycle |
+| `GET /api/curator/scheduler` · `POST /scheduler/run/{job}` | Scheduler state / manual fire |
+
+Pin / archive / restore / usage-telemetry routes **do not exist**. Curation
+lifecycle is a `SKILL.md` **frontmatter status flag** (`active` → `stale` →
+`retired`/`archived`), not an endpoint and not a directory move, and usage is
+read from the `<dataDir>/skills/<name>/.usage.json` sidecar.
 
 ---
 
@@ -379,6 +399,7 @@ but ignored keys is a `400`, not a silent no-op.
 | | `GET /memory/metrics?days=` | Recall and latency metrics |
 | | `GET /memory/preview?query&workspace` | The **verbatim** text a turn receives: the `<memory>` block, the session-start memory index, and the project boot block. Rendered by the same builders the workbench calls, so Settings → Memory cannot disagree with chat. `autoInject` / `modelMemoryRead` come back too — the UI says which gate shaped the block |
 | Routing | `POST /routing/arena` · `GET /routing/arena` · `GET /routing/suggestions` | Record an Arena/Debate verdict, read the archive, rank models by win rate. There is no automatic per-turn rerouting |
+| Skills | `GET /skills/suggestions?days=&limit=` | Per-skill **measured effect** from the turn ledger: `{skill, turnsWith, okRateWith, turnsWithout, okRateWithout, lift}` — resolved rate on turns that carried the skill vs turns that did not, and the difference. The `routing/suggestions` pattern applied to skills: `turn_outcomes.skills_injected` is the event record and the aggregate is computed read-time with `json_each`, so there is no second store to keep in sync. Two honesty rules: a turn that predates the credit columns is **excluded from both denominators** (a `NULL` is unrecorded, not "no skills"), and a skill carried by every turn has `turnsWithout = 0`, so its `lift` is `null` rather than a flattering number. Diagnostics only — nothing demotes a skill on its own |
 | Raw state | `GET /state-lookup?key=` | One `internal_state` / `memory_store` row by key |
 | Memory files | `GET /integrity` | `PRAGMA integrity_check` on the live DB, its path, healthy-copy count and any staged restore |
 | | `GET /backups` | Every copy, each with its own verdict, plus `keep`, `pendingRestore` and the folder |
@@ -569,17 +590,35 @@ Common event types:
 | Type | When | Payload (typical) |
 |------|------|-------------------|
 | `started` | Generation begins | `{sessionId, model}` |
-| `final_output` | Model text delta | `{content}` |
+| `finalOutput` | Model text delta | `{content}` |
 | `thinking` | Reasoning delta | `{content}` |
-| `tool_call` | Tool starting | `{id, name, status:"running"}` |
-| `tool_result` | Tool finished | `{id, name, content, status, …}` |
-| `plan_proposed` | Plan submitted | `{plan}` |
+| `toolCall` | Tool starting | `{id, name, status:"running"}` |
+| `toolResult` | Tool finished | `{id, name, content, status, …}` |
+| `planProposed` | Plan submitted | `{plan}` |
+| `clarifyProposed` | Model asked for input | question + options |
+| `todosUpdated` | Todo list changed | todo array |
 | `compaction` | Context compressed | token counts |
 | `session_status` | Status changed | guard/status fields |
+| `info` / `warning` | Progress and soft failures | `{message}` |
+| `checkpoint` | Revertible state captured | checkpoint fields |
+| `browserAction` | Playwright step | action + target |
+| `narrationReclassify` | Text the loop reclassified as tool narration | `{message}` |
+| `subagentStart` · `subagentText` · `subagentToolCall` · `subagentToolResult` · `subagentDone` | Per-worker lane updates | worker/task fields |
+| `subagentFanout` | One per dispatch: the concurrency / children / round budgets that **were** applied, and whether any bound the run | cap fields |
+| `turn_end` | Terminal turn diagnostic, emitted just before `done` | `{reason, rounds, error}` — `reason` is `finished \| length \| cap \| stall-stop \| budget \| error \| interrupted \| awaiting-input` |
+| `recovery` | One frame per mid-flight rescue (length continuation, reactive context reduction, auto-compact, the budget ladder) | `{kind, attempt, outcome, degraded}` — `degraded: true` means the answer shipped truncated or on a reduced tool surface |
 | `error` | Error | `{message}` |
 | `aborted` | Cancelled | `{}` |
 | `done` | Generation complete | `{sessionId, usage?}` — `usage` is `{inputTokens, outputTokens, contextTokens}` when token tracking is on |
 | `keepalive` | Idle | comment line `: keepalive` |
+
+> **Wire names are camelCase.** Import them from
+> [`app/services/workbench/emit_types.py`](../backend-py/app/services/workbench/emit_types.py)
+> rather than spelling them out — that module is the single list, and
+> `WORKBENCH_EMIT_TYPES` deliberately excludes `aborted` / `keepalive`, which the
+> router emits itself. The snake_case spellings `final_output`, `tool_call`,
+> `tool_result`, `plan_proposed` are **accepted for legacy readers only** and must
+> never be emitted.
 
 The stream terminates after `done`, `error`, or `aborted`. Pass the last `id`
 as `sinceSeq` on reconnect to resume without gaps.

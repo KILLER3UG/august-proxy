@@ -185,17 +185,67 @@ Settings → Memory / Reliability / model fleet and `GET/PUT /api/config/cogniti
 `GET/PUT /api/config/model-fleet`, and `/api/brain/config*`.
 `maxWorkbenchToolLoops` here overrides the workbench tool-round cap (default `0 = uncapped`).
 
-### Memory review (selected chat model)
+**Turn budget ladder** — three soft per-turn ceilings, each **off by default**
+(`0` = disabled, so an untouched install never walks the ladder):
 
-Not a `config.json` key. The desktop composer chip **Review what I remember**
-calls `POST /api/memory/review` with the **currently selected chat model**.
-The model returns improve / remove / always-include suggestions only.
-`POST /api/memory/review/apply` writes **after the user confirms** each row.
-This is separate from hippocampus consolidation (which can still apply
-background plans). Idle sleep-cycle distill stashes a plan at
-`GET /api/brain/pending-consolidation`; Keep is `POST /api/brain/apply-consolidation`,
-Discard is `POST /api/brain/pending-consolidation/discard`. Explicit
-Settings “run consolidation now” still applies immediately.
+| Key | Type | Default | Fires when |
+|-----|------|---------|-----------|
+| `budgetSoftUsd` | float | `0` | This turn's estimated spend reaches it |
+| `budgetSoftTokens` | int | `0` | This turn's prompt+output tokens reach it |
+| `budgetWallClockSec` | int | `0` | This turn's monotonic wall clock reaches it |
+
+Unlike the tool-round cap, a breach does **not** cut the turn off. It spends one
+rung, once per round, and reports each as a `recovery` frame with
+`kind: 'budget'`:
+
+1. narrow the tool surface to the bare set (read/write/run_command/state);
+2. compact the context, same prune→summarize pass the pre-turn auto-compact runs;
+3. buy **one** tool-free round — the system prompt gains a `<turn_budget>`
+   directive and no tools are advertised — then the turn ends.
+
+The turn then ends as `turn_end {reason: 'budget'}`, which the transcript
+renders as an amber **budget reached** badge. Cost is priced through
+`cost_estimator.price_for_model` like every other surface, so the budget arm and
+the Usage page can never disagree; the clock arm uses `time.monotonic()`, not
+`time.time()`, so a wall-clock adjustment mid-turn cannot fake a breach. Arm
+only what you want: any single key is enough, and the rungs still escalate in
+order when several are set.
+
+The two guardrails that keep this file and the UI honest —
+`AUGUST_STRICT_BEST_EFFORT` and `npm run check:design` — are documented in
+[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md#design-conventions-enforced-by-npm-run-checkdesign).
+
+### Memory review and consolidation
+
+**There is no user-facing "Review what I remember" feature.** `POST /api/memory/review`
+and `/review/apply` were removed along with `routers/memory.py`, and the
+`pending-consolidation` / `apply-consolidation` / `discard` trio never existed —
+do not implement against them.
+
+What is real:
+
+- The **model** manages memory through tools: `remember` (write/update by key),
+  `list_facts`, `forget`. All three are core tools, so progressive disclosure
+  cannot hide the key lookup `remember` depends on, and a downgraded model can
+  still correct what it remembers. Sub-agents read and recall but never write —
+  the parent turn is the single write door.
+- **Automatic recall** is the BM25 `<memory>` tail, gated by brain-config
+  `memoryAutoInject` (**default `false`**). Independently of that gate,
+  `kind='profile'` facts ride an always-in lane (~600-char budget) — that is what
+  makes August remember who you are without a keyword coincidence. A fact dropped
+  for budget is *named* in a `recall partial:` line rather than vanishing.
+  The boot memory index is frozen per session to protect the provider prefix
+  cache, so re-read `list_facts` after writing rather than trusting it.
+- **Consolidation** is one scheduled job, not a multi-job daemon:
+  `GET /api/brain/consolidation/log` and `POST /api/brain/consolidation/run`
+  (explicit runs apply immediately).
+- **Proposals** that need a human go through
+  `GET /api/august/memory/proposals?status=pending` and
+  `POST /api/august/memory/proposals/{id}/decide`. Approving a retire-preference
+  proposal flips the fact's `status` to `retired`; the row survives, so it is
+  reversible.
+- Direct store browsing/editing is `GET /api/brain/stores[/{name}]` and
+  `PATCH`/`DELETE /api/brain/stores/{name}/{id}`, plus `POST /api/august/memory/manage`.
 
 ### Harness / orchestrator
 
@@ -283,7 +333,9 @@ Also editable via `GET/PUT /api/security`.
     "enabled": true,
     "provider": "anthropic",
     "model": "sonnet",
-    "guard_mode": "full",
+    "guardMode": "full",
+    "agentId": "",
+    "modelProvider": "",
     "platforms": {
       "telegram": { "enabled": true, "webhook_path": "/api/gateway/telegram/webhook", "base_url": "" },
       "discord":  { "enabled": true },
@@ -292,6 +344,13 @@ Also editable via `GET/PUT /api/security`.
   }
 }
 ```
+
+> **`gateway` keys are camelCase.** `services/gateway/runner.py` reads
+> `cfg.get('guardMode')`, `cfg.get('agentId')`, `cfg.get('modelProvider')`. A
+> `guard_mode` key is **silently ignored** — and because the code default is
+> `'full'`, which is also the example value, writing the snake_case form appears
+> to work until you set a different mode and nothing changes. This is the
+> snake→camel migration miss; do not reintroduce it.
 
 Bot tokens are normally env vars (see below). Optional SDKs:
 
@@ -494,6 +553,7 @@ process env.
 | `AUGUST_SUMMARIZING_COMPACTOR` | enabled | Set `0` to disable context compression |
 | `AUGUST_SESSION_JSON_EXPORT` | unset | `1` enables JSON session backup |
 | `AUGUST_PERF_TIMING` | unset | Perf ring buffer + logging |
+| `AUGUST_STRICT_BEST_EFFORT` | unset | `1` makes `best_effort(site)` blocks **re-raise** instead of logging. Production swallows a named, logged failure; under this flag the same failure fails the test, so what a swallow would have hidden surfaces in CI. Set in test runs |
 | `AUGUST_P1_TOOL_CACHE` | on | `0` disables tool def cache |
 | `AUGUST_P1_PROMPT_CACHE` | removed | never read in code (Part 25 Phase 7.2) — the segment/skills cache has no env kill-switch |
 | `AUGUST_P1_PARALLEL_TOOLS` | on | `0` forces serial tools |

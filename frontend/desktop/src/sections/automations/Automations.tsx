@@ -500,7 +500,7 @@ function AutomationForm({
                   }
                 >
                   <div className="text-sm font-medium">{opt.label}</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">{opt.hint}</div>
+                  <div className="text-2xs text-muted-foreground mt-0.5">{opt.hint}</div>
                 </button>
               );
             })}
@@ -597,7 +597,7 @@ function AutomationForm({
                 ))}
               </select>
             </label>
-            <p className="text-[11px] text-muted-foreground sm:col-span-2">
+            <p className="text-2xs text-muted-foreground sm:col-span-2">
               This job runs with nobody watching: a mode that asks will park the run rather than
               finish it, and “Whole machine” lets the scheduled command touch anything the app can.
             </p>
@@ -800,11 +800,11 @@ function AutomationCard({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-semibold">{job.name || job.id}</span>
-              <Badge variant="secondary" className="text-[9px]">
+              <Badge variant="secondary" className="text-3xs">
                 {jobType}
               </Badge>
               {job.paused && (
-                <Badge variant="outline" className="text-[9px]">
+                <Badge variant="outline" className="text-3xs">
                   paused
                 </Badge>
               )}
@@ -813,7 +813,7 @@ function AutomationCard({
               {job.limitReached && (
                 <Badge
                   variant="outline"
-                  className="text-[9px] border-warning/50 text-warning"
+                  className="text-3xs border-warning/50 text-warning"
                   title={`Stopped after ${job.maxRuns} runs`}
                 >
                   limit reached
@@ -822,20 +822,20 @@ function AutomationCard({
               {job.approvalRequired && (
                 <Badge
                   variant="outline"
-                  className="text-[9px] border-info/50 text-info"
+                  className="text-3xs border-info/50 text-info"
                   title="A human confirms each run of this job"
                 >
                   needs approval
                 </Badge>
               )}
               {job.status === 'running' && (
-                <Badge variant="outline" className="text-[9px] border-info/50 text-info">
+                <Badge variant="outline" className="text-3xs border-info/50 text-info">
                   running
                 </Badge>
               )}
             </div>
 
-            <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground font-mono flex-wrap">
+            <div className="flex items-center gap-3 mt-1.5 text-2xs text-muted-foreground font-mono flex-wrap">
               <StatusPill
                 tone={job.enabled && !job.paused && !job.limitReached ? 'good' : 'muted'}
                 label={
@@ -884,7 +884,7 @@ function AutomationCard({
             </div>
 
             {detail && (
-              <pre className="text-[11px] font-mono whitespace-pre-wrap break-all text-muted-foreground/70 mt-1.5 bg-muted/40 rounded px-2 py-1 max-h-20 overflow-auto">
+              <pre className="text-2xs font-mono whitespace-pre-wrap break-all text-muted-foreground/70 mt-1.5 bg-muted/40 rounded px-2 py-1 max-h-20 overflow-auto">
                 {detail}
               </pre>
             )}
@@ -926,7 +926,7 @@ function AutomationCard({
         </div>
 
         {token && (
-          <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2 text-[11px] space-y-1">
+          <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2 text-2xs space-y-1">
             <div className="font-medium text-foreground/80">Webhook token (copy now — not shown on refresh)</div>
             <div className="flex items-center gap-2">
               <code className="flex-1 truncate font-mono">{token}</code>
@@ -952,14 +952,14 @@ function AutomationCard({
 
         {!token && (
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={onRotate} disabled={busy}>
+            <Button size="sm" variant="ghost" className="h-7 text-2xs" onClick={onRotate} disabled={busy}>
               <RefreshCw className="size-3" /> Rotate webhook token
             </Button>
             {job.sessionId && (
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 text-[11px]"
+                className="h-7 text-2xs"
                 onClick={() => openSession(job.sessionId!)}
               >
                 <ExternalLink className="size-3" /> Open last session
@@ -970,7 +970,7 @@ function AutomationCard({
 
         <button
           type="button"
-          className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+          className="flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground"
           onClick={() => setOpenRuns((v) => !v)}
         >
           {openRuns ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
@@ -979,12 +979,12 @@ function AutomationCard({
         {openRuns && (
           <div className="space-y-1 pl-1">
             {runs.length === 0 ? (
-              <div className="text-[11px] text-muted-foreground">No runs yet.</div>
+              <div className="text-2xs text-muted-foreground">No runs yet.</div>
             ) : (
               [...runs].reverse().map((r) => (
                 <div
                   key={r.id}
-                  className="rounded border border-border/50 px-2 py-1.5 text-[11px] text-muted-foreground"
+                  className="rounded border border-border/50 px-2 py-1.5 text-2xs text-muted-foreground"
                 >
                   <div className="flex flex-wrap gap-2 font-mono">
                     <span>{r.status}</span>

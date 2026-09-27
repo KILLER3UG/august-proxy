@@ -85,12 +85,12 @@ export function UpdateRelaunchOverlay() {
             <div className="flex items-center gap-2 border-b border-border/60 bg-card/40 px-4 py-2.5">
               <span
                 aria-hidden
-                className="grid size-5 place-items-center rounded-md border border-border bg-elevated text-[11px] font-bold text-primary"
+                className="grid size-5 place-items-center rounded-md border border-border bg-elevated text-2xs font-bold text-primary"
               >
                 A
               </span>
-              <span className="text-[13px] font-semibold text-foreground">August</span>
-              <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-[10.5px] text-muted-foreground">
+              <span className="text-[0.8125rem] font-semibold text-foreground">August</span>
+              <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-[0.65625rem] text-muted-foreground">
                 <span className={cn('size-1.5 rounded-full', pill.ok ? 'bg-success' : 'bg-primary')} />
                 {pill.text}
               </span>
@@ -99,18 +99,18 @@ export function UpdateRelaunchOverlay() {
             {/* Thread */}
             <div className="flex flex-col gap-3.5 px-4 py-4">
               <div className="flex justify-end" data-testid="update-user">
-                <div className="max-w-[80%] rounded-2xl bg-user-bubble px-3.5 py-2 text-[13.5px] leading-snug text-foreground">
+                <div className="max-w-[80%] rounded-2xl bg-user-bubble px-3.5 py-2 text-[0.84375rem] leading-snug text-foreground">
                   {userLine}
                 </div>
               </div>
               <div className="flex items-start gap-2.5" data-testid="update-assistant">
                 <span
                   aria-hidden
-                  className="mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-[7px] border border-border bg-elevated text-[10px] font-bold text-primary"
+                  className="mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-[7px] border border-border bg-elevated text-3xs font-bold text-primary"
                 >
                   A
                 </span>
-                <div className="min-w-0 flex-1 pt-0.5 text-[13.5px] leading-relaxed text-foreground/90">
+                <div className="min-w-0 flex-1 pt-0.5 text-[0.84375rem] leading-relaxed text-foreground/90">
                   {assistantLine}
                   {available?.date && (
                     <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground/80">
@@ -152,7 +152,7 @@ export function UpdateRelaunchOverlay() {
 
             {/* Composer-style action row */}
             <div className="flex items-center gap-2 px-3 pb-3">
-              <div className="flex-1 truncate rounded-xl border border-border bg-card/50 px-3 py-2 text-[12.5px] text-muted-foreground/70">
+              <div className="flex-1 truncate rounded-xl border border-border bg-card/50 px-3 py-2 text-[0.78125rem] text-muted-foreground/70">
                 {downloading
                   ? 'Downloading in the background…'
                   : ready
@@ -174,7 +174,7 @@ export function UpdateRelaunchOverlay() {
                   <button
                     type="button"
                     onClick={() => setReadyDismissed(true)}
-                    className="shrink-0 rounded-lg px-2.5 py-2 text-[12px] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    className="shrink-0 rounded-lg px-2.5 py-2 text-[0.75rem] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
                     aria-label="Later"
                     title="Later"
                     data-testid="update-later"

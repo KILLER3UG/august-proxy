@@ -25,6 +25,7 @@ RECORDED (older row, or the value was never measured) — never 0.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections.abc import Sequence
@@ -33,6 +34,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.services.deferred_writes import defer_commit
+
+# Audit D8 (2026-09-26): family_for_class joins this recorder's
+# (signature-stable) error classes onto the loop's error-family vocabulary so
+# ``error_class`` rows and ``guardrail_classes`` digests are diagnosable
+# against each other. The vocabulary itself lives in error_families.
+from app.services.error_families import family_for_class  # noqa: F401  (re-export)
 from app.services.memory_conn import conn as _conn
 
 logger = logging.getLogger(__name__)
@@ -65,6 +72,7 @@ TURN_END_REASONS = (
     'length',
     'cap',
     'stall-stop',
+    'budget',
     'error',
     'interrupted',
     'awaiting-input',
@@ -110,6 +118,17 @@ _ERROR_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         ),
     ),
     ('network', re.compile(r'connection|network|dns|refused|reset', re.IGNORECASE)),
+    # Audit D8 (2026-09-26): the loop steered on a process_exit family while
+    # this recorder had no such class — the shell telling you the truth never
+    # reached the measured record. Last (most conservative) match: a traceback
+    # riding a more specific upstream error keeps that error's class.
+    (
+        'process_exit',
+        re.compile(
+            r'exit code[: ]+[1-9]|exited with code|nonzero exit|traceback \(most recent call last\)',
+            re.IGNORECASE,
+        ),
+    ),
 ]
 
 
@@ -156,7 +175,24 @@ _NEW_COLUMNS = (
     'surface_downgraded',
     'edit_verify_fails',
     'guardrail_classes',
+    'skills_injected',
+    'skills_loaded',
+    'facts_injected',
+    'error_families',
 )
+
+
+def _nullable_json_list(value: list[str] | None) -> str | None:
+    """JSON-encode a name list, or NULL when it was never recorded.
+
+    ``None`` → NULL (pre-050 callers / unrecorded); ``[]`` → ``'[]'``
+    (measured and empty). Every name is stringified and deduplicated so a
+    json_each aggregation cannot double-count.
+    """
+    if value is None:
+        return None
+    names = sorted({str(v) for v in value if str(v)})
+    return json.dumps(names, ensure_ascii=False)
 
 
 def record_turn_outcome(
@@ -177,6 +213,10 @@ def record_turn_outcome(
     surface_downgraded: bool | int | None = None,
     edit_verify_fails: int | None = None,
     guardrail_classes: str | None = None,
+    skills_injected: list[str] | None = None,
+    skills_loaded: list[str] | None = None,
+    facts_injected: list[str] | None = None,
+    error_families: list[str] | None = None,
 ) -> None:
     """Append one telemetry row. Best-effort: never raises into the turn.
 
@@ -226,6 +266,10 @@ def record_turn_outcome(
             _nullable_int(surface_downgraded),
             _nullable_int(edit_verify_fails),
             _nullable_text(guardrail_classes),
+            _nullable_json_list(skills_injected),
+            _nullable_json_list(skills_loaded),
+            _nullable_json_list(facts_injected),
+            _nullable_json_list(error_families),
         ]
         try:
             conn.execute(

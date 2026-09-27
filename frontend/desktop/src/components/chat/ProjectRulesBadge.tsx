@@ -34,7 +34,7 @@ export function ProjectRulesBadge({
   return (
     <span
       className={cn(
-        'inline-flex max-w-[14rem] items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-1.5 py-0.5 text-[10px] text-muted-foreground',
+        'inline-flex max-w-[14rem] items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-1.5 py-0.5 text-3xs text-muted-foreground',
         className,
       )}
       title={title}

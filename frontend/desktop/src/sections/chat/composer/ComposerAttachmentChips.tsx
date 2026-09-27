@@ -76,7 +76,7 @@ function UploadProgressRing({
       </svg>
       <div className="absolute inset-[5px] flex items-center justify-center overflow-hidden rounded-full bg-muted/80">
         {children ?? (
-          <span className="text-[9px] font-semibold tabular-nums text-foreground/80">
+          <span className="text-3xs font-semibold tabular-nums text-foreground/80">
             {determinate ? `${Math.round(pct)}%` : '…'}
           </span>
         )}
@@ -199,10 +199,10 @@ export function ComposerAttachmentChips({
             <AttachmentThumb file={file} />
 
             <div className="min-w-0 flex-1 pr-4">
-              <div className="text-[11px] font-medium truncate text-foreground leading-tight">
+              <div className="text-2xs font-medium truncate text-foreground leading-tight">
                 {file.name}
               </div>
-              <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+              <div className="text-3xs text-muted-foreground tabular-nums mt-0.5">
                 {isReading
                   ? progress > 0
                     ? `Uploading ${Math.round(progress)}%`

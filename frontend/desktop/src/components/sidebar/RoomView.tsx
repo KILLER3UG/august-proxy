@@ -60,7 +60,7 @@ function ThreadRow({ msg, bots }: { msg: RoomMessage; bots: Array<{ id: string; 
         {msg.kind === 'verdict' && (
           <span className="rounded bg-violet-500/15 px-1 text-violet-500">review</span>
         )}
-        <span className="ml-auto text-[10px] text-muted-foreground/60">{timeAgo(msg.created_at)}</span>
+        <span className="ml-auto text-3xs text-muted-foreground/60">{timeAgo(msg.created_at)}</span>
       </div>
       <div className="whitespace-pre-wrap">{msg.body}</div>
     </div>
@@ -93,7 +93,7 @@ function Thread({
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}
-        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11px] text-muted-foreground hover:bg-white/[0.02]"
+        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-2xs text-muted-foreground hover:bg-white/[0.02]"
       >
         <ChevronDown className={cn('size-3 transition-transform', collapsed && '-rotate-90')} />
         {collapsed ? 'Expand thread' : 'Collapse thread'}
@@ -109,7 +109,7 @@ function Thread({
               the active root — the backend may be slow, show it). */}
           {replying && (
             <div
-              className="px-3 py-1.5 text-[12px] italic text-muted-foreground/70"
+              className="px-3 py-1.5 text-[0.75rem] italic text-muted-foreground/70"
               data-testid={`room-thread-thinking-${root.id}`}
             >
               <span className="animate-pulse">… thinking</span>
@@ -336,7 +336,7 @@ export function RoomView() {
         ) : (
           <>
             {/* Member tab strip (reference: uppercase names) */}
-            <div className="flex shrink-0 items-center gap-1 border-b border-border/60 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="flex shrink-0 items-center gap-1 border-b border-border/60 px-3 py-1 text-3xs font-medium uppercase tracking-wide text-muted-foreground">
               {memberNames.map((n) => (
                 <span key={n} className="rounded px-1.5 py-0.5 hover:bg-white/[0.04]">
                   {n}
@@ -349,7 +349,7 @@ export function RoomView() {
               <span className="min-w-0 flex-1 truncate text-sm font-medium">
                 {memberNames.join(', ')}
               </span>
-              <span className="shrink-0 text-[11px] text-muted-foreground">{room.members.length} bots</span>
+              <span className="shrink-0 text-2xs text-muted-foreground">{room.members.length} bots</span>
               <button
                 type="button"
                 onClick={openSettings}
@@ -370,7 +370,7 @@ export function RoomView() {
             </div>
             {/* Activity row */}
             {activityLabel && (
-              <div className="flex shrink-0 items-center gap-1.5 border-b border-border/40 px-3 py-1 text-[11px] text-muted-foreground">
+              <div className="flex shrink-0 items-center gap-1.5 border-b border-border/40 px-3 py-1 text-2xs text-muted-foreground">
                 <ChevronDown className="size-3" />
                 <span className="font-medium">Activity</span>
                 <span className="truncate">{activityLabel}</span>
@@ -485,7 +485,7 @@ export function RoomView() {
               <label className="text-xs text-muted-foreground">Round caps</label>
               <div className="grid grid-cols-2 gap-2">
                 <label className="space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground/70">Max rounds</span>
+                  <span className="text-3xs text-muted-foreground/70">Max rounds</span>
                   <input
                     type="number"
                     min={0}
@@ -503,7 +503,7 @@ export function RoomView() {
                   />
                 </label>
                 <label className="space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground/70">Max messages</span>
+                  <span className="text-3xs text-muted-foreground/70">Max messages</span>
                   <input
                     type="number"
                     min={0}
@@ -521,7 +521,7 @@ export function RoomView() {
                   />
                 </label>
               </div>
-              <p className="text-[10px] text-muted-foreground/60">
+              <p className="text-3xs text-muted-foreground/60">
                 0 = use room default. Caps bound every send until you change them.
               </p>
             </div>

@@ -34,7 +34,7 @@ function TextPreview({ content }: { content: string }) {
   const truncated = lines.length < allLines.length;
 
   return (
-    <div className="min-h-full bg-[#171717] py-3 font-mono text-[12px] leading-6 text-foreground/90">
+    <div className="min-h-full bg-[#171717] py-3 font-mono text-[0.75rem] leading-6 text-foreground/90">
       {lines.map((line, index) => (
         <div key={index} className="grid grid-cols-[3.5rem_minmax(0,1fr)] px-4 hover:bg-white/[0.035]">
           <span className="select-none pr-4 text-right text-muted-foreground/45">{index + 1}</span>
@@ -254,7 +254,7 @@ function ZoomControls({ zoom, setZoom }: { zoom: number; setZoom: (fn: (z: numbe
         <Minus size={14} />
       </button>
       <span
-        className="min-w-[3rem] text-center text-[11px] tabular-nums text-muted-foreground"
+        className="min-w-[3rem] text-center text-2xs tabular-nums text-muted-foreground"
         data-testid="file-preview-zoom-level"
       >
         {Math.round(zoom * 100)}%
@@ -306,12 +306,12 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
           <Icon size={17} color={fileIcon.color} className="shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-foreground">{file.name}</div>
-            <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70">
+            <div className="text-3xs uppercase tracking-[0.12em] text-muted-foreground/70">
               {extensionLabel(file.name)} · {file.size || 'Attached file'}
             </div>
           </div>
           {file.truncated && (
-            <span className="rounded border border-warning/30 bg-warning/10 px-2 py-1 text-[10px] text-warning">
+            <span className="rounded border border-warning/30 bg-warning/10 px-2 py-1 text-3xs text-warning">
               Truncated
             </span>
           )}
@@ -360,7 +360,7 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
             <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border/70 bg-card/70 px-4">
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold text-foreground">{file.name}</div>
-                <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70">
+                <div className="text-3xs uppercase tracking-[0.12em] text-muted-foreground/70">
                   {extensionLabel(file.name)} · Fullscreen
                 </div>
               </div>

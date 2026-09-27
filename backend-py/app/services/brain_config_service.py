@@ -112,6 +112,15 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # cap killed long legitimate runs. Set > 0 in Settings → Brain to opt in;
     # stall detection still stops genuinely spinning turns.
     ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', DEFAULT_FEATURES.get('max_workbench_tool_loops', 0), 'num'),
+    # Turn budget ladder (audit P1#12): soft per-turn ceilings, each DISABLED by
+    # default (0 = off). Unlike the tool-round cap these do not cut a turn off —
+    # a breach degrades it in steps (bare surface → compaction → one tool-free
+    # answer) and the turn then ends as turn_end{reason: 'budget'}. Set any one
+    # in Settings → Brain to arm that arm; spend is priced by cost_estimator
+    # (the single pricing source), so budgetSoftUsd follows per-model pricing.
+    ('budgetSoftUsd', 'budget_soft_usd', 0, 'num'),
+    ('budgetSoftTokens', 'budget_soft_tokens', 0, 'num'),
+    ('budgetWallClockSec', 'budget_wall_clock_sec', 0, 'num'),
     # Evidence-driven routing introspection: `autoRoute` /
     # `autoRouteMinWinRate` / `autoRouteWinGap` are REMOVED — no turn-loop
     # reader ever existed (the "auto-routing" claim was corrected in Part 25

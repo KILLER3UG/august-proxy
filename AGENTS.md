@@ -58,12 +58,20 @@ process_exit`) that steers once per family even when each call differs. Every
 `[Proxy Self-Heal]` reminder is runtime-only and says so, so it does not get
 filed back as a durable memory. Every turn ends with a `turn_end
 {reason, rounds, error}` event in the session log (`finished | length | cap |
-stall-stop | error | interrupted | awaiting-input`) — read that before
+stall-stop | budget | error | interrupted | awaiting-input`) — read that before
 auditing code for "why did it stop"; the transcript also renders it as an
 amber stop-reason badge for any non-`finished` stop, so a stalled turn says so
 in the chat itself. The same reason plus round/malformed/
 downgrade/edit-verify/guardrail counters are persisted on the `turn_outcomes`
-row (migration 046), where NULL means unrecorded, not zero. Numbers in this file that duplicate code
+row (migration 046), where NULL means unrecorded, not zero. **The turn budget
+ladder is a separate, all-off opt-in** (`budgetSoftUsd` /
+`budgetSoftTokens` / `budgetWallClockSec`, each 0 = off): a breach spends ONE
+rung per round — bare tool surface, then compaction, then one tool-free answer
+— emitting `recovery {kind: 'budget', attempt, outcome, degraded}` each time,
+and the turn then ends as `budget`. It is priced through
+`cost_estimator.price_for_model` like everything else, so the budget arm and
+the Usage page cannot disagree; the wall-clock arm is `time.monotonic()`, not
+`time.time()`. Numbers in this file that duplicate code
 constants are guarded by `npm run check:docs`. Malformed tool JSON never executes as `{}` — the loop
 returns a `[Validation Error] … Do NOT stop` self-heal and downgrades to the
 bare tool surface after 3 consecutive failures. Stream rules flag

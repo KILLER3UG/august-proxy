@@ -11,6 +11,7 @@ import { Brain, Check, ChevronDown, ChevronRight, Loader2, RotateCcw, Asterisk, 
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { useModels } from '@/hooks/useModels';
+import { qk } from '@/lib/query-keys';
 import { invalidateReviewInboxCount } from '@/lib/useReviewInboxCount';
 import { turnEndPhrase } from '@/lib/turn-end';
 import { CuratorSuggestionBar } from '@/sections/chat/CuratorSuggestionBar';
@@ -281,7 +282,7 @@ export function LearningPanel() {
     enabled: expanded,
   });
   const draftsQ = useQuery({
-    queryKey: ['harness-proposals', 'distilled'],
+    queryKey: qk.harnessProposals('distilled'),
     queryFn: () =>
       api.get<{ proposals: Proposal[] }>(
         '/api/harness/proposals?status=open&origin=distilled',
@@ -321,7 +322,7 @@ export function LearningPanel() {
   const refresh = useCallback(() => {
     void qc.invalidateQueries({ queryKey: ['curator-report'] });
     void qc.invalidateQueries({ queryKey: ['curator-episodes'] });
-    void qc.invalidateQueries({ queryKey: ['harness-proposals'] });
+    void qc.invalidateQueries({ queryKey: qk.harnessProposals() });
     void qc.invalidateQueries({ queryKey: ['curator-refine'] });
     invalidateReviewInboxCount(qc);
   }, [qc]);
@@ -433,7 +434,7 @@ export function LearningPanel() {
         )}
         <Brain className="size-3.5 text-primary" />
         <span className="text-sm font-medium text-foreground">Learning</span>
-        <span className="min-w-0 flex-1 truncate text-right text-[11.5px] text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate text-right text-[0.71875rem] text-muted-foreground">
           {summaryLine}
         </span>
       </button>
@@ -442,14 +443,14 @@ export function LearningPanel() {
         <div className="space-y-4 border-t border-border/60 px-4 py-3">
           {/* Raw telemetry behind an explicit expand (D3). */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <span className="text-3xs font-semibold uppercase tracking-wider text-muted-foreground/70">
               Details
             </span>
             {metrics.map(([label, value]) => (
               <span
                 key={label}
                 data-testid={`learning-metric-${label.toLowerCase()}`}
-                className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground"
+                className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-3xs text-muted-foreground"
               >
                 {label} {value ?? '—'}
               </span>
@@ -461,21 +462,21 @@ export function LearningPanel() {
               onClick={runPass}
               disabled={running || reportQ.data?.mode === 'off'}
               data-testid="learning-run-pass"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-2.5 py-1 text-[11px] text-foreground transition hover:border-primary/40 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-2.5 py-1 text-2xs text-foreground transition hover:border-primary/40 disabled:opacity-50"
             >
               {running ? <Loader2 className="size-3 animate-spin" /> : null}
               Run learning pass
             </button>
             <CuratorSuggestionBar />
             {reportQ.data?.mode === 'off' && (
-              <span className="text-[10.5px] text-muted-foreground">
+              <span className="text-[0.65625rem] text-muted-foreground">
                 skillLearning is off — enable it in Brain settings
               </span>
             )}
             {reportQ.data?.skillsIndexOverflow && (
               <span
                 data-testid="learning-skills-index-overflow"
-                className="text-[10.5px] text-amber-600 dark:text-amber-400"
+                className="text-[0.65625rem] text-amber-600 dark:text-amber-400"
                 title="The skills catalogue outgrew the prompt byte budget; some skills are packed out of the descriptive index."
               >
                 Skills index over budget —{' '}
@@ -490,7 +491,7 @@ export function LearningPanel() {
               writes per turn; a reason is a turn that already delivered its
               answer, never a withheld one. */}
           <div data-testid="learning-turn-verdicts">
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="mb-1.5 text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
               Turn verdicts ({verdicts?.days ?? 7}d)
             </p>
             {!verdicts || !verdicts.turns ? (
@@ -507,7 +508,7 @@ export function LearningPanel() {
                       key={r.reason}
                       data-testid={`learning-verdict-${r.reason}`}
                       title={`end_reason = ${r.reason}`}
-                      className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground"
+                      className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-3xs text-muted-foreground"
                     >
                       {turnEndPhrase(r.reason)} {r.turns}
                     </span>
@@ -516,7 +517,7 @@ export function LearningPanel() {
                     <span
                       data-testid="learning-verdict-unrecorded"
                       title="Rows written before the verdict was recorded, or turns whose reason never reached the ledger — not a reason of their own"
-                      className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground/80"
+                      className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-3xs text-muted-foreground/80"
                     >
                       {verdicts.reasonUnrecorded} turn(s) not recorded
                     </span>
@@ -527,7 +528,7 @@ export function LearningPanel() {
                     <li
                       key={label}
                       data-testid={`learning-verdict-counter-${label.toLowerCase().replace(/[^a-z]+/g, '-')}`}
-                      className="flex items-center justify-between gap-3 text-[10.5px]"
+                      className="flex items-center justify-between gap-3 text-[0.65625rem]"
                     >
                       <span className="text-muted-foreground">{label}</span>
                       <span className="text-foreground/80">{value}</span>
@@ -536,7 +537,7 @@ export function LearningPanel() {
                 </ul>
                 <p
                   data-testid="learning-verdict-no-gate"
-                  className="mt-1 text-[10px] text-muted-foreground/70"
+                  className="mt-1 text-3xs text-muted-foreground/70"
                 >
                   These are finished turns — every answer still reached you. Nothing here gates a
                   response.
@@ -547,7 +548,7 @@ export function LearningPanel() {
 
           {/* Flagged episodes */}
           <div>
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="mb-1.5 text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
               Flagged episodes
             </p>
             {!episodesQ.data?.episodes?.length ? (
@@ -566,7 +567,7 @@ export function LearningPanel() {
                     <span className="min-w-0 truncate text-foreground/90" title={ep.fingerprint}>
                       {describeEpisode(ep)}
                     </span>
-                    <span className="shrink-0 rounded-full bg-muted/40 px-2 py-0.5 text-[10px] text-muted-foreground">
+                    <span className="shrink-0 rounded-full bg-muted/40 px-2 py-0.5 text-3xs text-muted-foreground">
                       confidence {typeof ep.rubric?.score === 'number' ? ep.rubric.score.toFixed(2) : '—'}
                     </span>
                   </li>
@@ -577,7 +578,7 @@ export function LearningPanel() {
 
           {/* Distiller drafts */}
           <div>
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="mb-1.5 text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
               Distiller drafts ({draftsQ.data?.proposals?.length ?? 0})
             </p>
             {!draftsQ.data?.proposals?.length ? (
@@ -630,7 +631,7 @@ export function LearningPanel() {
               background job, so a 24h writer never looks dead. Manual "run"
               rides the same code path (and ledger) the cadence uses. */}
           <div data-testid="learning-scheduler">
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="mb-1.5 text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
               Background jobs
             </p>
             {!schedulerQ.data?.jobs?.length ? (
@@ -649,7 +650,7 @@ export function LearningPanel() {
                     >
                       <span className="min-w-0">
                         <span className="font-medium text-foreground/90">{j.job}</span>
-                        <span className="ml-2 text-[10.5px] text-muted-foreground" title={j.lastRunAt ?? undefined}>
+                        <span className="ml-2 text-[0.65625rem] text-muted-foreground" title={j.lastRunAt ?? undefined}>
                           every {j.intervalHours}h · last {agoLabel(j.lastRunAt)}
                           {j.lastStatus === 'error' ? ' · errored' : ''}
                           {outcome ? ` · ${outcome}` : ''}
@@ -660,7 +661,7 @@ export function LearningPanel() {
                         data-testid={`learning-scheduler-run-${j.job}`}
                         onClick={() => runJobNow.mutate(j.job)}
                         disabled={runJobNow.isPending}
-                        className="shrink-0 rounded-lg border border-border/60 bg-muted/30 px-2 py-0.5 text-[10.5px] text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+                        className="shrink-0 rounded-lg border border-border/60 bg-muted/30 px-2 py-0.5 text-[0.65625rem] text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-50"
                       >
                         {runJobNow.isPending && runJobNow.variables === j.job ? 'running…' : 'run now'}
                       </button>
@@ -677,10 +678,10 @@ export function LearningPanel() {
               a diff you can undo. */}
           <div data-testid="learning-refine">
             <div className="mb-1.5 flex items-center justify-between gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <p className="text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Refine store ({refineQ.data?.entries?.length ?? 0} active)
               </p>
-              <label className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
+              <label className="flex items-center gap-1.5 text-[0.65625rem] text-muted-foreground">
                 <input
                   type="checkbox"
                   data-testid="learning-auto-refine"
@@ -696,12 +697,12 @@ export function LearningPanel() {
                 the batch, reviewer (a DIFFERENT model — the backend refuses
                 equal pairs when auto-refine is on) judges it discard-default.
                 Empty = provider default per pin. */}
-            <div className="mb-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10.5px] text-muted-foreground">
+            <div className="mb-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[0.65625rem] text-muted-foreground">
               <label className="flex min-w-0 items-center gap-1.5" data-testid="learning-refine-producer-row">
                 <span className="shrink-0">producer</span>
                 <select
                   data-testid="learning-refine-producer"
-                  className="max-w-[220px] truncate rounded-md border border-border/60 bg-card px-1.5 py-0.5 text-[10.5px] text-foreground focus:border-primary/40 focus:outline-none [color-scheme:dark]"
+                  className="max-w-[220px] truncate rounded-md border border-border/60 bg-card px-1.5 py-0.5 text-[0.65625rem] text-foreground focus:border-primary/40 focus:outline-none [color-scheme:dark]"
                   value={refineQ.data?.config?.producerModel ?? ''}
                   disabled={setRefineModels.isPending}
                   onChange={(e) => setRefineModels.mutate({ producerModel: e.target.value })}
@@ -720,7 +721,7 @@ export function LearningPanel() {
                 <span className="shrink-0">reviewer</span>
                 <select
                   data-testid="learning-refine-reviewer"
-                  className="max-w-[220px] truncate rounded-md border border-border/60 bg-card px-1.5 py-0.5 text-[10.5px] text-foreground focus:border-primary/40 focus:outline-none [color-scheme:dark]"
+                  className="max-w-[220px] truncate rounded-md border border-border/60 bg-card px-1.5 py-0.5 text-[0.65625rem] text-foreground focus:border-primary/40 focus:outline-none [color-scheme:dark]"
                   value={refineQ.data?.config?.reviewModel ?? ''}
                   disabled={setRefineModels.isPending}
                   onChange={(e) => setRefineModels.mutate({ reviewModel: e.target.value })}
@@ -758,14 +759,14 @@ export function LearningPanel() {
                     className="flex items-start justify-between gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-1.5 text-xs"
                   >
                     <span className="min-w-0">
-                      <span className="mr-1.5 inline-block rounded-full border border-border/60 bg-muted/30 px-1.5 py-px text-[9px] uppercase text-muted-foreground">
+                      <span className="mr-1.5 inline-block rounded-full border border-border/60 bg-muted/30 px-1.5 py-px text-3xs uppercase text-muted-foreground">
                         {en.kind} · {en.scope} · v{en.version}
                       </span>
                       <span className="text-foreground/90">
                         {en.content?.text || en.content?.name || en.id}
                       </span>
                       {en.rationale ? (
-                        <span className="mt-0.5 block truncate text-[10.5px] text-muted-foreground" title={en.rationale}>
+                        <span className="mt-0.5 block truncate text-[0.65625rem] text-muted-foreground" title={en.rationale}>
                           why: {en.rationale}
                         </span>
                       ) : null}
@@ -787,10 +788,10 @@ export function LearningPanel() {
             )}
             {(refineQ.data?.ledger?.length ?? 0) > 0 && (
               <details className="mt-1.5">
-                <summary className="cursor-pointer text-[10.5px] text-muted-foreground">
+                <summary className="cursor-pointer text-[0.65625rem] text-muted-foreground">
                   Recent refine journal
                 </summary>
-                <ul className="mt-1 space-y-0.5 text-[10px] text-muted-foreground/80">
+                <ul className="mt-1 space-y-0.5 text-3xs text-muted-foreground/80">
                   {refineQ.data!.ledger.slice(-6).reverse().map((row, i) => (
                     <li key={i} className="flex items-center gap-1.5 truncate">
                       <Asterisk className="size-2.5 shrink-0" />

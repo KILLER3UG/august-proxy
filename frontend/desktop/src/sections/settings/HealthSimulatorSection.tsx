@@ -88,7 +88,7 @@ export function HealthSimulatorSection() {
           {/* Selection */}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
-              <span className="text-[11px] text-muted-foreground">Provider</span>
+              <span className="text-2xs text-muted-foreground">Provider</span>
               <select
                 value={provider?.id ?? ''}
                 onChange={(e) => { setProviderId(e.target.value); setModelId(''); setResult(null); }}
@@ -101,7 +101,7 @@ export function HealthSimulatorSection() {
               </select>
             </label>
             <label className="block">
-              <span className="text-[11px] text-muted-foreground">Model</span>
+              <span className="text-2xs text-muted-foreground">Model</span>
               <select
                 value={model?.id ?? ''}
                 onChange={(e) => { setModelId(e.target.value); setResult(null); }}
@@ -141,7 +141,7 @@ export function HealthSimulatorSection() {
             </div>
           ) : result && result.checks.length > 0 ? (
             <div className="space-y-2">
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-2xs text-muted-foreground">
                 {result.provider} · <span className="font-mono">{result.model}</span> · {result.apiFormat || 'default format'}
               </p>
               {result.checks.map((c) => {
@@ -152,13 +152,13 @@ export function HealthSimulatorSection() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-foreground">{c.name}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                        <span className={`text-3xs px-1.5 py-0.5 rounded-full ${
                           c.success ? 'bg-emerald-500/15 text-emerald-500' : 'bg-rose-500/15 text-rose-500'
                         }`} data-testid={`sim-check-${c.id}`}>
                           {c.success ? 'PASS' : 'FAIL'}
                         </span>
                         {c.latencyMs > 0 ? (
-                          <span className="ml-auto text-[10px] text-muted-foreground shrink-0">{c.latencyMs}ms</span>
+                          <span className="ml-auto text-3xs text-muted-foreground shrink-0">{c.latencyMs}ms</span>
                         ) : null}
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground break-words">{c.detail}</p>
@@ -166,7 +166,7 @@ export function HealthSimulatorSection() {
                   </div>
                 );
               })}
-              <p className="text-[11px] text-muted-foreground/60">
+              <p className="text-2xs text-muted-foreground/60">
                 Probes use the same call paths as real chat (no fake transport). Tool support is a capability —
                 a FAIL there doesn&apos;t block chat, it means the model won&apos;t drive August&apos;s tools.
               </p>

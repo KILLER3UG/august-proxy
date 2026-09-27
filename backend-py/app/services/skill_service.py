@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -1149,6 +1150,28 @@ def read_skill_load_count(skill_name: str) -> int:
     return as_int(read_skill_usage(skill_name).get('count'), 0)
 
 
+# Turn-scoped load collector (audit D1, migration 050): the workbench turn
+# opens a list at turn start; every load during the turn appends its skill
+# name; turn_close drains it into ``turn_outcomes.skills_loaded`` — the link
+# between a load and how the turn ended that the usage sidecar alone cannot
+# give. ContextVar so concurrent sessions never see each other's loads.
+_TURN_LOADED_SKILLS: ContextVar[Optional[list[str]]] = ContextVar(
+    'august_turn_loaded_skills', default=None
+)
+
+
+def begin_turn_skill_collection() -> None:
+    """Open the turn-scoped load list (called once at turn start)."""
+    _TURN_LOADED_SKILLS.set([])
+
+
+def drain_turn_loaded_skills() -> list[str]:
+    """Close the turn-scoped load list and return what it caught."""
+    collected = _TURN_LOADED_SKILLS.get()
+    _TURN_LOADED_SKILLS.set(None)
+    return sorted({str(name) for name in (collected or [])})
+
+
 def record_skill_use(skillPath: str) -> None:
     """Bump the per-skill usage sidecar, resolved through ``usage_sidecar_path``.
 
@@ -1164,6 +1187,11 @@ def record_skill_use(skillPath: str) -> None:
     hands us; bundled and agent skills carry a frontmatter ``name`` equal to
     their directory name (``list_all`` validates it at discovery).
     """
+    # Audit D1: mirror the load into the turn-scoped collector when one is
+    # open, so the turn row can tie this skill to the turn's outcome.
+    turnCollector = _TURN_LOADED_SKILLS.get()
+    if turnCollector is not None:
+        turnCollector.append(Path(skillPath).parent.name)
     target: Optional[Path] = None
     try:
         from datetime import datetime

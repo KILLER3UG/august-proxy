@@ -141,7 +141,7 @@ export function WorkspaceHeatmap({ cells, className, legend = true, activityMode
           {monthLabels.map(({ label, weekIndex }) => (
             <span
               key={`${label}-${weekIndex}`}
-              className="absolute top-2.5 text-[11px] text-muted-foreground/60"
+              className="absolute top-2.5 text-2xs text-muted-foreground/60"
               style={{ left: `calc(${(weekIndex / weeks.length) * 100}% )` }}
             >
               {label}
@@ -151,7 +151,7 @@ export function WorkspaceHeatmap({ cells, className, legend = true, activityMode
       </div>
 
       {legend && (
-        <div className="flex items-center justify-end gap-2 text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-end gap-2 text-3xs text-muted-foreground">
           <span>Less</span>
           <div className="flex gap-[3px]">
             {LEVELS.map((cls, i) => (

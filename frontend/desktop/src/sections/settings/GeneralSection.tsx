@@ -264,7 +264,7 @@ export function GeneralSection() {
                     >
                       Aa
                     </span>
-                    <span className="text-[10px] uppercase tracking-caps">{opt.label}</span>
+                    <span className="text-3xs uppercase tracking-caps">{opt.label}</span>
                   </button>
                 );
               })}
@@ -309,7 +309,7 @@ export function GeneralSection() {
                   {s.keys.map((k) => (
                     <kbd
                       key={k}
-                      className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground"
+                      className="rounded border border-border bg-muted px-1.5 py-0.5 text-3xs font-mono text-muted-foreground"
                     >
                       {k}
                     </kbd>
