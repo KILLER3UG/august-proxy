@@ -42,6 +42,22 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: node scripts/check-naming.mjs
 
+      # OpenAPI drift gate (audit P1#7): the committed docs/api/openapi.json
+      # must match what the app serves — a router change without a schema
+      # refresh fails here, and npm run gen:api feeds the same file to the
+      # frontend type generator.
+      #
+      # This lives in the BACKEND job on purpose. The gate imports the app to
+      # read its real schema, so it needs a working interpreter with the
+      # backend's dependencies — which this job already has from
+      # `pip install -e ".[dev]"` — and nothing else. It previously ran in the
+      # frontend job, which only does checkout + npm ci, and exited 2 on
+      # "backend venv not found" every single run. A gate that cannot pass
+      # trains people to click through it.
+      - name: OpenAPI drift gate
+        working-directory: ${{ github.workspace }}
+        run: npm run check:api
+
       - name: Version sync (4 manifests + lockfile)
         working-directory: ${{ github.workspace }}
         run: node scripts/check-version-sync.mjs
@@ -111,13 +127,6 @@ jobs:
       # the budget with it.
       - name: Lint warning ratchet
         run: npm run lint:ratchet
-
-      # OpenAPI drift gate (audit P1#7): the committed docs/api/openapi.json
-      # must match what the app serves — a router change without a schema
-      # refresh fails here, and npm run gen:api feeds the same file to the
-      # frontend type generator.
-      - name: OpenAPI drift gate
-        run: npm run check:api
 
       # Phase 7 UI inventory (Feature Flow, AUG toggle, collaboration banners,
       # marquee titles). Live backend SSE is covered by backend pytest; vitest

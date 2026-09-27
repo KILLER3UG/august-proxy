@@ -1,9 +1,10 @@
 """Export the FastAPI OpenAPI schema to docs/api/openapi.json (audit P1#7).
 
 The committed schema is a BUILD ARTIFACT, not a hand-edited file: regenerate
-with `backend-py/.venv/Scripts/python.exe backend-py/scripts/export_openapi.py`
-and commit the result. scripts/check-api.mjs re-runs this into a temp file and
-fails on drift, so a router change without a schema refresh cannot merge.
+with `npm run gen:openapi` (or invoke this file with any interpreter that can
+import the backend app) and commit the result. scripts/check-api.mjs re-runs
+this and fails on drift, so a router change without a schema refresh cannot
+merge.
 
 The export runs with AUGUST_DATA_DIR pointed at a throwaway dir — importing
 the app must not touch a real data dir, and the schema does not depend on
