@@ -43,7 +43,7 @@ const assertions = [
     label: 'stall nudge threshold',
     doc: { file: DOC, re: /never advances across\s+(\d+)\+\s+stalled rounds/ },
     code: {
-      file: 'backend-py/app/services/workbench/workbench.py',
+      file: 'backend-py/app/services/workbench/loop/guards.py',
       re: /^MIN_ROUNDS_BEFORE_STALL_CHECK\s*=\s*(\d+)/m,
     },
   },

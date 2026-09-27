@@ -62,6 +62,13 @@ boolKeys: tuple[str, ...] = (
 numKeys: tuple[str, ...] = (
     'maxAgentDepth',
     'maxWorkbenchToolLoops',
+    # Turn budget ladder (P1#12) + usage retention: all four carry a fieldTable
+    # entry but were missing here, so `allowedKeys` excluded them and every PUT
+    # naming one was rejected — the ladder could not be armed through the API.
+    'budgetSoftUsd',
+    'budgetSoftTokens',
+    'budgetWallClockSec',
+    'usageRetentionDays',
     'autoRouteMinSamples',
     'consolidationIntervalHours',
     'introspectionIntervalHours',
@@ -99,6 +106,19 @@ subagentMaxDepthRange = (1, 5)
 # telemetry reports, so the divergence is observable rather than silent.
 subagentMaxChildrenPerTurnRange = (1, 24)
 subagentFanoutRoundBudgetRange = (0, 2000)
+# Turn budget ladder bounds (P1#12). 0 is the OFF sentinel and must stay
+# writable or an armed ladder could never be disarmed — the loop reads every
+# arm through max(0, ...) and treats 0 as "this rung is not armed"
+# (loop/recovery.py:_turnBudget). The ceilings are deliberately far above any
+# real turn: a soft budget that can never be reached is a silently dead knob,
+# and the ladder only DEGRADES a turn, it never truncates work.
+budgetSoftUsdRange = (0, 10_000)
+budgetSoftTokensRange = (0, 50_000_000)
+budgetWallClockSecRange = (0, 86_400)  # 24h
+# Mirrors the clamp in consolidation._sweep_usage (`max(30, min(3650, days))`)
+# exactly, so the API door cannot accept a value the sweep then silently
+# rewrites behind the caller's back.
+usageRetentionDaysRange = (30, 3650)
 fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('enabled', 'enabled', DEFAULT_FEATURES.get('enabled', True), 'bool'),
     # The agent-jobs flag is gone: the registry job ledger is an in-memory
@@ -412,6 +432,14 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 # 0 is legal and means "no aggregate bound" — the one opt-out
                 # in this family. Read by subagent_fanout.charge_fanout_round.
                 lo, hi = subagentFanoutRoundBudgetRange
+            elif key == 'budgetSoftUsd':
+                lo, hi = budgetSoftUsdRange
+            elif key == 'budgetSoftTokens':
+                lo, hi = budgetSoftTokensRange
+            elif key == 'budgetWallClockSec':
+                lo, hi = budgetWallClockSecRange
+            elif key == 'usageRetentionDays':
+                lo, hi = usageRetentionDaysRange
             else:
                 lo, hi = maxWorkbenchLoopsRange
             if value < lo or value > hi:

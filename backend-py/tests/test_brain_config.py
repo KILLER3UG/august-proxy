@@ -155,6 +155,70 @@ async def testPutProjectMemoryAndSkillsKnobs(client, isolatedData):
 
 
 @pytest.mark.asyncio
+async def testPutBudgetLadderAndUsageRetentionAreSettable(client, isolatedData):
+    """P1#12: the turn budget ladder must be armable THROUGH THE API.
+
+    Same bug class as the projectMemory/projectSkills test above: all four
+    carried a fieldTable entry but were missing from numKeys, so `allowedKeys`
+    excluded them and every PUT naming one was rejected as an unknown field —
+    the ladder was implemented and wired in loop/recovery.py but unreachable
+    from the only door that can set it.
+    """
+    resp = await client.put(
+        '/api/brain/config',
+        json={
+            'budgetSoftUsd': 2,
+            'budgetSoftTokens': 200000,
+            'budgetWallClockSec': 300,
+            'usageRetentionDays': 30,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    cfg = resp.json()['config']
+    assert cfg['budgetSoftUsd'] == 2
+    assert cfg['budgetSoftTokens'] == 200000
+    assert cfg['budgetWallClockSec'] == 300
+    assert cfg['usageRetentionDays'] == 30
+
+
+@pytest.mark.asyncio
+async def testPutBudgetLadderDisarmAcceptsZero(client, isolatedData):
+    """0 is the ladder's OFF sentinel, so it must stay writable.
+
+    The range check for an unbranched numeric key falls through to
+    maxWorkbenchLoopsRange (1, 500), which would reject the documented default
+    of 0 — so an armed arm could never be turned back off.
+    """
+    resp = await client.put(
+        '/api/brain/config',
+        json={'budgetSoftUsd': 5, 'budgetSoftTokens': 50000, 'budgetWallClockSec': 60},
+    )
+    assert resp.status_code == 200, resp.text
+    resp = await client.put(
+        '/api/brain/config',
+        json={'budgetSoftUsd': 0, 'budgetSoftTokens': 0, 'budgetWallClockSec': 0},
+    )
+    assert resp.status_code == 200, resp.text
+    cfg = resp.json()['config']
+    assert cfg['budgetSoftUsd'] == 0
+    assert cfg['budgetSoftTokens'] == 0
+    assert cfg['budgetWallClockSec'] == 0
+
+
+@pytest.mark.asyncio
+async def testPutRejectsOutOfRangeBudgetAndRetention(client, isolatedData):
+    """Out-of-range arms are 400, and the bound names the field."""
+    resp = await client.put('/api/brain/config', json={'budgetSoftUsd': -1})
+    assert resp.status_code == 400
+    assert 'budgetSoftUsd' in resp.json().get('detail', {}).get('message', '')
+    # usageRetentionDays mirrors the clamp in consolidation._sweep_usage
+    # (max(30, min(3650, days))) so the door cannot accept a value the sweep
+    # would then silently rewrite.
+    assert (await client.put('/api/brain/config', json={'usageRetentionDays': 29})).status_code == 400
+    assert (await client.put('/api/brain/config', json={'usageRetentionDays': 3651})).status_code == 400
+
+
+@pytest.mark.asyncio
 async def testPutRejectsUnknownKey(client, isolatedData):
     """Unknown field → 400, no save, no audit row."""
     resp = await client.put('/api/brain/config', json={'notARealKey': True})
