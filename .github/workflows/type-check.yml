@@ -112,11 +112,26 @@ jobs:
       - name: Lint warning ratchet
         run: npm run lint:ratchet
 
+      # OpenAPI drift gate (audit P1#7): the committed docs/api/openapi.json
+      # must match what the app serves — a router change without a schema
+      # refresh fails here, and npm run gen:api feeds the same file to the
+      # frontend type generator.
+      - name: OpenAPI drift gate
+        run: npm run check:api
+
       # Phase 7 UI inventory (Feature Flow, AUG toggle, collaboration banners,
       # marquee titles). Live backend SSE is covered by backend pytest; vitest
       # proves the desktop consumers of that stream.
       - name: vitest
         run: npm run test -w frontend/desktop
+
+      # Accessibility smoke (audit A2): one axe scan per main rail, in web
+      # mode (offline states render — the scan judges DOM structure). Gates on
+      # CRITICAL violations only; serious-and-below print for triage.
+      - name: Accessibility smoke (axe)
+        run: |
+          npx playwright install chromium
+          npm run test:e2e -w frontend/desktop
 
   mobile-typecheck:
     name: Mobile — typecheck + parity audit

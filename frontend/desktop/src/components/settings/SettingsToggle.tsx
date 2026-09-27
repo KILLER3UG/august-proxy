@@ -1,9 +1,11 @@
 /* ── SettingsToggle — accessible iOS-style switch ──────────────────── */
-/* Real <button> with role="switch" + aria-checked. Works with keyboard
- * (Space/Enter) and screen readers. Optional label/description/tooltip row
- * so it drops straight into a card list. */
+/* Real <button> with role="switch" + aria-checked + aria-labelledby — the
+ * visible label is the switch's accessible name (the e2e axe gate caught
+ * the unnamed-button form of this). Works with keyboard (Space/Enter) and
+ * screen readers. Optional label/description/tooltip row so it drops
+ * straight into a card list. */
 
-import { type ReactNode } from 'react';
+import { type ReactNode, useId } from 'react';
 import { cn } from '@/lib/utils';
 import { SettingsTooltip } from './SettingsTooltip';
 
@@ -29,6 +31,7 @@ export function SettingsToggle({
   className,
   'data-testid': testId,
 }: SettingsToggleProps) {
+  const labelId = useId();
   return (
     <div
       className={cn(
@@ -40,7 +43,9 @@ export function SettingsToggle({
     >
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="text-sm font-medium text-foreground">{label}</span>
+          <span id={labelId} className="text-sm font-medium text-foreground">
+            {label}
+          </span>
           {tooltip && <SettingsTooltip content={tooltip} />}
         </div>
         {description && (
@@ -51,6 +56,7 @@ export function SettingsToggle({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-labelledby={labelId}
         disabled={disabled}
         data-testid={testId}
         onClick={() => !disabled && onCheckedChange(!checked)}
