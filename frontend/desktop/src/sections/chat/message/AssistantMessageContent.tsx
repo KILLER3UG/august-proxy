@@ -1,5 +1,6 @@
 import { ChangesCard } from '@/components/chat/ChangesCard';
 import { CircuitArtifactCard } from '@/components/chat/CircuitArtifactCard';
+import { TurnProvenanceChip } from '@/components/chat/TurnProvenanceChip';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 import type { GitDiffResult } from '@/api/git';
 import type { SubagentBlockState } from '../chat-stream-manager';
@@ -192,6 +193,12 @@ export function AssistantMessageContent({
               : ''}
           </div>
         ) : null}
+        {/* Audit A6: the skills and facts that went into THIS answer, plus the
+            failure families the loop hit — the provenance chip. Rendered
+            last so it reads as the footnote to everything above it, and
+            gated on the same `!(isLast && streaming)` as its siblings: the
+            frame that carries it is emitted at turn close, never mid-stream. */}
+        {!(isLast && streaming) && <TurnProvenanceChip provenance={message.provenance} />}
       </div>
       <AssistantMessageActions
         showActions={showActions}

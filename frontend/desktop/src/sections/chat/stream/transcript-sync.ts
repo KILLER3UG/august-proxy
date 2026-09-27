@@ -58,6 +58,7 @@ const STRUCTURED_FIELDS = [
   'queued',
   'usedFallback',
   'editHistory',
+  'provenance',
 ] as const satisfies readonly (keyof ChatMessage)[];
 
 const _syncTimers = new Map<string, ReturnType<typeof setTimeout>>();

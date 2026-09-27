@@ -33,6 +33,7 @@ import { QueryErrorState } from '@/components/QueryErrorState';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
 import { LearningPanel } from '@/sections/settings/LearningPanel';
 import { SkillPacksPanel } from '@/sections/settings/SkillPacksPanel';
+import { SkillVersionsPanel } from '@/sections/settings/SkillVersionsPanel';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { cn } from '@/lib/utils';
 
@@ -646,6 +647,12 @@ export function SkillsSection() {
                 </h3>
                 <Markdown content={selected.instructions || '_No instructions body._'} />
               </section>
+
+              {/* Audit #13: what this file used to say. Read-only, and it is
+                  scoped like every other read on this page — a project skill's
+                  history is the project copy's, never the global one it
+                  shadows. */}
+              <SkillVersionsPanel name={selected.name} workspace={wsScope || undefined} />
             </div>
           )}
         </div>

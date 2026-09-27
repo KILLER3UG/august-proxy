@@ -53,6 +53,13 @@ STRUCTURED_FIELDS: tuple[str, ...] = (
     'toolCalls',
     'toolUseId',
     'interrupted',
+    # A6 provenance (audit A6): what the turn actually had injected — the
+    # skill names, the memory keys, and the error families. Without this key
+    # the chip renders live and then vanishes on reload, which reads as the
+    # shell forgetting rather than as a missing field: a turn that injected
+    # three skills looks identical to one that injected none. The lists are
+    # omitted entirely when empty, so this costs nothing on the common turn.
+    'provenance',
 )
 
 # snake_case spellings the workbench transcript actually uses, mapped onto the

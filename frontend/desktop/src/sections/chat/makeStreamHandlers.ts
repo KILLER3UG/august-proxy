@@ -795,6 +795,20 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       ));
       scheduleUpdate();
     },
+    onTurnTelemetry: ({ provenance }) => {
+      // Audit A6: the same anchoring as turnEnd, one line later in the
+      // frame order. Written straight onto the message rather than through
+      // `update()` for the same reason: update()/finalize() rebuild the
+      // message from `...msg`, so a stamped field is never clobbered, while
+      // a local `let` read there would still be unset at that moment.
+      // A frame with no provenance lists carries nothing worth showing, so
+      // it leaves the message untouched rather than storing empty arrays.
+      if (!provenance) return;
+      setMessages(prev => prev.map(msg =>
+        msg.id === assistantMsgId ? { ...msg, provenance } : msg
+      ));
+      scheduleUpdate();
+    },
     onUserMessageQueued: (data) => {
       // A follow-up was parked behind the running turn — surface the pill.
       if (!data?.messageId || !data?.sessionId) return;

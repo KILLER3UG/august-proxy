@@ -199,6 +199,43 @@ export interface WorkbenchTurnEnd {
   error?: boolean;
 }
 
+/** What the shell actually injected for one turn, and what it hit while
+ *  doing it (audit A6). These are the same credit-assignment lists the
+ *  `turn_outcomes` row carries, so the transcript chip and the ledger
+ *  cannot disagree.
+ *
+ *  Every list is OPTIONAL and `undefined` has one meaning: the shell did not
+ *  report it. The backend omits each key entirely when its list is empty
+ *  (turn_close.py), so an empty list is never a "checked and found nothing"
+ *  claim here — it is a shape the wire does not produce. */
+export interface WorkbenchTurnProvenance {
+  /** Skill names whose bodies went into this turn's prompt. */
+  skillsInjected?: string[];
+  /** Fact keys the recall tail injected this turn. */
+  factsInjected?: string[];
+  /** Failure families the loop classified this turn
+   *  (timeout | rate_limit | auth | permission | not_found | network |
+   *  invalid_argument | process_exit). Surfacing it is the shell telling
+   *  the truth about a turn that stumbled. */
+  errorFamilies?: string[];
+}
+
+/** The `turnTelemetry` frame: per-turn numbers plus the provenance lists.
+ *  The numbers are carried for completeness — the transcript renders the
+ *  provenance today and no chip reads the rest yet. */
+export interface WorkbenchTurnTelemetry {
+  ttftMs?: number;
+  durationMs?: number;
+  cacheHitTokens?: number;
+  cacheMissTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  toolArgsReadyToStreamEndMs?: number;
+  /** Absent when the turn reported none of the three lists — see
+   *  `WorkbenchTurnProvenance`. */
+  provenance?: WorkbenchTurnProvenance;
+}
+
 export type WorkbenchEvent =
   | { type: 'thinking'; data: { content: string } }
   | { type: 'text'; data: { content: string } }
@@ -493,6 +530,11 @@ export interface WorkbenchEventHandlers {
    *  stopped and after how many rounds. Anchored to the assistant message so
    *  the transcript badge answers "it froze after N commands" at a glance. */
   onTurnEnd?: (data: WorkbenchTurnEnd) => void;
+  /** Per-turn telemetry (Observability) + the provenance lists the transcript
+   *  chip reads (audit A6). Anchored to this turn's assistant message so the
+   *  answer says, next to itself, what was injected to produce it. Fires once
+   *  per turn, at close — never mid-stream. */
+  onTurnTelemetry?: (data: WorkbenchTurnTelemetry) => void;
   /** Model submitted a plan via submit_plan — show the proposal banner. */
   onPlanProposed?: (data: { plan: unknown }) => void;
   /** Model switched the session into plan mode itself (enter_plan_mode) —

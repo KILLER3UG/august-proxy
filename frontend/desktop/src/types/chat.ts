@@ -5,7 +5,7 @@
  * orthogonal to the WorkbenchEvent SSE union.
  */
 
-import type { WorkbenchTurnUsage, WorkbenchTurnEnd } from './workbench';
+import type { WorkbenchTurnUsage, WorkbenchTurnEnd, WorkbenchTurnProvenance } from './workbench';
 
 /** Structured provider-setup config carried by `setup_provider`-style tool
  *  results so the UI can render an inline config/API-key form. Shape inferred
@@ -275,6 +275,17 @@ export interface ChatMessage {
    *  emitted just before `done`). Rendered as the stop-reason badge in the
    *  assistant footer; persists with the message like `usage`/`clarify`. */
   turnEnd?: WorkbenchTurnEnd;
+  /** What the shell injected for THIS turn — skills, recalled facts, and the
+   *  failure families it hit (audit A6, from the `turnTelemetry` frame).
+   *  Rendered as a provenance chip beside the answer so the user can see WHY
+   *  the model behaved as it did.
+   *
+   *  Live-session only: the backend's transcript allow-list
+   *  (`STRUCTURED_FIELDS` in memory_store/transcript_blocks.py) has no key
+   *  for this, so a restored session carries no provenance and shows no chip.
+   *  That is the honest behaviour for now — a chip restored from storage
+   *  would be asserting something the server never stored. */
+  provenance?: WorkbenchTurnProvenance;
   /** Transient "retrying after rate limit" notice while the backend backs
    *  off (from `retrying` SSE events). Cleared when the turn finalizes. */
   retryNotice?: string;

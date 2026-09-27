@@ -257,6 +257,32 @@ export function ensureSessionSubscriber(sessionOrWorkbenchId: string): void {
         { transcriptUpdate: 'stream' },
       );
     },
+    onTurnTelemetry: ({ provenance }) => {
+      // Audit A6: same last-assistant anchor as turnEnd, for the provenance
+      // chip. Same reason it is not in RENDERED_EVENT_TYPES — this frame
+      // follows the turn-content frames, and advancing lastSeq past them
+      // would make a per-turn replay skip the content it belongs to.
+      if (!provenance) return;
+      updateSessionStreamState(
+        uiSessionId,
+        (prev) => {
+          const msgs = prev.messages ?? [];
+          let lastAssistantIdx = -1;
+          for (let i = msgs.length - 1; i >= 0; i--) {
+            if (msgs[i].role === 'assistant') {
+              lastAssistantIdx = i;
+              break;
+            }
+          }
+          if (lastAssistantIdx === -1) return prev;
+          return {
+            ...prev,
+            messages: msgs.map((m, i) => (i === lastAssistantIdx ? { ...m, provenance } : m)),
+          };
+        },
+        { transcriptUpdate: 'stream' },
+      );
+    },
   };
 
   streamWorkbenchReconnect(wbId, handlers, controller.signal, sinceSeq, {

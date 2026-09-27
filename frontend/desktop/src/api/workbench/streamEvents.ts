@@ -431,6 +431,42 @@ export function dispatchWorkbenchEvent(
       });
       break;
     }
+    case 'turnTelemetry': {
+      // Audit A6: what the shell injected for THIS answer, and what it hit
+      // while producing it. The backend OMITS each key when its list is empty
+      // (turn_close.py spreads them only when truthy), so a missing array is
+      // coerced to `undefined`, never to `[]` — "0 skills" is a claim the
+      // shell never made, and the chip stays absent instead of asserting it.
+      const names = (v: unknown): string[] | undefined => {
+        if (!Array.isArray(v)) return undefined;
+        const kept = v.filter((n): n is string => typeof n === 'string' && n.length > 0);
+        return kept.length > 0 ? kept : undefined;
+      };
+      const num = (v: unknown): number | undefined =>
+        typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+      const skillsInjected = names(p?.skillsInjected);
+      const factsInjected = names(p?.factsInjected);
+      const errorFamilies = names(p?.errorFamilies);
+      const provenance =
+        skillsInjected || factsInjected || errorFamilies
+          ? {
+              ...(skillsInjected ? { skillsInjected } : {}),
+              ...(factsInjected ? { factsInjected } : {}),
+              ...(errorFamilies ? { errorFamilies } : {}),
+            }
+          : undefined;
+      handlers.onTurnTelemetry?.({
+        ttftMs: num(p?.ttftMs),
+        durationMs: num(p?.durationMs),
+        cacheHitTokens: num(p?.cacheHitTokens),
+        cacheMissTokens: num(p?.cacheMissTokens),
+        inputTokens: num(p?.inputTokens),
+        outputTokens: num(p?.outputTokens),
+        toolArgsReadyToStreamEndMs: num(p?.toolArgsReadyToStreamEndMs),
+        provenance,
+      });
+      break;
+    }
     case 'error':
       handlers.onError?.({ message: typeof p?.message === 'string' ? p.message : JSON.stringify(p?.message ?? 'Unknown error') });
       break;

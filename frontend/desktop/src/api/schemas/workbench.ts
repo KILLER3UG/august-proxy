@@ -320,14 +320,42 @@ export const WorkbenchUserMessageQueueEventSchema = WorkbenchBaseSchema.extend({
   ]),
 });
 
+/** Per-turn telemetry + provenance, emitted once at turn close (audit A6).
+ *
+ *  The numbers are the Observability pass (latency / cache / tokens); no UI
+ *  renders them yet, but they are declared so a drift in THEIR shape is
+ *  caught here rather than looking like a missing field later.
+ *
+ *  `skillsInjected` / `factsInjected` / `errorFamilies` are the provenance
+ *  lists, and they are OPTIONAL on purpose. The backend omits each key
+ *  ENTIRELY when its list is empty (turn_close.py spreads the key only when
+ *  the list is truthy), so:
+ *    - they must never be `.default([])`, which would turn "the shell did
+ *      not report this" into "the shell checked and injected nothing";
+ *    - a turn that injected nothing should show no chip at all, because
+ *      "nothing" is the default state of a chat and a chip for it is noise.
+ */
+export const WorkbenchTurnTelemetryEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('turnTelemetry'),
+  ttftMs: z.number().optional(),
+  durationMs: z.number().optional(),
+  cacheHitTokens: z.number().optional(),
+  cacheMissTokens: z.number().optional(),
+  inputTokens: z.number().optional(),
+  outputTokens: z.number().optional(),
+  /** P3.1 early-dispatch measurement; 0 = no tool call this turn. */
+  toolArgsReadyToStreamEndMs: z.number().optional(),
+  skillsInjected: z.array(z.string()).optional(),
+  factsInjected: z.array(z.string()).optional(),
+  errorFamilies: z.array(z.string()).optional(),
+});
+
 /** Lifecycle events without dedicated UI handling yet (filesystem
  *  checkpoints) — accepted so they don't trip the schema-mismatch
  *  warning in the stream dispatcher. `todosUpdated`, `upstreamRetry`,
  *  `recalledMemories` and `narrationReclassify` route to handlers in
- *  streamEvents.ts.
- *  `turnTelemetry` is accepted here so the frame is not flagged as a
- *  mismatch, but streamEvents.ts has no `turnTelemetry` case yet — the event
- *  is currently dropped (no cache-hit/latency chip is wired). */
+ *  streamEvents.ts; `turnTelemetry` has its own schema above (a
+ *  discriminated union cannot hold the same `type` twice). */
 export const WorkbenchMiscLifecycleEventSchema = WorkbenchBaseSchema.extend({
   type: z.enum([
     'todosUpdated',
@@ -336,7 +364,6 @@ export const WorkbenchMiscLifecycleEventSchema = WorkbenchBaseSchema.extend({
     'aborted',
     'retrying',
     'upstreamRetry',
-    'turnTelemetry',
     'recalledMemories',
     'narrationReclassify',
   ]),
@@ -461,6 +488,7 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchUserMessageQueueEventSchema,
   WorkbenchLegacyFinalOutputEventSchema,
   WorkbenchMiscLifecycleEventSchema,
+  WorkbenchTurnTelemetryEventSchema,
 ]);
 
 /** Inferred TypeScript type — should match `WorkbenchEvent` from

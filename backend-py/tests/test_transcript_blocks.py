@@ -103,6 +103,42 @@ def test_decode_blocks_survives_corrupt_json():
     assert tb.decode_blocks('[1,2,3]') == {}
 
 
+def test_provenance_survives_the_round_trip():
+    """A6: a turn that injected skills/facts must still say so after a reload.
+
+    The live chip was rendering from the SSE event, so without this the chip
+    appeared during the turn and vanished on the next restore — which reads
+    as the shell forgetting what it did, not as a field that was never
+    persisted. `provenance` is allow-listed in STRUCTURED_FIELDS precisely so
+    it lands in blocks_json like every other structured sibling.
+    """
+    message = {
+        'role': 'assistant',
+        'content': 'done',
+        'provenance': {
+            'skillsInjected': ['pnpm-before-vitest', 'tsconfig-parity'],
+            'factsInjected': ['distilled:pnpm-first'],
+            'errorFamilies': ['timeout'],
+        },
+    }
+    raw = tb.encode_blocks(message)
+    assert raw is not None
+    decoded = tb.decode_blocks(raw)
+    assert decoded['provenance']['skillsInjected'] == ['pnpm-before-vitest', 'tsconfig-parity']
+    assert decoded['provenance']['factsInjected'] == ['distilled:pnpm-first']
+    assert decoded['provenance']['errorFamilies'] == ['timeout']
+
+
+def test_turn_with_no_provenance_stores_none_of_it():
+    """The common case must cost nothing and claim nothing.
+
+    The three lists are omitted entirely when the turn injected nothing, so a
+    plain assistant turn must not grow an empty provenance object — that
+    would render a "0 skills · 0 facts" chip the shell never sent.
+    """
+    raw = tb.encode_blocks({'role': 'assistant', 'content': 'plain answer'})
+    assert raw is not None
+    assert 'provenance' not in tb.decode_blocks(raw)
 def test_decode_blocks_normalizes_snake_case_keys():
     decoded = tb.decode_blocks(json.dumps({'tool_use_id': 'toolu_9', 'tool_calls': []}))
     assert decoded['toolUseId'] == 'toolu_9'

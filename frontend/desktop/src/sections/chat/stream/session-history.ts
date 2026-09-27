@@ -69,6 +69,11 @@ const STRUCTURED_FIELDS = [
   'queued',
   'usedFallback',
   'editHistory',
+  // A6 provenance. The backend allow-list carries it
+  // (memory_store/transcript_blocks.py STRUCTURED_FIELDS), so a reloaded
+  // turn still shows what it had injected instead of silently looking like a
+  // turn that injected nothing.
+  'provenance',
 ] as const satisfies readonly (keyof ChatMessage)[];
 
 function readStructured(row: Record<string, unknown>): Partial<ChatMessage> {
