@@ -32,7 +32,9 @@ import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.services.memory_conn import conn as _conn
 
@@ -62,6 +64,115 @@ _JUDGE_SYSTEM = (
     ' "skill": "<existing skill name>", "patch_markdown": "<amended section>"}]}'
     ' Omit fields irrelevant to the chosen action. Prefer "none" for one-offs.'
 )
+
+# ── per-action verdict schemas (audit P2#16) ──────────────────────────
+#
+# The judge prompt describes ONE flat verdict shape with every field optional
+# and "omit fields irrelevant to the chosen action". That is a contract with
+# no teeth: a verdict that says `action: "amend_body"` with no `skill` and no
+# `patch_markdown` is structurally indistinguishable from a well-formed one
+# until `apply_verdict` reaches a branch that happens to notice. A field the
+# action NEEDS should be required by that action, so the shape a verdict must
+# have is decided here rather than rediscovered as an `if not x: return` in
+# the applier.
+#
+# These are VALIDATORS, NOT TRANSFORMERS. `parse_verdicts` returns the judge's
+# ORIGINAL dict for every verdict that validates. Nothing is rewritten, no
+# field is coerced, and `episode` stays exactly as the model sent it —
+# `apply_verdict` is called directly by a lot of tests and by the downgrade
+# path with hand-built dicts, so its input contract must not move underneath
+# it. A validation layer that silently normalised its way into the applier
+# would be a second, divergent definition of the same thing.
+#
+# Unknown extra keys are allowed on purpose: the prompt advertises more fields
+# than any one action uses, and a model that volunteers a `reason` on a
+# `memory` verdict is being helpful, not malformed.
+
+
+class _VerdictBase(BaseModel):
+    """Fields every verdict shares.
+
+    `episode` is `int | str` because the prompt asks for an id and real
+    judges send both `3` and `"3"`; the applier and `set_judge_verdict`
+    already tolerate either, so narrowing here would reject a usable verdict.
+    """
+
+    model_config = ConfigDict(extra='allow')
+
+    episode: int | str
+    reason: str = ''
+
+
+class _NoneVerdict(_VerdictBase):
+    """Nothing durable to learn. Always valid — that is the point of it."""
+
+    action: Literal['none'] = 'none'
+
+
+class _MemoryVerdict(_VerdictBase):
+    """`summary` is the whole payload; a memory verdict without one is empty.
+
+    `title` stays optional because `apply_verdict` derives a key from the
+    summary when there is no title, and that fallback is load-bearing.
+
+    `category` and `expires_days` are deliberately NOT constrained. The
+    applier already owns both: it defaults a missing/empty category to
+    'general' and ignores an `expires_days` that is not a number. Typing
+    either more tightly here would not catch a bad value — it would DROP a
+    verdict whose summary is perfectly good, losing a real lesson over a
+    display label. The vocabulary the judge prompt advertises is documented
+    in _JUDGE_SYSTEM; it is not a reason to discard work.
+    """
+
+    action: Literal['memory']
+    summary: str = Field(min_length=1)
+    title: str = ''
+    category: str = 'general'
+    expires_days: Any = None
+
+
+class _CreateSkillVerdict(_VerdictBase):
+    """A new skill draft.
+
+    Only `name` is required. `description` is NOT: the applier falls back to
+    `description or name`, and a judge that omits it today gets a perfectly
+    good draft. Requiring it here would silently stop producing those.
+    `body_markdown` falls back to the description the same way. Requiring
+    what the applier already defaults is the one way this layer could make
+    the distiller produce LESS than it does now.
+    """
+
+    action: Literal['create_skill']
+    name: str = Field(min_length=1)
+    description: str = ''
+    trigger: str = ''
+    body_markdown: str = ''
+
+
+class _AmendTriggerVerdict(_VerdictBase):
+    """Rewrites an EXISTING skill's trigger — both halves are the whole edit."""
+
+    action: Literal['amend_trigger']
+    skill: str = Field(min_length=1)
+    trigger: str = Field(min_length=1)
+
+
+class _AmendBodyVerdict(_VerdictBase):
+    """Appends a section to an existing skill. An empty patch is a no-op that
+    would still burn a proposal slot and a human's attention."""
+
+    action: Literal['amend_body']
+    skill: str = Field(min_length=1)
+    patch_markdown: str = Field(min_length=1)
+
+
+VERDICT_MODELS: dict[str, type[_VerdictBase]] = {
+    'none': _NoneVerdict,
+    'memory': _MemoryVerdict,
+    'create_skill': _CreateSkillVerdict,
+    'amend_trigger': _AmendTriggerVerdict,
+    'amend_body': _AmendBodyVerdict,
+}
 
 
 # ── model resolution ────────
@@ -165,13 +276,73 @@ def _extractJson(raw: str) -> dict[str, Any]:
     return data
 
 
+def parse_verdicts(
+    data: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split one judge payload into (applicable, dropped).
+
+    ``applicable`` holds the judge's ORIGINAL dicts, untouched. ``dropped``
+    describes each verdict that could not be applied and why, so a pass can
+    report what it threw away instead of silently applying half of it.
+
+    Dropping is per-verdict, not per-batch: one malformed verdict in a batch
+    of five must not cost the other four, and one bad field must not cost the
+    rest of that verdict. An action the judge invented outright (``"rewrite_
+    everything"``) is dropped with the same accounting as a missing field.
+    """
+    applicable: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+    for raw in data.get('verdicts', []) or []:
+        if not isinstance(raw, dict):
+            dropped.append({'action': None, 'episode': None, 'why': 'verdict is not an object'})
+            continue
+        action = str(raw.get('action', 'none') or 'none').strip().lower()
+        model = VERDICT_MODELS.get(action)
+        if model is None:
+            dropped.append(
+                {
+                    'action': action or None,
+                    'episode': raw.get('episode'),
+                    'why': f'unknown action {action!r}',
+                }
+            )
+            continue
+        try:
+            model.model_validate(raw)
+        except ValidationError as exc:
+            missing = [
+                '.'.join(str(p) for p in e['loc']) or '<root>'
+                for e in exc.errors()
+                if e['type'] in ('missing', 'string_too_short')
+            ]
+            dropped.append(
+                {
+                    'action': action,
+                    'episode': raw.get('episode'),
+                    'why': f'invalid {action} verdict: ' + ', '.join(missing or ['schema mismatch']),
+                }
+            )
+            continue
+        applicable.append(raw)
+    return applicable, dropped
+
+
 async def call_judge(prompt: str) -> dict[str, Any] | None:
     """One judge model call. Returns parsed JSON or None (judge failed).
 
     §12 F-7: uses an UNPOOLED client, closed after the call — judge batches
     run on throwaway event loops (one ``asyncio.run`` per pass), and a
     pooled client's keep-alive connections bind to the loop that made them,
-    so the next pass hits "Event loop is closed" every other time."""
+    so the next pass hits "Event loop is closed" every other time.
+
+    A payload whose verdicts ALL fail validation earns exactly ONE repair
+    retry, because "your JSON did not match" is the one judge failure the
+    model can actually fix on a second look. The retry is not attempted when
+    some verdicts already validated: a partially-good batch is a working
+    batch, and re-rolling it would throw away correct answers to chase a
+    cosmetic improvement. A second failure returns the payload as-is and lets
+    ``parse_verdicts`` drop whatever is still malformed.
+    """
     model = resolve_judge_model()
     provider = _resolveProvider(model)
     if not provider or not model:
@@ -186,7 +357,17 @@ async def call_judge(prompt: str) -> dict[str, Any] | None:
         try:
             client.config = {**dict(client.config or {}), 'model': model}
             raw = await client.generate(prompt, system=_JUDGE_SYSTEM)
-            return _extractJson(str(raw))
+            data = _extractJson(str(raw))
+            applicable, _dropped = parse_verdicts(data)
+            if not applicable and data.get('verdicts'):
+                # Every verdict was unusable — the shape was wrong, not the
+                # content. Ask once more, naming what failed.
+                _, dropped = parse_verdicts(data)
+                repair = _repair_prompt(prompt, dropped)
+                logger.info('distiller judge: %d invalid verdict(s), one repair retry', len(dropped))
+                raw2 = await client.generate(repair, system=_JUDGE_SYSTEM)
+                return _extractJson(str(raw2))
+            return data
         finally:
             try:
                 await client.close()
@@ -195,6 +376,18 @@ async def call_judge(prompt: str) -> dict[str, Any] | None:
     except Exception as exc:
         logger.warning('distiller judge call failed: %s', exc)
         return None
+
+
+def _repair_prompt(prompt: str, dropped: list[dict[str, Any]]) -> str:
+    """The original prompt plus the specific schema failures, for one retry."""
+    problems = '; '.join(str(d.get('why', '')) for d in dropped[:8])
+    return (
+        f'{prompt}\n\n'
+        f'Your previous reply could not be used: {problems}. '
+        'Reply again with the SAME verdicts object, correcting only those '
+        'fields so every verdict carries the fields its action requires. '
+        'Strict JSON only.'
+    )
 
 
 # ── anti-drift: one draft per (fingerprint, action, target) ─────────────
@@ -229,9 +422,35 @@ def _draftExists(fp: str, action: str, target: str) -> bool:
 # ── precision ship bar ───────
 
 
+def _precisionRow(labeled: int, correct: int) -> dict[str, Any]:
+    """One bucket's numbers plus the verdict the ship bar reaches."""
+    labeled = int(labeled)
+    correct = int(correct)
+    precision = (correct / labeled) if labeled else 0.0
+    return {
+        'labeled': labeled,
+        'correct': correct,
+        'precision': round(precision, 4),
+        'enabled': labeled >= _PRECISION_MIN_LABELED and precision >= _PRECISION_SHIP_BAR,
+    }
+
+
 def precision_state() -> dict[str, Any]:
     """Judge precision over hand-labeled episodes (test_distiller_precision
-    harness feeds this store). ``amend_body_enabled`` is the ship bar."""
+    harness feeds this store). ``amend_body_enabled`` is the ship bar.
+
+    The top-level counters are the ALL-ACTIONS figure and stay exactly as
+    they were: existing harnesses record one (labeled, correct) pair per run
+    and read ``amendBodyEnabled`` off it. Per-action buckets are additive and
+    FALL BACK to those global numbers for any action with no samples of its
+    own, so an install that has never recorded a breakdown behaves exactly as
+    it did before rather than reading every action as 0-labeled and locked.
+
+    Per-action is what makes the bar actionable: a judge that is excellent at
+    ``memory`` and hopeless at ``amend_body`` should not have the second
+    dragged along by the first, and under one global bar the only way to
+    raise ``amend_body`` precision was to get better at everything else.
+    """
     try:
         from app.lib.paths import dataPath
 
@@ -241,17 +460,41 @@ def precision_state() -> dict[str, Any]:
         data = {}
     labeled = int(data.get('labeled', 0))
     correct = int(data.get('correct', 0))
-    precision = (correct / labeled) if labeled else 0.0
+    overall = _precisionRow(labeled, correct)
+
+    raw_by_action = data.get('byAction')
+    byActionRaw: dict[str, Any] = raw_by_action if isinstance(raw_by_action, dict) else {}
+    byAction: dict[str, dict[str, Any]] = {}
+    for action in VERDICT_MODELS:
+        row = byActionRaw.get(action)
+        if not isinstance(row, dict):
+            # No samples for this action yet — it inherits the global figure
+            # rather than reporting an empty bucket that reads as "0%".
+            byAction[action] = dict(overall)
+        else:
+            byAction[action] = _precisionRow(row.get('labeled', 0), row.get('correct', 0))
+
     return {
         'labeled': labeled,
         'correct': correct,
-        'precision': round(precision, 4),
-        'amendBodyEnabled': labeled >= _PRECISION_MIN_LABELED and precision >= _PRECISION_SHIP_BAR,
+        'precision': overall['precision'],
+        'amendBodyEnabled': bool(byAction['amend_body']['enabled']),
+        'byAction': byAction,
     }
 
 
-def record_precision_run(labeled: int, correct: int) -> dict[str, Any]:
-    """Accumulate one harness run into the precision store."""
+def record_precision_run(
+    labeled: int,
+    correct: int,
+    per_action: dict[str, dict[str, int]] | None = None,
+) -> dict[str, Any]:
+    """Accumulate one harness run into the precision store.
+
+    ``per_action`` is optional and additive: a harness that knows which action
+    each labeled episode was judged as passes ``{action: {'labeled': n,
+    'correct': n}}`` and gets per-action gates. One that does not keeps the
+    single global bar it has always had.
+    """
     from app.lib.paths import dataPath
 
     path = dataPath('skill_learning_precision.json')
@@ -261,6 +504,22 @@ def record_precision_run(labeled: int, correct: int) -> dict[str, Any]:
         data = {}
     data['labeled'] = int(data.get('labeled', 0)) + int(labeled)
     data['correct'] = int(data.get('correct', 0)) + int(correct)
+
+    if per_action:
+        byAction = data.get('byAction')
+        if not isinstance(byAction, dict):
+            byAction = {}
+        for action, counts in per_action.items():
+            if action not in VERDICT_MODELS or not isinstance(counts, dict):
+                continue
+            row = byAction.get(action)
+            if not isinstance(row, dict):
+                row = {'labeled': 0, 'correct': 0}
+            row['labeled'] = int(row.get('labeled', 0)) + int(counts.get('labeled', 0))
+            row['correct'] = int(row.get('correct', 0)) + int(counts.get('correct', 0))
+            byAction[action] = row
+        data['byAction'] = byAction
+
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data), 'utf-8')
     return precision_state()
@@ -588,7 +847,15 @@ def run_distiller_pass(dryRun: bool = False) -> dict[str, Any]:
             _cooldown_batch(len(batch))
             results.append({'batch': len(batch), 'judgeFailed': True})
             break
-        for v in verdicts.get('verdicts', []):
+        # P2#16: validate BEFORE anything is applied. A verdict that cannot be
+        # applied is dropped here, whole — it never reaches `apply_verdict`,
+        # so it can never half-apply (a fact saved from a verdict whose skill
+        # half was unusable). `apply_verdict` keeps its own denylist check as
+        # the LAST gate before persistence; this layer only ever removes more.
+        applicable, dropped = parse_verdicts(verdicts)
+        for d in dropped:
+            results.append({'episode': d.get('episode'), 'label': 'dropped-invalid', 'why': d['why']})
+        for v in applicable:
             epId = v.get('episode')
             fpRow = _conn().execute(
                 'SELECT fingerprint_id, scope FROM episodes WHERE id = ?', (epId,)
@@ -601,7 +868,17 @@ def run_distiller_pass(dryRun: bool = False) -> dict[str, Any]:
             if epId is not None:
                 set_judge_verdict(int(epId), json.dumps(v, ensure_ascii=False)[:2000])
             results.append({'episode': epId, 'label': label})
-    return {'verdicts': len(results), 'results': results}
+        if dropped:
+            logger.info(
+                'distiller batch dropped %d invalid verdict(s) of %d',
+                len(dropped),
+                len(applicable) + len(dropped),
+            )
+    return {
+        'verdicts': len(results),
+        'dropped': sum(1 for r in results if r.get('label') == 'dropped-invalid'),
+        'results': results,
+    }
 
 
 def _run_batch(batch: list[dict[str, Any]]) -> dict[str, Any] | None:
