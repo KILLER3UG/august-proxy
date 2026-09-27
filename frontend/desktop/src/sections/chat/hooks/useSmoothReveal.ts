@@ -15,25 +15,15 @@
  *    copy, persistence) the full target is returned untouched.
  *  • If the target shrinks (retry rollback truncates the accumulator), the
  *    shown length clamps down immediately — no stale tail.
- *  • `prefers-reduced-motion` disables the animation entirely.
+ *  • The reduced-motion preference disables the animation entirely, read
+ *    through the sanctioned `useReducedMotion` wrapper (audit P2#18).
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { useReducedMotion } from '@/lib/motion';
 
 const CATCHUP_FRAMES = 12; // spread a burst over ~200 ms at 60 fps
 const MAX_CHARS_PER_FRAME = 24;
-
-function prefersReducedMotion(): boolean {
-  try {
-    return (
-      typeof window !== 'undefined' &&
-      !!window.matchMedia &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    );
-  } catch {
-    return false;
-  }
-}
 
 export function useSmoothReveal(target: string, active: boolean): string {
   const [revealed, setRevealed] = useState(target);
@@ -41,9 +31,10 @@ export function useSmoothReveal(target: string, active: boolean): string {
   targetRef.current = target;
   const shownRef = useRef(target.length);
   const emittedRef = useRef(target);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
-    if (!active || prefersReducedMotion()) {
+    if (!active || reducedMotion) {
       shownRef.current = targetRef.current.length;
       emittedRef.current = targetRef.current;
       setRevealed(targetRef.current);
@@ -76,7 +67,7 @@ export function useSmoothReveal(target: string, active: boolean): string {
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [active]);
+  }, [active, reducedMotion]);
 
   return active ? revealed : target;
 }

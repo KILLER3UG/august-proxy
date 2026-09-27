@@ -6,6 +6,7 @@
 
 import { useThemeStore, setThemeMode, setTextSize } from '@/lib/theme';
 import type { ThemeMode, TextSize } from '@/lib/theme';
+import { Surface, type SurfaceElevation } from '@/components/ui/Surface';
 
 interface ColorToken {
   name: string;
@@ -76,10 +77,18 @@ const RADII: SpacingToken[] = [
   { name: '2xl', value: '20px' },
 ];
 
-const SHADOWS: SpacingToken[] = [
-  { name: 'overlay', value: '0 24px 48px -12px rgb(0 0 0 / 0.45)' },
-  { name: 'soft',    value: '0 1px 2px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.10)' },
-  { name: 'ring',    value: '0 0 0 4px rgb(74 138 255 / 0.18)' },
+/* The elevation ladder (audit P2#17). The values live once, in
+ * src/styles/tokens.css, and are re-exposed as `shadow-elev-*` in
+ * tailwind.config.cjs — this page renders each rung through the <Surface>
+ * primitive rather than repeating a hardcoded box-shadow, so the inspector
+ * cannot drift from what the app actually paints. `flat` is `none`, so its
+ * swatch shows the bare tile. (The `ring` entry in the Tailwind theme is the
+ * 4px FOCUS halo, a different vocabulary, and is not a rung here.) */
+const ELEVATIONS: { name: string; elev: SurfaceElevation; token: string }[] = [
+  { name: 'flat',    elev: 'flat',    token: '--elev-flat' },
+  { name: 'ring',    elev: 'ring',    token: '--elev-ring' },
+  { name: 'raised',  elev: 'raised',  token: '--elev-raised' },
+  { name: 'overlay', elev: 'overlay', token: '--elev-overlay' },
 ];
 
 const TYPE_TOKENS: TypeToken[] = [
@@ -163,12 +172,15 @@ function RadiiGrid() {
 
 function ShadowsGrid() {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-      {SHADOWS.map(s => (
+    <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
+      {ELEVATIONS.map(s => (
         <div key={s.name} className="rounded-lg border border-border bg-card p-6">
-          <div className="mx-auto mb-4 size-16 rounded-md bg-card" style={{ boxShadow: s.value }} />
+          <Surface
+            elev={s.elev}
+            className="mx-auto mb-4 size-16 rounded-md bg-card"
+          />
           <p className="text-sm font-medium text-foreground">{s.name}</p>
-          <p className="font-mono text-3xs text-muted-foreground break-all">{s.value}</p>
+          <p className="font-mono text-3xs text-muted-foreground break-all">{s.token}</p>
         </div>
       ))}
     </div>
@@ -280,7 +292,7 @@ export function DesignRoute() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-2xl font-semibold tracking-display">Shadows</h2>
+          <h2 className="text-2xl font-semibold tracking-display">Elevation</h2>
           <ShadowsGrid />
         </section>
 

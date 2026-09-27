@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { X, Mic } from 'lucide-react';
 import { useLiveSession } from './useLiveSession';
 import { LiveOrb } from './LiveOrb';
@@ -6,6 +6,7 @@ import { LiveCaptions } from './LiveCaptions';
 import { LiveToolRail } from './LiveToolRail';
 import { LiveApprovalCard } from './LiveApprovalCard';
 import { LiveControls } from './LiveControls';
+import { useReducedMotion } from '@/lib/motion';
 import { liveClient } from '@/api/liveClient';
 import { getLiveConfig } from '@/api/api-client';
 import { liveSTTFactory } from '@/api/speech/liveSTT';
@@ -21,20 +22,15 @@ interface LiveSurfaceProps {
 
 export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfaceProps) {
   const session = useLiveSession();
-  const [reducedMotion, setReducedMotion] = useState(false);
+  // Audit P2#18 — the sanctioned reduced-motion read (lib/motion.ts), which
+  // replaces the hand-rolled matchMedia subscription this component used to
+  // own. It reads the preference once instead of tracking OS flips; the orb
+  // is re-created with the rest of the Live surface, so the difference was
+  // never visible here.
+  const reducedMotion = useReducedMotion();
   const sessionIdRef = useRef<string>('');
   const sttRef = useRef<LiveSTT | null>(null);
   const ttsRef = useRef<LiveTTS | null>(null);
-
-  // Reduced-motion preference (feature-detect for jsdom)
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setReducedMotion(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
 
   // Push prop-supplied pending mutations into the session queue
   useEffect(() => {

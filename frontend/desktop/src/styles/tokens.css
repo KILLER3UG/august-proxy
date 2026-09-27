@@ -1,0 +1,318 @@
+/* ── tokens.css — design tokens (:root / .dark) and the token-backed
+ * background / foreground / border / ring utility classes. Imported first;
+ * the @tailwind directives live here so the Tailwind layer order is
+ * unchanged from the single-file era.
+ *
+ * Moved verbatim out of src/styles.css (audit P2#17): every rule below is a
+ * byte-identical slice of that file, in the same order it had there. */
+
+/* ── August Proxy UI v2 — design tokens (Phase 1.3) ───────────────── */
+/* Inherits Tailwind v3 utilities + base from tailwind.generated.css.  */
+/* This file is imported by main.tsx so Vite picks it up.              */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Surface palette — warmer, quieter neutrals (off the blue tint) */
+    --dt-background: #fbfbfa;
+    --dt-background-hsl: 60 11.11% 98.24%;
+    --dt-foreground: #1c1c1e;
+    --dt-foreground-hsl: 240 3.45% 11.37%;
+    /* Three sanctioned contrast tiers (2026-09-16 UI scan §3.2):
+     * - tier-1: primary body text (~15:1 on dt-background)
+     * - tier-2: secondary (timestamps, metadata, ≥11.5px) (~7:1)
+     * - tier-3: tertiary (placeholders, ≥13px OR ≥18px only) (~4.5:1)
+     * The dark theme tokens below mirror these targets. */
+    --dt-fg-1: #1c1c1e;
+    --dt-fg-2: #4a4a52;
+    --dt-fg-3: #6b6b70;
+    --dt-card: #ffffff;
+    --dt-card-hsl: 0 0% 100%;
+    --dt-card-foreground: #1c1c1e;
+    --dt-card-foreground-hsl: 240 3.45% 11.37%;
+    --dt-muted: #f4f4f3;
+    --dt-muted-hsl: 60 4.35% 95.49%;
+    --dt-muted-foreground: #6b6b70;
+    --dt-muted-foreground-hsl: 240 2.28% 42.94%;
+    --dt-popover: #ffffff;
+    --dt-popover-hsl: 0 0% 100%;
+    --dt-popover-foreground: #1c1c1e;
+    --dt-popover-foreground-hsl: 240 3.45% 11.37%;
+    --dt-elevated: #ffffff;
+
+    /* Brand — desaturated, reserved for action/focus */
+    --dt-primary: #2f6df6;
+    --dt-primary-hsl: 221.31 91.71% 57.45%;
+    --dt-primary-foreground: #ffffff;
+    --dt-primary-foreground-hsl: 0 0% 100%;
+    --dt-secondary: #eef3ff;
+    --dt-secondary-foreground: #1e293b;
+    --dt-accent: #eef3ff;
+    --dt-accent-foreground: #1e3a8a;
+    --dt-border: #ececea;
+    --dt-border-hsl: 60 5% 92.16%;
+    --dt-input: #dededa;
+    --dt-ring: #2f6df6;
+
+    /* Status — muted, not neon */
+    --dt-destructive: #d2503f;
+    --dt-destructive-foreground: #ffffff;
+    --dt-success: #2e9e6b;
+    --dt-success-fg: #047857;
+    --dt-warning: #c98a14;
+    --dt-warning-fg: #b45309;
+    --dt-info: #3b82f6;
+    --dt-info-fg: #1d4ed8;
+    --dt-danger: #d2503f;
+    --dt-danger-fg: #b91c1c;
+
+    /* Code surfaces */
+    --dt-code-inline: #b3215f;
+    --dt-code-block-bg: #f6f6f5;
+    --dt-code-block-fg: #1c1c1e;
+    /* Shared dark code surface (highlighted code + diffs) — same in both
+       themes because the syntax tokens come from highlight.js's dark theme. */
+    --dt-code-surface-bg: #1e1e1e;
+    --dt-code-surface-fg: #d4d4d4;
+    --dt-code-surface-num: #6b7280;
+    --dt-code-surface-border: rgba(255, 255, 255, 0.08);
+    --dt-code-added: #4ade80;
+    --dt-code-added-wash: rgba(74, 222, 128, 0.07);
+    --dt-code-added-gutter: rgba(74, 222, 128, 0.1);
+    --dt-code-removed: #f87171;
+    --dt-code-removed-wash: rgba(248, 113, 113, 0.07);
+    --dt-code-removed-gutter: rgba(248, 113, 113, 0.1);
+
+    /* Sidebar */
+    --dt-sidebar: #f8f8f7;
+    --dt-sidebar-foreground: #1c1c1e;
+    --dt-sidebar-primary: #2f6df6;
+    --dt-sidebar-primary-foreground: #ffffff;
+    --dt-sidebar-accent: #eef3ff;
+    --dt-sidebar-accent-foreground: #1e3a8a;
+    --dt-sidebar-border: #ececea;
+    --dt-sidebar-ring: #2f6df6;
+
+    /* Chat surfaces — derived from the base palette so they track the theme
+       until the user overrides them (Settings → Design UI / customize_ui). */
+    --dt-chat-background: var(--dt-background);
+    --dt-chat-input-bg: color-mix(in srgb, var(--dt-card) 95%, transparent);
+    --dt-user-bubble: color-mix(in srgb, var(--dt-muted) 35%, transparent);
+
+    /* ── Elevation ladder (audit P2#17) ───────────────────────────────
+       One vocabulary for "how far off the page is this surface", in four
+       rungs. Before this, the UI mixed a `shadow-md` on the composer with
+       1px `border`s on every sibling surface, so adjacent panels at the
+       same depth did not read as the same depth. The values are the
+       `soft` / `overlay` entries that already lived in
+       tailwind.config.cjs, and that config now reads them from here, so
+       `shadow-soft` and `<Surface elev="raised">` cannot drift apart.
+       Use the Surface primitive (components/ui/Surface) rather than
+       hand-writing a box-shadow; `--elev-ring` is the 1px-in-the-border
+       colour rung for surfaces whose siblings are all bordered. */
+    --elev-flat: none;
+    --elev-ring: 0 0 0 1px var(--dt-border);
+    --elev-raised: 0 1px 2px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.10);
+    --elev-overlay: 0 24px 48px -12px rgb(0 0 0 / 0.45);
+    /* No `.dark` overrides: the three shadow rungs are black at low alpha
+       and read the same on both backgrounds, and `--elev-ring` is derived
+       from `--dt-border`, which the theme already swaps. */
+
+    /* Base font-size — overridden by data-text-size for scaling */
+    font-size: 16px;
+  }
+
+  .dark {
+    /* Help native form controls (select/option) use dark system chrome on Windows */
+    color-scheme: dark;
+
+    /* Surface palette — deeper black like reference (Z/August), not charcoal */
+    --dt-background: #0F0F0F;
+    --dt-background-hsl: 0 0% 5.9%;
+    --dt-foreground: #f0f0f0;
+    --dt-foreground-hsl: 0 0% 94.1%;
+    --dt-fg-1: #f0f0f0;
+    --dt-fg-2: #c8c8cc;
+    --dt-fg-3: #a6a6a6;
+    --dt-card: #171717;
+    --dt-card-hsl: 0 0% 9%;
+    --dt-card-foreground: #f0f0f0;
+    --dt-card-foreground-hsl: 0 0% 94.1%;
+    --dt-muted: #1E1E1E;
+    --dt-muted-hsl: 0 0% 11.8%;
+    --dt-muted-foreground: #a6a6a6;
+    --dt-muted-foreground-hsl: 0 0% 65.1%;
+    --dt-popover: #1A1A1A;
+    --dt-popover-hsl: 0 0% 10.2%;
+    --dt-popover-foreground: #f0f0f0;
+    --dt-popover-foreground-hsl: 0 0% 94.1%;
+    --dt-elevated: #232323;
+
+    /* Brand — bright enough for AAA on charcoal, still restrained */
+    --dt-primary: #6f9bff;
+    --dt-primary-hsl: 221.67 100% 71.76%;
+    --dt-primary-foreground: #0e0e10;
+    --dt-primary-foreground-hsl: 240 6.67% 5.88%;
+    --dt-secondary: #1a2238;
+    --dt-secondary-foreground: #dbeafe;
+    --dt-accent: #1a2238;
+    --dt-accent-foreground: #dbeafe;
+    --dt-border: #262626;
+    --dt-border-hsl: 0 0% 15%;
+    --dt-input: #2A2A2A;
+    --dt-ring: #6f9bff;
+
+    /* Status */
+    --dt-destructive: #f0766a;
+    --dt-destructive-foreground: #ffffff;
+    --dt-success: #45c08a;
+    --dt-success-fg: #6ee7b7;
+    --dt-warning: #e0b341;
+    --dt-warning-fg: #fcd34d;
+    --dt-info: #60a5fa;
+    --dt-info-fg: #93c5fd;
+    --dt-danger: #f0766a;
+    --dt-danger-fg: #fca5a5;
+
+    /* Code surfaces */
+    --dt-code-inline: #9ec1ff;
+    --dt-code-block-bg: #0a0a0c;
+    --dt-code-block-fg: #e3e3e6;
+
+    /* Sidebar — deeper, matches header #0F0F0F stack */
+    --dt-sidebar: #141414;
+    --dt-sidebar-foreground: #eeeeee;
+    --dt-sidebar-primary: #6f9bff;
+    --dt-sidebar-primary-foreground: #0e0e10;
+    --dt-sidebar-accent: #1a2238;
+    --dt-sidebar-accent-foreground: #dbeafe;
+    --dt-sidebar-border: #262626;
+    --dt-sidebar-ring: #6f9bff;
+  }
+
+	  /* Text-size selector overrides the root font-size (scales all rems) */
+	  :root[data-text-size="compact"]     { font-size: calc(16px * 0.92); }
+	  :root[data-text-size="default"]     { font-size: calc(16px * 1.00); }
+	  :root[data-text-size="comfortable"] { font-size: calc(16px * 1.08); }
+	  :root[data-text-size="spacious"]    { font-size: calc(16px * 1.18); }
+
+  /* Fill the webview exactly — avoid 100vh/h-screen gaps that show the
+     native window chrome (white hairline) on Windows maximize/fullscreen. */
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: var(--dt-background);
+  }
+  body {
+    color: var(--dt-foreground);
+    font-family: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    letter-spacing: -0.011em;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1 { font-size: 1.375rem;  line-height: 1.25; letter-spacing: -0.022em; font-weight: 600; }
+  h2 { font-size: 1.125rem;  line-height: 1.3;  letter-spacing: -0.018em; font-weight: 600; }
+  h3 { font-size: 1rem;      line-height: 1.35; letter-spacing: -0.014em; font-weight: 600; }
+  h4 { font-size: 0.9375rem; line-height: 1.4;  letter-spacing: -0.012em; font-weight: 600; }
+
+  kbd {
+    font-family: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+    font-size: 0.6875rem;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 6px;
+    background: var(--dt-muted);
+    color: var(--dt-muted-foreground);
+    border: 1px solid var(--dt-border);
+  }
+}
+
+@layer components {
+  /* Surface backgrounds */
+  .bg-background     { background-color: var(--dt-background); }
+  .bg-foreground     { background-color: var(--dt-foreground); }
+  .bg-card           { background-color: var(--dt-card); }
+  .bg-muted          { background-color: var(--dt-muted); }
+  .bg-popover        { background-color: var(--dt-popover); }
+  .bg-primary        { background-color: var(--dt-primary); }
+  .bg-secondary      { background-color: var(--dt-secondary); }
+  .bg-accent         { background-color: var(--dt-accent); }
+  .bg-destructive    { background-color: var(--dt-destructive); }
+  .bg-elevated       { background-color: var(--dt-elevated); }
+  .bg-sidebar        { background-color: var(--dt-sidebar); }
+  .bg-sidebar-accent { background-color: var(--dt-sidebar-accent); }
+
+  /* Chat surfaces (user-customizable) */
+  .bg-chat-area      { background-color: var(--dt-chat-background); }
+  .bg-chat-input     { background-color: var(--dt-chat-input-bg); }
+  .bg-user-bubble    { background-color: var(--dt-user-bubble); }
+
+  /* Status backgrounds */
+  .bg-success        { background-color: var(--dt-success); }
+  .bg-warning        { background-color: var(--dt-warning); }
+  .bg-info           { background-color: var(--dt-info); }
+  .bg-danger         { background-color: var(--dt-danger); }
+
+  /* Foregrounds */
+  .text-foreground               { color: var(--dt-foreground); }
+  .text-background               { color: var(--dt-background); }
+  .text-card-foreground          { color: var(--dt-card-foreground); }
+  .text-muted-foreground         { color: var(--dt-muted-foreground); }
+  .text-popover-foreground       { color: var(--dt-popover-foreground); }
+  .text-primary                  { color: var(--dt-primary); }
+
+  /* Sanctioned contrast tiers — 2026-09-16 UI scan §3.2.
+   * tier-1: primary body (≥15:1), tier-2: metadata ≥11.5px (~7:1),
+   * tier-3: placeholders + decorative only at ≥13px (~4.5:1). */
+  .text-tier-1                  { color: var(--dt-fg-1); }
+  .text-tier-2                  { color: var(--dt-fg-2); }
+  .text-tier-3                  { color: var(--dt-fg-3); }
+  [data-tier='1']               { color: var(--dt-fg-1); }
+  [data-tier='2']               { color: var(--dt-fg-2); }
+  [data-tier='3']               { color: var(--dt-fg-3); }
+
+  .text-primary-foreground       { color: var(--dt-primary-foreground); }
+  .text-secondary-foreground     { color: var(--dt-secondary-foreground); }
+  .text-accent-foreground        { color: var(--dt-accent-foreground); }
+  .text-destructive              { color: var(--dt-destructive); }
+  .text-destructive-foreground   { color: var(--dt-destructive-foreground); }
+  .text-sidebar-foreground       { color: var(--dt-sidebar-foreground); }
+  .text-sidebar-primary-foreground { color: var(--dt-sidebar-primary-foreground); }
+  .text-sidebar-accent-foreground  { color: var(--dt-sidebar-accent-foreground); }
+
+  /* Status foregrounds */
+  .text-success        { color: var(--dt-success); }
+  .text-success-fg     { color: var(--dt-success-fg); }
+  .text-warning        { color: var(--dt-warning); }
+  .text-warning-fg     { color: var(--dt-warning-fg); }
+  .text-info           { color: var(--dt-info); }
+  .text-info-fg        { color: var(--dt-info-fg); }
+  .text-danger         { color: var(--dt-danger); }
+  .text-danger-fg      { color: var(--dt-danger-fg); }
+
+  /* Code */
+  .text-code-inline    { color: var(--dt-code-inline); }
+  .bg-code-block       { background-color: var(--dt-code-block-bg); }
+  .text-code-block     { color: var(--dt-code-block-fg); }
+
+  /* Borders */
+  .border-border          { border-color: var(--dt-border); }
+  .border-muted           { border-color: var(--dt-muted); }
+  .border-input           { border-color: var(--dt-input); }
+  .border-sidebar-border  { border-color: var(--dt-sidebar-border); }
+  .border-success         { border-color: var(--dt-success); }
+  .border-warning         { border-color: var(--dt-warning); }
+  .border-info            { border-color: var(--dt-info); }
+  .border-danger          { border-color: var(--dt-danger); }
+  /* Focus rings */
+  .ring-ring { --tw-ring-color: var(--dt-ring); }
+}
+

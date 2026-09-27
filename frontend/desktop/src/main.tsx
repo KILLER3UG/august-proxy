@@ -5,6 +5,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { MotionConfig } from 'framer-motion';
 import { Toaster } from 'sonner';
 import { hydrateTheme } from './lib/theme';
 import { hydrateUiCustomization } from './lib/ui-customization';
@@ -47,16 +48,28 @@ startRealtimeBridge();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        {/* Last line of defense: a render throw anywhere shows a recoverable
-            error card with the message instead of a black webview. */}
-        <ErrorBoundary>
-          <App />
-        </ErrorBoundary>
-        <Toaster position="bottom-right" theme="system" richColors />
-      </BrowserRouter>
-    </QueryClientProvider>
+    {/* Audit P2#18 — `reducedMotion="user"` makes every framer-motion
+        animation in the tree below honour the OS `prefers-reduced-motion`
+        setting, in one place. Previously each animated component either
+        opted in individually or ignored the preference entirely; this is
+        the app-wide half of that, and `useReducedMotion` (lib/motion.ts)
+        is the per-component half. CSS-only animations keep their
+        `@media (prefers-reduced-motion: reduce)` blocks in
+        src/styles/motion.css. Outermost of the providers on purpose —
+        motion preference is a whole-app concern, not a router or a query
+        concern. */}
+    <MotionConfig reducedMotion="user">
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          {/* Last line of defense: a render throw anywhere shows a recoverable
+              error card with the message instead of a black webview. */}
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
+          <Toaster position="bottom-right" theme="system" richColors />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </MotionConfig>
   </React.StrictMode>,
 );
 

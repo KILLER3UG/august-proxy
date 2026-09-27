@@ -89,9 +89,28 @@ module.exports = {
         '2xs': '0.6875rem',
       },
       boxShadow: {
-        overlay: '0 24px 48px -12px rgb(0 0 0 / 0.45)',
-        soft:    '0 1px 2px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.10)',
+        // The four-rung elevation ladder (audit P2#17), defined once in
+        // src/styles/tokens.css and exposed as `shadow-elev-*` so the
+        // <Surface> primitive and a hand-written utility cannot disagree.
+        elev: {
+          flat:    'var(--elev-flat)',
+          ring:    'var(--elev-ring)',
+          raised:  'var(--elev-raised)',
+          overlay: 'var(--elev-overlay)',
+        },
+        // `soft` and `overlay` now read the elevation ladder from
+        // src/styles/tokens.css (audit P2#17) instead of repeating the
+        // values, so a Tailwind `shadow-soft` and a
+        // `<Surface elev="raised">` are the same shadow by construction.
+        overlay: 'var(--elev-overlay)',
+        soft:    'var(--elev-raised)',
+        // `ring` is the FOCUS ring (4px brand-tinted halo), not a surface
+        // elevation — it is a different vocabulary from --elev-ring, which
+        // is the 1px border-coloured edge.
         ring:    '0 0 0 4px rgb(74 138 255 / 0.18)',
+        // `xs` is the hairline step used by the composer attachment chips;
+        // it predates the four-rung ladder and stays on the Tailwind side
+        // rather than becoming a fifth rung for two call sites.
         xs:      '0 1px 2px rgb(0 0 0 / 0.04)',
       },
     },

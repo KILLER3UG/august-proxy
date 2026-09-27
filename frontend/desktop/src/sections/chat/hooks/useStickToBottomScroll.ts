@@ -18,14 +18,7 @@ import {
   type MutableRefObject,
   type RefObject,
 } from 'react';
-
-function prefersReducedMotion(): boolean {
-  try {
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  } catch {
-    return false;
-  }
-}
+import { useReducedMotion } from '@/lib/motion';
 
 const FREE_CLASS = 'chat-scroll--free';
 
@@ -58,6 +51,13 @@ export function useStickToBottomScroll({
   const touchStartYRef = useRef<number | null>(null);
   const onPinnedChangeRef = useRef(onPinnedChange);
   onPinnedChangeRef.current = onPinnedChange;
+  // Audit P2#18 — the sanctioned reduced-motion read (lib/motion.ts). The
+  // two former `prefersReducedMotion()` calls were re-read at scroll time;
+  // the hook reads once per mount, which is the same value for the life of
+  // a streaming turn.
+  const reducedMotion = useReducedMotion();
+  const reducedMotionRef = useRef(reducedMotion);
+  reducedMotionRef.current = reducedMotion;
 
   const getScrollTarget = useCallback(() => {
     const el = scrollRef.current;
@@ -103,7 +103,7 @@ export function useStickToBottomScroll({
     target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' });
     window.setTimeout(() => {
       programmaticScrollRef.current = false;
-    }, prefersReducedMotion() ? 50 : 450);
+    }, reducedMotionRef.current ? 50 : 450);
   }, [getScrollTarget, setPinned]);
 
   const scrollToBottomImmediate = useCallback(() => {
@@ -211,7 +211,7 @@ export function useStickToBottomScroll({
     if (!streaming) return;
     if (!sessionId || loadedSessionId !== sessionId) return;
 
-    const reduced = prefersReducedMotion();
+    const reduced = reducedMotion;
     let raf = 0;
     let alive = true;
 
@@ -248,6 +248,7 @@ export function useStickToBottomScroll({
     getScrollTarget,
     pinnedToBottomRef,
     applyScrollTop,
+    reducedMotion,
   ]);
 
   // When idle (or stream just ended), snap if anchoring slipped.

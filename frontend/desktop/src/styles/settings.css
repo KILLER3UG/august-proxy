@@ -1,0 +1,48 @@
+/* ── settings.css — settings and update-flow surfaces.
+ *
+ * Moved verbatim out of src/styles.css (audit P2#17): every rule below is a
+ * byte-identical slice of that file, in the same order it had there. */
+
+/* Update flow dialog — intentionally follows the desktop updater reference:
+   calm dimmed workspace, one focused card, bytes above a thin progress bar,
+   then a clear Later / Restart to update decision. */
+.update-flow-backdrop {
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(8px);
+}
+
+.update-flow-card {
+  border-color: color-mix(in srgb, var(--dt-border) 90%, white);
+  background: color-mix(in srgb, var(--dt-elevated) 98%, white);
+}
+
+.update-flow-icon {
+  color: var(--dt-primary);
+  background: color-mix(in srgb, var(--dt-primary) 16%, var(--dt-card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dt-primary) 35%, transparent);
+}
+
+.update-flow-secondary-button {
+  color: var(--dt-foreground);
+  background: color-mix(in srgb, var(--dt-foreground) 8%, transparent);
+  transition: background-color 150ms ease;
+}
+
+.update-flow-secondary-button:hover {
+  background: color-mix(in srgb, var(--dt-foreground) 14%, transparent);
+}
+
+.update-flow-primary-button {
+  color: var(--dt-primary-foreground);
+  background: var(--dt-primary);
+  transition: filter 150ms ease, transform 150ms ease;
+}
+
+.update-flow-primary-button:hover {
+  filter: brightness(1.08);
+}
+
+.august-menu-panel[data-state='open'] .august-menu-item {
+  animation: august-menu-item-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+

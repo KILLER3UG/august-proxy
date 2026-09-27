@@ -1,0 +1,372 @@
+/* ── code.css — code presentation: the markdown body, fenced code blocks and
+ * the shared dark code surface (DiffCodePanel).
+ *
+ * Moved verbatim out of src/styles.css (audit P2#17): every rule below is a
+ * byte-identical slice of that file, in the same order it had there. */
+
+/* ── Markdown Content Styling ────────────────────────────────────── */
+.markdown-content {
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+
+/* Assistant prose: matches the sidebar/base UI sans stack so chat text and
+   session list share one font; code/pre/katex keep mono stacks below */
+.markdown-content--assistant {
+  font-family: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.98rem;
+  line-height: 1.7;
+  letter-spacing: 0;
+}
+.markdown-content--assistant code,
+.markdown-content--assistant pre,
+.markdown-content--assistant pre code,
+.markdown-content--assistant .katex,
+.markdown-content--assistant .katex-error,
+.markdown-content--assistant .math-fallback {
+  font-family: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace !important;
+  letter-spacing: 0;
+}
+
+.markdown-token {
+  min-width: 0;
+}
+
+.markdown-token > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content p {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+}
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content strong,
+.markdown-content b {
+  font-weight: 700 !important;
+  color: var(--dt-foreground) !important;
+}
+
+.markdown-content em,
+.markdown-content i {
+  font-style: italic;
+}
+
+/* Headings */
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: var(--dt-foreground);
+}
+.markdown-content h1 { font-size: 1.25rem; }
+.markdown-content h2 { font-size: 1.1rem; }
+.markdown-content h3 { font-size: 1rem; }
+
+/* Lists */
+.markdown-content ul,
+.markdown-content ol {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  padding-left: 1.25rem;
+}
+.markdown-content ul {
+  list-style-type: disc;
+}
+.markdown-content ol {
+  list-style-type: decimal;
+}
+.markdown-content li {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+/* Code blocks & inline code */
+.markdown-content code {
+  font-family: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+  font-size: 0.875em;
+  background-color: rgba(100, 150, 255, 0.06);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  border: 1px solid rgba(100, 150, 255, 0.12);
+  color: var(--dt-code-inline);
+  font-weight: 500;
+}
+
+.markdown-content pre {
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  background-color: var(--dt-code-block-bg);
+  border: 1px solid var(--dt-border);
+  border-radius: 0.5rem;
+}
+
+.markdown-content .markdown-code-block {
+  border-radius: 0.75rem;
+  border: 1px solid var(--dt-border);
+  overflow: hidden;
+  margin-top: 0.875rem;
+  margin-bottom: 0.875rem;
+  background-color: var(--dt-code-surface-bg, #1e1e1e);
+}
+.markdown-content .markdown-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.875rem;
+  background-color: color-mix(in srgb, var(--dt-foreground) 4%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 60%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.markdown-content .markdown-code-block > pre {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  padding: 0.75rem 1rem;
+}
+.markdown-content .markdown-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.375rem;
+  font-size: 0.6875rem;
+  color: var(--dt-muted-foreground);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.markdown-content .markdown-copy-btn:hover {
+  color: var(--dt-foreground);
+  background: color-mix(in srgb, var(--dt-foreground) 8%, transparent);
+}
+.markdown-content pre code {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 400;
+  display: block;
+}
+/* VS Code–like theme (vs2015) — keep token colors from highlight.js */
+.markdown-content pre code.hljs {
+  background: transparent;
+  padding: 0;
+}
+.markdown-content .markdown-code-block > pre.hljs {
+  background-color: var(--dt-code-surface-bg);
+  border-color: var(--dt-code-surface-border);
+}
+
+/* Tables */
+.markdown-content table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 0.875rem;
+  margin-bottom: 0.875rem;
+  font-size: 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--dt-border) 70%, transparent);
+  border-radius: 0.5rem;
+}
+.markdown-content th,
+.markdown-content td {
+  padding: 0.5rem 0.875rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 50%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--dt-border) 40%, transparent);
+}
+.markdown-content th:last-child,
+.markdown-content td:last-child {
+  border-right: none;
+}
+.markdown-content tr:last-child td {
+  border-bottom: none;
+}
+.markdown-content th {
+  background-color: color-mix(in srgb, var(--dt-muted) 50%, transparent);
+  font-weight: 600;
+  text-align: left;
+}
+.markdown-content tr:nth-child(even) {
+  background-color: rgba(241, 245, 249, 0.3);
+}
+.dark .markdown-content tr:nth-child(even) {
+  background-color: rgba(30, 30, 33, 0.3);
+}
+
+/* Horizontal rule */
+.markdown-content hr {
+  border: 0;
+  border-top: 1px solid var(--dt-border);
+  margin: 1.25rem 0;
+}
+
+/* Blockquotes */
+.markdown-content blockquote {
+  margin: 0.75rem 0;
+  padding-left: 1rem;
+  border-left: 4px solid var(--dt-primary);
+  color: var(--dt-muted-foreground);
+}
+
+/* ── Edit rail row — header faces + code panel ─────────────────────── */
+.edit-rail-verb {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--dt-muted-foreground) 92%, transparent);
+}
+.edit-rail-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.edit-rail-langicon {
+  flex: 0 0 auto;
+  line-height: 0;
+}
+.edit-rail-filelink {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--dt-foreground) 92%, transparent);
+}
+.edit-rail-dir {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent);
+}
+.edit-rail-chevron {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  opacity: 0;
+  color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent);
+  transition: opacity 0.15s ease, transform 0.18s ease;
+}
+.edit-rail-trigger:hover .edit-rail-chevron,
+.edit-rail-trigger:focus-visible .edit-rail-chevron,
+.edit-rail-chevron.is-open {
+  opacity: 0.85;
+}
+.edit-rail-chevron.is-open {
+  transform: rotate(90deg);
+}
+.edit-rail-panel {
+  margin-top: 6px;
+}
+
+/* ── DiffCodePanel — syntax-highlighted, gutter + accent bar ─────────
+   The panel is a fixed *dark* code surface in both themes — the same
+   compromise the chat's fenced code blocks and the legacy DiffView make —
+   because the syntax tokens come from highlight.js's dark `vs2015` theme and
+   would wash out on a light background. Added/removed tints are rgba washes
+   over that dark surface (the legacy DiffView's proven palette), with a
+   bright accent bar and readable green/red line numbers. */
+.diff-code-panel {
+  overflow: hidden;
+  border: 1px solid var(--dt-code-surface-border);
+  border-radius: 8px;
+  background: var(--dt-code-surface-bg);
+  font-family: ui-monospace, 'JetBrains Mono Variable', 'Cascadia Code', Menlo,
+    Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+.diff-code-scroll {
+  max-height: 22rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.diff-code-row {
+  display: flex;
+  align-items: stretch;
+  min-width: 100%;
+  width: max-content;
+}
+.diff-code-row:hover {
+  filter: brightness(1.08);
+}
+.diff-code-accent {
+  flex: 0 0 3px;
+  align-self: stretch;
+  background: transparent;
+}
+.diff-code-num {
+  flex: 0 0 auto;
+  min-width: 2.75rem;
+  padding: 0 0.6rem 0 0.5rem;
+  text-align: right;
+  white-space: pre;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--dt-code-surface-num);
+}
+.diff-code-text {
+  flex: 0 0 auto;
+  padding-right: 1rem;
+  white-space: pre;
+  color: var(--dt-code-surface-fg);
+}
+/* Added lines — green wash across the row, stronger in the gutter, bright
+   accent bar + readable green line numbers (the reference screenshot). */
+.diff-code-row--added {
+  background: var(--dt-code-added-wash);
+}
+.diff-code-row--added .diff-code-accent {
+  background: var(--dt-code-added);
+}
+.diff-code-row--added .diff-code-num {
+  background: var(--dt-code-added-gutter);
+  color: var(--dt-code-added);
+}
+/* Removed lines — red mirror of the above. */
+.diff-code-row--removed {
+  background: var(--dt-code-removed-wash);
+}
+.diff-code-row--removed .diff-code-accent {
+  background: var(--dt-code-removed);
+}
+.diff-code-row--removed .diff-code-num {
+  background: var(--dt-code-removed-gutter);
+  color: var(--dt-code-removed);
+}
+.diff-code-more {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 0;
+  border: none;
+  border-top: 1px solid var(--dt-code-surface-border);
+  background: transparent;
+  color: #9ca3af;
+  font-size: 0.65625rem;
+  text-align: center;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.diff-code-more:hover {
+  color: #e5e7eb;
+}

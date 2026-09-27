@@ -1,0 +1,423 @@
+/* ── base.css — global, feature-agnostic CSS: status-color alpha utilities,
+ * scrollbars, element guards, the shared typography scale and the small
+ * utility classes used across the app.
+ *
+ * Moved verbatim out of src/styles.css (audit P2#17): every rule below is a
+ * byte-identical slice of that file, in the same order it had there. */
+
+/* ── Status-color alpha utilities (unlayered: Tailwind drops    ──
+     unrecognized `/NN` utilities inside @layer components, so    ──
+     these live outside any layer and always survive the build.   ──*/
+
+/* Status-color alpha utilities — Tailwind does not know these color
+   names, so `/NN` modifiers like bg-warning/10 compile to nothing
+   without this block (color-mix mirrors the `--dt-*-hsl` layer). */
+.bg-success\/5                  { background-color: color-mix(in srgb, var(--dt-success) 5%, transparent); }
+.bg-success\/10                 { background-color: color-mix(in srgb, var(--dt-success) 10%, transparent); }
+.bg-success\/15                 { background-color: color-mix(in srgb, var(--dt-success) 15%, transparent); }
+.bg-success\/20                 { background-color: color-mix(in srgb, var(--dt-success) 20%, transparent); }
+.bg-success\/25                 { background-color: color-mix(in srgb, var(--dt-success) 25%, transparent); }
+.bg-success\/30                 { background-color: color-mix(in srgb, var(--dt-success) 30%, transparent); }
+.bg-success\/35                 { background-color: color-mix(in srgb, var(--dt-success) 35%, transparent); }
+.bg-success\/40                 { background-color: color-mix(in srgb, var(--dt-success) 40%, transparent); }
+.bg-success\/45                 { background-color: color-mix(in srgb, var(--dt-success) 45%, transparent); }
+.bg-success\/50                 { background-color: color-mix(in srgb, var(--dt-success) 50%, transparent); }
+.bg-success\/55                 { background-color: color-mix(in srgb, var(--dt-success) 55%, transparent); }
+.bg-success\/60                 { background-color: color-mix(in srgb, var(--dt-success) 60%, transparent); }
+.bg-success\/65                 { background-color: color-mix(in srgb, var(--dt-success) 65%, transparent); }
+.bg-success\/70                 { background-color: color-mix(in srgb, var(--dt-success) 70%, transparent); }
+.bg-success\/75                 { background-color: color-mix(in srgb, var(--dt-success) 75%, transparent); }
+.bg-success\/80                 { background-color: color-mix(in srgb, var(--dt-success) 80%, transparent); }
+.bg-success\/85                 { background-color: color-mix(in srgb, var(--dt-success) 85%, transparent); }
+.bg-success\/90                 { background-color: color-mix(in srgb, var(--dt-success) 90%, transparent); }
+.bg-success\/95                 { background-color: color-mix(in srgb, var(--dt-success) 95%, transparent); }
+.bg-warning\/5                  { background-color: color-mix(in srgb, var(--dt-warning) 5%, transparent); }
+.bg-warning\/10                 { background-color: color-mix(in srgb, var(--dt-warning) 10%, transparent); }
+.bg-warning\/15                 { background-color: color-mix(in srgb, var(--dt-warning) 15%, transparent); }
+.bg-warning\/20                 { background-color: color-mix(in srgb, var(--dt-warning) 20%, transparent); }
+.bg-warning\/25                 { background-color: color-mix(in srgb, var(--dt-warning) 25%, transparent); }
+.bg-warning\/30                 { background-color: color-mix(in srgb, var(--dt-warning) 30%, transparent); }
+.bg-warning\/35                 { background-color: color-mix(in srgb, var(--dt-warning) 35%, transparent); }
+.bg-warning\/40                 { background-color: color-mix(in srgb, var(--dt-warning) 40%, transparent); }
+.bg-warning\/45                 { background-color: color-mix(in srgb, var(--dt-warning) 45%, transparent); }
+.bg-warning\/50                 { background-color: color-mix(in srgb, var(--dt-warning) 50%, transparent); }
+.bg-warning\/55                 { background-color: color-mix(in srgb, var(--dt-warning) 55%, transparent); }
+.bg-warning\/60                 { background-color: color-mix(in srgb, var(--dt-warning) 60%, transparent); }
+.bg-warning\/65                 { background-color: color-mix(in srgb, var(--dt-warning) 65%, transparent); }
+.bg-warning\/70                 { background-color: color-mix(in srgb, var(--dt-warning) 70%, transparent); }
+.bg-warning\/75                 { background-color: color-mix(in srgb, var(--dt-warning) 75%, transparent); }
+.bg-warning\/80                 { background-color: color-mix(in srgb, var(--dt-warning) 80%, transparent); }
+.bg-warning\/85                 { background-color: color-mix(in srgb, var(--dt-warning) 85%, transparent); }
+.bg-warning\/90                 { background-color: color-mix(in srgb, var(--dt-warning) 90%, transparent); }
+.bg-warning\/95                 { background-color: color-mix(in srgb, var(--dt-warning) 95%, transparent); }
+.bg-info\/5                  { background-color: color-mix(in srgb, var(--dt-info) 5%, transparent); }
+.bg-info\/10                 { background-color: color-mix(in srgb, var(--dt-info) 10%, transparent); }
+.bg-info\/15                 { background-color: color-mix(in srgb, var(--dt-info) 15%, transparent); }
+.bg-info\/20                 { background-color: color-mix(in srgb, var(--dt-info) 20%, transparent); }
+.bg-info\/25                 { background-color: color-mix(in srgb, var(--dt-info) 25%, transparent); }
+.bg-info\/30                 { background-color: color-mix(in srgb, var(--dt-info) 30%, transparent); }
+.bg-info\/35                 { background-color: color-mix(in srgb, var(--dt-info) 35%, transparent); }
+.bg-info\/40                 { background-color: color-mix(in srgb, var(--dt-info) 40%, transparent); }
+.bg-info\/45                 { background-color: color-mix(in srgb, var(--dt-info) 45%, transparent); }
+.bg-info\/50                 { background-color: color-mix(in srgb, var(--dt-info) 50%, transparent); }
+.bg-info\/55                 { background-color: color-mix(in srgb, var(--dt-info) 55%, transparent); }
+.bg-info\/60                 { background-color: color-mix(in srgb, var(--dt-info) 60%, transparent); }
+.bg-info\/65                 { background-color: color-mix(in srgb, var(--dt-info) 65%, transparent); }
+.bg-info\/70                 { background-color: color-mix(in srgb, var(--dt-info) 70%, transparent); }
+.bg-info\/75                 { background-color: color-mix(in srgb, var(--dt-info) 75%, transparent); }
+.bg-info\/80                 { background-color: color-mix(in srgb, var(--dt-info) 80%, transparent); }
+.bg-info\/85                 { background-color: color-mix(in srgb, var(--dt-info) 85%, transparent); }
+.bg-info\/90                 { background-color: color-mix(in srgb, var(--dt-info) 90%, transparent); }
+.bg-info\/95                 { background-color: color-mix(in srgb, var(--dt-info) 95%, transparent); }
+.bg-danger\/5                  { background-color: color-mix(in srgb, var(--dt-danger) 5%, transparent); }
+.bg-danger\/10                 { background-color: color-mix(in srgb, var(--dt-danger) 10%, transparent); }
+.bg-danger\/15                 { background-color: color-mix(in srgb, var(--dt-danger) 15%, transparent); }
+.bg-danger\/20                 { background-color: color-mix(in srgb, var(--dt-danger) 20%, transparent); }
+.bg-danger\/25                 { background-color: color-mix(in srgb, var(--dt-danger) 25%, transparent); }
+.bg-danger\/30                 { background-color: color-mix(in srgb, var(--dt-danger) 30%, transparent); }
+.bg-danger\/35                 { background-color: color-mix(in srgb, var(--dt-danger) 35%, transparent); }
+.bg-danger\/40                 { background-color: color-mix(in srgb, var(--dt-danger) 40%, transparent); }
+.bg-danger\/45                 { background-color: color-mix(in srgb, var(--dt-danger) 45%, transparent); }
+.bg-danger\/50                 { background-color: color-mix(in srgb, var(--dt-danger) 50%, transparent); }
+.bg-danger\/55                 { background-color: color-mix(in srgb, var(--dt-danger) 55%, transparent); }
+.bg-danger\/60                 { background-color: color-mix(in srgb, var(--dt-danger) 60%, transparent); }
+.bg-danger\/65                 { background-color: color-mix(in srgb, var(--dt-danger) 65%, transparent); }
+.bg-danger\/70                 { background-color: color-mix(in srgb, var(--dt-danger) 70%, transparent); }
+.bg-danger\/75                 { background-color: color-mix(in srgb, var(--dt-danger) 75%, transparent); }
+.bg-danger\/80                 { background-color: color-mix(in srgb, var(--dt-danger) 80%, transparent); }
+.bg-danger\/85                 { background-color: color-mix(in srgb, var(--dt-danger) 85%, transparent); }
+.bg-danger\/90                 { background-color: color-mix(in srgb, var(--dt-danger) 90%, transparent); }
+.bg-danger\/95                 { background-color: color-mix(in srgb, var(--dt-danger) 95%, transparent); }
+.text-success\/5                  { color: color-mix(in srgb, var(--dt-success) 5%, transparent); }
+.text-success\/10                 { color: color-mix(in srgb, var(--dt-success) 10%, transparent); }
+.text-success\/15                 { color: color-mix(in srgb, var(--dt-success) 15%, transparent); }
+.text-success\/20                 { color: color-mix(in srgb, var(--dt-success) 20%, transparent); }
+.text-success\/25                 { color: color-mix(in srgb, var(--dt-success) 25%, transparent); }
+.text-success\/30                 { color: color-mix(in srgb, var(--dt-success) 30%, transparent); }
+.text-success\/35                 { color: color-mix(in srgb, var(--dt-success) 35%, transparent); }
+.text-success\/40                 { color: color-mix(in srgb, var(--dt-success) 40%, transparent); }
+.text-success\/45                 { color: color-mix(in srgb, var(--dt-success) 45%, transparent); }
+.text-success\/50                 { color: color-mix(in srgb, var(--dt-success) 50%, transparent); }
+.text-success\/55                 { color: color-mix(in srgb, var(--dt-success) 55%, transparent); }
+.text-success\/60                 { color: color-mix(in srgb, var(--dt-success) 60%, transparent); }
+.text-success\/65                 { color: color-mix(in srgb, var(--dt-success) 65%, transparent); }
+.text-success\/70                 { color: color-mix(in srgb, var(--dt-success) 70%, transparent); }
+.text-success\/75                 { color: color-mix(in srgb, var(--dt-success) 75%, transparent); }
+.text-success\/80                 { color: color-mix(in srgb, var(--dt-success) 80%, transparent); }
+.text-success\/85                 { color: color-mix(in srgb, var(--dt-success) 85%, transparent); }
+.text-success\/90                 { color: color-mix(in srgb, var(--dt-success) 90%, transparent); }
+.text-success\/95                 { color: color-mix(in srgb, var(--dt-success) 95%, transparent); }
+.text-warning\/5                  { color: color-mix(in srgb, var(--dt-warning) 5%, transparent); }
+.text-warning\/10                 { color: color-mix(in srgb, var(--dt-warning) 10%, transparent); }
+.text-warning\/15                 { color: color-mix(in srgb, var(--dt-warning) 15%, transparent); }
+.text-warning\/20                 { color: color-mix(in srgb, var(--dt-warning) 20%, transparent); }
+.text-warning\/25                 { color: color-mix(in srgb, var(--dt-warning) 25%, transparent); }
+.text-warning\/30                 { color: color-mix(in srgb, var(--dt-warning) 30%, transparent); }
+.text-warning\/35                 { color: color-mix(in srgb, var(--dt-warning) 35%, transparent); }
+.text-warning\/40                 { color: color-mix(in srgb, var(--dt-warning) 40%, transparent); }
+.text-warning\/45                 { color: color-mix(in srgb, var(--dt-warning) 45%, transparent); }
+.text-warning\/50                 { color: color-mix(in srgb, var(--dt-warning) 50%, transparent); }
+.text-warning\/55                 { color: color-mix(in srgb, var(--dt-warning) 55%, transparent); }
+.text-warning\/60                 { color: color-mix(in srgb, var(--dt-warning) 60%, transparent); }
+.text-warning\/65                 { color: color-mix(in srgb, var(--dt-warning) 65%, transparent); }
+.text-warning\/70                 { color: color-mix(in srgb, var(--dt-warning) 70%, transparent); }
+.text-warning\/75                 { color: color-mix(in srgb, var(--dt-warning) 75%, transparent); }
+.text-warning\/80                 { color: color-mix(in srgb, var(--dt-warning) 80%, transparent); }
+.text-warning\/85                 { color: color-mix(in srgb, var(--dt-warning) 85%, transparent); }
+.text-warning\/90                 { color: color-mix(in srgb, var(--dt-warning) 90%, transparent); }
+.text-warning\/95                 { color: color-mix(in srgb, var(--dt-warning) 95%, transparent); }
+.text-info\/5                  { color: color-mix(in srgb, var(--dt-info) 5%, transparent); }
+.text-info\/10                 { color: color-mix(in srgb, var(--dt-info) 10%, transparent); }
+.text-info\/15                 { color: color-mix(in srgb, var(--dt-info) 15%, transparent); }
+.text-info\/20                 { color: color-mix(in srgb, var(--dt-info) 20%, transparent); }
+.text-info\/25                 { color: color-mix(in srgb, var(--dt-info) 25%, transparent); }
+.text-info\/30                 { color: color-mix(in srgb, var(--dt-info) 30%, transparent); }
+.text-info\/35                 { color: color-mix(in srgb, var(--dt-info) 35%, transparent); }
+.text-info\/40                 { color: color-mix(in srgb, var(--dt-info) 40%, transparent); }
+.text-info\/45                 { color: color-mix(in srgb, var(--dt-info) 45%, transparent); }
+.text-info\/50                 { color: color-mix(in srgb, var(--dt-info) 50%, transparent); }
+.text-info\/55                 { color: color-mix(in srgb, var(--dt-info) 55%, transparent); }
+.text-info\/60                 { color: color-mix(in srgb, var(--dt-info) 60%, transparent); }
+.text-info\/65                 { color: color-mix(in srgb, var(--dt-info) 65%, transparent); }
+.text-info\/70                 { color: color-mix(in srgb, var(--dt-info) 70%, transparent); }
+.text-info\/75                 { color: color-mix(in srgb, var(--dt-info) 75%, transparent); }
+.text-info\/80                 { color: color-mix(in srgb, var(--dt-info) 80%, transparent); }
+.text-info\/85                 { color: color-mix(in srgb, var(--dt-info) 85%, transparent); }
+.text-info\/90                 { color: color-mix(in srgb, var(--dt-info) 90%, transparent); }
+.text-info\/95                 { color: color-mix(in srgb, var(--dt-info) 95%, transparent); }
+.text-danger\/5                  { color: color-mix(in srgb, var(--dt-danger) 5%, transparent); }
+.text-danger\/10                 { color: color-mix(in srgb, var(--dt-danger) 10%, transparent); }
+.text-danger\/15                 { color: color-mix(in srgb, var(--dt-danger) 15%, transparent); }
+.text-danger\/20                 { color: color-mix(in srgb, var(--dt-danger) 20%, transparent); }
+.text-danger\/25                 { color: color-mix(in srgb, var(--dt-danger) 25%, transparent); }
+.text-danger\/30                 { color: color-mix(in srgb, var(--dt-danger) 30%, transparent); }
+.text-danger\/35                 { color: color-mix(in srgb, var(--dt-danger) 35%, transparent); }
+.text-danger\/40                 { color: color-mix(in srgb, var(--dt-danger) 40%, transparent); }
+.text-danger\/45                 { color: color-mix(in srgb, var(--dt-danger) 45%, transparent); }
+.text-danger\/50                 { color: color-mix(in srgb, var(--dt-danger) 50%, transparent); }
+.text-danger\/55                 { color: color-mix(in srgb, var(--dt-danger) 55%, transparent); }
+.text-danger\/60                 { color: color-mix(in srgb, var(--dt-danger) 60%, transparent); }
+.text-danger\/65                 { color: color-mix(in srgb, var(--dt-danger) 65%, transparent); }
+.text-danger\/70                 { color: color-mix(in srgb, var(--dt-danger) 70%, transparent); }
+.text-danger\/75                 { color: color-mix(in srgb, var(--dt-danger) 75%, transparent); }
+.text-danger\/80                 { color: color-mix(in srgb, var(--dt-danger) 80%, transparent); }
+.text-danger\/85                 { color: color-mix(in srgb, var(--dt-danger) 85%, transparent); }
+.text-danger\/90                 { color: color-mix(in srgb, var(--dt-danger) 90%, transparent); }
+.text-danger\/95                 { color: color-mix(in srgb, var(--dt-danger) 95%, transparent); }
+.border-success\/5                  { border-color: color-mix(in srgb, var(--dt-success) 5%, transparent); }
+.border-success\/10                 { border-color: color-mix(in srgb, var(--dt-success) 10%, transparent); }
+.border-success\/15                 { border-color: color-mix(in srgb, var(--dt-success) 15%, transparent); }
+.border-success\/20                 { border-color: color-mix(in srgb, var(--dt-success) 20%, transparent); }
+.border-success\/25                 { border-color: color-mix(in srgb, var(--dt-success) 25%, transparent); }
+.border-success\/30                 { border-color: color-mix(in srgb, var(--dt-success) 30%, transparent); }
+.border-success\/35                 { border-color: color-mix(in srgb, var(--dt-success) 35%, transparent); }
+.border-success\/40                 { border-color: color-mix(in srgb, var(--dt-success) 40%, transparent); }
+.border-success\/45                 { border-color: color-mix(in srgb, var(--dt-success) 45%, transparent); }
+.border-success\/50                 { border-color: color-mix(in srgb, var(--dt-success) 50%, transparent); }
+.border-success\/55                 { border-color: color-mix(in srgb, var(--dt-success) 55%, transparent); }
+.border-success\/60                 { border-color: color-mix(in srgb, var(--dt-success) 60%, transparent); }
+.border-success\/65                 { border-color: color-mix(in srgb, var(--dt-success) 65%, transparent); }
+.border-success\/70                 { border-color: color-mix(in srgb, var(--dt-success) 70%, transparent); }
+.border-success\/75                 { border-color: color-mix(in srgb, var(--dt-success) 75%, transparent); }
+.border-success\/80                 { border-color: color-mix(in srgb, var(--dt-success) 80%, transparent); }
+.border-success\/85                 { border-color: color-mix(in srgb, var(--dt-success) 85%, transparent); }
+.border-success\/90                 { border-color: color-mix(in srgb, var(--dt-success) 90%, transparent); }
+.border-success\/95                 { border-color: color-mix(in srgb, var(--dt-success) 95%, transparent); }
+.border-warning\/5                  { border-color: color-mix(in srgb, var(--dt-warning) 5%, transparent); }
+.border-warning\/10                 { border-color: color-mix(in srgb, var(--dt-warning) 10%, transparent); }
+.border-warning\/15                 { border-color: color-mix(in srgb, var(--dt-warning) 15%, transparent); }
+.border-warning\/20                 { border-color: color-mix(in srgb, var(--dt-warning) 20%, transparent); }
+.border-warning\/25                 { border-color: color-mix(in srgb, var(--dt-warning) 25%, transparent); }
+.border-warning\/30                 { border-color: color-mix(in srgb, var(--dt-warning) 30%, transparent); }
+.border-warning\/35                 { border-color: color-mix(in srgb, var(--dt-warning) 35%, transparent); }
+.border-warning\/40                 { border-color: color-mix(in srgb, var(--dt-warning) 40%, transparent); }
+.border-warning\/45                 { border-color: color-mix(in srgb, var(--dt-warning) 45%, transparent); }
+.border-warning\/50                 { border-color: color-mix(in srgb, var(--dt-warning) 50%, transparent); }
+.border-warning\/55                 { border-color: color-mix(in srgb, var(--dt-warning) 55%, transparent); }
+.border-warning\/60                 { border-color: color-mix(in srgb, var(--dt-warning) 60%, transparent); }
+.border-warning\/65                 { border-color: color-mix(in srgb, var(--dt-warning) 65%, transparent); }
+.border-warning\/70                 { border-color: color-mix(in srgb, var(--dt-warning) 70%, transparent); }
+.border-warning\/75                 { border-color: color-mix(in srgb, var(--dt-warning) 75%, transparent); }
+.border-warning\/80                 { border-color: color-mix(in srgb, var(--dt-warning) 80%, transparent); }
+.border-warning\/85                 { border-color: color-mix(in srgb, var(--dt-warning) 85%, transparent); }
+.border-warning\/90                 { border-color: color-mix(in srgb, var(--dt-warning) 90%, transparent); }
+.border-warning\/95                 { border-color: color-mix(in srgb, var(--dt-warning) 95%, transparent); }
+.border-info\/5                  { border-color: color-mix(in srgb, var(--dt-info) 5%, transparent); }
+.border-info\/10                 { border-color: color-mix(in srgb, var(--dt-info) 10%, transparent); }
+.border-info\/15                 { border-color: color-mix(in srgb, var(--dt-info) 15%, transparent); }
+.border-info\/20                 { border-color: color-mix(in srgb, var(--dt-info) 20%, transparent); }
+.border-info\/25                 { border-color: color-mix(in srgb, var(--dt-info) 25%, transparent); }
+.border-info\/30                 { border-color: color-mix(in srgb, var(--dt-info) 30%, transparent); }
+.border-info\/35                 { border-color: color-mix(in srgb, var(--dt-info) 35%, transparent); }
+.border-info\/40                 { border-color: color-mix(in srgb, var(--dt-info) 40%, transparent); }
+.border-info\/45                 { border-color: color-mix(in srgb, var(--dt-info) 45%, transparent); }
+.border-info\/50                 { border-color: color-mix(in srgb, var(--dt-info) 50%, transparent); }
+.border-info\/55                 { border-color: color-mix(in srgb, var(--dt-info) 55%, transparent); }
+.border-info\/60                 { border-color: color-mix(in srgb, var(--dt-info) 60%, transparent); }
+.border-info\/65                 { border-color: color-mix(in srgb, var(--dt-info) 65%, transparent); }
+.border-info\/70                 { border-color: color-mix(in srgb, var(--dt-info) 70%, transparent); }
+.border-info\/75                 { border-color: color-mix(in srgb, var(--dt-info) 75%, transparent); }
+.border-info\/80                 { border-color: color-mix(in srgb, var(--dt-info) 80%, transparent); }
+.border-info\/85                 { border-color: color-mix(in srgb, var(--dt-info) 85%, transparent); }
+.border-info\/90                 { border-color: color-mix(in srgb, var(--dt-info) 90%, transparent); }
+.border-info\/95                 { border-color: color-mix(in srgb, var(--dt-info) 95%, transparent); }
+.border-danger\/5                  { border-color: color-mix(in srgb, var(--dt-danger) 5%, transparent); }
+.border-danger\/10                 { border-color: color-mix(in srgb, var(--dt-danger) 10%, transparent); }
+.border-danger\/15                 { border-color: color-mix(in srgb, var(--dt-danger) 15%, transparent); }
+.border-danger\/20                 { border-color: color-mix(in srgb, var(--dt-danger) 20%, transparent); }
+.border-danger\/25                 { border-color: color-mix(in srgb, var(--dt-danger) 25%, transparent); }
+.border-danger\/30                 { border-color: color-mix(in srgb, var(--dt-danger) 30%, transparent); }
+.border-danger\/35                 { border-color: color-mix(in srgb, var(--dt-danger) 35%, transparent); }
+.border-danger\/40                 { border-color: color-mix(in srgb, var(--dt-danger) 40%, transparent); }
+.border-danger\/45                 { border-color: color-mix(in srgb, var(--dt-danger) 45%, transparent); }
+.border-danger\/50                 { border-color: color-mix(in srgb, var(--dt-danger) 50%, transparent); }
+.border-danger\/55                 { border-color: color-mix(in srgb, var(--dt-danger) 55%, transparent); }
+.border-danger\/60                 { border-color: color-mix(in srgb, var(--dt-danger) 60%, transparent); }
+.border-danger\/65                 { border-color: color-mix(in srgb, var(--dt-danger) 65%, transparent); }
+.border-danger\/70                 { border-color: color-mix(in srgb, var(--dt-danger) 70%, transparent); }
+.border-danger\/75                 { border-color: color-mix(in srgb, var(--dt-danger) 75%, transparent); }
+.border-danger\/80                 { border-color: color-mix(in srgb, var(--dt-danger) 80%, transparent); }
+.border-danger\/85                 { border-color: color-mix(in srgb, var(--dt-danger) 85%, transparent); }
+.border-danger\/90                 { border-color: color-mix(in srgb, var(--dt-danger) 90%, transparent); }
+.border-danger\/95                 { border-color: color-mix(in srgb, var(--dt-danger) 95%, transparent); }
+
+
+/* ── Custom UI styling overrides ── */
+
+/* 1. Ensure scrollbars are theme-aware — faint thumb in both modes. */
+::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--dt-muted-foreground, rgba(128, 128, 128, 0.2)) !important;
+  border-radius: 9999px !important;
+  opacity: 0.35;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--dt-muted-foreground, rgba(128, 128, 128, 0.2)) !important;
+  opacity: 0.6;
+}
+
+.model-dropdown-list {
+  overflow-x: hidden !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--dt-muted-foreground, rgba(128, 128, 128, 0.2)) transparent !important;
+}
+
+/* 2. Fix the search bar input so that it is not white */
+input::placeholder {
+  color: var(--dt-muted-foreground) !important;
+}
+
+/* 3. Eliminate white lines, outlines, and border highlights — Tailwind handles via border-border.
+   Keep this guard only for raw `.border` utilities not covered by Tailwind's component shim. */
+.border, .border-t, .border-b, .border-l, .border-r {
+  border-color: var(--dt-border) !important;
+}
+
+/* 4. Disable focus ring blue highlights — only on elements that manage their own focus */
+.composer-container:focus-within {
+  --tw-ring-shadow: none !important;
+}
+
+/* ── Shared typography classes (scale with root font-size rem) ───────── */
+.chat-message-text {
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  letter-spacing: -0.011em;
+}
+
+/* Chat font preference (General → Preferences → Chat font). Applied via
+   data attribute on <html> by @/lib/preferences. Serif reads like the
+   reference provider's serif option; mono is for code-heavy chats. */
+:root[data-chat-font='serif'] .chat-message-text {
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia,
+    'Times New Roman', serif;
+  letter-spacing: 0;
+}
+:root[data-chat-font='mono'] .chat-message-text {
+  font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo,
+    Consolas, monospace;
+  font-size: 0.875rem;
+  letter-spacing: 0;
+}
+
+.chat-thought-text {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  letter-spacing: -0.011em;
+}
+
+.drawer-section-text {
+  font-size: 0.875rem;
+  line-height: 1.55;
+  letter-spacing: -0.011em;
+}
+
+.drawer-muted-text {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  letter-spacing: -0.011em;
+}
+
+.plan-section-text {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  letter-spacing: -0.011em;
+}
+
+.session-list-title {
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+  font-weight: 400;
+}
+
+.marquee-title-scroll {
+  /* Only animate while hovered — idle titles stay truncated. */
+  padding-right: 1.5rem;
+}
+
+.group\/marquee:hover > .marquee-title-scroll {
+  animation: marqueeTitleScroll 8s ease-in-out infinite;
+}
+
+/* ── Utilities ── */
+
+/* Break long words/tool context anywhere */
+.wrap-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Shimmer text for pending/streaming state (ThinkingDisclosure)
+ *
+ * Note: -webkit-text-fill-color + background-clip:text can make text
+ * invisible in some environments (Electron/Chromium GPU compositing).
+ * We always set a visible base color + animation, then layer the
+ * gradient shimmer on top only when background-clip is supported.
+ */
+.shimmer {
+  color: var(--dt-foreground);
+  animation: shimmerMove 1.5s ease-in-out infinite;
+}
+
+/* When background-clip:text is supported, use a gradient shimmer instead
+ * of the simple color fade-in above.
+ * The @supports query ensures text is NEVER invisible — on environments
+ * where background-clip fails the user sees the color animation instead.
+ */
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--dt-muted-foreground) 0%,
+      var(--dt-foreground) 50%,
+      var(--dt-muted-foreground) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+}
+
+/* 🔽 Consistent text styling for DisclosureRow tool call headers */
+[data-slot="tool-block"] .font-mono {
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.25rem;
+}
+
+/* 🔽 Clarify banner (plan-banner family, larger) */
+[data-slot="clarify-banner"] [data-choice] {
+  outline: none;
+}
+[data-slot="clarify-banner"] [data-choice]:focus-visible {
+  outline: 2px solid var(--dt-primary);
+  outline-offset: 2px;
+  border-radius: 0.75rem;
+}
+[data-slot="clarify-inline"] [data-choice] {
+  outline: none;
+}
+[data-slot="clarify-inline"] [data-choice]:focus-visible {
+  outline: 2px solid var(--dt-primary);
+  outline-offset: -2px;
+  border-radius: 0.375rem;
+}
+
+/* Shimmer skeleton row for model loading */
+.skeleton-row {
+  background: linear-gradient(
+    90deg,
+    var(--dt-muted) 25%,
+    rgba(148, 163, 184, 0.12) 50%,
+    var(--dt-muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.5s infinite linear;
+}
+

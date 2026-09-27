@@ -3,6 +3,35 @@
  * here and every animated component picks it up. */
 
 import type { Transition, Variants } from 'framer-motion';
+import { useReducedMotion as useFramerReducedMotion } from 'framer-motion';
+
+/* ── Reduced motion (audit P2#18) ──────────────────────────────────────
+ * The ONE sanctioned way for a component to ask "should this animate?".
+ * Four modules used to hand-roll `matchMedia('(prefers-reduced-motion:
+ * reduce)')` behind their own local helper, three of them with their own
+ * feature-detect and their own idea of what to do when `matchMedia` is
+ * missing. Import it from here instead:
+ *
+ *     import { useReducedMotion } from '@/lib/motion';
+ *     const reduced = useReducedMotion();
+ *
+ * Two things it does NOT do, so do not rely on them:
+ *  • It reads the preference once. An OS-level flip mid-session is not
+ *    observed; the app-level General → Preferences → Motion toggle still
+ *    works instantly because that is a `data-reduce-motion` attribute
+ *    handled in CSS (src/styles/motion.css), not this hook.
+ *  • It knows nothing about framer's own animations. Those are covered by
+ *    the `<MotionConfig reducedMotion="user">` wrapper at the app root
+ *    (main.tsx), which is the other half of this change.
+ * CSS-only animations keep their `@media (prefers-reduced-motion: reduce)`
+ * blocks in styles/motion.css — a media query is the right tool for a
+ * stylesheet, and a React hook cannot reach one. */
+export function useReducedMotion(): boolean {
+  // framer-motion types its hook as `boolean | null` (null means "no DOM").
+  // Every call site wants a plain boolean, so the narrowing happens here
+  // once instead of at each of them.
+  return useFramerReducedMotion() ?? false;
+}
 
 /* Easing curves — kept short and snappy, matching shadcn/Tailwind cadence. */
 export const easeOut = [0.16, 1, 0.3, 1] as const;        // expo-out, hero

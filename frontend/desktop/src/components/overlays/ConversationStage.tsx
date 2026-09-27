@@ -5,21 +5,17 @@
 /* for launch that is gated on the backend actually being ready, so the */
 /* app reveals the moment the real load completes (never a fake wait).  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useReducedMotion } from '@/lib/motion';
 import type { Beat, ConversationScript } from '@/lib/conversations';
 
 const FIRST_MS = 260;
 const STEP_MS = 560;
 const FAST_MS = 240; // after ready, close out briskly
 const HOLD_MS = 720; // linger on the final line before revealing
-
-function prefersReducedMotion(): boolean {
-  if (typeof window === 'undefined' || !window.matchMedia) return false;
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
 
 function TypingDots() {
   return (
@@ -147,7 +143,8 @@ export function ConversationStage({
    *  dialogue. Off for the update celebration, which should always play out. */
   revealOnReady?: boolean;
 }) {
-  const reduced = useMemo(prefersReducedMotion, []);
+  // Audit P2#18 — the sanctioned reduced-motion read (lib/motion.ts).
+  const reduced = useReducedMotion();
   const beats = script.beats;
   const [shown, setShown] = useState(0);
   const [done, setDone] = useState(false);

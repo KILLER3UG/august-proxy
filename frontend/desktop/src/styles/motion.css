@@ -1,0 +1,248 @@
+/* ── motion.css — every @keyframes plus every reduced-motion opt-out.
+ * Imported last so the opt-outs win over the animation declarations that
+ * stay with their own rules in the other partials.
+ *
+ * Moved verbatim out of src/styles.css (audit P2#17): every rule below is a
+ * byte-identical slice of that file, in the same order it had there. */
+
+/* AUG working indicator — subtle, not dominant (ChatGPT-clean) */
+@keyframes augLetterBounce {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translateY(-3px);
+    opacity: 0.75;
+  }
+}
+@keyframes augCaretBlink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+@keyframes dotPulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(1); }
+  40%           { opacity: 1; transform: scale(1.2); }
+}
+
+/* One-shot rise when the final answer block mounts — not on every token flush. */
+@keyframes chat-final-stream-enter {
+  from { opacity: 0.35; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Part 27 G2: one-shot rise for newly-mounted transcript rows (delegate rows,
+   Explore groups, subagent timeline rows) — fast, opacity + a 2px lift. */
+@keyframes row-enter {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Reconnecting notice: three dots that light up in sequence (travel),
+   replacing the old whole-line fade. */
+@keyframes reconnect-dot {
+  0%, 70%, 100% { opacity: 0.25; }
+  35% { opacity: 1; }
+}
+@keyframes md-live-fade {
+  from { opacity: 0.2; }
+  to { opacity: 1; }
+}
+
+@keyframes md-settle-fade {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
+}
+
+/* Reduce-motion preference (General → Preferences → Motion). Mirrors the
+   OS prefers-reduced-motion treatment but driven by the in-app toggle. */
+:root[data-reduce-motion='1'] *,
+:root[data-reduce-motion='1'] *::before,
+:root[data-reduce-motion='1'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Long session / status titles: horizontal marquee when overflow */
+@keyframes marqueeTitleScroll {
+  0%,
+  12% {
+    transform: translateX(0);
+  }
+  88%,
+  100% {
+    transform: translateX(calc(-100% + min(100%, 12rem)));
+  }
+}
+
+@keyframes activity-working-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+@keyframes activity-live-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+/* Brain icon — soft “learning / active” pulse while events stream in */
+@keyframes brain-learning-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--dt-primary) 45%, transparent));
+  }
+}
+@keyframes brain-functioning-pulse {
+  0%,
+  100% {
+    opacity: 0.78;
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--dt-primary) 28%, transparent));
+  }
+}
+@keyframes pillSlideIn {
+  from {
+    opacity: 0;
+    transform: translate(16px, -50%);
+  }
+}
+
+@keyframes maskSweep {
+  0% {
+    -webkit-mask-position: 150% 0;
+    mask-position: 150% 0;
+  }
+  100% {
+    -webkit-mask-position: -150% 0;
+    mask-position: -150% 0;
+  }
+}
+
+@keyframes thoughtPulse {
+  0%, 100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+
+@keyframes shimmerMove {
+  0% {
+    background-position: 200% 0;
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    background-position: -200% 0;
+    opacity: 0.6;
+  }
+}
+
+@keyframes skeletonShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Settings dropdown — staggered enter only; hover uses framer-motion
+ * (same rowMotion / icon springs as New chat & Skills & Tools). */
+@keyframes august-menu-item-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes aug-progress-shine {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
+}
+
+@keyframes aug-relaunch-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes aug-relaunch-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.82;
+    filter: brightness(1.15);
+  }
+}
+
+@keyframes thought-live-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes thought-enter {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes thought-summary-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
