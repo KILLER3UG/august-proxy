@@ -98,6 +98,14 @@ _recurringSubagentSlots = asyncio.Semaphore(MAX_RECURRING_SUBAGENT_CONCURRENCY)
 # behavior serializes (wait=True); unattended callers may pass wait=False to
 # get a structured busy instead of queuing behind a live turn.
 _turnLocks: dict[str, asyncio.Lock] = {}
+# Backstop for `_turnLocks`. The lock is released when a session is deleted,
+# but sessions also disappear by other routes — the startup window prune, a
+# cap on how many are kept, a session id that never came back — and this dict
+# never shrinks on its own. A desktop process runs for days, so a per-session
+# object that is only ever added is a slow leak that a long session pays for
+# in memory it cannot get back. Insertion order is preserved by dict, so the
+# oldest entries are the front.
+_MAX_TURN_LOCKS = 512
 
 
 class SessionBusyError(RuntimeError):
@@ -108,11 +116,41 @@ class SessionBusyError(RuntimeError):
         self.sessionId = sessionId
 
 
+def release_turn_lock(sessionId: str) -> bool:
+    """Forget a session's turn gate. True when an entry was actually dropped.
+
+    Refuses to drop a LOCKED gate: a turn is holding it, and removing the dict
+    entry would let the next turn create a second lock for the same session —
+    which is precisely the interleaving the gate exists to prevent. A locked
+    entry is left for the prune below instead.
+    """
+    lock = _turnLocks.get(sessionId)
+    if lock is None:
+        return False
+    if lock.locked():
+        return False
+    _turnLocks.pop(sessionId, None)
+    return True
+
+
+def _prune_turn_locks() -> None:
+    """Oldest-first trim, skipping any gate a turn is currently holding."""
+    if len(_turnLocks) <= _MAX_TURN_LOCKS:
+        return
+    for sessionId in list(_turnLocks.keys()):
+        if len(_turnLocks) <= _MAX_TURN_LOCKS:
+            break
+        lock = _turnLocks.get(sessionId)
+        if lock is not None and not lock.locked():
+            _turnLocks.pop(sessionId, None)
+
+
 def _sessionTurnLock(sessionId: str) -> asyncio.Lock:
     lock = _turnLocks.get(sessionId)
     if lock is None:
         lock = asyncio.Lock()
         _turnLocks[sessionId] = lock
+        _prune_turn_locks()
     return lock
 
 

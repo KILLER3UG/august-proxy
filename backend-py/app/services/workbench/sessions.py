@@ -1193,6 +1193,17 @@ def delete_workbench_session(session_id: str) -> bool:
     except Exception:
         logger.debug('session watcher detach failed', exc_info=True)
 
+    # The per-session turn gate is a RAM-resident dict keyed by session id
+    # that nothing else ever removes, so a deleted session would keep its
+    # lock for the life of the process. Refuses while a turn is live, so
+    # deleting a session mid-turn cannot hand the next turn a second lock.
+    try:
+        from app.services.workbench.workbench import release_turn_lock
+
+        release_turn_lock(session_id)
+    except Exception:
+        logger.debug('turn lock release failed', exc_info=True)
+
     # Drop from RAM + notify UI first (real-time), cascade SQLite after.
     if session_id in _sessions:
         del _sessions[session_id]
