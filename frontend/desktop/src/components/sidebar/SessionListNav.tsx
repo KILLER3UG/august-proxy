@@ -9,8 +9,15 @@ import {
 } from "lucide-react";
 import { SECTION_NAV_ITEMS } from "@/routes";
 import { addRightDrawerSection } from "@/components/shell/RightDrawerState";
+import { useReviewInboxCount } from "@/lib/useReviewInboxCount";
 import { t } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+
+/** Routes whose dock button carries the pending-human-decision count. The
+ *  Learning hub is the only route that is a human decision queue, and the
+ *  Settings rail is modal — without this the count was invisible until the
+ *  user opened Settings to go looking for it. */
+const REVIEW_INBOX_ROUTES = new Set(["/learning"]);
 
 export interface SessionListNavProps {
   onNew: () => void;
@@ -54,6 +61,9 @@ export function SessionListNav({
   const isActive = (path: string) =>
     activePath === path || activePath.startsWith(`${path}/`);
   const brandLabel = workspaceName?.trim() || 'August';
+  // One polled count (harness proposals + memory retirements) feeds both the
+  // settings rail and this dock — same query key, one request a minute.
+  const inbox = useReviewInboxCount();
 
   return (
     <div className="august-sidebar-nav flex flex-col shrink-0">
@@ -136,25 +146,38 @@ export function SessionListNav({
 
       {/* Destination icon dock */}
       <div className="px-2 pb-1.5 pt-0.5 flex items-center gap-1" role="navigation" aria-label="Workspace">
-        {DESTINATIONS.map(({ to: path, label, Icon }) => (
-          <button
-            key={path}
-            type="button"
-            onClick={() => onNavigate(path)}
-            className={cn(
-              'flex size-7 shrink-0 items-center justify-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
-              isActive(path)
-                ? 'bg-white/[0.07] text-sidebar-foreground'
-                : 'text-sidebar-foreground/55 hover:bg-white/[0.04] hover:text-sidebar-foreground/80',
-            )}
-            aria-current={isActive(path) ? 'page' : undefined}
-            title={label}
-            aria-label={label}
-            data-testid={`sidebar-nav-${path.replace(/^\//, '')}`}
-          >
-            <Icon className="size-3.5" />
-          </button>
-        ))}
+        {DESTINATIONS.map(({ to: path, label, Icon }) => {
+          const pending = REVIEW_INBOX_ROUTES.has(path) ? inbox.total : 0;
+          return (
+            <button
+              key={path}
+              type="button"
+              onClick={() => onNavigate(path)}
+              className={cn(
+                'relative flex size-7 shrink-0 items-center justify-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
+                isActive(path)
+                  ? 'bg-white/[0.07] text-sidebar-foreground'
+                  : 'text-sidebar-foreground/55 hover:bg-white/[0.04] hover:text-sidebar-foreground/80',
+              )}
+              aria-current={isActive(path) ? 'page' : undefined}
+              title={pending > 0 ? `${label} — ${pending} awaiting review` : label}
+              aria-label={label}
+              data-testid={`sidebar-nav-${path.replace(/^\//, '')}`}
+            >
+              <Icon className="size-3.5" />
+              {/* Same amber pill the settings rail uses; the dock button is
+                  28px, so it rides the icon's top-right corner. */}
+              {pending > 0 ? (
+                <span
+                  data-testid={`sidebar-nav-badge-${path.replace(/^\//, '')}`}
+                  className="absolute -right-1.5 -top-1.5 min-w-3.5 rounded-sm bg-amber-500/20 px-0.5 text-3xs font-medium leading-3.5 text-amber-400 tabular-nums"
+                >
+                  {pending}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

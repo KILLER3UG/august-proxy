@@ -10,6 +10,7 @@ import {
   Bot,
   History,
   Kanban,
+  GraduationCap,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -36,6 +37,9 @@ const BoardPage = lazy(() =>
 );
 const HistoryPage = lazy(() =>
   import('@/sections/history/HistoryPage').then((m) => ({ default: m.HistoryPage })),
+);
+const LearningHub = lazy(() =>
+  import('@/sections/learning/LearningHub').then((m) => ({ default: m.LearningHub })),
 );
 const DesignRoute = lazy(() =>
   import('@/pages/DesignRoute').then((m) => ({ default: m.DesignRoute })),
@@ -125,6 +129,16 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
     label: 'History',
     Icon: History,
     element: React.createElement(LazySection, { name: 'History' }, React.createElement(HistoryPage)),
+    nav: true,
+  },
+  {
+    /* Audit P2#14 — the learning loop as a work surface. Additive: the
+     * settings sections this route reuses keep their own entries, and the
+     * settings registry is unchanged. */
+    path: '/learning',
+    label: 'Learning',
+    Icon: GraduationCap,
+    element: React.createElement(LazySection, { name: 'Learning' }, React.createElement(LearningHub)),
     nav: true,
   },
   { path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, element: React.createElement(Navigate, { to: '/settings/traffic-activity', replace: true }), nav: false },

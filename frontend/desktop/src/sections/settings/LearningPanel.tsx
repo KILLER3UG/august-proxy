@@ -266,9 +266,12 @@ function describeEpisode(ep: FlaggedEpisode): string {
     : `${kindPhrase} · ${outcome}`;
 }
 
-export function LearningPanel() {
+export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: boolean } = {}) {
   const qc = useQueryClient();
-  const [expanded, setExpanded] = useState(false);
+  // The Skills page keeps the collapsed-by-default card; /learning's
+  // Scheduler tab opens it, because the background-job ledger inside IS that
+  // tab and a collapsed panel would show nothing on arrival.
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [running, setRunning] = useState(false);
   const { models } = useModels();
 
