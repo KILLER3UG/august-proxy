@@ -13,6 +13,7 @@ user state.
 
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import sys
@@ -20,6 +21,8 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
+# Enough to identify a drift, short enough for a CI log.
+_MAX_DIFF_LINES = 60
 
 
 def build_schema() -> dict:
@@ -43,9 +46,25 @@ def main() -> int:
             return 0
         print(
             '[check-api] FAIL — docs/api/openapi.json is stale. Regenerate with '
-            'backend-py/.venv/Scripts/python.exe backend-py/scripts/export_openapi.py '
-            'and commit the result.'
+            '`npm run gen:openapi` and commit the result.'
         )
+        # Always show WHAT differs. "Stale" on its own sends people to
+        # regenerate a schema that was already correct, which is how a real
+        # environment problem gets mistaken for a real code problem. The diff
+        # is bounded because the file is ~500 KB and CI logs are not infinite.
+        diff = list(
+            difflib.unified_diff(
+                current.splitlines(keepends=True),
+                text.splitlines(keepends=True),
+                fromfile='committed docs/api/openapi.json',
+                tofile='regenerated from the app',
+                n=1,
+            )
+        )
+        for line in diff[:_MAX_DIFF_LINES]:
+            sys.stdout.write(line if line.endswith('\n') else line + '\n')
+        if len(diff) > _MAX_DIFF_LINES:
+            print(f'... ({len(diff) - _MAX_DIFF_LINES} more diff lines not shown)')
         return 1
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, 'utf-8')
