@@ -38,10 +38,22 @@ class _FakeRoute:
         self.aborted_with = reason
 
 
+class _FakeContext:
+    """Routing now lives on the CONTEXT, so popups inherit it."""
+
+    def __init__(self) -> None:
+        self.routes: list[str] = []
+
+    async def route(self, pattern: str, _handler) -> None:
+        self.routes.append(pattern)
+
+
 class _FakePage:
     def __init__(self) -> None:
         self.handler = None
         self.events: list[str] = []
+        self.context = _FakeContext()
+        self.url = 'about:blank'
 
     def on(self, event: str, _cb) -> None:
         self.events.append(event)
@@ -57,6 +69,54 @@ async def _guard_for(url: str) -> tuple[_FakeRoute, sm.BrowserSession]:
     route = _FakeRoute(url)
     await page.handler(route, route.request)  # type: ignore[misc]
     return route, session
+
+
+class TestFinalUrlIsChecked:
+    """The layer that actually closes the redirect hole.
+
+    Verified with a real Chromium by adversarial review: Playwright does NOT
+    hand a route handler the target of an HTTP 3xx, so the guard above never
+    sees it. `302 -> 127.0.0.1` completed and the body came back. These
+    assert the post-navigation check, which is what stops the response
+    reaching the model.
+    """
+
+    def _session(self):
+        return sm.BrowserSession('s-final')
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'landed',
+        [
+            'http://127.0.0.1:19387/api/providers',
+            'http://169.254.169.254/latest/meta-data/iam/security-credentials/',
+            'http://localhost:8000/',
+            'http://10.0.0.5/internal',
+        ],
+    )
+    async def test_landing_on_a_private_address_is_refused(self, landed: str):
+        page = _FakePage()
+        page.url = landed
+        session = self._session()
+        reason = sm.assertFinalUrlAllowed(page, session)
+        assert reason is not None, f'{landed} was accepted after navigating'
+        assert session.navBlockReason == reason
+
+    @pytest.mark.asyncio
+    async def test_landing_on_a_public_address_is_allowed(self):
+        page = _FakePage()
+        page.url = 'https://example.com/page'
+        session = self._session()
+        assert sm.assertFinalUrlAllowed(page, session) is None
+        assert session.navBlockReason is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('blank', ['about:blank', ''])
+    async def test_a_page_that_never_navigated_is_not_a_block(self, blank: str):
+        """A refused navigation still leaves `about:blank`; that is not a block."""
+        page = _FakePage()
+        page.url = blank
+        assert sm.assertFinalUrlAllowed(page, self._session()) is None
 
 
 class TestNavigationGuardBlocksPrivateAddresses:
@@ -108,11 +168,15 @@ class TestNavigationGuardBlocksPrivateAddresses:
         captured: dict[str, object] = {}
 
         class _Ctx:
+            def __init__(self) -> None:
+                self.page = _FakePage()
+
             async def new_page(self):
-                return _FakePage()
+                return self.page
 
         class _Browser:
             async def new_context(self, **_kw):
+                self.kw = _kw
                 return _Ctx()
 
         class _Launcher:
@@ -131,5 +195,7 @@ class TestNavigationGuardBlocksPrivateAddresses:
         page = session.page
         assert isinstance(page, _FakePage)
         assert callable(page.handler), 'navigation guard was not installed on the new page'
+        # Context-level too — that is what a `window.open` popup inherits.
+        assert page.context.routes == ['**/*']
         assert captured == {}
         sm._sessions.clear()

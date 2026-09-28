@@ -26,6 +26,7 @@ file access is out of scope.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 # Paths that must never be written, in any mode. Env-named files ending in
 # `.example` / `.sample` / `.template` are the documented commit-able
@@ -79,8 +80,20 @@ _CREDENTIAL_DIRECTORIES = ('.ssh', '.aws', '.gnupg')
 
 
 def is_credential_directory(path: str) -> bool:
-    """True when `path` IS a credential store, so its contents must not be listed."""
-    name = _canonical(path).rstrip('/').rsplit('/', 1)[-1].lower()
+    """True when `path` IS a credential store, so its contents must not be listed.
+
+    Takes the name from the RESOLVED path, not from a string split. The first
+    version stripped a trailing `/` and took the last segment, which a caller
+    stepped straight over: `.ssh/`, `.ssh/.` and `.ssh ` all resolved to the
+    same directory and all returned 200 with the directory's entries. The
+    caller resolves before asking, so a `.` segment is already gone by then —
+    and asking on the resolved form is the only form that cannot be dressed
+    up with a trailing dot, slash or space.
+    """
+    try:
+        name = Path(path).resolve().name.lower()
+    except OSError:
+        name = _canonical(path).rstrip('/').rsplit('/', 1)[-1].lower()
     return name in _CREDENTIAL_DIRECTORIES
 
 # Explicit mutating markers (in-place edits, deletes, copies, network fetch).

@@ -209,7 +209,12 @@ async def workspace_files(path: str = Query('.', alias='path')):
     from app.services.sandbox.hardline import is_credential_directory
     from app.services.sandbox.paths import bind_path
 
-    if is_credential_directory(path):
+    # Check the RESOLVED path: the guard normalises `.`, a trailing separator
+    # and a trailing space, so asking it about the raw query string let
+    # `.ssh/`, `.ssh/.` and `.ssh ` all through and returned 200.
+    requested, _ = bind_path(path, None, for_write=False)
+    probe = str(requested) if requested is not None else path
+    if is_credential_directory(probe):
         # The read guard deliberately allows one non-secret member of `.ssh`
         # (authorized_keys), so it cannot catch the directory itself — but
         # enumerating the store is the entire secret set in one response.

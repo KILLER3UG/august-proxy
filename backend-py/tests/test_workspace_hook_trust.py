@@ -22,6 +22,8 @@ the trust boundary and keeps working.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from app.lib.paths import dataDir
 from app.services.hooks import user_hooks
@@ -40,6 +42,16 @@ def _write(path, payload) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({'hooks': payload}), 'utf-8')
+
+
+@pytest.fixture
+async def client():
+    from app.main import app
+    from httpx import ASGITransport, AsyncClient
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url='http://test') as ac:
+        yield ac
 
 
 @pytest.fixture(autouse=True)
@@ -147,6 +159,96 @@ class TestDeletedConfigStopsFiring:
         assert user_hooks.ensure_hooks_loaded(str(ws)) == 0
         assert not [n for n in user_hooks.describe() if n['name'].startswith('ws:')]
         assert registry is not None
+
+
+class TestRevocationActuallyDisarms:
+    """F3: `revoke_workspace` returned True while the hook kept running.
+
+    Proven with a marker file written after revocation. Two independent causes:
+    the disarm compared path STRINGS while trust is keyed on the RESOLVED
+    directory, and the trust check sat BELOW the unchanged-mtime early-return,
+    so a revoked workspace's handlers survived every later prompt build.
+    """
+
+    def test_a_non_canonical_workspace_is_disarmed(self, tmp_path):
+        ws = tmp_path / 'repo'
+        (ws / '.aug').mkdir(parents=True)
+        _write(ws / '.aug' / 'hooks.json', _HOOK)
+        # The form that used to break it: trust resolves, the disarm did not.
+        messy = str(ws / '.' / '..' / 'repo')
+        user_hooks.trust_workspace(messy)
+        assert user_hooks.ensure_hooks_loaded(messy) == 1
+        assert [n for n in user_hooks.describe() if n['name'].startswith('ws:')]
+
+        assert user_hooks.revoke_workspace(messy) is True
+        assert not [n for n in user_hooks.describe() if n['name'].startswith('ws:')], (
+            'revoke reported success but the handler is still registered'
+        )
+
+    def test_a_revoked_workspace_stays_disarmed_across_prompt_builds(self, tmp_path):
+        """The mtime early-return used to skip the trust check entirely.
+
+        The file had not changed, so every subsequent `ensure_hooks_loaded`
+        returned early — and the revoked handler was never unregistered.
+        """
+        ws = tmp_path / 'repo2'
+        (ws / '.aug').mkdir(parents=True)
+        _write(ws / '.aug' / 'hooks.json', _HOOK)
+        user_hooks.trust_workspace(ws)
+        assert user_hooks.ensure_hooks_loaded(str(ws)) == 1
+        user_hooks.revoke_workspace(ws)
+
+        for _ in range(3):  # several prompt builds, file untouched
+            user_hooks.ensure_hooks_loaded(str(ws))
+            assert not [
+                n for n in user_hooks.describe() if n['name'].startswith('ws:')
+            ], 'a revoked workspace re-armed on a later prompt build'
+
+    def test_re_approving_after_revocation_works(self, tmp_path):
+        ws = tmp_path / 'repo3'
+        (ws / '.aug').mkdir(parents=True)
+        _write(ws / '.aug' / 'hooks.json', _HOOK)
+        user_hooks.trust_workspace(ws)
+        user_hooks.ensure_hooks_loaded(str(ws))
+        user_hooks.revoke_workspace(ws)
+        user_hooks.trust_workspace(ws)
+        assert user_hooks.ensure_hooks_loaded(str(ws)) == 1
+
+
+class TestCredentialStoreBypass:
+    """F5: `.ssh/`, `.ssh/.` and `.ssh ` all returned 200 with the entries.
+
+    The guard stripped a trailing `/` and took the last string segment, so a
+    `.` segment or a trailing space walked straight past it. It now takes the
+    name from the RESOLVED path.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('suffix', ['', '/', '/.', '/./'])
+    async def test_no_spelling_of_a_store_lists(self, client, isolatedData, suffix: str):
+        from app.lib.paths import dataPath
+
+        base = Path(str(dataPath('observations')))
+        ssh = base / '.ssh'
+        ssh.mkdir(parents=True, exist_ok=True)
+        (ssh / 'id_rsa').write_text('PRIVATE', encoding='utf-8')
+
+        resp = await client.get('/api/workspace/files', params={'path': f'{ssh}{suffix}'})
+        assert resp.status_code in (403, 404), f'{suffix!r} listed the store: {resp.text}'
+        assert 'id_rsa' not in resp.text
+
+    def test_the_guard_itself_normalises(self, tmp_path):
+        from app.services.sandbox.hardline import is_credential_directory
+
+        base = tmp_path / '.ssh'
+        base.mkdir()
+        for form in (str(base), f'{base}/', f'{base}/.', f'{base} '):
+            assert is_credential_directory(form), f'{form!r} was not recognised'
+
+    def test_an_ordinary_dot_directory_is_still_listable(self, tmp_path):
+        from app.services.sandbox.hardline import is_credential_directory
+
+        assert not is_credential_directory(str(tmp_path / 'src'))
 
 
 class TestHookEnvironmentIsScrubbed:

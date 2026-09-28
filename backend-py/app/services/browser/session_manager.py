@@ -86,7 +86,14 @@ async def getOrCreateSession(sessionId: str) -> BrowserSession:
             args=['--disable-dev-shm-usage', '--disable-gpu'],
         )
         session.browser = browser
-        context = await browser.new_context(viewport=_VIEWPORT, user_agent=_USERAgent)
+        context = await browser.new_context(
+            viewport=_VIEWPORT,
+            user_agent=_USERAgent,
+            # A service worker's `fetch()` is not routed at all, so a hostile
+            # page could register one and read a private address through it
+            # while every route handler reported the request as fine.
+            service_workers='block',
+        )
         session.context = context
         page = await context.new_page()
         session.page = page
@@ -114,14 +121,34 @@ async def _installNavigationGuard(page: Page, session: BrowserSession) -> None:
     body back. This is the bug the `web_fetch` docstring says was fixed
     ("redirects were never re-checked"); it was fixed only there.
 
-    Interception is the durable shape. Re-validating after `goto` returns is
-    too late — the request has already been made — and a manual redirect loop
-    is not possible when the browser, not this code, drives the navigation.
-    `page.route` sees each hop as its own request, so the check cannot be
-    stepped over, and it also covers subresources a redirected page pulls in.
+    WHAT ROUTING CAN AND CANNOT DO — measured, not assumed. The first version
+    of this used `page.route('**/*')` and claimed "the check cannot be stepped
+    over, so the check cannot be stepped over". Adversarial review with a real
+    Chromium found that false: Playwright does NOT invoke a route handler for
+    an HTTP 3xx redirect hop. The handler fires for the original request and
+    never for the follow-up, so `302 → 127.0.0.1` completed and
+    `browser_get_content` returned the blocked body. It also missed requests
+    made by a service worker, and popups opened with `window.open` (a
+    different `Page` with no routes at all).
 
-    Installed on the page when it is created, not in `browserOpen`, so every
-    browser operation is behind it rather than the one that was audited.
+    So this is defence in LAYERS, and the load-bearing one is the last:
+
+      1. routing on the CONTEXT, not the page, which covers popups and every
+         page the context ever makes, installed once instead of per page;
+      2. `service_workers='block'` on the context, because a worker's
+         `fetch()` is not routed at all;
+      3. routing still blocks the direct, subresource and client-side
+         navigation cases (meta refresh and `location.href` are fresh
+         document requests, and those ARE routed);
+      4. and the control that actually closes the redirect case —
+         `assertFinalUrlAllowed` below, which re-checks where the browser
+         ENDED UP and refuses to return the body.
+
+    Layer 4 is the one that matters for this threat model. Chromium may
+    already have issued the redirect request by the time we look; what must
+    never happen is the response reaching the model. A private address can
+    still be *contacted* through a redirect, but nothing it returns is ever
+    read back.
     """
     from urllib.parse import urlparse
 
@@ -143,7 +170,37 @@ async def _installNavigationGuard(page: Page, session: BrowserSession) -> None:
             return
         await route.continue_()
 
+    context = page.context
+    # Context-level so a popup — a fresh Page the model opened — inherits it.
+    await context.route('**/*', _guard)
+    # Belt and braces for a page created before this ran.
     await page.route('**/*', _guard)
+
+
+def assertFinalUrlAllowed(page: Page, session: BrowserSession) -> str | None:
+    """Refuse a navigation that ENDED on a blocked address. Returns a reason.
+
+    This is the layer that closes the redirect hole routing cannot. A
+    `page.goto` that followed a 3xx to a private address leaves `page.url`
+    pointing at the private host, so the check runs against where the browser
+    actually arrived rather than where it was told to go.
+
+    The caller must treat a non-None result as "discard everything the page
+    produced" — not merely "note it". A refused navigation has still executed
+    JavaScript and still populated the DOM, so the screenshot and the
+    element snapshot have to be dropped too, or the same bytes come back
+    through the other return values.
+    """
+    from app.services.browser.handlers import _checkUrlAllowlist
+
+    final = page.url
+    if not final or final == 'about:blank':
+        return None
+    reason = _checkUrlAllowlist(final)
+    if reason:
+        session.navBlockReason = reason
+        return reason
+    return None
 
 
 def get_session(sessionId: str) -> BrowserSession | None:

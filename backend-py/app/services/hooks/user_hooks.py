@@ -326,35 +326,43 @@ def _register_from_file(origin: str, path: Path) -> int:
     if not path.is_file():
         _forget_file(path)
         return 0
+
+    # Workspace hooks carry their home for the handler's scoping guard and the
+    # command's cwd; user hooks scope nothing (None). Computed first because
+    # the trust gate keys on it.
+    workspace_origin: str | None = (
+        None if origin == 'user' else origin.removeprefix('workspace:')
+    )
+
+    # The trust gate runs BEFORE the unchanged-mtime return, deliberately.
+    # It used to run after, so the cheap "nothing changed" path skipped it
+    # entirely: a workspace whose trust was revoked kept its live handlers
+    # across every subsequent prompt build, because the file had not changed
+    # and the revocation never reached a re-registration. A gate that only
+    # runs when something else happens to change is not a gate.
+    if workspace_origin is not None and not is_workspace_trusted(workspace_origin):
+        _forget_file(path)
+        logger.info(
+            'hooks: %s is not trusted by the user — its hooks are inactive '
+            '(approve the workspace to enable them)',
+            path,
+        )
+        return 0
+
     mtime = path.stat().st_mtime_ns
     if _FILE_MTIMES.get(str(path)) == mtime:
         return 0  # unchanged since last load
     _FILE_MTIMES[str(path)] = mtime
 
-    # Workspace hooks carry their home for the handler's scoping guard and the
-    # command's cwd; user hooks scope nothing (None). Computed once, because
-    # it is also what the trust gate below keys on.
-    workspace_origin: str | None = (
-        None if origin == 'user' else origin.removeprefix('workspace:')
-    )
-
     if origin == 'user':
         key_prefix = 'user:'
     else:
-        # The trust gate. A workspace hooks file arrives with a clone, so
-        # registering it would be running a command the user never chose —
-        # and the model can create that file and trigger it in the same turn.
-        # Untrusted means not registered at all, rather than registered and
-        # checked at fire time, so there is no path that skips the check.
-        ws_path = origin.removeprefix('workspace:')
-        if not is_workspace_trusted(ws_path):
-            _forget_file(path)
-            logger.info(
-                'hooks: %s is not trusted by the user — its hooks are inactive '
-                '(approve the workspace to enable them)',
-                path,
-            )
-            return 0
+        # The trust check already ran, above the mtime early-return. A
+        # workspace hooks file arrives with a clone, so registering it would
+        # be running a command the user never chose — and the model can create
+        # that file and trigger it in the same turn. Untrusted means not
+        # registered at all, rather than registered and checked at fire time,
+        # so there is no path that skips the check.
         ws_hash = hashlib.sha1(origin.encode('utf-8')).hexdigest()[:8]
         key_prefix = f'ws:{ws_hash}:'
     wanted: set[str] = set()
@@ -426,14 +434,30 @@ def _forget_file(path: Path) -> None:
 
 
 def _unregister_workspace(workspace: str) -> None:
-    """Drop every handler belonging to a workspace's hooks file."""
+    """Drop every handler belonging to a workspace's hooks file.
+
+    Compares RESOLVED paths on both sides. Trust is keyed on the resolved
+    directory, so a string comparison here is a different key: `src` keeps
+    whatever `..` or symlink form the session's `workspacePath` arrived in,
+    while `workspace` is canonical. The two never matched, so `revoke_workspace`
+    returned True — reporting success — while the `shell=True` handler stayed
+    registered and kept running, and survived every later prompt build because
+    the unchanged-mtime return happens before the trust check. A control that
+    says it revoked something and did not is worse than one that errors.
+    """
+    from pathlib import Path as _P
+
+    try:
+        target = (_P(workspace) / '.aug' / 'hooks.json').resolve()
+    except OSError:
+        return
     for name, src in list(_LOADED.items()):
         try:
-            if Path(src) == Path(workspace) / '.aug' / 'hooks.json':
+            if _P(src).resolve() == target:
                 registry.unregister(name)
                 _LOADED.pop(name, None)
                 _FILE_MTIMES.pop(src, None)
-        except Exception:
+        except OSError:
             continue
 
 

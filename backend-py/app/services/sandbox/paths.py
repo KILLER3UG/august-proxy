@@ -214,8 +214,15 @@ def bind_path(path: str, workspace: str | None, *, for_write: bool = False) -> t
         # Reads of the app's own logs are the one sanctioned exception —
         # the model diagnoses August itself without Full access (see
         # app_logs_root). Writes never are.
+        #
+        # The allowlist still applies. This carve-out used to `return
+        # resolved, None` outright, which meant a user who had restricted
+        # computer access to their project folders could still read
+        # `<dataDir>/logs/**` — an unintentional hole in the gate added in the
+        # same change, and exactly the kind of thing a user who set that
+        # allowlist is trying to prevent.
         if not for_write and is_within_app_logs(resolved):
-            return resolved, None
+            return resolved, _allowlist_denied(resolved, root)
         action = 'write' if for_write else 'access'
         return None, (
             f'Error: Sandbox blocked {action} outside workspace. '
