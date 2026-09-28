@@ -108,10 +108,27 @@ async def list_observations(limit: int = Query(50, ge=1, le=500), since: str = '
 
 @router.get('/api/observations/{obs_id}.png')
 async def observation_png(obs_id: str):
-    p = dataPath('observations', f'{obs_id}.png')
-    if not p.is_file():
-        from fastapi import HTTPException
+    from fastapi import HTTPException
 
+    # `{obs_id}` is a `[^/]+` segment, so a forward slash cannot get in — but
+    # a percent-encoded `%5C` decodes to a backslash, which IS a separator on
+    # Windows and therefore reached this handler as real traversal:
+    # `GET /api/observations/..%5C..%5Csecret.png` served a PNG from outside
+    # the observations dir (and outside the data dir entirely with one more
+    # `..`), because `dataPath` only joins segments — it does not sanitize
+    # them. The reach is narrow: only files ending in `.png` are servable,
+    # since the suffix is appended here. Reject the separators outright
+    # rather than trusting the segment regex, then prove containment the way
+    # `bind_path` does for workspace paths — resolve, then `relative_to`.
+    if not obs_id or '/' in obs_id or '\\' in obs_id or obs_id in ('.', '..'):
+        raise HTTPException(status_code=404, detail='Observation not found')
+    obs_dir = dataPath('observations').resolve()
+    p = (obs_dir / f'{obs_id}.png').resolve()
+    try:
+        p.relative_to(obs_dir)
+    except ValueError:
+        raise HTTPException(status_code=404, detail='Observation not found')
+    if not p.is_file():
         raise HTTPException(status_code=404, detail='Observation not found')
     return FileResponse(str(p), media_type='image/png')
 

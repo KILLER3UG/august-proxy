@@ -42,8 +42,21 @@ _PROTECTED_WRITE_PATTERN = re.compile(
 # (id_ecdsa, id_dsa, …) and the git/netrc/aws-config credential stores, so
 # those read straight into the transcript even under Full Access. `id_\w+`
 # covers all key types; the added alternatives cover the common stores.
+#
+# `id_\w+` is COMPONENT-ANCHORED, and that matters. Unanchored, it matches
+# anywhere in the path, so it fired on ordinary files and folders that merely
+# contain the letters: a path through `grid_layout/` matches `id_l`, one
+# through `user_id_seed.py` matches `id_seed`, and a pytest tmpdir named
+# `test_..._id_still_...` matches `id_still`. Those files are not credentials,
+# and silently refusing to read them is a real bug — a model asked to inspect
+# one reports that it does not exist.
+#
+# Anchoring costs nothing in coverage. OpenSSH keys live in `.ssh/` and are
+# named `id_<type>` as a whole component, so they match the anchored form, and
+# the `\.ssh/[^\s]*\*` alternative already covers anything else inside `.ssh/`
+# by directory. The remaining alternatives are already anchored or specific.
 _CREDENTIAL_READ_PATTERN = re.compile(
-    r'(providers\.json|id_\w+|\.aws/credentials|\.aws/config$|'
+    r'(providers\.json|(?:^|/)id_\w+|\.aws/credentials|\.aws/config$|'
     r'(?:^|/)credentials$|\.git-credentials$|\.netrc$|\.(?:pem|key)$|'
     r'\.aws/[^\s]*\*|\.ssh/[^\s]*\*|'
     r'-----BEGIN [A-Z ]*PRIVATE KEY-----)',
