@@ -1,13 +1,19 @@
 """Characterization tests for CamelModel on the git router.
 
-Proves the git command body boundary: snake_case Python fields, camelCase
-JSON in (frontend contract), and that POST /api/git/command still works.
+Proves the git body boundary: snake_case Python fields, camelCase JSON in
+(frontend contract), and that the typed /api/git/restore endpoint works.
+
+The arbitrary-argv `POST /api/git/command` is GONE — it forwarded a
+caller-supplied argv straight to git, which included reading and writing any
+file on the machine via `diff --no-index` and running any program via
+`-c diff.external=`. Its tombstone is asserted below so a stale client gets a
+410 that names the replacement instead of a 404 it has to guess at.
 """
 from __future__ import annotations
 
 import pytest
 from app.main import app
-from app.routers.git import GitCommand
+from app.routers.git import GitCommand, RestoreBody
 from httpx import ASGITransport, AsyncClient
 
 
@@ -18,58 +24,84 @@ async def client():
         yield ac
 
 
-def test_git_command_serializes_camelcase():
-    body = GitCommand(repo_path='/tmp/repo', args=['status', '--short'])
+def test_restore_body_serializes_camelcase():
+    body = RestoreBody(repo_path='/tmp/repo')
     dumped = body.model_dump(by_alias=True)
     assert dumped['repoPath'] == '/tmp/repo'
-    assert dumped['args'] == ['status', '--short']
+    # The body names a session or a repo. It does NOT name a command — that
+    # field is the whole vulnerability, and its absence is the fix.
+    assert 'args' not in dumped
 
 
-def test_git_command_accepts_camelcase_input():
-    body = GitCommand.model_validate(
-        {
-            'repoPath': '/work/proj',
-            'args': ['log', '-1'],
-        }
-    )
+def test_restore_body_accepts_camelcase_input():
+    body = RestoreBody.model_validate({'sessionId': 's1', 'repoPath': '/work/proj'})
+    assert body.session_id == 's1'
     assert body.repo_path == '/work/proj'
-    assert body.args == ['log', '-1']
 
 
-def test_git_command_accepts_snake_case_via_populate_by_name():
-    body = GitCommand(repo_path='/x', args=['rev-parse', 'HEAD'])
+def test_restore_body_accepts_snake_case_via_populate_by_name():
+    body = RestoreBody(session_id='s1', repo_path='/x')
+    assert body.session_id == 's1'
     assert body.repo_path == '/x'
-    assert body.args == ['rev-parse', 'HEAD']
 
 
 @pytest.mark.asyncio
-async def test_post_api_git_command_accepts_camelcase_json(client, isolatedData):
-    """HTTP contract: frontend posts camelCase; endpoint runs a safe git command."""
-    from pathlib import Path
+async def test_post_api_git_restore_discards_working_tree(client, isolatedData, tmp_path):
+    """The one real caller wanted `git restore -- .`; that is now the endpoint."""
+    import subprocess
 
-    # Explicit repoPath — empty path is rejected (no cwd default).
-    # `git rev-parse --is-inside-work-tree` is read-only and always works here.
-    resp = await client.post(
-        '/api/git/command',
-        json={
-            'repoPath': str(Path.cwd()),
-            'args': ['rev-parse', '--is-inside-work-tree'],
-        },
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    subprocess.run(['git', 'init', '-b', 'main'], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ['git', 'commit', '--allow-empty', '-m', 'init'],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        env=_git_env(),
     )
+    (repo / 'tracked.txt').write_text('original', encoding='utf-8')
+    subprocess.run(['git', 'add', '-A'], cwd=repo, check=True, capture_output=True, env=_git_env())
+    subprocess.run(
+        ['git', 'commit', '-m', 'add file'], cwd=repo, check=True, capture_output=True, env=_git_env()
+    )
+    (repo / 'tracked.txt').write_text('scratch edit', encoding='utf-8')
+
+    resp = await client.post('/api/git/restore', json={'sessionId': '', 'repoPath': str(repo)})
     assert resp.status_code == 200, resp.text
-    data = resp.json()
-    assert 'output' in data
-    assert data['output'].strip() == 'true'
+    assert resp.json()['workspace'] == str(repo.resolve())
+    assert (repo / 'tracked.txt').read_text(encoding='utf-8') == 'original'
 
 
 @pytest.mark.asyncio
-async def test_post_api_git_command_rejects_empty_args(client, isolatedData):
+async def test_git_command_is_gone_and_says_what_replaced_it(client, isolatedData):
+    """410, not 404 — a stale client should be told the replacement."""
+    resp = await client.post('/api/git/command', json={'args': ['status'], 'repoPath': '.'})
+    assert resp.status_code == 410
+    detail = resp.json()['detail']
+    assert '/api/git/restore' in detail
+    # It must not run anything on the way to refusing.
+    assert 'No git args' not in detail
+
+
+@pytest.mark.asyncio
+async def test_git_command_tombstone_runs_no_git(client, isolatedData, monkeypatch):
+    """A refusal that still spawns git is not a refusal."""
+    from app.routers import git as git_router
+
+    called: list[tuple] = []
+
+    async def _fail(*args, **kwargs):  # pragma: no cover - must never run
+        called.append(args)
+        raise AssertionError('the tombstone must not invoke git')
+
+    monkeypatch.setattr(git_router, '_run_git', _fail)
     resp = await client.post(
         '/api/git/command',
-        json={'repoPath': '', 'args': []},
+        json={'args': ['diff', '--no-index', 'a', 'b'], 'repoPath': '.'},
     )
-    assert resp.status_code == 400
-    assert 'No git args' in resp.json()['detail']
+    assert resp.status_code == 410
+    assert called == []
 
 
 @pytest.mark.asyncio

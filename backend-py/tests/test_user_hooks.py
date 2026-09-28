@@ -124,6 +124,9 @@ async def test_workspace_hook_scoped_to_its_workspace(_cfg, tmp_path):
     _write(ws / '.aug' / 'hooks.json', [
         {'name': 'wsdeny', 'event': 'pre_tool_use', 'matcher': '*', 'command': _cmd(_DENY2)},
     ])
+    # Workspace hooks are trust-gated: a `.aug/hooks.json` arrives with a
+    # clone, so it is inert until the user approves that workspace.
+    user_hooks.trust_workspace(ws)
     assert user_hooks.ensure_hooks_loaded(str(ws)) == 1
     # Other workspace: passthrough.
     assert all(r.action == 'allow' for r in await _emit(workspace=str(tmp_path / 'other')))

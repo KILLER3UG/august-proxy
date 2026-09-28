@@ -2653,10 +2653,16 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Git Command
-         * @description Execute an arbitrary git command.
+         * Git Command Removed
+         * @description 410 Gone. This route used to forward a caller-supplied argv to git.
+         *
+         *     It is kept as a tombstone ONLY — it runs nothing — so a client that
+         *     predates the change gets told exactly what replaced it instead of a bare
+         *     404 it has to guess at. The capability it exposed (arbitrary git anywhere,
+         *     which included reading and writing files the sandbox and the hardline
+         *     credential guard exist to protect) is not coming back.
          */
-        post: operations["git_command_api_git_command_post"];
+        post: operations["git_command_removed_api_git_command_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2729,6 +2735,50 @@ export interface paths {
          *     when no upstream is configured — the UI surfaces that as a toast.
          */
         post: operations["git_push_api_git_push_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Git Restore
+         * @description Discard working-tree changes, back to the last commit.
+         *
+         *     This REPLACED a general ``POST /command`` that forwarded a caller-supplied
+         *     argv straight to git. That route was a hole shaped exactly like the
+         *     privilege it was handed:
+         *
+         *     - ``git diff --no-index <any file> <any file>`` prints the FULL CONTENTS of
+         *       any two files on the machine, so a read primitive bypassed every path
+         *       check the file tools enforce;
+         *     - ``git diff --no-index --output=<path>`` writes to any path;
+         *     - ``-c diff.external=<command>`` runs an arbitrary program;
+         *     - and ``repoPath`` only had to be an existing directory, so none of the
+         *       above needed the session's workspace at all.
+         *
+         *     Git has no argv shape that is safe to accept verbatim, and there is no
+         *     filter that makes one safe: the dangerous capability is a flag, not a
+         *     subcommand, so a denylist of subcommands or of flags is always one
+         *     revision behind. The only durable shape is to stop accepting an argv.
+         *
+         *     The single real caller wanted ``git restore -- .`` — "discard my changes"
+         *     — and that is what this endpoint does. Its argv is fixed here, in the
+         *     backend, and the workspace comes from the session, so a caller cannot
+         *     choose a directory. Anything else git can do has a typed route next to
+         *     this one; if a new one is needed, it gets its own endpoint and its own
+         *     fixed argv rather than reopening this.
+         */
+        post: operations["git_restore_api_git_restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2976,6 +3026,57 @@ export interface paths {
          *     matching how the GET above resolves it.
          */
         post: operations["reload_hooks_api_hooks_reload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hooks/revoke-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke Workspace
+         * @description Withdraw that approval, and unregister the handlers it armed.
+         *
+         *     Revoking has to disarm live registrations, not just forget the record —
+         *     otherwise the commands keep running until the process exits.
+         */
+        post: operations["revoke_workspace_api_hooks_revoke_workspace_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hooks/trust-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trust Workspace
+         * @description Approve running this session's workspace `.aug/hooks.json`.
+         *
+         *     The consent step for a capability that runs `shell=True` outside the
+         *     sandbox. It has to be explicit and per-workspace: the file arrives with a
+         *     clone, so a config file inside a repo is not itself a trust decision —
+         *     the person who wrote it need not be the person who opened it.
+         *
+         *     Persisted, because trust is a durable decision and a restart must not
+         *     silently re-arm a workspace the user has since stopped trusting.
+         */
+        post: operations["trust_workspace_api_hooks_trust_workspace_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7830,7 +7931,10 @@ export interface components {
         };
         /**
          * GitCommand
-         * @description Git CLI body. Internals are snake_case; JSON stays camelCase.
+         * @description Retired — the arbitrary-argv body behind the removed ``/command``.
+         *
+         *     Kept only so a stale client gets a clear 410 rather than a confusing
+         *     validation error, and so the shape is documented as deliberately gone.
          */
         GitCommand: {
             /**
@@ -8596,6 +8700,25 @@ export interface components {
              */
             rows: number;
             /** Sessionid */
+            sessionId: string;
+        };
+        /**
+         * RestoreBody
+         * @description Body for the typed ``/restore`` endpoint.
+         *
+         *     No ``args``: the argv is fixed in the handler. A body that can name its
+         *     own command is the thing that was removed, not a convenience.
+         */
+        RestoreBody: {
+            /**
+             * Repopath
+             * @default
+             */
+            repoPath: string;
+            /**
+             * Sessionid
+             * @default
+             */
             sessionId: string;
         };
         /**
@@ -13585,7 +13708,7 @@ export interface operations {
             };
         };
     };
-    git_command_api_git_command_post: {
+    git_command_removed_api_git_command_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -13727,6 +13850,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PushBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    git_restore_api_git_restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreBody"];
             };
         };
         responses: {
@@ -14014,6 +14170,50 @@ export interface operations {
         };
     };
     reload_hooks_api_hooks_reload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    revoke_workspace_api_hooks_revoke_workspace_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    trust_workspace_api_hooks_trust_workspace_post: {
         parameters: {
             query?: never;
             header?: never;

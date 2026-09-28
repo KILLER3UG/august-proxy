@@ -55,7 +55,7 @@ export function useRevertAllChanges(
             variant: 'destructive',
           });
           if (!ok) return;
-          await gitApi.command(['restore', '--', '.'], sessionId);
+          await gitApi.restore(sessionId);
           toast.success('Working tree restored');
         }
         onReverted?.();

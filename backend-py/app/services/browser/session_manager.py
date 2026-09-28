@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from playwright.async_api import Browser, BrowserContext, ConsoleMessage, Page, Playwright, ViewportSize
@@ -35,6 +35,10 @@ class BrowserSession:
         self.context: BrowserContext | None = None
         self.page: Page | None = None
         self.consoleLogs: list[dict[str, object]] = []
+        # Why the last request was refused by the navigation guard, so a
+        # blocked redirect can be reported instead of surfacing as a generic
+        # "navigation failed".
+        self.navBlockReason: str | None = None
 
     @property
     def ready(self) -> bool:
@@ -94,8 +98,52 @@ async def getOrCreateSession(sessionId: str) -> BrowserSession:
                 del session.consoleLogs[: len(session.consoleLogs) - _MAXConsole]
 
         page.on('console', _onConsole)
+        await _installNavigationGuard(page, session)
         _sessions[sid] = session
         return session
+
+
+async def _installNavigationGuard(page: Page, session: BrowserSession) -> None:
+    """Refuse any request to a blocked address, on EVERY request.
+
+    Checking the URL the model supplied is not enough, and the gap was
+    exploitable: `browserOpen` validated `url` and then called
+    `page.goto(url)`, which follows 3xx INTERNALLY. A public host answering
+    `302 Location: http://169.254.169.254/…` (or loopback, or August's own
+    backend) sailed past the guard, and `browser_get_content` then handed the
+    body back. This is the bug the `web_fetch` docstring says was fixed
+    ("redirects were never re-checked"); it was fixed only there.
+
+    Interception is the durable shape. Re-validating after `goto` returns is
+    too late — the request has already been made — and a manual redirect loop
+    is not possible when the browser, not this code, drives the navigation.
+    `page.route` sees each hop as its own request, so the check cannot be
+    stepped over, and it also covers subresources a redirected page pulls in.
+
+    Installed on the page when it is created, not in `browserOpen`, so every
+    browser operation is behind it rather than the one that was audited.
+    """
+    from urllib.parse import urlparse
+
+    # Imported here: handlers imports this module, so a top-level import would
+    # be circular. The page exists long after both modules are loaded.
+    from app.services.browser.handlers import _checkUrlAllowlist
+
+    async def _guard(route: Any, request: Any) -> None:
+        target = request.url
+        # data:/blob:/about: are not network fetches and have no host to
+        # judge; blocking them would break rendering without adding safety.
+        if urlparse(target).scheme not in ('http', 'https'):
+            await route.continue_()
+            return
+        reason = _checkUrlAllowlist(target)
+        if reason:
+            session.navBlockReason = reason
+            await route.abort('blockedbyclient')
+            return
+        await route.continue_()
+
+    await page.route('**/*', _guard)
 
 
 def get_session(sessionId: str) -> BrowserSession | None:

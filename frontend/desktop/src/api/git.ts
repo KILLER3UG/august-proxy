@@ -140,10 +140,17 @@ export const gitApi = {
     qs.set('count', String(count));
     return api.get<GitLogResult>(`/api/git/log?${qs.toString()}`);
   },
-  /** Run an arbitrary git command (e.g. `['restore', '.']`) in the workspace. */
-  command:  (args: string[], sessionId?: string, repoPath?: string) =>
-    api.post<GitCommandResult>('/api/git/command', {
-      args,
+  /**
+   * Discard working-tree changes, back to the last commit.
+   *
+   * Replaces a `command(args[])` passthrough that forwarded an arbitrary argv
+   * to the backend. Git has no argv shape that is safe to accept verbatim —
+   * `diff --no-index` reads and writes arbitrary files and `-c
+   * diff.external=` runs a program — so the argv now lives in the backend
+   * where it is fixed. Anything else git can do has its own typed route.
+   */
+  restore: (sessionId?: string, repoPath?: string) =>
+    api.post<GitCommandResult>('/api/git/restore', {
       sessionId: sessionId || '',
       ...(repoPath ? { repoPath } : {}),
     }),

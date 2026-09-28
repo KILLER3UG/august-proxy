@@ -29,7 +29,7 @@ vi.mock('@/api/workbench', () => ({
 
 vi.mock('@/api/git', () => ({
   gitApi: {
-    command: vi.fn().mockResolvedValue({ workspace: null, output: '' }),
+    restore: vi.fn().mockResolvedValue({ workspace: null, output: '' }),
   },
 }));
 
@@ -215,7 +215,7 @@ describe('ChangesCard', () => {
     await waitFor(() =>
       expect(restoreWorkbenchCheckpoint).toHaveBeenCalledWith('sess_test', 'cp_1'),
     );
-    expect(gitApi.command).not.toHaveBeenCalled();
+    expect(gitApi.restore).not.toHaveBeenCalled();
   });
 
   it('Undo falls back to git restore when no save point exists', async () => {
@@ -231,7 +231,7 @@ describe('ChangesCard', () => {
     );
     fireEvent.click(screen.getByTestId('confirm-dialog-confirm'));
     await waitFor(() =>
-      expect(gitApi.command).toHaveBeenCalledWith(['restore', '--', '.'], 'sess_test'),
+      expect(gitApi.restore).toHaveBeenCalledWith('sess_test'),
     );
     expect(restoreWorkbenchCheckpoint).not.toHaveBeenCalled();
   });
@@ -266,7 +266,7 @@ describe('ChangesCard', () => {
     await screen.findByTestId('confirm-dialog');
     fireEvent.click(screen.getByTestId('confirm-dialog-confirm'));
     await waitFor(() =>
-      expect(gitApi.command).toHaveBeenCalledWith(['restore', '--', '.'], 'sess_explicit'),
+      expect(gitApi.restore).toHaveBeenCalledWith('sess_explicit'),
     );
   });
 });

@@ -7,27 +7,43 @@ from fastapi import APIRouter, Request
 router = APIRouter(prefix='/api/hooks')
 
 
+def _workspace_for_session(session_id: str) -> str:
+    """The workspace behind a session id, or ''.
+
+    Hooks execute with `shell=True` outside the sandbox, so the directory that
+    supplies `<dir>/.aug/hooks.json` is a trust boundary. Every route here
+    therefore takes a `sessionId` and never a path: accepting a caller-chosen
+    directory would let any local caller trust (and thereby arm) a directory it
+    picked. The session lookup keeps the set of addressable workspaces to the
+    ones August already has open.
+    """
+    if not session_id:
+        return ''
+    try:
+        from app.services.workbench import workbench as wb
+
+        sess = wb.getWorkbenchSession(session_id)
+        return str(getattr(sess, 'workspacePath', '') or '') if sess else ''
+    except Exception:
+        return ''
+
+
 @router.get('')
 async def list_hooks(request: Request) -> dict:
     """Registry stats for every hook plus the user/workspace hook specs."""
     from app.services.hooks.registry import registry
-    from app.services.hooks.user_hooks import describe
+    from app.services.hooks.user_hooks import describe, ensure_hooks_loaded, is_workspace_trusted
 
     # Refresh from disk so the UI sees a hand-edited config immediately.
     try:
-        from app.services.hooks.user_hooks import ensure_hooks_loaded
-
-        workspace = ''
-        session_id = request.query_params.get('sessionId') or ''
-        if session_id:
-            from app.services.workbench import workbench as wb
-
-            sess = wb.getWorkbenchSession(session_id)
-            workspace = str(getattr(sess, 'workspacePath', '') or '') if sess else ''
+        workspace = _workspace_for_session(request.query_params.get('sessionId') or '')
         ensure_hooks_loaded(workspace or None)
     except Exception:
-        pass
-    return registry.stats() | {'userHooks': describe()}
+        workspace = ''
+    return registry.stats() | {
+        'userHooks': describe(),
+        'workspaceTrusted': bool(workspace) and is_workspace_trusted(workspace),
+    }
 
 
 @router.post('/reload')
@@ -43,7 +59,6 @@ async def reload_hooks(request: Request) -> dict:
     """
     from app.services.hooks.user_hooks import ensure_hooks_loaded
 
-    workspace = ''
     session_id = ''
     try:
         body = await request.json()
@@ -51,10 +66,56 @@ async def reload_hooks(request: Request) -> dict:
             session_id = str(body.get('sessionId') or '')
     except Exception:
         pass
-    if session_id:
-        from app.services.workbench import workbench as wb
-
-        sess = wb.getWorkbenchSession(session_id)
-        workspace = str(getattr(sess, 'workspacePath', '') or '') if sess else ''
+    workspace = _workspace_for_session(session_id)
     loaded = ensure_hooks_loaded(workspace or None)
     return {'ok': True, 'reloaded': loaded}
+
+
+@router.post('/trust-workspace')
+async def trust_workspace(request: Request) -> dict:
+    """Approve running this session's workspace `.aug/hooks.json`.
+
+    The consent step for a capability that runs `shell=True` outside the
+    sandbox. It has to be explicit and per-workspace: the file arrives with a
+    clone, so a config file inside a repo is not itself a trust decision —
+    the person who wrote it need not be the person who opened it.
+
+    Persisted, because trust is a durable decision and a restart must not
+    silently re-arm a workspace the user has since stopped trusting.
+    """
+    from app.services.hooks.user_hooks import ensure_hooks_loaded
+    from app.services.hooks.user_hooks import trust_workspace as _trust
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    session_id = str(body.get('sessionId') or '') if isinstance(body, dict) else ''
+    workspace = _workspace_for_session(session_id)
+    if not workspace:
+        return {'ok': False, 'error': 'No workspace for that session'}
+    if not _trust(workspace):
+        return {'ok': False, 'error': 'Could not persist workspace trust'}
+    return {'ok': True, 'workspace': workspace, 'loaded': ensure_hooks_loaded(workspace)}
+
+
+@router.post('/revoke-workspace')
+async def revoke_workspace(request: Request) -> dict:
+    """Withdraw that approval, and unregister the handlers it armed.
+
+    Revoking has to disarm live registrations, not just forget the record —
+    otherwise the commands keep running until the process exits.
+    """
+    from app.services.hooks.user_hooks import revoke_workspace as _revoke
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    session_id = str(body.get('sessionId') or '') if isinstance(body, dict) else ''
+    workspace = _workspace_for_session(session_id)
+    if not workspace:
+        return {'ok': False, 'error': 'No workspace for that session'}
+    if not _revoke(workspace):
+        return {'ok': False, 'error': 'Could not persist workspace revocation'}
+    return {'ok': True, 'workspace': workspace}

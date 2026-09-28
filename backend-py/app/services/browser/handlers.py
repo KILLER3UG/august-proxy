@@ -19,7 +19,11 @@ from app.config import settings
 from app.json_narrowing import as_dict
 from app.lib.paths import dataPath
 from app.services.browser.element_resolver import resolveLocator
-from app.services.browser.session_manager import BrowserUnavailableError, getOrCreateSession
+from app.services.browser.session_manager import (
+    BrowserUnavailableError,
+    get_session,
+    getOrCreateSession,
+)
 from app.services.browser.snapshot import buildCompactSnapshot, runSnapshot
 from app.services.workbench.context import currentSessionId
 
@@ -165,8 +169,17 @@ async def browserOpen(url: str, waitUntil: str = 'load') -> str:
     page, err = await _page()
     if err or page is None:
         return err or _err('Browser session not ready')
+    session = get_session('')
+    if session is not None:
+        session.navBlockReason = None
     try:
         await page.goto(url, wait_until=waitState, timeout=_NAVTimeoutMs)
+        # A blocked redirect aborts the navigation, so `goto` raises. The guard
+        # recorded why — reporting that is the difference between "this host
+        # is not reachable" and "this redirect tried to reach a private
+        # address and was refused".
+        if session is not None and session.navBlockReason:
+            return _err(f'Navigation blocked: {session.navBlockReason}', url=url)
         title = await page.title()
         elements = await _elementsSnapshot(page)
         screenshot = await _captureScreenshot(page)

@@ -8,6 +8,7 @@ structured JSON matching the desktop gitApi client:
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from pathlib import Path
 
@@ -16,10 +17,26 @@ from fastapi import APIRouter, HTTPException
 from app.models.camel_base import CamelModel
 
 router = APIRouter(prefix='/api/git')
+logger = logging.getLogger(__name__)
+
+
+class RestoreBody(CamelModel):
+    """Body for the typed ``/restore`` endpoint.
+
+    No ``args``: the argv is fixed in the handler. A body that can name its
+    own command is the thing that was removed, not a convenience.
+    """
+
+    session_id: str = ''
+    repo_path: str = ''
 
 
 class GitCommand(CamelModel):
-    """Git CLI body. Internals are snake_case; JSON stays camelCase."""
+    """Retired — the arbitrary-argv body behind the removed ``/command``.
+
+    Kept only so a stale client gets a clear 410 rather than a confusing
+    validation error, and so the shape is documented as deliberately gone.
+    """
 
     session_id: str = ''
     repo_path: str = ''
@@ -504,12 +521,61 @@ async def git_commit(body: CommitBody):
 
 
 @router.post('/command')
-async def git_command(body: GitCommand):
-    """Execute an arbitrary git command."""
-    if not body.args:
-        raise HTTPException(status_code=400, detail='No git args provided')
+async def git_command_removed(body: GitCommand):
+    """410 Gone. This route used to forward a caller-supplied argv to git.
+
+    It is kept as a tombstone ONLY — it runs nothing — so a client that
+    predates the change gets told exactly what replaced it instead of a bare
+    404 it has to guess at. The capability it exposed (arbitrary git anywhere,
+    which included reading and writing files the sandbox and the hardline
+    credential guard exist to protect) is not coming back.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            'POST /api/git/command was removed: it forwarded an arbitrary '
+            'argv to git. Use POST /api/git/restore to discard working-tree '
+            'changes, or the typed /status /diff /branch /commit /checkout '
+            'routes.'
+        ),
+    )
+
+
+@router.post('/restore')
+async def git_restore(body: RestoreBody):
+    """Discard working-tree changes, back to the last commit.
+
+    This REPLACED a general ``POST /command`` that forwarded a caller-supplied
+    argv straight to git. That route was a hole shaped exactly like the
+    privilege it was handed:
+
+    - ``git diff --no-index <any file> <any file>`` prints the FULL CONTENTS of
+      any two files on the machine, so a read primitive bypassed every path
+      check the file tools enforce;
+    - ``git diff --no-index --output=<path>`` writes to any path;
+    - ``-c diff.external=<command>`` runs an arbitrary program;
+    - and ``repoPath`` only had to be an existing directory, so none of the
+      above needed the session's workspace at all.
+
+    Git has no argv shape that is safe to accept verbatim, and there is no
+    filter that makes one safe: the dangerous capability is a flag, not a
+    subcommand, so a denylist of subcommands or of flags is always one
+    revision behind. The only durable shape is to stop accepting an argv.
+
+    The single real caller wanted ``git restore -- .`` — "discard my changes"
+    — and that is what this endpoint does. Its argv is fixed here, in the
+    backend, and the workspace comes from the session, so a caller cannot
+    choose a directory. Anything else git can do has a typed route next to
+    this one; if a new one is needed, it gets its own endpoint and its own
+    fixed argv rather than reopening this.
+    """
     path, err = _resolve_workspace(body.session_id, body.repo_path)
     if err or not path:
         raise HTTPException(status_code=400, detail=err or 'No path')
-    _, output, _ = await _run_git(path, *body.args)
+    repo_err = await _ensure_repo(path)
+    if repo_err:
+        raise HTTPException(status_code=400, detail=repo_err)
+    _, output, stderr = await _run_git(path, 'restore', '--', '.')
+    if stderr.strip():
+        logger.info('git restore reported: %s', stderr.strip()[:500])
     return {'output': output, 'workspace': path}
