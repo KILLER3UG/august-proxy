@@ -117,11 +117,27 @@ def _is_private_ip(ip) -> bool:
     )
 
 
-def _is_private_url(url: str) -> bool:
-    """SSRF guard: reject loopback, private, link-local, and metadata
-    addresses — including IPv6, decimal/hex forms, and hosts that RESOLVE
-    to private IPs (the old startswith prefix check missed all of those,
-    and redirects were never re-checked)."""
+def _vetted_public_ips(url: str) -> tuple[str, list[str]] | None:
+    """Return ``(hostname, [ip, ...])`` if this URL is safe to connect to, else None.
+
+    This REPLACES a boolean guard for every caller that can pin the
+    connection, and the reason is a time-of-check/time-of-use gap. The old
+    `_is_private_url` called `getaddrinfo` to decide the verdict, and then
+    httpx called `getaddrinfo` AGAIN to make the connection. A hostile
+    authoritative DNS server can answer public for the first lookup and
+    `169.254.169.254` for the second, so the address that was vetted was
+    never the address that was dialled. Adding more string checks does not
+    close that window; only connecting to an already-vetted address does.
+
+    So the guard now RETURNS the vetted addresses, and `_fetchUrlContent`
+    dials one of them directly. All returned addresses are checked — a name
+    that resolves to both a public and a private address is refused, because
+    picking the public one and hoping is how the bypass comes back.
+
+    `None` means "do not fetch", for every reason: malformed URL, no host,
+    `localhost`, a literal private address, an unresolvable name, or ANY
+    resolved address being private/loopback/link-local/reserved.
+    """
     import ipaddress
     import socket
     from urllib.parse import urlparse
@@ -129,37 +145,87 @@ def _is_private_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
     except ValueError:
-        return True
+        return None
     host = (parsed.hostname or '').strip().strip('[]')
-    if not host:
-        return True
-    if host.lower() == 'localhost':
-        return True
+    if not host or host.lower() == 'localhost':
+        return None
     try:
-        ip = ipaddress.ip_address(host)
-        return _is_private_ip(ip)
+        return None if _is_private_ip(ipaddress.ip_address(host)) else (host, [host])
     except ValueError:
-        pass
+        pass  # not a literal IP — resolve it below
     try:
-        infos = socket.getaddrinfo(host, None)
+        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
     except Exception:
-        # Unresolvable — safest to block; a legit public host will resolve.
-        return True
+        return None  # unresolvable — a legitimate public host will resolve
+    vetted: list[str] = []
     for info in infos:
         try:
             ip = ipaddress.ip_address(info[4][0])
         except ValueError:
             continue
         if _is_private_ip(ip):
-            return True
-    return False
+            # ANY private answer poisons the name. Not "prefer the public
+            # one": the resolver is exactly the untrusted party here.
+            return None
+        vetted.append(str(ip))
+    if not vetted:
+        return None
+    return host, vetted
+
+
+def _is_private_url(url: str) -> bool:
+    """True when the URL must not be fetched (see `_vetted_public_ips`).
+
+    Kept for callers that cannot pin the connection to a vetted address —
+    the Playwright browser does its own connecting. That caller is still
+    exposed to DNS rebinding; see `_installNavigationGuard`, and do not read
+    a `False` here as "this address is safe", only as "nothing obviously
+    private was found at check time".
+    """
+    return _vetted_public_ips(url) is None
+
+
+def _pinned_request(
+    url: str, hostname: str, ips: list[str], headers: dict[str, str]
+) -> tuple[str, dict[str, str], dict[str, str]]:
+    """Build a request that dials a VETTED address, not a freshly resolved one.
+
+    Rewrites the host to a literal address from `_vetted_public_ips` and
+    restores the identity of the real host in the two places it matters:
+
+    * `Host:` — HTTP/1.1 servers route on this, and a vhost fronting many
+      sites will serve the wrong one (or refuse) without it;
+    * `sni_hostname` — the TLS extension httpcore reads to set SNI and to pick
+      the certificate to verify. Without it, TLS would validate the
+      certificate against the IP literal and every HTTPS fetch would fail.
+
+    When the URL already uses a literal IP there is nothing to pin, so the URL
+    is returned untouched and SNI is omitted.
+
+    With several vetted addresses the first is used. The security property is
+    the same either way — EVERY address was checked, and `ips[0]` is one of
+    them — so a round-robin would only add module state and a concurrency
+    question in exchange for letting a CDN pick its own edge.
+    """
+    import httpx
+
+    if hostname in ips:  # literal-IP URL; nothing was re-resolved
+        return url, dict(headers), {}
+    pinned = httpx.URL(url).copy_with(host=ips[0])
+    if pinned.scheme == 'https':
+        return str(pinned), {**headers, 'Host': hostname}, {'sni_hostname': hostname}
+    return str(pinned), {**headers, 'Host': hostname}, {}
 
 
 async def _fetchUrlContent(url: str, maxLength: int = 50000, timeout_s: float = 30.0) -> str:
     """Fetch a URL and return its content as Markdown (no aux compress).
 
-    SSRF-guarded per hop: the URL and every redirect target are checked
-    against private/local/loopback ranges before the request is made.
+    SSRF-guarded per hop AND per connection: each hop is resolved once, every
+    resolved address is checked, and the request is then made against one of
+    those checked addresses with the original hostname preserved for `Host`
+    and TLS SNI. Re-resolving at connect time is what left the classic
+    rebinding window open, so it is deliberately not done — see
+    `_vetted_public_ips`.
     """
     import httpx
 
@@ -171,10 +237,15 @@ async def _fetchUrlContent(url: str, maxLength: int = 50000, timeout_s: float = 
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
         current = url
         for _hop in range(6):
-            if _is_private_url(current):
+            vetted = _vetted_public_ips(current)
+            if vetted is None:
                 return f'Error: Private/local network addresses are blocked: {current}'
+            hostname, ips = vetted
+            target, request_headers, extensions = _pinned_request(current, hostname, ips, headers)
             try:
-                resp = await client.get(current, headers=headers)
+                resp = await client.get(
+                    target, headers=request_headers, extensions=extensions
+                )
             except httpx.TimeoutException:
                 return f'Error: Timed out fetching {url}'
             except httpx.RequestError as exc:

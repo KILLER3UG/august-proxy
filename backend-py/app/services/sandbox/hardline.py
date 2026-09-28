@@ -55,6 +55,14 @@ _PROTECTED_WRITE_PATTERN = re.compile(
 # named `id_<type>` as a whole component, so they match the anchored form, and
 # the `\.ssh/[^\s]*\*` alternative already covers anything else inside `.ssh/`
 # by directory. The remaining alternatives are already anchored or specific.
+#
+# Note the read pattern deliberately does NOT treat `.ssh` as a directory
+# boundary, even though the write pattern does. `~/.ssh/authorized_keys` is a
+# list of PUBLIC keys and stays readable — a considered decision, pinned by
+# test_credential_reads_blocked. What the directory does need is to be
+# unLISTABLE, which is a different question with a different answer: listing
+# `.ssh` returns every key name and size in one response. That is
+# `is_credential_directory` below, used by the file-tree route.
 _CREDENTIAL_READ_PATTERN = re.compile(
     r'(providers\.json|(?:^|/)id_\w+|\.aws/credentials|\.aws/config$|'
     r'(?:^|/)credentials$|\.git-credentials$|\.netrc$|\.(?:pem|key)$|'
@@ -62,6 +70,18 @@ _CREDENTIAL_READ_PATTERN = re.compile(
     r'-----BEGIN [A-Z ]*PRIVATE KEY-----)',
     re.IGNORECASE,
 )
+
+# Directories that are credential STORES rather than credential files.
+# Reading one specific non-secret member of `.ssh` is allowed, so this cannot
+# be folded into the read pattern; but enumerating the store is the whole
+# secret set in a single response, and no legitimate file tree shows it.
+_CREDENTIAL_DIRECTORIES = ('.ssh', '.aws', '.gnupg')
+
+
+def is_credential_directory(path: str) -> bool:
+    """True when `path` IS a credential store, so its contents must not be listed."""
+    name = _canonical(path).rstrip('/').rsplit('/', 1)[-1].lower()
+    return name in _CREDENTIAL_DIRECTORIES
 
 # Explicit mutating markers (in-place edits, deletes, copies, network fetch).
 _WRITE_VERB_PATTERN = re.compile(

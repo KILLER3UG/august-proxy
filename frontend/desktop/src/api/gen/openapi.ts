@@ -7283,6 +7283,23 @@ export interface paths {
         /**
          * Workspace Files
          * @description List files under a workspace path (desktop file tree).
+         *
+         *     The directory has to survive `bind_path` first. This route takes a path
+         *     straight from the caller and used to `iterdir()` it with no containment at
+         *     all, so `?path=C:/Users/<u>/.ssh` returned every entry with absolute
+         *     paths — a directory lister for the whole machine, past the workspace
+         *     check, the hardline credential guard, and the user's own "Computer
+         *     access" allowlist, all of which file tools apply to the same paths.
+         *
+         *     So it now goes through the same chokepoint: the hardline guard runs first
+         *     (a listing reveals names and sizes, and `.ssh` is exactly the directory
+         *     that must stay unnameable), then workspace/allowlist containment. It keeps
+         *     read semantics — `for_write=False` — because it reads.
+         *
+         *     `workspace=None` is deliberate: this route is the file TREE, which is how
+         *     a user browses to pick a project folder in the first place, so it cannot
+         *     be scoped to a session workspace that may not exist yet. Containment
+         *     therefore comes from the hardline guard and the user's allowlist.
          */
         get: operations["workspace_files_api_workspace_files_get"];
         put?: never;

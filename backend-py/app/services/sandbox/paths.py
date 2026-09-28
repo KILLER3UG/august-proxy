@@ -101,6 +101,68 @@ def is_within_app_logs(path: Path) -> bool:
     return root is not None and is_within_root(path, root)
 
 
+def _allowlist_denied(resolved: Path, root: Path | None) -> str | None:
+    """Enforce the user's "Computer access" allowlist, when they set one.
+
+    `security.filesystemScope` / `security.allowedRoots` are written and read
+    back by the Settings UI (ComputerAccessSettings) and enforced NOWHERE —
+    the only references to those keys in the whole backend were this file's
+    own getter/setter. So a user who restricted computer access to a couple of
+    project folders was told a protection existed that did not, while the
+    per-session workspace still permitted anything inside it. A security
+    setting that silently does nothing is worse than no setting: it is
+    relied upon.
+
+    Semantics, and the judgement call in them:
+
+      * scope `root` — the user explicitly chose unrestricted access. No gate.
+      * scope `allowlist` with a NON-EMPTY list — the real gate: the resolved
+        path must sit inside one of those roots, or inside the session's own
+        workspace.
+      * scope `allowlist` with an EMPTY list — treated as NOT CONFIGURED, and
+        no gate applies.
+
+    That last one is deliberate and is the whole reason this is safe to
+        land. The stored default is `allowlist` + `[]`, so reading it
+        literally would deny every file operation for every user who never
+        opened the setting — the feature is opt-in in practice, and the empty
+        list is "not set up yet", not "nothing is permitted". Only a
+        configured list restricts anything.
+
+    The session workspace stays implicitly allowed. It is where the user
+        pointed this conversation, and an allowlist that excluded it would
+        contradict that rather than express it.
+    """
+    try:
+        from app.json_narrowing import as_dict, as_list, as_str
+        from app.services.config_service import getConfig
+    except Exception:
+        return None
+    try:
+        cfg = getConfig()
+        sec = as_dict((cfg or {}).get('security')) if cfg is not None else {}
+    except Exception:
+        return None
+    if as_str(sec.get('filesystemScope') or 'allowlist') == 'root':
+        return None
+    configured = [str(r).strip() for r in as_list(sec.get('allowedRoots')) if str(r).strip()]
+    if not configured:
+        return None
+    if root is not None and is_within_root(resolved, root):
+        return None
+    for entry in configured:
+        try:
+            if is_within_root(resolved, Path(entry).expanduser()):
+                return None
+        except OSError:
+            continue
+    return (
+        f'Error: Sandbox blocked access outside your allowed roots. '
+        f'path={resolved} allowedRoots={configured}. '
+        f'Add the folder under Settings → Computer access, or switch the scope to the whole computer.'
+    )
+
+
 def bind_path(path: str, workspace: str | None, *, for_write: bool = False) -> tuple[Path | None, str | None]:
     """Resolve ``path`` and ensure it stays inside the workspace when set.
 
@@ -143,7 +205,10 @@ def bind_path(path: str, workspace: str | None, *, for_write: bool = False) -> t
                     'Open a project folder first (the session has no workspace), '
                     'or write under the system temp directory.'
                 )
-        return resolved, None
+        # With no workspace there is nothing to be implicitly allowed, so the
+        # user's allowlist — if they configured one — is the only gate left.
+        denied = _allowlist_denied(resolved, None)
+        return (None, denied) if denied else (resolved, None)
 
     if not is_within_root(resolved, root):
         # Reads of the app's own logs are the one sanctioned exception —
@@ -156,7 +221,11 @@ def bind_path(path: str, workspace: str | None, *, for_write: bool = False) -> t
             f'Error: Sandbox blocked {action} outside workspace. '
             f'path={resolved} workspace={root}'
         )
-    return resolved, None
+    # Inside the workspace already, so the allowlist gate below can only
+    # pass — checked anyway, because it is cheap and because the workspace
+    # being implicitly allowed is an explicit design decision, not a
+    # coincidence worth relying on silently.
+    return resolved, _allowlist_denied(resolved, root)
 
 
 def _candidate_paths(token: str) -> list[str]:

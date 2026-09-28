@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.json_narrowing import as_str
 from app.models.camel_base import CamelModel
 from app.services.tools import agent_registry
+from app.services.workbench.subagent import register_detached_session_task
 
 logger = logging.getLogger('agents')
 
@@ -498,9 +499,15 @@ async def createJob(body: AgentJob):
     agent_id = (body.agent_id or 'general').strip() or 'general'
     job = agent_registry.createJob(agent_id, body.goal, body.context)
     job_id = as_str(job.get('id'))
-    asyncio.create_task(
+    task = asyncio.create_task(
         _run_api_agent_job(job_id, agent_id, body.goal, body.context, body.session_id or '')
     )
+    # Registered, not fire-and-forget. A bare `create_task` drops the only
+    # reference, so nothing can cancel it: deleting the session left the job
+    # running, and since `_run_api_agent_job` drives a full `executeSubAgent`,
+    # it kept making model calls for minutes on a chat that no longer existed.
+    # The registry also holds a strong reference and drains the outcome.
+    register_detached_session_task(body.session_id or '', task)
     return job
 
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 
 from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse
@@ -188,13 +187,41 @@ async def system_restart():
 
 @router.get('/api/workspace/files')
 async def workspace_files(path: str = Query('.', alias='path')):
-    """List files under a workspace path (desktop file tree)."""
-    root = Path(path).expanduser()
-    if not root.is_absolute():
-        # Resolve relative to project / data dir for safety defaults
-        root = (Path.cwd() / root).resolve()
-    else:
-        root = root.resolve()
+    """List files under a workspace path (desktop file tree).
+
+    The directory has to survive `bind_path` first. This route takes a path
+    straight from the caller and used to `iterdir()` it with no containment at
+    all, so `?path=C:/Users/<u>/.ssh` returned every entry with absolute
+    paths — a directory lister for the whole machine, past the workspace
+    check, the hardline credential guard, and the user's own "Computer
+    access" allowlist, all of which file tools apply to the same paths.
+
+    So it now goes through the same chokepoint: the hardline guard runs first
+    (a listing reveals names and sizes, and `.ssh` is exactly the directory
+    that must stay unnameable), then workspace/allowlist containment. It keeps
+    read semantics — `for_write=False` — because it reads.
+
+    `workspace=None` is deliberate: this route is the file TREE, which is how
+    a user browses to pick a project folder in the first place, so it cannot
+    be scoped to a session workspace that may not exist yet. Containment
+    therefore comes from the hardline guard and the user's allowlist.
+    """
+    from app.services.sandbox.hardline import is_credential_directory
+    from app.services.sandbox.paths import bind_path
+
+    if is_credential_directory(path):
+        # The read guard deliberately allows one non-secret member of `.ssh`
+        # (authorized_keys), so it cannot catch the directory itself — but
+        # enumerating the store is the entire secret set in one response.
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=403, detail='Refused: credential store is not listable')
+
+    root, denial = bind_path(path, None, for_write=False)
+    if denial or root is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=403, detail=denial or 'Path not permitted')
     if not root.exists():
         from fastapi import HTTPException
 
@@ -213,6 +240,15 @@ async def workspace_files(path: str = Query('.', alias='path')):
     for entry in entries:
         # Skip heavy / hidden noise
         if entry.name in ('.git', 'node_modules', '__pycache__', '.venv'):
+            continue
+        # A directory the credential guard protects is not listed at all, even
+        # when the guard would allow the PARENT it sits in. Gating the request
+        # path is not enough on its own: a cloned repo can carry a key at its
+        # root, and the tree view would hand back its name and size. The guard
+        # is asked per entry, so the rule lives in exactly one place.
+        from app.services.sandbox.hardline import check_hardline_path, is_credential_directory
+
+        if is_credential_directory(str(entry)) or check_hardline_path(str(entry), for_write=False):
             continue
         try:
             files.append(

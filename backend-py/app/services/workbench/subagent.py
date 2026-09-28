@@ -130,37 +130,63 @@ def _capability_filter(capability: str | None) -> set[str] | None:
 # cancel_subagent_tasks_for_session.
 _subagent_session_tasks: dict[str, set[asyncio.Task]] = {}
 
-# Recurring-task sub-agents: the workbench chat loop creates these as detached
-# tasks; the handle is registered HERE at creation time (not from inside the
-# coroutine) so session teardown can cancel them even in the few-millisecond
-# window before executeSubAgent self-registers (audit batch 2026-09-09).
-_recurring_session_tasks: dict[str, set[asyncio.Task]] = {}
+# Detached sub-agent tasks per session: workbench chat-loop recurring tasks
+# and the API `/agents/jobs` runner. Both are created as detached tasks and
+# bypass the orchestrator, so the handle is registered HERE at creation time
+# (not from inside the coroutine) so session deletion can cancel them — even
+# in the few-millisecond window before the coroutine self-registers. A job
+# that is not tracked here keeps running after its session is deleted, still
+# spending model calls on work whose chat no longer exists.
+_detached_session_tasks: dict[str, set[asyncio.Task]] = {}
+
+
+def register_detached_session_task(session_id: str, task: asyncio.Task) -> None:
+    """Track a detached task so session teardown can cancel it.
+
+    Holds a strong reference (so the task cannot be garbage-collected
+    mid-flight) and drains it on completion, including the now-empty SET, so
+    the dict tracks live sessions rather than every session ever seen — the
+    same reasoning as `workbench._prune_turn_locks`.
+    """
+    if not session_id:
+        return
+    _detached_session_tasks.setdefault(session_id, set()).add(task)
+
+    def _discard(done: asyncio.Task, sid: str = session_id) -> None:
+        live = _detached_session_tasks.get(sid)
+        if live is None:
+            return
+        live.discard(done)
+        if not live:
+            _detached_session_tasks.pop(sid, None)
+        # Retrieve the outcome: an unretrieved exception on a detached task
+        # is logged as "never retrieved" much later, out of context, and the
+        # job row is left in a running state with no explanation.
+        if not done.cancelled():
+            exc = done.exception()
+            if exc is not None:
+                logger.warning('detached sub-agent task for %s failed: %s', sid, exc)
+
+    task.add_done_callback(_discard)
 
 
 def register_recurring_task(session_id: str, task: asyncio.Task) -> None:
     """Track a freshly-created recurring sub-agent task for cancellation."""
-    if not session_id:
-        return
-    _recurring_session_tasks.setdefault(session_id, set()).add(task)
-
-    def _discard(done: asyncio.Task, sid: str = session_id) -> None:
-        _recurring_session_tasks.get(sid, set()).discard(done)
-
-    task.add_done_callback(_discard)
+    register_detached_session_task(session_id, task)
 
 
 def cancel_subagent_tasks_for_session(session_id: str) -> int:
     """Cancel every in-flight executeSubAgent task bound to a session.
 
     Used by the session-delete path (sessions.cancel_session_work) so
-    fire-and-forget recurring-task sub-agents cannot outlive their session.
-    Covers both the self-registered worker tasks and the detached recurring
-    tasks registered at creation. Returns the number of tasks cancelled.
+    fire-and-forget sub-agents cannot outlive their session.
+    Covers both the self-registered worker tasks and the detached tasks
+    registered at creation. Returns the number of tasks cancelled.
     """
     if not session_id:
         return 0
     tasks = _subagent_session_tasks.pop(session_id, set())
-    tasks |= _recurring_session_tasks.pop(session_id, set())
+    tasks |= _detached_session_tasks.pop(session_id, set())
     cancelled = 0
     for t in tasks:
         if not t.done():
