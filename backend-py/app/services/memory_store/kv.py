@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 
 from app.lib.paths import assertPytestDataDirIsolated
 from app.services.deferred_writes import defer_commit
@@ -15,6 +16,45 @@ from app.type_aliases import JsonValue
 def init() -> None:
     """Create all tables on first use (migrates camel→snake if needed)."""
     ensure_schema(_conn())
+
+
+def _write_with_fts_recovery(
+    conn: sqlite3.Connection, sql: str, params: tuple[object, ...]
+) -> None:
+    """Run a `memory_store` write, and repair the search index if it vetoes it.
+
+    `memory_store` carries an AFTER INSERT/UPDATE/DELETE trigger that
+    maintains `memory_store_fts`. In SQLite a trigger that raises aborts the
+    statement that fired it, so a search index that cannot be opened takes the
+    durable row down with it — the wrong way round, because the index is
+    derived and rebuildable from the very table it indexes.
+
+    The state that triggers this is a vtable entry that survived in
+    sqlite_master while its shadow tables did not. `CREATE VIRTUAL TABLE IF
+    NOT EXISTS` then skips it forever, so the failure is permanent for that
+    file: every subsequent write raises, and every search returns nothing.
+
+    So: attempt the write, and if the index is what failed, rebuild the index
+    and retry ONCE. If the retry still fails the error propagates — a broken
+    database must not be reported as a successful write.
+    """
+    try:
+        conn.execute(sql, params)
+        return
+    except (sqlite3.OperationalError, sqlite3.DatabaseError) as first:
+        if 'memory_store_fts' not in str(first) and 'malformed' not in str(first):
+            raise
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            # A rollback on a connection that never opened a transaction is
+            # not interesting; the rebuild below is what has to work.
+            pass
+        from app.services.memory_schema import rebuild_fts_index
+
+        if not rebuild_fts_index(conn):
+            raise first
+        conn.execute(sql, params)
 
 
 def save_internal(key: str, value: JsonValue) -> None:
@@ -34,7 +74,8 @@ def save_internal(key: str, value: JsonValue) -> None:
     # `fts5: missing row N from content table` for any search that matches that
     # stale term, which is every overwrite of an existing key. `set_internal_state`
     # below already uses this form.
-    conn.execute(
+    _write_with_fts_recovery(
+        conn,
         "INSERT INTO memory_store (key, value, updated_at) VALUES (?, ?, datetime('now')) "
         'ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
         (key, _json(value)),

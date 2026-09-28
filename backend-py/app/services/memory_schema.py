@@ -553,6 +553,61 @@ def repair_fts_sync(conn: sqlite3.Connection) -> None:
             logging.debug('FTS repair skipped for %s: %s', fts, exc)
 
 
+def rebuild_fts_index(
+    conn: sqlite3.Connection, fts: str = 'memory_store_fts', base: str = 'memory_store'
+) -> bool:
+    """Drop and recreate one external-content FTS index from its base table.
+
+    The escalation above ``repair_fts_sync``, which can only re-index a vtable
+    that still opens. This is for the state where the vtable entry survives in
+    ``sqlite_master`` but its shadow tables (``_content``, ``_idx``,
+    ``_docsize``, ``_config``) are gone or inconsistent — which is what a
+    partial or interrupted schema application leaves behind. Because
+    ``CREATE VIRTUAL TABLE IF NOT EXISTS`` sees the surviving entry and skips
+    it, the broken index is permanent for that file: every later write that
+    fires the sync trigger fails, and every search silently returns nothing.
+
+    The index is DERIVED — it can always be rebuilt from ``base`` — so
+    recreating it loses nothing. Returns True when the index is usable
+    afterwards.
+
+    Trigger names are recreated too: they are what keeps the index in step
+    going forward, and a fresh vtable without them would drift on the very
+    next write. The ``IF NOT EXISTS`` form keeps this safe to call twice.
+    """
+    try:
+        for shadow in (f'{fts}_content', f'{fts}_idx', f'{fts}_docsize', f'{fts}_config'):
+            conn.execute(f'DROP TABLE IF EXISTS {shadow}')
+        conn.execute(f'DROP TABLE IF EXISTS {fts}')
+        conn.execute(
+            f'CREATE VIRTUAL TABLE {fts} USING fts5('
+            f'key, value, content=\'{base}\', content_rowid=\'rowid\')'
+        )
+        conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_ai AFTER INSERT ON {base} BEGIN '
+                     f'INSERT INTO {fts}(rowid, key, value) VALUES (new.rowid, new.key, new.value); END')
+        conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_ad AFTER DELETE ON {base} BEGIN '
+                     f'INSERT INTO {fts}({fts}, rowid, key, value) '
+                     f"VALUES('delete', old.rowid, old.key, old.value); END")
+        conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_au AFTER UPDATE ON {base} BEGIN '
+                     f'INSERT INTO {fts}({fts}, rowid, key, value) '
+                     f"VALUES('delete', old.rowid, old.key, old.value); "
+                     f'INSERT INTO {fts}(rowid, key, value) VALUES (new.rowid, new.key, new.value); END')
+        # Repopulate from the base table: the index is derived, so the rows
+        # already stored are the source of truth and must come back.
+        conn.execute(
+            f'INSERT INTO {fts}(rowid, key, value) SELECT rowid, key, value FROM {base}'
+        )
+        conn.commit()
+        return True
+    except Exception as exc:
+        logging.warning('FTS index rebuild failed for %s: %s', fts, exc)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """Idempotently migrate camel→snake (if needed) then create the full brain schema.
 
