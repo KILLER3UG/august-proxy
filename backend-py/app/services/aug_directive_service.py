@@ -155,6 +155,31 @@ def _directive_file(directory: Path) -> Optional[Path]:
 # the layer files themselves (an edit changes the file's mtime), so any
 # layer change busts the key on the next call.
 _layered_cache: dict[str, tuple[tuple, Optional[dict[str, object]]]] = {}
+# Capacity bound for _layered_cache. A value is a stat fingerprint plus the
+# resolved layer result, whose body is capped at 32 KiB, so an unbounded dict
+# retains up to 32 KB for every workspace path the app has ever been pointed
+# at. Freshness here is the fingerprint, not a clock — an idle-but-unchanged
+# workspace must keep serving from cache — so capacity is the bound, not a
+# TTL. 8 workspaces covers a session's active workspace plus the projects a
+# user moves between, and an evicted path only costs a re-read of the layers.
+_LAYERED_CACHE_MAX = 8
+
+
+def _store_layered(
+    cache_key: str, fingerprint: tuple, value: Optional[dict[str, object]]
+) -> None:
+    """Cache one layered result, keeping the dict inside its capacity.
+
+    Oldest-first eviction: dicts keep insertion order, so
+    ``next(iter(_layered_cache))`` is the oldest WRITE — a FIFO, not an
+    arbitrary victim. The trim runs BEFORE the insert and stops one below the
+    cap, so the insert lands back exactly on the cap and the entry the caller
+    is about to receive is never the one dropped; a caller still holding an
+    evicted result keeps its own reference.
+    """
+    while len(_layered_cache) >= _LAYERED_CACHE_MAX:
+        _layered_cache.pop(next(iter(_layered_cache)))
+    _layered_cache[cache_key] = (fingerprint, value)
 
 
 def _stat_sig(path: Path) -> tuple[int, int]:
@@ -227,10 +252,19 @@ def load_layered(workspacePath: str | None) -> Optional[dict[str, object]]:
     exists}`` or ``None`` when no layer exists.
 
     Results are cached per workspace against an (mtime, size) fingerprint of
-    the candidate layers; callers must treat the returned dict as read-only.
+    the candidate layers.
+
+    Both return paths now hand back a fresh ``dict``. They used to be
+    asymmetric — a HIT returned a copy, a MISS returned the very object now
+    held by the cache — so the first call after any layer change could mutate
+    the cached value in place and silently corrupt every later hit for that
+    workspace. A cache whose entries a caller can write through is not a cache.
+    The copy is shallow, which is right here: the values are scalars and one
+    string, so a shallow copy is enough to make the cached object unreachable
+    from a caller's hands.
     """
-    cacheKey = str(workspacePath or '')
-    cached = _layered_cache.get(cacheKey)
+    cache_key = str(workspacePath or '')
+    cached = _layered_cache.get(cache_key)
     if cached is not None and _layers_unchanged(cached[0]):
         hit = cached[1]
         return dict(hit) if hit is not None else None
@@ -278,7 +312,7 @@ def load_layered(workspacePath: str | None) -> Optional[dict[str, object]]:
                     _addLayer(found, scope)
 
     if not layers:
-        _layered_cache[cacheKey] = (_layers_fingerprint(workspacePath), None)
+        _store_layered(cache_key, _layers_fingerprint(workspacePath), None)
         return None
 
     def _bytes(layer: dict[str, str]) -> int:
@@ -300,8 +334,8 @@ def load_layered(workspacePath: str | None) -> Optional[dict[str, object]]:
         'truncated': truncated,
         'exists': True,
     }
-    _layered_cache[cacheKey] = (_layers_fingerprint(workspacePath), result)
-    return result
+    _store_layered(cache_key, _layers_fingerprint(workspacePath), result)
+    return dict(result)
 
 
 

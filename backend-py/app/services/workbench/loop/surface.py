@@ -94,6 +94,37 @@ def _toolDefName(t: dict[str, object]) -> str:
 
 _capability_profile_cache: dict[tuple[str, str], tuple[float, dict[str, object]]] = {}
 _CAPABILITY_PROFILE_TTL_S = 5.0
+# Capacity bound for _capability_profile_cache. The key is a (model, provider)
+# pair and a session can name a different model every turn, so the key space
+# grows with every pair the app has ever carried — and a TTL that is only
+# tested on LOOKUP reclaims none of them, which is what made this unbounded.
+# 64 pairs covers any realistic providers.json (even a large multi-fleet
+# install) many times over, and a value is three scalars, so the ceiling is
+# well under a kilobyte.
+_CAPABILITY_PROFILE_CACHE_MAX = 64
+
+
+def _pruneCapabilityProfiles(now: float) -> None:
+    """Reclaim the capability-profile memo: expired entries, then capacity.
+
+    Expiry is the real bound — a pair nobody has looked at for 5s can never
+    be served again — so sweeping it on WRITE is what makes the TTL mean
+    anything. The capacity trim then handles the pairs that are all still live
+    (a model-switch burst inside one TTL window), oldest write first: dicts
+    iterate in insertion order, so ``next(iter(...))`` is the oldest insert.
+    The trim runs before the caller's own entry is stored and stops one below
+    the cap, so the insert lands back on the cap and the profile about to be
+    returned is never the one evicted.
+    """
+    expired = [
+        k
+        for k, v in _capability_profile_cache.items()
+        if now - v[0] >= _CAPABILITY_PROFILE_TTL_S
+    ]
+    for k in expired:
+        _capability_profile_cache.pop(k, None)
+    while len(_capability_profile_cache) >= _CAPABILITY_PROFILE_CACHE_MAX:
+        _capability_profile_cache.pop(next(iter(_capability_profile_cache)))
 
 
 def _modelCapabilityProfile(session: WorkbenchSession) -> dict[str, object]:
@@ -103,7 +134,11 @@ def _modelCapabilityProfile(session: WorkbenchSession) -> dict[str, object]:
     getProvidersAsModels() — a full providers.json read + typed rebuild —
     and the tool-surface path hits it 2–3× per turn for the same pair.
     Provider edits apply within 5 seconds, which is fine for a tool
-    surface; the config UI reloads the page anyway.
+    surface; the config UI reloads the page anyway. The memo is swept on
+    write and capped at ``_CAPABILITY_PROFILE_CACHE_MAX`` (see
+    ``_pruneCapabilityProfiles``) so it cannot outlive its usefulness or grow
+    with every model a session has ever named. The returned dict is the
+    cached object — callers must read it, not mutate it.
     """
     import time as _time
 
@@ -135,6 +170,7 @@ def _modelCapabilityProfile(session: WorkbenchSession) -> dict[str, object]:
                 break
     except Exception:
         pass
+    _pruneCapabilityProfiles(now)
     _capability_profile_cache[cacheKey] = (now, profile)
     return profile
 

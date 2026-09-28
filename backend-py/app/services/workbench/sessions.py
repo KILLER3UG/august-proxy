@@ -657,6 +657,7 @@ def _persist_sessions_snapshot() -> None:
     the window so they never silently disappear from the UI; a pruned session
     is transparently reloaded from SQLite on next access.
     """
+    evicted: list[str] = []
     with _persist_io_lock:
         with _sessions_lock:
             sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:_SESSION_WINDOW]
@@ -683,6 +684,7 @@ def _persist_sessions_snapshot() -> None:
                 except Exception:
                     pass
                 del _sessions[sid]
+                evicted.append(sid)
             # Only sessions whose state changed since the last
             # pass are serialized; the JSON export (admin one-shot surface)
             # keeps writing the full window.
@@ -693,27 +695,53 @@ def _persist_sessions_snapshot() -> None:
             snapshots = [s.toDict() for s in sorted_sessions]
             export_json = is_session_json_export_enabled()
 
+    # Release per-session resources for sessions that just aged out of the
+    # RAM window, OUTSIDE both locks — `EnvironmentWatcher.stop()` closes a
+    # watchdog thread and an OS directory-watch handle, and holding the session
+    # lock across that would stall every concurrent chat turn.
+    #
+    # The watcher used to be released only on an explicit delete, while this
+    # recency window is 60 entries. So a user who opened 200 workspaces kept
+    # 200 watchdog observer threads and their `ReadDirectoryChangesW` handles
+    # resident: the thread count and handle count climbed monotonically and
+    # never came back down. Eviction from the window IS the moment the
+    # process stops caring about a session, so it is where teardown belongs.
+    for sid in evicted:
         try:
-            from app.services import memory_store
-            from app.services.memory_store import save_workbench_session_sot
+            from app.services.cognitive_boot import detach_session_watcher
 
-            memory_store.init()
-            for blob in dirty_snapshots:
-                save_workbench_session_sot(blob)
-            # Drop the dirty marks only after the SQLite write succeeded —
-            # clearing them first would silently lose those sessions' changes
-            # until their next mutation if the write raises.
-            _dirty_sids.difference_update(dirty_ids)
+            detach_session_watcher(sid)
         except Exception:
-            logger.exception('SQLite session write failed')
+            logger.debug('watcher detach on evict failed for %s', sid, exc_info=True)
+        try:
+            from app.services.environment_watcher import forgetSessionChanges
 
-        if export_json:
-            try:
-                path = _sessions_path()
-                path.parent.mkdir(parents=True, exist_ok=True)
-                write_json_atomic(path, snapshots, indent=2)
-            except Exception:
-                logger.exception('JSON session export failed (non-fatal; SQLite is primary)')
+            forgetSessionChanges(sid)
+        except Exception:
+            logger.debug('change-buffer drop on evict failed for %s', sid, exc_info=True)
+
+    try:
+        from app.services import memory_store
+        from app.services.memory_store import save_workbench_session_sot
+
+        memory_store.init()
+        for blob in dirty_snapshots:
+            save_workbench_session_sot(blob)
+        # Drop the dirty marks only after the SQLite write succeeded —
+        # clearing them first would silently lose those sessions' changes
+        # until their next mutation if the write raises.
+        _dirty_sids.difference_update(dirty_ids)
+    except Exception:
+        logger.exception('SQLite session write failed')
+
+    if export_json:
+        try:
+            path = _sessions_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            write_json_atomic(path, snapshots, indent=2)
+        except Exception:
+            logger.exception('JSON session export failed (non-fatal; SQLite is primary)')
+
 
 def save_sessions_now() -> None:
     """Persist immediately (create/delete/rename/shutdown/tests).

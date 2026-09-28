@@ -38,9 +38,17 @@ from typing import AsyncIterator, cast
 
 logger = logging.getLogger(__name__)
 
+# Events retained per session for reconnect-replay. See MAX_SESSIONS_RESIDENT
+# for the bound this does NOT provide.
 MAX_IN_MEMORY = 2000
 # Rewrite the JSONL with the in-memory tail once it exceeds this size.
 MAX_LOG_BYTES = 8 * 1024 * 1024
+# How many session rings stay resident. MAX_IN_MEMORY bounds the EVENTS per
+# session; this bounds the SESSIONS, which nothing did — the dict was
+# append-only, so a long-lived process accumulated a 2000-event replay buffer
+# for every session it had ever seen, including deleted ones. 64 covers any
+# realistic number of concurrent/recent chats at ~2000 events each.
+MAX_SESSIONS_RESIDENT = 64
 # Bounded persistence backlog. Beyond this, writes are DROPPED (counted +
 # warned) rather than blocking the caller: the in-memory ring and live
 # subscribers still got the event — only restart-replay loses it.
@@ -70,6 +78,8 @@ class EventLog:
         self._writerThread: threading.Thread | None = None
         self._droppedWrites = 0
         self._dropWarnedAt = 0.0
+        self._evictedSessions = 0
+        self._lastEvictWarnAt = 0.0
         self._startWriter()
 
     def append(self, sessionId: str, eventType: str, payload: dict[str, object] | None = None) -> int:
@@ -192,9 +202,53 @@ class EventLog:
             entry.subscribers.discard(q)
 
     def _getOrCreate(self, sessionId: str) -> '_SessionLog':
-        if sessionId not in self._sessions:
-            self._sessions[sessionId] = _SessionLog(sessionId)
-        return self._sessions[sessionId]
+        entry = self._sessions.get(sessionId)
+        if entry is None:
+            entry = _SessionLog(sessionId)
+            self._sessions[sessionId] = entry
+            self._evictIfOverCapacity()
+        entry.touchedAt = time.monotonic()
+        return entry
+
+    def _evictIfOverCapacity(self) -> None:
+        """Bound the number of resident session rings.
+
+        `MAX_IN_MEMORY` bounds the EVENTS per session and `MAX_LOG_BYTES` the
+        on-disk file. Neither bounds how many sessions are resident, and this
+        dict is append-only: there was no pop anywhere in the module. So every
+        session the app ever saw kept a 2000-entry deque of full SSE payloads
+        — tool arguments, tool results, assistant deltas — for the life of the
+        process. A user leaving the app open across 200 sessions was holding
+        hundreds of MB of replay buffer for sessions they were not looking at,
+        including deleted ones.
+
+        Evicted least-recently-touched first, and NEVER one with a live
+        subscriber: an active stream holds the entry, and dropping it would
+        break the SSE connection mid-turn. Entries still subscribed are
+        skipped, so a burst of concurrent turns can exceed the cap rather
+        than lose a stream — the correct thing to give up.
+        """
+        if len(self._sessions) <= MAX_SESSIONS_RESIDENT:
+            return
+        stale = [
+            (entry.touchedAt, sid)
+            for sid, entry in self._sessions.items()
+            if not entry.subscribers
+        ]
+        # Oldest first, and stop as soon as we are back under the cap.
+        stale.sort()
+        excess = len(self._sessions) - MAX_SESSIONS_RESIDENT
+        for _, sid in stale[:excess]:
+            evicted = self._sessions.pop(sid, None)
+            if evicted is not None:
+                self._evictedSessions += 1
+                now = time.monotonic()
+                if now - self._lastEvictWarnAt > 60.0:
+                    self._lastEvictWarnAt = now
+                    logger.info(
+                        'event log: dropped idle session ring %s (%d resident, cap %d)',
+                        sid, len(self._sessions), MAX_SESSIONS_RESIDENT,
+                    )
 
 
 class _SessionLog:
@@ -204,6 +258,8 @@ class _SessionLog:
         self.events: deque[dict] = deque(maxlen=MAX_IN_MEMORY)
         self.subscribers: set[asyncio.Queue] = set()
         self.sizeHint: int = 0
+        # LRU key for the residency cap. Set on every append/get.
+        self.touchedAt: float = time.monotonic()
         self._rehydrate()
 
     def _rehydrate(self) -> None:

@@ -134,6 +134,15 @@ _BINARY_SNIFF_BYTES = 1024
 
 _cache: dict[str, tuple[float, str]] = {}
 _gitDirsCache: dict[str, tuple[float, frozenset[str]]] = {}
+# Capacity bound for _cache. A value is the whole prompt-side code-map block
+# (~10-20 KB of tree + signature lines) and the key is a resolved workspace
+# root, so without a cap this dict — unlike its neighbour below — is the one
+# thing in the file that grows for as long as the process lives, by however
+# many places the user has opened. A desktop session walks ONE workspace at a
+# time; 8 covers that plus the subfolders/projects a user actually flips
+# between in a sitting, at ~160 KB worst case, and an evicted root only costs
+# the bounded walk + a prompt rebuild on the next build.
+_MAP_CACHE_MAX_ENTRIES = 8
 
 
 def _is_binary(path: Path) -> bool:
@@ -351,6 +360,15 @@ def build_code_map(workspace_path: str | None) -> str:
         parts.append('Signatures:\n' + '\n'.join(sig_lines))
     block = '\n\n'.join(parts)
     try:
+        # Oldest-first capacity trim (same shape as the _gitDirsCache bound,
+        # but FIFO instead of a full flush): dicts iterate in insertion order,
+        # so `next(iter(_cache))` is the oldest WRITE. It runs BEFORE the
+        # insert — and trims to one below the cap, so the insert lands back
+        # exactly on the cap and the entry this call is about to return is
+        # never the one dropped. The value is a str, so a caller still holding
+        # an older block is unaffected by its eviction either way.
+        while len(_cache) >= _MAP_CACHE_MAX_ENTRIES:
+            _cache.pop(next(iter(_cache)))
         _cache[key] = (time.monotonic(), block)
     except Exception:
         pass

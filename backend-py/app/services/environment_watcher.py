@@ -55,19 +55,60 @@ class ChangeEvent:
 
 _recentChanges: dict[str, list[dict]] = {}
 
+# Per-session cap on the change buffer. `getRecentChanges` only ever returns
+# the last `maxAgeSeconds` (default 5 min) of changes, so anything older is
+# unreachable by design — the list used to keep them anyway, and there was no
+# cap on either the length or the number of sessions, so a long-lived process
+# accumulated every change for every session it had ever watched.
+_MAX_CHANGES_PER_SESSION = 200
+
 
 def getRecentChanges(sessionId: str, maxAgeSeconds: int = 300) -> list[dict]:
     """v2: Return recent environment changes for the session."""
     cutoff = time.time() - maxAgeSeconds
-    changes = _recentChanges.get(sessionId, [])
-    return [c for c in changes if as_float(c.get('timestamp'), 0.0) >= cutoff]
+    changes = _recentChanges.get(sessionId)
+    if not changes:
+        return []
+    # Sweep on read, not just filter: an entry past the cutoff can never be
+    # returned again, and the dict key itself is dead once its list empties.
+    live = [c for c in changes if as_float(c.get('timestamp'), 0.0) >= cutoff]
+    if live:
+        changes[:] = live
+    else:
+        _recentChanges.pop(sessionId, None)
+    return live
+
+
+def forgetSessionChanges(sessionId: str) -> None:
+    """Drop a session's change buffer outright.
+
+    Called when the session leaves the RAM recency window, not when its
+    changes merely age out — otherwise the dict key outlives the session it
+    belongs to, and the number of keys tracks every session the process ever
+    watched rather than the ones still in play.
+    """
+    _recentChanges.pop(sessionId, None)
 
 
 def recordChange(sessionId: str, change: dict) -> None:
-    """v2: Record an environment change (called by EnvironmentWatcher on emit)."""
-    if sessionId not in _recentChanges:
-        _recentChanges[sessionId] = []
-    _recentChanges[sessionId].append(change)
+    """v2: Record an environment change (called by EnvironmentWatcher on emit).
+
+    The timestamp is stamped HERE, by the recorder, rather than expected of
+    each caller. The `EnvironmentChange` dataclass above declares one and
+    `getRecentChanges` filters on it, but the only production caller
+    (`cognitive_boot._on_event`) was building the dict by hand without it — so
+    every change was written, grew without bound, and then failed its own age
+    check and was never returned. A field the reader depends on belongs to the
+    writer that owns the record, not to whoever happens to call it.
+    """
+    entry = _recentChanges.get(sessionId)
+    if entry is None:
+        entry = _recentChanges[sessionId] = []
+    if 'timestamp' not in change:
+        change = {**change, 'timestamp': time.time()}
+    entry.append(change)
+    if len(entry) > _MAX_CHANGES_PER_SESSION:
+        del entry[: len(entry) - _MAX_CHANGES_PER_SESSION]
 
 
 def watch(workspacePath: str, sessionId: str) -> None:

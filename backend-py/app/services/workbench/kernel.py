@@ -22,7 +22,6 @@ templates; this module owns everything the parent process can reason about
 (tokens, paths, caps, locks, venv discovery, and the gated dispatch).
 """
 
-from __future__ import annotations
 
 import asyncio
 import logging
@@ -128,10 +127,19 @@ class WarmKernel:
         self.session_id = session_id
         self.interpreter = interpreter or ''
         self.proc: asyncio.subprocess.Process | None = None
-        self.last_used: float = 0.0
+        # Seeded NOW, not at first boot. `acquire_warm_kernel` registers an
+        # entry and the child is created lazily on the first cell, so a kernel
+        # that is acquired and then never used (a warm run that falls back to
+        # the cold path, a session that ends first) had `last_used == 0.0`
+        # and no armed timer — the idle window could never fire for it, and
+        # nothing else ever removed the entry. A monotonic clock reading of
+        # ~0.0 is also far enough in the past that the window elapsed
+        # instantly, so arming here reaps it promptly.
+        self.last_used: float = time.monotonic()
         self._shutdown = False
         self._busy = False
         self._idle_handle: asyncio.TimerHandle | None = None
+        self._arm_idle_timer()
 
     async def _boot(self) -> None:
         """Spawn the persistent child (must run inside an event loop)."""
@@ -189,16 +197,31 @@ class WarmKernel:
         return not self._shutdown and (self.proc is None or self.proc.returncode is None)
 
     def kill(self) -> None:
-        """Kill the child and drain its pipes.
+        """Kill the child, drain its pipes, and drop the registry entry.
 
         ``proc.kill()`` alone leaks: on Windows the child becomes a zombie
         until someone reaps it, and the stdin/stdout pipes stay open (each
         holds an OS handle) until GC. ``await proc.wait()`` can't run in this
         sync method, so reap via a fire-and-forget task and close the pipes
         here.
+
+        The registry entry is dropped HERE, not in ``shutdown``, because the
+        registry is what leaks: the idle timer calls ``kill()`` directly, so
+        every kernel that expired after 15 minutes left its entry — and a
+        reference to the dead ``asyncio.subprocess.Process`` and its
+        transport — in ``_WARM_KERNELS`` for the life of the process. The
+        reaper that was meant to catch this had no production caller at all.
+        A resource deregistering itself when it dies means no future call site
+        can reintroduce the leak by forgetting to pop.
         """
         self._shutdown = True
         self._disarm_idle_timer()
+        # Identity-checked: only drop the entry if it is still OURS. A kernel
+        # that was replaced in the registry (acquire after death) must not
+        # evict its successor.
+        key = _warm_key(self.workspace_path, self.session_id)
+        if _WARM_KERNELS.get(key) is self:
+            _WARM_KERNELS.pop(key, None)
         proc = self.proc
         if proc is not None and proc.returncode is None:
             try:
@@ -223,8 +246,9 @@ class WarmKernel:
 
     def shutdown(self) -> None:
         """Kill the child and drop the registry entry."""
+        # `kill()` now owns the deregistration, so this is the same operation.
+        # Kept as a distinct name because callers read as "stop using this".
         self.kill()
-        _WARM_KERNELS.pop(_warm_key(self.workspace_path, self.session_id), None)
 
     def launch_command(self) -> str:
         """The fixed boot-command SHAPE (interpreter + ``-I``) — the same
