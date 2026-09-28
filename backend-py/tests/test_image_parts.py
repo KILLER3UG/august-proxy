@@ -1,4 +1,4 @@
-"""Hermes-style inline image parts on the chat wire.
+"""Inline image parts on the chat wire.
 
 Composer images land under <workspace>/.aug/attachments/ and the message text
 names the path; inline_image_parts upgrades those user messages to multipart

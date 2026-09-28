@@ -1,4 +1,4 @@
-"""Inline composer image attachments into the chat wire (Hermes-style turns).
+"""Inline composer image attachments into the chat wire (multimodal turns).
 
 Composer images are persisted by ``POST /api/workbench/attachments`` to
 ``<workspace>/.aug/attachments/<sessionId>/<name>`` and the user message text

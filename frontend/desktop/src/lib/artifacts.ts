@@ -1,5 +1,5 @@
 /* ── Artifacts — session-wide deliverables gallery ──────────────── */
-/* Hermes/DeepSeek pattern: collect what the agent produced (files,     */
+/* Collect what the agent produced (files,     */
 /* images, links) across the whole session into a searchable gallery.   */
 /* Extracted from ChatMessage[] so it stays pure + testable.           */
 

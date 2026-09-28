@@ -386,10 +386,13 @@ Missing `discord.py` / `slack_sdk` skips that adapter without blocking boot.
 `GET /api/gateway/status` reports per-platform `available` / `reason` /
 `installHint`.
 
-### Profile-style overrides (legacy)
+### Older "profile" keys are inert
 
-A small number of keys may still mirror older profile shapes (`claude`, `codex`,
-`custom`). Prefer `modelAliases` + `activeProvider` + `providers.json`.
+There is **no profile subsystem** — nothing in `app/` reads a `claude` / `codex`
+/ `custom` profile shape (no `PROFILES` table, no such key anywhere). If an old
+`config.json` still carries one, it is ignored rather than applied, so a model
+that seems to "come from the profile" is actually coming from `modelAliases`,
+`activeProvider` or `providers.json`. Configure those three.
 
 ---
 

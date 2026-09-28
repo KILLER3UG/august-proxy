@@ -282,7 +282,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
         e.preventDefault();
         setShowPreview(v => !v);
       }
-      // Hermes-style Quick Entry — Cmd/Ctrl+Shift+Space focuses composer from anywhere
+      // Quick Entry — Cmd/Ctrl+Shift+Space focuses composer from anywhere
       if (cmd && e.shiftKey && (e.code === 'Space' || e.key === ' ')) {
         e.preventDefault();
         taRef.current?.focus();

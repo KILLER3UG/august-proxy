@@ -1,8 +1,8 @@
 """Web search/fetch and headless browser tool handlers + registration.
 
-``web_search`` returns ranked snippets only (Hermes/Claude cite-then-fetch).
+``web_search`` returns ranked snippets only (cite-then-fetch).
 ``web_fetch`` downloads a chosen URL with timeouts, body caps, and optional
-Hermes-style aux compression for long pages.
+Aux compression for long pages.
 """
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 /* ── RightDrawerArtifactsSection ─ session gallery ──────────────── */
-/* Hermes “Artifacts” + DeepSeek produced-files row, lifted to a drawer   */
+/* A produced-files row, lifted to a drawer   */
 /* section that is searchable and grouped by kind. Reuses                   */
 /* collectArtifacts so it stays in sync with the inline ChangesCard.      */
 

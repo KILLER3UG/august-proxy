@@ -121,7 +121,7 @@ def _workspace() -> str:
 # ── Media guard: images/video/audio must go through vision/media tools ───
 # Text-reading a PNG/MP4/MP3 produces mojibake that wastes context and
 # teaches the model nothing — the correct surface is a dedicated analyzer
-# (vision_analyze / media analysis tools). Mirrors how the Hermes harness
+# (vision_analyze / media analysis tools). Mirrors how the harness
 # refuses to read images with read_file.
 
 _MEDIA_EXTS = frozenset({

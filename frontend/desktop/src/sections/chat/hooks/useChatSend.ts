@@ -508,7 +508,7 @@ export function useChatSend(opts: UseChatSendOptions) {
       }
 
       // While streaming: mid-run STEER (course correction) — applies at the
-      // next tool/LLM boundary without cancelling the turn (Hermes-style /steer).
+      // next tool/LLM boundary without cancelling the turn (/steer).
       if (streaming && sessionId) {
         try {
           const wbId = ChatSendService.resolveWorkbenchQueueId(

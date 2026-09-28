@@ -74,9 +74,8 @@ def _subagent_answer(accumulated: str, last_round: str) -> str:
     head-truncated slice of that blob therefore shipped the narration and
     discarded the answer. Prefer the last round, and fall back to the
     accumulation only when the last round was empty — which is what a capped or
-    interrupted run leaves behind. Mirrors how deepseek-harness normalizes
-    subagent output in `assistant-output.ts` rather than re-deriving it per
-    call site.
+    interrupted run leaves behind. Normalizes subagent output in one place
+    rather than re-deriving it per call site.
     """
     trimmed = last_round.strip()
     return trimmed or accumulated.strip()

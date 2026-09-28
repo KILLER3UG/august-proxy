@@ -1,7 +1,6 @@
 """Gateway platform adapter base — ingest-side messaging.
 
-Modeled on Hermes ``gateway/platforms/base.py:2085`` (BasePlatformAdapter) +
-``handle_message`` (``base.py:4284``). Two-guard pattern:
+Modeled on a base platform adapter + ``handle_message`` entry point. Two-guard pattern:
 
   * First guard (here): a 2nd message arriving while a turn is running for the
     same session is queued, not run concurrently — so each platform chat gets

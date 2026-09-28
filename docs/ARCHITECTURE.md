@@ -226,7 +226,7 @@ phase). The former verifier gate / receipts machinery was removed
 plus [`subagent_orchestrator.py`](../backend-py/app/services/subagent_orchestrator.py)
 and HTTP `/api/subagents/*`. Sub-agents resolve inherited model aliases, apply
 `subAgentFallback`, enforce depth caps, and reuse workbench model callers.
-Hermes-structured harness: `delegation {maxConcurrent, maxIterations, maxDepth, worktreeIsolation}`
+Structured harness: `delegation {maxConcurrent, maxIterations, maxDepth, worktreeIsolation}`
 in `workbench.metadata.delegation` (`GET/POST /api/subagents/config`). Statuses `queued/running/stalling`
 with `queuePosition/queueTotal`, `lastActivityAt/apiCalls` stall monitor (>90s → `stalling`),
 `result_full` 20k blob + `cache/delegation/<taskId>.jsonl` live transcript (`GET /{taskId}/transcript`).

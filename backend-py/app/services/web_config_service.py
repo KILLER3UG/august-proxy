@@ -1,7 +1,7 @@
 """Web search/extract config under ``auxiliary.web`` in config.json.
 
 Backends (search): ``ddgs`` (default), ``brave``, ``searxng``, or ``auto``.
-Extract compression follows Hermes-style size thresholds.
+Extract compression follows size thresholds.
 """
 
 from __future__ import annotations

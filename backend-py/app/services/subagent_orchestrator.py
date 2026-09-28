@@ -73,7 +73,7 @@ _MAX_RETAINED_HANDLES = 12
 
 
 def _transcript_path(task_id: str) -> Any:
-    """Path to delegation transcript jsonl (Hermes cache/delegation)."""
+    """Path to delegation transcript jsonl (cache/delegation)."""
     from app.lib.paths import dataPath as _dataPath
 
     # Sanitize: only task_ prefix
@@ -87,7 +87,7 @@ def _append_transcript(task_id: str, event: dict[str, Any]) -> None:
     try:
         p = _transcript_path(task_id)
         p.parent.mkdir(parents=True, exist_ok=True)
-        # Keep file bounded (~200 lines, ~100KB) - Hermes readable from remote backends
+        # Keep file bounded (~200 lines, ~100KB) - readable from remote backends
         with open(p, "a", encoding="utf-8") as f:
             f.write(_json.dumps(event, ensure_ascii=False) + "\n")
         # Trim if too large
@@ -378,7 +378,7 @@ class SubagentHandle:
         # toDict() and the runs endpoint.
         self.todos: list[dict[str, object]] = []
         self._future: asyncio.Future | None = None
-        # Hermes-style: track liveness for stall detection + live-transcript
+        # Track liveness for stall detection + live-transcript
         self.lastActivityAt: float = time.time()
         self.apiCalls: int = 0
         self.iterations: int = 0
@@ -393,7 +393,7 @@ class SubagentHandle:
     def isStalling(self) -> bool:
         if self.status not in ('pending', 'running'):
             return False
-        # Hermes stall threshold ~300s, but UI flags earlier for visibility
+        # Stall threshold ~300s, but UI flags earlier for visibility
         return (time.time() - self.lastActivityAt) > 90
 
     def touch(self) -> None:
@@ -489,11 +489,11 @@ class SubagentOrchestrator:
         return sem
 
     async def spawn(self, request: SubagentSpawnRequest) -> list[SubagentHandle]:
-        """Spawn one or more sub-agents concurrently (Hermes-structured).
+        """Spawn one or more sub-agents concurrently.
 
         Respects per-session delegation config (maxConcurrent / maxIterations /
         maxDepth / worktreeIsolation) stored in workbench metadata — same shape
-        as Hermes `delegation.*` so the harness stays well-structured and
+        as `delegation.*` so the harness stays well-structured and
         predictable.
         """
         if self._closed:
@@ -530,7 +530,7 @@ class SubagentOrchestrator:
                     delegation[_k] = _v
         except Exception:
             pass
-        max_concurrent = max(1, min(30, as_int(delegation.get('maxConcurrent', 5), 5) or 5))  # Hermes default 3, August default 5
+        max_concurrent = max(1, min(30, as_int(delegation.get('maxConcurrent', 5), 5) or 5))  # August default 5
         default_max_iter = max(5, min(200, as_int(delegation.get('maxIterations', 50), 50) or 50))
         # ONE resolution for every fan-out bound, shared with the spawn tool
         # (app/services/tools/spawn_subagents_tool.py) so the two can never
@@ -572,7 +572,7 @@ class SubagentOrchestrator:
             )
             refused_items = list(work_items[children_cap:])
             work_items = work_items[:children_cap]
-        # Hermes-style: wrap emit to capture live transcript + touch liveness
+        # Wrap emit to capture live transcript + touch liveness
         _orig_emit = request.emit
         def _wrapped_emit(ev: dict[str, Any]) -> None:
             try:
@@ -614,7 +614,7 @@ class SubagentOrchestrator:
             effort = as_str(item.get('effort'), 'medium') or 'medium'
             model = as_str(item.get('model'), '')
             # Runtime recursion depth: children of a sub-agent run at
-            # parent_depth + 1; root spawns default to 0. Hermes max_spawn_depth caps this.
+            # parent_depth + 1; root spawns default to 0. max_spawn_depth caps this.
             # Read the per-task depth ContextVar (race-free across
             # concurrent workers); fall back to the session attr for callers that
             # spawn outside a worker context.
@@ -648,7 +648,7 @@ class SubagentOrchestrator:
             depth = raw_depth
             handle.workstream = as_str(item.get('workstream') or item.get('name'), '')
             handle.skills = [str(s).strip() for s in (item.get('skills') or []) if str(s).strip()]
-            # Hermes: queued when semaphore saturated; visible in drawer queue position
+            # Queued when semaphore saturated; visible in drawer queue position
             if self._semaphore.locked():
                 handle.status = 'queued'
             self._handles[taskId] = handle

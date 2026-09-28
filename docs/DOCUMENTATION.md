@@ -32,7 +32,7 @@
 
 | Document | Contents |
 |----------|----------|
-| [`research/`](research/) | 2026-09-24/25 read-only audits of August (backend harness, frontend UI, lifecycle, sub-agent output) plus competitor deep dives. The freshest analysis in the tree — and it already supersedes `settings-audit.md` |
+| [`research/`](research/) | 2026-09-24/25 read-only audits of August itself (backend harness, frontend UI, lifecycle, sub-agent output). The freshest analysis in the tree — and it already supersedes `settings-audit.md` |
 
 ### Refactor program (closed — archaeology)
 

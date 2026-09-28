@@ -15308,7 +15308,7 @@
     },
     "/api/subagents/{taskId}/transcript": {
       "get": {
-        "description": "Hermes-style live transcript (cache/delegation jsonl).",
+        "description": "Live transcript (cache/delegation jsonl).",
         "operationId": "getSubagentTranscript_api_subagents__taskId__transcript_get",
         "parameters": [
           {

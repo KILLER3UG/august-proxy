@@ -1,4 +1,4 @@
-"""Hermes-style size-driven compression for ``web_fetch`` page bodies.
+"""Size-driven compression for ``web_fetch`` page bodies.
 
 | Page size (chars) | Behavior |
 | ----------------- | -------- |
@@ -123,7 +123,7 @@ async def maybe_compress_page(url: str, body: str) -> tuple[str, dict[str, objec
         # Avoid double URL: header already includes URL; strip leading URL line from body path
         return header + summary, meta
 
-    # Fallback: first raw_max chars (Hermes behavior)
+    # Fallback: first raw_max chars
     meta['mode'] = 'truncated_fallback'
     meta['message'] = 'Summarization unavailable; returning start of page'
     return body[:raw_max] + '\n…(truncated; summarization unavailable)', meta

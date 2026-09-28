@@ -307,8 +307,7 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
           break;
         }
         case 'goal': {
-          // Standing, verifiable objective (Claude Code / Codex / Hermes
-          // style): kept in the system prompt every turn until cleared.
+          // Standing, verifiable objective: kept in the system prompt every turn until cleared.
           const sid = workbenchSessionId || event.sessionId || sessionId || '';
           if (!sid) {
             toast.error('No active session');

@@ -346,7 +346,7 @@ async def stopAllSubagents(request: Request):
 
 @router.get('/{taskId}/transcript')
 async def getSubagentTranscript(taskId: str, limit: int = 200):
-    """Hermes-style live transcript (cache/delegation jsonl)."""
+    """Live transcript (cache/delegation jsonl)."""
     from app.services.subagent_orchestrator import _read_transcript
 
     if limit < 1 or limit > 500:
