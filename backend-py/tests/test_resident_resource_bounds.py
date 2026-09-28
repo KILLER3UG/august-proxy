@@ -302,7 +302,3 @@ class TestFtsRebuildDiagnostic:
         old.kill()
         assert kmod._WARM_KERNELS.get(kmod._warm_key('/ws', 'sess-3')) is new
         kmod._WARM_KERNELS.clear()
-
-
-class TestWarmKernelDeregistersItself:
-    pass

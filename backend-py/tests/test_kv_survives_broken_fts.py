@@ -16,7 +16,10 @@ application leaves) rather than trying to win a race to produce it.
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
+from app.services import memory_schema
 from app.services.memory_store import kv
 
 
@@ -136,3 +139,100 @@ class TestDurableWriteSurvivesBrokenIndex:
             kv.save_internal(f'k{i}', {'v': i})
         for i in range(5):
             assert kv.get_memory(f'k{i}') == {'v': i}
+
+
+class _FailingOnceConn:
+    """A connection proxy whose first memory INSERT raises, then behaves normally.
+
+    Stands in for the contention this path exists for. It is a proxy rather
+    than a real second connection because the property under test — "no DDL
+    ran" — is observable without racing actual threads, and a test that needed
+    a race would itself be the flake. `sqlite3.Connection.execute` is
+    read-only, so the proxy stands in for the whole connection rather than
+    the method.
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+        self._raised = False
+
+    def execute(self, sql, *args, **kwargs):
+        if not self._raised and 'INSERT INTO memory_store' in sql:
+            self._raised = True
+            raise sqlite3.OperationalError('database is locked')
+        return self._conn.execute(sql, *args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
+class TestRebuildOnlyWhenTheIndexIsActuallyBroken:
+    """The architectural half: repair what is broken, not what touched it.
+
+    `_write_with_fts_recovery` used to DROP-and-CREATE on ANY SQLite error
+    from a memory write. That is five `DROP TABLE` statements plus a `CREATE
+    VIRTUAL TABLE` against a file every thread has open, executed on a REQUEST
+    path — so a write that failed only because the file was momentarily busy
+    escalated into destructive DDL, and the DROP is precisely what makes some
+    *other* connection's next statement fail with `vtable constructor failed`.
+    The recovery path was manufacturing the symptom it existed to cure, which
+    is why it never reproduced locally and failed CI five times across five
+    different tests.
+    """
+
+    def test_a_genuinely_broken_index_is_still_rebuilt_and_the_row_lands(self, brain):
+        """The property the recovery path exists for must not regress."""
+        conn = kv._conn()
+        kv.save_internal('before', 'x')
+        # Drop one shadow table: the vtable entry survives, the index does not.
+        conn.execute('DROP TABLE memory_store_fts_data')
+        conn.commit()
+        assert not memory_schema.fts_index_intact(conn)
+
+        kv.save_internal('after', 'y')
+
+        assert kv.get_memory('after') == 'y', 'the row was lost to a broken index'
+        assert memory_schema.fts_index_intact(conn), 'the index was not repaired'
+
+    def test_a_missing_index_reads_as_broken(self, brain):
+        conn = kv._conn()
+        assert memory_schema.fts_index_intact(conn)
+        conn.execute('DROP TABLE IF EXISTS memory_store_fts')
+        conn.commit()
+        assert not memory_schema.fts_index_intact(conn)
+
+    def test_contention_does_not_run_ddl(self, brain, monkeypatch):
+        """The regression the five CI failures actually were.
+
+        A write that fails for a reason unrelated to the index must not cost
+        the file five DROPs. Counted, not timed.
+        """
+        conn = kv._conn()
+        rebuilds: list[int] = []
+        monkeypatch.setattr(
+            memory_schema, 'rebuild_fts_index', lambda *a, **k: rebuilds.append(1) or True
+        )
+        monkeypatch.setattr(memory_schema, 'fts_index_intact', lambda *a, **k: True)
+        monkeypatch.setattr(kv, '_conn', lambda: _FailingOnceConn(conn))
+
+        kv.save_internal('k', 'v')
+
+        assert rebuilds == [], (
+            f'the index was whole and the rebuild still ran {len(rebuilds)}x — this is '
+            'the DDL-on-contention path that five CI failures were reporting'
+        )
+
+    def test_contention_still_lets_the_write_land(self, brain, monkeypatch):
+        """The retry is the point: an intact index must not lose the row."""
+        conn = kv._conn()
+        monkeypatch.setattr(memory_schema, 'fts_index_intact', lambda *a, **k: True)
+        monkeypatch.setattr(
+            memory_schema,
+            'rebuild_fts_index',
+            lambda *a, **k: pytest.fail('rebuilt a whole index over a lock timeout'),
+        )
+        monkeypatch.setattr(kv, '_conn', lambda: _FailingOnceConn(conn))
+
+        kv.save_internal('retry-key', 'value')
+
+        assert kv.get_memory('retry-key') == 'value', 'a transient failure lost a write'

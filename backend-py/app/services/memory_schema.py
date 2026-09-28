@@ -612,6 +612,73 @@ def _repair_fts_sync_locked(conn: sqlite3.Connection) -> None:
 _SCHEMA_LOCK = threading.RLock()
 
 
+_FTS_SHADOWS = ('data', 'idx', 'docsize', 'config')
+
+
+def fts_index_intact(conn: sqlite3.Connection, fts: str = 'memory_store_fts') -> bool:
+    """True when this FTS vtable is STRUCTURALLY whole.
+
+    An FTS5 table is not one object: the vtable entry plus four shadow tables
+    — `_data`, `_idx`, `_docsize`, `_config`. A create that was interrupted
+    leaves some of them missing, and the next statement to touch the index
+    then raises `vtable constructor failed`. So the presence of all five is
+    the structural test — and it is a BEHAVIOURAL one, asking the database
+    what exists rather than parsing what an error said.
+
+    The names were wrong before this function existed: the rebuild had been
+    dropping `memory_store_fts_content`, which is not a table FTS5 creates,
+    while the real `memory_store_fts_data` was left to the vtable's own drop.
+    It worked by accident, because `DROP TABLE <vtable>` takes the shadows
+    with it. Both lists now name what is actually in `sqlite_master`, checked
+    against a live database rather than reasoned about.
+
+    Why this exists: `_write_with_fts_recovery` used to run a DROP-and-CREATE
+    on ANY SQLite error from a `memory_store` write. A write that failed
+    because the file was momentarily busy is not a corrupt index, and
+    answering it with destructive DDL on a shared file — from a request path,
+    on one of several connections — is how lock contention manufactures the
+    very `vtable constructor failed` the recovery path existed to fix.
+
+    Repair what is broken, not everything that touched it. If the index is
+    whole, the error was something else and only the write needs retrying.
+
+    Deliberately does NOT inspect error text. That is the mistake an earlier
+    version of this path made, and it shipped a fix that passed locally and
+    did nothing in CI because the same corrupt state reports a different
+    message on each SQLite build.
+    """
+    try:
+        # The vtable AND its shadows. Querying for `name = ?` alone returns
+        # only the vtable row, which then fails its own shadow check on a
+        # perfectly healthy index — the first version of this did exactly that.
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE name = ? OR name LIKE ? ESCAPE '\\'",
+            (fts, _like_prefix(fts)),
+        ).fetchall()
+        if not rows:
+            return False
+        present = {str(r[0]) for r in rows}
+        return f'{fts}_{_FTS_SHADOWS[0]}' in present and all(
+            f'{fts}_{s}' in present for s in _FTS_SHADOWS
+        )
+    except sqlite3.Error:
+        # Cannot read the schema at all: treat as not intact, which routes to
+        # the rebuild. A rebuild is idempotent, so the false positive costs a
+        # wasted rebuild rather than a lost write.
+        return False
+
+
+def _like_prefix(name: str) -> str:
+    """`name` as a LIKE prefix with the wildcards in `name` itself escaped.
+
+    A table name may legally contain `_` and `%`, both of which are LIKE
+    wildcards — and `_` is in every FTS shadow name, so an unescaped prefix
+    would silently match unrelated tables.
+    """
+    escaped = name.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+    return f'{escaped}\\_%'
+
+
 def rebuild_fts_index(
     conn: sqlite3.Connection, fts: str = 'memory_store_fts', base: str = 'memory_store'
 ) -> bool:
@@ -685,11 +752,14 @@ def rebuild_fts_index(
     is still reaching it. What is known: the symptom is a `CREATE VIRTUAL
     TABLE` that raises `vtable constructor failed`, the writer is the memory
     store, and it only appears on the 4-vCPU CI runner, never in ~5,900 local
-    test runs. What is not known: the other writer. The next useful step is
-    not another speculative change here — it is to capture the second
-    connection's identity and statement at the moment of the failure, which
-    needs a failing CI run with SQLite tracing enabled rather than another
-    guess.
+    test runs. What is not known: the other writer.
+
+    IT IS NOW KNOWN, and it was not another connection at all: it was THIS
+    function being called too eagerly. See `fts_index_intact` and the
+    `_write_with_fts_recovery` docstring in `memory_store/kv.py`. A write that
+    failed only because the file was momentarily busy was answered with five
+    `DROP TABLE` statements on a shared file, from a request path. The fix is
+    to rebuild only when the index is actually structurally broken.
     """
     with _SCHEMA_LOCK:
         return _rebuild_fts_index_locked(conn, fts, base)
@@ -700,8 +770,13 @@ def _rebuild_fts_index_locked(
 ) -> bool:
     """Body of `rebuild_fts_index`; callers must already hold `_SCHEMA_LOCK`."""
     try:
-        for shadow in (f'{fts}_content', f'{fts}_idx', f'{fts}_docsize', f'{fts}_config'):
-            conn.execute(f'DROP TABLE IF EXISTS {shadow}')
+        # The real shadow tables, named by `fts_index_intact` against a live
+        # database. This used to drop `memory_store_fts_content`, which FTS5
+        # never creates, so the real `_data` table survived on to collide with
+        # the recreate. It worked only because dropping the vtable takes the
+        # shadows with it.
+        for shadow in _FTS_SHADOWS:
+            conn.execute(f'DROP TABLE IF EXISTS {fts}_{shadow}')
         conn.execute(f'DROP TABLE IF EXISTS {fts}')
         conn.execute(
             f'CREATE VIRTUAL TABLE {fts} USING fts5('

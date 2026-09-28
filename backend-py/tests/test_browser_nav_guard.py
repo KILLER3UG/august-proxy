@@ -165,7 +165,6 @@ class TestNavigationGuardBlocksPrivateAddresses:
 
         Otherwise the next browser tool that navigates inherits the hole.
         """
-        captured: dict[str, object] = {}
 
         class _Ctx:
             def __init__(self) -> None:
@@ -197,5 +196,4 @@ class TestNavigationGuardBlocksPrivateAddresses:
         assert callable(page.handler), 'navigation guard was not installed on the new page'
         # Context-level too — that is what a `window.open` popup inherits.
         assert page.context.routes == ['**/*']
-        assert captured == {}
         sm._sessions.clear()

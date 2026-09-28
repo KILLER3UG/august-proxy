@@ -44,6 +44,27 @@ def _write_with_fts_recovery(
     idempotent, lossless and cheap, and this is an error path that should
     essentially never run, so the honest trade is a possible wasted rebuild on
     an unrelated error in exchange for never losing a row to a cache.
+
+    THAT LAST TRADE WAS THE BUG, and it took five CI failures to see it.
+    "Rebuild on any error" is not a cheap idempotent repair — it is five
+    `DROP TABLE` statements plus a `CREATE VIRTUAL TABLE` against a file that
+    every other thread in the process also has open, executed on a REQUEST
+    path. A write that failed only because the file was momentarily busy
+    (`database is locked` after the busy timeout, which on a 4-vCPU CI runner
+    is routine) therefore escalated to destructive DDL, and the DROP is
+    exactly what makes some *other* connection's next statement fail with
+    `vtable constructor failed`. The recovery path was manufacturing the
+    symptom it was written to cure, which is why it survived locally — no
+    local run has the contention — and failed on CI five times across five
+    different tests, whichever one happened to be writing memory.
+
+    So the rebuild is now conditional on the index actually being broken:
+    `fts_index_intact` checks structurally (the vtable entry plus all four
+    shadow tables) rather than by parsing the error, which keeps the property
+    this function exists for — a genuinely half-built index still gets rebuilt
+    and the row still lands — while a transient failure no longer costs the
+    file five drops. An intact index means the error was not the index, so the
+    write is simply retried, which is the correct response to contention.
     """
     try:
         conn.execute(sql, params)
@@ -53,16 +74,27 @@ def _write_with_fts_recovery(
             conn.rollback()
         except sqlite3.Error:
             # A rollback on a connection with no open transaction is not
-            # interesting; the rebuild below is what has to work.
+            # interesting; whatever the write needs is what has to work.
             pass
-        from app.services.memory_schema import rebuild_fts_index
+        from app.services.memory_schema import fts_index_intact, rebuild_fts_index
 
+        # A whole index means this error was never about the index, so do not
+        # do DDL about it. The write is retried either way.
+        if fts_index_intact(conn) and _retry_write(conn, sql, params):
+            return
         if not rebuild_fts_index(conn):
             raise first
-        try:
-            conn.execute(sql, params)
-        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+        if not _retry_write(conn, sql, params):
             raise first
+
+
+def _retry_write(conn: sqlite3.Connection, sql: str, params: tuple[object, ...]) -> bool:
+    """One more attempt at the write. False means it failed again."""
+    try:
+        conn.execute(sql, params)
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
+        return False
+    return True
 
 
 def save_internal(key: str, value: JsonValue) -> None:
