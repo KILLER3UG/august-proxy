@@ -94,7 +94,14 @@ describe('QuitConfirmModal', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Cancel/i }));
     expect(screen.queryByTestId('quit-confirm-modal')).not.toBeInTheDocument();
-    expect(invokeMock).not.toHaveBeenCalled();
+    // Scoped to the command under test, NOT `not.toHaveBeenCalled()`.
+    // `useBackendStatus` polls `proxy_status` on a timer and shares this
+    // file's `@tauri-apps/api/core` mock, so whether that unrelated call has
+    // landed by the time we assert is a race — which is exactly how this test
+    // failed intermittently, with a recorded `proxy_status` call and nothing
+    // to do with the Cancel button. What matters is that Cancel did not
+    // confirm the quit.
+    expect(invokeMock).not.toHaveBeenCalledWith('confirm_quit');
   });
 
   it('Quit Anyway invokes confirm_quit', async () => {

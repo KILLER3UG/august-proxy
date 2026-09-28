@@ -108,8 +108,23 @@ it('profiles legacy full-parse vs block-cached live render across a growing stre
       `(${(legacyMs / Math.max(newMs, 0.001)).toFixed(1)}x faster)`,
   );
   expect(container).toBeTruthy();
-  // Loose sanity ceiling: the incremental path must stay far below a
-  // catastrophic hang even on loaded CI (120 jsdom renders of 8KB would
-  // blow well past 10s if the tail-only parse + cache were broken).
-  expect(newMs).toBeLessThan(5000);
+
+  // The property is a RATIO, not a duration. jsdom wall-clock scales with
+  // whatever else the machine is doing — a loaded runner moved this from
+  // ~640ms to ~36s, an 8x swing in the measured number while the code under
+  // test did not change. An absolute ceiling therefore tests the machine
+  // rather than the renderer, which is how this gate went red on the normal
+  // path for as long as it existed.
+  //
+  // The ratio is what matters and it is load-independent: both sides are
+  // measured in the same run, so a slow machine inflates both. Before the
+  // incremental splitter the live path was SLOWER than legacy (4196ms vs
+  // 6372ms — a ratio below 1), which is exactly the regression this test
+  // exists to catch; a 2x margin separates that from the ~5x a working
+  // path shows.
+  expect(legacyMs / Math.max(newMs, 0.001)).toBeGreaterThan(2);
+
+  // One absolute number stays, as a tripwire against a genuine hang rather
+  // than a slowdown: if either path stops finishing at all, no ratio helps.
+  expect(Math.max(legacyMs, newMs)).toBeLessThan(120_000);
 });
