@@ -695,10 +695,39 @@ def _persist_sessions_snapshot() -> None:
             snapshots = [s.toDict() for s in sorted_sessions]
             export_json = is_session_json_export_enabled()
 
+        # The SQLite write stays INSIDE `_persist_io_lock`, where it has always
+        # been. That lock is what serializes session writes; moving the write
+        # outside it let two concurrent persists contend for the brain DB and
+        # one of them lost with `sqlite3.OperationalError: database is locked`,
+        # which surfaced as a session silently not being saved. The lock is not
+        # held for the in-memory copy only — holding it across the I/O is the
+        # point, and the detach below is the one thing that must not join it.
+        try:
+            from app.services import memory_store
+            from app.services.memory_store import save_workbench_session_sot
+
+            memory_store.init()
+            for blob in dirty_snapshots:
+                save_workbench_session_sot(blob)
+            # Drop the dirty marks only after the SQLite write succeeded —
+            # clearing them first would silently lose those sessions' changes
+            # until their next mutation if the write raises.
+            _dirty_sids.difference_update(dirty_ids)
+        except Exception:
+            logger.exception('SQLite session write failed')
+
+        if export_json:
+            try:
+                path = _sessions_path()
+                path.parent.mkdir(parents=True, exist_ok=True)
+                write_json_atomic(path, snapshots, indent=2)
+            except Exception:
+                logger.exception('JSON session export failed (non-fatal; SQLite is primary)')
+
     # Release per-session resources for sessions that just aged out of the
-    # RAM window, OUTSIDE both locks — `EnvironmentWatcher.stop()` closes a
-    # watchdog thread and an OS directory-watch handle, and holding the session
-    # lock across that would stall every concurrent chat turn.
+    # RAM window — OUTSIDE both locks. `EnvironmentWatcher.stop()` closes a
+    # watchdog thread and an OS directory-watch handle, and holding either lock
+    # across that would stall every concurrent chat turn.
     #
     # The watcher used to be released only on an explicit delete, while this
     # recency window is 60 entries. So a user who opened 200 workspaces kept
@@ -719,28 +748,6 @@ def _persist_sessions_snapshot() -> None:
             forgetSessionChanges(sid)
         except Exception:
             logger.debug('change-buffer drop on evict failed for %s', sid, exc_info=True)
-
-    try:
-        from app.services import memory_store
-        from app.services.memory_store import save_workbench_session_sot
-
-        memory_store.init()
-        for blob in dirty_snapshots:
-            save_workbench_session_sot(blob)
-        # Drop the dirty marks only after the SQLite write succeeded —
-        # clearing them first would silently lose those sessions' changes
-        # until their next mutation if the write raises.
-        _dirty_sids.difference_update(dirty_ids)
-    except Exception:
-        logger.exception('SQLite session write failed')
-
-    if export_json:
-        try:
-            path = _sessions_path()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            write_json_atomic(path, snapshots, indent=2)
-        except Exception:
-            logger.exception('JSON session export failed (non-fatal; SQLite is primary)')
 
 
 def save_sessions_now() -> None:
