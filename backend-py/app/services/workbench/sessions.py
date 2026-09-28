@@ -10,6 +10,7 @@ imports and re-exports them so chat streaming and external callers share one sto
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -1159,6 +1160,49 @@ def cancel_session_work(session_id: str) -> None:
         logger.debug('daemon session cleanup failed', exc_info=True)
 
 
+# Strong refs for in-flight browser teardowns, so the task cannot be
+# garbage-collected mid-flight (which would also surface as "exception was
+# never retrieved" and turn a cleanup into a quieter leak).
+_BROWSER_CLOSE_TASKS: set[asyncio.Task] = set()
+
+
+def _close_browser_session(session_id: str) -> None:
+    """Release this session's headless browser, from sync or async context.    ``closeSession`` is async, and this module is deliberately synchronous —
+    it is called from the FastAPI delete route (inside a running loop, where
+    ``asyncio.run`` would raise) and from sync teardown paths (where there is
+    no loop to schedule onto). So: schedule on the running loop when there is
+    one, and drive it directly when there is not.
+
+    The task reference is retained until it settles. A bare
+    ``loop.create_task`` lets the task be garbage-collected mid-flight, and an
+    exception inside it would then be reported as never-retrieved — turning a
+    cleanup into a second, quieter leak.
+    """
+    import asyncio
+
+    try:
+        from app.services.browser.session_manager import closeSession
+    except Exception:
+        logger.debug('browser session_manager unavailable on delete', exc_info=True)
+        return
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is None:
+        try:
+            asyncio.run(closeSession(session_id))
+        except Exception:
+            logger.debug('browser session close failed', exc_info=True)
+        return
+
+    task = loop.create_task(closeSession(session_id))
+    _BROWSER_CLOSE_TASKS.add(task)
+    task.add_done_callback(_BROWSER_CLOSE_TASKS.discard)
+
+
 def delete_workbench_session(session_id: str) -> bool:
     """Delete a session from memory, SQLite, and the JSON export file.
 
@@ -1192,6 +1236,21 @@ def delete_workbench_session(session_id: str) -> bool:
         detach_session_watcher(session_id)
     except Exception:
         logger.debug('session watcher detach failed', exc_info=True)
+
+    # The browser for this session is TWO OS processes — a Playwright node
+    # driver and a headless Chromium — started per session id in
+    # session_manager.getOrCreateSession. Nothing else reclaims them: the only
+    # caller of closeSession was the model-facing `session_delete` tool, so
+    # deleting a chat from the sidebar (this route) left every browser that
+    # session had ever opened resident until the app exited. That is hundreds
+    # of MB per orphaned Chromium, and a user deleting a few chats a day would
+    # quietly fill the machine.
+    #
+    # Done here rather than in the router because this function is the single
+    # place that already owns "release everything scoped to this session" —
+    # subagent work, the environment watcher, the turn gate. A teardown that
+    # lives in one caller of many is the same bug a second time.
+    _close_browser_session(session_id)
 
     # The per-session turn gate is a RAM-resident dict keyed by session id
     # that nothing else ever removes, so a deleted session would keep its

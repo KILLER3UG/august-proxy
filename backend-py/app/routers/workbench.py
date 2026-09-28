@@ -1492,6 +1492,35 @@ _SANDBOX_BUILTIN_NAMES = frozenset({
     'sorted', 'str', 'sum', 'tuple', 'zip', 'True', 'False', 'None',
 })
 
+# Dunder ATTRIBUTE access is how a restricted-builtins cell gets the real
+# builtins back. Banning `import` is not enough, and always was not:
+#
+#     ().__class__.__base__.__subclasses__()
+#
+# needs no import and no name the allowlist omitted. Walk the subclasses,
+# read `__init__.__globals__['__builtins__']`, and you are holding real
+# `exec`, `open` and `__import__` — which is the whole sandbox, gone. The
+# AST gate passed that payload unchanged; it was verified end to end against
+# this exact config, reading a file off disk.
+#
+# So the ban is on the traversal, not on a list of names we thought of: any
+# `__dunder__` attribute except the two that are inert. The two exceptions
+# exist because real code uses them and neither reaches a callable or a
+# module — `__doc__` is a string, `__name__` is the module's own name.
+#
+# This is defence in depth, NOT a boundary. Anything that runs Python in
+# process can be escaped eventually; a real containment tier is a container
+# or a Windows Job Object, not an allowlist. What this buys is that the
+# advertised policy (no network, no subprocess) is not trivially false, and
+# that the obvious one-liner does not defeat it.
+_SANDBOX_BANNED_ATTRS = frozenset({
+    '__class__', '__bases__', '__base__', '__mro__', '__subclasses__',
+    '__globals__', '__builtins__', '__code__', '__closure__', '__func__',
+    '__self__', '__dict__', '__getattribute__', '__reduce__', '__reduce_ex__',
+    '__init__', '__import__', '__loader__', '__spec__', '__new__',
+})
+_SANDBOX_ALLOWED_ATTRS = frozenset({'__doc__', '__name__'})
+
 # The runner executes in a fresh interpreter process; it reads the cell from
 # stdin, applies the same AST policy, runs with restricted builtins, and
 # prints a single JSON result to stdout. A runaway loop is hard-killed by
@@ -1501,6 +1530,7 @@ import ast, io, json, sys, traceback
 from contextlib import redirect_stderr, redirect_stdout
 
 banned = __BANNED__
+allowed_attrs = __ALLOWED_ATTRS__
 code = sys.stdin.read()
 try:
     tree = ast.parse(code, mode='exec')
@@ -1518,6 +1548,10 @@ for node in ast.walk(tree):
         root = (node.module or '').split('.')[0]
         if root in banned:
             print(json.dumps({'ok': False, 'error': f'Import blocked by sandbox policy: {root}', 'stdout': '', 'stderr': ''}))
+            sys.exit(0)
+    if isinstance(node, ast.Attribute) and node.attr.startswith('__') and node.attr.endswith('__'):
+        if node.attr not in allowed_attrs:
+            print(json.dumps({'ok': False, 'error': f'Dunder attribute blocked by sandbox policy: {node.attr}', 'stdout': '', 'stderr': ''}))
             sys.exit(0)
 
 names = __BUILTINS__
@@ -1560,6 +1594,13 @@ def _sandbox_ast_check(code: str) -> str:
             root = (node.module or '').split('.')[0]
             if root in _SANDBOX_BANNED_MODULES:
                 return f'Import blocked by sandbox policy: {root}'
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr.startswith('__')
+            and node.attr.endswith('__')
+            and node.attr not in _SANDBOX_ALLOWED_ATTRS
+        ):
+            return f'Dunder attribute blocked by sandbox policy: {node.attr}'
     return ''
 
 
@@ -1578,6 +1619,7 @@ def _run_sandbox_subprocess(code: str, cwd_path, timeout_ms: int) -> dict:
     runner_src = (
         _SANDBOX_RUNNER_TEMPLATE.replace('__BANNED__', repr(sorted(_SANDBOX_BANNED_MODULES)))
         .replace('__BUILTINS__', repr(sorted(_SANDBOX_BUILTIN_NAMES)))
+        .replace('__ALLOWED_ATTRS__', repr(sorted(_SANDBOX_ALLOWED_ATTRS)))
     )
     fd, runner_path = tempfile.mkstemp(suffix='.py', prefix='august_sandbox_')
     try:
