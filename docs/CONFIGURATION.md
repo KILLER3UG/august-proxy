@@ -15,6 +15,7 @@ This document is the operator reference for current options.
 6. [Settings precedence](#settings-precedence)
 7. [Runtime paths](#runtime-paths)
 8. [AUG.md (project instructions)](#augmd-project-instructions)
+9. [Workspace hooks (`.aug/hooks.json`)](#workspace-hooks-aughooksjson)
 
 ---
 
@@ -815,4 +816,52 @@ New workspaces inherit the Docker image toolchain (or host `scripts/ensure-toolc
 **Guaranteed CLIs:** `uv` (Python), `pnpm` + `npm`/`node` (JS), `ripgrep` (`rg`), `fd` (`fd-find`), `jq`. Verified by `scripts/ensure-toolchain.sh` and baked into `Dockerfile` (`apt: ripgrep fd-find jq` + `npm i -g pnpm`).
 
 **Run manually:** `bash scripts/ensure-toolchain.sh` (host) or `docker exec august-proxy bash /app/scripts/ensure-toolchain.sh`.
+
+---
+
+## Workspace hooks (`.aug/hooks.json`)
+
+A workspace can register shell commands against harness events from
+`<workspace>/.aug/hooks.json`:
+
+```json
+{ "hooks": [ { "name": "lint", "event": "pre_tool_use", "command": "./scripts/lint.sh" } ] }
+```
+
+These are loaded at the start of every prompt build, so a hand-edited file
+takes effect on the next turn. Hooks run with `shell=True` **outside** the
+sandbox, in the workspace as their working directory.
+
+### Workspace hooks need approval; user hooks do not
+
+`<dataDir>/hooks.json` is your own and always runs. A **workspace**
+`.aug/hooks.json` only runs after you approve that workspace, because the file
+arrives with the clone — and the model can create one and fire it in the same
+turn, which would be remote code execution from an untrusted repo.
+
+Approval is per workspace, keyed on its resolved path (`..` and symlinks
+cannot launder one workspace's approval into another's), and persists across
+restarts in `<dataDir>/trusted-hook-workspaces.json`. Manage it with:
+
+```
+POST /api/hooks/trust-workspace    {"sessionId": "..."}   # approve
+POST /api/hooks/revoke-workspace  {"sessionId": "..."}   # withdraw
+```
+
+Both take a **`sessionId`, never a path** — August resolves the workspace from
+its own session store, so a local caller cannot nominate a directory to run
+commands from.
+
+### When hooks are blocked, August says so
+
+An untrusted workspace's hooks do not simply fail quietly. The count and path
+appear in the next prompt, `GET /api/hooks` reports them under
+`inactiveWorkspaceHooks`, and the trust list is what `workspaceTrusted` reads.
+A workspace with no hooks file at all is untrusted *and* has nothing
+suppressed, so it is not reported — the two states are deliberately distinct.
+
+**If a hook you wrote never seems to run**, check `inactiveWorkspaceHooks`
+first. The environment is scrubbed of secret-shaped variables before the
+command is invoked, so a hook that reads `OPENAI_API_KEY` will not find it.
+
 

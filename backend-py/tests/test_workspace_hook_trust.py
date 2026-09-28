@@ -278,3 +278,102 @@ class TestHookEnvironmentIsScrubbed:
         assert 'MY_DB_PASSWORD' not in env
         # Ordinary process environment still reaches a hook it was written for.
         assert env.get('PATH') == '/usr/bin'
+
+
+class TestSuppressedHooksAreNotSilent:
+    """The gate was invisible, which made it a feature the user cannot use.
+
+    A workspace whose `.aug/hooks.json` is not trusted used to do nothing at
+    all: no banner, no transcript line, nothing to report a bug about. The
+    docs say workspace hooks are a supported feature, so the user wires one up,
+    watches nothing happen, and has no way to tell a bug from a gate. These
+    tests pin that the state is observable and stays true through the whole
+    lifecycle, because a notice that appears once and then lies is worse than
+    silence.
+    """
+
+    @staticmethod
+    def _repo(tmp_path):
+        ws = tmp_path / 'cloned-repo'
+        (ws / '.aug').mkdir(parents=True)
+        _write(ws / '.aug' / 'hooks.json', _HOOK)
+        return ws
+
+    def test_an_untrusted_workspace_says_its_hooks_are_not_running(self, tmp_path):
+        ws = self._repo(tmp_path)
+        user_hooks.ensure_hooks_loaded(str(ws))
+        notice = user_hooks.inactive_notice(str(ws))
+        assert notice, 'a workspace whose hooks are blocked said nothing at all'
+        assert 'not' in notice.lower() and 'approv' in notice.lower()
+        assert len(user_hooks.inactive_workspace_hooks()) == 1
+
+    def test_the_notice_names_the_file_and_how_many_hooks_are_blocked(self, tmp_path):
+        ws = self._repo(tmp_path)
+        user_hooks.ensure_hooks_loaded(str(ws))
+        entry = user_hooks.inactive_workspace_hooks()[0]
+        assert entry['path'].endswith('hooks.json')
+        # A bare "not trusted" is not actionable — the user cannot tell an
+        # empty file from a blocked one, and would not know anything is
+        # being suppressed.
+        assert int(entry['suppressed']) >= 1
+
+    def test_approving_clears_the_notice(self, tmp_path):
+        ws = self._repo(tmp_path)
+        user_hooks.ensure_hooks_loaded(str(ws))
+        assert user_hooks.inactive_notice(str(ws))
+        user_hooks.trust_workspace(ws)
+        user_hooks.ensure_hooks_loaded(str(ws))
+        assert user_hooks.inactive_notice(str(ws)) == '', (
+            'the notice outlived the approval — a false warning'
+        )
+        assert user_hooks.inactive_workspace_hooks() == []
+
+    def test_revoking_brings_the_notice_back_immediately(self, tmp_path):
+        ws = self._repo(tmp_path)
+        user_hooks.trust_workspace(ws)
+        user_hooks.ensure_hooks_loaded(str(ws))
+        assert user_hooks.inactive_notice(str(ws)) == ''
+
+        user_hooks.revoke_workspace(ws)
+        # No reload in between: the review proved the previous version left
+        # the reported state stale for a full cycle, and a notice that blinks
+        # out for one prompt is one users learn to ignore.
+        assert user_hooks.inactive_notice(str(ws)), 'revocation was not reported'
+
+    def test_deleting_the_hooks_file_stops_the_warning(self, tmp_path):
+        ws = self._repo(tmp_path)
+        user_hooks.ensure_hooks_loaded(str(ws))
+        assert user_hooks.inactive_notice(str(ws))
+        (ws / '.aug' / 'hooks.json').unlink()
+        user_hooks.ensure_hooks_loaded(str(ws))
+        assert user_hooks.inactive_notice(str(ws)) == '', (
+            'warning about a file that no longer exists'
+        )
+
+    def test_a_workspace_with_no_hooks_file_is_never_warned_about(self, tmp_path):
+        """The distinction the API response also has to make.
+
+        An untrusted workspace with nothing to suppress is the common case. If
+        it were reported the same way, every user would see a hooks warning on
+        every project, and the one project that needs it would be the warning
+        they have learned to dismiss.
+        """
+        ws = tmp_path / 'plain-repo'
+        ws.mkdir()
+        user_hooks.ensure_hooks_loaded(str(ws))
+        assert user_hooks.inactive_notice(str(ws)) == ''
+        assert user_hooks.inactive_workspace_hooks() == []
+
+    def test_an_empty_hooks_file_does_not_manufacture_a_count(self, tmp_path):
+        ws = tmp_path / 'empty-repo'
+        (ws / '.aug').mkdir(parents=True)
+        _write(ws / '.aug' / 'hooks.json', {'hooks': []})
+        user_hooks.ensure_hooks_loaded(str(ws))
+        assert user_hooks.inactive_notice(str(ws)) == ''
+
+    def test_trusted_workspaces_stay_silent(self, tmp_path):
+        """The cost side: this must be empty for everyone not hitting the gate."""
+        ws = self._repo(tmp_path)
+        user_hooks.trust_workspace(ws)
+        user_hooks.ensure_hooks_loaded(str(ws))
+        assert user_hooks.inactive_notice(str(ws)) == ''

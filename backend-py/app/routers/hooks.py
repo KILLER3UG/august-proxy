@@ -32,7 +32,12 @@ def _workspace_for_session(session_id: str) -> str:
 async def list_hooks(request: Request) -> dict:
     """Registry stats for every hook plus the user/workspace hook specs."""
     from app.services.hooks.registry import registry
-    from app.services.hooks.user_hooks import describe, ensure_hooks_loaded, is_workspace_trusted
+    from app.services.hooks.user_hooks import (
+        describe,
+        ensure_hooks_loaded,
+        inactive_workspace_hooks,
+        is_workspace_trusted,
+    )
 
     # Refresh from disk so the UI sees a hand-edited config immediately.
     try:
@@ -43,6 +48,12 @@ async def list_hooks(request: Request) -> dict:
     return registry.stats() | {
         'userHooks': describe(),
         'workspaceTrusted': bool(workspace) and is_workspace_trusted(workspace),
+        # Hooks this workspace DEFINES that are not running. Reported because
+        # `workspaceTrusted: false` alone is not the same fact: a workspace
+        # with no hooks file at all is also untrusted and has nothing
+        # suppressed, and a consumer that treats the two as equivalent either
+        # shows a warning about nothing or stays silent about a real one.
+        'inactiveWorkspaceHooks': inactive_workspace_hooks(),
     }
 
 

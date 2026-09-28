@@ -93,6 +93,29 @@ _FILE_MTIMES: dict[str, int] = {}
 # must not silently re-arm an untrusted repo.
 _TRUST_STORE = 'trusted-hook-workspaces.json'
 
+# Workspaces that HAVE a hooks file whose hooks are NOT running, because the
+# user has not approved them. Populated by the trust gate itself, so the
+# decision and the record of it cannot drift apart.
+#
+# This exists because the gate was invisible. A workspace whose `.aug/hooks.json`
+# is not trusted used to just quietly do nothing: no banner, no transcript
+# line, nothing a user could see or report. A security control whose activation
+# state is hidden is a control the user eventually disables — and here it is
+# worse than that, because the user is told the feature exists in the docs.
+# So "this workspace has hooks that are not running, and here is why" is a
+# first-class observable of this subsystem, not a log line somebody has to
+# remember to promote.
+_INACTIVE: dict[str, dict[str, str]] = {}
+
+
+def inactive_workspace_hooks() -> list[dict[str, str]]:
+    """Workspaces that define hooks which are currently NOT running.
+
+    Read by the prompt builder and by `/api/hooks`. Empty is the normal case
+    and the common one: a workspace with no hooks file, or an approved one.
+    """
+    return [dict(v) for v in _INACTIVE.values()]
+
 
 def _trust_store_path() -> Path | None:
     try:
@@ -169,6 +192,23 @@ def revoke_workspace(workspace: str | Path) -> bool:
     if not _write_trust_store(p, remaining):
         return False
     _unregister_workspace(key)
+    # Revoking is the moment the workspace becomes untrusted, and the state has
+    # to be right NOW rather than at the next prompt build: the reviewer
+    # proved the previous version reported success while the hook kept running
+    # for a full reload cycle, and a stale "active" record here would repeat
+    # that at the reporting layer. The suppressed count is read from the real
+    # file rather than left for the next build to fill in — a notice that
+    # blinked out for one prompt after a revoke is a notice users learn to
+    # ignore, and if the file cannot be read the count is 0 and the notice
+    # stays empty, which is the safe direction for a count we must not invent.
+    try:
+        target = (Path(key) / '.aug' / 'hooks.json').resolve()
+    except (OSError, TypeError):
+        target = None
+    suppressed = 0
+    if target is not None and target.is_file():
+        suppressed = len(_parse_specs(target))
+    _INACTIVE[key] = {'workspace': key, 'path': str(target or ''), 'suppressed': str(suppressed)}
     return True
 
 
@@ -325,6 +365,13 @@ def _register_from_file(origin: str, path: Path) -> int:
     """
     if not path.is_file():
         _forget_file(path)
+        # No file means nothing to warn about. Clearing here is what keeps the
+        # notice honest: a workspace that deletes its hooks file must stop
+        # being reported as having blocked hooks, or the user chases a warning
+        # about a file that no longer exists.
+        if origin != 'user':
+            ws = origin.removeprefix('workspace:')
+            _INACTIVE.pop(_normalize_workspace(ws) or ws, None)
         return 0
 
     # Workspace hooks carry their home for the handler's scoping guard and the
@@ -342,12 +389,29 @@ def _register_from_file(origin: str, path: Path) -> int:
     # runs when something else happens to change is not a gate.
     if workspace_origin is not None and not is_workspace_trusted(workspace_origin):
         _forget_file(path)
+        # Record the refusal, with enough detail to act on: the file, and how
+        # many hooks are sitting behind the gate. A bare "not trusted" is not
+        # actionable — the user cannot tell an empty file from a blocked one,
+        # and would have no idea whether anything is being suppressed.
+        _INACTIVE[_normalize_workspace(workspace_origin) or workspace_origin] = {
+            'workspace': workspace_origin,
+            'path': str(path),
+            'suppressed': str(len(_parse_specs(path))) if path.is_file() else '0',
+        }
         logger.info(
             'hooks: %s is not trusted by the user — its hooks are inactive '
             '(approve the workspace to enable them)',
             path,
         )
         return 0
+
+    # Trusted (or a user file): anything previously recorded for this workspace
+    # is stale, so clear it. Without this, approving a workspace would leave
+    # the "hooks are not running" notice in place forever, which would be a
+    # false warning rather than a missing one — the worse direction for a
+    # message whose whole job is to be believed.
+    if workspace_origin is not None:
+        _INACTIVE.pop(_normalize_workspace(workspace_origin) or workspace_origin, None)
 
     mtime = path.stat().st_mtime_ns
     if _FILE_MTIMES.get(str(path)) == mtime:
@@ -469,7 +533,52 @@ def describe() -> list[dict[str, Any]]:
     return out
 
 
+def inactive_notice(workspace: str | Path | None = None) -> str:
+    """Prompt text telling the user their workspace hooks are not running.
+
+    Empty in the normal case, and empty for every workspace whose hooks are
+    actually active — this is not a per-turn cost for anyone who has not hit
+    the gate.
+
+    Why it lives here rather than in the prompt builder: the builder already
+    calls `ensure_hooks_loaded` once per prompt, and that is the only place in
+    the engine that touches user hooks. Generating the text inside the
+    subsystem and reading it back at that one site means a new consumer of the
+    trust state gets the wording for free, and nobody has to remember to add a
+    banner.
+
+    The wording is deliberately factual and gives the path forward, because
+    the alternative this replaces is a user who has read the docs, wired up
+    `.aug/hooks.json`, and is watching nothing happen.
+    """
+    if not workspace:
+        return ''
+    key = _normalize_workspace(workspace)
+    if key is None:
+        return ''
+    entry = _INACTIVE.get(key)
+    if not entry:
+        return ''
+    count = entry.get('suppressed', '')
+    try:
+        n = int(count)
+    except (TypeError, ValueError):
+        n = 0
+    if n <= 0:
+        # A file with no usable hooks in it. Naming it anyway would train the
+        # user to ignore the message, which costs us the one case that matters.
+        return ''
+    return (
+        f'[hooks] {n} workspace hook(s) from {entry.get("path") or "this workspace"} '
+        'are NOT running because this workspace has not been approved. The gate is '
+        'deliberate — a workspace hook file arrives with a clone, and the model can '
+        'create one and fire it in the same turn. Approve the workspace to enable '
+        'them; do not retry the hook or claim it ran.'
+    )
+
+
 def reset_for_tests() -> None:
     """Forget load bookkeeping (test helper — does not touch the registry)."""
     _LOADED.clear()
     _FILE_MTIMES.clear()
+    _INACTIVE.clear()

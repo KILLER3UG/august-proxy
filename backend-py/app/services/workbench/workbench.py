@@ -765,6 +765,21 @@ def buildSystemPrompt(
         ensure_hooks_loaded(workspacePath or None)
     except Exception:
         logger.debug('prompt: user hook load failed', exc_info=True)
+    # If that workspace defines hooks the trust gate is currently suppressing,
+    # say so HERE rather than letting the user watch nothing happen. This is
+    # the one place in the engine that loads user hooks, so the notice cannot
+    # be forgotten at a second call site. It is empty whenever no gate is
+    # active, so it costs no context for anyone who has not hit it, and it
+    # changes only when the user approves or revokes — a deliberate action
+    # that is worth one prefix-cache invalidation.
+    hookTrustNotice = ''
+    if workspacePath:
+        try:
+            from app.services.hooks.user_hooks import inactive_notice
+
+            hookTrustNotice = inactive_notice(workspacePath)
+        except Exception:
+            logger.debug('prompt: hook trust notice failed', exc_info=True)
     vcsInfo = ''
     whatsNew = ''
     if workspacePath:
@@ -983,6 +998,8 @@ def buildSystemPrompt(
         intake.append(f'- Tools: {len(tool_names)} registered this turn (details in <capabilities>).')
     intake.append('</intake>')
     parts.append('\n'.join(intake))
+    if hookTrustNotice:
+        parts.append(hookTrustNotice)
     if not is_worker:
         guide = _harness_guide_text()
         if guide:
