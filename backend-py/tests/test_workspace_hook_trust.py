@@ -22,6 +22,7 @@ the trust boundary and keeps working.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -242,8 +243,21 @@ class TestCredentialStoreBypass:
 
         base = tmp_path / '.ssh'
         base.mkdir()
-        for form in (str(base), f'{base}/', f'{base}/.', f'{base} '):
+        # `/.` and `//` are the cross-platform spellings. A TRAILING SPACE is
+        # deliberately absent: Windows `resolve()` strips it, so the store is
+        # recognised there, but on Linux a trailing space is a legal filename
+        # character and a directory literally named `.ssh ` is NOT a
+        # credential store. Asserting it cross-platform asserts a falsehood.
+        for form in (str(base), f'{base}/', f'{base}/.', f'{base}//'):
             assert is_credential_directory(form), f'{form!r} was not recognised'
+
+    @pytest.mark.skipif(os.name != 'nt', reason='Windows strips trailing spaces in paths')
+    def test_windows_normalises_a_trailing_space_away(self, tmp_path):
+        from app.services.sandbox.hardline import is_credential_directory
+
+        base = tmp_path / '.ssh'
+        base.mkdir()
+        assert is_credential_directory(f'{base} ')
 
     def test_an_ordinary_dot_directory_is_still_listable(self, tmp_path):
         from app.services.sandbox.hardline import is_credential_directory
