@@ -21,7 +21,7 @@ def init() -> None:
 def _write_with_fts_recovery(
     conn: sqlite3.Connection, sql: str, params: tuple[object, ...]
 ) -> None:
-    """Run a `memory_store` write, and repair the search index if it vetoes it.
+    """Run a `memory_store` write, and repair the search index if it vetoed it.
 
     `memory_store` carries an AFTER INSERT/UPDATE/DELETE trigger that
     maintains `memory_store_fts`. In SQLite a trigger that raises aborts the
@@ -29,32 +29,40 @@ def _write_with_fts_recovery(
     durable row down with it — the wrong way round, because the index is
     derived and rebuildable from the very table it indexes.
 
-    The state that triggers this is a vtable entry that survived in
-    sqlite_master while its shadow tables did not. `CREATE VIRTUAL TABLE IF
-    NOT EXISTS` then skips it forever, so the failure is permanent for that
-    file: every subsequent write raises, and every search returns nothing.
+    On ANY SQLite error from the write: roll back, rebuild the index from the
+    base table, and retry once. Whatever goes wrong, the ORIGINAL error is
+    what escapes if the retry does not succeed, so a broken database is never
+    reported as a successful write.
 
-    So: attempt the write, and if the index is what failed, rebuild the index
-    and retry ONCE. If the retry still fails the error propagates — a broken
-    database must not be reported as a successful write.
+    Deliberately not pattern-matching the error text. The same corrupt state
+    reports `vtable constructor failed` on one SQLite build, `SQL logic error`
+    on another and `database disk image is malformed` on a third, so a
+    string filter works on the machine it was written on and nowhere else —
+    which is precisely how the first attempt at this shipped a fix that passed
+    locally and did nothing in CI. Probing the index instead is not better: a
+    MATCH query can still succeed on a half-built index. Rebuilding is
+    idempotent, lossless and cheap, and this is an error path that should
+    essentially never run, so the honest trade is a possible wasted rebuild on
+    an unrelated error in exchange for never losing a row to a cache.
     """
     try:
         conn.execute(sql, params)
         return
     except (sqlite3.OperationalError, sqlite3.DatabaseError) as first:
-        if 'memory_store_fts' not in str(first) and 'malformed' not in str(first):
-            raise
         try:
             conn.rollback()
         except sqlite3.Error:
-            # A rollback on a connection that never opened a transaction is
-            # not interesting; the rebuild below is what has to work.
+            # A rollback on a connection with no open transaction is not
+            # interesting; the rebuild below is what has to work.
             pass
         from app.services.memory_schema import rebuild_fts_index
 
         if not rebuild_fts_index(conn):
             raise first
-        conn.execute(sql, params)
+        try:
+            conn.execute(sql, params)
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            raise first
 
 
 def save_internal(key: str, value: JsonValue) -> None:

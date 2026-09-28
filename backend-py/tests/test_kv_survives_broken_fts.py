@@ -31,7 +31,7 @@ def brain(isolatedData):
 def _break_fts_index() -> None:
     """Leave `memory_store_fts` registered but with its shadow tables gone.
 
-    That is the state SQLite reports as `vtable constructor failed`: the
+    That is the state SQLite reports as a vtable that cannot be opened: the
     vtable entry is in sqlite_master, so `CREATE VIRTUAL TABLE IF NOT EXISTS`
     skips it, but the `_content`/`_idx`/`_docsize`/`_config` tables the
     constructor needs are not there.
@@ -42,6 +42,48 @@ def _break_fts_index() -> None:
     for shadow in ('memory_store_fts_docsize', 'memory_store_fts_idx'):
         c.execute(f'DROP TABLE IF EXISTS {shadow}')
     c.commit()
+
+
+class TestSchemaCreationIsSerialized:
+    def test_concurrent_core_schema_leaves_a_usable_index(self, brain):
+        """The ORIGIN, not the symptom.
+
+        Two connections building the schema against one file can interleave so
+        that one creates the sync triggers against a half-built vtable. The
+        result is a file whose `memory_store_fts` entry survives while its
+        shadow tables do not — and because `CREATE VIRTUAL TABLE IF NOT EXISTS`
+        skips the surviving entry, that is permanent.
+
+        With the lock this cannot interleave, so the index is still openable
+        afterwards and the KV write that fires its trigger succeeds.
+        """
+        import threading
+
+        from app.services.memory_conn import conn
+        from app.services.memory_schema import create_core_schema
+
+        errors: list[BaseException] = []
+
+        def build() -> None:
+            try:
+                create_core_schema(conn())
+            except BaseException as exc:  # noqa: BLE001 — reported below
+                errors.append(exc)
+
+        threads = [threading.Thread(target=build) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == [], f'concurrent schema creation raised: {errors}'
+        # The assertion that matters: the index still opens, which is exactly
+        # what it does not do when the triggers were built against a
+        # half-constructed vtable.
+        rows = conn().execute(
+            "SELECT key FROM memory_store_fts WHERE memory_store_fts MATCH 'anything'"
+        ).fetchall()
+        assert rows == []
 
 
 class TestDurableWriteSurvivesBrokenIndex:

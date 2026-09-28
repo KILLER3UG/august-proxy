@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import threading
 
 from app.services.schema_rename_migration import migrate_camel_to_snake
 
@@ -219,7 +220,32 @@ def ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) 
 
 
 def create_core_schema(conn: sqlite3.Connection) -> None:
-    """Create core tables, FTS virtual tables, sync triggers, and primary indexes."""
+    """Create core tables, FTS virtual tables, sync triggers, and primary indexes.
+
+    Serialized process-wide. `CREATE VIRTUAL TABLE ... USING fts5` is not a
+    single atomic step: SQLite constructs the virtual table and its shadow
+    tables (`_content`, `_idx`, `_docsize`, `_config`) as part of opening it.
+    Two connections running this against one file concurrently can interleave
+    so that one creates the sync triggers against a half-built vtable, and the
+    file is left with a `memory_store_fts` entry in `sqlite_master` whose
+    shadow tables are incomplete.
+
+    That state is permanent and self-reinforcing, because
+    `CREATE VIRTUAL TABLE IF NOT EXISTS` then sees the surviving entry and
+    skips it. Every later write to `memory_store` fails, because the AFTER
+    INSERT trigger cannot open the index — so a rebuildable search index takes
+    durable rows down with it — and every search returns nothing, which reads
+    as "no matches" rather than as a broken database.
+
+    DDL against one SQLite file should be serialized regardless; this is the
+    cheapest place to say so. Re-entrant because `ensure_schema` calls into
+    helpers that may reach back here.
+    """
+    with _SCHEMA_LOCK:
+        _create_core_schema_locked(conn)
+
+
+def _create_core_schema_locked(conn: sqlite3.Connection) -> None:
     conn.executescript(_CORE_SCHEMA_SQL)
     conn.commit()
     # Cheap no-op path: only rebuild FTS when base has rows and FTS is empty.
@@ -551,6 +577,9 @@ def repair_fts_sync(conn: sqlite3.Connection) -> None:
         except Exception as exc:
             # Shadow table may not exist if FTS table was never created; skip.
             logging.debug('FTS repair skipped for %s: %s', fts, exc)
+
+
+_SCHEMA_LOCK = threading.RLock()
 
 
 def rebuild_fts_index(
