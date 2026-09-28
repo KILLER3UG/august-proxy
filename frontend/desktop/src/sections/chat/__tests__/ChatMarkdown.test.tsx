@@ -248,10 +248,16 @@ Display matrix math:
 $$\\begin{pmatrix} a_{11} & a_{12} & a_{13} \\\\ a_{21} & a_{22} & a_{23} \\\\ a_{31} & a_{32} & a_{33} \\end{pmatrix} \\begin{pmatrix} x_1 \\\\ x_2 \\\\ x_3 \\end{pmatrix} = \\begin{pmatrix} b_1 \\\\ b_2 \\\\ b_3 \\end{pmatrix}$$
 `;
 
-    // Warm up cache on 1st parse
+    // The first parse is the cold one: KaTeX renders these six equations and
+    // the block cache is empty. Measured separately because it is the only
+    // render that does real work, and it is the denominator that makes the
+    // assertion below load-independent.
+    const coldStart = performance.now();
     render(<Markdown content={mathContent} live={true} />);
+    const coldMs = performance.now() - coldStart;
 
-    // Profile subsequent flushes when math equations are already in cache
+    // Subsequent flushes re-render with the same content, so every equation is
+    // in the KaTeX cache and every block is a cache hit.
     const times: number[] = [];
     for (let i = 0; i < 50; i++) {
       const t0 = performance.now();
@@ -261,13 +267,28 @@ $$\\begin{pmatrix} a_{11} & a_{12} & a_{13} \\\\ a_{21} & a_{22} & a_{23} \\\\ a
     }
 
     const avgTimeMs = times.reduce((a, b) => a + b, 0) / times.length;
-    console.log(`[KaTeX Cache Profiling] Average cached flush duration (5 inline + 1 matrix equation): ${avgTimeMs.toFixed(3)} ms`);
-    // This is a profiling diagnostic, not a hard SLO. In jsdom the measured
-    // wall-clock time is dominated by React reconciliation + DOM/innerHTML
-    // overhead (the KaTeX cache itself is a tiny fraction), so it varies widely
-    // with machine/CI load (~12ms isolated, ~40ms under full-suite load). A tight
-    // threshold here was flaky. Assert only a loose sanity ceiling that catches a
-    // catastrophic hang/regression without failing on normal environment variance.
-    expect(avgTimeMs).toBeLessThan(500);
+    console.log(
+      `[KaTeX Cache Profiling] cold parse ${coldMs.toFixed(1)}ms, ` +
+        `average cached flush ${avgTimeMs.toFixed(3)}ms ` +
+        `(${coldMs > 0 ? (coldMs / Math.max(avgTimeMs, 0.001)).toFixed(1) : 'n/a'}x cheaper)`,
+    );
+
+    // The property is the RATIO between cold and cached, not a duration.
+    // jsdom wall-clock scales with whatever else the machine is doing — the
+    // same code measured 12ms idle and blew past a 500ms ceiling under a
+    // loaded test runner, which is how this test went intermittently red on
+    // the normal path. Both sides are timed in the same run, so a slow
+    // machine inflates both and the comparison survives it.
+    //
+    // A working cache makes a cached re-render materially cheaper than the
+    // parse that populated it. The margin is deliberately loose because in
+    // jsdom React reconciliation and DOM/innerHTML dominate the measurement
+    // and the KaTeX cache is a small part of it — this is catching "the cache
+    // stopped working", not profiling the renderer.
+    expect(avgTimeMs).toBeLessThan(coldMs);
+
+    // One absolute number stays, as a tripwire against a genuine hang rather
+    // than a slowdown: if the cold parse never finishes, no ratio helps.
+    expect(coldMs).toBeLessThan(60_000);
   });
 });
