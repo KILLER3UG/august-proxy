@@ -153,7 +153,7 @@ class TestCheckpointIdSegments:
         assert [e['path'] for e in ck['files']] == [str(f.resolve())], ck
 
         f.write_text('destroyed', encoding='utf-8')
-        result = restore_checkpoint('s-ok_1', ck['id'])
+        result = restore_checkpoint('s-ok_1', ck['id'], workspace=str(ws))
         assert result['ok'] is True, result
         assert result['errors'] == [], result
         assert result['restored'] == 1, result

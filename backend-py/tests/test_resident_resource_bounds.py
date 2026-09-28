@@ -35,6 +35,41 @@ class TestEventLogBoundsResidentSessions:
         finally:
             log._sessions.clear()
 
+    def test_the_newcomer_never_evicts_itself(self):
+        """The bug adversarial review found: the ring was inserted, THEN swept.
+
+        When every resident already carried a subscriber the newcomer was the
+        only stale candidate, so it evicted itself — and the SSE stream it was
+        created for was silently orphaned: gone from the map, so every later
+        append built a different ring that was also evicted, and the client
+        sat on a live connection receiving nothing but keepalives.
+        """
+        import asyncio
+
+        from app.services.event_log import MAX_SESSIONS_RESIDENT, EventLog
+
+        log = EventLog()
+        try:
+            for i in range(MAX_SESSIONS_RESIDENT):
+                log.append(f'held_{i}', 'turn_start', {'i': i})
+                log._sessions[f'held_{i}'].subscribers.add(object())  # type: ignore[arg-type]
+            # Now every resident is subscribed, so only the newcomer is stale.
+            log.append('newcomer', 'turn_start', {'i': 0})
+            assert 'newcomer' in log._sessions, (
+                'the new ring evicted itself, orphaning the stream it was made for'
+            )
+            held = log._sessions['newcomer']
+            log.append('newcomer', 'delta', {'x': 1})
+            # The ring the stream holds is still the one in the map, so the
+            # event is delivered rather than lost.
+            assert log._sessions.get('newcomer') is held
+            assert held.events, 'events went to a ring the map no longer holds'
+        finally:
+            for e in log._sessions.values():
+                e.subscribers.clear()
+            log._sessions.clear()
+        assert asyncio is not None
+
     def test_eviction_drops_the_oldest_first(self):
         from app.services.event_log import MAX_SESSIONS_RESIDENT, EventLog
 

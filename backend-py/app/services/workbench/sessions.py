@@ -1072,10 +1072,37 @@ def get_workbench_session(session_id: str | None) -> WorkbenchSession | None:
         restored = WorkbenchSession.fromDict(blob)
         if restored.id:
             _sessions[restored.id] = restored
+            _reattach_session_watcher(restored)
             return restored
     except Exception:
         logger.debug('workbench session reload from SQLite failed', exc_info=True)
     return None
+
+
+def _reattach_session_watcher(session: WorkbenchSession) -> None:
+    """Re-attach the environment watcher a reload just lost.
+
+    The eviction teardown in ``_persist_sessions_snapshot`` detaches the
+    watcher when a session ages out of the RAM recency window, which is right:
+    a 60-entry window cannot hold 200 watchdog threads. But
+    ``get_workbench_session`` reloads an aged-out session from SQLite on the
+    next turn, and nothing put the watcher back — so environment watching was
+    dead for that chat for the life of the process, with no error anywhere.
+    Tier-3 ``<environment>`` injection just silently stopped.
+
+    The reload is the moment the process starts caring about a session again,
+    which makes it the mirror of eviction. ``attach_session_watcher`` is
+    idempotent, so this is safe to call on every reload.
+    """
+    workspace = str(getattr(session, 'workspacePath', '') or '').strip()
+    if not workspace:
+        return
+    try:
+        from app.services.cognitive_boot import attach_session_watcher
+
+        attach_session_watcher(session.id, workspace)
+    except Exception:
+        logger.debug('watcher re-attach on reload failed for %s', session.id, exc_info=True)
 
 
 def set_workbench_session_agent(session_id: str, agent_id: str) -> WorkbenchSession | None:
@@ -1297,6 +1324,18 @@ def delete_workbench_session(session_id: str) -> bool:
         release_turn_lock(session_id)
     except Exception:
         logger.debug('turn lock release failed', exc_info=True)
+
+    # The same leak shape for code mode: one `asyncio.Lock` per session id
+    # that ever ran a cell, with no release anywhere. It was fixed for
+    # `_turnLocks` in the same series and missed for `_kernel_locks`, which
+    # 20,000 session ids left at 20,000 entries. Reclaimed on delete, with a
+    # capacity prune as the backstop for sessions that are never deleted.
+    try:
+        from app.services.workbench.kernel import release_session_kernel_lock
+
+        release_session_kernel_lock(session_id)
+    except Exception:
+        logger.debug('kernel lock release failed', exc_info=True)
 
     # Drop from RAM + notify UI first (real-time), cascade SQLite after.
     if session_id in _sessions:

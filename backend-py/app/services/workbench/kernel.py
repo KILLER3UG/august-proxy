@@ -538,7 +538,18 @@ def clear_kernel_state(workspace_path: str, session_id: str) -> int:
 
 # Sequential execution (cells never interleave)
 
+# One lock per session id that ever ran a code cell, and nothing ever removed
+# one — the identical leak shape that was fixed for `workbench._turnLocks` in
+# the same series and missed here. Measured by adversarial review: 20,000
+# session ids left 20,000 entries, with no pop or release anywhere in either
+# file. A lock is small, but the mapping grows with every session the process
+# has ever run code for and never comes back down.
 _kernel_locks: dict[str, asyncio.Lock] = {}
+# Same ceiling and the same oldest-first prune as `_turnLocks`. Generous
+# because a lock is tiny and an eviction is only ever a correctness risk if
+# two LIVE cells in the same session could then interleave — which needs
+# more than this many concurrent sessions.
+_MAX_KERNEL_LOCKS = 512
 
 
 def session_kernel_lock(session_id: str) -> asyncio.Lock:
@@ -546,9 +557,31 @@ def session_kernel_lock(session_id: str) -> asyncio.Lock:
     key = as_str(session_id, 'default')
     lock = _kernel_locks.get(key)
     if lock is None:
+        if len(_kernel_locks) >= _MAX_KERNEL_LOCKS:
+            for stale in list(_kernel_locks)[: len(_kernel_locks) - _MAX_KERNEL_LOCKS + 1]:
+                victim = _kernel_locks.get(stale)
+                # Never drop a gate a cell is currently holding: that is
+                # exactly the interleave this lock exists to prevent.
+                if victim is not None and not victim.locked():
+                    _kernel_locks.pop(stale, None)
         lock = asyncio.Lock()
         _kernel_locks[key] = lock
     return lock
+
+
+def release_session_kernel_lock(session_id: str) -> bool:
+    """Drop a session's sequential-execution gate. Called on session delete.
+
+    Reclaiming on delete is the precise fix; the cap above is the backstop for
+    sessions that are never deleted.
+    """
+    key = as_str(session_id, 'default')
+    victim = _kernel_locks.get(key)
+    if victim is None:
+        return False
+    if victim.locked():
+        return False  # a cell is mid-flight; leave the gate in place
+    return _kernel_locks.pop(key, None) is not None
 
 
 # Pre-seeded venv discovery / provisioning

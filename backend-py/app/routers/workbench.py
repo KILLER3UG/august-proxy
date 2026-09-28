@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid
 from pathlib import Path
 from typing import Callable
@@ -1508,29 +1509,46 @@ _SANDBOX_BUILTIN_NAMES = frozenset({
 # exist because real code uses them and neither reaches a callable or a
 # module — `__doc__` is a string, `__name__` is the module's own name.
 #
+# There is deliberately NO companion "banned attributes" list. An earlier
+# version carried one and nothing read it: the check keys on the `__x__`
+# SHAPE, which covers an attribute nobody thought of. A second, unenforced
+# list is worse than none — a future maintainer edits it, changes nothing,
+# and the test stays green.
+_SANDBOX_ALLOWED_ATTRS = frozenset({'__doc__', '__name__'})
+
+# Dunder access performed by a FORMAT STRING rather than by the AST. This is
+# the one way the attribute ban above could be walked around, and adversarial
+# review found it:
+#
+#     '{0.__class__.__base__.__subclasses__}'.format(())
+#
+# has no `ast.Attribute` node at all — the traversal is parsed out of the
+# string at RUNTIME, so an AST check that only looks at attributes never sees
+# it, and the child runner executed it. The same applies to a `__dunder__`
+# name passed as a string to anything that would resolve it.
+#
+# The shape is the same `.__dunder__`, so the same rule applies. Matching on
+# the LEADING DOT is what keeps this narrow: a docstring that merely mentions
+# `__name__` is fine, and only a dunder reached THROUGH something is refused.
+_SANDBOX_STRING_DUNDER_RE = re.compile(r'\.\s*__\w+__')
+
 # This is defence in depth, NOT a boundary. Anything that runs Python in
 # process can be escaped eventually; a real containment tier is a container
 # or a Windows Job Object, not an allowlist. What this buys is that the
 # advertised policy (no network, no subprocess) is not trivially false, and
-# that the obvious one-liner does not defeat it.
-_SANDBOX_BANNED_ATTRS = frozenset({
-    '__class__', '__bases__', '__base__', '__mro__', '__subclasses__',
-    '__globals__', '__builtins__', '__code__', '__closure__', '__func__',
-    '__self__', '__dict__', '__getattribute__', '__reduce__', '__reduce_ex__',
-    '__init__', '__import__', '__loader__', '__spec__', '__new__',
-})
-_SANDBOX_ALLOWED_ATTRS = frozenset({'__doc__', '__name__'})
+# that the obvious one-liners do not defeat it.
 
 # The runner executes in a fresh interpreter process; it reads the cell from
 # stdin, applies the same AST policy, runs with restricted builtins, and
 # prints a single JSON result to stdout. A runaway loop is hard-killed by
 # subprocess.run's timeout — it can never block the server's event loop.
 _SANDBOX_RUNNER_TEMPLATE = r'''
-import ast, io, json, sys, traceback
+import ast, io, json, re, sys, traceback
 from contextlib import redirect_stderr, redirect_stdout
 
 banned = __BANNED__
 allowed_attrs = __ALLOWED_ATTRS__
+string_dunder = re.compile(__STRING_DUNDER__)
 code = sys.stdin.read()
 try:
     tree = ast.parse(code, mode='exec')
@@ -1552,6 +1570,11 @@ for node in ast.walk(tree):
     if isinstance(node, ast.Attribute) and node.attr.startswith('__') and node.attr.endswith('__'):
         if node.attr not in allowed_attrs:
             print(json.dumps({'ok': False, 'error': f'Dunder attribute blocked by sandbox policy: {node.attr}', 'stdout': '', 'stderr': ''}))
+            sys.exit(0)
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        _hit = string_dunder.search(node.value)
+        if _hit:
+            print(json.dumps({'ok': False, 'error': f'Dunder access inside a string blocked by sandbox policy: {_hit.group(0).strip()}', 'stdout': '', 'stderr': ''}))
             sys.exit(0)
 
 names = __BUILTINS__
@@ -1601,6 +1624,10 @@ def _sandbox_ast_check(code: str) -> str:
             and node.attr not in _SANDBOX_ALLOWED_ATTRS
         ):
             return f'Dunder attribute blocked by sandbox policy: {node.attr}'
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            found = _SANDBOX_STRING_DUNDER_RE.search(node.value)
+            if found:
+                return f'Dunder access inside a string blocked by sandbox policy: {found.group(0).strip()}'
     return ''
 
 
@@ -1620,6 +1647,7 @@ def _run_sandbox_subprocess(code: str, cwd_path, timeout_ms: int) -> dict:
         _SANDBOX_RUNNER_TEMPLATE.replace('__BANNED__', repr(sorted(_SANDBOX_BANNED_MODULES)))
         .replace('__BUILTINS__', repr(sorted(_SANDBOX_BUILTIN_NAMES)))
         .replace('__ALLOWED_ATTRS__', repr(sorted(_SANDBOX_ALLOWED_ATTRS)))
+        .replace('__STRING_DUNDER__', repr(_SANDBOX_STRING_DUNDER_RE.pattern))
     )
     fd, runner_path = tempfile.mkstemp(suffix='.py', prefix='august_sandbox_')
     try:

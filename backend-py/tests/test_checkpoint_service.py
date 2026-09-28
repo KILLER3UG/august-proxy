@@ -40,7 +40,7 @@ def test_checkpoint_restore_file(tmp_path):
     assert ck['fileCount'] >= 1
 
     f.write_text('v2-destroyed', encoding='utf-8')
-    result = restore_checkpoint('sess1', ck['id'])
+    result = restore_checkpoint('sess1', ck['id'], workspace=str(ws))
     assert result['ok'] is True
     assert f.read_text(encoding='utf-8') == 'v1'
 
@@ -68,6 +68,6 @@ def test_restore_deletes_new_file(tmp_path):
     )
     assert ck is not None
     newf.write_text('created after', encoding='utf-8')
-    result = restore_checkpoint('s3', ck['id'])
+    result = restore_checkpoint('s3', ck['id'], workspace=str(ws))
     assert result['ok'] is True
     assert not newf.exists()

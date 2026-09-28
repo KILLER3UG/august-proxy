@@ -91,3 +91,50 @@ class TestOrdinaryPathsAreNotFalsePositives:
         has no `id_` rule — but pinning it keeps the two consistent."""
         for p in ('/home/u/grid_layout/main.py', '/repo/user_id_seed.sql'):
             assert check_hardline_path(p, for_write=True) is None
+
+
+class TestTemplateAndDocFilesAreNotCredentials:
+    """`providers.json.example` and `credentials.md` are ordinary files.
+
+    Both alternatives were unanchored, so a project documenting its own
+    provider setup could not be read, and a project documenting its credential
+    setup could not be written. Found by adversarial review; neither is a
+    credential, and a guard that refuses them is a guard people disable.
+    """
+
+    @pytest.mark.parametrize(
+        'path',
+        [
+            '/repo/providers.json.example',
+            '/repo/providers.json.sample',
+            '/repo/credentials.md',
+            '/repo/src/credentials.rst',
+        ],
+    )
+    def test_readable(self, path: str):
+        assert check_hardline_path(path, for_write=False) is None
+
+    @pytest.mark.parametrize(
+        'path',
+        ['/repo/providers.json', '/repo/.aws/credentials', '/repo/docs/providers.json'],
+    )
+    def test_the_real_thing_is_still_blocked_on_read(self, path: str):
+        """Including a copy in a subdirectory.
+
+        The anchor is the END of the name, not the directory, so
+        `docs/providers.json` is still refused. That is deliberate: the guard
+        is about the filename, and a document that is a copy of the live
+        provider store carries the same API keys wherever it is kept.
+        """
+        assert check_hardline_path(path, for_write=False) is not None
+
+    @pytest.mark.parametrize(
+        'path',
+        ['/repo/credentials/notes.md', '/repo/credentials', '/repo/providers.json'],
+    )
+    def test_the_real_thing_is_still_blocked_on_write(self, path: str):
+        assert check_hardline_path(path, for_write=True) is not None
+
+    @pytest.mark.parametrize('path', ['/repo/credentials.md', '/repo/src/main.py'])
+    def test_ordinary_writes_still_work(self, path: str):
+        assert check_hardline_path(path, for_write=True) is None

@@ -205,8 +205,17 @@ class EventLog:
         entry = self._sessions.get(sessionId)
         if entry is None:
             entry = _SessionLog(sessionId)
-            self._sessions[sessionId] = entry
+            # Evict BEFORE inserting, so a brand-new ring can never be the
+            # victim. It used to be inserted first and swept second, and when
+            # every resident already carried a subscriber the newcomer was the
+            # ONLY stale candidate — so it evicted itself, and the very stream
+            # it was created for was silently orphaned: the ring was no longer
+            # in the map, so every later `append` built a different ring that
+            # was also evicted, and the client sat on a live connection
+            # receiving nothing but keepalives. That inverts the promise made
+            # in `_evictIfOverCapacity` below.
             self._evictIfOverCapacity()
+            self._sessions[sessionId] = entry
         entry.touchedAt = time.monotonic()
         return entry
 
@@ -235,9 +244,12 @@ class EventLog:
             for sid, entry in self._sessions.items()
             if not entry.subscribers
         ]
-        # Oldest first, and stop as soon as we are back under the cap.
+        # Oldest first. The +1 is because eviction now runs BEFORE the
+        # caller's insert: dropping down to the cap and then inserting would
+        # settle at cap+1 forever, and the named constant has to be the real
+        # ceiling rather than one above it.
         stale.sort()
-        excess = len(self._sessions) - MAX_SESSIONS_RESIDENT
+        excess = len(self._sessions) - MAX_SESSIONS_RESIDENT + 1
         for _, sid in stale[:excess]:
             evicted = self._sessions.pop(sid, None)
             if evicted is not None:

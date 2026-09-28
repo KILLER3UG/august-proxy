@@ -150,7 +150,15 @@ def _modelCapabilityProfile(session: WorkbenchSession) -> dict[str, object]:
     cached = _capability_profile_cache.get(cacheKey)
     now = _time.monotonic()
     if cached is not None and now - cached[0] < _CAPABILITY_PROFILE_TTL_S:
-        return cached[1]
+        # A copy, not the cached object. Returning the memo's own dict hands
+        # every caller a handle on it, so one that writes — and the name is
+        # re-exported from `workbench.py`, so a future caller might — silently
+        # re-poisons the memo for every session sharing that (model, provider)
+        # pair for the next 5s. The docstring used to describe this hazard
+        # instead of removing it, in the same change that removed exactly this
+        # asymmetry from `load_layered`. A cache whose entries a caller can
+        # write through is not a cache. Cheap: three scalars.
+        return dict(cached[1])
     profile: dict[str, object] = {}
     try:
         from app.services import config_service
@@ -172,7 +180,10 @@ def _modelCapabilityProfile(session: WorkbenchSession) -> dict[str, object]:
         pass
     _pruneCapabilityProfiles(now)
     _capability_profile_cache[cacheKey] = (now, profile)
-    return profile
+    # Copy out for the same reason the hit path copies: the memo now holds this
+    # exact object, so returning it would give the caller write-through access
+    # to what every other session sees for the next 5 seconds.
+    return dict(profile)
 
 
 def _applyModelCapabilityProfile(

@@ -47,6 +47,22 @@ def ws(data_dir) -> Path:
     return root
 
 
+@pytest.fixture
+def live_session(ws):
+    """A real workbench session rooted at `ws`.
+
+    `restore_checkpoint` now takes its containment root from the LIVE session
+    rather than from the manifest — a manifest is a file an attacker can
+    plant, so its `workspacePath` is a claim about the past, not an authority
+    (verified: a planted manifest could otherwise redirect a restore to an
+    arbitrary directory, for both write and delete). So a restore test has to
+    have a session to contain against, exactly as production does.
+    """
+    from app.services.workbench.sessions import create_workbench_session
+
+    return create_workbench_session(goal='checkpoint guard', workspacePath=str(ws))
+
+
 def _staged_blobs(data_dir: Path) -> list[bytes]:
     """Every file body staged under the checkpoint store, for leak assertions."""
     store = data_dir / 'checkpoints'
@@ -172,16 +188,16 @@ class TestContainmentRefusedAtCreate:
 
 
 class TestNormalPathStillWorks:
-    def test_in_workspace_file_is_snapshotted_and_restored(self, brain, ws):
+    def test_in_workspace_file_is_snapshotted_and_restored(self, brain, ws, live_session):
         f = ws / 'hello.txt'
         f.write_text('v1', encoding='utf-8')
 
-        ck = create_checkpoint('s7', workspace_path=str(ws), paths=[str(f)], tool_name='write_file')
+        ck = create_checkpoint(live_session.id, workspace_path=str(ws), paths=[str(f)], tool_name='write_file')
         assert ck is not None
         assert [e['path'] for e in ck['files']] == [str(f.resolve())]
 
         f.write_text('v2-destroyed', encoding='utf-8')
-        result = restore_checkpoint('s7', ck['id'])
+        result = restore_checkpoint(live_session.id, ck['id'])
         assert result['ok'] is True
         assert result['restored'] == 1
         assert result['errors'] == []
@@ -194,46 +210,132 @@ class TestNormalPathStillWorks:
         assert ck is not None
         assert ck['files'][0]['path'] == str((ws / 'notes.md').resolve())
 
-    def test_nested_workspace_path_round_trips(self, brain, ws):
+    def test_nested_workspace_path_round_trips(self, brain, ws, live_session):
         nested = ws / 'src' / 'deep'
         nested.mkdir(parents=True)
         f = nested / 'mod.py'
         f.write_text('x = 1', encoding='utf-8')
 
-        ck = create_checkpoint('s8b', workspace_path=str(ws), paths=['src/deep/mod.py'], tool_name='write_file')
+        ck = create_checkpoint(live_session.id, workspace_path=str(ws), paths=['src/deep/mod.py'], tool_name='write_file')
         assert ck is not None
         f.write_text('x = 999', encoding='utf-8')
-        restore_checkpoint('s8b', ck['id'])
+        restore_checkpoint(live_session.id, ck['id'])
         assert f.read_text(encoding='utf-8') == 'x = 1'
 
-    def test_new_file_is_tracked_and_deleted_on_restore(self, brain, ws):
+    def test_new_file_is_tracked_and_deleted_on_restore(self, brain, ws, live_session):
         newf = ws / 'brand_new.txt'
-        ck = create_checkpoint('s9', workspace_path=str(ws), paths=[str(newf)], tool_name='write_file')
+        ck = create_checkpoint(live_session.id, workspace_path=str(ws), paths=[str(newf)], tool_name='write_file')
         assert ck is not None
         assert ck['files'][0]['existed'] is False
 
         newf.write_text('created after', encoding='utf-8')
-        result = restore_checkpoint('s9', ck['id'])
+        result = restore_checkpoint(live_session.id, ck['id'])
         assert result['ok'] is True
         assert result['deleted'] == 1
         assert not newf.exists()
 
 
+class TestManifestCannotWidenItsOwnContainment:
+    """F4: ``workspacePath`` was the field the ``rel`` fix forgot.
+
+    The manifest is a file an attacker can plant, so its ``workspacePath`` is
+    a claim about the past -- but it was being used as the containment ROOT,
+    so a planted manifest naming a victim directory moved containment with it
+    and both the write branch and the delete branch then operated outside the
+    workspace. Verified for both. The root is now the LIVE session's
+    workspace, which lives outside any directory a manifest can reach.
+    """
+
+    def test_a_planted_workspace_cannot_redirect_a_write(
+        self, brain, data_dir, ws, live_session
+    ):
+        victim = data_dir / 'victim'
+        victim.mkdir(parents=True, exist_ok=True)
+        loot = victim / 'loot.txt'
+        loot.write_text('ORIGINAL', encoding='utf-8')
+
+        target = ws / 'a.txt'
+        target.write_text('v1', encoding='utf-8')
+        ck = create_checkpoint(
+            live_session.id, workspace_path=str(ws), paths=[str(target)], tool_name='write_file'
+        )
+        assert ck is not None
+        _rewrite_manifest(
+            data_dir,
+            live_session.id,
+            ck['id'],
+            workspacePath=str(victim),  # the planted root
+            files=[{'path': str(loot), 'rel': 'a.txt', 'existed': True, 'size': 0}],
+        )
+
+        restore_checkpoint(live_session.id, ck['id'])
+
+        assert loot.read_text(encoding='utf-8') == 'ORIGINAL', (
+            'a planted manifest workspacePath redirected a write outside the workspace'
+        )
+
+    def test_a_planted_workspace_cannot_redirect_a_delete(
+        self, brain, data_dir, ws, live_session
+    ):
+        victim = data_dir / 'victim2'
+        victim.mkdir(parents=True, exist_ok=True)
+        secret = victim / 'secret.txt'
+        secret.write_text('KEEP', encoding='utf-8')
+
+        target = ws / 'b.txt'
+        ck = create_checkpoint(
+            live_session.id, workspace_path=str(ws), paths=[str(target)], tool_name='write_file'
+        )
+        assert ck is not None
+        _rewrite_manifest(
+            data_dir,
+            live_session.id,
+            ck['id'],
+            workspacePath=str(victim),
+            files=[{'path': str(secret), 'rel': 'b.txt', 'existed': False, 'size': 0}],
+        )
+
+        result = restore_checkpoint(live_session.id, ck['id'])
+
+        assert secret.exists(), 'a planted manifest deleted a file outside the workspace'
+        assert result['deleted'] == 0
+
+    def test_a_restore_with_no_live_session_refuses(self, brain, data_dir, ws, live_session):
+        """No live session means nothing to contain against.
+
+        Falling back to the manifest's own claim is exactly the bug, so the
+        refusal is the point: a checkpoint for a session that no longer exists
+        cannot be shown to land anywhere safe.
+        """
+        target = ws / 'c.txt'
+        target.write_text('v1', encoding='utf-8')
+        ck = create_checkpoint(
+            live_session.id, workspace_path=str(ws), paths=[str(target)], tool_name='write_file'
+        )
+        assert ck is not None
+        from app.services.workbench import sessions as sessions_mod
+
+        sessions_mod._sessions.pop(live_session.id, None)
+        result = restore_checkpoint(live_session.id, ck['id'])
+        assert result['ok'] is False
+        assert 'contain' in result['error'].lower()
+
+
 class TestRestoreRevalidatesManifest:
     """A manifest is a file on disk — it is not trusted on the way out."""
 
-    def test_planted_hardline_path_is_neither_written_nor_deleted(self, brain, data_dir, ws):
+    def test_planted_hardline_path_is_neither_written_nor_deleted(self, brain, data_dir, ws, live_session):
         key = ws / '.ssh' / 'id_rsa'
         key.parent.mkdir(exist_ok=True)
         key.write_text('REAL-KEY', encoding='utf-8')
 
-        ck = create_checkpoint('s10', workspace_path=str(ws), paths=[str(ws / 'a.txt')], tool_name='write_file')
+        ck = create_checkpoint(live_session.id, workspace_path=str(ws), paths=[str(ws / 'a.txt')], tool_name='write_file')
         assert ck is not None
         # A restore would `copy2` over this key (existed=True) or `unlink` it
         # (existed=False). Both are refused, and the real file is untouched.
         _rewrite_manifest(
             data_dir,
-            's10',
+            live_session.id,
             ck['id'],
             files=[
                 {'path': str(key), 'rel': 'a.txt', 'existed': False, 'size': 0},
@@ -241,33 +343,33 @@ class TestRestoreRevalidatesManifest:
             ],
         )
 
-        result = restore_checkpoint('s10', ck['id'])
+        result = restore_checkpoint(live_session.id, ck['id'])
 
         assert key.read_text(encoding='utf-8') == 'REAL-KEY', 'restore damaged a protected key'
         assert result['deleted'] == 0
         assert result['restored'] == 0
         assert len(result['errors']) == 2
 
-    def test_planted_path_outside_the_workspace_is_not_deleted(self, brain, data_dir, ws):
+    def test_planted_path_outside_the_workspace_is_not_deleted(self, brain, data_dir, ws, live_session):
         outside = data_dir / 'outside.txt'
         outside.write_text('untouched', encoding='utf-8')
 
-        ck = create_checkpoint('s11', workspace_path=str(ws), paths=[str(ws / 'a.txt')], tool_name='write_file')
+        ck = create_checkpoint(live_session.id, workspace_path=str(ws), paths=[str(ws / 'a.txt')], tool_name='write_file')
         assert ck is not None
         _rewrite_manifest(
             data_dir,
-            's11',
+            live_session.id,
             ck['id'],
             files=[{'path': str(outside), 'rel': 'a.txt', 'existed': False, 'size': 0}],
         )
 
-        result = restore_checkpoint('s11', ck['id'])
+        result = restore_checkpoint(live_session.id, ck['id'])
 
         assert outside.exists(), 'restore deleted a file outside the workspace'
         assert outside.read_text(encoding='utf-8') == 'untouched'
         assert result['deleted'] == 0
 
-    def test_widening_the_manifest_workspace_does_not_reach_a_hardline_path(self, brain, data_dir, ws):
+    def test_widening_the_manifest_workspace_does_not_reach_a_hardline_path(self, brain, data_dir, ws, live_session):
         """`workspacePath` is manifest data too, so widening it must not widen reach.
 
         The hardline guard is deliberately independent of the anchor: a
@@ -278,17 +380,17 @@ class TestRestoreRevalidatesManifest:
         key.parent.mkdir(parents=True, exist_ok=True)
         key.write_text('REAL-KEY', encoding='utf-8')
 
-        ck = create_checkpoint('s12', workspace_path=str(ws), paths=[str(ws / 'a.txt')], tool_name='write_file')
+        ck = create_checkpoint(live_session.id, workspace_path=str(ws), paths=[str(ws / 'a.txt')], tool_name='write_file')
         assert ck is not None
         _rewrite_manifest(
             data_dir,
-            's12',
+            live_session.id,
             ck['id'],
             workspacePath=str(data_dir),  # the whole data dir, not `ws`
             files=[{'path': str(key), 'rel': 'a.txt', 'existed': False, 'size': 0}],
         )
 
-        result = restore_checkpoint('s12', ck['id'])
+        result = restore_checkpoint(live_session.id, ck['id'])
 
         assert key.exists(), 'a widened workspacePath reached a hardline path'
         assert result['deleted'] == 0

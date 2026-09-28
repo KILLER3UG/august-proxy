@@ -54,8 +54,14 @@ class TestDunderTraversalIsBlocked:
         err = wb._sandbox_ast_check(_ESCAPES['subclasses_walk'])
         assert 'Dunder attribute' in err
         # Which dunder it names depends on ast.walk's order, so assert the
-        # message is specific rather than pinning one attribute.
-        assert err.rsplit(' ', 1)[-1] in wb._SANDBOX_BANNED_ATTRS
+        # message is specific rather than pinning one attribute. There is
+        # deliberately no "banned attributes" LIST to check membership
+        # against — the control keys on the `__x__` shape, and an unenforced
+        # companion list is worse than none: a maintainer edits it, changes
+        # nothing, and the test stays green.
+        named = err.rsplit(' ', 1)[-1]
+        assert named.startswith('__') and named.endswith('__')
+        assert named not in wb._SANDBOX_ALLOWED_ATTRS
 
     def test_a_plain_import_of_a_banned_module_is_still_blocked(self):
         assert 'Import blocked' in wb._sandbox_ast_check('import socket')
@@ -69,6 +75,51 @@ class TestDunderTraversalIsBlocked:
         assert '__init__' not in {'__class__', '__base__', '__subclasses__'}
         err = wb._sandbox_ast_check('x = ().__class__.__init__')
         assert 'Dunder attribute blocked' in err
+
+
+class TestFormatStringsAreNotABackDoor:
+    """The one way the attribute ban was walked around, found by review.
+
+    `'{0.__class__.__base__.__subclasses__}'.format(())` contains no
+    `ast.Attribute` node at all — the traversal is parsed out of the string at
+    RUNTIME, so a check that only inspects attributes never sees it, and the
+    child runner executed it. The review could not escalate it past
+    information disclosure (`__import__`, `__build_class__`, `getattr` and
+    `type` are all absent from the allowlist, and `str.format` always
+    stringifies), but a read-only leak is still a leak and the class of bug
+    matters more than today's blast radius.
+    """
+
+    @pytest.mark.parametrize(
+        'src',
+        [
+            "print('{0.__class__.__base__.__subclasses__}'.format(()))",
+            "print('{0.__init__.__globals__}'.format(re))",
+            "s = '{0.__mro__}'.format(type)",
+        ],
+    )
+    def test_dunder_in_a_format_string_is_refused(self, src: str):
+        assert 'Dunder access inside a string' in wb._sandbox_ast_check(src)
+
+    def test_a_plain_string_mentioning_a_dunder_is_fine(self):
+        """The leading dot is what makes this narrow.
+
+        A docstring documenting `__name__` is not an escape attempt, and
+        refusing ordinary documentation pushes people toward disabling the
+        sandbox rather than complying with it.
+        """
+        assert wb._sandbox_ast_check('"""Notes about __name__ and __doc__."""') == ''
+        assert wb._sandbox_ast_check('print("hello", 1 + 1)') == ''
+
+    def test_the_child_runner_carries_the_same_check(self):
+        """No path may check attributes only.
+
+        The parent gate and the child runner both apply the policy; if the
+        runner built its pattern from somewhere else these would drift.
+        """
+        src = wb._SANDBOX_RUNNER_TEMPLATE
+        assert '__STRING_DUNDER__' in src
+        assert 'string_dunder.search' in src
 
 
 class TestLegitimateCellsStillRun:

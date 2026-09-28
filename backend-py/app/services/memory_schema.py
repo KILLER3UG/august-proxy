@@ -562,7 +562,19 @@ def repair_fts_sync(conn: sqlite3.Connection) -> None:
     row per indexed document) to detect desync.
 
     Cost: 6 tiny count queries per boot. Self-heals any future desync.
+
+    Takes `_SCHEMA_LOCK` for the same reason `rebuild_fts_index` does: this
+    writes to the FTS vtables, and the schema application holds that lock
+    while creating them. Boot-time repair racing schema creation is the same
+    cross-connection interleaving that produced the FTS corruption, so it
+    belongs behind the same door.
     """
+    with _SCHEMA_LOCK:
+        _repair_fts_sync_locked(conn)
+
+
+def _repair_fts_sync_locked(conn: sqlite3.Connection) -> None:
+    """Body of `repair_fts_sync`; callers must already hold `_SCHEMA_LOCK`."""
     for fts, base in _FTS_SYNC_MAP:
         try:
             idx_n = conn.execute(f'SELECT count(*) FROM {fts}_docsize').fetchone()[0]
@@ -618,7 +630,38 @@ def rebuild_fts_index(
     with ``vtable constructor failed`` while a healthy database was otherwise
     reachable. A second attempt costs one statement and turns a permanent
     outage of the index into a delay.
+
+    IT NOW ALSO TAKES ``_SCHEMA_LOCK``, and that is the part that matters.
+
+    The lock was originally added around ``create_core_schema`` only — on the
+    theory that a half-built vtable came from two threads applying the schema
+    at once. Adversarial review showed the theory was pointed at the wrong
+    function: this rebuild is the ONLY other place in the backend that runs
+    ``CREATE VIRTUAL TABLE ... USING fts5`` against the brain file, it is
+    reached from ``memory_store/kv.py`` on any write error, and it took no
+    lock at all. Two connections — one inside ``create_core_schema``, one in
+    here — reproduced ``vtable constructor failed`` 195 times in 200 rounds,
+    and left a database that a FRESH connection could not open the index in
+    167 of those. That is the exact CI signature this flake has produced four
+    times, from a path the lock never touched.
+
+    The two are the same resource (one vtable, one file) so they take the same
+    lock. ``memory_conn`` hands each thread its own connection, so without a
+    lock this is a genuine cross-connection race rather than a thread-safety
+    question. The lock is re-entrant, and the retry runs INSIDE it, which
+    also removes the reviewer's other point: the retry previously doubled the
+    DROP/CREATE window (10 drops instead of 5) and doubled the log volume
+    precisely because it could land inside another connection's rebuild. Held
+    across both attempts, that cannot happen.
     """
+    with _SCHEMA_LOCK:
+        return _rebuild_fts_index_locked(conn, fts, base)
+
+
+def _rebuild_fts_index_locked(
+    conn: sqlite3.Connection, fts: str = 'memory_store_fts', base: str = 'memory_store'
+) -> bool:
+    """Body of `rebuild_fts_index`; callers must already hold `_SCHEMA_LOCK`."""
     for attempt in range(2):
         try:
             for shadow in (f'{fts}_content', f'{fts}_idx', f'{fts}_docsize', f'{fts}_config'):

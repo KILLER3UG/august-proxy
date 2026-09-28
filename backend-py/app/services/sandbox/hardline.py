@@ -31,8 +31,14 @@ from pathlib import Path
 # Paths that must never be written, in any mode. Env-named files ending in
 # `.example` / `.sample` / `.template` are the documented commit-able
 # templates and stay writable (checked in ``_is_env_template``).
+#
+# `credentials` is COMPONENT-ANCHORED for the same reason `id_\w+` is on the
+# read side: unanchored it also matched `credentials.md`, so a project
+# documenting its own credential setup could not be written at all. A
+# directory named `credentials` is still protected — the anchor requires the
+# component to end there.
 _PROTECTED_WRITE_PATTERN = re.compile(
-    r'(\.env|providers\.json|credentials|\.ssh(?:/|$)|'
+    r'(\.env|providers\.json|(?:^|/)credentials(?:/|$)|\.ssh(?:/|$)|'
     r'id_rsa|id_ed25519|\.aws(?:/|$)|\.npmrc|\.pypirc)',
     re.IGNORECASE,
 )
@@ -52,10 +58,16 @@ _PROTECTED_WRITE_PATTERN = re.compile(
 # and silently refusing to read them is a real bug — a model asked to inspect
 # one reports that it does not exist.
 #
-# Anchoring costs nothing in coverage. OpenSSH keys live in `.ssh/` and are
-# named `id_<type>` as a whole component, so they match the anchored form, and
-# the `\.ssh/[^\s]*\*` alternative already covers anything else inside `.ssh/`
-# by directory. The remaining alternatives are already anchored or specific.
+# Anchoring costs no coverage. OpenSSH keys live in `.ssh/` and are named
+# `id_<type>` as a whole component, so they match the anchored form, which is
+# what actually does the work here. A previous version of this comment
+# claimed the `\.ssh/[^\s]*\*` alternative "covers anything else inside
+# `.ssh/` by directory" — that was simply false: it requires a literal `*` in
+# the name, so `~/.ssh/known_hosts` and `~/.ssh/config` are readable. The
+# claim was worse than the gap, because it would stop the next person
+# re-checking. Those two files are public and stay readable deliberately.
+# `providers\.json` is component-anchored for the same reason `id_\w+` is —
+# unanchored it blocked `providers.json.example`, a template file.
 #
 # Note the read pattern deliberately does NOT treat `.ssh` as a directory
 # boundary, even though the write pattern does. `~/.ssh/authorized_keys` is a
@@ -65,7 +77,7 @@ _PROTECTED_WRITE_PATTERN = re.compile(
 # `.ssh` returns every key name and size in one response. That is
 # `is_credential_directory` below, used by the file-tree route.
 _CREDENTIAL_READ_PATTERN = re.compile(
-    r'(providers\.json|(?:^|/)id_\w+|\.aws/credentials|\.aws/config$|'
+    r'(providers\.json$|(?:^|/)id_\w+|\.aws/credentials|\.aws/config$|'
     r'(?:^|/)credentials$|\.git-credentials$|\.netrc$|\.(?:pem|key)$|'
     r'\.aws/[^\s]*\*|\.ssh/[^\s]*\*|'
     r'-----BEGIN [A-Z ]*PRIVATE KEY-----)',

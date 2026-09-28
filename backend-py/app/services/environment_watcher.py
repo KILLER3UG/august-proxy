@@ -11,6 +11,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
@@ -61,22 +62,39 @@ _recentChanges: dict[str, list[dict]] = {}
 # cap on either the length or the number of sessions, so a long-lived process
 # accumulated every change for every session it had ever watched.
 _MAX_CHANGES_PER_SESSION = 200
+# The buffer is shared between the watchdog observer threads (which call
+# `recordChange`) and whichever thread asks for changes (which sweeps). Every
+# access is under this lock, so a sweep cannot discard a record appended
+# microseconds earlier.
+_recent_lock = threading.Lock()
 
 
 def getRecentChanges(sessionId: str, maxAgeSeconds: int = 300) -> list[dict]:
-    """v2: Return recent environment changes for the session."""
+    """v2: Return recent environment changes for the session.
+
+    The expiry sweep runs under the same lock `recordChange` takes. Rebuilding
+    a filtered list and assigning it back was a lost update — `recordChange`
+    is called from watchdog observer THREADS, so anything appended between
+    building the copy and assigning it was silently discarded, and the old
+    `else` branch was worse: it popped the dict key and threw away a whole
+    freshly-appended buffer. Adversarial review made the window deterministic
+    with a list subclass, though it could not hit it with real threads, so
+    treat the rate as unmeasured.
+
+    A lock is the honest fix rather than another slice trick: the list is
+    shared between two threads by construction, so the read-modify-write has
+    to be atomic. It is held for microseconds over a bounded list.
+    """
     cutoff = time.time() - maxAgeSeconds
-    changes = _recentChanges.get(sessionId)
-    if not changes:
-        return []
-    # Sweep on read, not just filter: an entry past the cutoff can never be
-    # returned again, and the dict key itself is dead once its list empties.
-    live = [c for c in changes if as_float(c.get('timestamp'), 0.0) >= cutoff]
-    if live:
-        changes[:] = live
-    else:
-        _recentChanges.pop(sessionId, None)
-    return live
+    with _recent_lock:
+        changes = _recentChanges.get(sessionId)
+        if changes is None:
+            return []
+        changes[:] = [c for c in changes if as_float(c.get('timestamp'), 0.0) >= cutoff]
+        if not changes:
+            _recentChanges.pop(sessionId, None)
+            return []
+        return list(changes)
 
 
 def forgetSessionChanges(sessionId: str) -> None:
@@ -85,9 +103,12 @@ def forgetSessionChanges(sessionId: str) -> None:
     Called when the session leaves the RAM recency window, not when its
     changes merely age out — otherwise the dict key outlives the session it
     belongs to, and the number of keys tracks every session the process ever
-    watched rather than the ones still in play.
+    watched rather than the ones still in play. Takes the same lock as
+    `recordChange` so a concurrent append cannot re-create the key between
+    this check and the pop.
     """
-    _recentChanges.pop(sessionId, None)
+    with _recent_lock:
+        _recentChanges.pop(sessionId, None)
 
 
 def recordChange(sessionId: str, change: dict) -> None:
@@ -100,15 +121,20 @@ def recordChange(sessionId: str, change: dict) -> None:
     every change was written, grew without bound, and then failed its own age
     check and was never returned. A field the reader depends on belongs to the
     writer that owns the record, not to whoever happens to call it.
+
+    Takes `_recent_lock` because the buffer is shared with
+    `getRecentChanges`, which sweeps it from whichever thread asked for
+    changes — the watchdog observer threads are not the loop thread.
     """
-    entry = _recentChanges.get(sessionId)
-    if entry is None:
-        entry = _recentChanges[sessionId] = []
-    if 'timestamp' not in change:
-        change = {**change, 'timestamp': time.time()}
-    entry.append(change)
-    if len(entry) > _MAX_CHANGES_PER_SESSION:
-        del entry[: len(entry) - _MAX_CHANGES_PER_SESSION]
+    with _recent_lock:
+        entry = _recentChanges.get(sessionId)
+        if entry is None:
+            entry = _recentChanges[sessionId] = []
+        if 'timestamp' not in change:
+            change = {**change, 'timestamp': time.time()}
+        entry.append(change)
+        if len(entry) > _MAX_CHANGES_PER_SESSION:
+            del entry[: len(entry) - _MAX_CHANGES_PER_SESSION]
 
 
 def watch(workspacePath: str, sessionId: str) -> None:

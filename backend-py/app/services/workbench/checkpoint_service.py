@@ -351,8 +351,45 @@ def _snapshot_source(files_dir: Path, rel: str) -> Path | None:
     return None
 
 
-def restore_checkpoint(session_id: str, checkpoint_id: str) -> dict[str, Any]:
-    """Restore files from a checkpoint. Deletes files that did not exist at snapshot time."""
+def _live_workspace_for(session_id: str) -> str | None:
+    """The session's CURRENT workspace, or None when the session is unknown.
+
+    The authority for restore containment, deliberately NOT the manifest's
+    recorded `workspacePath`. A checkpoint is a claim about what a workspace
+    looked like earlier; the live session is where it is now, and it lives
+    outside any directory a checkpoint manifest can reach.
+    """
+    try:
+        from app.services.workbench.sessions import get_workbench_session
+
+        sess = get_workbench_session(session_id)
+    except Exception:
+        return None
+    if sess is None:
+        return None
+    return str(getattr(sess, 'workspacePath', '') or '').strip() or None
+
+
+def restore_checkpoint(
+    session_id: str, checkpoint_id: str, workspace: str | None = None
+) -> dict[str, Any]:
+    """Restore files from a checkpoint. Deletes files that did not exist at snapshot time.
+
+    `workspace` is the CONTAINMENT AUTHORITY, and it is a PARAMETER rather
+    than a value read out of the checkpoint for a reason: the manifest is a
+    file in `<dataDir>/checkpoints/<sid>/<ck>/`, and its `workspacePath` was
+    being used as the root every target is resolved against — so a planted
+    manifest naming a victim directory moved containment with it, and both the
+    write branch and the delete branch then operated outside the workspace.
+    Verified for both by adversarial review. A checkpoint is a claim about
+    what a workspace looked like earlier; it is not an authority about where a
+    restore may write now.
+
+    Resolution: the caller's value, else the LIVE session's workspace. With
+    neither, this refuses rather than falling back to the manifest — the
+    fallback IS the bug. A caller that legitimately holds authority (rolling
+    back a session that is no longer live) passes it explicitly.
+    """
     meta = get_checkpoint(session_id, checkpoint_id)
     if not meta:
         return {'ok': False, 'error': 'Checkpoint not found'}
@@ -362,10 +399,30 @@ def restore_checkpoint(session_id: str, checkpoint_id: str) -> dict[str, Any]:
     files_dir = base / 'files'
     # A manifest is a FILE ON DISK, so "we wrote it" is not a reason to trust
     # it on the way out. Every target below is re-run through the same guard
-    # the create side used, against the workspace the manifest itself names —
-    # a manifest edited or planted after the fact cannot redirect a restore
-    # at a protected path or outside the workspace.
-    workspace = as_str(meta.get('workspacePath')) or ''
+    # the create side used.
+    #
+    # The containment root is the LIVE session's workspace, never the
+    # manifest's. Taking it from the manifest was the hole: `workspacePath`
+    # is a field in the same file an attacker controls, so a planted manifest
+    # naming a victim directory moved containment with it, and both the write
+    # branch (`copy2` over the target) and the delete branch (`unlink`) then
+    # operated outside the workspace. Verified for both. The `rel` field was
+    # fixed for exactly this reason in the previous change; `workspacePath`
+    # was the adjacent field from the same file, left behind.
+    #
+    # The session store is the authority because it is not writable from a
+    # checkpoint directory. A recorded manifest value is a claim about the
+    # past; the live session is a fact about the present.
+    workspace = workspace or _live_workspace_for(session_id) or ''
+    if not workspace:
+        # Neither the caller nor the live session supplied an authority, so
+        # there is nothing to contain against. Refuse rather than fall back to
+        # the manifest's claim — the fallback IS the bug.
+        logger.warning(
+            'checkpoint restore refused: no workspace authority for session %s '
+            '(checkpoint %s)', session_id, checkpoint_id,
+        )
+        return {'ok': False, 'error': 'Cannot verify checkpoint containment: no workspace'}
     restored = 0
     deleted = 0
     errors: list[str] = []
