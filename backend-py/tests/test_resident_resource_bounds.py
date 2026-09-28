@@ -165,7 +165,91 @@ class TestEnvironmentChangeBuffer:
         _recentChanges.clear()
 
 
-class TestWarmKernelDeregistersItself:
+class TestConnectionCensus:
+    """A thread-local connection is invisible to every other thread.
+
+    That is correct for normal use and exactly wrong for diagnosing the
+    recurring `vtable constructor failed: memory_store_fts` CI failure: it is
+    one connection's DDL colliding with another's, and there was no way to see
+    the other one. This is the registry that makes it visible.
+    """
+
+    def test_a_thread_can_see_another_threads_connection(self):
+        import threading
+
+        from app.services.memory_conn import close, conn, connection_debug_snapshot
+
+        before = len(connection_debug_snapshot())
+        conn()  # may already exist from an earlier fixture — do not assume
+        mine = max(before, len(connection_debug_snapshot()))
+        assert mine >= 1
+
+        seen: list[int] = []
+
+        def other() -> None:
+            conn()
+            seen.append(len(connection_debug_snapshot()))
+
+        t = threading.Thread(target=other)
+        t.start()
+        t.join()
+        # The other thread sees at least what we see — entries it did NOT
+        # create, which is the whole point. A thread-local alone would show it
+        # only its own, so the counts could not match.
+        assert seen, 'the other thread recorded no census'
+        assert seen[0] >= mine, (
+            f'cross-thread visibility broken: other thread saw {seen[0]}, we hold {mine}'
+        )
+        close()
+
+    def test_the_census_carries_the_database_path_and_thread(self):
+        from app.services.memory_conn import conn, connection_debug_snapshot
+
+        conn()
+        entry = connection_debug_snapshot()[0]
+        assert 'path' in entry and 'thread' in entry
+        assert str(entry['path']), 'the census does not say which file the connection is on'
+
+    def test_closing_deregisters(self):
+        from app.services.memory_conn import close, conn, connection_debug_snapshot
+
+        conn()
+        with_it = len(connection_debug_snapshot())
+        close()
+        assert len(connection_debug_snapshot()) == with_it - 1
+
+
+class TestFtsRebuildDiagnostic:
+    """Five CI failures and four wrong fixes: the next attempt needs evidence.
+
+    The previous logs said only "vtable constructor failed", which does not
+    distinguish another connection's DDL from a bad transaction from missing
+    shadow tables. This asserts the diagnostic actually fires and records the
+    state that separates them.
+    """
+
+    def test_a_failure_is_described_rather_than_swallowed(self, caplog):
+        import logging
+        import sqlite3
+
+        from app.services.memory_schema import _describe_rebuild_failure
+
+        conn = sqlite3.connect(':memory:')
+        conn.execute('CREATE TABLE memory_store(key TEXT PRIMARY KEY, value TEXT)')
+        with caplog.at_level(logging.ERROR):
+            _describe_rebuild_failure(
+                conn,
+                'memory_store_fts',
+                'memory_store',
+                RuntimeError('vtable constructor failed: memory_store_fts'),
+            )
+        text = caplog.text
+        assert 'FTS rebuild diagnostics' in text
+        assert 'vtable constructor failed' in text
+        # The two facts that separate the candidate causes.
+        assert 'base_table' in text, 'the log does not say whether the content table exists'
+        assert 'threads' in text, 'the log does not census the other connections'
+        assert 'schema' in text, 'the log does not show what is left in sqlite_master'
     def test_kill_drops_the_registry_entry(self):
         """The idle timer calls `kill()`; only `shutdown()` used to pop.
 
@@ -218,3 +302,7 @@ class TestWarmKernelDeregistersItself:
         old.kill()
         assert kmod._WARM_KERNELS.get(kmod._warm_key('/ws', 'sess-3')) is new
         kmod._WARM_KERNELS.clear()
+
+
+class TestWarmKernelDeregistersItself:
+    pass

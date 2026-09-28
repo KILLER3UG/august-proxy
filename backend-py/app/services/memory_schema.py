@@ -456,7 +456,25 @@ _SCHEMA_USER_VERSION = 16
 
 
 def _ensure_messages_fts(conn: sqlite3.Connection) -> None:
-    """Idempotent messages FTS + triggers (schema v8 additive upgrade)."""
+    """Idempotent messages FTS + triggers (schema v8 additive upgrade).
+
+    Takes `_SCHEMA_LOCK` for the same reason the memory-store rebuild does.
+    Round-2 review found this was the THIRD `CREATE VIRTUAL TABLE ... USING
+    fts5` site against a brain file, and it was the one still outside the lock
+    — `ensure_schema` calls it one line from `repair_fts_sync`, which does
+    take it. Locking two of three writers leaves the class open, which is the
+    whole point of having a lock: it is not a list of sites someone has to
+    remember.
+
+    `_SCHEMA_LOCK` is re-entrant, so the calls that already hold it — the
+    schema path reaching here through `create_core_schema` — do not deadlock.
+    """
+    with _SCHEMA_LOCK:
+        _ensure_messages_fts_locked(conn)
+
+
+def _ensure_messages_fts_locked(conn: sqlite3.Connection) -> None:
+    """Body of `_ensure_messages_fts`; callers must already hold `_SCHEMA_LOCK`."""
     conn.execute(
         """
         CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
@@ -710,8 +728,99 @@ def _rebuild_fts_index_locked(
             conn.rollback()
         except Exception:
             pass
+        _describe_rebuild_failure(conn, fts, base, exc)
         logging.warning('FTS index rebuild failed for %s: %s', fts, exc)
         return False
+
+
+def _describe_rebuild_failure(
+    conn: sqlite3.Connection, fts: str, base: str, exc: BaseException
+) -> None:
+    """Record what the file looked like when the rebuild failed.
+
+    This exists because four separate fixes to this path were wrong, and the
+    fifth attempt should not be another guess. The failure only appears on the
+    CI runner, never across thousands of local tests, so the only place the
+    evidence exists is a failing CI log — and the previous logs said only
+    "vtable constructor failed", which does not distinguish "another
+    connection dropped the vtable mid-create" from "this connection is in a
+    bad transaction" from "the shadow tables are gone again".
+
+    So on failure, write down the state that separates those. Logged at ERROR
+    rather than embedded in the WARNING above so a grep for this module's
+    diagnostics finds it, and deliberately cheap: this is a path that only
+    runs when something has already gone wrong.
+
+    The single most useful field is ``schema`` — it separates "the vtable
+    entry survived with NO shadow tables" (the half-built state described
+    above) from "entry and shadows are all present and the constructor failed
+    for some other reason". Which is the question five CI failures have not
+    answered.
+
+    It is ALSO WRITTEN TO A FILE, because a log line is not enough. Round-2
+    review established that `logging.error` is swallowed in CI: there is no
+    `log_cli` in the pytest config, xdist gives each worker its own capture
+    buffer, a record from a worker whose test PASSED is dropped at teardown,
+    and `kv.py` re-raises the ORIGINAL error so the test's message is not even
+    the FTS one. The flake has failed five different tests; the evidence
+    exists only if the rebuild failure and the reported failure land in the
+    same test's call phase on the same worker, which is not something to bet
+    the diagnosis on. A file under the data dir survives worker teardown and
+    can be uploaded as a CI artifact.
+    """
+    import threading as _threading
+
+    detail: dict[str, object] = {'error': f'{type(exc).__name__}: {exc}'}
+    try:
+        # `sqlite3.Connection` has no `.database` attribute, so a previous
+        # version of this always logged '?'. `db_path()` is the actual answer
+        # to "is the interfering writer even on this database".
+        from app.services.memory_conn import db_path
+
+        detail['db'] = str(db_path())
+    except Exception as probe_exc:
+        detail['db'] = f'unavailable: {probe_exc}'
+    try:
+        rows = conn.execute(
+            "SELECT type, name FROM sqlite_master WHERE name LIKE ?",
+            (f'{fts}%',),
+        ).fetchall()
+        detail['schema'] = sorted(f'{r[0]}:{r[1]}' for r in rows)
+    except Exception as probe_exc:
+        detail['schema'] = f'unreadable: {probe_exc}'
+    try:
+        detail['base_table'] = bool(
+            conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (base,)).fetchone()
+        )
+    except Exception as probe_exc:
+        detail['base_table'] = f'unreadable: {probe_exc}'
+    try:
+        from app.services.memory_conn import connection_debug_snapshot
+
+        detail['threads'] = connection_debug_snapshot()
+    except Exception as probe_exc:
+        detail['threads'] = f'unavailable: {probe_exc}'
+    detail['current_thread'] = _threading.current_thread().name
+    logging.error('FTS rebuild diagnostics: %s', detail)
+    _write_fts_diagnostic(detail)
+
+
+def _write_fts_diagnostic(detail: dict[str, object]) -> None:
+    """Append the diagnostic to a file, so CI cannot swallow it.
+
+    Best-effort: a failure to write the diagnostic must never turn an FTS
+    error into a different one.
+    """
+    try:
+        import time as _time
+
+        from app.lib.paths import dataPath
+
+        path = dataPath('fts-diagnostics.log')
+        with path.open('a', encoding='utf-8') as fh:
+            fh.write(f'{_time.time():.3f} {detail!r}\n')
+    except Exception:
+        pass
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:

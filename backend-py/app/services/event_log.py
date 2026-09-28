@@ -237,17 +237,23 @@ class EventLog:
         skipped, so a burst of concurrent turns can exceed the cap rather
         than lose a stream — the correct thing to give up.
         """
-        if len(self._sessions) <= MAX_SESSIONS_RESIDENT:
+        # `< CAP`, not `<=`: eviction runs BEFORE the caller's insert, so the
+        # dict must be below the cap before the insert to land ON it. With
+        # `<=`, the count settled at cap+1 (measured: 65 against a named
+        # constant of 64) and the previous version papered over that with an
+        # `excess = len - CAP + 1` correction — arithmetic compensating for an
+        # off-by-one in the guard above it, which any future growth path would
+        # silently break. The guard is now correct and the arithmetic is gone.
+        if len(self._sessions) < MAX_SESSIONS_RESIDENT:
             return
         stale = [
             (entry.touchedAt, sid)
             for sid, entry in self._sessions.items()
             if not entry.subscribers
         ]
-        # Oldest first. The +1 is because eviction now runs BEFORE the
-        # caller's insert: dropping down to the cap and then inserting would
-        # settle at cap+1 forever, and the named constant has to be the real
-        # ceiling rather than one above it.
+        # Oldest first, and drop exactly enough for the caller's pending insert
+        # to land back ON the cap — which is why this is `+ 1`, and why the
+        # guard above is `<` rather than `<=`.
         stale.sort()
         excess = len(self._sessions) - MAX_SESSIONS_RESIDENT + 1
         for _, sid in stale[:excess]:

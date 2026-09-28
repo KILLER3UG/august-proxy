@@ -132,12 +132,17 @@ def undo_entry(entry_id: str) -> dict[str, object]:
                 raise ValueError('Missing sessionId/checkpointId on rollback entry')
             from app.services.workbench.checkpoint_service import restore_checkpoint
 
-            # Pass the authority explicitly. A rollback can target a session
-            # that is no longer live, and the live lookup would then refuse —
-            # correctly, since a checkpoint manifest is not an authority. The
-            # rollback log is the caller that actually knows where the session
-            # was rooted, so it supplies it.
-            result = restore_checkpoint(session_id, checkpoint_id, workspace=None)
+            # No workspace is passed, so this falls back to the live session
+            # and REFUSES when the session is not live — which is the correct
+            # direction (a checkpoint manifest is not an authority) but it does
+            # mean a rollback of a non-live session's checkpoint now fails
+            # with `Cannot verify checkpoint containment`. That is a real
+            # limitation, not an oversight: the rollback log does not record a
+            # workspace, so there is nothing honest to pass. Recorded here so
+            # the next reader does not go looking for a workspace field that
+            # was promised in an earlier version of this comment and never
+            # written.
+            result = restore_checkpoint(session_id, checkpoint_id)
             if not result.get('ok'):
                 raise ValueError(as_str(result.get('error')) or 'Checkpoint restore failed')
             message = as_str(result.get('message')) or 'Checkpoint restored'

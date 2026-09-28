@@ -132,6 +132,39 @@ def _warn_dual_data_roots(path: Path) -> None:
         pass
 
 
+# Every live thread-local connection, by thread. `threading.local()` makes a
+# connection invisible to every other thread BY DESIGN, which is right for
+# normal use and exactly wrong for diagnosing a cross-connection race: the
+# recurring `vtable constructor failed: memory_store_fts` CI failure is one
+# connection's DDL colliding with another's, and there was no way to see the
+# other one. This is the registry that makes it visible.
+#
+# Registration is on the create path and removal is on close, both under a
+# lock, and it stores a reference to the connection rather than a copy — a
+# census that reported a stale path would be worse than none.
+_LIVE: dict[int, dict[str, object]] = {}
+_LIVE_LOCK = threading.Lock()
+
+
+def connection_debug_snapshot() -> list[dict[str, object]]:
+    """Every thread currently holding a brain connection.
+
+    For diagnostics only. Cheap enough to call on an error path and never
+    called on the happy path, so it costs a normal request nothing.
+    """
+    with _LIVE_LOCK:
+        return [dict(v) for v in _LIVE.values()]
+
+
+def _register_live(c: sqlite3.Connection, path: Path) -> None:
+    with _LIVE_LOCK:
+        _LIVE[threading.get_ident()] = {
+            'thread': threading.current_thread().name,
+            'path': str(path),
+            'in_transaction': bool(getattr(c, 'in_transaction', False)),
+        }
+
+
 def conn() -> sqlite3.Connection:
     """Get a thread-local connection to the brain database."""
     if not hasattr(_local, 'conn') or _local.conn is None:
@@ -142,6 +175,7 @@ def conn() -> sqlite3.Connection:
         c.row_factory = sqlite3.Row
         apply_conn_pragmas(c)
         _local.conn = c
+        _register_live(c, path)
     return _local.conn
 
 
@@ -153,3 +187,5 @@ def close() -> None:
         except Exception:
             pass
         _local.conn = None
+    with _LIVE_LOCK:
+        _LIVE.pop(threading.get_ident(), None)

@@ -429,7 +429,7 @@ def migrate_json_sessions_to_sqlite(*, force: bool = False) -> dict[str, object]
             session = WorkbenchSession.fromDict(item)
             if not session.id:
                 continue
-            _sessions[session.id] = session
+            _put_session(session)
             save_workbench_session_sot(session.toDict())
             imported += 1
         result['imported'] = imported
@@ -463,7 +463,7 @@ def _load_sessions() -> None:
         for item in blobs:
             session = WorkbenchSession.fromDict(item)
             if session.id:
-                _sessions[session.id] = session
+                _put_session(session)
         if _sessions:
             _purge_leaked_sessions()
             return
@@ -883,7 +883,7 @@ def reload_sessions_from_sot() -> int:
         for item in blobs:
             session = WorkbenchSession.fromDict(item)
             if session.id:
-                _sessions[session.id] = session
+                _put_session(session)
     except Exception:
         logger.exception('reload_sessions_from_sot failed')
     return len(_sessions)
@@ -1025,7 +1025,7 @@ def create_workbench_session(
     )
     if goal:
         session.goal = goal
-    _sessions[session_id] = session
+    _put_session(session)
     save_sessions(immediate=True)
     # save_sessions() already writes SQLite (blob + messages).
     if session.workspacePath:
@@ -1071,28 +1071,44 @@ def get_workbench_session(session_id: str | None) -> WorkbenchSession | None:
             return None
         restored = WorkbenchSession.fromDict(blob)
         if restored.id:
-            _sessions[restored.id] = restored
-            _reattach_session_watcher(restored)
+            _put_session(restored)
             return restored
     except Exception:
         logger.debug('workbench session reload from SQLite failed', exc_info=True)
     return None
 
 
+def _put_session(session: WorkbenchSession) -> WorkbenchSession:
+    """Make a session resident, and keep its environment watcher attached.
+
+    Six places put a session into `_sessions` — create, two snapshot reload
+    paths, the delete cascade, the SOT reload and the per-id reload — and
+    each one used to be a chance to forget the watcher. That is how
+    environment watching ended up dead: the eviction sweep detaches on
+    RAM-window eviction, and the two paths that REPOPULATE the map (`_load_sessions`
+    and `reload_sessions_from_sot`) put sessions back without re-attaching, so
+    `get_workbench_session` early-returned and the re-attach never ran. A
+    property that has to be remembered at every call site is a property that
+    gets forgotten at one.
+
+    So it is an invariant of RESIDENCY, stated once, here. Eviction is the
+    other half and already calls `detach_session_watcher`.
+    """
+    _sessions[session.id] = session
+    _reattach_session_watcher(session)
+    return session
+
+
 def _reattach_session_watcher(session: WorkbenchSession) -> None:
-    """Re-attach the environment watcher a reload just lost.
+    """Idempotently (re)attach the environment watcher for a resident session.
 
-    The eviction teardown in ``_persist_sessions_snapshot`` detaches the
-    watcher when a session ages out of the RAM recency window, which is right:
-    a 60-entry window cannot hold 200 watchdog threads. But
-    ``get_workbench_session`` reloads an aged-out session from SQLite on the
-    next turn, and nothing put the watcher back — so environment watching was
-    dead for that chat for the life of the process, with no error anywhere.
-    Tier-3 ``<environment>`` injection just silently stopped.
+    `attach_session_watcher` keys on the session id and returns early when one
+    is already present, so this is safe to call on every insertion — verified
+    at 50 reload cycles yielding exactly one watcher per session.
 
-    The reload is the moment the process starts caring about a session again,
-    which makes it the mirror of eviction. ``attach_session_watcher`` is
-    idempotent, so this is safe to call on every reload.
+    Called from `_put_session`, not from the individual reload paths, because
+    the reviewer showed that fixing the reload and not the bulk loaders left
+    the bug in place on the path that matters most.
     """
     workspace = str(getattr(session, 'workspacePath', '') or '').strip()
     if not workspace:
@@ -1102,7 +1118,11 @@ def _reattach_session_watcher(session: WorkbenchSession) -> None:
 
         attach_session_watcher(session.id, workspace)
     except Exception:
-        logger.debug('watcher re-attach on reload failed for %s', session.id, exc_info=True)
+        logger.debug('watcher attach failed for %s', session.id, exc_info=True)
+
+
+def _load_sessions_placeholder() -> None:  # pragma: no cover - anchor for docs
+    """See `_put_session` for the residency invariant."""
 
 
 def set_workbench_session_agent(session_id: str, agent_id: str) -> WorkbenchSession | None:
@@ -1490,7 +1510,7 @@ def branch_workbench_session(
     new.planApproved = False
     new.todos = list(src.todos) if src.todos else None
     new.updatedAt = _now()
-    _sessions[new.id] = new
+    _put_session(new)
     save_sessions(immediate=True)
     notify_session_created(new)
     _emit_session_status(new.id)

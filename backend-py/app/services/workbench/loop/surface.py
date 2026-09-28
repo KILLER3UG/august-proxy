@@ -137,8 +137,9 @@ def _modelCapabilityProfile(session: WorkbenchSession) -> dict[str, object]:
     surface; the config UI reloads the page anyway. The memo is swept on
     write and capped at ``_CAPABILITY_PROFILE_CACHE_MAX`` (see
     ``_pruneCapabilityProfiles``) so it cannot outlive its usefulness or grow
-    with every model a session has ever named. The returned dict is the
-    cached object — callers must read it, not mutate it.
+    with every model a session has ever named. Both return paths hand back a
+    COPY, so a caller can mutate what it gets without re-poisoning the memo
+    for every other session using that (model, provider) pair.
     """
     import time as _time
 

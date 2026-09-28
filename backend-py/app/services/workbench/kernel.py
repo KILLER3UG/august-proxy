@@ -23,6 +23,8 @@ templates; this module owns everything the parent process can reason about
 """
 
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
