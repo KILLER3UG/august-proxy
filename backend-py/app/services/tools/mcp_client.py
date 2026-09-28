@@ -72,8 +72,56 @@ _CATASTROPHIC_ARG_RE = re.compile(
 )
 
 
+# Interpreters whose INLINE-code flags are exactly as much arbitrary
+# execution as a shell is. `python -c "<payload>"` was previously accepted
+# while `sh -c "<payload>"` was refused, which is the same capability under
+# a different name — the denylist was listing shells rather than the
+# property that makes them dangerous. None of these are how an MCP stdio
+# server is actually run (they take a script path, or a package name via
+# npx/uvx), so refusing the inline form costs nothing legitimate.
+_INLINE_CODE_INTERPRETERS = frozenset({
+    'python', 'python3', 'pythonw', 'py', 'node', 'nodejs', 'bun', 'deno',
+    'perl', 'ruby', 'php',
+})
+_INLINE_CODE_FLAGS = frozenset({'-c', '-e', '-E', '--eval', '-r', '--print'})
+# Interpreters that take inline code as a SUBCOMMAND rather than a flag
+# (`deno eval "code"`). Without this the first bare argument would end the
+# scan and the inline form would walk straight past.
+_INLINE_CODE_SUBCOMMANDS = frozenset({'eval'})
+
+
+def _inline_code_arg(args: list[str]) -> bool:
+    """True when an interpreter is being handed code INLINE on the argv.
+
+    Scans until the first non-flag token, because a script path is a legal
+    argument: `python server.py --eval` must not be mistaken for inline code,
+    and neither must `python -m somepkg`. The flag has to appear before the
+    thing it operates on.
+    """
+    for arg in args:
+        if not arg.startswith('-'):
+            # First bare token. A known inline subcommand is still inline;
+            # anything else is the script/module and ends the scan.
+            return arg.lower() in _INLINE_CODE_SUBCOMMANDS
+        if arg in _INLINE_CODE_FLAGS:
+            return True
+    return False
+
+
 def validateStdioLaunch(command: str, args: list[str]) -> str | None:
-    """Return a refusal reason for a stdio launch, or None when allowed."""
+    """Return a refusal reason for a stdio launch, or None when allowed.
+
+    WHAT THIS IS NOT: a sandbox. A stdio MCP server is, by design, a program
+    the user registered and August runs. Anyone who can edit the MCP server
+    list can already ask the user to run anything, so this check is a guard
+    against the ACCIDENTAL case — a shell or an inline-code interpreter
+    dressed up as an "integration" when the intent was a known server — not
+    against a hostile local actor. The comment in `routers/mcp.py` claiming
+    the validation is non-overridable overstated that; it is enforced at
+    registration and at spawn, which is what "not overridable by config"
+    means, and it is not a boundary against someone who already controls the
+    machine.
+    """
     from pathlib import PurePosixPath, PureWindowsPath
 
     cmd = (command or '').strip()
@@ -88,6 +136,18 @@ def validateStdioLaunch(command: str, args: list[str]) -> str | None:
         return (
             f'MCP stdio servers cannot run a shell ({cmd}) — that is arbitrary '
             'command execution. Register the real binary (npx/uvx/python/node) instead.'
+        )
+    # `.exe` is FOUR characters — an earlier `base[:-3]` turned `python.exe`
+    # into `python.` and silently stopped matching. The shell list never hit
+    # this because it spells out both `cmd` and `cmd.exe`; normalising here
+    # means one spelling of each interpreter instead of two.
+    stem = base[:-4] if base.endswith('.exe') else base
+    if stem in _INLINE_CODE_INTERPRETERS and _inline_code_arg(list(args)):
+        return (
+            f'MCP stdio servers cannot run {cmd} with inline code '
+            f'({', '.join(a for a in args if a.startswith('-')) or 'inline subcommand'}) — that is '
+            'arbitrary command execution, the same as a shell. Point it at a script '
+            'file instead.'
         )
     joined = ' '.join([cmd, *args])
     if _CATASTROPHIC_ARG_RE.search(joined):
@@ -738,8 +798,32 @@ async def _open_sse_stream(serverId: str, base_url: str) -> tuple[str, dict[str,
 
     Returns (messages_post_url, stream_state). The reader task keeps the
     stream open so JSON-RPC responses can be dispatched to pending requests.
+
+    The URL is SSRF-checked here, at connect, not only at registration. It
+    reused to have no private-address check at all, so a server row pointing
+    at `http://127.0.0.1:<port>/…` or `169.254.169.254` was fetched happily —
+    and it is August's own backend on the first of those. Reuses
+    `_vetted_public_ips`, the same guard `web_fetch` and the browser use,
+    rather than a second implementation of the same idea.
+
+    The guard resolves the host and checks every address; it does NOT pin the
+    connection the way `_fetchUrlContent` does, because this is a long-lived
+    streaming client and rewriting the connect target per request is not
+    available here. So a hostile DNS server could in principle answer public
+    at check time and private at connect time. That residual is real and is
+    why the check lives at BOTH registration and connect rather than only
+    one — but closing it fully would mean an MCP-specific pinned transport,
+    and a user registering an MCP server is already choosing to talk to that
+    host.
     """
     import httpx
+    from app.services.tool_registrations.web_tools import _vetted_public_ips
+
+    if _vetted_public_ips(base_url) is None:
+        raise ValueError(
+            'MCP server URL resolves to a private, loopback, link-local or '
+            f'metadata address and was refused: {base_url}'
+        )
 
     # Replace any stale stream for this server (dead readers must not linger).
     old = _sse_streams.get(serverId)
@@ -759,7 +843,12 @@ async def _open_sse_stream(serverId: str, base_url: str) -> tuple[str, dict[str,
             except Exception:
                 pass
 
-    client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
+    # Redirects are NOT followed. Every other hop would be a fresh URL that
+    # the private-address check above never saw, which is the same bug the
+    # browser had: a public host answering `302 → 127.0.0.1` walks straight
+    # past a check on the initial URL. An MCP SSE endpoint that redirects is
+    # unusual, and refusing to chase one is the right default.
+    client = httpx.AsyncClient(timeout=30.0, follow_redirects=False)
     st: dict[str, object] = {
         'client': client,
         'pending': {},
