@@ -5455,7 +5455,7 @@ export interface paths {
         };
         /**
          * Getsubagenttranscript
-         * @description Hermes-style live transcript (cache/delegation jsonl).
+         * @description Live transcript (cache/delegation jsonl).
          */
         get: operations["getSubagentTranscript_api_subagents__taskId__transcript_get"];
         put?: never;
