@@ -631,6 +631,16 @@ def rebuild_fts_index(
     reachable. A second attempt costs one statement and turns a permanent
     outage of the index into a delay.
 
+    THE RETRY IS NOW REMOVED, and keeping that decision on the record is the
+    point. It was added on the theory that the failure was transient. It was
+    not: adversarial review measured that the second attempt DOUBLES the
+    destructive window — ten `DROP TABLE` statements against one file instead
+    of five, and twice the log volume — and the flake then failed CI a fifth
+    time with the retry in place, which settles the question empirically. A
+    mitigation that doubles the blast radius and does not reduce the failure
+    rate is a liability, so it is out. The lock below is the part that is
+    actually justified; this is the part that was not.
+
     IT NOW ALSO TAKES ``_SCHEMA_LOCK``, and that is the part that matters.
 
     The lock was originally added around ``create_core_schema`` only — on the
@@ -648,11 +658,20 @@ def rebuild_fts_index(
     The two are the same resource (one vtable, one file) so they take the same
     lock. ``memory_conn`` hands each thread its own connection, so without a
     lock this is a genuine cross-connection race rather than a thread-safety
-    question. The lock is re-entrant, and the retry runs INSIDE it, which
-    also removes the reviewer's other point: the retry previously doubled the
-    DROP/CREATE window (10 drops instead of 5) and doubled the log volume
-    precisely because it could land inside another connection's rebuild. Held
-    across both attempts, that cannot happen.
+    question. The lock is re-entrant, and it is held for the whole drop/create
+    window so two rebuilds cannot interleave.
+
+    Honest status: this lock closes the interleaving the review reproduced,
+    but the CI flake is NOT fixed. It has now failed five times, including
+    once with this lock in place — so whatever else is reaching the brain file
+    is still reaching it. What is known: the symptom is a `CREATE VIRTUAL
+    TABLE` that raises `vtable constructor failed`, the writer is the memory
+    store, and it only appears on the 4-vCPU CI runner, never in ~5,900 local
+    test runs. What is not known: the other writer. The next useful step is
+    not another speculative change here — it is to capture the second
+    connection's identity and statement at the moment of the failure, which
+    needs a failing CI run with SQLite tracing enabled rather than another
+    guess.
     """
     with _SCHEMA_LOCK:
         return _rebuild_fts_index_locked(conn, fts, base)
@@ -662,42 +681,37 @@ def _rebuild_fts_index_locked(
     conn: sqlite3.Connection, fts: str = 'memory_store_fts', base: str = 'memory_store'
 ) -> bool:
     """Body of `rebuild_fts_index`; callers must already hold `_SCHEMA_LOCK`."""
-    for attempt in range(2):
+    try:
+        for shadow in (f'{fts}_content', f'{fts}_idx', f'{fts}_docsize', f'{fts}_config'):
+            conn.execute(f'DROP TABLE IF EXISTS {shadow}')
+        conn.execute(f'DROP TABLE IF EXISTS {fts}')
+        conn.execute(
+            f'CREATE VIRTUAL TABLE {fts} USING fts5('
+            f'key, value, content=\'{base}\', content_rowid=\'rowid\')'
+        )
+        # Repopulate from the base table: the index is derived, so the rows
+        # already stored are the source of truth and must come back.
+        conn.execute(
+            f'INSERT INTO {fts}(rowid, key, value) SELECT rowid, key, value FROM {base}'
+        )
+        conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_ai AFTER INSERT ON {base} BEGIN '
+                     f'INSERT INTO {fts}(rowid, key, value) VALUES (new.rowid, new.key, new.value); END')
+        conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_ad AFTER DELETE ON {base} BEGIN '
+                     f'INSERT INTO {fts}({fts}, rowid, key, value) '
+                     f"VALUES('delete', old.rowid, old.key, old.value); END")
+        conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_au AFTER UPDATE ON {base} BEGIN '
+                     f'INSERT INTO {fts}({fts}, rowid, key, value) '
+                     f"VALUES('delete', old.rowid, old.key, old.value); "
+                     f'INSERT INTO {fts}(rowid, key, value) VALUES (new.rowid, new.key, new.value); END')
+        conn.commit()
+        return True
+    except Exception as exc:
         try:
-            for shadow in (f'{fts}_content', f'{fts}_idx', f'{fts}_docsize', f'{fts}_config'):
-                conn.execute(f'DROP TABLE IF EXISTS {shadow}')
-            conn.execute(f'DROP TABLE IF EXISTS {fts}')
-            conn.execute(
-                f'CREATE VIRTUAL TABLE {fts} USING fts5('
-                f'key, value, content=\'{base}\', content_rowid=\'rowid\')'
-            )
-            # Repopulate from the base table: the index is derived, so the rows
-            # already stored are the source of truth and must come back.
-            conn.execute(
-                f'INSERT INTO {fts}(rowid, key, value) SELECT rowid, key, value FROM {base}'
-            )
-            conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_ai AFTER INSERT ON {base} BEGIN '
-                         f'INSERT INTO {fts}(rowid, key, value) VALUES (new.rowid, new.key, new.value); END')
-            conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_ad AFTER DELETE ON {base} BEGIN '
-                         f'INSERT INTO {fts}({fts}, rowid, key, value) '
-                         f"VALUES('delete', old.rowid, old.key, old.value); END")
-            conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_au AFTER UPDATE ON {base} BEGIN '
-                         f'INSERT INTO {fts}({fts}, rowid, key, value) '
-                         f"VALUES('delete', old.rowid, old.key, old.value); "
-                         f'INSERT INTO {fts}(rowid, key, value) VALUES (new.rowid, new.key, new.value); END')
-            conn.commit()
-            return True
-        except Exception as exc:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            if attempt == 0:
-                logging.warning('FTS index rebuild for %s failed, retrying once: %s', fts, exc)
-                continue
-            logging.warning('FTS index rebuild failed for %s: %s', fts, exc)
-            return False
-    return False
+            conn.rollback()
+        except Exception:
+            pass
+        logging.warning('FTS index rebuild failed for %s: %s', fts, exc)
+        return False
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
