@@ -603,38 +603,58 @@ def rebuild_fts_index(
     Trigger names are recreated too: they are what keeps the index in step
     going forward, and a fresh vtable without them would drift on the very
     next write. The ``IF NOT EXISTS`` form keeps this safe to call twice.
+
+    The drop and the create are not split apart. Build-then-swap was tried —
+    build under a temporary name, then `ALTER TABLE ... RENAME` — and it does
+    not work for an external-content FTS5 table: renaming the vtable leaves
+    its shadow tables (``_content``, ``_idx``, ``_docsize``, ``_config``)
+    under the OLD name prefix, and FTS5 resolves them by the vtable's own
+    name at open time. The result is an index that exists and is malformed.
+    So this stays drop-then-create, which is the only shape SQLite supports
+    for a vtable here.
+
+    What this version does add is a bounded retry, because the failure being
+    defended against is transient: on CI the ``CREATE`` itself has failed
+    with ``vtable constructor failed`` while a healthy database was otherwise
+    reachable. A second attempt costs one statement and turns a permanent
+    outage of the index into a delay.
     """
-    try:
-        for shadow in (f'{fts}_content', f'{fts}_idx', f'{fts}_docsize', f'{fts}_config'):
-            conn.execute(f'DROP TABLE IF EXISTS {shadow}')
-        conn.execute(f'DROP TABLE IF EXISTS {fts}')
-        conn.execute(
-            f'CREATE VIRTUAL TABLE {fts} USING fts5('
-            f'key, value, content=\'{base}\', content_rowid=\'rowid\')'
-        )
-        conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_ai AFTER INSERT ON {base} BEGIN '
-                     f'INSERT INTO {fts}(rowid, key, value) VALUES (new.rowid, new.key, new.value); END')
-        conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_ad AFTER DELETE ON {base} BEGIN '
-                     f'INSERT INTO {fts}({fts}, rowid, key, value) '
-                     f"VALUES('delete', old.rowid, old.key, old.value); END")
-        conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_au AFTER UPDATE ON {base} BEGIN '
-                     f'INSERT INTO {fts}({fts}, rowid, key, value) '
-                     f"VALUES('delete', old.rowid, old.key, old.value); "
-                     f'INSERT INTO {fts}(rowid, key, value) VALUES (new.rowid, new.key, new.value); END')
-        # Repopulate from the base table: the index is derived, so the rows
-        # already stored are the source of truth and must come back.
-        conn.execute(
-            f'INSERT INTO {fts}(rowid, key, value) SELECT rowid, key, value FROM {base}'
-        )
-        conn.commit()
-        return True
-    except Exception as exc:
-        logging.warning('FTS index rebuild failed for %s: %s', fts, exc)
+    for attempt in range(2):
         try:
-            conn.rollback()
-        except Exception:
-            pass
-        return False
+            for shadow in (f'{fts}_content', f'{fts}_idx', f'{fts}_docsize', f'{fts}_config'):
+                conn.execute(f'DROP TABLE IF EXISTS {shadow}')
+            conn.execute(f'DROP TABLE IF EXISTS {fts}')
+            conn.execute(
+                f'CREATE VIRTUAL TABLE {fts} USING fts5('
+                f'key, value, content=\'{base}\', content_rowid=\'rowid\')'
+            )
+            # Repopulate from the base table: the index is derived, so the rows
+            # already stored are the source of truth and must come back.
+            conn.execute(
+                f'INSERT INTO {fts}(rowid, key, value) SELECT rowid, key, value FROM {base}'
+            )
+            conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_ai AFTER INSERT ON {base} BEGIN '
+                         f'INSERT INTO {fts}(rowid, key, value) VALUES (new.rowid, new.key, new.value); END')
+            conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_ad AFTER DELETE ON {base} BEGIN '
+                         f'INSERT INTO {fts}({fts}, rowid, key, value) '
+                         f"VALUES('delete', old.rowid, old.key, old.value); END")
+            conn.execute(f'CREATE TRIGGER IF NOT EXISTS {fts}_au AFTER UPDATE ON {base} BEGIN '
+                         f'INSERT INTO {fts}({fts}, rowid, key, value) '
+                         f"VALUES('delete', old.rowid, old.key, old.value); "
+                         f'INSERT INTO {fts}(rowid, key, value) VALUES (new.rowid, new.key, new.value); END')
+            conn.commit()
+            return True
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            if attempt == 0:
+                logging.warning('FTS index rebuild for %s failed, retrying once: %s', fts, exc)
+                continue
+            logging.warning('FTS index rebuild failed for %s: %s', fts, exc)
+            return False
+    return False
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
