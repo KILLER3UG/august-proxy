@@ -564,10 +564,13 @@ async def git_restore(body: RestoreBody):
 
     The single real caller wanted ``git restore -- .`` — "discard my changes"
     — and that is what this endpoint does. Its argv is fixed here, in the
-    backend, and the workspace comes from the session, so a caller cannot
-    choose a directory. Anything else git can do has a typed route next to
-    this one; if a new one is needed, it gets its own endpoint and its own
-    fixed argv rather than reopening this.
+    backend. The workspace normally comes from the session, so a caller cannot
+    choose a directory; when ``repo_path`` is supplied it is honoured as a
+    fallback, which is a weaker property than this paragraph used to claim.
+    The web drive-by vector is closed upstream by TrustedOriginGuard, not here.
+    Anything else git can do has a typed route next to this one; if a new one is
+    needed, it gets its own endpoint and its own fixed argv rather than
+    reopening this.
     """
     path, err = _resolve_workspace(body.session_id, body.repo_path)
     if err or not path:

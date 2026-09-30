@@ -79,7 +79,12 @@ function normalizeVersion(value) {
 
 function bumpVersion(current, bump) {
     const normalized = normalizeVersion(current);
-    const parts = normalized.split('.').slice(0, 3).map(Number);
+    // Split the CORE off before parsing. A prerelease like `0.18.16-rc.1`
+    // splits on '.' into ['0','18','16-rc','1'], so slice(0,3).map(Number)
+    // produced [0, 18, NaN] and a patch release from a prerelease checkout
+    // emitted the string "0.18.NaN" — hard-blocking the next desktop build.
+    const [core] = normalized.split('-');
+    const parts = core.split('.').map(Number);
     if (bump === 'major') return [parts[0] + 1, 0, 0].join('.');
     if (bump === 'minor') return [parts[0], parts[1] + 1, 0].join('.');
     return [parts[0], parts[1], parts[2] + 1].join('.');

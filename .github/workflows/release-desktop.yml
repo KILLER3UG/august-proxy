@@ -114,10 +114,17 @@ jobs:
 
       - name: Backend lockfile, lint and typecheck
         working-directory: backend-py
+        shell: pwsh
+        # Check EVERY command's exit code, not just the last one. A multi-line
+        # `run:` under pwsh reports only the final command's status, so
+        # `uv lock --check` could fail here and the step still went green —
+        # and this is the one gate that runs late, AFTER the payload and
+        # backend-runtime.stamp were already staged from the same lockfile.
+        # Mirrors the per-command style used above in this file.
         run: |
-          uv lock --check --python 3.12
-          uv run ruff check .
-          uv run mypy app/
+          uv lock --check --python 3.12; if ($LASTEXITCODE -ne 0) { throw 'uv lock --check failed' }
+          uv run ruff check .; if ($LASTEXITCODE -ne 0) { throw 'ruff check failed' }
+          uv run mypy app/; if ($LASTEXITCODE -ne 0) { throw 'mypy failed' }
 
       # No test suite here on purpose. This job's only work is producing a
       # signed installer users can download; the 3,540-test suite runs in
