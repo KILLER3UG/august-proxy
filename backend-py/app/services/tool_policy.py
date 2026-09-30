@@ -188,6 +188,16 @@ _PLAN_BLOCKED_EXACT = frozenset({
     'run_command', 'bash', 'bashtool', 'shell', 'exec', 'execute', 'terminal',
     'install', 'uninstall', 'pip_install', 'npm_install', 'pnpm_add',
     'browser_click', 'browser_type', 'browser_select', 'browser_evaluate',
+    # Real-desktop input tools. These drive the user's ACTUAL screen, so the
+    # modes a user picks precisely to keep the agent off the machine (ask,
+    # plan, read-only) must see them as mutations. They were already in
+    # _PROMPT_WRITE (so they earned a confirmation) but were missing here, so
+    # is_mutating() said False and every one of those modes waved them
+    # through. Mirrors the browser_* precedent above: enumerated, not a blanket
+    # `desktop_` prefix — desktop_screenshot / desktop_list_windows are reads
+    # and must stay readable.
+    'desktop_click', 'desktop_type', 'desktop_press_key', 'desktop_ui_act',
+    'desktop_open_url',
     'create_agent', 'update_agent', 'delete_agent', 'create_alias',
     'update_alias', 'delete_alias', 'configure_fallback',
     # Bot Mode routines — create/delete persists a scheduled job that fires

@@ -945,7 +945,15 @@ async def manage_tools(body: ActionBody):
 
     action = (body.action or '').lower()
     if action == 'list':
-        return {'ok': True, 'tools': mcp_client.listRegisteredServers()}
+        # Redact, exactly as routers/mcp.py does. This management route used
+        # to return raw registry rows, so a plain 'list' exposed every server's
+        # env and headers — a GitHub token included — where the dedicated MCP
+        # route returned 'ghp_••••'. One API, two policies, and the weaker one
+        # was reachable.
+        return {
+            'ok': True,
+            'tools': [mcp_client.redactedServerRow(s) for s in mcp_client.listRegisteredServers()],
+        }
     if action == 'upsert' and body.name:
         cfg = body.config or {}
         source = str(cfg.get('source') or '')

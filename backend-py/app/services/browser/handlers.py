@@ -11,8 +11,10 @@ Result shape: ``{ "status": "success" | "error", ... }``.
 from __future__ import annotations
 
 import json
+import logging
 import time
-from typing import TYPE_CHECKING, Literal
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal, cast
 from urllib.parse import urlparse
 
 from app.config import settings
@@ -30,6 +32,8 @@ from app.services.workbench.context import currentSessionId
 
 if TYPE_CHECKING:
     from playwright.async_api import Page
+
+logger = logging.getLogger('browser')
 _NAVTimeoutMs = 30000
 _MAXContentChars = 50000
 _WAIT_STATES: dict[str, Literal['load', 'domcontentloaded', 'networkidle', 'commit']] = {
@@ -49,6 +53,33 @@ def _err(message: str, **fields: object) -> str:
     return json.dumps({'status': 'error', 'error': message, **fields}, default=str)
 
 
+_MAX_SCREENSHOTS_KEPT = 50
+
+
+def _pruneScreenshots(folder: Path, keep: int = _MAX_SCREENSHOTS_KEPT) -> int:
+    """Keep only the newest ``keep`` files in a screenshot folder.
+
+    browser_screenshots/ and desktop_screenshots/ grew strictly with use: every
+    capture wrote a millisecond-stamped PNG and nothing ever removed one, and
+    privacy.clearLogs only clears data/observations/*.png. A long session could
+    leave an unbounded pile of rendered pages on disk. The filename is a
+    zero-padded millisecond stamp, so lexical order is chronological.
+    """
+    try:
+        files = [f for f in folder.iterdir() if f.is_file()]
+        excess = len(files) - keep
+        if excess <= 0:
+            return 0
+        for f in sorted(files, key=lambda p: p.name)[:excess]:
+            try:
+                f.unlink()
+            except OSError:
+                pass
+        return excess
+    except OSError:
+        return 0
+
+
 async def _captureScreenshot(page: Page) -> dict[str, object] | None:
     """Save a screenshot to disk and return metadata for the frontend drawer.
 
@@ -63,6 +94,7 @@ async def _captureScreenshot(page: Page) -> dict[str, object] | None:
         path = folder / filename
         await page.screenshot(path=str(path), full_page=False)
         viewport = as_dict(page.viewport_size)
+        _pruneScreenshots(folder)
         return {'path': str(path), 'width': viewport.get('width'), 'height': viewport.get('height')}
     except Exception:
         return None
@@ -159,6 +191,21 @@ async def _detectLoginWall(page: Page) -> str | None:
         return None
 
 
+async def _parkPage(page: object) -> None:
+    """Blank the page after a refusal, so a refused address cannot be read back.
+
+    A refusal used to return an error and leave the page PARKED ON the blocked
+    target. The next browser_get_content / browser_screenshot / browser_evaluate
+    call reuses the same live page and happily returned the blocked internal
+    target (cloud metadata, LAN hosts, unauthenticated local ports) through a
+    different door than the one the guard closed.
+    """
+    try:
+        await page.goto('about:blank', timeout=_NAVTimeoutMs)  # type: ignore[attr-defined]
+    except Exception:
+        logger.debug('could not park the browser page after a refusal', exc_info=True)
+
+
 async def browserOpen(url: str, waitUntil: str = 'load') -> str:
     """Open a URL and return the page title + interactive-element snapshot."""
     if not url:
@@ -181,6 +228,7 @@ async def browserOpen(url: str, waitUntil: str = 'load') -> str:
         await page.goto(url, wait_until=waitState, timeout=_NAVTimeoutMs)
         # A routed block aborts the navigation and `goto` raises; report why.
         if session is not None and session.navBlockReason:
+            await _parkPage(page)
             return _err(f'Navigation blocked: {session.navBlockReason}', url=url)
         # The load-bearing check. A 3xx redirect to a private address is NOT
         # handed to the route handler by Playwright, so the guard above never
@@ -191,6 +239,7 @@ async def browserOpen(url: str, waitUntil: str = 'load') -> str:
         # the same bytes through a different door.
         finalReason = assertFinalUrlAllowed(page, session) if session is not None else None
         if finalReason:
+            await _parkPage(page)
             return _err(
                 f'Navigation blocked: landed on a refused address ({finalReason})',
                 url=url,
@@ -207,15 +256,40 @@ async def browserOpen(url: str, waitUntil: str = 'load') -> str:
         return _err(f'Navigation failed: {exc}', url=url)
 
 
-async def browserClick(ref: str | None = None, selector: str | None = None, text: str | None = None) -> str:
-    """Click an element by ref, CSS/XPath selector, or visible text."""
+async def browserClick(
+    ref: str | None = None,
+    selector: str | None = None,
+    text: str | None = None,
+    button: str = 'left',
+    clickCount: int = 1,
+) -> str:
+    """Click an element by ref, CSS/XPath selector, or visible text.
+
+    ``button`` and ``clickCount`` were in the tool schema but not in this
+    signature, so the error receipt re-advertised the exact argument that
+    caused the TypeError. Implemented rather than removed: Playwright supports
+    both and a right-click is a real need.
+    """
     page, err = await _page()
     if err or page is None:
         return err or _err('Browser session not ready')
     try:
         locator = await resolveLocator(page, ref=ref, selector=selector, text=text)
         target = await _locatorBbox(page, ref=ref, selector=selector, text=text)
-        await locator.click(timeout=_NAVTimeoutMs)
+        btn = (button or 'left').lower()
+        if btn not in ('left', 'right', 'middle'):
+            return _err(f"Unknown button '{button}'. Use left|right|middle.")
+        count = max(1, int(clickCount or 1))
+        if count == 1 and btn == 'left':
+            await locator.click(timeout=_NAVTimeoutMs)
+        else:
+            # Narrowed to the Literal Playwright's stub declares; the
+            # membership test above is what makes it safe.
+            await locator.click(
+                button=cast("Literal['left', 'right', 'middle']", btn),
+                click_count=count,
+                timeout=_NAVTimeoutMs,
+            )
         elements = await _elementsSnapshot(page)
         screenshot = await _captureScreenshot(page)
         loginWall = await _detectLoginWall(page)
@@ -227,15 +301,30 @@ async def browserClick(ref: str | None = None, selector: str | None = None, text
         return _err(f'Click failed: {exc}')
 
 
-async def browserType(text: str = '', ref: str | None = None, selector: str | None = None, submit: bool = False) -> str:
-    """Type ``text`` into a field (located by ref/selector) and optionally submit."""
+async def browserType(
+    text: str = '',
+    ref: str | None = None,
+    selector: str | None = None,
+    submit: bool = False,
+    clear: bool = True,
+) -> str:
+    """Type ``text`` into a field (located by ref/selector) and optionally submit.
+
+    ``clear`` was in the tool schema but not this signature. Now honoured:
+    ``fill()`` replaces the value (clear-then-type) and ``type()`` appends to
+    whatever is already there, so a model asking to append to a field was
+    silently getting it replaced instead.
+    """
     page, err = await _page()
     if err or page is None:
         return err or _err('Browser session not ready')
     try:
         locator = await resolveLocator(page, ref=ref, selector=selector)
         target = await _locatorBbox(page, ref=ref, selector=selector, text=None)
-        await locator.fill(text, timeout=_NAVTimeoutMs)
+        if clear:
+            await locator.fill(text, timeout=_NAVTimeoutMs)
+        else:
+            await locator.type(text, timeout=_NAVTimeoutMs)
         if submit:
             await locator.press('Enter')
         elements = await _elementsSnapshot(page)
@@ -265,8 +354,18 @@ async def browserSelect(value: str, ref: str | None = None, selector: str | None
         return _err(f'Select failed: {exc}')
 
 
-async def browserScroll(direction: str = 'down', amount: int = 400, selector: str | None = None) -> str:
-    """Scroll the page (or an element) by ``amount`` px in ``direction``."""
+async def browserScroll(
+    direction: str = 'down',
+    amount: int = 400,
+    selector: str | None = None,
+    ref: str | None = None,
+) -> str:
+    """Scroll the page, or an element, by ``amount`` px in ``direction``.
+
+    ``ref`` was advertised in the tool schema but not accepted here, so the one
+    addressing mode the compact element snapshot actually provides could not
+    scroll anything — the model got a TypeError and burned a round.
+    """
     page, err = await _page()
     if err or page is None:
         return err or _err('Browser session not ready')
@@ -275,9 +374,9 @@ async def browserScroll(direction: str = 'down', amount: int = 400, selector: st
         direction = 'down'
     dy = int(amount) if direction == 'down' else -int(amount)
     try:
-        if selector:
-            el = await resolveLocator(page, selector=selector)
-            await el.scroll_into_view_if_needed(timeout=_NAVTimeoutMs)
+        if ref or selector:
+            locator = await resolveLocator(page, ref=ref, selector=selector)
+            await locator.scroll_into_view_if_needed(timeout=_NAVTimeoutMs)
         else:
             await page.mouse.wheel(0, dy)
         await page.wait_for_timeout(300)
@@ -361,7 +460,13 @@ async def browserGetContent(format: str = 'text') -> str:
         elif fmt == 'text':
             content = await page.inner_text('body')
         elif fmt == 'markdown':
-            content = await page.inner_text('body')
+            # Really markdown. This was a second 'text' branch, so a model that
+            # asked for a structured extract got flat body text while the
+            # result was stamped "format": "markdown" — it silently lost link
+            # targets, heading levels and table structure.
+            from app.services.tool_html import html_to_markdown
+
+            content = html_to_markdown(await page.content())
         elif fmt == 'elements':
             content = await _elementsSnapshot(page)
         else:

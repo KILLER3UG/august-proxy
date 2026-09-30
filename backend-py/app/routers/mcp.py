@@ -132,6 +132,11 @@ class MCPServerUpdate(CamelModel):
     url: str = ''
     transport: str = ''
     enabled: bool | None = None
+    # Added so a client can SET these; when omitted they are carried forward
+    # from the current row, which is what stopped an edit of the detail pane
+    # from silently dropping a remote server's Authorization header.
+    headers: dict[str, str] | None = None
+    catalog_id: str = ''
 
 
 @router.patch('/servers/{serverId}')
@@ -154,6 +159,12 @@ async def updateServer(serverId: str, body: MCPServerUpdate):
         pass
     current_args = [str(a) for a in as_list(current.get('args'), [])]
     current_env = {str(k): str(v) for k, v in as_dict(current.get('env'), {}).items()}
+    # Carry the fields this route does not model. registerServer rebuilds the
+    # row from its own parameter list, so anything not passed here is DROPPED:
+    # a remote server lost its Authorization header on every save of its detail
+    # pane, and an installed server lost its catalog mapping.
+    current_headers = {str(k): str(v) for k, v in as_dict(current.get('headers'), {}).items()}
+    current_catalog = str(current.get('catalogId') or '')
     try:
         updated = mcp_client.registerServer(
             body.name or str(current.get('name') or ''),
@@ -165,7 +176,11 @@ async def updateServer(serverId: str, body: MCPServerUpdate):
             url=url,
             server_id=str(current.get('id')),
             persist=True,
+            headers=body.headers if body.headers is not None else (current_headers or None),
         )
+        catalog_id = str(body.catalog_id or '') or current_catalog
+        if catalog_id:
+            updated = mcp_client.set_server_meta(str(current.get('id')), catalogId=catalog_id) or updated
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return mcp_client.redactedServerRow(updated)

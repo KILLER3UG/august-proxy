@@ -202,7 +202,13 @@ async def firmware_compile(
     when the toolchain reports it.
     """
     ws = workspace or _workspace(session)
-    base = str(name or 'firmware').strip() or 'firmware'
+    # `base` becomes a PATH COMPONENT (sketch_root / f'{base}.ino' below), so it
+    # must not be able to carry a separator or drive letter: an absolute name
+    # wins outright in `Path(tmpdir) / base`, and `..\` escapes the temp tree —
+    # planting model-controlled C at a path that write_file and run_command
+    # would both refuse. Same sanitiser the sibling HDL tools use
+    # (fpga_tools.py, hdl_tools.py, kicad_tools.py).
+    base = re.sub(r'[^A-Za-z0-9_\-]', '_', str(name or '').strip()) or 'firmware'
 
     # Resolve the source: inline text vs workspace path.
     src_text = ''
@@ -298,11 +304,23 @@ async def firmware_compile(
                     'exitCode': rc,
                     'logTail': '\n'.join(log.splitlines()[-40:]),
                 }
+            if not shutil.which('avr-objcopy'):
+                # A missing tool is NOT a successful no-op. Returning (0, '')
+                # here claimed objcopy had run, so the code fell through to
+                # copyfile() on a .hex that was never produced and the user got
+                # an opaque errno instead of the _AVR_GCC_HINT the module
+                # docstring promises for a partial MSYS2 toolchain.
+                return {
+                    'installed': True,
+                    'ok': False,
+                    'error': 'avr-objcopy not found on PATH',
+                    'hint': _AVR_GCC_HINT,
+                }
             rc2, log2 = await _spawn(
                 'avr-objcopy', '-O', 'ihex', '-R', '.eeprom',
                 str(hex_tmp.with_suffix('.elf')), str(hex_tmp),
                 timeout=30.0,
-            ) if shutil.which('avr-objcopy') else (0, '')
+            )
             if rc2 not in (0, None):
                 return {
                     'installed': True, 'ok': False, 'error': 'objcopy failed',
@@ -314,6 +332,13 @@ async def firmware_compile(
         hex_name = f'{base}.hex'
         out = _bind(hex_name, ws, for_write=True) if ws else Path(tempfile.gettempdir()) / hex_name
         out.parent.mkdir(parents=True, exist_ok=True)
+        if not hex_tmp.exists():
+            return {
+                'installed': True,
+                'ok': False,
+                'error': f'no .hex artifact was produced at {hex_tmp.name}',
+                'hint': _AVR_GCC_HINT,
+            }
         shutil.copyfile(hex_tmp, out)
 
         # Flash size from the log ("Sketch uses 1960 bytes (6%) ...").

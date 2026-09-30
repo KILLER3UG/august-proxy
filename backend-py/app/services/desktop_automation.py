@@ -43,6 +43,11 @@ async def takeScreenshot() -> dict[str, object]:
         path = folder / filename
         screenshot.save(str(path), format='PNG')
         w, h = screenshot.size
+        # Same unbounded-growth problem as browser_screenshots/: nothing ever
+        # removed a capture and privacy.clearLogs does not cover this folder.
+        from app.services.browser.handlers import _pruneScreenshots
+
+        _pruneScreenshots(folder)
         return {'path': str(path), 'width': w, 'height': h, 'format': 'png'}
     except ImportError:
         return {'error': 'pyautogui not installed. Run `uv sync --extra desktop`.'}
@@ -121,11 +126,29 @@ async def openUrl(url: str) -> dict[str, object]:
 
     This launches the OS default browser window — use the headless
     ``browser_open`` tool instead for background page inspection.
+
+    The same URL policy the headless browser applies is enforced here: it
+    opens a window on the user's real desktop, so without this a model could
+    open ``file://`` paths and intranet hosts with no allowlist check at all —
+    in every guard mode. Reuses the browser guard so there is one policy, not
+    two that drift.
     """
     import webbrowser
 
-    webbrowser.open(url)
-    return {'url': url, 'status': 'opened'}
+    from app.services.browser.handlers import _checkUrlAllowlist
+
+    target = str(url or '').strip()
+    if not target:
+        raise ValueError('url is empty')
+    if not target.lower().startswith(('http://', 'https://')):
+        # The browser guard treats some schemes as pass-through, and this one
+        # hands the string straight to the OS. Refuse everything but http(s).
+        return {'url': target, 'status': 'refused', 'reason': 'only http:// and https:// URLs can be opened'}
+    reason = _checkUrlAllowlist(target)
+    if reason:
+        return {'url': target, 'status': 'refused', 'reason': reason}
+    webbrowser.open(target)
+    return {'url': target, 'status': 'opened'}
 
 
 # ── Camera (transient webcam capture) ─────────────────────────────────────

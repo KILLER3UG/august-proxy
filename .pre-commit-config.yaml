@@ -16,19 +16,26 @@
 
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.10
+    # Keep this in step with the ruff every CI and release gate actually runs
+    # (backend-py/uv.lock). It sat at v0.9.10 while CI ran 0.15.21, so every
+    # rule added in between blocked releases while being invisible to the
+    # developer running the documented commit gate.
+    rev: v0.15.21
     hooks:
       # Lint critical rules only (see [tool.ruff] in backend-py/pyproject.toml).
       - id: ruff
         name: ruff (backend-py)
         args: [--fix]
         files: ^backend-py/
+        # backend-py/scripts/ is deliberately NOT excluded: CI and the release
+        # job both lint it, and the per-file-ignores in pyproject.toml already
+        # quiet the rules those maintenance scripts trip. Excluding them here
+        # meant a green local hook while ~30 scripts had no lint check at all.
         exclude: |
           (?x)(
             \.bak$
             | __pycache__
             | august_proxy\.egg-info
-            | scripts/
           )
 
       # Formatter intentionally not forced yet — avoids a repo-wide reformat
