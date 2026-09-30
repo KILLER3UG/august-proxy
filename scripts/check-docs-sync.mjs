@@ -70,6 +70,26 @@ const assertions = [
       re: /max_age_hours: float = (\d+)(?:\.0+)?/,
     },
   },
+  // The two file-read ceilings are the numbers an agent plans against when it
+  // decides whether a large log is readable at all, and the paged ceiling
+  // exists because the normal one is deliberately skipped for paged reads
+  // (audit 2026-09-27 #12). Both are stated in MB; both are `N * 1024 * 1024`.
+  {
+    label: 'read_file size ceiling',
+    doc: { file: DOC, re: /`_MAXFileSize`\s+\(\*\*(\d+) MB\*\*\)/ },
+    code: {
+      file: 'backend-py/app/services/tool_registrations/file_tools.py',
+      re: /^_MAXFileSize = (\d+) \* 1024 \* 1024$/m,
+    },
+  },
+  {
+    label: 'read_file paged size ceiling',
+    doc: { file: DOC, re: /`_MAXPageFileSize`\s+\(\*\*(\d+) MB\*\*\)/ },
+    code: {
+      file: 'backend-py/app/services/tool_registrations/file_tools.py',
+      re: /^_MAXPageFileSize = (\d+) \* 1024 \* 1024$/m,
+    },
+  },
 ];
 
 let failed = 0;

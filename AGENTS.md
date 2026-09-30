@@ -197,6 +197,19 @@ exist — corrected Part 25 Phase 7.1.)
 
 - Version files (see below) — must stay in sync across all 8 checked desktop sources.
 - `dump_openai_upstream_body` / `dump_anthropic_upstream_body` — upstream serialization; a wrong key breaks all chat.
+- **File-read ceilings** — `read_file` refuses a file over `_MAXFileSize` (**20 MB**)
+  and tells you to page it. Paging is the documented escape hatch and works up
+  to `_MAXPageFileSize` (**200 MB**), which is higher *on purpose* so a large log
+  is still readable — but it is finite, because the paged branch reads the file
+  twice (text, then raw bytes for the `fileHash` the edit gate needs). Both
+  numbers are guarded by `npm run check:docs`.
+- **Gate participation** — every sandbox / permission / URL guard is an inline
+  `if toolName in (...)` prologue at one call site, so an **alias or aggregate
+  entry point is unguarded by default**. `bulk` routes `operation=<x>` to the
+  same handler as `x`. When you add a tool, a bulk operation, or a new router,
+  assert it is claimed by a gate: `tests/test_gate_participation.py` fails with a
+  table of unclaimed entry points. Five real guards were missing this way
+  (audit 2026-09-27 #2, #6, #8, #22, #30).
 - `backend-py/app/services/sandbox/` — permission policy; changes affect tool execution safety.
 - `_executeTool` hash-anchored edits + `toolDefinitions`/`openaiToolDefinitions`
   capability filtering — both wire formats must stay in sync.

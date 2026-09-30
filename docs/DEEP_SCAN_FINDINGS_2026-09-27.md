@@ -108,6 +108,54 @@ Resource ceilings needed a value, so the reasoning is stated rather than implied
 
 **All 52 findings are now closed.** 32 files changed, +788 / −111.
 
+## Finding #53 — found by the conformance test written afterwards
+
+`tests/test_gate_participation.py` (roadmap item #4) failed immediately on
+something the 52-item sweep did not report:
+
+> `_SHELL_BULK_OPS` held only the **singular** names (`run_command`), but the
+> operation literal `bulk` actually accepts is the **plural** `run_commands`.
+> `is_mutating` did not rescue it either — its bulk markers are
+> write/delete/rename/kill, and `run_commands` contains none.
+
+So `bulk(operation='run_commands')` — which fans out N shell commands — was
+gated by **nothing**, in ask, edit, plan and read-only alike, while the single
+`run_commands` tool was gated by all four. Fixed by putting the plural forms
+(and the other shell aliases) into both `_SHELL_BULK_OPS` and
+`_PLAN_BLOCKED_BULK_OPS`.
+
+This is worth more than the bug: it is direct evidence that systemic pattern #1
+was still live *after* all five originally-reported instances were fixed, and
+that only a mechanical check finds the next one.
+
+### The same test's discovery surface
+
+93 of the 145 registered tools claim neither `is_mutating` nor
+`is_shell_mutation`. Most are legitimately controlled elsewhere — handler-level
+gates (`modelMemoryWrites`), the prompt caution bucket, or `bind_path` — but the
+list is where the next instance of this class will surface:
+
+```
+analyze_media, board, brain_query, browser_*, bulk, camera_*, circuit_*,
+clear_blackboard, create_html_artifact, create_pptx, customize_ui,
+describe_environment, desktop_list_windows, desktop_mouse_position,
+desktop_screen_size, desktop_screenshot, desktop_ui_tree, diagnose_proxy,
+draw_circuit, enter_plan_mode, firmware_stimulus, forget, get_fallback,
+harness_introspect, harness_propose, hdl_timing_diagram, interrupt_subagent,
+job_notes, judge_artifact, kicad_render, list_*, load_skill, load_skills,
+message_agent, module_context, pptx_*, read_blackboard, read_file, read_files,
+remember, rename_session, render_chart, render_pages, render_video, search,
+search_files, send_subagent_message, session_context, set_agent_mode,
+setup_provider, spawn_daemon, spawn_subagents, submit_*, summarize_session,
+tool_*, update_state, update_todos, vcd_parse, web_fetch, web_fetch_many,
+web_search
+```
+
+`setup_provider` and `forget` are the two worth a look first: both change
+durable state and neither reads as mutating. **Not fixed here** — deciding
+whether each is correctly gated elsewhere is a policy question, not a mechanical
+one, so it is recorded rather than guessed at.
+
 ## What is deliberately NOT fixed
 
 Nothing. The 18 findings deferred after round 2 were then fixed in round 3;
