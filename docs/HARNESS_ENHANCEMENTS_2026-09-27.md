@@ -3,6 +3,21 @@
 Companion to [DEEP_SCAN_FINDINGS_2026-09-27.md](./DEEP_SCAN_FINDINGS_2026-09-27.md).
 That document is what is broken; this one is what to build.
 
+## Progress
+
+| # | Item | State |
+|---|---|---|
+| 4 | Gate-participation conformance test | **DONE** — `tests/test_gate_participation.py`. Found finding #53 on its first run, which the 52-item sweep had missed. |
+| 2 | `ok` honouring `end_reason` | **DONE** — `turn_outcomes.turn_ok()`. **No migration needed**: `end_reason` has been persisted since 046, so the judgement could be derived at write time. The proposal for a new `ok_reason` column was over-engineered. `ok = None` persists as SQL NULL, so both readers moved to `COUNT(ok)`. |
+| 1 | Runaway-turn backstop | not started — still the largest real-world turn-reliability hole |
+| 3 | `edit_verify_fails` as a per-turn count | not started |
+| 5-11, 13-14 | — | not started |
+
+Items 4 and 2 went ahead of the order below because both are S effort and both
+make later work measurable: #2 gives the Learning panel honest numbers, and #4
+is the mechanical check that finds the next instance of the bug class the audit
+could only sample.
+
 ## How this was derived, and the honest caveat
 
 Findings came from 16 parallel read-only auditors plus an adversarial

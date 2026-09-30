@@ -102,11 +102,13 @@ Resource ceilings needed a value, so the reasoning is stated rather than implied
 
 ### Post-fix gates
 
-`ruff` clean · `mypy` clean on 334 files · **3938 backend passed / 3 skipped** ·
-**1486 frontend passed / 189 files** · `check:docs`, `check:version` and
-`check:naming` all pass · zero regressions against the 3924 + 1486 baseline.
+`ruff` clean · `mypy` clean on 334 files · **3991 backend passed / 3 skipped** ·
+**1486 frontend passed / 189 files** · `check:docs` (6 claims),
+`check:version` and `check:naming` all pass · zero regressions against the
+3924 + 1486 baseline.
 
-**All 52 findings are now closed.** 32 files changed, +788 / −111.
+**All 52 findings are now closed**, plus #53 found afterwards by the
+conformance test.
 
 ## Finding #53 — found by the conformance test written afterwards
 
@@ -155,6 +157,22 @@ web_search
 durable state and neither reads as mutating. **Not fixed here** — deciding
 whether each is correctly gated elsewhere is a policy question, not a mechanical
 one, so it is recorded rather than guessed at.
+
+## What still needs a human on the real desktop app
+
+Everything above is verified by a green suite. Four fixes changed behaviour in
+a way CI structurally cannot reach, so they are listed as **unverified** rather
+than folded into the "all green" claim. `npm run dev:desktop` is the harness.
+
+| # | Fix | How to check it |
+|---|---|---|
+| **9** | MCP registry now rehydrates at startup | Configure one MCP server, **restart the app**, and confirm it reappears in the tool list with its Authorization header intact. This is the fix with the largest behavioural delta — before it, nothing survived a restart. |
+| **18** | Per-step shadow-git moved onto the event loop's executor | Run a multi-round turn that mutates files, and confirm the **Changes card still shows every step** in order. Awaited (not fire-and-forget) so ordering should hold, but ordering is the thing a concurrency change can silently break. |
+| **7 / 30** | Browser page parks on `about:blank` after a refusal; `desktop_open_url` now enforces the URL policy | Drive the browser to a blocked address, then call `browser_get_content`. It must return nothing about that address. Then try `desktop_open_url('file:///...')` and confirm it is refused in every guard mode. Needs a live browser. |
+| **6 / 14 / 34 / 35** | The EDA fixes | Their suites pass locally (143 tests), but **`AGENTS.md` records that the ngspice-dependent circuit tests run in no CI job at all** — only where the binary is staged. The `avr-objcopy` and ModelSim-transcript fixes in particular were never exercised against a real toolchain. |
+
+Everything else — including all of the memory, ladder, tool-surface and
+build-pipeline fixes — is covered by a suite that runs in CI.
 
 ## What is deliberately NOT fixed
 
