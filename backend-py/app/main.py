@@ -209,8 +209,11 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             logger.warning('Storage-key migration skipped: %s', exc)
     try:
-        from app.services.tools.mcp_client import refreshMcpTools
+        from app.services.tools.mcp_client import refreshMcpTools, rehydrate_from_config
 
+        # Restore the persisted registry BEFORE the tool refresh, otherwise
+        # every configured MCP server is gone for the whole process lifetime.
+        rehydrate_from_config()
         asyncio.create_task(refreshMcpTools())
     except Exception:
         pass

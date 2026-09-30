@@ -65,6 +65,11 @@ _SUBAGENT_NEVER_TOOLS = frozenset(
 # Offered only while the configured depth cap still allows another level.
 _SPAWN_TOOLS = frozenset({'spawn_subagent', 'spawn_subagents'})
 
+# How many times the stream-rule (narration) reminder may re-prompt one
+# sub-agent before the round is accepted as-is. Matches the parent loop's
+# one-nudge-then-stop discipline.
+_STREAM_RULE_MAX_RETRIES = 3
+
 
 def _subagent_answer(accumulated: str, last_round: str) -> str:
     """The child's answer, decided by ONE rule that every consumer shares.
@@ -751,6 +756,12 @@ async def executeSubAgent(
         # Same malformed-JSON discipline as the parent loop: consecutive
         # invalid tool arguments must never execute as a phantom arg.
         subInvalidCount = 0
+        # ...and the same bound on the stream-rule (narration) retry. The
+        # parent loop caps it; this one just `continue`d. A model that narrates
+        # every round therefore retried forever, and the recurring-task
+        # dispatch path passes neither max_iterations nor a harness_job_id, so
+        # nothing else bounded the turn either.
+        streamRuleRetries = 0
         subInvalidNudged = False
         # Stall detection (parent-loop parity): a sub-agent that never
         # advances phase/step gets one reflection nudge, then hard-stops.
@@ -915,12 +926,13 @@ async def executeSubAgent(
                     )
                 updateJob(jobId, {'status': 'failed', 'error': err})
                 return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
-            if response.get('stream_rule'):
+            if response.get('stream_rule') and streamRuleRetries < _STREAM_RULE_MAX_RETRIES:
                 # Stream rule fired mid-generation (the model narrated a tool
                 # call instead of emitting one) — inject the same reminder
                 # the parent loop uses and retry this round. Previously the
                 # sub-agent loop ignored stream_rule and `break` on the empty
                 # tool_uses, silently ending the sub-agent with partial text.
+                streamRuleRetries += 1
                 messages.append(
                     {
                         'role': 'user',
@@ -944,6 +956,24 @@ async def executeSubAgent(
                         }
                     )
                 continue
+            if response.get('stream_rule'):
+                # Retry budget spent. Stop nudging and fall through: this round
+                # is treated as the sub-agent's answer and whatever text it
+                # produced is kept. Retrying forever burned provider calls with
+                # no progress; ending on nothing would discard real work.
+                streamRuleRetries += 1
+                if emit:
+                    emit(
+                        {
+                            'type': 'subagentWarning',
+                            'agentId': resolvedAgentId,
+                            'jobId': jobId,
+                            'message': (
+                                'Sub-agent narrated tool calls repeatedly — ending the round '
+                                'with its text so far instead of retrying again.'
+                            ),
+                        }
+                    )
             assistantMsg: dict[str, object]
             contentBlocks: list[dict[str, object]] = []
             if isAnthropic:

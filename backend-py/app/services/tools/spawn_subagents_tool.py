@@ -758,13 +758,37 @@ async def _doSpawn(
 
     failed_names: set[str] = set()
 
+    def _job_cancelled() -> bool:
+        """True once cancel_job has marked this job terminal."""
+        if not job_id:
+            return False
+        try:
+            from app.services.harness_jobs import get_job
+
+            row = get_job(job_id)
+            return bool(row) and str((row or {}).get('status') or '') == 'cancelled'
+        except Exception:
+            return False
+
     async def _run_all_waves() -> list[dict[str, Any]]:
         all_results: list[dict[str, Any]] = []
         for waveNo, wave in enumerate(waves):
+            # Stop walking between waves once the job is cancelled.
+            # cancel_job only terminated the ALREADY-DISPATCHED tasks; the
+            # driver carried on through the remaining waves, so a cancelled
+            # multi-wave batch kept spending model calls and then reported the
+            # job 'completed'.
+            if _job_cancelled():
+                logger.info('subagent job %s cancelled — not dispatching wave %d', job_id, waveNo)
+                break
             runnable: list[dict[str, Any]] = []
             for itemNo, item in enumerate(wave):
                 try:
-                    nm = item_name(item, 0)
+                    # itemNo, not a hardcoded 0: two unnamed items in one wave
+                    # both resolved to "item_1", so the second lane overwrote
+                    # the first's outcome entry and cancel_wave could not find
+                    # a taskId for "item_2".
+                    nm = item_name(item, itemNo)
                 except WorkstreamError:
                     nm = ''
                 deps = [str(d) for d in (item.get('dependsOn') or [])]

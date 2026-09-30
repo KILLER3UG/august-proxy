@@ -1308,6 +1308,32 @@ from app.services.workbench.loop.surface import (  # noqa: E402
 )
 
 
+def _canRetrieveSpill(
+    tools: list[dict[str, object]] | None,
+    openai_tools: list[dict[str, object]] | None,
+    session: WorkbenchSession,
+) -> bool:
+    """Can the model still read a spilled tool result back this turn?
+
+    Named and module-level so the decision is testable: the bug this replaces
+    lived inline in a 6.5k-line loop where no test could reach it, and the
+    existing stage-B tests passed the whole time because they only exercised
+    the ``_spillToolResult`` helper, never the call site's verdict.
+
+    ``tools`` is populated ONLY on the Anthropic wire; on OpenAI/Responses it
+    stays ``[]`` (:2626-2629). Reading it alone made ``offeredNames`` empty,
+    ``canRetrieve`` False, and the helper returned None — so an oversized
+    result was hard-truncated with no ``.aug`` file and nothing to re-read,
+    on the wire formats most providers speak. The text tool protocol parses
+    every registered tool natively, so it can always read back.
+    """
+    live = tools or openai_tools or []
+    offered = {_toolDefName(t) for t in live}
+    return bool(offered & _SPILL_RETRIEVAL_TOOLS) or bool(
+        getattr(session, '_text_tool_protocol', False)
+    )
+
+
 def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     """Return tool definitions in Anthropic format for a session.
 
@@ -1667,7 +1693,13 @@ def enqueueUserMessage(
     if not hasattr(session, 'queuedUserMessages') or session.queuedUserMessages is None:
         session.queuedUserMessages = []
     kind_n = (kind or 'queue').strip().lower()
-    if kind_n not in ('queue', 'steer', 'subagent'):
+    # 'daemon' must be a storable kind: daemon_manager enqueues its completion
+    # notices with it, and the subagent auto-turn drains with
+    # kinds={'subagent','daemon'} (routers/workbench.py:274). Coercing it to
+    # 'queue' here made that drain filter permanently unsatisfiable, so a
+    # daemon notification could never wake its session — the whole daemon
+    # auto-turn path was dead while every call site looked correct.
+    if kind_n not in ('queue', 'steer', 'subagent', 'daemon'):
         kind_n = 'queue'
     entry: dict[str, object] = {
         'id': f'qm_{uuid.uuid4().hex[:12]}',
@@ -2973,10 +3005,16 @@ async def _sendWorkbenchMessageStreamImpl(
                 _patched['_tailPatched'] = True
                 _patched['_tailFrom'] = len(_userText)
                 currentMessages[_lastUserIdx] = _patched
-            if _memoryBlock:
-                # Audit D1: the detail keys ARE the injected skill names —
-                # they ride the turn row so per-skill effect can be measured.
+            # Audit D1: the detail keys ARE the injected skill names — they ride
+            # the turn row so per-skill effect can be measured. Deliberately
+            # NOT nested under `if _memoryBlock:`: the skills lane is rendered
+            # independently of the memory lane, and memoryAutoInject is OFF by
+            # default, so gating the credit on a non-empty memory block left
+            # skills_injected permanently NULL — the skill-lift and
+            # brain-config readers were learning from an empty population.
+            if _skillsDetail:
                 _skillsInjectedNames = list(_skillsDetail.keys())
+            if _memoryBlock:
                 session._injected_facts = _injectedFacts
     except Exception:
         logger.debug('M3 memory injection failed', exc_info=True)
@@ -3077,6 +3115,11 @@ async def _sendWorkbenchMessageStreamImpl(
     _budgetArms = _turnBudget()
     _budgetStep = 0
     _budgetFinalFired = False
+    # Tracks WHICH authority narrowed the surface. The A6 clean-round restore
+    # may reverse the reversible self-heal downgrade, but a budget narrowing is
+    # a consequence of the operator's budget arms and must survive to the end
+    # of the turn — sharing one flag let the restore undo it.
+    budgetSurfaceNarrowed = False
     # Monotonic, not time.time(): a wall-clock adjustment mid-turn must not
     # make a long turn look short (or a short one look over budget).
     _turnStartMono = time.monotonic()
@@ -3207,22 +3250,34 @@ async def _sendWorkbenchMessageStreamImpl(
         ):
             _budgetStep = _nextBudgetStep(_budgetStep)
             _rung = _BUDGET_LADDER[_budgetStep - 1]
-            if _rung == 'surface' and not surfaceDowngraded:
-                tools = [t for t in toolDefinitions(session) if _toolDefName(t) in _BARE_TOOL_ALLOW]
-                openaiTools = [
-                    t for t in openaiToolDefinitions(session) if _toolDefName(t) in _BARE_TOOL_ALLOW
-                ]
-                surfaceDowngraded = True
-                cleanRoundsSinceDowngrade = 0
-                systemText = _buildSystemText(session, tools if isAnthropic else openaiTools)
+            if _rung == 'surface':
+                # Always consume this rung, even when the surface is already
+                # narrowed. The old test was `if _rung == 'surface' and not
+                # surfaceDowngraded`, so a turn that had been narrowed for any
+                # OTHER reason fell straight past compaction into the terminal
+                # 'final' branch — the documented three-rung ladder collapsed to
+                # one and the turn ended a round early.
+                _alreadyNarrowed = bool(surfaceDowngraded)
+                if not _alreadyNarrowed:
+                    tools = [t for t in toolDefinitions(session) if _toolDefName(t) in _BARE_TOOL_ALLOW]
+                    openaiTools = [
+                        t for t in openaiToolDefinitions(session) if _toolDefName(t) in _BARE_TOOL_ALLOW
+                    ]
+                    surfaceDowngraded = True
+                    budgetSurfaceNarrowed = True
+                    cleanRoundsSinceDowngrade = 0
+                    systemText = _buildSystemText(session, tools if isAnthropic else openaiTools)
                 _emitRecovery(emit, 'budget', _budgetStep, 'degraded', True)
                 if emit:
                     emit(
                         {
                             'type': 'warning',
                             'message': (
-                                'Turn budget reached — narrowing the tool surface to the essential '
+                                'Turn budget already narrowed the tool surface to the essential '
                                 'set for the rest of this turn.'
+                                if _alreadyNarrowed
+                                else 'Turn budget reached — narrowing the tool surface to the '
+                                'essential set for the rest of this turn.'
                             ),
                         }
                     )
@@ -5032,16 +5087,18 @@ async def _sendWorkbenchMessageStreamImpl(
             # inside the 30 KB / 2000-line budget; the ordinary cap then
             # applies to whatever stage B left (or to smaller results).
             if isinstance(historyContent, str) and len(historyContent) > _SPILL_THRESHOLD_CHARS:
-                # `tools` is the live surface for this round — a mid-turn
-                # downgrade to the bare set rebinds it — and the text tool
-                # protocol offers nothing natively while still parsing every
-                # registered tool, so it can always read back.
-                offeredNames = {_toolDefName(t) for t in tools}
-                canRetrieve = bool(offeredNames & _SPILL_RETRIEVAL_TOOLS) or bool(
-                    getattr(session, '_text_tool_protocol', False)
-                )
+                # Whether the model can read the spill back is decided in
+                # _canRetrieveSpill (module-level, and tested there) — it was
+                # inline here, and read only the Anthropic-shaped `tools`
+                # list, which is [] on the OpenAI/Responses wire. That made
+                # canRetrieve False there, _spillToolResult returned None,
+                # and oversized results were hard-truncated with no recovery
+                # file on the formats most providers speak.
                 spilled = _spillToolResult(
-                    session, toolName, historyContent, retrievable=canRetrieve
+                    session,
+                    toolName,
+                    historyContent,
+                    retrievable=_canRetrieveSpill(tools, openaiTools, session),
                 )
                 if spilled is not None:
                     historyContent = spilled
@@ -5090,7 +5147,21 @@ async def _sendWorkbenchMessageStreamImpl(
                     tools = toolDefinitions(session)
                     openaiTools = openaiToolDefinitions(session)
                     surfaceDowngraded = False
-                    cleanRoundsSinceDowngrade = 0
+                    # Do NOT undo a BUDGET downgrade. The A6 restore is for the
+                    # reversible self-heal downgrade (malformed tool JSON). It
+                    # used to clear the same flag, so a turn that breached its
+                    # budget recovered the FULL tool surface through rungs 2 and
+                    # 3 and the documented bare-surface narrowing never held.
+                    # The budget rung is re-asserted below when it owns the flag.
+                    if budgetSurfaceNarrowed:
+                        tools = [t for t in tools if _toolDefName(t) in _BARE_TOOL_ALLOW]
+                        openaiTools = [
+                            t for t in openaiTools if _toolDefName(t) in _BARE_TOOL_ALLOW
+                        ]
+                        surfaceDowngraded = True
+                        cleanRoundsSinceDowngrade = 0
+                    else:
+                        cleanRoundsSinceDowngrade = 0
                     # The system prompt enumerates the offered
                     # tools — rebuild it so the restored surface is advertised
                     # (the old prompt listed the bare set only).
@@ -5238,11 +5309,20 @@ async def _sendWorkbenchMessageStreamImpl(
             try:
                 from app.services.workbench import shadow_git as _shadow_git
 
-                _shadow_git.commit_snapshot(
-                    session.id,
-                    session.workspacePath,
-                    f'step {toolRound}: {session.mutationCount - mutationsBeforeRound} mutation(s)',
-                )
+                def _stepSnap() -> None:
+                    _shadow_git.commit_snapshot(
+                        session.id,
+                        session.workspacePath,
+                        f'step {toolRound}: {session.mutationCount - mutationsBeforeRound} mutation(s)',
+                    )
+
+                # Off the event loop, exactly like the turn-start baseline
+                # (_turnBaselineSnapshotTask). This ran inline, so every mutating
+                # round blocked the loop for 4+ git subprocesses — and only the
+                # mutex wait was bounded (_GIT_TIMEOUT_S), the subprocesses were
+                # not. Awaited (not fire-and-forget) so successive per-step
+                # snapshots keep their round order for the ChangesCard diff.
+                await asyncio.get_running_loop().run_in_executor(None, _stepSnap)
             except Exception:
                 logger.debug('shadow-git step snapshot failed', exc_info=True)
         if planSubmittedThisRound:
@@ -5706,20 +5786,35 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
     # inside the session itself, so it is blocked in EVERY guard mode
     # (Full Access included; the sidebar delete button is the user's path —
     # audit finding). Other sessions remain deletable.
-    if toolName in ('delete_session', 'delete_sessions', 'delete_folder'):
+    # `bulk` is a META tool: bulk_tools.py routes operation=delete_sessions
+    # to the same handler carrying the same sessionIds/sessionId args, and its
+    # alias table maps delete_session -> delete_sessions. A name-only test
+    # therefore let the aggregate path walk straight past this guard — while
+    # the OTHER guard on this call site (is_mutating, via tool_policy) DOES
+    # resolve nested bulk operations, so the two disagreed about the same
+    # call. Resolve the operation first; the receipt keeps the real tool name
+    # so it stays actionable.
+    guardOp = toolName
+    if toolName == 'bulk':
+        _bulkOp = as_str(args.get('operation') or '', '').strip().lower()
+        if _bulkOp == 'delete_session':
+            _bulkOp = 'delete_sessions'  # mirrors bulk_tools' alias table
+        if _bulkOp in ('delete_sessions', 'delete_folder'):
+            guardOp = _bulkOp
+    if guardOp in ('delete_session', 'delete_sessions', 'delete_folder'):
         currentId = session.id
         blockReason = None
-        if toolName == 'delete_session':
+        if guardOp == 'delete_session':
             target = as_str(args.get('sessionId') or args.get('session_id'), '')
             blockReason = currentId if (not target or target == currentId) else ''
-        elif toolName == 'delete_sessions':
+        elif guardOp == 'delete_sessions':
             ids = [
                 as_str(i, '')
                 for i in as_list(args.get('sessionIds') or args.get('session_ids'), [])
                 if isinstance(i, str)
             ]
             blockReason = currentId if currentId in ids else ''
-        elif toolName == 'delete_folder':
+        elif guardOp == 'delete_folder':
             folderId = as_str(args.get('folderId') or args.get('folder_id'), '')
             ownFolder = as_str(getattr(session, 'folderId', '') or '', '')
             blockReason = currentId if (ownFolder and folderId == ownFolder) else ''

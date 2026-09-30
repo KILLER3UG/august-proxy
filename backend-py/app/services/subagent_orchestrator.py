@@ -1010,6 +1010,16 @@ class SubagentOrchestrator:
                 await self._failNoWorkerSlot(
                     handle, 'Timed out waiting for a worker slot (all sub-agent slots busy).'
                 )
+                # Release the SESSION permit here. The releasing `finally` at
+                # the end of this coroutine is never entered on this path, so
+                # the bare return leaked it — and a leaked permit permanently
+                # shrinks that session's pool, so every later spawn in the same
+                # session then times out too and returns an empty result.
+                # (The session-acquire refusal above is NOT this bug: it
+                # returns with holdsSessionSlot still False, so there is
+                # nothing to release.)
+                if holdsSessionSlot and session_semaphore is not None:
+                    session_semaphore.release()
                 return
         except BaseException:
             if holdsSessionSlot and session_semaphore is not None and session_semaphore is not self._semaphore:

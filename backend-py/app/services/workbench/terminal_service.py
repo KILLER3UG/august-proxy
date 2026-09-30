@@ -204,8 +204,20 @@ def _broadcastExit(sessionId: str) -> None:
     instead of hanging forever after the shell process exits.
     """
     for queue in list(_wsQueues.get(sessionId, set())):
+        # The sentinel must be UNLOSABLE. `put_nowait(None)` on a full queue
+        # raised QueueFull and the bare `except` below dropped it, so a
+        # subscriber whose buffer was full never unblocked from queue.get():
+        # the drawer showed a live shell that had already died, and a
+        # reconnect got 4004 instead of the real output. Evict the oldest
+        # item and retry — the same shape _broadcastTerminal uses.
         try:
             queue.put_nowait(None)
+        except asyncio.QueueFull:
+            try:
+                queue.get_nowait()
+                queue.put_nowait(None)
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -302,7 +314,13 @@ async def reapTerminalSessions() -> int:
 
 def listTerminalSessions() -> list[dict[str, object]]:
     _maybe_reap_async()
-    return [_summarize(s) for s in _sessions.values()][:MAX_SESSIONS]
+    # List everything the reaper will RETAIN. This used to slice to
+    # MAX_SESSIONS (50) while _MAX_SESSIONS_HARD kept 100, so sessions 51-100
+    # held a live OS shell and a 256 KB output buffer that no UI path could list
+    # or close — cycling "new terminal" accumulated up to 50 unreachable shells
+    # and ~12 MB with no way to reclaim them. A retained session must be
+    # addressable by id.
+    return [_summarize(s) for s in _sessions.values()][:_MAX_SESSIONS_HARD]
 
 
 def listTerminalApprovals() -> list[dict[str, object]]:

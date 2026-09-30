@@ -218,6 +218,53 @@ def _saveConfig() -> None:
     path.write_text(json.dumps({'servers': servers_out}, indent=2), encoding='utf-8')
 
 
+def rehydrate_from_config() -> int:
+    """Restore the persisted registry into memory at startup. Returns the count.
+
+    ``_saveConfig`` wrote every server to mcp-servers.json, but nothing ever
+    read it back: ``_loadConfig`` had no callers, so ``_servers`` started empty
+    on every boot and the file's contents were dead on every load. Users had
+    to re-enter each integration by hand after each restart.
+
+    Rows go through ``registerServer(persist=False)`` rather than being poked
+    into ``_servers`` directly, so a config written before a tightening of
+    ``validateStdioLaunch`` is SKIPPED with a warning rather than restored into
+    a launch the guard would now refuse. ``catalogId`` is re-applied after
+    registration because registerServer has no such parameter.
+    """
+    config = _loadConfig()
+    rows = as_dict(config.get('servers'), {})
+    if not rows:
+        return 0
+    restored = 0
+    for sid, raw in rows.items():
+        row = as_dict(raw, {})
+        try:
+            registerServer(
+                name=as_str(row.get('name'), str(sid)),
+                command=as_str(row.get('command'), ''),
+                args=[str(a) for a in as_list(row.get('args'))],
+                env={str(k): str(v) for k, v in as_dict(row.get('env'), {}).items()},
+                enabled=bool(row.get('enabled', True)),
+                transport=as_str(row.get('transport'), 'stdio'),
+                url=as_str(row.get('url'), ''),
+                server_id=str(sid),
+                persist=False,
+                headers={str(k): str(v) for k, v in as_dict(row.get('headers'), {}).items()}
+                or None,
+            )
+        except ValueError as exc:
+            logger.warning('MCP server %s not restored — %s', sid, exc)
+            continue
+        catalog_id = as_str(row.get('catalogId'), '')
+        if catalog_id:
+            set_server_meta(str(sid), catalogId=catalog_id)
+        restored += 1
+    if restored:
+        logger.info('MCP registry rehydrated: %d server(s) from disk', restored)
+    return restored
+
+
 def listRegisteredServers() -> list[dict[str, object]]:
     """List all registered MCP servers."""
     return list(_servers.values())

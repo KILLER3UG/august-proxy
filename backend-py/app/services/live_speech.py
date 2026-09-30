@@ -59,14 +59,20 @@ def _resolve_provider(provider_id: str) -> dict[str, object] | None:
 
 
 def _api_base_and_key(provider: dict[str, object]) -> tuple[str, str]:
+    """The provider base, used EXACTLY as pasted.
+
+    This used to append '/v1' unless the base already contained that
+    substring, which is the one thing August does not do anywhere else:
+    baseUrl is used verbatim and only the API format leaf
+    ('audio/transcriptions', 'audio/speech') is appended. A self-hosted or
+    non-/v1 gateway therefore 404'd here and surfaced as an opaque
+    'STT request failed' with no hint that the base had been rewritten. The
+    substring test was also sloppy: '/v1' anywhere in the path (including a
+    '/v1beta/...' style) satisfied it.
+    """
     key = as_str(provider.get('api_key') or provider.get('apiKey'))
     base = as_str(provider.get('baseUrl') or provider.get('base_url'), 'https://api.openai.com/v1')
-    base = base.rstrip('/')
-    if base.endswith('/v1'):
-        pass
-    elif '/v1' not in base:
-        base = base + '/v1'
-    return base, key
+    return base.rstrip('/'), key
 
 
 async def transcribe_audio(
