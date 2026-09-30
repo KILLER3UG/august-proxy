@@ -102,13 +102,46 @@ Resource ceilings needed a value, so the reasoning is stated rather than implied
 
 ### Post-fix gates
 
-`ruff` clean · `mypy` clean on 334 files · **3991 backend passed / 3 skipped** ·
-**1486 frontend passed / 189 files** · `check:docs` (6 claims),
+`ruff` clean · `mypy` clean on 334 files · **4009 backend passed / 3 skipped**
+(9m35s) · **1486 frontend passed / 189 files** · `check:docs` (6 claims),
 `check:version` and `check:naming` all pass · zero regressions against the
 3924 + 1486 baseline.
 
 **All 52 findings are now closed**, plus #53 found afterwards by the
 conformance test.
+
+## Two tests that were not testing what they claimed
+
+Found while re-verifying the later work, not by the sweep: consecutive full
+runs failed **different** tests, which is the signature of load sensitivity
+rather than a regression. `AGENTS.md` is explicit that this is a bug in the
+test, not a reason to drop `-n auto`, and both were load-sensitive for the same
+underlying reason — a wall-clock or fixed-sleep assertion standing in for a
+structural fact.
+
+**`test_parallel_tools_gather_runs`** asserted "concurrent, not serial" with
+`elapsed < 0.05` over two 0.02 s tasks. Serial execution takes 0.04 s, which
+*also* satisfies that bound — so the test passed whether or not the calls were
+gathered, and it was simultaneously the suite's flakiest, failing a concurrent
+pair that measured 0.053 s. It now asserts **overlap**: each task records when
+it started and finished, and every pair must overlap. Verified to reject serial
+and accept a gather, so it discriminates instead of being green either way.
+
+**`test_background_spawn_returns_started_and_enqueues`** waited a fixed 0.2 s
+for a deliberately asynchronous enqueue — 6/6 alone, 5/6 alongside siblings,
+so the margin was a coin flip. It now polls to a 10 s deadline with the mock
+still patched (the patch has to stay open across the wait, or the watch task
+un-mocks mid-flight and the enqueue never happens).
+
+A first attempt at the second fix, using the deprecated
+`asyncio.get_event_loop()`, made it **worse** (6/8 failing) and passed in
+isolation. The working version uses `get_running_loop()`. Re-measuring a
+proposed fix in the configuration it failed in is the only reason that was
+caught.
+
+`test_handle_terminal_connection_pumps_output` failed once during a 2h56m
+oversubscribed run, then passed 8/8 standalone and 6/6 alongside neighbours.
+Left alone and recorded rather than chased: round 2 touches no terminal code.
 
 ## Finding #53 — found by the conformance test written afterwards
 
