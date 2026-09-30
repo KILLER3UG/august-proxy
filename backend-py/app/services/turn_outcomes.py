@@ -79,6 +79,46 @@ TURN_END_REASONS = (
 )
 
 
+def turn_ok(end_reason: str | None, errored: bool) -> bool | None:
+    """Did this turn succeed? Judged by WHY IT STOPPED, not by whether it raised.
+
+    ``None`` means "neither a success nor a failure" and MUST be written as SQL
+    NULL — never 0 — so an unclassified stop is not silently counted as an
+    error.
+
+    ``ok`` used to be ``turnError is None``. A turn that ends ``stall-stop``,
+    ``length``, ``budget``, ``cap`` or ``awaiting-input`` raises no exception, so
+    every one of them was recorded as a CLEAN SUCCESS. That made both consumers
+    of the column wrong in the direction that matters:
+
+    * ``skill_lift`` computes ok-rate-with minus ok-rate-without as a skill's
+      measured effect;
+    * ``error_rate_by_model`` ranks models by ``SUM(CASE WHEN ok = 0)``.
+
+    So the harness's own self-improvement and observability surfaces were blind
+    to precisely the failure modes it built stall detection, budget ladders and
+    length continuations to fix — a stall-stopping turn raised a model's
+    measured error rate by zero.
+
+    Mapping:
+      * ``finished``                     -> True
+      * ``awaiting-input``               -> None  (the human owes an answer)
+      * ``length``/``cap``/``stall-stop``/``budget``/``interrupted`` -> False
+      * ``error``                        -> False
+      * no reason recorded, no exception -> None  (unmeasured, not a success)
+    """
+    if errored:
+        return False
+    reason = (end_reason or '').strip().lower()
+    if not reason:
+        return None
+    if reason == 'finished':
+        return True
+    if reason == 'awaiting-input':
+        return None
+    return False
+
+
 @dataclass(frozen=True)
 class FailureClass:
     """One candidate lesson signature: which class failed, and what it looked like.
@@ -199,7 +239,7 @@ def record_turn_outcome(
     model: str,
     provider: str,
     task_type: str,
-    ok: bool,
+    ok: bool | None,
     error_class: str = '',
     duration_ms: int = 0,
     session_id: str = '',
@@ -250,7 +290,9 @@ def record_turn_outcome(
             model or '',
             provider or '',
             task_type or '',
-            1 if ok else 0,
+            # None stays NULL (unmeasured), never 0. `ok` is no longer just
+            # "did it raise" — see turn_ok(), the single authority for it.
+            None if ok is None else (1 if ok else 0),
             error_class or '',
             int(duration_ms or 0),
             session_id or '',
@@ -514,6 +556,10 @@ def skill_lift(days: int = 30) -> dict[str, float]:
     "no evidence" and "measured, no effect" are different facts, and only the
     second one may move a ranking. A DB without migration 050 (or without
     ``json_each``) degrades to an empty map.
+
+    ``COUNT(ok)`` not ``COUNT(*)``: ``ok`` is NULL for a turn whose stop was
+    never classified (see :func:`turn_ok`), and counting those rows in the
+    denominator while SUM ignores them would understate every rate.
     """
     window_days = max(1, min(int(days or 30), _RETENTION_DAYS))
     try:
@@ -523,9 +569,9 @@ def skill_lift(days: int = 30) -> dict[str, float]:
                 SELECT ok, skills_injected FROM turn_outcomes
                 WHERE ts >= datetime('now', ?) AND skills_injected IS NOT NULL
             ),
-            total AS (SELECT COUNT(*) AS n, SUM(ok) AS ok_n FROM windowed),
+            total AS (SELECT COUNT(ok) AS n, SUM(ok) AS ok_n FROM windowed),
             per AS (
-                SELECT je.value AS skill, COUNT(*) AS n, SUM(w.ok) AS ok_n
+                SELECT je.value AS skill, COUNT(w.ok) AS n, SUM(w.ok) AS ok_n
                 FROM windowed w, json_each(w.skills_injected) je
                 GROUP BY je.value
             )
@@ -562,7 +608,7 @@ def error_rate_by_model(days: int = 7) -> list[dict[str, object]]:
         rows = conn.execute(
             """
             SELECT model, provider,
-                   COUNT(*) AS turns,
+                   COUNT(ok) AS turns,
                    SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END) AS errors
             FROM turn_outcomes
             WHERE ts >= datetime('now', ?)

@@ -315,11 +315,17 @@ async def turnTelemetry(
         _factsInjected: list[str] | None = (
             [str(k) for k, _t in injectedFacts] if injectedFacts else None
         )
+        # The single authority for "did this turn succeed". It was
+        # `turnError is None`, which recorded stall-stop / length / budget /
+        # cap / awaiting-input — none of which raise — as CLEAN SUCCESSES, so
+        # skill_lift and error_rate_by_model were blind to exactly the failure
+        # modes the harness builds detection for.
+        _turnOk = turn_outcomes.turn_ok(_reason, bool(turnError))
         turn_outcomes.record_turn_outcome(
             model=resolvedModel or '',
             provider=_telemetryProvider,
             task_type=as_str(getattr(session, 'agent_mode', '') or 'agent'),
-            ok=turnError is None,
+            ok=_turnOk,
             error_class=turn_outcomes.classify_error(turnError or ''),
             duration_ms=max(0, int(time.time() * 1000) - turnStartMs),
             session_id=sessionId,
