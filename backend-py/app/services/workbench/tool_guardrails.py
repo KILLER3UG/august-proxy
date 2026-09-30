@@ -42,6 +42,40 @@ def record_guardrail_block(session_id: str, tool_name: str, reason: str) -> None
         logger.debug('guardrail block log write failed', exc_info=True)
 
 
+# Stable reason strings for the interceptions that a tool layer performs
+# itself, outside the loop's own guard. These are what `turn_close` rolls into
+# `guardrail_classes` and what the failure-lesson path mines, so they are part
+# of a contract: rename one and the historical rows stop grouping.
+INTERCEPTION_STALE_WRITE = 'stale_write'
+INTERCEPTION_ANCHOR_MISS = 'anchor_mismatch'
+INTERCEPTION_TOOL_TIMEOUT = 'tool_timeout'
+INTERCEPTION_MCP_TIMEOUT = 'mcp_timeout'
+
+
+def record_exec_interception(session_id: str, tool_name: str, reason: str) -> None:
+    """Log a call the harness stopped before it could do damage.
+
+    A hash-anchored edit whose ``fileHash`` no longer matches is the loudest
+    self-correction signal the loop produces: the harness caught the model about
+    to overwrite text it had not actually read. Until now that returned an
+    error string and nothing else — no log, no counter, no guardrail row — while
+    the structurally identical PRE-hook failure two lines away did log. So the
+    blocks landed nowhere: they never reached the turn's ``guardrail_classes``
+    digest, never reached ``maybe_promote_failure_lesson``, and a model that
+    repeatedly tried to clobber stale reads was invisible to the evidence trail
+    built to learn from exactly that.
+
+    No new table and no schema change: ``record_guardrail_block`` already writes
+    the table that the refine store's evidence builder and the privacy wipe
+    both know about. Never raises into the turn — telemetry loss must not change
+    tool behaviour, which is why the caller returns its error string regardless.
+    """
+    logger.info(
+        'tool interception: %s blocked by %s (session %s)', tool_name, reason, session_id or '-'
+    )
+    record_guardrail_block(session_id, tool_name, reason)
+
+
 class ToolCallTracker:
     """Tracks tool-call patterns to detect loops and failure spirals.
 

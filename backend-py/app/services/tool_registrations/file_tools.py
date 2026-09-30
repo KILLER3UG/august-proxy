@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import logging
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -15,6 +16,8 @@ from app.services.sandbox import policy_from_session, unsandboxed_grant_key
 
 if TYPE_CHECKING:
     from app.services.sandbox.policy import SandboxResult
+
+_LOGGER = logging.getLogger('workbench')
 
 _MAXFileSize = 20 * 1024 * 1024
 # Ceiling for the PAGED read path, which is the documented escape hatch for a
@@ -114,6 +117,23 @@ def _session():
         return get_workbench_session(currentSessionId.get())
     except Exception:
         return None
+
+
+def _record_interception(toolName: str, reason: str) -> None:
+    """Record a call this layer refused, so the turn row can see it (roadmap #7).
+
+    The session id comes from the context var the loop already sets, so the
+    guardrail row lands under the same session the turn's digest is built from.
+    Best-effort by construction — ``record_exec_interception`` never raises, and
+    neither does the context lookup.
+    """
+    try:
+        from app.services.workbench.context import currentSessionId
+        from app.services.workbench.tool_guardrails import record_exec_interception
+
+        record_exec_interception(as_str(currentSessionId.get(), ''), toolName, reason)
+    except Exception:
+        _LOGGER.debug('exec interception record failed', exc_info=True)
 
 
 def _workspace() -> str:
@@ -529,7 +549,15 @@ async def _editLines(
     actualHash = hashlib.sha256(raw).hexdigest()
     if actualHash != expectedHash:
         from app.services.workbench.read_before_edit import STALE_WRITE_HEADLINE
+        from app.services.workbench.tool_guardrails import INTERCEPTION_STALE_WRITE
 
+        # Roadmap #7: the harness just stopped the model overwriting text it had
+        # not actually read. That is the loudest self-correction signal the loop
+        # produces and it used to return a string and vanish — no log, no
+        # counter, no guardrail row, so it never reached the turn's
+        # guardrail_classes digest or the failure-lesson path. The structurally
+        # identical PRE-hook failure two lines up did log.
+        _record_interception('edit_lines', INTERCEPTION_STALE_WRITE)
         return (
             f'Error: File {STALE_WRITE_HEADLINE}. Read it again before '
             'attempting to write it — the fileHash from your last read_file '
@@ -701,7 +729,12 @@ async def _applyPatch(path: str, patch: str, fileHash: str = '') -> str:
             actual = hashlib.sha256(raw).hexdigest()
             if actual != fileHash.strip().lower():
                 from app.services.workbench.read_before_edit import STALE_WRITE_HEADLINE
+                from app.services.workbench.tool_guardrails import INTERCEPTION_STALE_WRITE
 
+                # Same interception as edit_lines — the two hash-anchored write
+                # doors are the only places the harness stops a model
+                # overwriting text it never actually read.
+                _record_interception('apply_patch', INTERCEPTION_STALE_WRITE)
                 return (
                     f'Error: File {STALE_WRITE_HEADLINE}. Read it again before '
                     'attempting to write it — the fileHash you passed no longer '

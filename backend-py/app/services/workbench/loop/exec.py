@@ -24,6 +24,13 @@ from app.json_narrowing import as_bool, as_dict, as_list, as_str
 from app.services.workbench.loop.guards import _bulk_paths_from_args
 from app.services.workbench.permissions import COMMAND_TOOLS as _COMMAND_TOOLS
 from app.services.workbench.sessions import WorkbenchSession
+from app.services.workbench.tool_guardrails import (
+    INTERCEPTION_MCP_TIMEOUT,
+    INTERCEPTION_TOOL_TIMEOUT,
+)
+from app.services.workbench.tool_guardrails import (
+    record_exec_interception as _record_interception,
+)
 
 logger = logging.getLogger('workbench')
 
@@ -79,6 +86,14 @@ async def _executeTool(
                     )
                 )
             except asyncio.TimeoutError:
+                # Roadmap #7: a tool the harness killed mid-flight. That is an
+                # interception, not a tool that merely returned an error, and it
+                # used to return a string and vanish — so a model whose calls
+                # keep timing out was invisible to the guardrail digest and the
+                # failure-lesson path.
+                _record_interception(
+                    session.id, toolName, INTERCEPTION_MCP_TIMEOUT
+                )
                 return f'Error: MCP tool {toolName} timed out after {_TOOL_EXEC_TIMEOUT_S}s.'
 
         # Hash-anchored edits (surpass #5): mutating tools may carry the
@@ -180,6 +195,7 @@ async def _executeTool(
                 toolTimeout = _TOOL_EXEC_TIMEOUT_S + 30
             result = await asyncio.wait_for(dispatchTool(toolName, args), timeout=toolTimeout)
         except asyncio.TimeoutError:
+            _record_interception(session.id, toolName, INTERCEPTION_TOOL_TIMEOUT)
             return f'Error: tool {toolName} timed out after {toolTimeout}s.'
         result_str = str(result)
 
