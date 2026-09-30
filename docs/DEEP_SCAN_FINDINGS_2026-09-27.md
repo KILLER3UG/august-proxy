@@ -103,9 +103,10 @@ Resource ceilings needed a value, so the reasoning is stated rather than implied
 ### Post-fix gates
 
 `ruff` clean · `mypy` clean on 334 files · **4067 backend passed / 3 skipped**
-(7m43s) · **1486 frontend passed / 189 files** · `check:docs` (6 claims),
-`check:version` and `check:naming` all pass · zero regressions against the
-3924 + 1486 baseline.
+(7m34s) · **1491 frontend passed / 190 files** · global coverage **70.52%** over
+332 files (harness-core mean 81.8%) · `check:docs` (6 claims), `check:version`,
+`check:naming`, `check:sse` and `check:coverage` all pass · zero regressions
+against the 3924 + 1486 baseline.
 
 **All 52 findings are now closed**, plus #53 found afterwards by the
 conformance test.
@@ -142,6 +143,13 @@ caught.
 `test_handle_terminal_connection_pumps_output` failed once during a 2h56m
 oversubscribed run, then passed 8/8 standalone and 6/6 alongside neighbours.
 Left alone and recorded rather than chased: round 2 touches no terminal code.
+
+`test_shadow_git.py::TestRevertUnrevert::testRevertRestoresAndUnrevertBringsBack`
+failed once during a coverage-instrumented run (the slowest, most contended
+configuration this repo has) and passed 3/3 in isolation and in the next
+full `-n auto` run. Same class as the two above, and worth carrying forward as a
+third data point: the failures are always at the timing margins, never in the
+assertions about behaviour.
 
 ## Finding #53 — found by the conformance test written afterwards
 

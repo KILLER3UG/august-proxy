@@ -16,13 +16,15 @@ That document is what is broken; this one is what to build.
 | 7 | Exec interceptions reach the evidence trail | **DONE** — `record_exec_interception` wires the two hash-anchored write doors and the two timeout seams into `tool_guardrail_log`, so stale-write blocks can finally reach the turn's `guardrail_classes` digest. |
 | 8 | Subagent-fanout population separated | **DONE** — one shared `_turnTypePredicate` for both readers, `byTaskType` breakdown, and unnamed rows demoted in the error ranking. The predicate is `COALESCE(task_type,'') != ?` on purpose. |
 | 9 | Startup/reload field parity | **DONE** — `tests/test_durable_restart_parity.py` diffs the writer's field set against the loader's for daemons, the MCP registry, project memory, harness jobs and sessions. Writing it found **two more instances of the class**: the daemons `expires_at` column was never written, so every restart reset the TTL to a full fresh term; and `_ensure_reaper()` ran outside the per-row `try`, so a failure to arm the timer cost the whole rehydration. |
-| 10-11, 13-14 | — | not started |
+| 10 | SSE frame parity + exhaustive dispatch | **DONE** — `scripts/check-sse-parity.mjs` (`npm run check:sse`) compares the backend's emitted frames against the Zod schema and the dispatcher. Found `recovery` — every self-correction rescue — **accepted by the schema and dropped by the dispatcher**, so no rescue the harness performed was ever visible; plus two frames logging a false schema warning on every frame. Recovery now routes through `onRecovery`. |
+| 11 | Per-module coverage floor for the harness core | **DONE** — `scripts/coverage-ratchet.mjs` (`npm run check:coverage`), ten floors enforced independently of the global 70.5%. Refuses to pass when `coverage.json` is absent. |
+| 12-14 | — | not started |
 
-Items 4, 2, 1, 3, 5, 7, 8, 6, 9 went ahead of the listed order because each is
-S–M effort and each either makes later work measurable (#2, #3, #8 make the
+Items 4, 2, 1, 3, 5, 7, 8, 6, 9, 10, 11 went ahead of the listed order because each
+is S–M effort and each either makes later work measurable (#2, #3, #8 make the
 panel's numbers honest), closes a hole that would mask everything else (#1, #5),
-surfaces signal the evidence trail was missing (#4, #7), or makes durable state
-testable at all (#6, #9).
+surfaces signal the evidence trail was missing (#4, #7), makes durable state
+testable at all (#6, #9), or stops the remaining drift from recurring (#10, #11).
 
 ### What #1 actually took
 The interesting part was not the counter, it was the test. The first stub
