@@ -18,13 +18,16 @@ That document is what is broken; this one is what to build.
 | 9 | Startup/reload field parity | **DONE** — `tests/test_durable_restart_parity.py` diffs the writer's field set against the loader's for daemons, the MCP registry, project memory, harness jobs and sessions. Writing it found **two more instances of the class**: the daemons `expires_at` column was never written, so every restart reset the TTL to a full fresh term; and `_ensure_reaper()` ran outside the per-row `try`, so a failure to arm the timer cost the whole rehydration. |
 | 10 | SSE frame parity + exhaustive dispatch | **DONE** — `scripts/check-sse-parity.mjs` (`npm run check:sse`) compares the backend's emitted frames against the Zod schema and the dispatcher. Found `recovery` — every self-correction rescue — **accepted by the schema and dropped by the dispatcher**, so no rescue the harness performed was ever visible; plus two frames logging a false schema warning on every frame. Recovery now routes through `onRecovery`. |
 | 11 | Per-module coverage floor for the harness core | **DONE** — `scripts/coverage-ratchet.mjs` (`npm run check:coverage`), ten floors enforced independently of the global 70.5%. Refuses to pass when `coverage.json` is absent. |
-| 12-14 | — | not started |
+| 12 | `k=5` window closed before the profile-lane exclusion | **DONE** — `retrieve_relevant_facts(exclude_keys=…)` drops the lane from the CORPUS, so the keyword lane always receives its full `k`. Writing the test found the same starvation one layer over: the `recalled` metrics list filled itself to `k` with profile rows inside a `k+3` cap, leaving the keyword lane three rows. |
+| 13 | Recall quality is unmeasured | **DONE** — `recall_quality()` reads migration 050's `facts_injected` against the `facts` usage columns, and ships on `memory_context_preview` as `recallQuality`. `null` with no denominator, never `0`. Documented as a floor, not a proof: it credits the same signal the usage boost learns from, so it is consistent rather than independent. |
+| 14 | BM25 has no negative signal | **DONE** — the pre-boost `if s <= 0: continue` is gone, so usage can promote a weakly-matching fact. `_hot_usage()` (`WHERE use_count > 0`) is a deliberately different query shape from the 200-key IN-list, which is what made the promotion impossible. `_MIN_USEFUL_BOOST` is the counterweight: a decayed boost is ~9e-99, not zero. |
 
-Items 4, 2, 1, 3, 5, 7, 8, 6, 9, 10, 11 went ahead of the listed order because each
-is S–M effort and each either makes later work measurable (#2, #3, #8 make the
-panel's numbers honest), closes a hole that would mask everything else (#1, #5),
-surfaces signal the evidence trail was missing (#4, #7), makes durable state
-testable at all (#6, #9), or stops the remaining drift from recurring (#10, #11).
+All fourteen roadmap items are now implemented. Items 4, 2, 1, 3, 5, 7, 8, 6,
+9, 10, 11 went ahead of the listed order because each is S–M effort and each
+either makes later work measurable (#2, #3, #8, #13), closes a hole that would
+mask everything else (#1, #5), surfaces signal the evidence trail was missing
+(#4, #7), makes durable state testable at all (#6, #9), or stops the drift from
+recurring (#10, #11).
 
 ### What #1 actually took
 The interesting part was not the counter, it was the test. The first stub

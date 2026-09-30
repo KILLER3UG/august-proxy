@@ -102,8 +102,8 @@ Resource ceilings needed a value, so the reasoning is stated rather than implied
 
 ### Post-fix gates
 
-`ruff` clean · `mypy` clean on 334 files · **4067 backend passed / 3 skipped**
-(7m34s) · **1491 frontend passed / 190 files** · global coverage **70.52%** over
+`ruff` clean · `mypy` clean on 334 files · **4085 backend passed / 3 skipped**
+(8m07s) · **1491 frontend passed / 190 files** · global coverage **70.52%** over
 332 files (harness-core mean 81.8%) · `check:docs` (6 claims), `check:version`,
 `check:naming`, `check:sse` and `check:coverage` all pass · zero regressions
 against the 3924 + 1486 baseline.
@@ -200,7 +200,6 @@ whether each is correctly gated elsewhere is a policy question, not a mechanical
 one, so it is recorded rather than guessed at.
 
 ## What still needs a human on the real desktop app
-
 Everything above is verified by a green suite. Four fixes changed behaviour in
 a way CI structurally cannot reach, so they are listed as **unverified** rather
 than folded into the "all green" claim. `npm run dev:desktop` is the harness.
@@ -211,6 +210,8 @@ than folded into the "all green" claim. `npm run dev:desktop` is the harness.
 | **18** | Per-step shadow-git moved onto the event loop's executor | Run a multi-round turn that mutates files, and confirm the **Changes card still shows every step** in order. Awaited (not fire-and-forget) so ordering should hold, but ordering is the thing a concurrency change can silently break. |
 | **7 / 30** | Browser page parks on `about:blank` after a refusal; `desktop_open_url` now enforces the URL policy | Drive the browser to a blocked address, then call `browser_get_content`. It must return nothing about that address. Then try `desktop_open_url('file:///...')` and confirm it is refused in every guard mode. Needs a live browser. |
 | **6 / 14 / 34 / 35** | The EDA fixes | Their suites pass locally (143 tests), but **`AGENTS.md` records that the ngspice-dependent circuit tests run in no CI job at all** — only where the binary is staged. The `avr-objcopy` and ModelSim-transcript fixes in particular were never exercised against a real toolchain. |
+
+| **recall (#12, #13, #14)** | The keyword lane is measurably fuller and usage can now teach it, but the *quality* of what it surfaces is exactly the thing no suite can assert. Save 20+ facts, then ask a question only one of them answers. Check `GET /api/brain/memory/context-preview` (or `memory_context_preview` directly) and read `recallQuality.precisionAtK` over a few days of real use — that number is what makes `k=5` and the 0.05 boost weight defensible rather than conventional, and it is the only way to know whether #14 traded precision for usage. |
 
 Everything else — including all of the memory, ladder, tool-surface and
 build-pipeline fixes — is covered by a suite that runs in CI.
