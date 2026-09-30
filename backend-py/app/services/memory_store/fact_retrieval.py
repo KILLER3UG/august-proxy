@@ -285,12 +285,61 @@ def _usage_for(keys: list[str]) -> dict[str, tuple[int, str]]:
     return out
 
 
+def _hot_usage() -> dict[str, tuple[int, str]]:
+    """``(use_count, last_used_at)`` for EVERY fact with a non-zero use_count.
+
+    A deliberately different query shape from :func:`_usage_for`, and the
+    reason is item 14. Once the usage boost is allowed to promote a fact that
+    did not match lexically, the boost has to be known for the whole corpus and
+    not just the BM25-strongest 200 — otherwise the promotion it exists to
+    enable is structurally impossible, which is the bug.
+
+    ``WHERE use_count > 0`` keeps the result set to the facts that have ever
+    been used, and avoids the 999-placeholder ceiling an IN-list over a few
+    thousand facts would hit on SQLite.
+    """
+    out: dict[str, tuple[int, str]] = {}
+    try:
+        rows = _conn().execute(
+            'SELECT fact_key, use_count, last_used_at FROM facts WHERE use_count > 0'
+        ).fetchall()
+        for r in rows:
+            out[str(r['fact_key'])] = (int(r['use_count'] or 0), str(r['last_used_at'] or ''))
+    except Exception as exc:
+        logging.debug('hot usage fetch failed: %s', exc)
+    return out
+
+
+# The floor below which a usage boost is too decayed to promote a fact that
+# did not match lexically. One use, undecayed, is exactly 0.05 — the smallest
+# boost that should count as a live signal.
+_MIN_USEFUL_BOOST = 0.05
+
+
+def _usage_map(keys: list[str]) -> dict[str, tuple[int, str]]:
+    """Usage for the BM25 candidates PLUS every fact that has ever been used.
+
+    Two sources, one map: the bounded IN-list still covers the candidates (and
+    is the only source for a fact with use_count=0, which simply has no entry),
+    while :func:`_hot_usage` supplies the rows outside the top-200 that the
+    boost is now allowed to promote.
+    """
+    merged = dict(_usage_for(keys))
+    for k, v in _hot_usage().items():
+        # Never downgrade a value the targeted query already fetched.
+        if k not in merged:
+            merged[k] = v
+    return merged
+
+
 def retrieve_relevant_facts(
     query: str,
     k: int = 5,
     prior_turn: str = '',
     scope: str = 'global',
     min_query_chars: int = _MIN_QUERY_CHARS,
+    *,
+    exclude_keys: set[str] | None = None,
 ) -> list[dict[str, object]]:
     """Top-k active facts relevant to ``query``, usage-boosted.
 
@@ -312,6 +361,16 @@ def retrieve_relevant_facts(
 
     M-2 (Part 21): ``scope`` selects the corpus union — 'global' (default,
     the pre-M-2 behavior) or 'bot:<id>' = global ∪ that bot's notes.
+
+    ``exclude_keys`` drops facts from the corpus BEFORE the top-k window is
+    closed, which is the only place it can be dropped usefully. The profile
+    lane used to be removed by the caller *after* the window had already been
+    filled: any profile fact that ranked into the top k consumed a slot and
+    was then discarded, so the keyword lane received ``k - (profile facts in
+    the top k)``. Since profile facts are deliberately not row-count capped
+    (they are bounded by ``_PROFILE_CHAR_CAP`` instead), the keyword lane got
+    thinner the richer a user's profile set grew — with no signal, because the
+    budget was being spent on a lane that is injected anyway.
     """
     q = (query or '').strip()
     if len(q) < max(1, int(min_query_chars)):
@@ -328,25 +387,41 @@ def retrieve_relevant_facts(
     priorTokens = _tokenize((prior_turn or '').strip()) if (prior_turn or '').strip() else []
     if not queryTokens:
         return []
+    blocked = {str(x) for x in (exclude_keys or set())}
     for i, row in enumerate(rows):
+        if blocked and str(row.get('key') or '') in blocked:
+            continue
         s = bm25.score(queryTokens, i)
         if priorTokens:
             # Follow-up expansion: prior-turn overlap counts at half
             # weight — context, not a substitute for the current ask.
             s += 0.5 * bm25.score(priorTokens, i)
-        if s <= 0:
-            continue
+        # NOTE: no `if s <= 0: continue` here. Discarding zero-lexical facts
+        # BEFORE the usage boost made the entire never-matched part of the
+        # corpus structurally invisible to the one mechanism designed to learn
+        # from usage: a fact the user is about to need is unreachable by "it
+        # has been useful before" if it has never matched once, and a stale
+        # but once-hot fact decays out and can never come back. A fact with no
+        # lexical overlap AND no usage still ends at 0 and is filtered below —
+        # the boost can promote a weakly-matching previously-useful fact, it
+        # cannot invent one from nothing.
         scored.append((s, row))
     scored.sort(key=lambda pair: pair[0], reverse=True)
     # Phase D item 3 + M-1 decoupling: the usage boost decays with idle
     # time (halved at 30 days unused); usage values are fetched fresh for
     # the candidate set — not from the (usage-free) cached corpus.
-    usage = _usage_for([str(row.get('key')) for _, row in scored])
+    usage = _usage_map([str(row.get('key')) for _, row in scored])
     boosted: list[tuple[float, dict[str, object]]] = []
     for s, row in scored:
         use_count, last_used_at = usage.get(str(row.get('key')), (0, ''))
-        s += 0.05 * min(use_count, 20) * _usage_decay(last_used_at)
-        boosted.append((s, row))
+        # A decayed boost is a tiny POSITIVE float, not zero: a fact last used
+        # in 2000 gets ~9e-99, so filtering the final score on `> 0` promoted
+        # it anyway. Usage may only promote a fact whose usage signal is still
+        # alive — one use with no decay is the floor.
+        boost = 0.05 * min(use_count, 20) * _usage_decay(last_used_at)
+        if s <= 0 and boost < _MIN_USEFUL_BOOST:
+            continue
+        boosted.append((s + boost, row))
     boosted.sort(key=lambda pair: pair[0], reverse=True)
     return [dict(row) for _, row in boosted[: max(1, k)]]
 
@@ -594,11 +669,16 @@ def build_memory_block(
     """
     profileLane, profileRows = build_profile_block(scope=scope)
     laneKeys = {str(r.get('key') or '') for r in profileRows}
-    facts = [
-        f
-        for f in retrieve_relevant_facts(query, k=k, prior_turn=prior_turn, scope=scope)
-        if str(f.get('key') or '') not in laneKeys
-    ]
+    # Exclude the always-in lane from the CORPUS, not from the result. Filtering
+    # after the fact meant every profile fact that ranked into the top k
+    # consumed a slot and was then thrown away, so the keyword lane received
+    # k minus however many profile facts happened to match. The richer a user's
+    # profile set grew, the thinner their keyword recall became — and nothing
+    # reported it, because the budget was spent on a lane that is injected
+    # regardless.
+    facts = retrieve_relevant_facts(
+        query, k=k, prior_turn=prior_turn, scope=scope, exclude_keys=laneKeys
+    )
     projectSection = ''
     projectRows: list[dict[str, object]] = []
     if workspace:
@@ -679,10 +759,14 @@ def build_memory_block(
     )
     lines.append('</memory>')
     if recalled is not None:
-        # Lane rows first (they render first), bounded by the same recall
-        # width `k` so a big profile set cannot crowd the keyword rows out of
-        # the transcript chip / recall metrics.
-        for row in profileRows[: max(1, k)]:
+        # Lane rows first (they render first). Bounded to HALF the recall width,
+        # not all of it: bounding profile rows at k while filling the same k+3
+        # list with them first left the keyword lane three rows no matter how
+        # many facts it had — the same starvation the corpus-level exclusion
+        # removed, one layer over in the metrics/UI list. Half of k is a floor
+        # for the keyword lane that no profile set can eat, and with no profile
+        # facts present the output is unchanged.
+        for row in profileRows[: max(1, int(k) // 2)]:
             recalled.append(_recalled_row(row))
         recalled.extend(projectRows)
         for f in facts:
