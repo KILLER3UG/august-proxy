@@ -176,6 +176,13 @@ def _oracle_classify(name: str) -> str:
 
 
 # Old isPlanModeBlocked (from workbench.py pre-consolidation).
+#
+# DIVERGENCES from the pre-consolidation original, all deliberate and all from
+# the 2026-09-27 deep-scan audit. This oracle exists to prove tool_policy.py
+# faithfully TRANSCRIBED the old inline logic; when a fix intentionally changes
+# behaviour the oracle also had, the change is recorded here rather than the
+# assertion being loosened. Keep this in step with tool_policy.py — a silent
+# divergence would make the whole parity check meaningless.
 _ORACLE_PLAN_EXACT = frozenset({
     'write_file', 'edit_file', 'create_file', 'str_replace', 'str_replace_editor',
     'strreplaceeditttool', 'apply_patch', 'patch_file', 'delete_file',
@@ -189,11 +196,26 @@ _ORACLE_PLAN_EXACT = frozenset({
     'create_routine',
     'connect_github', 'connect_slack', 'connect_google', 'install_mcp_server',
     'disconnect_integration',
+    # DIVERGENCE 1 (audit #8): the real-desktop input tools were in
+    # _PROMPT_WRITE (so they earned a confirmation) but absent here, so
+    # is_mutating said False and ask/plan/read-only — the modes a user picks
+    # precisely to keep the agent off the machine — waved them through.
+    'desktop_click', 'desktop_type', 'desktop_press_key', 'desktop_ui_act',
+    'desktop_open_url',
 })
 _ORACLE_PLAN_MARKERS = (
     'write', 'edit', 'delete', 'remove', 'install', 'uninstall',
     'exec', 'command', 'bash', 'shell', 'patch', 'rename', 'kill_daemon',
 )
+
+# DIVERGENCE 2 (finding #53): the operation literals `bulk` really accepts are
+# the PLURALS from BULK_OPS. The original held only the singular `run_command`,
+# so is_mutating('bulk', {'operation': 'run_commands'}) was False — and its
+# markers are write/delete/rename/kill, none of which appear in 'run_commands'.
+# The aggregate that fans out N shell commands was gated by NOTHING.
+_ORACLE_BULK_SHELL_OPS = frozenset({
+    'run_command', 'run_commands', 'bash', 'shell', 'exec', 'terminal_command',
+})
 
 
 def _oracle_plan_blocked(name: str, args: dict | None = None) -> bool:
@@ -210,7 +232,7 @@ def _oracle_plan_blocked(name: str, args: dict | None = None) -> bool:
             'write_files', 'write_file', 'write', 'delete_sessions',
             'delete_session', 'rename_sessions', 'rename_session',
             'kill_daemons', 'kill_daemon',
-        }
+        } | _ORACLE_BULK_SHELL_OPS  # DIVERGENCE 2
         return op in mutating_ops or any(m in op for m in ('write', 'delete', 'rename', 'kill'))
     if n in {'write_files', 'delete_sessions', 'rename_sessions', 'kill_daemons'}:
         return True
@@ -253,7 +275,9 @@ def _oracle_shell_mutation(name: str, args: dict | None = None) -> bool:
         return True
     if n == 'bulk':
         op = as_str((args or {}).get('operation')).lower().replace('-', '_')
-        return op in {'run_command', 'bash', 'shell', 'exec'}
+        # DIVERGENCE 2 (finding #53): plurals, because that is what `bulk`
+        # actually accepts. See _ORACLE_BULK_SHELL_OPS.
+        return op in _ORACLE_BULK_SHELL_OPS
     return any(m in n for m in ('bash', 'shell', 'terminal', 'run_command'))
 
 
@@ -271,6 +295,10 @@ _BULK_OPS = [
     'write_files', 'write_file', 'write', 'delete_sessions', 'delete_session',
     'rename_sessions', 'rename_session', 'kill_daemons', 'kill_daemon',
     'run_command', 'bash', 'shell', 'exec', 'read_files', 'list',
+    # DIVERGENCE 2: the literals BULK_OPS really contains are plural, so
+    # `run_commands` is the one that reaches the handler. Added because the
+    # singular-only list above is what let the plural slip through ungated.
+    'run_commands',
 ]
 
 
