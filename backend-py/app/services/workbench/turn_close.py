@@ -116,18 +116,32 @@ def _utcStamp(epochMs: int) -> str:
         return ''
 
 
-def _edit_verify_streak(session: WorkbenchSession) -> int | None:
-    """The turn's trailing edit-verification fail streak, NULL when unmeasured.
+def _edit_verify_fails(session: WorkbenchSession) -> int | None:
+    """The turn's edit-verification failures in total, NULL when unmeasured.
 
     Reads the state edit_verification already owns for this session. A session
     with no state never ran the gate, which must NOT be recorded as 0 — the
     panel distinguishes "the last gate passed" (0) from "there was no gate"
     (NULL).
+
+    Reads ``failCount`` (the turn's total), NOT ``failStreak`` (the trailing run
+    of them). The column is consumed as a per-turn count — `SUM(
+    edit_verify_fails)` and `edit_verify_fails > 0` — so writing the streak
+    meant a turn that failed three times and then passed recorded 0, and a turn
+    that failed, recovered, failed again recorded 1 instead of 2. The gate's own
+    fix budget still reads failStreak, which is what it should: it is a budget
+    on consecutive attempts, not a tally.
     """
     state = getattr(session, '_verify_state', None)
     if not isinstance(state, dict):
         return None
-    return as_int(state.get('failStreak'), 0)
+    if 'failCount' not in state:
+        # A state dict built before failCount existed. `_verify_state` seeds it,
+        # so in-process this only fires for a hand-constructed dict; falling
+        # back to the streak is a better answer than 0, which would claim the
+        # turn had no verification failures when it demonstrably had some.
+        return as_int(state.get('failStreak'), 0)
+    return as_int(state.get('failCount'), 0)
 
 
 def _edit_verify_sample(currentMessages: list[dict[str, Any]]) -> str:
@@ -299,7 +313,7 @@ async def turnTelemetry(
         _guardrailDigest, _guardrailSamples = turn_outcomes.guardrail_class_digest(
             sessionId, _utcStamp(turnStartMs)
         )
-        _editVerifyFails = _edit_verify_streak(session)
+        _editVerifyFails = _edit_verify_fails(session)
         # Audit D1 (migration 050): credit assignment. facts_injected comes
         # from the session list the usage bump above just drained (the tail
         # injection is its only writer); skills_loaded from the turn-scoped

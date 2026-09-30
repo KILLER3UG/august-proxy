@@ -452,6 +452,13 @@ def _verify_state(session: 'WorkbenchSession') -> dict[str, object]:
     if not isinstance(state, dict):
         state = {
             'failStreak': 0,
+            # Failures across the WHOLE turn, as distinct from failStreak (the
+            # TRAILING run of them, which a single pass resets to 0). The
+            # turn_outcomes column is consumed as a per-turn count —
+            # SUM(edit_verify_fails) — so a turn that failed verification three
+            # times and then passed used to record 0, and the Learning panel
+            # read "no verification failures" for a turn that had three.
+            'failCount': 0,
             'lastFailHash': None,
             'skippedAttempts': 0,
             'disarmedUntilTurn': 0,
@@ -647,6 +654,10 @@ async def verify_after_edit(
         state.update(
             {
                 'failStreak': 0,
+                # A new user turn starts a new count. Deliberately NOT reset by
+                # the pass branch below: that one clears the streak, which is
+                # about the trailing run, not the turn's total.
+                'failCount': 0,
                 'lastFailHash': None,
                 'skippedAttempts': 0,
                 'disarmedUntilTurn': 0,
@@ -658,7 +669,17 @@ async def verify_after_edit(
         state.get('disarmedUntilTurn'), 0
     ):
         state.update(
-            {'failStreak': 0, 'lastFailHash': None, 'skippedAttempts': 0, 'disarmedUntilTurn': 0}
+            {
+                'failStreak': 0,
+                # Reset with the streak for the same reason: the disarm only
+                # fires once the new turn has arrived, so this is a turn
+                # boundary too. Leaving the count to accumulate across turns
+                # would attribute one turn's failures to the next.
+                'failCount': 0,
+                'lastFailHash': None,
+                'skippedAttempts': 0,
+                'disarmedUntilTurn': 0,
+            }
         )
     if as_int(state.get('failStreak'), 0) >= maxFix:
         return (
@@ -756,6 +777,7 @@ def _failure_receipt(
     workspace: Path,
 ) -> str:
     state['failStreak'] = as_int(state.get('failStreak'), 0) + 1
+    state['failCount'] = as_int(state.get('failCount'), 0) + 1
     state['lastFailHash'] = treeHash
     state['skippedAttempts'] = 0
     streak = as_int(state['failStreak'], 1)

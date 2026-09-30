@@ -480,7 +480,11 @@ async def test_turn_close_records_the_verdict_the_loop_reports(isolatedData, mon
     calls: list[dict[str, object]] = []
     await _closeTurn(
         calls,
-        _fakeSession(id='s-report', _verify_state={'failStreak': 2}),
+        # failStreak 2 with failCount 5: the turn failed verification five times
+        # and ends on a trailing run of two. The column is a per-turn count, so
+        # it must be 5 — writing the streak here is what made a turn that failed,
+        # recovered and failed again record 1 instead of 2.
+        _fakeSession(id='s-report', _verify_state={'failStreak': 2, 'failCount': 5}),
         monkeypatch,
         currentMessages=[
             {'role': 'tool', 'content': '[verification FAILED — pytest] 2 failed in 0.31s'}
@@ -494,7 +498,7 @@ async def test_turn_close_records_the_verdict_the_loop_reports(isolatedData, mon
     assert row['rounds'] == 6
     assert row['malformed_tool_args'] == 4
     assert row['surface_downgraded'] == 1
-    assert row['edit_verify_fails'] == 2
+    assert row['edit_verify_fails'] == 5
     # The gate failure rides the widened lesson path, with a real sample.
     assert calls, 'lesson promotion never fired'
     classes = calls[0]['failure_classes'] or []

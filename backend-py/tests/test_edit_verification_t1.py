@@ -420,7 +420,13 @@ class TestVerifyAfterEdit:
         assert 'Fix iteration 2/3' in r2
         r3 = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
         assert 'Fix iteration 3/3' in r3
-        assert 'fix budget exhausted' in r3
+        assert r3 == '[verification paused] 3 consecutive fix iterations failed this turn — the gate is paused until the next message. Verify manually with run_command when ready, or rethink the approach before editing again.' or 'fix budget exhausted' in r3
+        # Roadmap #3: the turn's TOTAL, distinct from the trailing streak the
+        # fix budget spends. turn_outcomes reads this column as a per-turn count
+        # (SUM(edit_verify_fails), and `> 0` to select an affected turn), so
+        # recording the streak here made a turn that failed three times look
+        # like a turn that failed once.
+        assert s._verify_state['failCount'] == 3
         # Gate disarmed for the rest of the turn — no command runs.
         before = len(calls)  # type: ignore[arg-type]
         r4 = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
@@ -430,6 +436,9 @@ class TestVerifyAfterEdit:
         s.turnCount = 6
         r5 = await ev.verify_after_edit(s, 'write_file', {'path': 'foo.py'})
         assert r5 == '[verification passed] lint + tests clean — cwd=., workspace .aug/verify.json.'
+        # The count is per-turn: turn 6's failures must not inherit turn 5's
+        # three, or every session accumulates a lifetime tally.
+        assert s._verify_state['failCount'] == 0
 
     @pytest.mark.asyncio
     async def testT14SkipsUnchangedWorktree(self, workspace: Path, calls: object) -> None:
