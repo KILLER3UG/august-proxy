@@ -193,6 +193,7 @@ from app.services.workbench.loop.guards import (  # noqa: E402
     _pollingTarget,  # noqa: F401 -- re-export: guard helper (tests / callers read wb._pollingTarget)
     _recent_error_families,
     _recordWorldDelta,
+    _runawayBudget,  # noqa: F401 -- re-export: guard helper (tests read wb._runawayBudget)
     _toolResultText,  # noqa: F401 -- re-export: guard helper (tests / callers read wb._toolResultText)
     _toolSig,  # noqa: F401 -- re-export: guard helper (tests / callers read wb._toolSig)
     _toolTarget,  # noqa: F401 -- re-export: guard helper (tests / callers read wb._toolTarget)
@@ -3207,6 +3208,13 @@ async def _sendWorkbenchMessageStreamImpl(
     worldPaths: set[str] = set()
     familyByTarget: dict[tuple[str, str], str] = {}
     roundWorldDelta = {"moved": False}
+    # Runaway backstop state (roadmap #1). Counted on world delta alone, so
+    # argument novelty cannot reset it. The thresholds are brain-config and
+    # opt-in: 0/0 leaves the backstop off, which is what an operator who wants
+    # a genuinely uncapped turn gets.
+    _runawayNudgeRounds, _runawayStopRounds = _runawayBudget()
+    runawayRounds = 0
+    runawayNudgeSent = False
     try:
         from app.services.skill_service import begin_turn_skill_collection
 
@@ -3380,6 +3388,73 @@ async def _sendWorkbenchMessageStreamImpl(
                         turnError = turnError or msg
                         turnEndReason = 'stall-stop'
                         break
+            # Runaway backstop. Deliberately OUTSIDE the stall check above and
+            # deliberately NOT reset by argument novelty: the stall counter
+            # treats a new call signature as progress, so a model that calls a
+            # different tool with different arguments every round never stalls,
+            # never nudges and never hard-stops. With MAX_MANAGED_TOOL_ROUNDS
+            # uncapped and the budget ladder off by default, nothing else
+            # bounded it short of overflowing the context window.
+            #
+            # The evidence is world delta alone — a path the turn had not
+            # touched before, or a (tool, target) that was failing and now
+            # returns clean. Neither argument variety nor a flat update_state
+            # can move that flag, so this counts the thing the other guard
+            # structurally cannot see.
+            if _runawayStopRounds > 0 and toolRound >= MIN_ROUNDS_BEFORE_STALL_CHECK:
+                if roundWorldDelta["moved"]:
+                    runawayRounds = 0
+                    runawayNudgeSent = False
+                else:
+                    runawayRounds += 1
+                    if runawayRounds >= _runawayStopRounds:
+                        msg = (
+                            f'Stopped: {runawayRounds} tool rounds ran without the turn touching '
+                            'anything new — no new path and no previously failing call recovered.'
+                        )
+                        logger.warning('workbench %s', msg)
+                        _emitRecovery(emit, 'runaway', runawayRounds, 'stopped', True)
+                        if emit:
+                            emit({'type': 'error', 'message': msg})
+                        turnError = turnError or msg
+                        # Reuses 'stall-stop' rather than adding a reason: it IS
+                        # the same class of stop, and the reason vocabulary is
+                        # read by the frontend badge, the turn_outcomes column
+                        # and the docs. A new token would have to be added to
+                        # all three to say the same thing.
+                        turnEndReason = 'stall-stop'
+                        break
+                    if _runawayNudgeRounds > 0 and runawayRounds >= _runawayNudgeRounds:
+                        if not runawayNudgeSent:
+                            runawayNudgeSent = True
+                            _emitRecovery(emit, 'runaway', runawayRounds, 'nudged', True)
+                            currentMessages.append(
+                                {
+                                    'role': 'user',
+                                    'source': SOURCE_HARNESS_NUDGE,
+                                    'content': (
+                                        f'[Proxy Self-Heal] The last {runawayRounds} tool rounds each '
+                                        'looked different but none of them changed anything: no new '
+                                        'file was read, and nothing you retried started working. '
+                                        'Varying the call without changing the world is a loop. Stop, '
+                                        'say what you have established in one sentence with '
+                                        'update_state(phase=..., step=...), then either do the thing '
+                                        'that actually changes state or finish with your best answer '
+                                        'now.'
+                                        + _REMINDER_FOOTER
+                                    ),
+                                }
+                            )
+                            if emit:
+                                emit(
+                                    {
+                                        'type': 'warning',
+                                        'message': (
+                                            'No world movement across many tool rounds despite varied '
+                                            'calls — nudged the model to stop varying and act.'
+                                        ),
+                                    }
+                                )
             # Audit D4: the stall check above has consumed the previous
             # round's world-delta; this round's executions now fill the flag
             # for the next check.

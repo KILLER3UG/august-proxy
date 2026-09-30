@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import logging
 
-from app.json_narrowing import as_dict, as_list, as_str
+from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.services.error_families import classify_family as _error_family
 
 logger = logging.getLogger('workbench')
@@ -38,6 +38,60 @@ _POLL_TARGET_REPEATS = 6
 
 
 _ERROR_FAMILY_WINDOW = 6
+
+
+# ── Runaway backstop (roadmap item #1, 2026-09-27) ───────────────────────────
+# Nothing bounds a turn by default: MAX_MANAGED_TOOL_ROUNDS is 0 (uncapped)
+# and the budget-ladder arms are all-off opt-in. What remains is the stall
+# counter above — and it resets on argument novelty and on world delta, so a
+# model that calls a DIFFERENT tool with DIFFERENT arguments every round is
+# permanently "novel", never stalls, and never hits a bound short of overflowing
+# the context window. That is a real hole: the nudges exist, but the thing they
+# cannot detect is the thing most worth detecting.
+#
+# These two thresholds are counted on WORLD DELTA ALONE, which neither novelty
+# nor self-report can fake: a round moved the world only if the turn touched a
+# path it had not touched before, or a (tool, target) that was failing with a
+# known family now returns clean.
+RUNAWAY_NUDGE_ROUNDS = 25
+RUNAWAY_STOP_ROUNDS = 40
+
+
+def _runawayBudget() -> tuple[int, int]:
+    """(nudge at, hard-stop at) for the runaway backstop. 0/0 = off.
+
+    Brain-config keys ``runawayNudgeRounds`` / ``runawayStopRounds``. Unlike
+    the stall thresholds these are NOT defaults-on: an ABSENT key means OFF, not
+    the shipped constants.
+
+    That is a deliberate difference from ``MAX_MANAGED_TOOL_ROUNDS``, which is
+    uncapped by default and was kept that way on purpose. The backstop ends
+    turns, and this project treats any rule that ends a turn early as opt-in by
+    default — the ``verifierEnforced`` gate was opt-in and was then removed
+    altogether rather than made the default. Only ``runawayStopRounds`` has to
+    be set; ``runawayNudgeRounds`` then falls back to
+    :data:`RUNAWAY_NUDGE_ROUNDS`.
+
+    A read failure also returns off, so a broken brain store can never be the
+    reason someone's turn gets killed.
+    """
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        cfg = getRuntimeConfig()
+        # -1 is "unset", distinct from a configured 0 and from a value.
+        stop = as_int(cfg.get('runawayStopRounds'), -1)
+        nudge = as_int(cfg.get('runawayNudgeRounds'), -1)
+    except Exception:  # noqa: BLE001 -- fail-closed to OFF; matches this module's baseline
+        logger.debug('runaway budget read failed; backstop stays off', exc_info=True)
+        return 0, 0
+    if stop <= 0:
+        return 0, 0
+    if nudge < 0:
+        nudge = RUNAWAY_NUDGE_ROUNDS
+    nudge = min(max(0, nudge), stop - 1)
+    # A nudge at or past the stop would fire in the same round.
+    return (nudge, stop)
 
 
 def _toolResultText(msg: dict[str, object]) -> str:

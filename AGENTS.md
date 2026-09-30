@@ -77,7 +77,26 @@ and the turn then ends as `budget`. It is priced through
 `cost_estimator.price_for_model` like everything else, so the budget arm and
 the Usage page cannot disagree; the wall-clock arm is `time.monotonic()`, not
 `time.time()`. Numbers in this file that duplicate code
-constants are guarded by `npm run check:docs`. Malformed tool JSON never executes as `{}` — the loop
+constants are guarded by `npm run check:docs`.
+
+**Nothing bounds a turn by default, and that is deliberate — with one opt-in
+backstop.** `MAX_MANAGED_TOOL_ROUNDS` 0 plus the ladder off leaves the stall
+counter as the only bound, and the stall counter resets on argument novelty. A
+model that calls a *different* `(tool, target)` every round — `tool_describe`,
+`brain_query`, `search`, anything taking no path argument — is permanently
+novel, so it never stalls, never gets the reflection nudge, and was bounded
+only by overflowing the context window. `_runawayBudget` counts on **world
+delta alone** (`runawayNudgeRounds` / `runawayStopRounds`; nudge 25, stop 40),
+which neither argument variety nor a flat `update_state` can move; it emits
+`recovery {kind: 'runaway'}` and reuses the `stall-stop` reason so the reason
+vocabulary the frontend badge, `turn_outcomes` and these docs all read stays
+unchanged. **An absent key means OFF, not the shipped constants** — a rule that
+ends a turn early is opt-in here, the way `verifierEnforced` was before it was
+removed. Two neighbours it must not be confused with, both pinned by
+`tests/test_runaway_backstop.py`: re-reading one file at shifting offsets is
+caught by the `(tool, target)` polling guard and is *not* the runaway case,
+and a fresh path each round is real progress and resets the counter.
+Malformed tool JSON never executes as `{}` — the loop
 returns a `[Validation Error] … Do NOT stop` self-heal and downgrades to the
 bare tool surface after 3 consecutive failures. Stream rules flag
 tool-call *narration* ("I'll use the X tool", code-fenced JSON) but defer
