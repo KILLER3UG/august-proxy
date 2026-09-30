@@ -157,7 +157,16 @@ export const WorkbenchTurnEndEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('turn_end'),
   sessionId: z.string().optional(),
   reason: z
-    .enum(['finished', 'length', 'cap', 'stall-stop', 'error', 'interrupted', 'awaiting-input'])
+    .enum([
+      'finished',
+      'length',
+      'cap',
+      'stall-stop',
+      'budget',
+      'error',
+      'interrupted',
+      'awaiting-input',
+    ])
     .optional(),
   rounds: z.number().optional(),
   error: z.boolean().optional(),

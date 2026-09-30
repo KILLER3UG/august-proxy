@@ -188,6 +188,7 @@ export type WorkbenchTurnEndReason =
   | 'length'
   | 'cap'
   | 'stall-stop'
+  | 'budget'
   | 'error'
   | 'interrupted'
   | 'awaiting-input';

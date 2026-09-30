@@ -422,7 +422,7 @@ export function dispatchWorkbenchEvent(
       handlers.onTurnEnd?.({
         reason:
           reason === 'finished' || reason === 'length' || reason === 'cap' ||
-          reason === 'stall-stop' || reason === 'error' ||
+          reason === 'stall-stop' || reason === 'budget' || reason === 'error' ||
           reason === 'interrupted' || reason === 'awaiting-input'
             ? reason
             : undefined,
