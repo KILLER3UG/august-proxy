@@ -12,14 +12,17 @@ That document is what is broken; this one is what to build.
 | 3 | `edit_verify_fails` as a per-turn count | **DONE** — `failCount` (turn total) split from `failStreak` (trailing run, still the gate's fix budget). A pass clears the streak but not the count. |
 | 4 | Gate-participation conformance test | **DONE** — `tests/test_gate_participation.py`. Found finding #53 on its first run, which the 52-item sweep had missed. |
 | 5 | Context-overflow probe shape | **DONE** — the old probe recognised **1 of 7** real gateway envelopes. Now flattens the whole envelope. All three compaction paths emit a `compaction` frame tagged `trigger: pre_turn \| budget \| reactive_overflow`. *Correction to the item as written:* it claimed the reactive path emitted no event; it emitted a `recovery` frame. The real gap was the missing `compaction` frame and the missing discriminator. |
+| 6 | One compaction policy | **DONE** — `_compactionCall` is the single policy site; both mid-turn paths call it, so the trigger is the only intended difference. The reactive path now passes `replayUserBytes` (it is the path that most needs the user's own words back). *Correction:* `threshold` is a TRIGGER, not a target, so the item's proposed floor would have made the path more aggressive rather than less; the waste was the gate, now `_reductionIsWorthwhile`. |
 | 7 | Exec interceptions reach the evidence trail | **DONE** — `record_exec_interception` wires the two hash-anchored write doors and the two timeout seams into `tool_guardrail_log`, so stale-write blocks can finally reach the turn's `guardrail_classes` digest. |
 | 8 | Subagent-fanout population separated | **DONE** — one shared `_turnTypePredicate` for both readers, `byTaskType` breakdown, and unnamed rows demoted in the error ranking. The predicate is `COALESCE(task_type,'') != ?` on purpose. |
-| 6, 9-11, 13-14 | — | not started |
+| 9 | Startup/reload field parity | **DONE** — `tests/test_durable_restart_parity.py` diffs the writer's field set against the loader's for daemons, the MCP registry, project memory, harness jobs and sessions. Writing it found **two more instances of the class**: the daemons `expires_at` column was never written, so every restart reset the TTL to a full fresh term; and `_ensure_reaper()` ran outside the per-row `try`, so a failure to arm the timer cost the whole rehydration. |
+| 10-11, 13-14 | — | not started |
 
-Items 4, 2, 1, 3, 5, 7, 8 went ahead of the listed order because each is S–M
-effort and each either makes later work measurable (#2, #3, #8 make the panel's
-numbers honest), closes a hole that would mask everything else (#1, #5), or
-surfaces signal the evidence trail was missing (#4, #7).
+Items 4, 2, 1, 3, 5, 7, 8, 6, 9 went ahead of the listed order because each is
+S–M effort and each either makes later work measurable (#2, #3, #8 make the
+panel's numbers honest), closes a hole that would mask everything else (#1, #5),
+surfaces signal the evidence trail was missing (#4, #7), or makes durable state
+testable at all (#6, #9).
 
 ### What #1 actually took
 The interesting part was not the counter, it was the test. The first stub

@@ -115,7 +115,7 @@ def _reductionIsWorthwhile(before: int, after: int) -> bool:
     return int(after) <= int(before) - floor
 
 
-def _compactionThreshold(before: int, contextWindow: int) -> int:
+def _compactionThreshold(before: int, context_window: int) -> int:
     """The one trigger threshold both compaction paths use.
 
     With a known window it is the share of the window the surface may occupy
@@ -124,15 +124,15 @@ def _compactionThreshold(before: int, contextWindow: int) -> int:
     near-tautology that only ever meant "yes, compress", leaving the real
     decision to the gate in :func:`_reductionIsWorthwhile`.
     """
-    if contextWindow:
-        return max(4096, int(contextWindow * 0.55))
+    if context_window:
+        return max(4096, int(context_window * 0.55))
     return 4096
 
 
 async def _compactionCall(
     messages: list[dict[str, object]],
     *,
-    contextWindow: int,
+    context_window: int,
     goalHint: str,
     summarizer: object | None,
 ) -> list[dict[str, object]]:
@@ -165,12 +165,12 @@ async def _compactionCall(
     pruned = pruneToolOutputs(list(messages))
     return await compressMessages(
         pruned,
-        threshold=_compactionThreshold(_tokens(pruned), contextWindow),
+        threshold=_compactionThreshold(_tokens(pruned), context_window),
         head_count=4,
         tail_count=6,
         summarizer=summarizer,  # type: ignore[arg-type]
         pin_predicates=[_is_update_state_transition, _is_failing_receipt],
-        contextWindow=contextWindow or None,
+        contextWindow=context_window or None,
         goalHint=goalHint,
         schema=summarizer is None,
         replayUserBytes=REPLAY_USER_BUDGET_BYTES,
@@ -200,7 +200,7 @@ async def _reactiveContextReduction(
     try:
         reduced = await _compactionCall(
             messages,
-            contextWindow=contextWindow,
+            context_window=contextWindow,
             goalHint=as_str(getattr(session, 'goal', '') or ''),
             summarizer=None,
         )
@@ -345,7 +345,7 @@ async def _budgetTriggeredCompaction(
             summarizer = None
         compressed = await _compactionCall(
             messages,
-            contextWindow=contextWindow,
+            context_window=contextWindow,
             goalHint=as_str(getattr(session, 'goal', '') or ''),
             summarizer=summarizer,
         )
