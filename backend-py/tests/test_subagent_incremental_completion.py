@@ -108,11 +108,28 @@ async def test_background_spawn_returns_started_and_enqueues():
         assert result['status'] == 'started'
         assert result['background'] is True
         assert len(result['handles']) == 1
-        # Allow watch task to settle
-        await asyncio.sleep(0.2)
+        # The enqueue is DELIBERATELY asynchronous — a background spawn returns
+        # its handles immediately and the watch task appends the result later.
+        # A fixed `await asyncio.sleep(0.2)` is a race that only held on an idle
+        # box (measured: 6/6 alone, 5/6 with sibling tests under -n auto). Poll
+        # to a deadline instead, which is the contract's actual promise. The
+        # patch must stay open across the wait, or the watch task un-mocks
+        # mid-flight and the enqueue never happens.
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 10.0
+        queued: list = []
+        while True:
+            queued = getattr(session, 'queuedUserMessages', None) or []
+            if any(as_str_kind(q) == 'subagent' for q in queued):
+                break
+            if loop.time() >= deadline:
+                break
+            await asyncio.sleep(0.02)
 
-    queued = getattr(session, 'queuedUserMessages', None) or []
-    assert any(as_str_kind(q) == 'subagent' for q in queued)
+    assert any(as_str_kind(q) == 'subagent' for q in queued), (
+        f'the background spawn never enqueued its subagent result; '
+        f'queue held {queued!r}'
+    )
     await orch.close()
 
 

@@ -75,17 +75,34 @@ async def test_parallel_tools_gather_runs(isolatedData):
     """Two read-only tools can be gathered without error."""
     from app.services.workbench.parallel_tools import is_parallel_safe
 
+    loop = asyncio.get_event_loop()
+    started: dict[str, float] = {}
+    finished: dict[str, float] = {}
+
     async def fake(name: str) -> str:
+        started[name] = loop.time()
         await asyncio.sleep(0.02)
+        finished[name] = loop.time()
         return name
 
     names = ['list_skills', 'brain_query']
     assert all(is_parallel_safe(n) for n in names)
-    t0 = asyncio.get_event_loop().time()
     out = await asyncio.gather(*[fake(n) for n in names])
-    elapsed = asyncio.get_event_loop().time() - t0
     assert set(out) == set(names)
-    assert elapsed < 0.05  # concurrent, not 0.04 serial lower bound strict
+
+    # Concurrency is OVERLAP, not elapsed time. The old assertion was
+    # `elapsed < 0.05` for two 0.02s tasks — but serial execution takes 0.04s,
+    # which also satisfies that bound, so the test passed whether or not the
+    # calls were actually gathered. It was also the suite's flakiest test: under
+    # -n auto a concurrent pair measured 0.053s and failed a condition that a
+    # serial pair would have passed.
+    for a in names:
+        for b in names:
+            if a != b:
+                assert started[b] < finished[a], (
+                    f'{b} did not start until {a} finished — these were run '
+                    f'serially, not gathered'
+                )
 
 
 @pytest.mark.asyncio
