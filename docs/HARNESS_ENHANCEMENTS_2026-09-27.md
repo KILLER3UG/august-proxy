@@ -11,15 +11,17 @@ That document is what is broken; this one is what to build.
 | 2 | `ok` honouring `end_reason` | **DONE** — `turn_outcomes.turn_ok()`. **No migration needed**: `end_reason` has been persisted since 046, so the judgement could be derived at write time. The proposal for a new `ok_reason` column was over-engineered. `ok = None` persists as SQL NULL, so both readers moved to `COUNT(ok)`. |
 | 3 | `edit_verify_fails` as a per-turn count | **DONE** — `failCount` (turn total) split from `failStreak` (trailing run, still the gate's fix budget). A pass clears the streak but not the count. |
 | 4 | Gate-participation conformance test | **DONE** — `tests/test_gate_participation.py`. Found finding #53 on its first run, which the 52-item sweep had missed. |
-| 5-11, 13-14 | — | not started |
+| 5 | Context-overflow probe shape | **DONE** — the old probe recognised **1 of 7** real gateway envelopes. Now flattens the whole envelope. All three compaction paths emit a `compaction` frame tagged `trigger: pre_turn \| budget \| reactive_overflow`. *Correction to the item as written:* it claimed the reactive path emitted no event; it emitted a `recovery` frame. The real gap was the missing `compaction` frame and the missing discriminator. |
+| 7 | Exec interceptions reach the evidence trail | **DONE** — `record_exec_interception` wires the two hash-anchored write doors and the two timeout seams into `tool_guardrail_log`, so stale-write blocks can finally reach the turn's `guardrail_classes` digest. |
+| 8 | Subagent-fanout population separated | **DONE** — one shared `_turnTypePredicate` for both readers, `byTaskType` breakdown, and unnamed rows demoted in the error ranking. The predicate is `COALESCE(task_type,'') != ?` on purpose. |
+| 6, 9-11, 13-14 | — | not started |
 
-Items 4, 2, 1 and 3 went ahead of the listed order because each is S–M effort
-and each either makes later work measurable (#2 gives the Learning panel honest
-numbers, #3 makes its edit-verification column honest) or bounds a hole that
-would otherwise mask everything else (#1).
+Items 4, 2, 1, 3, 5, 7, 8 went ahead of the listed order because each is S–M
+effort and each either makes later work measurable (#2, #3, #8 make the panel's
+numbers honest), closes a hole that would mask everything else (#1, #5), or
+surfaces signal the evidence trail was missing (#4, #7).
 
 ### What #1 actually took
-
 The interesting part was not the counter, it was the test. The first stub
 varied the *arguments* of a fixed `read_file` path — which the `(tool,
 target)` polling guard catches, so the stall detector stopped the turn and the
@@ -33,6 +35,28 @@ The test now also asserts the stall path did *not* fire, so it cannot silently
 regress into testing the guard that already worked. Proof it is load-bearing:
 the same scenario with the backstop off does not terminate — it runs to a 60 s
 pytest timeout, versus ~10 s with it on.
+
+### What #5, #7 and #8 cost in corrections
+
+Three of the items were wrong as written, and measuring caught it each time
+rather than review:
+
+* **#5** claimed the reactive path emitted no event. It emitted a `recovery`
+  frame; the real gap was the missing `compaction` frame and the missing
+  discriminator. The probe, though, was worse than described — **1 of 7** real
+  gateway envelopes matched.
+* **#7** said "route the four string-return seams through one recorder". Two of
+  the four turned out to be `async` coroutines, which the first draft of the
+  test forgot to await.
+* **#8** specified `task_type != 'subagent_fanout'`. That evaluates to NULL for
+  a NULL `task_type`, and `WHERE NULL` is false, so it would have silently
+  dropped every row written before the column existed. The predicate is
+  `COALESCE(task_type, '') != ?` and a test pins the NULL case.
+
+A recurring theme worth carrying into the remaining items: several of these
+defects were invisible precisely because they were *silent* — a rescue that
+never fired, a block that recorded nothing, a population that blended in. The
+fix in each case was to make the signal countable first and correct second.
 
 ## How this was derived, and the honest caveat
 

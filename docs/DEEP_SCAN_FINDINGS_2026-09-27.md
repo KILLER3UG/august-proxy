@@ -102,8 +102,8 @@ Resource ceilings needed a value, so the reasoning is stated rather than implied
 
 ### Post-fix gates
 
-`ruff` clean · `mypy` clean on 334 files · **4009 backend passed / 3 skipped**
-(9m35s) · **1486 frontend passed / 189 files** · `check:docs` (6 claims),
+`ruff` clean · `mypy` clean on 334 files · **4048 backend passed / 3 skipped**
+(7m33s) · **1486 frontend passed / 189 files** · `check:docs` (6 claims),
 `check:version` and `check:naming` all pass · zero regressions against the
 3924 + 1486 baseline.
 
