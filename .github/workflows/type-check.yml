@@ -90,8 +90,28 @@ jobs:
       - name: Run pytest
         # `-n auto`: the slow tests drive external toolchains in per-test temp
         # dirs, so they parallelise cleanly (~2.6x measured on 4 workers).
-        # Coverage stays on here — this is the PR gate that owns the 55% floor.
-        run: pytest -q --tb=short -n auto
+        # Coverage stays on here — this is the PR gate that owns the 55% floor,
+        # and it is also what makes the per-module floors measurable below.
+        # `--cov-report=json` writes backend-py/coverage.json for
+        # `npm run check:coverage`; without it the harness-core ratchet refuses
+        # to pass rather than skipping.
+        run: pytest -q --tb=short -n auto --cov-report=json --cov-report=term
+
+      # The backend emits SSE frames; the frontend's Zod schema and dispatcher
+      # are both hand-maintained and nothing compared them. `recovery` — the
+      # frame every self-correction rescue emits — was accepted by the schema
+      # and dropped by the dispatcher, so no rescue was ever visible. This is a
+      # static check: no interpreter, no build, a second to run.
+      - name: SSE frame parity (backend vs schema vs dispatcher)
+        working-directory: ${{ github.workspace }}
+        run: npm run check:sse
+
+      # Per-module floors for the harness core, independent of the global 55%
+      # number. The global average is carried by ~5,000 statements of well-tested
+      # plumbing, so it can rise while the modules the guarantees live in rot.
+      - name: Harness-core coverage floors
+        working-directory: ${{ github.workspace }}
+        run: npm run check:coverage
 
   frontend-tsc-eslint:
     name: Frontend — tsc + eslint + vitest

@@ -241,7 +241,7 @@ exist — corrected Part 25 Phase 7.1.)
 cd backend-py && uv run ruff check . && uv run mypy app/ && uv run pytest -q -n auto
 ```
 
-Always pass `-n auto`. The serial suite is ~2h of 3,500 tests because the slow
+Always pass `-n auto`. The serial suite is ~2h of ~4,090 tests because the slow
 ones shell out to real external toolchains (Quartus, arduino-cli, ngspice) in
 independent temp dirs — measured 2.6x on 4 workers, 8m22s for the whole suite
 on 16 cores. A test that only passes serially is a load-sensitivity bug in that
@@ -250,7 +250,7 @@ from synchronous code); fix the test, don't drop `-n auto`.
 
 **The release job builds; it does not test.** `release-desktop.yml` runs
 `uv lock --check`, ruff and mypy, then produces the signed installer. The suite
-lives in `Type check`, which runs all 3,540 tests on every push to every branch
+lives in `Type check`, which runs all ~4,090 tests on every push to every branch
 and finishes in ~5 minutes on Ubuntu. Re-running it in the release job cost 45
 minutes of a ~70-minute release, and `-n auto` made it *worse* — 1h35m54s
 against 44m19s serial on the same job and runner class — because that job is the

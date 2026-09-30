@@ -247,9 +247,10 @@ Do not bump these unless you are shipping. Release: push the **tag**
 without the `v`. Two things to know before you push it:
 
 - The release job **builds; it does not test**. It runs `check:version`,
-  `check:docs`, `check:naming`, the frontend typecheck + vitest,
-  `uv lock --check`, ruff, mypy and the payload integrity tests — but **no pytest
-  suite**. The ~3,500 tests run in the `Type check` workflow instead.
+  `check:docs`, `check:naming`, `check:sse`, `check:coverage`, the frontend
+  typecheck + vitest, `uv lock --check`, ruff, mypy and the payload integrity
+  tests — but **no pytest suite**. The ~4,090 tests run in the `Type check`
+  workflow instead.
 - `Type check` runs on the tag's commit but **does not gate publication**, so
   confirm it is green before pushing the tag.
 

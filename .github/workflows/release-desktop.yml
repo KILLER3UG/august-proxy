@@ -86,11 +86,18 @@ jobs:
           "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Releasing version $version"
 
-      - name: Check version, documentation, and naming gates
+      - name: Check version, documentation, naming, and SSE parity gates
+        # `check:sse` is here because it is a pure static comparison of the
+        # backend's emitted frames against the frontend's hand-written schema
+        # and dispatcher: no interpreter and no build, so it costs nothing in a
+        # job that deliberately does NOT run pytest. `check:coverage` is
+        # deliberately absent — it needs a coverage run, and this job builds
+        # rather than tests; it lives in `Type check` alongside pytest.
         run: |
           npm run check:version
           npm run check:docs
           npm run check:naming
+          npm run check:sse
 
       - name: Verify release version against package sources
         shell: pwsh
