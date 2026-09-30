@@ -364,7 +364,11 @@ export const WorkbenchTurnTelemetryEventSchema = WorkbenchBaseSchema.extend({
  *  warning in the stream dispatcher. `todosUpdated`, `upstreamRetry`,
  *  `recalledMemories` and `narrationReclassify` route to handlers in
  *  streamEvents.ts; `turnTelemetry` has its own schema above (a
- *  discriminated union cannot hold the same `type` twice). */
+ *  discriminated union cannot hold the same `type` twice).
+ *
+ *  `tool_progress` and `info` ARE dispatched — they were missing from this
+ *  enum, so every frame of each logged a schema-mismatch warning while being
+ *  handled correctly. `scripts/check-sse-parity.mjs` is what caught it. */
 export const WorkbenchMiscLifecycleEventSchema = WorkbenchBaseSchema.extend({
   type: z.enum([
     'todosUpdated',
@@ -375,6 +379,8 @@ export const WorkbenchMiscLifecycleEventSchema = WorkbenchBaseSchema.extend({
     'upstreamRetry',
     'recalledMemories',
     'narrationReclassify',
+    'tool_progress',
+    'info',
   ]),
 });
 

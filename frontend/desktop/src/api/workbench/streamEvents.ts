@@ -232,6 +232,21 @@ export function dispatchWorkbenchEvent(
         workBreakdown: Array.isArray(p?.workBreakdown) ? (p.workBreakdown as Array<{ goal?: string; agentId?: string }>) : [],
       });
       break;
+    case 'recovery':
+      // The unified self-correction frame. The schema has always accepted this
+      // and this switch had no case for it, so every rescue the harness
+      // performed — budget ladder, context reduction, auto-compact, length
+      // continuation, runaway backstop — was dropped here with no error and no
+      // UI. `degraded: true` means the answer the user is reading was
+      // truncated or rescued into a reduced tool surface, and that is the one
+      // thing they most need to be told.
+      handlers.onRecovery?.({
+        kind: typeof p?.kind === 'string' ? p.kind : undefined,
+        attempt: typeof p?.attempt === 'number' ? p.attempt : undefined,
+        outcome: typeof p?.outcome === 'string' ? p.outcome : undefined,
+        degraded: typeof p?.degraded === 'boolean' ? p.degraded : undefined,
+      });
+      break;
     case 'warning':
       handlers.onWarning?.({
         kind: p?.kind as string | undefined,

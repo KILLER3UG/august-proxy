@@ -435,6 +435,28 @@ export interface WorkbenchEventHandlers {
       nudgeBytes?: number;
     } | null;
   }) => void;
+  /** A self-correction rescue fired mid-turn.
+   *
+   *  The backend emits one unified `recovery {kind, attempt, outcome, degraded}`
+   *  frame for EVERY rescue path — budget ladder, context reduction,
+   *  auto-compact, length continuation, and the runaway backstop. `degraded` is
+   *  the trust signal: the turn looks complete but was truncated or rescued
+   *  into a reduced tool surface.
+   *
+   *  The Zod schema has always accepted this frame and the dispatcher had no
+   *  case for it, so every rescue the harness performed was invisible in the
+   *  UI — the user saw a normal-looking answer that had actually been rescued
+   *  under them. `scripts/check-sse-parity.mjs` is what caught it. */
+  onRecovery?: (data: {
+    /** 'budget' | 'context-reduction' | 'auto-compact' | 'length-continuation' | 'runaway' */
+    kind?: string;
+    /** Which rung or attempt this is. */
+    attempt?: number;
+    /** 'reduced' | 'degraded' | 'stopped' | 'nudged' | 'compacted' | 'retrying' | 'exhausted' | 'failed' */
+    outcome?: string;
+    /** True when the answer shipped truncated or into a reduced surface. */
+    degraded?: boolean;
+  }) => void;
   /** Informational messages (auto-memory sync, guideline updates, etc.).
    *  Unknown fields go into `extras` for the same reason as onWarning. */
   onInfo?: (data: {
