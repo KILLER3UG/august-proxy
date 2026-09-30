@@ -261,7 +261,22 @@ _SHELL_EXACT = frozenset({
     'kicad_checks',
 })
 
-_SHELL_BULK_OPS = frozenset({'run_command', 'bash', 'shell', 'exec'})
+# The literal operations `bulk` actually accepts are the PLURAL names from
+# BULK_OPS (`run_commands`, not `run_command`). Holding only the singulars here
+# meant is_shell_mutation('bulk', {'operation': 'run_commands'}) was False — and
+# is_mutating was False too, since the bulk markers are write/delete/rename/kill
+# and 'run_commands' contains none. So the aggregate that runs N shell commands
+# was gated by NOTHING, in ask, edit, plan and read-only alike, while the single
+# `run_commands` tool was gated by all of them. Found by
+# tests/test_gate_participation.py (audit 2026-09-27 systemic pattern #1).
+_SHELL_BULK_OPS = frozenset({
+    'run_command', 'run_commands', 'bash', 'shell', 'exec', 'terminal_command',
+})
+
+# Same plural reality, for the plan/ask path (which reads is_mutating).
+_PLAN_BLOCKED_BULK_OPS = _PLAN_BLOCKED_BULK_OPS | frozenset({
+    'run_command', 'run_commands', 'bash', 'shell', 'exec', 'terminal_command',
+})
 
 _SHELL_SUBSTRINGS = ('bash', 'shell', 'terminal', 'run_command')
 
