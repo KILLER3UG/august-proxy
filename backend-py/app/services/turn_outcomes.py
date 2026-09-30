@@ -402,7 +402,31 @@ def parse_guardrail_digest(digest: object) -> dict[str, int]:
     return out
 
 
-def turn_verdict_stats(days: int = 7) -> dict[str, object]:
+def _turnTypePredicate(taskType: str | None) -> tuple[str, list[object]]:
+    """(SQL predicate, params) selecting the population an aggregate describes.
+
+    The subagent fanout writes its own durable row into this same table with
+    ``task_type='subagent_fanout'`` and ``model=''`` — a 1-3 round fanout
+    aggregate, not a user turn. Nothing downstream filtered on ``task_type``, so
+    those rows were averaged into the same ``reasons`` histogram and the same
+    round average as 20-round main turns, and the Learning panel's "avg rounds"
+    was a blend of two populations that mean different things.
+
+    Default is therefore "everything except the fanout", which is what the
+    Learning panel is about. An explicit ``taskType`` selects one population
+    exactly, including the fanout, so the excluded rows stay reachable rather
+    than hidden. One predicate shared by every reader here, so they cannot drift
+    apart the way the aggregates did.
+    """
+    if taskType is None:
+        # COALESCE matters: a bare `task_type != 'subagent_fanout'` evaluates to
+        # NULL for a NULL task_type, and `WHERE NULL` is false — so it would
+        # silently drop every row written before task_type existed.
+        return "COALESCE(task_type, '') != ?", ['subagent_fanout']
+    return 'task_type = ?', [str(taskType)]
+
+
+def turn_verdict_stats(days: int = 7, taskType: str | None = None) -> dict[str, object]:
     """Why turns end, and how often they misbehave on the way there.
 
     The read side of 046 for the Learning panel: one windowed aggregate over
@@ -411,25 +435,32 @@ def turn_verdict_stats(days: int = 7) -> dict[str, object]:
     that split the NULL-vs-zero question out honestly) and ``turns`` (turns
     with at least one of that signal). Diagnostics only: nothing here gates an
     answer, and a reason distribution is not a score.
+
+    Excludes the ``subagent_fanout`` population by default — see
+    :func:`_turnTypePredicate` — and reports it under ``byTaskType`` so the
+    split is visible rather than merely asserted.
     """
     windowDays = max(1, min(int(days or 7), _RETENTION_DAYS))
+    where, whereArgs = _turnTypePredicate(taskType)
     empty: dict[str, object] = {
         'days': windowDays,
         'turns': 0,
         'reasons': [],
         'reasonUnrecorded': 0,
         'counters': {},
+        'byTaskType': [],
     }
     try:
         conn = _conn()
-        args = (f'-{windowDays} days',)
+        args = (f'-{windowDays} days', *whereArgs)
         reasonRows = conn.execute(
-            'SELECT end_reason AS reason, COUNT(*) AS n FROM turn_outcomes '
-            "WHERE ts >= datetime('now', ?) GROUP BY end_reason ORDER BY n DESC",
+            f'SELECT end_reason AS reason, COUNT(*) AS n FROM turn_outcomes '
+            f"WHERE ts >= datetime('now', ?) AND {where} "
+            f'GROUP BY end_reason ORDER BY n DESC',
             args,
         ).fetchall()
         stats = conn.execute(
-            """
+            f"""
             SELECT COUNT(*) AS turns,
                    SUM(CASE WHEN rounds IS NULL THEN 1 ELSE 0 END) AS rounds_missing,
                    SUM(rounds) AS rounds_total, MAX(rounds) AS rounds_max,
@@ -445,14 +476,14 @@ def turn_verdict_stats(days: int = 7) -> dict[str, object]:
                    SUM(CASE WHEN guardrail_classes IS NULL THEN 1 ELSE 0 END) AS gr_missing,
                    SUM(CASE WHEN guardrail_classes != '' THEN 1 ELSE 0 END) AS gr_turns
             FROM turn_outcomes
-            WHERE ts >= datetime('now', ?)
+            WHERE ts >= datetime('now', ?) AND {where}
             """,
             args,
         ).fetchone()
         digests = conn.execute(
-            "SELECT guardrail_classes, COUNT(*) AS n FROM turn_outcomes "
-            "WHERE guardrail_classes IS NOT NULL AND guardrail_classes != '' "
-            "  AND ts >= datetime('now', ?) GROUP BY guardrail_classes",
+            f"SELECT guardrail_classes, COUNT(*) AS n FROM turn_outcomes "
+            f"WHERE guardrail_classes IS NOT NULL AND guardrail_classes != '' "
+            f"  AND ts >= datetime('now', ?) AND {where} GROUP BY guardrail_classes",
             args,
         ).fetchall()
     except Exception:
@@ -524,7 +555,47 @@ def turn_verdict_stats(days: int = 7) -> dict[str, object]:
         'reasons': reasons,
         'reasonUnrecorded': unrecordedReason,
         'counters': counters,
+        'byTaskType': _taskTypeBreakdown(windowDays),
     }
+
+
+def _taskTypeBreakdown(windowDays: int) -> list[dict[str, object]]:
+    """Row counts and round averages per ``task_type``, across ALL populations.
+
+    Computed without the population predicate, because its whole job is to show
+    what the predicate excluded. Without it, "we filter the fanout" would be an
+    assertion nobody could check from the panel — the excluded rows would simply
+    be gone.
+    """
+    try:
+        rows = _conn().execute(
+            """
+            SELECT COALESCE(task_type, '') AS task_type,
+                   COUNT(*) AS turns,
+                   SUM(rounds) AS rounds_total,
+                   SUM(CASE WHEN rounds IS NULL THEN 1 ELSE 0 END) AS rounds_missing
+            FROM turn_outcomes
+            WHERE ts >= datetime('now', ?)
+            GROUP BY COALESCE(task_type, '')
+            ORDER BY turns DESC
+            """,
+            (f'-{int(windowDays)} days',),
+        ).fetchall()
+    except Exception:
+        logger.debug('task_type breakdown failed', exc_info=True)
+        return []
+    out: list[dict[str, object]] = []
+    for r in rows:
+        measured = int(r['turns'] or 0) - int(r['rounds_missing'] or 0)
+        total = r['rounds_total']
+        out.append(
+            {
+                'taskType': str(r['task_type'] or ''),
+                'turns': int(r['turns'] or 0),
+                'avgRounds': round(float(total or 0) / measured, 2) if total is not None and measured else None,
+            }
+        )
+    return out
 
 
 def sweep_old_outcomes(days: int = _RETENTION_DAYS) -> int:
@@ -602,20 +673,27 @@ def skill_lift(days: int = 30) -> dict[str, float]:
 
 
 def error_rate_by_model(days: int = 7) -> list[dict[str, object]]:
-    """Per-model/provider turn stats for Observability + self-improve."""
+    """Per-model/provider turn stats for Observability + self-improve.
+
+    Excludes the subagent-fanout population by the SAME predicate
+    :func:`_turnTypePredicate` gives the verdict stats — one filter, so the two
+    readers cannot drift apart again. See that function for why it is a
+    COALESCE and not a bare inequality.
+    """
     try:
         conn = _conn()
+        where, whereArgs = _turnTypePredicate(None)
         rows = conn.execute(
-            """
+            f"""
             SELECT model, provider,
                    COUNT(ok) AS turns,
                    SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END) AS errors
             FROM turn_outcomes
-            WHERE ts >= datetime('now', ?)
+            WHERE ts >= datetime('now', ?) AND {where}
             GROUP BY model, provider
             ORDER BY errors DESC, turns DESC
             """,
-            (f'-{int(days)} days',),
+            (f'-{int(days)} days', *whereArgs),
         ).fetchall()
         out: list[dict[str, object]] = []
         for r in rows:
@@ -630,6 +708,15 @@ def error_rate_by_model(days: int = 7) -> list[dict[str, object]]:
                     'errorRate': round(errors / turns, 3) if turns else 0.0,
                 }
             )
+        # Roadmap #8: `ORDER BY errors DESC` put the `('', '')` bucket — which
+        # only ever holds subagent-fanout rows, written with no model — at the
+        # TOP of the per-model error ranking whenever any fanout ended badly. A
+        # phantom model with the highest error rate on the Observability page.
+        # Unnamed rows still rank by errors among themselves; they just cannot
+        # outrank a named model, and the fanout population is excluded outright
+        # by the same predicate the verdict stats use.
+        errorCounts = {id(r): int(r['errors'] or 0) for r in out}  # type: ignore[call-overload]
+        out.sort(key=lambda r: (not str(r['model'] or ''), -errorCounts[id(r)]))
         return out
     except Exception:
         logger.debug('error_rate_by_model failed', exc_info=True)
