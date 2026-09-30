@@ -530,7 +530,7 @@ def _modelRetryPolicy() -> dict[str, int]:
 # together with the transcript landmark pins the compaction paths share.
 # Re-exported under the original names so the loop body, subagent.py and the
 # tests keep resolving them on this module.
-from app.services.workbench.loop.events import _emitRecovery  # noqa: E402
+from app.services.workbench.loop.events import _emitCompactionEvent, _emitRecovery  # noqa: E402
 from app.services.workbench.loop.recovery import (  # noqa: E402
     _BUDGET_FINAL_DIRECTIVE,  # noqa: F401 -- re-export: loop appends it to the system text
     _BUDGET_LADDER,
@@ -2800,6 +2800,7 @@ async def _sendWorkbenchMessageStreamImpl(
                                     'threshold': threshold,
                                     'contextWindow': contextWindow,
                                     'underThreshold': False,
+                                    'trigger': 'pre_turn',
                                 }
                             )
                         _emitRecovery(emit, 'auto-compact', currentTurn, 'compacted', False)
@@ -3290,7 +3291,9 @@ async def _sendWorkbenchMessageStreamImpl(
                         }
                     )
             elif _rung == 'compaction':
-                _compacted = await _budgetTriggeredCompaction(
+                _messagesBeforeBudgetCompaction = len(currentMessages)
+                _tokensBeforeBudgetCompaction = estimateTokens(currentMessages)
+                _budgetCompacted = await _budgetTriggeredCompaction(
                     session,
                     sessionId,
                     currentMessages,
@@ -3300,8 +3303,23 @@ async def _sendWorkbenchMessageStreamImpl(
                     resolvedModel=resolvedModel,
                     currentTurn=getattr(session, 'turnCount', 0),
                 )
-                if _compacted:
-                    currentMessages = _compacted
+                # Roadmap #5: the budget ladder is the third compaction path and
+                # used to be uncountable in the stream — it emitted a `recovery`
+                # frame but never a `compaction` one, so a budget compaction was
+                # indistinguishable from the surface and final rungs in anything
+                # reading the event log. `trigger` is the discriminator, and
+                # equal before/after counts mean it ran and achieved nothing,
+                # which is different from never having run.
+                if _budgetCompacted:
+                    _emitCompactionEvent(
+                        emit,
+                        trigger='budget',
+                        originalTokens=_tokensBeforeBudgetCompaction,
+                        originalMessages=_messagesBeforeBudgetCompaction,
+                        currentMessages=_budgetCompacted,
+                        contextWindow=contextWindow,
+                    )
+                    currentMessages = _budgetCompacted
                 _emitRecovery(emit, 'budget', _budgetStep, 'degraded', True)
                 if emit:
                     emit(
@@ -3756,11 +3774,13 @@ async def _sendWorkbenchMessageStreamImpl(
                         and retryAttempt < retryPolicy['maxRetries']
                     ):
                         overflowReducedThisRound = True
+                        _messagesBeforeReactive = len(currentMessages)
+                        _tokensBeforeReactive = estimateTokens(currentMessages)
                         reduced = await _reactiveContextReduction(currentMessages, contextWindow, session)
                         if reduced is not None:
                             from app.providers.clients.base import estimateTokens as _estTok
 
-                            beforeTokens = _estTok(currentMessages)
+                            beforeTokens = _tokensBeforeReactive
                             currentMessages = reduced
                             afterTokens = _estTok(currentMessages)
                             logger.warning(
@@ -3779,7 +3799,34 @@ async def _sendWorkbenchMessageStreamImpl(
                                     }
                                 )
                             _emitRecovery(emit, 'context-reduction', 1, 'reduced', False)
+                            # Roadmap #5: the success signal this item asked
+                            # for — an overflow-triggered compaction that is
+                            # countable in the same stream the pre-turn path
+                            # already used.
+                            _emitCompactionEvent(
+                                emit,
+                                trigger='reactive_overflow',
+                                originalTokens=beforeTokens,
+                                originalMessages=_messagesBeforeReactive,
+                                currentMessages=currentMessages,
+                                contextWindow=contextWindow,
+                            )
                             continue
+                        # The rescue RAN and achieved nothing — the threshold it
+                        # compares against (`before - 1`, i.e. "shrink by one
+                        # token") was not met. Roadmap #5: this used to be
+                        # invisible, because the only signal was a `recovery`
+                        # frame with no counts, so a reactive reduction that
+                        # bought nothing was indistinguishable from one that
+                        # never ran.
+                        _emitCompactionEvent(
+                            emit,
+                            trigger='reactive_overflow',
+                            originalTokens=_tokensBeforeReactive,
+                            originalMessages=_messagesBeforeReactive,
+                            currentMessages=currentMessages,
+                            contextWindow=contextWindow,
+                        )
                         _emitRecovery(emit, 'context-reduction', 1, 'failed', True)
                     break
                 if retryAttempt >= retryPolicy['maxRetries'] or _isCancelled():

@@ -38,10 +38,59 @@ _CONTEXT_OVERFLOW_MARKERS = (
 )
 
 
-def _isContextOverflowError(response: dict[str, object]) -> bool:
-    """True when the failure is a context-window overflow (promotable)."""
-    msg = as_str(response.get('error')).lower()
-    return any((marker in msg for marker in _CONTEXT_OVERFLOW_MARKERS))
+def _overflowProbeText(response: object, _depth: int = 0) -> str:
+    """Flatten a provider error envelope into one lowercase haystack.
+
+    The marker table is rich (ten shapes of the same message) but it was being
+    matched against a single flat field, ``as_str(response.get('error'))``. Any
+    gateway that nests the message — which is most of them — stringified to
+    something that contained no marker, so :func:`_isContextOverflowError`
+    returned False and the reactive rescue silently never ran. The turn then
+    failed on a context overflow with no compaction attempted, and no event to
+    show that anything had been skipped.
+
+    Real shapes this has to survive:
+
+    * ``{'error': 'context length exceeded'}``            — flat
+    * ``{'error': {'message': 'prompt is too long'}}``    — nested (most common)
+    * ``{'code': 'context_length_exceeded'}``             — no message at all
+    * ``{'error': {'type': ..., 'message': ...}}``
+    * ``{'error': {'error': {'message': ...}}}``          — double-wrapped proxies
+    * ``{'message': ..., 'type': 'invalid_request_error'}``
+    * ``{'error': [{'message': ...}, ...]}``              — batch/aggregator shapes
+
+    Bounded depth and breadth: an envelope is a handful of levels, and a
+    pathological payload must not turn a predicate into a traversal.
+    """
+    if _depth > 4:
+        return ''
+    if isinstance(response, str):
+        return response.lower()
+    if isinstance(response, (int, float, bool)):
+        return str(response).lower()
+    if isinstance(response, dict):
+        parts = [
+            _overflowProbeText(v, _depth + 1)
+            for _k, v in list(response.items())[:24]
+        ]
+        return ' '.join(p for p in parts if p)
+    if isinstance(response, list):
+        parts = [_overflowProbeText(v, _depth + 1) for v in response[:12]]
+        return ' '.join(p for p in parts if p)
+    return ''
+
+
+def _isContextOverflowError(response: object) -> bool:
+    """True when the failure is a context-window overflow (promotable).
+
+    Matches the marker table against every string reachable in the error
+    envelope, not just a top-level flat ``error`` field. See
+    :func:`_overflowProbeText` for the shapes this had to survive.
+    """
+    hay = _overflowProbeText(response)
+    if not hay:
+        return False
+    return any((marker in hay for marker in _CONTEXT_OVERFLOW_MARKERS))
 
 
 async def _reactiveContextReduction(
