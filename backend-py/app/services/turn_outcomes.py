@@ -402,7 +402,7 @@ def parse_guardrail_digest(digest: object) -> dict[str, int]:
     return out
 
 
-def _turnTypePredicate(taskType: str | None) -> tuple[str, list[object]]:
+def _turnTypePredicate(task_type: str | None) -> tuple[str, list[object]]:
     """(SQL predicate, params) selecting the population an aggregate describes.
 
     The subagent fanout writes its own durable row into this same table with
@@ -418,15 +418,15 @@ def _turnTypePredicate(taskType: str | None) -> tuple[str, list[object]]:
     than hidden. One predicate shared by every reader here, so they cannot drift
     apart the way the aggregates did.
     """
-    if taskType is None:
+    if task_type is None:
         # COALESCE matters: a bare `task_type != 'subagent_fanout'` evaluates to
         # NULL for a NULL task_type, and `WHERE NULL` is false — so it would
         # silently drop every row written before task_type existed.
         return "COALESCE(task_type, '') != ?", ['subagent_fanout']
-    return 'task_type = ?', [str(taskType)]
+    return 'task_type = ?', [str(task_type)]
 
 
-def turn_verdict_stats(days: int = 7, taskType: str | None = None) -> dict[str, object]:
+def turn_verdict_stats(days: int = 7, task_type: str | None = None) -> dict[str, object]:
     """Why turns end, and how often they misbehave on the way there.
 
     The read side of 046 for the Learning panel: one windowed aggregate over
@@ -441,7 +441,7 @@ def turn_verdict_stats(days: int = 7, taskType: str | None = None) -> dict[str, 
     split is visible rather than merely asserted.
     """
     windowDays = max(1, min(int(days or 7), _RETENTION_DAYS))
-    where, whereArgs = _turnTypePredicate(taskType)
+    where, whereArgs = _turnTypePredicate(task_type)
     empty: dict[str, object] = {
         'days': windowDays,
         'turns': 0,
@@ -559,7 +559,7 @@ def turn_verdict_stats(days: int = 7, taskType: str | None = None) -> dict[str, 
     }
 
 
-def _taskTypeBreakdown(windowDays: int) -> list[dict[str, object]]:
+def _taskTypeBreakdown(window_days: int) -> list[dict[str, object]]:
     """Row counts and round averages per ``task_type``, across ALL populations.
 
     Computed without the population predicate, because its whole job is to show
@@ -579,7 +579,7 @@ def _taskTypeBreakdown(windowDays: int) -> list[dict[str, object]]:
             GROUP BY COALESCE(task_type, '')
             ORDER BY turns DESC
             """,
-            (f'-{int(windowDays)} days',),
+            (f'-{int(window_days)} days',),
         ).fetchall()
     except Exception:
         logger.debug('task_type breakdown failed', exc_info=True)

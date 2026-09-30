@@ -72,8 +72,8 @@ class TestVerdictStatsExcludeTheFanout:
         _fanout(1)
 
         assert turn_verdict_stats(30)['turns'] == 1
-        assert turn_verdict_stats(30, taskType='subagent_fanout')['turns'] == 1
-        assert turn_verdict_stats(30, taskType='agent')['turns'] == 1
+        assert turn_verdict_stats(30, task_type='subagent_fanout')['turns'] == 1
+        assert turn_verdict_stats(30, task_type='agent')['turns'] == 1
 
     def test_by_task_type_shows_the_split(self, brain):
         """The panel must be able to show what was excluded, not assert it."""

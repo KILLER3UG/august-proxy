@@ -113,10 +113,10 @@ class TestCompactionEventsAreCountable:
         _emitCompactionEvent(
             out.append,
             trigger='reactive_overflow',
-            originalTokens=1000,
-            originalMessages=10,
-            currentMessages=[{'role': 'user', 'content': 'x'}],
-            contextWindow=200_000,
+            original_tokens=1000,
+            original_messages=10,
+            current_messages=[{'role': 'user', 'content': 'x'}],
+            context_window=200_000,
         )
         assert len(out) == 1
         ev = out[0]
@@ -144,10 +144,10 @@ class TestCompactionEventsAreCountable:
         _emitCompactionEvent(
             out.append,
             trigger='reactive_overflow',
-            originalTokens=realTokens,
-            originalMessages=len(msgs),
-            currentMessages=msgs,
-            contextWindow=1000,
+            original_tokens=realTokens,
+            original_messages=len(msgs),
+            current_messages=msgs,
+            context_window=1000,
         )
         ev = out[0]
         assert ev['compressedCount'] == 0
@@ -159,8 +159,8 @@ class TestCompactionEventsAreCountable:
         _emitCompactionEvent(
             None,
             trigger='budget',
-            originalTokens=1,
-            originalMessages=2,
-            currentMessages=[],
-            contextWindow=1,
+            original_tokens=1,
+            original_messages=2,
+            current_messages=[],
+            context_window=1,
         )  # must not raise

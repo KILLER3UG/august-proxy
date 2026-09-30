@@ -3314,10 +3314,10 @@ async def _sendWorkbenchMessageStreamImpl(
                     _emitCompactionEvent(
                         emit,
                         trigger='budget',
-                        originalTokens=_tokensBeforeBudgetCompaction,
-                        originalMessages=_messagesBeforeBudgetCompaction,
-                        currentMessages=_budgetCompacted,
-                        contextWindow=contextWindow,
+                        original_tokens=_tokensBeforeBudgetCompaction,
+                        original_messages=_messagesBeforeBudgetCompaction,
+                        current_messages=_budgetCompacted,
+                        context_window=contextWindow,
                     )
                     currentMessages = _budgetCompacted
                 _emitRecovery(emit, 'budget', _budgetStep, 'degraded', True)
@@ -3806,10 +3806,10 @@ async def _sendWorkbenchMessageStreamImpl(
                             _emitCompactionEvent(
                                 emit,
                                 trigger='reactive_overflow',
-                                originalTokens=beforeTokens,
-                                originalMessages=_messagesBeforeReactive,
-                                currentMessages=currentMessages,
-                                contextWindow=contextWindow,
+                                original_tokens=beforeTokens,
+                                original_messages=_messagesBeforeReactive,
+                                current_messages=currentMessages,
+                                context_window=contextWindow,
                             )
                             continue
                         # The rescue RAN and achieved nothing — the threshold it
@@ -3822,10 +3822,10 @@ async def _sendWorkbenchMessageStreamImpl(
                         _emitCompactionEvent(
                             emit,
                             trigger='reactive_overflow',
-                            originalTokens=_tokensBeforeReactive,
-                            originalMessages=_messagesBeforeReactive,
-                            currentMessages=currentMessages,
-                            contextWindow=contextWindow,
+                            original_tokens=_tokensBeforeReactive,
+                            original_messages=_messagesBeforeReactive,
+                            current_messages=currentMessages,
+                            context_window=contextWindow,
                         )
                         _emitRecovery(emit, 'context-reduction', 1, 'failed', True)
                     break

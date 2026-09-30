@@ -46,10 +46,10 @@ def _emitCompactionEvent(
     emit: Callable[[dict[str, object]], None] | None,
     *,
     trigger: str,
-    originalTokens: int,
-    originalMessages: int,
-    currentMessages: list[dict[str, object]],
-    contextWindow: int,
+    original_tokens: int,
+    original_messages: int,
+    current_messages: list[dict[str, object]],
+    context_window: int,
 ) -> None:
     """One ``compaction`` frame per compaction, tagged with what caused it.
 
@@ -70,14 +70,14 @@ def _emitCompactionEvent(
         return
     from app.providers.clients.base import estimateTokens as _estTok
 
-    compressedTokens = _estTok(currentMessages)
+    compressedTokens = _estTok(current_messages)
     emit(
         {
             'type': 'compaction',
             'trigger': trigger,
-            'originalTokens': int(originalTokens),
+            'originalTokens': int(original_tokens),
             'compressedTokens': compressedTokens,
-            'compressedCount': max(0, int(originalMessages) - len(currentMessages)),
-            'contextWindow': int(contextWindow),
+            'compressedCount': max(0, int(original_messages) - len(current_messages)),
+            'contextWindow': int(context_window),
         }
     )

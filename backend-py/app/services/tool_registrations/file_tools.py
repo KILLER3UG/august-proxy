@@ -119,7 +119,7 @@ def _session():
         return None
 
 
-def _record_interception(toolName: str, reason: str) -> None:
+def _record_interception(tool_name: str, reason: str) -> None:
     """Record a call this layer refused, so the turn row can see it (roadmap #7).
 
     The session id comes from the context var the loop already sets, so the
@@ -131,7 +131,7 @@ def _record_interception(toolName: str, reason: str) -> None:
         from app.services.workbench.context import currentSessionId
         from app.services.workbench.tool_guardrails import record_exec_interception
 
-        record_exec_interception(as_str(currentSessionId.get(), ''), toolName, reason)
+        record_exec_interception(as_str(currentSessionId.get(), ''), tool_name, reason)
     except Exception:
         _LOGGER.debug('exec interception record failed', exc_info=True)
 
