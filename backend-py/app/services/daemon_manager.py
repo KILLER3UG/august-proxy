@@ -171,7 +171,8 @@ class DaemonManager:
 
                 c = _mem_conn()
                 c.execute(
-                    'INSERT OR REPLACE INTO daemons (id, session_id, workspace_path, name, spec_json, result_json, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime("now"))',
+                    'INSERT OR REPLACE INTO daemons (id, session_id, workspace_path, name, spec_json, result_json, status, updated_at, expires_at) '
+                    'VALUES (?, ?, ?, ?, ?, ?, ?, datetime("now"), ?)',
                     (
                         daemonId,
                         sessionId,
@@ -187,6 +188,15 @@ class DaemonManager:
                         ),
                         _json.dumps({'status': 'running'}),
                         'running',
+                        # The column existed and NOTHING wrote it: the reaper
+                        # filters the in-memory `expires_at`, so the DB copy
+                        # looked redundant — and then a restart silently reset
+                        # the TTL to a full fresh term (finding 2026-09-27 #9).
+                        # A daemon with a 1h TTL whose app was closed for a day
+                        # came back with another full hour, every launch.
+                        # Wall-clock epoch seconds; the reaper still compares
+                        # monotonic in memory, so rehydrate converts.
+                        f'{time.time() + as_float(info.get("expires_at"), 0.0) - time.monotonic():.3f}',
                     ),
                 )
                 c.commit()
@@ -248,7 +258,7 @@ class DaemonManager:
             from app.services.memory_store import _conn as _mem_conn3
 
             c = _mem_conn3()
-            rows = c.execute('SELECT id, session_id, workspace_path, name, spec_json, result_json, status FROM daemons WHERE status = "running"').fetchall()
+            rows = c.execute('SELECT id, session_id, workspace_path, name, spec_json, result_json, status, expires_at FROM daemons WHERE status = "running"').fetchall()
             n = 0
             for r in rows:
                 did = str(r['id'])
@@ -258,6 +268,21 @@ class DaemonManager:
                     spec_d = _json.loads(r['spec_json'] or '{}')
                     res_d = _json.loads(r['result_json'] or '{}')
                 except Exception:
+                    continue
+                # The deadline is persisted as WALL-CLOCK epoch seconds and
+                # converted back to a monotonic offset, so time spent with the
+                # app closed counts against the daemon's TTL. A row with no
+                # deadline (written before the column was populated) gets a
+                # full fresh term, which is the pre-fix behaviour and the only
+                # safe default.
+                _wallDeadline = 0.0
+                try:
+                    _wallDeadline = float(str(r['expires_at'] or '0') or '0')
+                except (TypeError, ValueError):
+                    _wallDeadline = 0.0
+                _remaining = _wallDeadline - time.time() if _wallDeadline > 0 else self._ttl_seconds()
+                if _remaining <= 0:
+                    logger.info('Daemon %s TTL expired while the app was closed — not rehydrating', did)
                     continue
                 info: dict[str, object] = {
                     'id': did,
@@ -273,16 +298,23 @@ class DaemonManager:
                     'retries': 0,
                     'backoff_index': 0,
                     'backoff_until': 0.0,
-                    # Re-arms the TTL. Without it a rehydrated daemon has no
-                    # deadline at all: the reaper filters on expires_at, so it
-                    # could never kill one, the daemon resurrected on every
-                    # launch, and list_daemons reported expires_in_s=0.
-                    'expires_at': time.monotonic() + self._ttl_seconds(),
+                    # Carries the REMAINING ttl, not a fresh one — see above.
+                    'expires_at': time.monotonic() + _remaining,
                 }
                 self._daemons[did] = info
                 # Arm the reaper for the restored deadline — the spawn path
                 # calls it, the rehydrate path did not.
-                self._ensure_reaper()
+                #
+                # Best-effort, and it has to be: `_ensure_reaper` calls
+                # asyncio.create_task, which raises outside a running loop, and
+                # that exception used to propagate to the outer handler and cost
+                # the ENTIRE rehydration — the daemon was in `_daemons` but the
+                # function reported 0 restored. A timer that failed to arm must
+                # never decide whether durable state comes back.
+                try:
+                    self._ensure_reaper()
+                except Exception:
+                    logger.debug('daemon reaper not armed during rehydrate', exc_info=True)
                 try:
                     import asyncio as _asyncio
 
