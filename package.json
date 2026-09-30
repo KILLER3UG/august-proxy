@@ -16,6 +16,7 @@
     "check:docs": "node scripts/check-docs-sync.mjs",
     "check:naming": "node scripts/check-naming.mjs",
     "check:sse": "node scripts/check-sse-parity.mjs",
+    "check:coverage": "node scripts/coverage-ratchet.mjs",
     "check:version": "node scripts/check-version-sync.mjs",
     "dev": "node scripts/dev-app.mjs",
     "dev:desktop": "node scripts/dev-tauri.mjs",
