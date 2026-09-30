@@ -406,23 +406,47 @@ def _merge_duplicates(modelSummarize: bool = False) -> tuple[int, list[str]]:
                         _addPair(f, other)
                     break
     for newer, older in pairs:
-        if older['key'] in removedKeys:
+        newerKey = str(newer['key'])
+        # Guard BOTH sides. The check used to cover only `older`, so a chain of
+        # three mutually-similar facts could pick a survivor that a previous
+        # pair had already removed: the UPDATE then matched no row and the
+        # DELETE still ran — a fact deleted with its text written nowhere, while
+        # the run log reported it as merged.
+        if older['key'] in removedKeys or newerKey in removedKeys:
             continue
-        mergedValue = _merge_fact_value(newer['value'], older['title'], older['key'])
+        # Re-read the survivor. `newer['value']` is the snapshot captured when
+        # the pairs were built, so in a chain A->B->C the second merge rebuilt C
+        # from the ORIGINAL A and silently overwrote the first pair's
+        # "(merged from: ...)" provenance note. The row on disk is the
+        # authority for what the survivor currently holds.
+        currentRow = conn.execute(
+            'SELECT fact_value FROM facts WHERE fact_key = ?', (newerKey,)
+        ).fetchone()
+        if currentRow is None:
+            notes.append(f'skipped {older["key"]!r} -> {newerKey!r}: survivor row missing')
+            continue
+        survivorValue = currentRow['fact_value']
+        mergedValue = _merge_fact_value(survivorValue, older['title'], older['key'])
         if modelSummarize:
             summary = _model_summarize(
-                f"Entry A:\n{_fact_body_text(newer['value'])}\n\nEntry B:\n{_fact_body_text(older['value'])}"
+                f"Entry A:\n{_fact_body_text(survivorValue)}\n\nEntry B:\n{_fact_body_text(older['value'])}"
             )
             if summary:
                 mergedValue = summary
-        conn.execute(
+        cur = conn.execute(
             "UPDATE facts SET fact_value = ?, updated_at = datetime('now') WHERE fact_key = ?",
-            (mergedValue, newer['key']),
+            (mergedValue, newerKey),
         )
+        # Only retire the absorbed fact once the survivor actually took the
+        # write. A rowcount of 0 means the survivor is gone, and deleting
+        # `older` then would destroy the last copy of the content.
+        if cur.rowcount != 1:
+            notes.append(f'skipped {older["key"]!r} -> {newerKey!r}: survivor row missing')
+            continue
         conn.execute('DELETE FROM facts WHERE fact_key = ?', (older['key'],))
         removedKeys.add(str(older['key']))
         merged += 1
-        notes.append(f'merged {older["key"]!r} into {newer["key"]!r}')
+        notes.append(f'merged {older["key"]!r} into {newerKey!r}')
     if merged:
         conn.commit()
         invalidate_fact_index()

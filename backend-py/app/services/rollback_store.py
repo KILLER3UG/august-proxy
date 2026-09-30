@@ -8,6 +8,7 @@ so the UI can list and undo without duplicating file blobs.
 from __future__ import annotations
 
 import copy
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any, cast
@@ -208,11 +209,28 @@ def undo_entry(entry_id: str) -> dict[str, object]:
                     from app.services import project_memory as _pm
 
                     if isinstance(before, dict) and as_str(before.get('workspace')):
+                        _targetFile = as_str(before.get('file') or '') or 'memory.md'
+                        # per_fact is true when the snapshot recorded it, or —
+                        # for snapshots taken before that field existed — when
+                        # the entry did NOT live in the legacy single-file
+                        # memory.md. Defaulting it to True instead turned a
+                        # legacy entry into a per-fact file under a new slug on
+                        # restore, so the undo changed the layout it was meant
+                        # to undo.
+                        _perFact = bool(before.get('perFact')) or _targetFile != 'memory.md'
                         _pm.upsert_entry(
                             as_str(before.get('workspace')),
                             as_str(before.get('title')) or target.removeprefix('project:'),
                             as_str(before.get('body') or ''),
-                            file=as_str(before.get('file') or '') or 'memory.md',
+                            file=_targetFile,
+                            # Restore the frontmatter too. Without these the
+                            # undo recreated a bare `## <title>` section,
+                            # permanently downgrading the per-fact file to the
+                            # legacy layout and losing its description/kind, so
+                            # recall fell back to the full body text.
+                            description=as_str(before.get('description') or ''),
+                            kind=as_str(before.get('kind') or ''),
+                            per_fact=_perFact,
                         )
                         message = f'Restored project memory {target}'
                     else:
@@ -223,7 +241,12 @@ def undo_entry(entry_id: str) -> dict[str, object]:
                             f'Cannot restore project memory {target}: no workspace in snapshot'
                         )
                 except Exception as exc:
-                    message = f'Restore project memory {target} failed: {exc}'
+                    # Must NOT be swallowed. The handler's whole purpose is to
+                    # make undo report ok=False; catching here fell through to
+                    # the success return below, so a failed restore reported
+                    # ok=True, restored nothing, and still burned the entry as
+                    # 'undone' — the user could not retry.
+                    raise RuntimeError(f'Restore project memory {target} failed: {exc}') from exc
             elif before is None:
                 memory_store.delete_fact(target)
                 message = f'Deleted created memory {target}'
@@ -233,7 +256,23 @@ def undo_entry(entry_id: str) -> dict[str, object]:
                 # confidence ride along — a rollback must not silently
                 # degrade the fact into an untitled default entry.
                 key = as_str(before.get('factKey') or before.get('key') or target)
-                value = before.get('factValue') if 'factValue' in before else before.get('value')
+                # A fact value is stored JSON-encoded and get_fact does NOT
+                # decode it (memory_store._row_as_wire only camelCases the
+                # row). Handing that raw string straight back to save_fact —
+                # which encodes again — added one JSON layer per Undo, so a
+                # recalled fact came back wrapped in literal quote characters
+                # and repeated undos compounded until the text was unreadable.
+                # Decode exactly one layer, and leave an object verbatim:
+                # unwrapping one would drop its members on the next save.
+                raw_value = (
+                    before.get('factValue') if 'factValue' in before else before.get('value')
+                )
+                value: object = raw_value
+                if isinstance(raw_value, str):
+                    try:
+                        value = json.loads(raw_value)
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        value = raw_value
                 category = as_str(before.get('category') or 'general') or 'general'
                 # Restore the row to the home it was born in — a
                 # bot-scoped fact resurrected without its scope leaked into

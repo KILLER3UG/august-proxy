@@ -338,6 +338,13 @@ async def _remember(
                     'title': existing[0].title,
                     'body': existing[0].body,
                     'updated': existing[0].updated,
+                    # Frontmatter must survive an undo. Without these the
+                    # restore wrote a bare `## <title>` section, permanently
+                    # downgrading a per-fact file to the legacy layout, and its
+                    # recall silently fell back to the full body text.
+                    'description': getattr(existing[0], 'description', ''),
+                    'kind': getattr(existing[0], 'kind', ''),
+                    'perFact': True,
                 }
             body = f'{text}\n\n{detailsText}' if detailsText else text
             entry = _pm.upsert_entry(ws, entryTitle, body,

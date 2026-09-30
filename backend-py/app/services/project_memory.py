@@ -288,6 +288,17 @@ def upsert_entry(
 
     if per_fact and not _find_entry_file(root, title):
         file = f'{_slugify(title)}.md'
+        # The slug is NOT a unique key: two different titles ("Auth flow" and
+        # "auth-flow") slug identically, and the collision check above looks
+        # for the TITLE, not the filename. So the second write silently
+        # truncated the first away and still reported success. Disambiguate
+        # against what is actually on disk.
+        n = 2
+        candidate = file
+        while (root / candidate).exists():
+            candidate = f'{_slugify(title)}-{n}.md'
+            n += 1
+        file = candidate
         fm = ['---', f'name: {_slugify(title)}']
         if fmDesc:
             fm.append(f'description: {fmDesc}')

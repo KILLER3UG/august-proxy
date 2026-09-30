@@ -36,6 +36,10 @@ BARRIER_STEP_BOUNDARY = 'step-boundary'
 # injection filter is prefix-only and <memory_nudge> contains correction
 # vocabulary). Marked at patch time; stripped before every persist.
 _TAIL_PATCH_FLAG = '_tailPatched'
+# The pre-tail content length, recorded by the patcher as the authoritative
+# boundary. The marker scan below is only a fallback for messages patched by an
+# older path that did not record it.
+_TAIL_FROM_KEY = '_tailFrom'
 _TAIL_MARKERS = (
     '\n\n<memory',
     '\n\n<relevant_skills',
@@ -51,13 +55,25 @@ def strip_tail_patches(messages: list[dict[str, object]]) -> list[dict[str, obje
     for msg in messages:
         if isinstance(msg, dict) and msg.get(_TAIL_PATCH_FLAG):
             changed = True
-            clean = {k: v for k, v in msg.items() if k != _TAIL_PATCH_FLAG}
+            clean = {k: v for k, v in msg.items() if k not in (_TAIL_PATCH_FLAG, _TAIL_FROM_KEY)}
             content = clean.get('content')
             if isinstance(content, str):
-                cuts = [content.find(m) for m in _TAIL_MARKERS]
-                cuts = [c for c in cuts if c > 0]
-                if cuts:
-                    clean = {**clean, 'content': content[: min(cuts)].rstrip()}
+                # Prefer the recorded boundary. Scanning for the first tail
+                # marker ANYWHERE truncated a message whose own text contained
+                # one — a user asking about the <memory> block, who put the tag
+                # on its own line, lost everything from that point onward in the
+                # persisted transcript.
+                cut = None
+                rawFrom = msg.get(_TAIL_FROM_KEY)
+                if isinstance(rawFrom, int) and not isinstance(rawFrom, bool):
+                    if 0 <= rawFrom < len(content):
+                        cut = rawFrom
+                if cut is None:
+                    cuts = [c for c in (content.find(m) for m in _TAIL_MARKERS) if c > 0]
+                    if cuts:
+                        cut = min(cuts)
+                if cut is not None:
+                    clean = {**clean, 'content': content[:cut].rstrip()}
             msg = clean
         out.append(msg)
     return out if changed else messages

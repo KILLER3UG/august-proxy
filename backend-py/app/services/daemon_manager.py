@@ -17,6 +17,7 @@ import hashlib
 import logging
 import os
 import time
+import uuid
 from dataclasses import dataclass
 from typing import cast
 
@@ -135,7 +136,13 @@ class DaemonManager:
                 ]
                 if len(ws_daemons) >= MAX_DAEMONS_PER_WORKSPACE:
                     return f'Error: max {MAX_DAEMONS_PER_WORKSPACE} daemons per workspace'
-            daemonId = f'{sessionId}_{spec.name}_{int(time.time())}'
+            # uuid suffix, not just the second: two same-named daemons spawned
+            # within one second produced the SAME id, so the second overwrote
+            # the first in _daemons/_tasks — orphaning a running _runLoop that
+            # was then invisible to kill_daemon, list_daemons and rehydrate. A
+            # provider poller left that way wakes every 30s and spends model
+            # calls forever with no way to stop it.
+            daemonId = f'{sessionId}_{spec.name}_{int(time.time())}_{uuid.uuid4().hex[:6]}'
             info: dict[str, object] = {
                 'id': daemonId,
                 'name': spec.name,
@@ -266,8 +273,16 @@ class DaemonManager:
                     'retries': 0,
                     'backoff_index': 0,
                     'backoff_until': 0.0,
+                    # Re-arms the TTL. Without it a rehydrated daemon has no
+                    # deadline at all: the reaper filters on expires_at, so it
+                    # could never kill one, the daemon resurrected on every
+                    # launch, and list_daemons reported expires_in_s=0.
+                    'expires_at': time.monotonic() + self._ttl_seconds(),
                 }
                 self._daemons[did] = info
+                # Arm the reaper for the restored deadline — the spawn path
+                # calls it, the rehydrate path did not.
+                self._ensure_reaper()
                 try:
                     import asyncio as _asyncio
 

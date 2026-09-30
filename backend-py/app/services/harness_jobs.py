@@ -124,16 +124,35 @@ def attach_task(job_id: str, task_id: str) -> None:
         logger.debug('attach_task failed', exc_info=True)
 
 
-def finish_job(job_id: str, status: str, *, dirty: bool = False, error: str = '') -> None:
+def finish_job(
+    job_id: str, status: str, *, dirty: bool | None = None, error: str = ''
+) -> None:
+    """Close a job.
+
+    ``dirty`` is tri-state on purpose. It used to default to False, so the
+    ordinary close — ``finish_job(job_id, 'cancelled')`` from cancel_job — wrote
+    dirty=0 and blanked the error, erasing the mark_dirty "a worker mutated the
+    environment" receipt. The fleet then settled and the run was reported clean
+    even though a worker had changed things. None means "not supplied, keep the
+    stored value"; True/False set it.
+
+    A terminal status is terminal: a cancelled job is never overwritten by the
+    wave driver's later finish_job('completed').
+    """
     if not job_id:
         return
     try:
         conn = _conn()
         conn.execute(
-            'UPDATE harness_jobs SET status = ?, dirty = ?, error = ?, finished_at = ? WHERE id = ?',
+            'UPDATE harness_jobs SET status = ?, '
+            "dirty = CASE WHEN ? THEN 1 ELSE dirty END, "
+            "error = CASE WHEN ? != '' THEN ? ELSE error END, "
+            "finished_at = COALESCE(finished_at, ?) "
+            'WHERE id = ? AND status NOT IN (\'cancelled\', \'completed\', \'failed\')',
             (
                 status,
                 1 if dirty else 0,
+                (error or '')[:2000],
                 (error or '')[:2000],
                 time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
                 job_id,
