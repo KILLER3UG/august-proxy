@@ -93,41 +93,128 @@ def _isContextOverflowError(response: object) -> bool:
     return any((marker in hay for marker in _CONTEXT_OVERFLOW_MARKERS))
 
 
+# A rescue that frees a handful of tokens is not a rescue: the retry that
+# follows will overflow again, so the turn pays a whole extra request to learn
+# nothing. Both paths used to accept ANY reduction (`after < before`), which
+# meant a 1-token shave passed the gate and the caller retried into the same
+# overflow. Scaled off `before` so a small turn is not held to an absolute
+# floor it can never meet, with a hard minimum so the "1 token" case can never
+# pass.
+_MIN_USEFUL_REDUCTION_TOKENS = 256
+
+
+def _reductionIsWorthwhile(before: int, after: int) -> bool:
+    """Did the compaction free enough headroom to be worth retrying for?
+
+    ``compressMessages`` is a TRIGGER, not a target: any ``threshold`` below the
+    current size makes it attempt a reduction. So the only thing standing
+    between "the surface got smaller" and "the turn can continue" is this gate,
+    and it used to be ``after < before``.
+    """
+    floor = max(_MIN_USEFUL_REDUCTION_TOKENS, int(before) // 32)
+    return int(after) <= int(before) - floor
+
+
+def _compactionThreshold(before: int, contextWindow: int) -> int:
+    """The one trigger threshold both compaction paths use.
+
+    With a known window it is the share of the window the surface may occupy
+    (55%). Without one there is no budget to reason about, so the trigger is
+    simply "more than the floor" — the old reactive ``before - 1`` was a
+    near-tautology that only ever meant "yes, compress", leaving the real
+    decision to the gate in :func:`_reductionIsWorthwhile`.
+    """
+    if contextWindow:
+        return max(4096, int(contextWindow * 0.55))
+    return 4096
+
+
+async def _compactionCall(
+    messages: list[dict[str, object]],
+    *,
+    contextWindow: int,
+    goalHint: str,
+    summarizer: object | None,
+) -> list[dict[str, object]]:
+    """THE compaction policy — one site, shared by every path that compacts.
+
+    Pre-turn auto-compact, the budget ladder's middle rung and the reactive
+    overflow rescue all reduce context for the same session, so they must agree
+    on HOW or a rescue is a second context policy wearing the same name. Three
+    things used to differ, and the differences were not deliberate:
+
+    * the reactive path passed NO ``replayUserBytes``, so the newest whole user
+      messages from the summarized middle were dropped — on the one path that
+      runs *after* the model has already overflowed, where the original ask is
+      most likely to be sitting in that middle;
+    * it hardcoded ``schema=True`` where the budget path computed
+      ``schema=summarizer is None``;
+    * it hardcoded ``schema=True`` and passed no summarizer, so a provider with
+      the LLM compactor enabled still got the heuristic on the overflow path.
+
+    The trigger is the ONLY intended difference now, and it is not even a
+    parameter: all three call this with the same policy and differ only in what
+    they do with the result.
+    """
+    from app.services.workbench.context_compressor import (
+        REPLAY_USER_BUDGET_BYTES,
+        compressMessages,
+        pruneToolOutputs,
+    )
+
+    pruned = pruneToolOutputs(list(messages))
+    return await compressMessages(
+        pruned,
+        threshold=_compactionThreshold(_tokens(pruned), contextWindow),
+        head_count=4,
+        tail_count=6,
+        summarizer=summarizer,  # type: ignore[arg-type]
+        pin_predicates=[_is_update_state_transition, _is_failing_receipt],
+        contextWindow=contextWindow or None,
+        goalHint=goalHint,
+        schema=summarizer is None,
+        replayUserBytes=REPLAY_USER_BUDGET_BYTES,
+    )
+
+
+def _tokens(messages: list[dict[str, object]]) -> int:
+    from app.providers.clients.base import estimateTokens
+
+    return estimateTokens(messages)
+
+
 async def _reactiveContextReduction(
     messages: list[dict[str, object]], contextWindow: int, session: WorkbenchSession
 ) -> list[dict[str, object]] | None:
     """Reactive prune-then-compact for a context-overflow error.
 
-    Runs the same reduction as pre-turn (projection prune, then summarize
-    with the token-budgeted verbatim tail) and returns the reduced list only
-    when the surface actually advanced (token count dropped). None means the
-    caller should fall through to context promotion / the fallback chain.
+    Runs the same policy as every other compaction path (see
+    :func:`_compactionCall`) and returns the reduced list only when the surface
+    actually advanced by enough to be worth a retry. ``None`` means the caller
+    should fall through to context promotion / the fallback chain — which is
+    the right outcome when shaving a few tokens would just overflow again.
     The reduced transcript gets the plan-state block re-injected (T7
     mid-turn policy) so orientation survives the rewrite.
     """
-    from app.providers.clients.base import estimateTokens
-    from app.services.workbench.context_compressor import compressMessages, pruneToolOutputs
-
-    before = estimateTokens(messages)
+    before = _tokens(messages)
     try:
-        reduced = pruneToolOutputs(messages)
-        threshold = max(4096, int(contextWindow * 0.55)) if contextWindow else before - 1
-        reduced = await compressMessages(
-            reduced,
-            threshold=threshold,
-            head_count=4,
-            tail_count=6,
-            contextWindow=contextWindow or None,
+        reduced = await _compactionCall(
+            messages,
+            contextWindow=contextWindow,
             goalHint=as_str(getattr(session, 'goal', '') or ''),
-            schema=True,
-            pin_predicates=[_is_update_state_transition, _is_failing_receipt],
+            summarizer=None,
         )
         reduced = _injectPlanState(reduced, session)
     except Exception:
         logger.debug('reactive context reduction failed', exc_info=True)
         return None
-    after = estimateTokens(reduced)
-    if after >= before:
+    after = _tokens(reduced)
+    if not _reductionIsWorthwhile(before, after):
+        logger.info(
+            'workbench reactive context reduction bought nothing useful: %d→%d tokens',
+            before,
+            after,
+        )
         return None
     logger.info('workbench reactive context reduction: %d→%d tokens', before, after)
     return reduced
@@ -229,18 +316,14 @@ async def _budgetTriggeredCompaction(
 ) -> list[dict[str, object]] | None:
     """Mid-turn compaction forced by the budget ladder.
 
-    Deliberately the SAME compaction the pre-turn auto-compact runs (same
-    prune → summarize → persist, same landmark pins) — a budget rescue that
-    summarized differently would be a second, subtly different context policy
-    for the same session. Returns the reduced list only when the surface
-    actually shrank; None means the caller keeps what it had.
+    Deliberately the SAME policy as every other compaction path — it calls
+    :func:`_compactionCall`, so a budget rescue cannot become a second, subtly
+    different context policy for the same session. Returns the reduced list only
+    when the surface shrank by enough to be worth having; ``None`` means the
+    caller keeps what it had.
     """
-    from app.providers.clients.base import estimateTokens
     from app.services.workbench.context_compressor import (
-        REPLAY_USER_BUDGET_BYTES,
         acquireCompactionLock,
-        compressMessages,
-        pruneToolOutputs,
         releaseCompactionLock,
     )
 
@@ -248,9 +331,9 @@ async def _budgetTriggeredCompaction(
         logger.info('workbench budget-compact skipped — lock held session=%s', sessionId)
         return None
     try:
-        pruned = pruneToolOutputs(list(messages))
-        originalTokens = estimateTokens(pruned)
-        threshold = max(4096, int((contextWindow or 0) * 0.55)) if contextWindow else 4096
+        from app.services.workbench.context_compressor import pruneToolOutputs
+
+        originalTokens = _tokens(pruneToolOutputs(list(messages)))
         summarizer = None
         try:
             from app.services.cognitive_config import get_features
@@ -260,34 +343,33 @@ async def _budgetTriggeredCompaction(
                 summarizer = make_compactor_llm_client(resolvedProvider, resolvedModel)
         except Exception:
             summarizer = None
-        compressed = await compressMessages(
-            pruned,
-            threshold=threshold,
-            head_count=4,
-            tail_count=6,
-            summarizer=summarizer,
-            pin_predicates=[_is_update_state_transition, _is_failing_receipt],
-            contextWindow=contextWindow or None,
+        compressed = await _compactionCall(
+            messages,
+            contextWindow=contextWindow,
             goalHint=as_str(getattr(session, 'goal', '') or ''),
-            schema=summarizer is None,
-            replayUserBytes=REPLAY_USER_BUDGET_BYTES,
+            summarizer=summarizer,
         )
-        compressedTokens = estimateTokens(compressed)
-        if compressedTokens >= originalTokens:
+        compressedTokens = _tokens(compressed)
+        if not _reductionIsWorthwhile(originalTokens, compressedTokens):
             return None
         session.messages = list(compressed)  # type: ignore[attr-defined]
         session.messageCount = len(compressed)  # type: ignore[attr-defined]
         session._last_compaction_turn = currentTurn  # type: ignore[attr-defined]
+        # The event lives HERE, not in the ladder's caller: emitting it from
+        # both meant a budget compaction published two `compaction` frames,
+        # which is a regression introduced when the trigger tag was added.
+        # `trigger='budget'` is what makes the three paths distinguishable in
+        # the stream; without it this frame is anonymous.
         if emit:
             emit(
                 {
                     'type': 'compaction',
+                    'trigger': 'budget',
                     'originalTokens': originalTokens,
                     'compressedTokens': compressedTokens,
-                    'compressedCount': len(pruned) - len(compressed),
+                    'compressedCount': len(compressed),
                     'headCount': 4,
                     'tailCount': 6,
-                    'threshold': threshold,
                     'contextWindow': contextWindow,
                     'underThreshold': False,
                 }

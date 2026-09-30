@@ -3291,8 +3291,6 @@ async def _sendWorkbenchMessageStreamImpl(
                         }
                     )
             elif _rung == 'compaction':
-                _messagesBeforeBudgetCompaction = len(currentMessages)
-                _tokensBeforeBudgetCompaction = estimateTokens(currentMessages)
                 _budgetCompacted = await _budgetTriggeredCompaction(
                     session,
                     sessionId,
@@ -3303,22 +3301,11 @@ async def _sendWorkbenchMessageStreamImpl(
                     resolvedModel=resolvedModel,
                     currentTurn=getattr(session, 'turnCount', 0),
                 )
-                # Roadmap #5: the budget ladder is the third compaction path and
-                # used to be uncountable in the stream — it emitted a `recovery`
-                # frame but never a `compaction` one, so a budget compaction was
-                # indistinguishable from the surface and final rungs in anything
-                # reading the event log. `trigger` is the discriminator, and
-                # equal before/after counts mean it ran and achieved nothing,
-                # which is different from never having run.
+                # The `compaction` frame is emitted by _budgetTriggeredCompaction
+                # itself, tagged trigger='budget' (roadmap #5). Emitting it here
+                # as well — which is what the trigger tag briefly did — published
+                # two frames for one compaction.
                 if _budgetCompacted:
-                    _emitCompactionEvent(
-                        emit,
-                        trigger='budget',
-                        original_tokens=_tokensBeforeBudgetCompaction,
-                        original_messages=_messagesBeforeBudgetCompaction,
-                        current_messages=_budgetCompacted,
-                        context_window=contextWindow,
-                    )
                     currentMessages = _budgetCompacted
                 _emitRecovery(emit, 'budget', _budgetStep, 'degraded', True)
                 if emit:
