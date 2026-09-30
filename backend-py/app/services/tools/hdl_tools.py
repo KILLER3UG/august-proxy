@@ -456,6 +456,18 @@ async def hdl_simulate(
                     [ms, '-c', '-quiet', '-l', 'transcript',
                      '-do', str(do), top_name],
                     timeout, cwd=tmpdir)
+                # vsim's `-l transcript` sends the real log to a FILE. Without
+                # this the whole transcript was thrown away and `out` (just the
+                # .do echo on -c) was parsed for assertion results — so a
+                # testbench whose `assert ... severity failure` fired was
+                # reported as a passing run with zero asserts. Read it back
+                # before the tmpdir is removed.
+                transcript = Path(tmpdir) / 'transcript'
+                if transcript.is_file():
+                    try:
+                        out = f'{out}\n{transcript.read_text(encoding="utf-8", errors="replace")}'
+                    except OSError:
+                        pass
                 # vsim transcripts append the .do echo — keep the tail as
                 # the sim log; rc is vsim's exit status.
                 engine = 'modelsim'
@@ -642,7 +654,8 @@ def vcd_summary(text: str) -> dict[str, object]:
     edges: dict[str, list[float]] = {}
     prev: dict[str, object] = {}
     t = 0.0
-    for tok in text.split():
+    tokens = text.split()
+    for tokNo, tok in enumerate(tokens):
         if tok.startswith('#'):
             try:
                 t = float(tok[1:])
@@ -650,6 +663,18 @@ def vcd_summary(text: str) -> dict[str, object]:
                 pass
             continue
         if tok.startswith('$') or tok in ('b', 'B', 'r', 'R'):
+            continue
+        if tok[0] in 'bBrR' and len(tok) > 1:
+            # A vector change is TWO tokens (`b1010 data_bus`), not one. The
+            # scalar path below would read val='b', ident='1010' — and a
+            # bit-string is never a VCD ident, so the `ident not in ids` check
+            # dropped it and EVERY multi-bit signal reported zero activity.
+            # Take the following token as the ident and treat any value change
+            # as one edge.
+            nxt = tokens[tokNo + 1] if tokNo + 1 < len(tokens) else ''
+            if nxt in ids and prev.get(nxt) != tok:
+                prev[nxt] = tok
+                edges.setdefault(nxt, []).append(t)
             continue
         # scalar change token: first char is the value
         val, ident = tok[0], tok[1:]
@@ -887,10 +912,15 @@ def _junit_xml(verdicts: list[dict[str, object]], name: str) -> str:
         return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
 
     total = len(verdicts)
-    failed = sum(1 for v in verdicts if not v.get('passed'))
+    # Same predicate as the result dict's `failed` and `ok`: a SKIP is neither
+    # a pass nor a failure. Counting it here made `failures="3"` on a suite
+    # where every test skipped, contradicting the <testcase> elements below.
+    failed = sum(1 for v in verdicts if not v.get('passed') and not v.get('skipped'))
+    skipped = sum(1 for v in verdicts if v.get('skipped'))
     ts = _dt.datetime.now(_dt.UTC).isoformat()
     head = (
         f'<testsuite name="{_esc(name)}" tests="{total}" failures="{failed}" '
+        f'skipped="{skipped}" '
         f'time="{sum(_ns(v) for v in verdicts):.1f}" '
         f'timestamp="{ts}">'
     )
@@ -901,6 +931,10 @@ def _junit_xml(verdicts: list[dict[str, object]], name: str) -> str:
             body.append(
                 f'<testcase classname="cocotb" name="{tname}" '
                 f'time="{_ns(v):.1f}"/>')
+        elif v.get('skipped'):
+            body.append(
+                f'<testcase classname="cocotb" name="{tname}" '
+                f'time="{_ns(v):.1f}"><skipped/></testcase>')
         else:
             msg = _esc(str(v.get('failReason') or 'assertion failed'))
             body.append(
@@ -1061,18 +1095,24 @@ async def hdl_test(
         rc, out = await _run([sys.executable, str(run_py)], 120.0, cwd=tmpdir)
         verdicts = _parse_cocotb_results(out)
         # SKIP is not a failure — ok means "no test failed" (a skipped
-        # test neither passes nor breaks the run).
+        # test neither passes nor breaks the run). `failed` must use the SAME
+        # predicate: it counted `not v.get('passed')`, so a run where every
+        # test skipped reported ok=True alongside failed=3, and the JUnit
+        # `failures` attribute disagreed with the file's own contents — which
+        # is exactly what a CI reader trusts.
+        def _is_failure(v: dict[str, object]) -> bool:
+            return not v.get('passed') and not v.get('skipped')
+
         result: dict[str, object] = {
             'installed': True,
-            'ok': rc == 0 and not any(
-                not v['passed'] and not v.get('skipped') for v in verdicts
-            ) if verdicts else rc == 0,
+            'ok': rc == 0 and not any(_is_failure(v) for v in verdicts) if verdicts else rc == 0,
             'exitCode': rc,
             'engine': engine_name,
             'top': top_name,
             'tests': verdicts,
             'passed': sum(1 for v in verdicts if v.get('passed')),
-            'failed': sum(1 for v in verdicts if not v.get('passed')),
+            'skipped': sum(1 for v in verdicts if v.get('skipped')),
+            'failed': sum(1 for v in verdicts if _is_failure(v)),
             'logTail': '\n'.join(out.splitlines()[-40:]),
         }
         if ws:

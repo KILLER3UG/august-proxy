@@ -35,8 +35,12 @@ async def _bulk_read_files(paths: object = None, path: str = '', offset: int | N
     # Accept files: [{path, offset, limit}] for per-file paging of large logs/datasets
     ids: list[str] = []
     per_file_params: list[tuple[int | None, int | None]] = []
+    dropped = 0
     if files is not None and isinstance(files, list):
         for entry in files:
+            if len(ids) >= BULK_MAX_ITEMS:
+                dropped += 1
+                continue
             if isinstance(entry, dict):
                 fp = str(entry.get('path') or entry.get('file') or '').strip()
                 if fp:
@@ -60,6 +64,10 @@ async def _bulk_read_files(paths: object = None, path: str = '', offset: int | N
         per_file_params = [(offset, limit)] * len(ids)
     if not ids:
         return 'Error: paths is required (array of file paths to read).'
+    # The object form never went through coerce_str_list, so it never met
+    # BULK_MAX_ITEMS: 5000 entries fanned out into 5000 concurrent whole-file
+    # reads plus sha256 digests, while the tool's own description promised a
+    # 40-item cap. Cap it here and report what was actually dropped.
     results = await asyncio.gather(*[_readFile(p, offset=off, limit=lim) for (p, (off, lim)) in zip(ids, per_file_params)], return_exceptions=True)
     blocks: list[str] = []
     ok: list[str] = []
@@ -75,6 +83,8 @@ async def _bulk_read_files(paths: object = None, path: str = '', offset: int | N
         ok.append(p)
         blocks.append(f'===== {p} =====\n{text}')
     header = format_bulk_report(label='read_files', total=len(ids), ok_ids=ok, errors=errors)
+    if dropped:
+        header += f' ({dropped} more item(s) dropped — the cap is {BULK_MAX_ITEMS} per call)'
     body = '\n\n'.join(blocks) if blocks else '(no files read)'
     return f'{header}\n\n{body}'
 

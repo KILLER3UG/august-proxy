@@ -588,10 +588,13 @@ def register() -> None:
             'properties': {
                 'direction': {
                     'type': 'string',
-                    'enum': ['up', 'down', 'left', 'right'],
+                    # up/down only — the handler drives a vertical mouse wheel,
+                    # so left/right were accepted by the schema and silently
+                    # coerced to a downward scroll.
+                    'enum': ['up', 'down'],
                     'description': 'Scroll direction (default down).',
                 },
-                'amount': {'type': 'integer', 'description': 'Pixels to scroll (default 600).'},
+                'amount': {'type': 'integer', 'description': 'Pixels to scroll (default 400).'},
                 'ref': {
                     'type': 'string',
                     'description': 'Optional element ref to scroll into view / within.',
@@ -609,7 +612,11 @@ def register() -> None:
             'properties': {
                 'strategy': {
                     'type': 'string',
-                    'enum': ['selector', 'networkidle', 'timeout'],
+                    # 'load' was implemented by the handler but absent here, so
+                    # the branch was unreachable through the tool surface and a
+                    # model reaching for the natural strategy burned a round
+                    # being told it did not exist.
+                    'enum': ['selector', 'load', 'networkidle', 'timeout'],
                     'description': 'What to wait for (default selector).',
                 },
                 'selector': {'type': 'string', 'description': 'Required when strategy=selector.'},

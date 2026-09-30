@@ -17,6 +17,11 @@ if TYPE_CHECKING:
     from app.services.sandbox.policy import SandboxResult
 
 _MAXFileSize = 20 * 1024 * 1024
+# Ceiling for the PAGED read path, which is the documented escape hatch for a
+# file over _MAXFileSize. Higher than the normal cap on purpose — a 50 MB log
+# must still be pageable — but finite, because the paged branch reads the whole
+# file (text) and then again (raw bytes, for the sha256 the edit gate needs).
+_MAXPageFileSize = 200 * 1024 * 1024
 _MAXSearchResults = 100
 # Python fallback search bounds — rg isn't bundled on Windows, so the fallback
 # is the common path; it must stay fast and interruptible instead of hanging
@@ -213,8 +218,21 @@ async def _readFile(
     if _is_media_file(str(filePath)):
         return _MEDIA_REDIRECT.format(path=path, kind=_media_kind(ext), ext=ext)
     size = filePath.stat().st_size
-    if size > _MAXFileSize and offset is None and limit is None and start_line is None and end_line is None:
+    _paging = offset is not None or limit is not None or start_line is not None or end_line is not None
+    if size > _MAXFileSize and not _paging:
         return f'Error: File too large ({size} bytes). Maximum: {_MAXFileSize} bytes. Use offset/limit to page it, e.g. read_file(path, offset=1, limit=200).'
+    if size > _MAXPageFileSize:
+        # Paging is the DOCUMENTED escape hatch for a file over _MAXFileSize, so
+        # it must keep working for genuinely large logs and datasets — but it
+        # must not be unbounded. Previously the ceiling was skipped entirely
+        # whenever any paging argument was present, so the one path with no
+        # limit was also the one that reads the whole file twice (text, then
+        # raw bytes for the hash). 200 MB leaves a real escape hatch while still
+        # refusing the unbounded case.
+        return (
+            f'Error: File too large to page ({size} bytes). Maximum for paged reads: '
+            f'{_MAXPageFileSize} bytes. Use search_files to locate the region you need.'
+        )
     try:
         import aiofiles
 
@@ -260,18 +278,20 @@ async def _readFile(
             ) else ''
             # Per-line anchors (R1): numbered lines let the model reference
             # exact lines in edit_lines.changes[].line and verify its anchors.
-            numbered = '\n'.join(f'{start_i + i:5d}| {line}' for i, line in enumerate(sliced))
+            # Join with '' not '\n': `sliced` came from splitlines(keepends=True),
+            # so every element ALREADY ends in a newline. Joining with '\n'
+            # rendered a blank line between every pair, which meant the block
+            # could not be copied verbatim into edit_lines' `old` anchor — the
+            # edit was rejected and the closest-match hint scored below its
+            # threshold, so the model got no hint at all and burned a round.
+            numbered = ''.join(f'{start_i + i:5d}| {line}' for i, line in enumerate(sliced))
             out = hashHeader + header + numbered + ('\n' if numbered else '')
-            try:
-                from app.services.workbench.context import currentSessionId as _csid
-
-                _sid2 = _csid.get() or ''
-                if _sid2:
-                    from app.services.workbench.tool_result_cache import put as _cache_put
-
-                    _cache_put(_sid2, 'read_file', f'{path}:{start_i}-{end_i}', out)
-            except Exception:
-                pass
+            # NOT cached, deliberately. The lookup key is `str(path)` (see the
+            # cache probe above), so an entry stored under `path:start-end` can
+            # never be read back — it only evicted real non-paged read_file /
+            # list_directory entries from the 30s cache and replaced them with
+            # unreachable ones. Paging is not a hot path worth a lookup that
+            # does not exist.
             return out
         out2 = hashHeader + content
         try:
@@ -593,6 +613,24 @@ async def _editLines(
         filePath.write_bytes(joined.encode('utf-8'))
     except OSError as exc:
         return f'Error writing file: {exc}'
+    # The read_file cache is keyed on the path, so a successful edit makes
+    # every cached read of that file stale — and the next edit_lines in the
+    # same session would read those stale bytes, build an anchor that no
+    # longer matches, and be rejected [edit-stale] with nothing having
+    # changed underneath. writeFile clears for the same reason (:315-321);
+    # this path did not, so the SECOND edit of a file in one session was
+    # refused. Cleared on the success path only — a failed write leaves the
+    # cache correct.
+    try:
+        from app.services.workbench.context import currentSessionId as _csid_e
+
+        _sid_e = _csid_e.get() or ''
+        if _sid_e:
+            from app.services.workbench.tool_result_cache import clear as _cache_clear_e
+
+            _cache_clear_e()
+    except Exception:
+        pass
     result = f'Applied {applied} edit{"" if applied == 1 else "s"} to {path}.'
     if fuzzyNotes:
         result += (
