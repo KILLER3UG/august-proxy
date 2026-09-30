@@ -7,16 +7,32 @@ That document is what is broken; this one is what to build.
 
 | # | Item | State |
 |---|---|---|
-| 4 | Gate-participation conformance test | **DONE** — `tests/test_gate_participation.py`. Found finding #53 on its first run, which the 52-item sweep had missed. |
+| 1 | Runaway-turn backstop | **DONE** — `_runawayBudget` counts on world delta alone, which argument novelty and a flat `update_state` cannot move. Opt-in: an absent key means OFF, unlike `MAX_MANAGED_TOOL_ROUNDS`. Emits `recovery {kind:'runaway'}`, reuses the `stall-stop` reason. |
 | 2 | `ok` honouring `end_reason` | **DONE** — `turn_outcomes.turn_ok()`. **No migration needed**: `end_reason` has been persisted since 046, so the judgement could be derived at write time. The proposal for a new `ok_reason` column was over-engineered. `ok = None` persists as SQL NULL, so both readers moved to `COUNT(ok)`. |
-| 1 | Runaway-turn backstop | not started — still the largest real-world turn-reliability hole |
-| 3 | `edit_verify_fails` as a per-turn count | not started |
+| 3 | `edit_verify_fails` as a per-turn count | **DONE** — `failCount` (turn total) split from `failStreak` (trailing run, still the gate's fix budget). A pass clears the streak but not the count. |
+| 4 | Gate-participation conformance test | **DONE** — `tests/test_gate_participation.py`. Found finding #53 on its first run, which the 52-item sweep had missed. |
 | 5-11, 13-14 | — | not started |
 
-Items 4 and 2 went ahead of the order below because both are S effort and both
-make later work measurable: #2 gives the Learning panel honest numbers, and #4
-is the mechanical check that finds the next instance of the bug class the audit
-could only sample.
+Items 4, 2, 1 and 3 went ahead of the listed order because each is S–M effort
+and each either makes later work measurable (#2 gives the Learning panel honest
+numbers, #3 makes its edit-verification column honest) or bounds a hole that
+would otherwise mask everything else (#1).
+
+### What #1 actually took
+
+The interesting part was not the counter, it was the test. The first stub
+varied the *arguments* of a fixed `read_file` path — which the `(tool,
+target)` polling guard catches, so the stall detector stopped the turn and the
+test passed while proving nothing about the runaway case. Reproducing the real
+gap needs **novelty and zero world delta at the same time**, which means a tool
+that takes no path argument (`tool_describe`, `brain_query`, `search`): a
+different `(tool, target)` each round, each used once, so the novelty reset
+fires and no world delta is recorded.
+
+The test now also asserts the stall path did *not* fire, so it cannot silently
+regress into testing the guard that already worked. Proof it is load-bearing:
+the same scenario with the backstop off does not terminate — it runs to a 60 s
+pytest timeout, versus ~10 s with it on.
 
 ## How this was derived, and the honest caveat
 
