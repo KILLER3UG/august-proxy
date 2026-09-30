@@ -273,3 +273,154 @@ class TestLadderInTheLoop:
         assert not [e for e in events if e.get('type') == 'recovery' and e.get('kind') == 'budget']
         end = [e for e in events if e.get('type') == 'turn_end']
         assert end[-1]['reason'] == 'interrupted'
+
+
+# ── Rung dispatch when the surface was narrowed by something ELSE (2026-09-27) ──
+
+
+class NarrowedThenBudgetClient(StubClient):
+    """Emits `malformedRounds` rounds of unparseable tool JSON, then valid calls.
+
+    Three consecutive malformed rounds trip the malformed-JSON self-heal, which
+    sets the loop's ``surfaceDowngraded`` — so by the time the budget's FIRST
+    rung fires the surface is already narrow, but for a reason that has nothing
+    to do with the budget. That is the state the old dispatch mishandled.
+    """
+
+    def __init__(self, malformedRounds: int = 3) -> None:
+        super().__init__(answerOnFinalRound=False)
+        self.malformedRounds = malformedRounds
+
+    async def messages_stream(self, body) -> AsyncIterator[dict[str, object]]:
+        self.callCount += 1
+        roundN = self.callCount
+        self.bodies.append(body)
+        await asyncio.sleep(0)
+        if roundN <= self.malformedRounds:
+            yield {
+                '_event_type': 'content_block_start',
+                'content_block': {'type': 'tool_use', 'id': f'toolu_{roundN}', 'name': 'list_skills'},
+            }
+            # Not valid JSON for the tool's schema → the loop records a parse
+            # failure instead of executing an empty call.
+            yield {
+                '_event_type': 'content_block_delta',
+                'delta': {'type': 'input_json_delta', 'partial_json': '{not json'},
+            }
+            yield {'_event_type': 'content_block_stop'}
+            yield {'_event_type': 'message_delta', 'usage': {'input_tokens': 5000, 'output_tokens': 500}}
+            return
+        yield {
+            '_event_type': 'content_block_start',
+            'content_block': {'type': 'tool_use', 'id': f'toolu_{roundN}', 'name': 'list_skills'},
+        }
+        yield {
+            '_event_type': 'content_block_delta',
+            'delta': {'type': 'input_json_delta', 'partial_json': '{}'},
+        }
+        yield {'_event_type': 'content_block_stop'}
+        yield {'_event_type': 'message_delta', 'usage': {'input_tokens': 5000, 'output_tokens': 500}}
+
+
+def _budget_recoveries(events: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [e for e in events if e.get('type') == 'recovery' and e.get('kind') == 'budget']
+
+
+def _tool_names(body: object) -> set[str]:
+    if not isinstance(body, dict):
+        return set()
+    return {
+        t.get('name') for t in (body.get('tools') or []) if isinstance(t, dict) and t.get('name')
+    }
+
+
+class TestRungDispatchWhenAlreadyNarrowed:
+    @pytest.mark.asyncio
+    async def test_first_rung_still_degrades_when_the_surface_was_already_narrowed(
+        self, _isolate, monkeypatch
+    ):
+        """A budget breach must spend exactly ONE rung, whatever narrowed the surface.
+
+        Regression: the dispatch was
+        ``if _rung == 'surface' and not surfaceDowngraded: ... elif compaction: ...
+        else: final``. With the surface already downgraded for an unrelated
+        reason, the first rung matched neither branch and fell straight into
+        the TERMINAL branch — so the documented three-rung ladder collapsed to
+        one and the turn ended a round early with no compaction.
+        """
+        monkeypatch.setattr(wb, '_turnBudget', lambda: (0.0, 16000, 0))
+        stub = NarrowedThenBudgetClient()
+        _isolate['client'] = stub
+        events: list[dict[str, object]] = []
+        await wb.sendWorkbenchMessageStream(
+            sessionId='wb_pre_narrowed',
+            message='go',
+            model='stub-claude',
+            emit=events.append,
+        )
+        recoveries = _budget_recoveries(events)
+        assert recoveries, 'the budget never fired'
+        # Rung 1 must degrade, not stop. 'stopped' here is the regression.
+        assert recoveries[0]['attempt'] == 1
+        assert recoveries[0]['outcome'] == 'degraded', (
+            'rung 1 escalated to the terminal rung because the surface was '
+            f'already narrowed: {recoveries[0]}'
+        )
+        # And the ladder still walks all three rungs in order.
+        assert [r['outcome'] for r in recoveries][:3] == ['degraded', 'degraded', 'stopped']
+        assert [r['attempt'] for r in recoveries][:3] == [1, 2, 3]
+        end = [e for e in events if e.get('type') == 'turn_end']
+        assert end[-1]['reason'] == 'budget'
+
+    @pytest.mark.asyncio
+    async def test_a_budget_narrowing_survives_the_a6_clean_round_restore(
+        self, _isolate, monkeypatch
+    ):
+        """The A6 restore may reverse the self-heal downgrade, never the budget one.
+
+        Regression: both downgrades shared one ``surfaceDowngraded`` flag, so the
+        A6 restore cleared it and handed the model the FULL tool surface back —
+        through the budget ladder's rungs, where the documented bare-surface
+        narrowing has to hold.
+
+        ``_DOWNGRADE_RECOVERY_ROUNDS`` is dropped to 1 so the restore fires on
+        the round right after the budget narrowed, while the turn is still
+        running and its next request body can be inspected. At the shipped
+        value of 3 the restore can only land on the round AFTER the 'final'
+        rung, where the turn is already ending and the restored surface is
+        never sent — so the bug is latent there and this timing is what makes
+        it observable.
+        """
+        monkeypatch.setattr(wb, '_turnBudget', lambda: (0.0, 1000, 0))
+        monkeypatch.setattr(wb, '_DOWNGRADE_RECOVERY_ROUNDS', 1)
+        stub = NarrowedThenBudgetClient(malformedRounds=0)  # budget owns the narrowing
+        _isolate['client'] = stub
+        events: list[dict[str, object]] = []
+        await wb.sendWorkbenchMessageStream(
+            sessionId='wb_budget_narrow',
+            message='go',
+            model='stub-claude',
+            emit=events.append,
+        )
+        assert _budget_recoveries(events), 'the budget never fired'
+
+        # Find the first request that carried the bare set: that is the round
+        # the budget's surface rung narrowed.
+        narrowAt = None
+        for i, body in enumerate(stub.bodies):
+            names = _tool_names(body)
+            if names and names.issubset(wb._BARE_TOOL_ALLOW):
+                narrowAt = i
+                break
+        assert narrowAt is not None, 'the budget never narrowed the surface'
+
+        # Every later request must still be bare (or tool-free). Pre-fix the
+        # A6 restore put the full registry back here.
+        for i in range(narrowAt + 1, len(stub.bodies)):
+            names = _tool_names(stub.bodies[i])
+            if not names:
+                continue  # the 'final' rung's tool-free answer
+            assert names.issubset(wb._BARE_TOOL_ALLOW), (
+                f'round {i} advertised {sorted(names - wb._BARE_TOOL_ALLOW)} after the budget '
+                'narrowed the surface: the A6 restore undid the budget rung'
+            )
