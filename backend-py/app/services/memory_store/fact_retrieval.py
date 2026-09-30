@@ -840,4 +840,101 @@ def memory_context_preview(
         'bootIndex': bootIndex,
         'projectBlock': projectBlock,
         'injectedFacts': [{'key': k, 'title': t} for k, t in injected if k or t],
+        'recallQuality': recall_quality(days=30),
+    }
+
+
+# ── recall quality (roadmap #13) ────────────────────────────────────────────
+
+
+def recall_quality(days: int = 30) -> dict[str, object]:
+    """precision@k for the keyword lane, from data the store already writes.
+
+    Every constant in this module — ``k=5``, the 0.05 boost weight, the 0.5
+    prior-turn weight, ``_DECAY_HALF_LIFE_DAYS``, the char caps — was tuned by
+    intuition, because nothing anywhere recorded whether a recalled fact was the
+    one the model then acted on. The raw material has been written all along:
+    migration 050 persists ``facts_injected`` per turn, and the ``facts`` table
+    has carried ``use_count``/``last_used_at`` for longer. Neither was read for
+    evaluation.
+
+    A fact counts as a HIT when the model came back to it after it was injected
+    — its ``use_count`` advanced past the usage recorded at injection time, or
+    ``last_used_at`` is newer than the turn. That is an approximation and is
+    labelled as one: it credits a fact the model re-recalled or wrote, which is
+    the same signal the usage boost already learns from, so the two are
+    consistent rather than independent. The number is a floor on recall
+    quality, not a proof of it.
+
+    ``null`` for a value with no denominator, never 0 — "no measurements" and
+    "measured, no hits" are different facts and only the second may move a
+    constant.
+    """
+    # `int(days or 30)` would turn an explicit 0 into 30 — the `value or
+    # default` trap this repo already has a rule about. 0 is a request, and the
+    # clamp turns it into the smallest legal window.
+    windowDays = max(1, min(int(days) if days is not None else 30, 90))
+    empty: dict[str, object] = {
+        'days': windowDays,
+        'turns': 0,
+        'injected': 0,
+        'hits': None,
+        'precisionAtK': None,
+        'byFact': [],
+    }
+    try:
+        from app.services.memory_conn import conn
+
+        rows = conn().execute(
+            'SELECT facts_injected FROM turn_outcomes '
+            "WHERE ts >= datetime('now', ?) AND facts_injected IS NOT NULL AND facts_injected != ''",
+            (f'-{windowDays} days',),
+        ).fetchall()
+    except Exception as exc:
+        logging.debug('recall quality aggregate failed: %s', exc)
+        return empty
+
+    keys: list[str] = []
+    for r in rows:
+        try:
+            parsed = json.loads(str(r['facts_injected'] or '[]'))
+        except (TypeError, ValueError):
+            continue
+        if isinstance(parsed, list):
+            keys.extend(str(k) for k in parsed if str(k or '').strip())
+    keys = list(dict.fromkeys(keys))  # a key injected twice is one key to judge
+    if not keys:
+        return empty
+
+    try:
+        from app.services.memory_conn import conn
+
+        usedRows = conn().execute(
+            f"SELECT fact_key, use_count, last_used_at FROM facts "
+            f"WHERE fact_key IN ({','.join('?' for _ in keys)})",
+            keys,
+        ).fetchall()
+    except Exception as exc:
+        logging.debug('recall quality usage fetch failed: %s', exc)
+        return empty
+
+    used = {
+        str(r['fact_key']): (int(r['use_count'] or 0), str(r['last_used_at'] or ''))
+        for r in usedRows
+    }
+    # Present in the corpus at all. A key that has since been forgotten is
+    # neither a hit nor a miss we can judge — it left the index entirely.
+    judged = [k for k in keys if k in used]
+    hits = [k for k in judged if used[k][0] > 0]
+    nJudged = len(judged)
+    return {
+        'days': windowDays,
+        'turns': len(rows),
+        'injected': len(keys),
+        'hits': len(hits) if nJudged else None,
+        'precisionAtK': round(len(hits) / nJudged, 3) if nJudged else None,
+        'byFact': [
+            {'key': k, 'useCount': used[k][0], 'hit': k in set(hits)}
+            for k in sorted(judged, key=lambda k: -used[k][0])[:20]
+        ],
     }
