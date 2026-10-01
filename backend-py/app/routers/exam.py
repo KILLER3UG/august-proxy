@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
@@ -19,6 +20,103 @@ from app.services.memory_store import _conn
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/api/exam')
+
+
+def _read_attached_files(files: list[object], ws_root: Path | None) -> str:
+    """Read the caller's attached files, bounded by a containment root.
+
+    Split out of ``generateExam`` so it can be tested directly: inline, the
+    containment logic could only be reached through the full request/DB path,
+    which is how triage #23 (a request-supplied root of ``/``) survived.
+
+    Two roots, and neither is asserted by the caller: a session-owned workspace
+    when there is one, else the system temp dir. Both are checked by resolving
+    the candidate first, so a symlink cannot walk out of the root it passed.
+    """
+    import tempfile
+
+    tmp_root = Path(tempfile.gettempdir()).resolve()
+    chunks: list[str] = []
+    for fp in files:
+        path = as_str(fp)
+        try:
+            p = Path(path).resolve()
+        except OSError:
+            continue
+        if not p.is_file():
+            continue
+        if ws_root is not None:
+            try:
+                p.relative_to(ws_root)
+            except ValueError:
+                continue
+        elif not p.is_absolute() or (tmp_root not in p.parents and p != tmp_root):
+            continue
+        try:
+            with open(p, 'r', encoding='utf-8', errors='ignore') as f:
+                chunks.append(f.read()[:5000])
+        except Exception:
+            continue
+    return '\n\n'.join(chunks)[:10000]
+
+
+def _trusted_workspace_root(session_id: str, claimed: str) -> Path | None:
+    """Resolve the containment root for attached-file reads.
+
+    A caller-supplied ``workspacePath`` cannot DEFINE the root. It may only
+    nominate one, and it is honoured only when it matches the workspace a real
+    session already owns — server-side truth, not something the request asserts.
+
+    Before this, the root was taken straight from the body and the only check was
+    ``p.relative_to(ws_root)``, so ``{"workspacePath": "/"}`` made every absolute
+    path on the machine pass containment and the first 10 KB of each was read
+    into the exam prompt. The comment above the call already claimed "arbitrary
+    absolute paths are rejected"; that was true only for the no-workspace branch.
+
+    The shipped frontend never sends ``workspacePath`` for exam generation, so
+    this closes an API-level hole without changing the UI contract: with no
+    nominated workspace the temp-dir rule below still applies.
+    """
+    claim = (claimed or '').strip()
+    if not claim:
+        return None
+    try:
+        wanted = str(Path(claim).expanduser().resolve(strict=False)).lower()
+    except OSError:
+        return None
+
+    # A nominated workspace must belong to a session that exists.
+    sid = (session_id or '').strip()
+    owned: list[str] = []
+    if sid:
+        try:
+            from app.services.workbench.sessions import get_workbench_session
+
+            wb = get_workbench_session(sid)
+            if wb:
+                owned.append(str(getattr(wb, 'workspacePath', '') or ''))
+        except Exception:
+            logger.debug('exam workspace: workbench lookup failed', exc_info=True)
+        try:
+            from app.services.memory_store import get_session
+
+            rec = get_session(sid)
+            if rec:
+                owned.append(str(rec.get('workspacePath') or ''))
+        except Exception:
+            logger.debug('exam workspace: session lookup failed', exc_info=True)
+
+    for path in owned:
+        if not path:
+            continue
+        try:
+            if str(Path(path).expanduser().resolve(strict=False)).lower() == wanted:
+                return Path(wanted)
+        except OSError:
+            continue
+
+    logger.warning('exam: rejected unowned workspacePath %r', claim)
+    return None
 
 
 def _db():
@@ -43,40 +141,15 @@ async def generateExam(body: dict[str, object]):
     context = ''
     sourceFiles = ''
     if files:
-        import os
-        import tempfile
-        from pathlib import Path
 
-        # Only read files the user actually owns: inside the session
-        # workspace when one is given, else the system temp dir (mirrors
-        # the sandbox's no-workspace write gate). Arbitrary absolute paths
-        # are rejected (audit finding — arbitrary file disclosure).
+        # Only read files the user actually owns: inside the session workspace
+        # when one is nominated AND that workspace belongs to a real session
+        # (see _trusted_workspace_root), else the system temp dir (mirrors the
+        # sandbox's no-workspace write gate). A body-supplied path can no longer
+        # widen the root to "/" — arbitrary absolute paths are rejected.
         ws = as_str(body.get('workspacePath')) or as_str(body.get('workspace_path'))
-        ws_root = Path(ws).resolve() if ws and os.path.isdir(ws) else None
-        tmp_root = Path(tempfile.gettempdir()).resolve()
-
-        chunks = []
-        for fp in files:
-            path = as_str(fp)
-            try:
-                p = Path(path).resolve()
-            except OSError:
-                continue
-            if not p.is_file():
-                continue
-            if ws_root is not None:
-                try:
-                    p.relative_to(ws_root)
-                except ValueError:
-                    continue
-            elif not p.is_absolute() or (tmp_root not in p.parents and p != tmp_root):
-                continue
-            try:
-                with open(p, 'r', encoding='utf-8', errors='ignore') as f:
-                    chunks.append(f.read()[:5000])
-            except Exception:
-                continue
-        context = '\n\n'.join(chunks)[:10000]
+        ws_root = _trusted_workspace_root(as_str(body.get('sessionId')), ws)
+        context = _read_attached_files(files, ws_root)
         sourceFiles = json.dumps(files)
     if not topic:
         topic = f'the content of {len(files)} uploaded file(s)'
