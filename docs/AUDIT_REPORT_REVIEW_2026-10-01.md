@@ -123,7 +123,7 @@ subtrees (documented at `case_converters.py:89`) and does necessary work.
 
 | # | Claim | Evidence |
 |---|---|---|
-| **100** | Command allowlist permissive | The list at `file_tools.py:52` includes `rm`, `cp`, `mv`, `chmod`, `chown`, `mkdir`, `find` alongside the interpreters. The report named `bash`/`sh`/`pwsh`; the actual problem is that `rm` is allowlisted outright |
+| **100** | `rm` guard defeated by spelling | **My own verdict was wrong — see Corrections.** The allowlist at `file_tools.py:52` does include `rm`, but it is a FIRST-WORD filter deciding which *binary* runs; removing `rm` would break the agent and close nothing. The real hole was the second layer: the `dangerous` substring list matches only one spelling, so `rm -fr /`, `rm --recursive --force ~` and `rm -rf $HOME` all passed. Fixed in `4a0203ea` |
 | **89** | No-op `_record_tool_failure` | `proxy_tools.py:174` is `def _record_tool_failure(info): return None`, called at L407 and L465 with real `{tool_name, args, error, phase}` dicts that are discarded. A telemetry hook that silently drops every failure |
 | **70** | Bare `except: pass` | Four of them in `model_service.py` (46, 321, 413, 421) |
 
@@ -175,6 +175,20 @@ I recorded this because the failure was mine, not the report's: I read a
 branch without checking which `if` guarded it. That is the same mistake the
 report makes throughout — a line read without its neighbour — and it is worth
 naming when the reviewer of a review has to correct himself.
+
+**#100 — also wrong, and in a way that would have made things worse.** I filed it
+as "the command allowlist permits `rm`/`chmod`/`chown`/`find`". True, and
+irrelevant: `_ALLOWEDCommandPrefixes` is a first-word filter deciding which
+*binary* may be invoked. Removing `rm` from it would break an agent that cannot
+delete its own build directory, and would close nothing, because that list was
+never the boundary. The boundary is the second layer, the `dangerous` substring
+list — and *that* had a real hole: it matches one exact spelling, so `rm -fr /`,
+`rm --recursive --force ~` and `rm -rf $HOME` sailed through.
+
+Acting on my own verdict would have removed a capability to fix a bug elsewhere
+in the same file. The error was treating a list I had read as the whole
+mechanism without reading what consulted it — the identical mistake, twice,
+in two different files.
 
 ## What this means
 
