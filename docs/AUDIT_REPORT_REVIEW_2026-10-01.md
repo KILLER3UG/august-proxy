@@ -19,13 +19,16 @@ roughly a third hold, and the ones that do are mostly minor or already mitigated
 
 | | Count |
 |---|---|
-| Real, worth fixing | **8** |
-| Real but trivial / severity inflated | **10** |
-| False positive | **16** |
-| Mixed — needs context the report omits | **7** |
-| Deep-verified total | **~45 of 120** |
+| Real, worth fixing | **10** |
+| Real but trivial / severity inflated | **16** |
+| False positive | **30** |
+| Mixed — needs context the report omits | **8** |
+| Deep-verified total | **~64 of 120** |
 | Style opinions, no code check changes them | **18** (`#78`–`#95`) |
-| Not yet verified | **~57** |
+| Not yet verified | **~38** |
+
+**Roughly two thirds of the verified claims are wrong.** The report is not a work
+queue; it is a list of places a scanner stopped reading.
 
 ## The report's own numbers are unreliable
 
@@ -52,10 +55,16 @@ roughly a third hold, and the ones that do are mostly minor or already mitigated
 | 27 | `quota_endpoint` `TypeError` | The ternary short-circuits, **and** line 235 already early-returns the exact case cited |
 | 33 | Lookbehind needs Safari 16.4 | `(?<![(\]])` is a **single-character** lookbehind. Only *variable-length* lookbehind needs 16.4 |
 | 35 | `_begin_txn` check-then-act | `sessions.py` imports `threading` and carries `_state_lock` |
-| 46 | `_mcpCleanupTasks` unbounded | `task.add_done_callback(_mcpCleanupTasks.discard)` removes entries |
-| 50 | `_chatTasks`/`_cancelled` unbounded | `_cancelled.pop(sessionId, None)` on the close path |
-| 76 | `gateway_auth` swallows exceptions | Returns `False`/`None` — that is **fail-closed**, the safe direction. Listed as if it were fail-open |
+| 30 | Listener accumulation in reconnect | `{ once: true }` on the abort listener — removed after firing |
+| 45 | Browser console logs never cleared | `_MAXConsole = 500`, trimmed on append (line 104) |
+| 47 | Probe loop never cancelled on shutdown | Lines 184–188 cancel, await, and swallow `CancelledError` |
+| 66 | 2-second `setInterval` | Line 50 stores the id, line 51 returns `clearInterval` |
+| 97 | Screenshot symlink bypass | `Path(path).resolve()` **and** both roots `.resolve()`d before `_inside()` |
+| 108 | Reads 2000 files synchronously | Three independent caps: `_MAX_SCAN_FILES` (79), `_MAX_SCAN_DEPTH` (75), `count >= 30` (94), plus `read(8192)` (89) |
+| 110 | `_deriveFactKey` has no length limit | `[:48]` on the slug (111), `[:40]` on the scope (113) |
+| 111 | `CancelledError` not caught | Correct behaviour — it derives from `BaseException`, so `except Exception` *should not* catch it; propagating cancellation is the point |
 | 96 | `_q()` bypassable by Unicode lookalikes | Line 16 is standard single-quote doubling (`'` → `''`). The correct SQL escape |
+| 76 | `gateway_auth` swallows exceptions | Returns `False`/`None` — that is **fail-closed**, the safe direction. Listed as if it were fail-open |
 
 **Note `#20` vs `#13`.** The audit applied the *same* "cache keyed by `id()`" claim
 to two sites. It is wrong about one and right about the other, for a reason that
@@ -80,9 +89,23 @@ object, `model_params` does not. Sampling one would have produced the wrong answ
 `#28` no-op ternary (`feature if feature in _FEATURE_IDS else feature`) is real but
 filed as "P1 Critical Logic Bug". `#116` dead loop is real, and the comment above it
 already says "Simpler: clear all for session". `#26` calls `bind_path` twice.
+`#29` `!sess && !sessions.some(...)` — `some` is genuinely redundant after `find`.
 `#67` and `#44` leak a timer/task handle. `#104` uses `!=` for a token compare.
 `#40`, `#41`, `#51` are real but small (missing lock; abandoned approvals never pruned).
 `#54`, `#114` "grow unbounded" but are a `Set` of session ids and a dict of repo locks.
+`#53` `matchMedia` listener added at `theme.ts:113` with no matching `removeEventListener`.
+`#102` reassigns `self._client` on connect without closing the previous one.
+`#91` uses `input` as a parameter name in three places, shadowing the builtin.
+`#86` MD5 for a content hash where the rest of the codebase uses SHA-256.
+`#112` `close()` does not clear the PTY buffer — harmless, the object is discarded.
+
+## Real — found on the second pass
+
+| # | Claim | Evidence |
+|---|---|---|
+| **100** | Command allowlist permissive | The list at `file_tools.py:52` includes `rm`, `cp`, `mv`, `chmod`, `chown`, `mkdir`, `find` alongside the interpreters. The report named `bash`/`sh`/`pwsh`; the actual problem is that `rm` is allowlisted outright |
+| **89** | No-op `_record_tool_failure` | `proxy_tools.py:174` is `def _record_tool_failure(info): return None`, called at L407 and L465 with real `{tool_name, args, error, phase}` dicts that are discarded. A telemetry hook that silently drops every failure |
+| **70** | Bare `except: pass` | Four of them in `model_service.py` (46, 321, 413, 421) |
 
 ## Mixed — the report omits the context that decides it
 
@@ -94,6 +117,9 @@ already says "Simpler: clear all for session". `#26` calls `bind_path` twice.
 - **#42** — `threading.Lock()` is only wrong inside `async def`; not established here.
 - **#6** — `follow_redirects=True` on an authenticated request is real, but the exfiltration
   impact depends on the httpx version's cross-host `Authorization` stripping.
+- **#90** — `_stub_tool_definitions()` does return `[]`, but its docstring says so: it is a
+  declared placeholder, not a defect.
+- **#103** — `auth_test()` has no explicit timeout, but `slack_sdk` applies its own default.
 
 ## Style opinions, not defects
 
@@ -103,21 +129,24 @@ stated measurement is wrong by 2.4×, which is the only checkable content in the
 
 ## Not yet verified
 
-~57 claims: `#29`–`#34`, `#36`, `#39`, `#43`, `#45`, `#47`–`#49`, `#52`–`#66`,
-`#68`–`#75`, `#77`, `#97`–`#103`, `#105`–`#108`, `#110`–`#113`, `#115`,
-`#117`–`#120`. These are mostly the P2/P3 tables. Given the measured false-positive
-rate I would not expect most to survive, but that is a prediction, not a result.
+~38 claims: `#31`, `#32`, `#34`, `#36`, `#39`, `#43`, `#48`, `#49`, `#52`,
+`#55`–`#65`, `#68`, `#69`, `#71`–`#75`, `#77`, `#82`–`#85`, `#87`, `#88`,
+`#92`–`#95`, `#98`, `#106`, `#113`, `#117`–`#120`. Mostly the P2 perf/error-handling
+tables and the remaining frontend nits. Given the measured false-positive rate I would
+not expect many to survive, but that is a prediction, not a result.
 
 ## What this means
 
 The failure modes are consistent and identifiable:
 
-1. **Reading a line without its neighbours.** `#17`, `#27`, `#20`, `#2`, `#9`, `#76`.
-   The cited line is real; the meaning isn't.
-2. **Stale platform semantics.** `#15` (pre-3.10 asyncio), `#16` (httpx read timeout).
-3. **Deliberate design read as oversight.** `#1`, `#11`, `#14`, `#12`.
-4. **Severity inflated to force action.** `#28`, `#54`, `#114` — cosmetic items in a
-   Critical/P1 list is what makes the real findings (23, 13, 5, 22) easy to miss.
+1. **Reading a line without its neighbours.** `#17`, `#27`, `#20`, `#2`, `#9`, `#76`,
+   `#45`, `#47`, `#66`, `#97`, `#108`, `#110`. The cited line is real; the meaning isn't.
+2. **Stale platform semantics.** `#15` (pre-3.10 `asyncio.Lock`), `#16` (httpx read
+   timeout), `#111` (`CancelledError` derives from `BaseException` — *not* catching it
+   is correct, and the report calls the correct behaviour a gap).
+3. **Deliberate design read as oversight.** `#1`, `#11`, `#14`, `#12`, `#90`.
+4. **Severity inflated to force action.** `#28`, `#54`, `#114`, `#89` — cosmetic items in a
+   Critical/P1 list is what makes the real findings (#23, #13, #5, #22) easy to miss.
 
 That last point is the cost. `#23` is a genuine arbitrary-file-read that a prior audit
 already flagged, and it is buried at position 23 in a list whose #1 is a non-issue.
