@@ -115,10 +115,17 @@ _BUILTIN_FAMILIES: tuple[FamilySpec, ...] = (
     ),
 )
 
-#: (id(config-object), parsed families). One value carries both the parse and
-#: the identity it was parsed from, so nothing can disagree with anything else.
-_loaded_config: tuple[int, tuple[FamilySpec, ...]] | None = None
-_cache: dict[str, tuple[int, FamilySpec | None]] = {}
+#: (the config object itself, parsed families). One value carries both the parse
+#: and the identity it was parsed from, so nothing can disagree with anything
+#: else — and holding the object is what makes the identity check sound.
+#:
+#: This used to store `id(config)`. That is not an identity: the settings dict is
+#: dropped on `settings.reload()`, so CPython reuses the freed address, a fresh
+#: dict can land on it, and every memo silently validated against the PREVIOUS
+#: config. Keeping the object in the tuple is what closes it — `id()` of a live
+#: reference cannot collide, and the strong ref keeps it live to be compared.
+_loaded_config: tuple[object, tuple[FamilySpec, ...]] | None = None
+_cache: dict[str, tuple[object, FamilySpec | None]] = {}
 
 
 def _from_config() -> tuple[FamilySpec, ...]:
@@ -137,8 +144,8 @@ def _from_config() -> tuple[FamilySpec, ...]:
     except Exception:
         logger.debug('model_params: config unavailable, using built-ins only', exc_info=True)
         return ()
-    stamp = id(raw) if isinstance(raw, dict) else 0
-    if _loaded_config is not None and _loaded_config[0] == stamp:
+    stamp = raw if isinstance(raw, dict) else None
+    if _loaded_config is not None and _loaded_config[0] is stamp:
         return _loaded_config[1]
     section = raw.get('modelParams') if isinstance(raw, dict) else None
     entries = section.get('families') if isinstance(section, dict) else None
@@ -231,7 +238,7 @@ def family_for(model_id: str) -> FamilySpec | None:
         return None
     stamp = _stamp()
     cached = _cache.get(key)
-    if cached is not None and cached[0] == stamp:
+    if cached is not None and cached[0] is stamp:
         return cached[1]
     # The lookup stamp is read live (see _stamp), and the stored one is read
     # again after resolving families, so a config that changed mid-call cannot
@@ -241,21 +248,25 @@ def family_for(model_id: str) -> FamilySpec | None:
     return match
 
 
-def _stamp() -> int:
+def _stamp() -> object:
     """Identity of the config the memos must be validated against.
 
     Read live from settings rather than from what this module last parsed: a
     stamp taken from the previous parse can only ever agree with itself, so it
     cannot detect the reload it exists to notice. Cheap — one property read,
     no reparse (that is what `_loaded_config` is for).
+
+    Returns the dict ITSELF, not `id()` of it. Every caller stores this value in
+    a memo, so the reference stays alive and `is` compares the object rather
+    than an address the allocator is free to hand to a different dict.
     """
     try:
         from app.config import settings
 
         raw = settings.config
     except Exception:
-        return 0
-    return id(raw) if isinstance(raw, dict) else 0
+        return None
+    return raw if isinstance(raw, dict) else None
 
 
 def accepts_reasoning_effort(model_id: str) -> bool:
