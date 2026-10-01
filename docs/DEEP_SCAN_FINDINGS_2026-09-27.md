@@ -149,6 +149,23 @@ failed once during a coverage-instrumented run (the slowest, most contended
 configuration this repo has) and passed 3/3 in isolation and in the next
 full `-n auto` run. Same class as the two above, and worth carrying forward as a
 third data point: the failures are always at the timing margins, never in the
+
+**`test_vcs_state_frozen_across_commits`** is the fourth, and the cleanest
+demonstration yet. It builds a real git repository with `subprocess` calls
+carrying a 15 s timeout each, and reads a probe with a 60 s TTL — so it is
+dominated by wall-clock. Measured directly rather than assumed:
+
+| Condition | Result |
+|---|---|
+| Isolated | 13/13 passed in 46 s |
+| 10 background CPU hogs, 3 consecutive runs | **3/3 failed**, in 145 s / 72 s / 56 s |
+| 10 CPU hogs, one further run | passed, 41 s |
+
+A ~5 s test taking 145 s under load is the whole story. It is non-deterministic
+under contention rather than deterministic, and none of the files changed in
+the surrounding work are in its dependency path (`workbench.py` and
+`prompt_build.py` were untouched). Recorded, not chased — for the same reason as
+the other three.
 assertions about behaviour.
 
 ## Finding #53 — found by the conformance test written afterwards
