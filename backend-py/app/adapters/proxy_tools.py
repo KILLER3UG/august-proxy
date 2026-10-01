@@ -172,7 +172,32 @@ def _get_brain_config() -> dict[str, object]:
 
 
 def _record_tool_failure(info: dict[str, object]) -> None:
-    return None
+    """Surface a managed-tool failure instead of dropping it on the floor.
+
+    This was `return None` — a no-op with two call sites, both passing a real
+    `{tool_name, args, error, phase}` dict that was then discarded. A proxy
+    managed tool that failed left nothing behind: not in the log, not in the
+    turn row, not in the guardrail digest. The proxy path is exactly where a
+    failure is easiest to lose, because there is no workbench session around it
+    to hang an interception off.
+
+    Logging is the honest minimum here rather than wiring it to
+    `tool_guardrails.record_exec_interception`, which needs a session id this
+    path does not reliably carry. Making the failure visible is the fix; the
+    destination can be decided once the proxy path has a session to attach to.
+
+    Args are truncated because a tool argument list can be an entire file, and
+    it can hold a credential the guard exists to protect — this must not become
+    the leak it is reporting.
+    """
+    name = str(info.get('tool_name') or '?')
+    phase = str(info.get('phase') or '?')
+    error = str(info.get('error') or '')[:500]
+    try:
+        args = json.dumps(info.get('args'), default=str)[:300]
+    except (TypeError, ValueError):
+        args = '<unserialisable>'
+    logger.warning('proxy managed tool failed (%s/%s): %s | args=%s', phase, name, error, args)
 
 
 def _validate_tool_arguments(
