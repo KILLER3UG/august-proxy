@@ -14,12 +14,15 @@ Key functions:
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import time
 
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.providers.clients import getClient
 from app.services.workbench.providers import supports_thinking
+
+logger = logging.getLogger(__name__)
 
 _modelCache: list[dict[str, object]] | None = None
 _modelCacheAt: float = 0
@@ -43,8 +46,12 @@ def invalidate_cache() -> None:
         from app.config import settings
 
         settings.reload()
-    except Exception:
-        pass
+    except Exception as exc:
+        # Swallowing is right here — a provider that will not list its models
+        # must still yield its configured ones. But doing it invisibly made a
+        # broken provider indistinguishable from an empty one, which is the
+        # failure mode this whole audit is about. Best-effort, not silent.
+        logger.debug('model_service: enrichment step skipped: %s', exc)
 
 
 def _extract_context_window_value(raw: object) -> int:
@@ -318,8 +325,12 @@ async def _fetchProviderModels(provider: dict[str, object], timeoutS: float = 5.
                         for m in (modelList if isinstance(modelList, list) else [])
                         if isinstance(m, dict) and as_str(m.get('id'))
                     ]
-        except Exception:
-            pass
+        except Exception as exc:
+            # Swallowing is right here — a provider that will not list its models
+            # must still yield its configured ones. But doing it invisibly made a
+            # broken provider indistinguishable from an empty one, which is the
+            # failure mode this whole audit is about. Best-effort, not silent.
+            logger.debug('model_service: enrichment step skipped: %s', exc)
     static = _STATICModelLists.get(providerName, [])
     if not static:
         defaultModel = as_str(provider.get('defaultModel'))
@@ -410,16 +421,24 @@ async def _aggregateModels() -> list[dict[str, object]]:
                         'apiFormat': as_str(m.get('apiFormat'), '') or None,
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        # Swallowing is right here — a provider that will not list its models
+        # must still yield its configured ones. But doing it invisibly made a
+        # broken provider indistinguishable from an empty one, which is the
+        # failure mode this whole audit is about. Best-effort, not silent.
+        logger.debug('model_service: enrichment step skipped: %s', exc)
     # Inject alias models so /v1/models exposes them alongside provider models.
     try:
         from app.services.alias_mapping_service import get_alias_models_for_v1_models
 
         aliasModels = get_alias_models_for_v1_models()
         allModels.extend(aliasModels)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Swallowing is right here — a provider that will not list its models
+        # must still yield its configured ones. But doing it invisibly made a
+        # broken provider indistinguishable from an empty one, which is the
+        # failure mode this whole audit is about. Best-effort, not silent.
+        logger.debug('model_service: enrichment step skipped: %s', exc)
     seen: dict[tuple[str, str], dict[str, object]] = {}
     for m in allModels:
         # Dedupe by (id, provider), NOT id alone. The same model id is
@@ -479,8 +498,12 @@ async def _refreshBackground() -> None:
         fresh = await _aggregateModels()
         _modelCache = fresh
         _modelCacheAt = time.time()
-    except Exception:
-        pass
+    except Exception as exc:
+        # Swallowing is right here — a provider that will not list its models
+        # must still yield its configured ones. But doing it invisibly made a
+        # broken provider indistinguishable from an empty one, which is the
+        # failure mode this whole audit is about. Best-effort, not silent.
+        logger.debug('model_service: enrichment step skipped: %s', exc)
 
 
 async def prewarm() -> None:
@@ -490,8 +513,12 @@ async def prewarm() -> None:
         global _modelCache, _modelCacheAt
         _modelCache = models
         _modelCacheAt = time.time()
-    except Exception:
-        pass
+    except Exception as exc:
+        # Swallowing is right here — a provider that will not list its models
+        # must still yield its configured ones. But doing it invisibly made a
+        # broken provider indistinguishable from an empty one, which is the
+        # failure mode this whole audit is about. Best-effort, not silent.
+        logger.debug('model_service: enrichment step skipped: %s', exc)
 
 
 def getModelDisplayAlias(model: dict[str, object]) -> str:

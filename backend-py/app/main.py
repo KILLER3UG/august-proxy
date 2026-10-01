@@ -195,7 +195,13 @@ async def lifespan(app: FastAPI):
     # One verified safety copy per 12 h, off the event loop and after migrations
     # (the backup API needs a read lock, which a migration transaction holds).
     # An upgrade must never boot without something restorable behind it.
-    asyncio.create_task(asyncio.to_thread(brain_backup.ensure_current_backup))
+    # Hold a reference: the event loop only keeps a weak reference to a running
+    # task, so a fire-and-forget task can be garbage-collected mid-flight. The
+    # learning scheduler below stores its task for exactly this reason.
+    backup_task = asyncio.create_task(
+        asyncio.to_thread(brain_backup.ensure_current_backup), name='brain_backup'
+    )
+    app.state.brain_backup_task = backup_task
     from app.lib.paths import dataPath
 
     _dbPathVal = dataPath('august_brain.sqlite')
@@ -214,7 +220,11 @@ async def lifespan(app: FastAPI):
         # Restore the persisted registry BEFORE the tool refresh, otherwise
         # every configured MCP server is gone for the whole process lifetime.
         rehydrate_from_config()
-        asyncio.create_task(refreshMcpTools())
+        # Reference held for the same reason as the backup task above: an
+        # unreferenced task can be collected before its first await completes,
+        # and this one is what makes configured MCP servers contribute tools.
+        mcp_task = asyncio.create_task(refreshMcpTools(), name='mcp_refresh')
+        app.state.mcp_refresh_task = mcp_task
     except Exception:
         pass
     # Bot Mode Phase A boot backfill: the default assistant Bot (and its

@@ -212,8 +212,13 @@ async def workspace_files(path: str = Query('.', alias='path')):
     # Check the RESOLVED path: the guard normalises `.`, a trailing separator
     # and a trailing space, so asking it about the raw query string let
     # `.ssh/`, `.ssh/.` and `.ssh ` all through and returned 200.
-    requested, _ = bind_path(path, None, for_write=False)
-    probe = str(requested) if requested is not None else path
+    #
+    # One call, not two. This used to bind once for the credential-directory
+    # probe and again for the real root, with identical arguments — so the
+    # "TOCTOU" it appeared to have was an illusion, created by binding twice
+    # rather than by anything changing underneath.
+    root, denial = bind_path(path, None, for_write=False)
+    probe = str(root) if root is not None else path
     if is_credential_directory(probe):
         # The read guard deliberately allows one non-secret member of `.ssh`
         # (authorized_keys), so it cannot catch the directory itself — but
@@ -222,7 +227,6 @@ async def workspace_files(path: str = Query('.', alias='path')):
 
         raise HTTPException(status_code=403, detail='Refused: credential store is not listable')
 
-    root, denial = bind_path(path, None, for_write=False)
     if denial or root is None:
         from fastapi import HTTPException
 

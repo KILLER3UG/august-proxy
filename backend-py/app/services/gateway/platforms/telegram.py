@@ -74,6 +74,11 @@ class TelegramAdapter(BasePlatformAdapter):
             log.error('telegram: AUGUST_TELEGRAM_BOT_TOKEN not set')
             return False
 
+        # Close a previous client before replacing it. This used to assign a
+        # fresh AsyncClient over the old one, so a reconnect (or a connect after
+        # a failed connect that skipped its own disconnect) orphaned the previous
+        # client and its connection pool with nothing left to close them.
+        await self.disconnect()
         self._client = httpx.AsyncClient()
         me = await self._request('getMe')
         if not me.get('ok'):

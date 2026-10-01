@@ -17,6 +17,8 @@ pass — rotate-token is the user-facing control if a token leaks.
 
 from __future__ import annotations
 
+import hmac
+
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.json_narrowing import as_str
@@ -294,7 +296,13 @@ async def trigger_automation(
         # Also accept ?token= for local curl convenience
         token = as_str(request.query_params.get('token'))
     expected = as_str(job.get('triggerToken'))
-    if not expected or token != expected:
+    # Constant-time. `!=` short-circuits on the first differing byte, which leaks
+    # the length and prefix of the token through response timing — a real, if
+    # slow, oracle for a bearer token that authorises running this automation.
+    # The pairing check is explicit because compare_digest raises on non-ASCII
+    # str, and a query-string token can be anything the caller typed.
+    tokenOk = token.isascii() and expected.isascii() and hmac.compare_digest(token, expected)
+    if not expected or not tokenOk:
         raise HTTPException(status_code=401, detail='Invalid trigger token')
     if as_bool_paused(job):
         raise HTTPException(status_code=409, detail='Automation is paused')

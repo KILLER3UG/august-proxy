@@ -93,7 +93,14 @@ class FeatureFlowBus:
         entry: dict[str, object] = {
             'id': uuid.uuid4().hex,
             'traceId': trace_id or uuid.uuid4().hex[:12],
-            'feature': feature if feature in _FEATURE_IDS else feature,
+            # Was `feature if feature in _FEATURE_IDS else feature` — both branches
+            # identical, so it validated nothing while reading as a guard.
+            # Deliberately NOT tightened into a rejection: callers pass ids this
+            # module has no inventory for, and turning a no-op into a raise in
+            # the middle of a cleanup is not a change to make blind. Refusing an
+            # unknown feature belongs at the door that accepts one, where the
+            # failure can be reported to a caller who can act on it.
+            'feature': feature,
             'stage': stage,
             'status': status,  # running | ok | error
             'summary': summary,

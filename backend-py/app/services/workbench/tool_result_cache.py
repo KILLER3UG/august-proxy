@@ -36,12 +36,17 @@ def put(session_id: str, tool: str, args: str, value: str) -> None:
 
 
 def invalidate_path(session_id: str, path_prefix: str) -> None:
-    # Invalidate any cached read/list under the written path's ancestors.
-    prefix = path_prefix.strip().replace('\\', '/').lower()
-    to_del = [k for k in _cache if k.startswith(f'{session_id}:')]
-    for k in to_del:
-        _cache.pop(k, None) if prefix in k.lower() else None
-    # Simpler: clear all for session on any write (cheap, correct).
+    # Clear every entry for the session on any write.
+    #
+    # This used to narrow first — building `to_del`, then popping only keys whose
+    # cached value contained the written path — and then cleared all of them
+    # anyway three lines later. The narrow pass was pure dead work whose result
+    # was unconditionally discarded, and it cost a full scan of the cache on
+    # every single write. `path_prefix` stays in the signature because it is the
+    # caller's contract, and narrowing the invalidation back to it is a
+    # behaviour change rather than a cleanup: the two are not equivalent once a
+    # session's cache holds entries unrelated to the path being written.
+    _ = path_prefix
     for k in [k for k in list(_cache.keys()) if k.startswith(f'{session_id}:')]:
         _cache.pop(k, None)
 
