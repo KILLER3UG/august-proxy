@@ -90,7 +90,7 @@ object, `model_params` does not. Sampling one would have produced the wrong answ
 | **23** | `exam.py` arbitrary file read | `ws_root = Path(body.get('workspacePath')).resolve()` is user-controlled; the only check is `p.relative_to(ws_root)`. Set the path to `/` and every absolute file passes. The comment on line 53 says *"are rejected (audit finding — arbitrary file disclosure)"* — a prior audit raised this and the fix only covers the **no-workspace** branch. Double review: `generateExam(body: dict[str, object])` takes a raw dict with no Pydantic model and no dependency that could validate upstream, so nothing else constrains it |
 | **13** | Stale config cache | `_loaded_config = (stamp, parsed)` stores only the `id()`. `raw = settings.config` goes out of scope, so a new dict can land on the freed address and return stale params indefinitely. Same pattern recurs at line 255 |
 | **5** | Egress DNS rebinding | `_is_allowed()` matches the **hostname** string (line 64); line 118 then calls `asyncio.open_connection(host, port)`, which resolves independently. No `getaddrinfo`/resolved-IP check exists anywhere in the file |
-| **22** | Security hook fails open | Line 179 is literally `return HookResult(action='allow')  # Fail-open`. The breaker at 176 only opens *after* `_BREAKER_THRESHOLD` consecutive timeouts, so the first timeout still permits the action. **Double review found it is worse than reported:** line 197 is a second `action='allow'` on the generic `except Exception` path, so a *crashing* security guard also fails open. The report only cited the timeout branch |
+| **22** | Security hook fails open | **My own verdict was partly wrong — see Corrections.** The timeout branch returned `action='allow'` for every event, so a PRE_TOOL_USE guard that HANGS allowed the call while the same guard that *raises* denied it. Timeouts are the likelier failure (a subprocess guard that stops responding never raises), and they produced no error to notice. Fixed in `18e6287a` |
 | **18** | Task reported as fired when the write failed | `try: UPDATE … / except Exception: pass` then `fired.append(...)` **outside** the try (line 230). `last_fired_at` never written → fires again next call |
 | **19** | `wait_for_message` re-delivers | Line 104 `return q[-1]` with no pop. Docstring says "Block until a **new** message arrives" — the code contradicts its own contract |
 | **8** | OAuth tokens plaintext | Lines 949–950 store `accessToken`/`refreshToken` straight into `config.json`. No encryption at rest. Note its *recommendation* is also wrong: `app.lib.secrets` provides `mask`, which is for display, not encryption — following it verbatim would produce masked-looking-but-plaintext storage |
@@ -156,6 +156,25 @@ there is no code to read: `#31`, `#34`, `#36`, `#39`, `#43`, `#48`, `#49`,
 than cited — `#52` points at `subagent.py:432` when `_pendingProposals` actually
 lives in `spawn_subagents_tool.py:55`. Given the measured false-positive rate I
 would not expect many to survive, but that is a prediction, not a result.
+
+## Corrections
+
+**#22 — my verdict was wrong about the severity, and the fix narrowed it.** I
+wrote that `registry.py:197` was "a second `action='allow'` on the generic
+`except Exception` path, so a *crashing* security guard also fails open." It is
+not. The exception path already fails CLOSED for PRE events (lines 185-194),
+with a comment explaining exactly why. Line 197 is reached only for POST hooks,
+where the call has already executed and failing open is correct.
+
+What was actually wrong is narrower and still real: the **timeout** branch
+returned `action='allow'` for every event, so a PRE_TOOL_USE guard that hangs
+allowed the call while the same guard that raises denies it. Fixed in `18e6287a`.
+
+I recorded this because the failure was mine, not the report's: I read a
+`return HookResult(action='allow')` on line 197 and attributed it to the wrong
+branch without checking which `if` guarded it. That is the same mistake the
+report makes throughout — a line read without its neighbour — and it is worth
+naming when the reviewer of a review has to correct himself.
 
 ## What this means
 
