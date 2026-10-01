@@ -121,7 +121,20 @@ class TestHookRegistry:
         assert seen_args == {'original': 1, 'injected': True}
 
     @pytest.mark.asyncio
-    async def test_timeout_fail_open(self, _clean_registry):
+    async def test_timeout_fail_closed_pre(self, _clean_registry):
+        """A hanging PRE hook must deny, exactly like a raising one.
+
+        This test used to assert `action == 'allow'` and was named
+        `test_timeout_fail_open`. It encoded the defect fixed in 18e6287a: the
+        exception path denied while the timeout path allowed, so a guard that
+        HANGS — a subprocess that stops responding, which never raises — was the
+        one failure mode with no error to notice. `test_exception_fail_closed_pre`
+        directly below asserted the opposite for a raising hook, so the suite
+        itself held both behaviours at once.
+
+        `test_timeout_fail_open_post` below now covers the case where failing
+        open is correct.
+        """
         reg = _clean_registry
 
         async def slow_handler(ctx):
@@ -131,7 +144,24 @@ class TestHookRegistry:
         reg.register('slow', HookEvent.PRE_TOOL_USE, slow_handler, priority=10)
         ctx = HookContext(event=HookEvent.PRE_TOOL_USE, session_id='s1', tool_name='x')
         results = await reg.emit(HookEvent.PRE_TOOL_USE, ctx)
-        assert results[0].action == 'allow'  # Fail-open
+        assert results[0].action == 'deny', (
+            'a PRE hook that hung allowed the call — it must fail closed like '
+            'the exception path'
+        )
+
+    @pytest.mark.asyncio
+    async def test_timeout_fail_open_post(self, _clean_registry):
+        """POST observes an already-executed call, so there is nothing to hold."""
+        reg = _clean_registry
+
+        async def slow_handler(ctx):
+            await asyncio.sleep(_HOOK_TIMEOUT_S + 1)
+            return HookResult(action='deny')  # Should never reach this
+
+        reg.register('slow', HookEvent.POST_TOOL_USE, slow_handler, priority=10)
+        ctx = HookContext(event=HookEvent.POST_TOOL_USE, session_id='s1', tool_name='x')
+        results = await reg.emit(HookEvent.POST_TOOL_USE, ctx)
+        assert not any(r.action == 'deny' for r in results)
 
     @pytest.mark.asyncio
     async def test_exception_fail_closed_pre(self, _clean_registry):
