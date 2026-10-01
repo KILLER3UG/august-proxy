@@ -1332,6 +1332,11 @@
             ],
             "title": "Args"
           },
+          "catalogId": {
+            "default": "",
+            "title": "Catalogid",
+            "type": "string"
+          },
           "command": {
             "default": "",
             "title": "Command",
@@ -1361,6 +1366,20 @@
               }
             ],
             "title": "Env"
+          },
+          "headers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headers"
           },
           "name": {
             "default": "",
@@ -4016,7 +4035,7 @@
   },
   "info": {
     "title": "August Proxy",
-    "version": "0.18.16"
+    "version": "0.18.17"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -9551,7 +9570,7 @@
     },
     "/api/git/restore": {
       "post": {
-        "description": "Discard working-tree changes, back to the last commit.\n\nThis REPLACED a general ``POST /command`` that forwarded a caller-supplied\nargv straight to git. That route was a hole shaped exactly like the\nprivilege it was handed:\n\n- ``git diff --no-index <any file> <any file>`` prints the FULL CONTENTS of\n  any two files on the machine, so a read primitive bypassed every path\n  check the file tools enforce;\n- ``git diff --no-index --output=<path>`` writes to any path;\n- ``-c diff.external=<command>`` runs an arbitrary program;\n- and ``repoPath`` only had to be an existing directory, so none of the\n  above needed the session's workspace at all.\n\nGit has no argv shape that is safe to accept verbatim, and there is no\nfilter that makes one safe: the dangerous capability is a flag, not a\nsubcommand, so a denylist of subcommands or of flags is always one\nrevision behind. The only durable shape is to stop accepting an argv.\n\nThe single real caller wanted ``git restore -- .`` — \"discard my changes\"\n— and that is what this endpoint does. Its argv is fixed here, in the\nbackend, and the workspace comes from the session, so a caller cannot\nchoose a directory. Anything else git can do has a typed route next to\nthis one; if a new one is needed, it gets its own endpoint and its own\nfixed argv rather than reopening this.",
+        "description": "Discard working-tree changes, back to the last commit.\n\nThis REPLACED a general ``POST /command`` that forwarded a caller-supplied\nargv straight to git. That route was a hole shaped exactly like the\nprivilege it was handed:\n\n- ``git diff --no-index <any file> <any file>`` prints the FULL CONTENTS of\n  any two files on the machine, so a read primitive bypassed every path\n  check the file tools enforce;\n- ``git diff --no-index --output=<path>`` writes to any path;\n- ``-c diff.external=<command>`` runs an arbitrary program;\n- and ``repoPath`` only had to be an existing directory, so none of the\n  above needed the session's workspace at all.\n\nGit has no argv shape that is safe to accept verbatim, and there is no\nfilter that makes one safe: the dangerous capability is a flag, not a\nsubcommand, so a denylist of subcommands or of flags is always one\nrevision behind. The only durable shape is to stop accepting an argv.\n\nThe single real caller wanted ``git restore -- .`` — \"discard my changes\"\n— and that is what this endpoint does. Its argv is fixed here, in the\nbackend. The workspace normally comes from the session, so a caller cannot\nchoose a directory; when ``repo_path`` is supplied it is honoured as a\nfallback, which is a weaker property than this paragraph used to claim.\nThe web drive-by vector is closed upstream by TrustedOriginGuard, not here.\nAnything else git can do has a typed route next to this one; if a new one is\nneeded, it gets its own endpoint and its own fixed argv rather than\nreopening this.",
         "operationId": "git_restore_api_git_restore_post",
         "requestBody": {
           "content": {
