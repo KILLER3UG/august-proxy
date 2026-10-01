@@ -225,8 +225,18 @@ def check_and_fire(session_id: str, workspace_path: str = '') -> list[tuple[str,
                 )
                 _record_run(conn, task['id'], message)
                 conn.commit()
-            except Exception:
-                pass
+            except Exception as exc:
+                # Do NOT fall through to fired.append(). `last_fired_at` is the
+                # only thing standing between this task and firing again on the
+                # next call, so reporting a fire whose receipt was never written
+                # produces a duplicate notification every cycle. `fired` is what
+                # the caller acts on, so it must mean "fired AND recorded".
+                logger.warning(
+                    'recurring task %s not recorded as fired: %s',
+                    task.get('id'),
+                    exc,
+                )
+                continue
             fired.append((message, as_str(task.get('model'), '')))
     except Exception as exc:
         logger.debug('recurring task check failed: %s', exc)

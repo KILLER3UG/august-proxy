@@ -92,16 +92,29 @@ class AgentMessageBus:
         return list(self._queues.get(topic, []))
 
     async def wait_for_message(self, topic: str, timeout: float | None = None) -> dict[str, Any] | None:
-        """Block until a new message arrives on *topic*, then return it.
+        """Block until a message arrives on *topic*, consume it, and return it.
 
         If *timeout* is set and no message arrives, returns ``None``.
+
+        This CONSUMES. It used to ``return q[-1]`` — the newest — without
+        removing it, so a second call with nothing new returned the same message
+        again, and a caller polling in a loop could spin forever on one delivery
+        and never observe the next. That also contradicted its own docstring,
+        which promised "a **new** message".
+
+        The oldest is taken, not the newest: this is a queue, and taking the tail
+        silently discarded everything ahead of it. ``get_topic_messages`` is the
+        non-consuming path, for callers that only want to look.
         """
         loopStart = asyncio.get_running_loop().time()
         async with self._condition:
             while True:
                 q = self._queues.get(topic, [])
                 if q:
-                    return q[-1]
+                    msg = q.pop(0)
+                    if not q:
+                        self._queues.pop(topic, None)
+                    return msg
                 if self._closed:
                     return None
                 if timeout is not None:
