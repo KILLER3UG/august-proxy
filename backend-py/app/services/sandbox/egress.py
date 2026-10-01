@@ -63,6 +63,69 @@ class EgressProxy:
             return False
         return host in self._allow_set
 
+    @staticmethod
+    async def _vetted_addresses(host: str, allowed: frozenset[str] | None) -> list[str]:
+        """Resolve ``host`` and return only addresses that are safe to dial.
+
+        The allowlist check above matches a HOSTNAME STRING, and
+        ``asyncio.open_connection(host, port)`` then resolved that name again
+        itself. Between the two lookups a hostile authoritative DNS server can
+        answer public for the first and ``169.254.169.254`` for the second, so
+        the address that was vetted was never the address that was dialled —
+        and an allowlisted name is enough to reach anything inside the network.
+
+        Same gap, same fix as ``web_tools._vetted_public_ips``: resolve once,
+        check EVERY answer, and return the addresses so the caller dials one of
+        those rather than re-resolving the name. A name that resolves to both a
+        public and a private address is refused outright — picking the public one
+        and hoping is how the bypass comes back.
+
+        A LITERAL address the operator put on the allowlist is honoured, private
+        or not. Naming ``127.0.0.1`` in an allowlist is a deliberate choice (a
+        local upstream, a test echo server), not a rebinding — nobody rebinds a
+        literal. The hole this closes is a NAME that resolves somewhere private,
+        so that is the case that is refused.
+        """
+        import ipaddress
+        import socket
+
+        from app.services.tool_registrations.web_tools import _is_private_ip
+
+        bare = host.strip('[]').strip()
+        try:
+            ipaddress.ip_address(bare)
+        except ValueError:
+            pass
+        else:
+            return [bare] if allowed is None or bare in allowed else []
+
+        # getaddrinfo raises socket.gaierror (an OSError) for a name that does
+        # not resolve. No blind except is needed, and an unresolvable
+        # allowlisted host is exactly what must not silently succeed.
+        try:
+            infos = await asyncio.get_running_loop().getaddrinfo(
+                bare, None, type=socket.SOCK_STREAM
+            )
+        except OSError:
+            return []
+        vetted: list[str] = []
+        for info in infos:
+            try:
+                ip = ipaddress.ip_address(info[4][0])
+            except ValueError:
+                continue
+            if _is_private_ip(ip):
+                return []
+            vetted.append(str(ip))
+        # Deduplicate but keep order, so a CDN's several addresses all work.
+        seen: set[str] = set()
+        unique: list[str] = []
+        for a in vetted:
+            if a not in seen:
+                seen.add(a)
+                unique.append(a)
+        return unique
+
     async def _handle(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
@@ -87,6 +150,19 @@ class EgressProxy:
                     port = int(port_s)
                 except ValueError:
                     port = 443
+            # Vet the resolved addresses BEFORE dialling, and dial those. An
+            # allowlisted hostname that resolves inside the network is exactly
+            # the rebinding case, and it is refused here rather than at the
+            # socket — where the second lookup would already have happened.
+            addresses = await self._vetted_addresses(host, self._allow_set)
+            if not addresses:
+                writer.write(
+                    b'HTTP/1.1 403 Forbidden\r\n'
+                    b'Content-Length: ' + str(len(_DEFAULT_DENY_BODY)).encode() + b'\r\n'
+                    b'Connection: close\r\n\r\n' + _DEFAULT_DENY_BODY
+                )
+                await writer.drain()
+                return
             if first.startswith(b'CONNECT'):
                 # Drain the rest of the CONNECT request headers — leftover
                 # bytes would otherwise leak into the tunnel as data.
@@ -94,10 +170,10 @@ class EgressProxy:
                     leftover = await asyncio.wait_for(reader.readline(), timeout=5)
                     if leftover in (b'\r\n', b'\n', b''):
                         break
-                await self._relay_connect(reader, writer, host, port)
+                await self._relay_connect(reader, writer, host, port, addresses)
             else:
                 # Absolute-URI plain HTTP: forward the raw stream to :80.
-                await self._relay_plain(reader, writer, host)
+                await self._relay_plain(reader, writer, host, addresses)
         except (ConnectionError, OSError, asyncio.IncompleteReadError):
             pass
         finally:
@@ -114,21 +190,40 @@ class EgressProxy:
         client_writer: asyncio.StreamWriter,
         host: str,
         port: int,
+        addresses: list[str],
     ) -> None:
-        up_reader, up_writer = await asyncio.open_connection(host, port)
-        client_writer.write(b'HTTP/1.1 200 Connection Established\r\n\r\n')
-        await client_writer.drain()
-        pump_a = _pump(client_reader, up_writer)
-        pump_b = _pump(up_reader, client_writer)
-        await asyncio.gather(pump_a, pump_b, return_exceptions=True)
+        last: Exception | None = None
+        for address in addresses:
+            try:
+                up_reader, up_writer = await asyncio.open_connection(address, port)
+            except (OSError, asyncio.TimeoutError) as exc:
+                last = exc
+                continue
+            client_writer.write(b'HTTP/1.1 200 Connection Established\r\n\r\n')
+            await client_writer.drain()
+            pump_a = _pump(client_reader, up_writer)
+            pump_b = _pump(up_reader, client_writer)
+            await asyncio.gather(pump_a, pump_b, return_exceptions=True)
+            return
+        raise last or OSError(f'no vetted address for {host}')
 
     async def _relay_plain(
         self,
         client_reader: asyncio.StreamReader,
         client_writer: asyncio.StreamWriter,
         host: str,
+        addresses: list[str],
     ) -> None:
-        up_reader, up_writer = await asyncio.open_connection(host, 80)
+        last: Exception | None = None
+        for address in addresses:
+            try:
+                up_reader, up_writer = await asyncio.open_connection(address, 80)
+            except (OSError, asyncio.TimeoutError) as exc:
+                last = exc
+                continue
+            break
+        else:
+            raise last or OSError(f'no vetted address for {host}')
         # Re-emit the request line as origin-form (proxy → origin request).
         first = await client_reader.readline()
         parts = first.split(b' ', 2)
