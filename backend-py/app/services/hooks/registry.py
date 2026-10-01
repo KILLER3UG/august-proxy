@@ -5,10 +5,15 @@ a priority (lower = runs first), and an async handler. The registry emits
 events in priority order, short-circuiting on the first 'deny'.
 
 Execution rules:
-- Async handlers with a 5s timeout (fail-open on timeout).
-- PRE_TOOL_USE handler exceptions fail CLOSED (returned as a deny so a broken
-  security guard never silently allows a credential write); POST_TOOL_USE
-  exceptions are logged only (the tool already ran).
+- Async handlers with a 5s timeout.
+- Fail-CLOSED on failure for anything that can still be held back: a
+  PRE_TOOL_USE / PRE_MODEL_CALL hook that TIMES OUT or RAISES returns a deny,
+  so a broken security guard never silently allows a credential write. POST
+  hooks observe an already-executed call, so their failures are logged only —
+  there is nothing left to hold back. The timeout branch used to fail open even
+  for PRE events, which made a hanging guard (the likelier failure of the two,
+  since a subprocess guard that stops responding never raises at all) the one
+  that waved the call through.
 - Circuit breaker: 3 consecutive timeouts disables a hook for 60s.
 - First 'deny' short-circuits (no further hooks run for that event).
 - 'modify' results chain (each hook sees previous modifications).
@@ -176,7 +181,25 @@ class HookRegistry:
             if entry.consecutive_timeouts >= _BREAKER_THRESHOLD:
                 entry.breaker_open_until = time.monotonic() + _BREAKER_COOLDOWN_S
                 logger.warning('Hook %s circuit breaker OPEN for %.0fs', entry.name, _BREAKER_COOLDOWN_S)
-            return HookResult(action='allow')  # Fail-open
+            if entry.event in (HookEvent.PRE_TOOL_USE, HookEvent.PRE_MODEL_CALL):
+                # Fail-CLOSED, matching the exception path below. A pre-tool
+                # hook is a security guard (secret_guard, sensitive_code), and a
+                # hook that HANGS is the more likely failure of the two — a
+                # subprocess guard that stops responding never raises at all.
+                # It used to return allow here, so the one failure mode that
+                # produces no error to notice was also the one that waved the
+                # call through.
+                entry.deny_count += 1
+                return HookResult(
+                    action='deny',
+                    message=(
+                        f'Hook {entry.name} timed out after '
+                        f'{elapsed_ms:.0f}ms and could not evaluate the call'
+                    ),
+                )
+            # POST hooks observe an already-executed call — there is nothing to
+            # hold back, so a failure here can only be logged.
+            return HookResult(action='allow')
         except Exception as exc:
             elapsed_ms = (time.monotonic() - start) * 1000
             entry.record_duration(elapsed_ms)
