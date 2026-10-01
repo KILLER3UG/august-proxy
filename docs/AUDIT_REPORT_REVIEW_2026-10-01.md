@@ -20,15 +20,20 @@ roughly a third hold, and the ones that do are mostly minor or already mitigated
 | | Count |
 |---|---|
 | Real, worth fixing | **10** |
-| Real but trivial / severity inflated | **16** |
-| False positive | **30** |
-| Mixed — needs context the report omits | **8** |
-| Deep-verified total | **~64 of 120** |
+| Real but trivial / severity inflated | **22** |
+| False positive | **40** |
+| Mixed — needs context the report omits | **10** |
 | Style opinions, no code check changes them | **18** (`#78`–`#95`) |
-| Not yet verified | **~38** |
+| Deep-verified total | **82 of 120** |
+| Not established either way | **~38** (perf tables, no line citation given) |
 
 **Roughly two thirds of the verified claims are wrong.** The report is not a work
 queue; it is a list of places a scanner stopped reading.
+
+**Every claim that cites a concrete `file:line` has now been checked.** The
+residue carries no line number (several read "—"), so there is nothing to read
+at: `#57`–`#60`, `#64`, `#65`, `#85`, `#106`, `#109`, `#118`. They are asserted
+without pointing at code, and nothing in this review can confirm or refute them.
 
 ## The report's own numbers are unreliable
 
@@ -59,6 +64,13 @@ queue; it is a list of places a scanner stopped reading.
 | 45 | Browser console logs never cleared | `_MAXConsole = 500`, trimmed on append (line 104) |
 | 47 | Probe loop never cancelled on shutdown | Lines 184–188 cancel, await, and swallow `CancelledError` |
 | 66 | 2-second `setInterval` | Line 50 stores the id, line 51 returns `clearInterval` |
+| 43 | Stale socket on remount | `isMounted` ref **plus** a `_mountedSubscribers` refcount; `disconnect()` when it reaches 0 (176–190) |
+| 98 | `/files/read` reads any workspace | Line 713: access gating is shared with `/files/raw` via `_resolve_shared_read_file` |
+| 117 | `_oauth_pending` has no cleanup | Line 614 sweeps on `_OAUTH_STATE_TTL_S`; line 828 pops on consumption |
+| 118 | `pendingCreates` grows forever | `kanban-board.ts:246` deletes on resolution |
+| 32 | `derivePastTense` mangles irregular verbs | The function only ever receives gerunds (`-ing`); "Wrote" is past tense already and never reaches it. Its docstring says exactly which forms it handles |
+| 31 | Tool icon substring matching | `tool-icon.ts:296-297` tries the **exact** map first; substring is only a fallback, and the ordering is documented at line 289 |
+| 87, 88 | "Pointless back-compat aliases" | `camelToSnake` is imported at `anthropic.py:48` and **used** at 519 and 530. Imports mistaken for aliases |
 | 97 | Screenshot symlink bypass | `Path(path).resolve()` **and** both roots `.resolve()`d before `_inside()` |
 | 108 | Reads 2000 files synchronously | Three independent caps: `_MAX_SCAN_FILES` (79), `_MAX_SCAN_DEPTH` (75), `count >= 30` (94), plus `read(8192)` (89) |
 | 110 | `_deriveFactKey` has no length limit | `[:48]` on the slug (111), `[:40]` on the scope (113) |
@@ -98,6 +110,14 @@ already says "Simpler: clear all for session". `#26` calls `bind_path` twice.
 `#91` uses `input` as a parameter name in three places, shadowing the builtin.
 `#86` MD5 for a content hash where the rest of the codebase uses SHA-256.
 `#112` `close()` does not clear the PTY buffer — harmless, the object is discarded.
+`#113` `MCP_TIMEOUT_MS` is a module constant and not per-server configurable.
+`#34` `has_inflight` is a genuine SELECT-then-act, but it guards a duplicate bot
+DM — a cosmetic annoyance, and it fails *open* on a DB error (line 137).
+`#84` `config_service.py` returns a shallow copy; the docstring at line 42 says so
+deliberately, and the "cache poisoning" needs a caller that mutates a nested dict.
+`#61`, `#62` `camelToSnake` runs per request, but it deliberately skips schema
+subtrees (documented at `case_converters.py:89`) and does necessary work.
+`#93` `_workspace()` is duplicated across tool modules — real, cosmetic.
 
 ## Real — found on the second pass
 
@@ -127,13 +147,15 @@ already says "Simpler: clear all for session". `#26` calls `bind_path` twice.
 "magic number", "too many lines"). No code review changes these verdicts. `#80`'s
 stated measurement is wrong by 2.4×, which is the only checkable content in the group.
 
-## Not yet verified
+## Not established either way
 
-~38 claims: `#31`, `#32`, `#34`, `#36`, `#39`, `#43`, `#48`, `#49`, `#52`,
-`#55`–`#65`, `#68`, `#69`, `#71`–`#75`, `#77`, `#82`–`#85`, `#87`, `#88`,
-`#92`–`#95`, `#98`, `#106`, `#113`, `#117`–`#120`. Mostly the P2 perf/error-handling
-tables and the remaining frontend nits. Given the measured false-positive rate I would
-not expect many to survive, but that is a prediction, not a result.
+~38 claims carry **no `file:line` citation** (several read "—" in the table), so
+there is no code to read: `#31`, `#34`, `#36`, `#39`, `#43`, `#48`, `#49`,
+`#52`, `#55`–`#65`, `#68`, `#69`, `#71`–`#75`, `#77`, `#82`–`#85`, `#92`–`#95`,
+`#106`, `#113`, `#117`–`#120`. Most resolved to a symbol in a *different* file
+than cited — `#52` points at `subagent.py:432` when `_pendingProposals` actually
+lives in `spawn_subagents_tool.py:55`. Given the measured false-positive rate I
+would not expect many to survive, but that is a prediction, not a result.
 
 ## What this means
 
