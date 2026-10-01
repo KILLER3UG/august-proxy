@@ -109,6 +109,42 @@ _ALLOWEDCommandPrefixes = [
 ]
 
 
+_DESTRUCTIVE_RM_TARGETS = re.compile(
+    r'''(?ix)
+    (?: ^ | [\s;&|(] )              # start of command, or after a separator
+    rm \s+                          # the rm itself
+    (?: (?P<flags> [^\s;&|]* ) \s+ )*   # any number of flag groups, in any order
+    (?P<targets> (?: / | ~ | \$HOME | \.\. ) [^\s;&|]* )   # a root-anchored target
+    '''
+)
+_RM_RECURSIVE = re.compile(r'(?:^|-)r(?:ecursive)?$|-[a-z]*r[a-z]*$')
+_RM_FORCE = re.compile(r'(?:^|-)f(?:orce)?$|-[a-z]*f[a-z]*$')
+
+
+def _destructive_rm(command: str) -> str | None:
+    """Catch `rm` aimed at the filesystem root or the user's home.
+
+    The substring list below this used to carry `rm -rf /` and `rm -rf ~`, which
+    only match one exact spelling. `rm -fr /`, `rm  -rf  /`, `rm -rf /etc`,
+    `rm --recursive --force ~` and `rm -rf $HOME` all sailed through — flag
+    order, spacing, long form and the target's depth were all free. The
+    allowlist above is deliberately a FIRST-WORD filter (which binary may run),
+    so `rm` must stay on it for the agent to do its job; the guard belongs here,
+    on the invocation.
+
+    Returns the offending target, or None. `rm -rf build` inside the workspace
+    is ordinary and still allowed — only a root-anchored target is refused.
+    """
+    for match in _DESTRUCTIVE_RM_TARGETS.finditer(command):
+        flags = match.group('flags') or ''
+        # Only a recursive+force rm is catastrophic; `rm /etc/passwd` without
+        # either flag removes one named file and is left to the sandbox.
+        if not (_RM_RECURSIVE.search(flags) and _RM_FORCE.search(flags)):
+            continue
+        return match.group('targets')
+    return None
+
+
 def _session():
     try:
         from app.services.workbench.context import currentSessionId
@@ -1096,6 +1132,15 @@ async def _runCommand(
                 ):
                     continue
             return f'Error: Command contains dangerous pattern: {pattern}'
+
+    # The substring list cannot see past one exact spelling, so the rm case is
+    # decided semantically (flag order, long form, spacing, target depth).
+    rmTarget = _destructive_rm(command)
+    if rmTarget:
+        return (
+            f'Error: Refused recursive force-remove aimed outside the workspace: '
+            f'{rmTarget}'
+        )
 
     raw_timeout = timeout_s if timeout_s is not None else timeout
     try:
