@@ -20,26 +20,31 @@ import pytest
 
 
 @pytest.fixture
-def secret():
-    """A file genuinely OUTSIDE the system temp dir.
+def secret(tmp_path, monkeypatch):
+    """A file genuinely OUTSIDE the temp root, hermetically and on any platform.
 
     Not `tmp_path`: pytest places `tmp_path` UNDER `tempfile.gettempdir()`, so a
     secret put there is legitimately readable by the no-workspace branch and the
-    test fails for the wrong reason — it asserts a bug that is not there. The
-    parent of the temp dir is outside it on every platform this runs on.
+    test fails for the wrong reason — it asserts a bug that is not there.
+
+    The temp root is therefore REDIRECTED into tmp_path/inside, and the secret
+    goes to tmp_path/outside. That makes "outside the temp dir" exact on every
+    platform. The first version used `Path(gettempdir()).parent`, which is
+    `C:\\Users\\<u>\\AppData\\Local` on Windows and `/` on Linux — so it passed
+    locally and died in CI with PermissionError creating `/august_exam_probe`.
+    A green local run is not evidence the test is portable.
     """
     import tempfile
 
-    base = Path(tempfile.gettempdir()).parent / 'august_exam_probe'
-    base.mkdir(parents=True, exist_ok=True)
-    p = base / 'secret.txt'
+    inside = tmp_path / 'inside'
+    outside = tmp_path / 'outside'
+    inside.mkdir()
+    outside.mkdir()
+    monkeypatch.setattr(tempfile, 'gettempdir', lambda: str(inside))
+
+    p = outside / 'secret.txt'
     p.write_text('SUPER_SECRET_MARKER contents', encoding='utf-8')
-    yield p
-    p.unlink(missing_ok=True)
-    try:
-        base.rmdir()
-    except OSError:
-        pass
+    return p
 
 
 @pytest.fixture
