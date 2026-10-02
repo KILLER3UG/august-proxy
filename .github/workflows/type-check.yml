@@ -58,6 +58,15 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: npm run check:api
 
+      # docs/API_INDEX.md is GENERATED from the committed openapi.json, and the
+      # spec is gated immediately above — so this can only fail if someone
+      # edited the spec without regenerating the index, or hand-edited a
+      # generated file. It is the completeness half of API_REFERENCE.md, which
+      # is hand-written and covers ~half the routes by design.
+      - name: Generated API index is current
+        working-directory: ${{ github.workspace }}
+        run: npm run check:api-index
+
       - name: Version sync (4 manifests + lockfile)
         working-directory: ${{ github.workspace }}
         run: node scripts/check-version-sync.mjs

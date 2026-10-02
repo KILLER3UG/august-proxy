@@ -179,6 +179,12 @@ def redactedServerRow(server: dict[str, object]) -> dict[str, object]:
 _servers: dict[str, dict[str, object]] = {}
 _toolsCache: dict[str, list[dict[str, object]]] = {}
 _processes: dict[str, asyncio.subprocess.Process] = {}
+# Per-child serialization for the stdio transport. A stdio MCP server
+# multiplexes one stdin/stdout pair and this client's reader consumes frames
+# until it sees its own request id, so concurrent calls on one child read each
+# other's responses and drop them. Keyed by server id, and dropped in
+# `_stopServerProcess` so a restarted server gets a fresh lock.
+_stdio_locks: dict[str, asyncio.Lock] = {}
 
 
 def _loadConfig() -> dict[str, object]:
@@ -469,8 +475,60 @@ async def _stdio_rpc(
     timeout: float = 30.0,
     notification: bool = False,
     framing: str = 'ndjson',
+    server_id: str = '',
 ) -> dict[str, object] | None:
-    """Send a JSON-RPC request/notification and optionally wait for the matching response."""
+    """Send a JSON-RPC request/notification and optionally wait for the matching response.
+
+    SERIALIZED PER SERVER. A stdio MCP child multiplexes one stdin/stdout pair,
+    and the read loop below DISCARDS any frame whose id is not the one it sent
+    (that is how server notifications are skipped). Two callers on the same
+    child therefore interleave on a single pipe, and a frame consumed by the
+    wrong reader is gone — not returned to the other caller.
+
+    How bad that is in practice depends on arrival order, and FIFO ordering
+    usually hides it: a reader takes the OLDEST frame, which is most often its
+    own. It is not guaranteed, though — a server that emits a notification, or a
+    slow first response, or any frame that arrives while both callers are
+    waiting, breaks that coincidence. The failure is then a timeout and a
+    reaped child, which surfaces as the MCP server going flaky rather than as
+    the local concurrency bug it is.
+
+    Locking removes the class rather than relying on arrival order. It costs
+    nothing measurable: requests to one MCP server are sequential anyway, and
+    the lock is keyed per server so a slow server never blocks another.
+    Notification writes are fire-and-forget but share the pipe with a request
+    in flight, so they take the same lock.
+    """
+    lock = _stdio_lock_for(server_id, proc)
+    async with lock:
+        return await _stdio_rpc_locked(proc, method, params, msg_id, timeout, notification, framing)
+
+
+def _stdio_lock_for(server_id: str, proc: asyncio.subprocess.Process) -> asyncio.Lock:
+    """The serialization lock for one child.
+
+    Keyed by server id when known, else by process identity — an unkeyed lock
+    would serialize every MCP server in the app against each other, which is
+    the cost paid for a correctness problem that is per-child.
+    """
+    key = server_id or f'proc:{id(proc)}'
+    lock = _stdio_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _stdio_locks[key] = lock
+    return lock
+
+
+async def _stdio_rpc_locked(
+    proc: asyncio.subprocess.Process,
+    method: str,
+    params: dict[str, object] | None,
+    msg_id: object,
+    timeout: float,
+    notification: bool,
+    framing: str,
+) -> dict[str, object] | None:
+    """The body of :func:`_stdio_rpc`, run with the per-server lock held."""
     if notification:
         note: dict[str, object] = {'jsonrpc': '2.0', 'method': method}
         if params is not None:
@@ -499,7 +557,7 @@ async def _stdio_rpc(
             return msg
 
 
-async def _mcp_initialize(proc: asyncio.subprocess.Process) -> bool:
+async def _mcp_initialize(proc: asyncio.subprocess.Process, server_id: str = '') -> bool:
     """Send MCP initialize + notifications/initialized handshake over stdio.
 
     Returns False when the server answers with a JSON-RPC error (some servers
@@ -519,10 +577,11 @@ async def _mcp_initialize(proc: asyncio.subprocess.Process) -> bool:
         },
         msg_id=0,
         timeout=20.0,
+        server_id=server_id,
     )
     if not resp or 'error' in resp:
         return False
-    await _stdio_rpc(proc, 'notifications/initialized', notification=True)
+    await _stdio_rpc(proc, 'notifications/initialized', notification=True, server_id=server_id)
     return True
 
 
@@ -607,7 +666,7 @@ async def _startServerProcessLocked(
         _processes[serverId] = proc
         _start_stderr_drain(serverId, proc)
         try:
-            ok = await _mcp_initialize(proc)
+            ok = await _mcp_initialize(proc, serverId)
         except (asyncio.TimeoutError, ConnectionError, OSError, json.JSONDecodeError) as exc:
             # Init handshake failed hard (timeout / unresponsive child). Do
             # NOT leave the child registered: a stale handle would be returned
@@ -655,6 +714,9 @@ async def _stopServerProcess(serverId: str) -> None:
 
     proc = _processes.pop(serverId, None)
     _toolsCache.pop(serverId, None)
+    # Drop the transport lock with the child. A restarted server gets a fresh
+    # lock rather than inheriting one whose owner may never release it.
+    _stdio_locks.pop(serverId, None)
     drain = _stderr_tasks.pop(serverId, None)
     if drain and not drain.done():
         drain.cancel()
@@ -1238,7 +1300,9 @@ async def discoverTools(serverId: str) -> list[dict[str, object]]:
     if not proc or not proc.stdin or (not proc.stdout):
         return []
     try:
-        result = await _stdio_rpc(proc, 'tools/list', {}, msg_id=1, timeout=30.0)
+        result = await _stdio_rpc(
+            proc, 'tools/list', {}, msg_id=1, timeout=30.0, server_id=serverId
+        )
         if not result:
             return []
         if 'error' in result:
@@ -1311,6 +1375,7 @@ async def executeTool(serverId: str, toolName: str, args: dict[str, object]) -> 
             {'name': toolName, 'arguments': args},
             msg_id=str(uuid.uuid4()),
             timeout=MCP_TIMEOUT_MS / 1000,
+            server_id=serverId,
         )
         if not result:
             return f"Error: empty response from MCP tool '{toolName}'"

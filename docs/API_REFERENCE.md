@@ -13,6 +13,11 @@ WebSocket at `/api/logs/stream`.
 
 OpenAPI is available when the server is running at `/docs` and `/openapi.json`.
 
+> **This file is hand-written and explains the families worth knowing about.**
+> It deliberately does not enumerate every route. For the complete list —
+> all 412 operations, grouped, each with the route's own docstring — see the
+> generated [`API_INDEX.md`](./API_INDEX.md), which is drift-gated in CI.
+
 ---
 
 ## Table of Contents

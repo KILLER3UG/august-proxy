@@ -10,6 +10,8 @@
   "scripts": {
     "build:web": "npm run build -w frontend/desktop",
     "check:api": "node scripts/check-api.mjs",
+    "gen:api-index": "node scripts/gen-api-index.mjs",
+    "check:api-index": "node scripts/gen-api-index.mjs --check",
     "gen:openapi": "node scripts/check-api.mjs --write",
     "check:design": "node scripts/check-design.mjs",
     "check:doc-links": "node scripts/check-doc-links.mjs",
