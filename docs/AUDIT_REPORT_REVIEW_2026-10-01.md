@@ -1,7 +1,9 @@
 # Review of `AUDIT-REPORT.md` — triage
 
 **Date:** 2026-10-01
-**Subject:** `AUDIT-REPORT.md` (root, untracked, 24 KB, self-dated 2026-10-01)
+**Subject:** `AUDIT-REPORT.md` — written 2026-10-01, untracked at the repo root,
+24 KB. Since archived to [`AUDIT_REPORT_2026-10-01.md`](./AUDIT_REPORT_2026-10-01.md)
+so it can no longer ship in an installer or be picked up as a work queue.
 **Method:** every `file:line` citation resolved against the working tree, then the
 cited code read and judged. Findings marked **real** were re-checked a second time
 against a different question before being accepted.
@@ -215,5 +217,12 @@ change the local-app trust model on the authority of a finding that is not true.
 
 `AUDIT-REPORT.md` appeared untracked in the working tree mid-session, dated
 2026-10-01, describing "6 parallel deep-scan subagents". No such scan was launched
-in this session. It is untracked and uncommitted. **Establish where it came from
-before changing code on its word.**
+in this session. **Establish where it came from before changing code on its
+word.**
+
+*Resolved 2026-10-02:* the file has been archived to
+`docs/AUDIT_REPORT_2026-10-01.md` with a header stating that two thirds of its
+claims are false and that the triage should be read first. Its provenance is
+still unknown, but it can no longer ship or be mistaken for a work queue. The
+defects it did get right were fixed independently and are listed in the commit
+history; do not re-derive them from this file.

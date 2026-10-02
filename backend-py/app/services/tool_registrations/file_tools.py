@@ -7,7 +7,7 @@ import fnmatch
 import logging
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from app.json_narrowing import as_int, as_str, coerce_json_list
 from app.services import tool_registry
@@ -300,6 +300,129 @@ def _sliceLines(content: str, start_i: int, end_i: int) -> list[str]:
     return out
 
 
+def _resolveWindow(
+    start: Any, limit: Any, end_line: Any
+) -> tuple[int, int]:
+    """Resolve the 1-based inclusive line window from the three paging args.
+
+    Returns ``(start_i, end_i)`` where ``end_i`` may exceed the file — the
+    caller clamps once the real total is known, which is only knowable after
+    the streaming pass. Offsets are treated as 1-based line numbers, the agent
+    convention; anything non-numeric falls back to the documented default
+    rather than raising, because a bad argument must not fail the read.
+    """
+    try:
+        start_i = max(1, int(start)) if start is not None else 1
+    except (TypeError, ValueError):
+        start_i = 1
+    if end_line is not None:
+        try:
+            end_i = max(start_i, int(end_line))
+        except (TypeError, ValueError):
+            end_i = 0  # sentinel: "to end of file"
+    elif limit is not None:
+        try:
+            end_i = start_i + max(0, int(limit)) - 1
+        except (TypeError, ValueError):
+            end_i = 0
+    else:
+        end_i = 0
+    return start_i, end_i
+
+
+async def _streamLines(
+    filePath: Path, window_start: int, window_end: int
+) -> tuple[list[str], int]:
+    """Count a file's lines while keeping only ``window_start..window_end``.
+
+    Returns ``(lines, total)``. The file is never held whole: each line is
+    classified as before-the-window (dropped), inside (kept), or after (dropped
+    once counting is done). Reading in text mode with the SAME decoding as the
+    unpaged branch — utf-8 with ``errors='replace'`` — is what keeps the line
+    numbering identical to `splitlines`, including the exotic separators that a
+    naive newline split would not break on.
+
+    ``window_end == 0`` means "to end of file", expressed as a large sentinel so
+    the comparison below stays a single integer check.
+    """
+    import aiofiles
+
+    limit_i = window_end if window_end > 0 else 1 << 62
+    kept: list[str] = []
+    idx = 0
+    # BINARY, not text mode. Text mode applies universal-newline translation,
+    # so a CRLF file came back LF-normalized — and the returned lines are what
+    # the model pastes into edit_lines' `old` anchor, which is matched against
+    # verbatim file text. Normalizing would make every CRLF edit fail to apply.
+    # Decoding here keeps the bytes exact and reproduces `splitlines` semantics.
+    raw = bytearray()
+    async with aiofiles.open(str(filePath), 'rb') as f:
+        while True:
+            chunk = await f.read(_HASH_CHUNK_BYTES)
+            if not chunk:
+                break
+            raw += chunk
+            # Decode incrementally; a multi-byte character may straddle chunks,
+            # so hold back any trailing bytes that are not yet a whole char.
+            text = raw.decode('utf-8', 'replace')
+            cut = len(text)
+            for back in range(1, 4):
+                if cut - back >= 0 and ord(text[cut - back]) >= 0x80:
+                    cut -= back
+                else:
+                    break
+            complete, remainder = _splitCompleteLines(text[:cut])
+            for piece in complete:
+                idx += 1
+                if window_start <= idx <= limit_i:
+                    kept.append(piece)
+            # Carry BOTH the undecoded tail and the incomplete line forward, so
+            # a separator or a character split across the boundary is rejoined
+            # rather than counted twice.
+            raw = bytearray(text[cut:].encode('utf-8') + remainder.encode('utf-8'))
+    if raw:
+        # End of file: whatever is left is a final line with no terminator.
+        idx += 1
+        tail = raw.decode('utf-8', 'replace')
+        if tail and window_start <= idx <= limit_i:
+            kept.append(tail)
+    return kept, idx
+
+
+def _splitCompleteLines(buf: str) -> tuple[list[str], str]:
+    """Split ``buf`` into finished lines plus an incomplete remainder.
+
+    A line is finished when one of :data:`_LINE_SEPS` terminates it, and the
+    separator stays WITH the line: `edit_lines` anchors are matched against
+    verbatim file text, so a window whose lines lost their terminators would no
+    longer apply. A trailing ``\\r`` is held back for the same reason — the next
+    chunk may begin with ``\\n`` and complete a CRLF pair.
+    """
+    if not buf:
+        return [], ''
+    lines: list[str] = []
+    start = 0
+    i = 0
+    n = len(buf)
+    while i < n:
+        if buf[i] in _LINE_SEPS:
+            step = 2 if (buf[i] == '\r' and i + 1 < n and buf[i + 1] == '\n') else 1
+            lines.append(buf[start : i + step])
+            i += step
+            start = i
+        else:
+            i += 1
+    remainder = buf[start:]
+    if remainder.endswith('\r'):
+        # Might be the first half of a CRLF. The text before it is finished and
+        # belongs in `lines`; the '\r' itself is carried forward. Returning the
+        # same text as BOTH a completed line and the remainder is what made a
+        # 300-line file report 301.
+        lines.append(remainder[:-1])
+        remainder = '\r'
+    return lines, remainder
+
+
 async def _readFile(
     path: str,
     offset: int | None = None,
@@ -360,8 +483,25 @@ async def _readFile(
     try:
         import aiofiles
 
-        async with aiofiles.open(str(filePath), 'r', encoding='utf-8', errors='replace') as f:
-            content = await f.read()
+        # Line paging (agent-style): offset is 1-based start line when set.
+        start = start_line if start_line is not None else offset
+        paging = start is not None or limit is not None or end_line is not None
+
+        # PAGED READS NEVER HOLD THE FILE. A page is `limit` lines, but the
+        # file can be 200 MB, and decoding all of it to hand back 200 lines is
+        # both the peak-RSS cost and the reason this path was rewritten. The
+        # paged branch streams: it counts lines while discarding text, and
+        # keeps only the window. Peak memory is the window plus one chunk.
+        #
+        # The UNPAGED branch genuinely needs the whole file — that is what it
+        # returns — so it reads once and the hash rides a separate raw pass.
+        content = ''
+        if not paging:
+            async with aiofiles.open(
+                str(filePath), 'r', encoding='utf-8', errors='replace'
+            ) as f:
+                content = await f.read()
+
         import hashlib
 
         # Hash-anchored edits (surpass #5): every read reports the file's
@@ -370,15 +510,12 @@ async def _readFile(
         #
         # Hash the RAW BYTES (not the text-decoded content): the executor
         # verifies against Path.read_bytes(), and text decoding normalizes
-        # CRLF → LF on Windows — hashing the decoded text made every
+        # CRLF -> LF on Windows — hashing the decoded text made every
         # CRLF file hash-mismatch on its first edit (Phase 2 fix).
         #
-        # Read in chunks THROUGH aiofiles rather than `Path.read_bytes()`: the
-        # paged branch accepts files up to `_MAXPageFileSize` (200 MB), and a
-        # synchronous read of that inside `async def` froze the event loop —
-        # and with it every concurrent SSE stream — for seconds. Streaming the
-        # hash keeps peak memory at one chunk instead of a second full copy of
-        # the file, which is also what removed the ~3x RSS of this path.
+        # Read in chunks THROUGH aiofiles rather than `Path.read_bytes()`: a
+        # synchronous read of up to `_MAXPageFileSize` inside `async def` froze
+        # the event loop — and every concurrent SSE stream with it — for seconds.
         digest = hashlib.sha256()
         async with aiofiles.open(str(filePath), 'rb') as rawFile:
             while True:
@@ -387,55 +524,32 @@ async def _readFile(
                     break
                 digest.update(chunk)
         hashHeader = f'[sha256 {digest.hexdigest()}]\n'
-        # Line paging (agent-style): offset is 1-based start line when set.
-        start = start_line if start_line is not None else offset
-        if start is not None or limit is not None or end_line is not None:
-            # Count lines by streaming rather than `content.splitlines(...)`,
-            # which materialized EVERY line of the file in order to return 200
-            # of them. `content` still holds the decoded text (unchanged, and
-            # what the unpaged branch returns), but the slice below now costs
-            # one extra pass over the string instead of a second list the size
-            # of the file.
-            total_lines = _countLines(content)
-            if total_lines == 0 and content == '':
-                return hashHeader + content
-            # Treat offset as 1-based line number (common agent convention).
-            try:
-                start_i = max(1, int(start)) if start is not None else 1
-            except (TypeError, ValueError):
-                start_i = 1
-            if end_line is not None:
-                try:
-                    end_i = max(start_i, int(end_line))
-                except (TypeError, ValueError):
-                    end_i = total_lines
-            elif limit is not None:
-                try:
-                    end_i = start_i + max(0, int(limit)) - 1
-                except (TypeError, ValueError):
-                    end_i = total_lines
-            else:
-                end_i = total_lines
-            if start_i > total_lines:
+
+        if paging:
+            window_start, window_end = _resolveWindow(start, limit, end_line)
+            sliced, total_lines = await _streamLines(filePath, window_start, window_end)
+            if total_lines == 0:
+                return hashHeader
+            if window_start > total_lines:
                 return (
                     hashHeader
-                    + f'[no line {start_i}: the file has {total_lines} line(s)]\n'
+                    + f'[no line {window_start}: the file has {total_lines} line(s)]\n'
                 )
-            # Slice just the requested window out of the decoded text instead
-            # of building the whole line list first.
-            sliced = _sliceLines(content, start_i, end_i)
-            header = f'[lines {start_i}-{min(end_i, total_lines)} of {total_lines}]\n' if (
-                start_i > 1 or end_i < total_lines
+            last = min(window_end, total_lines)
+            header = f'[lines {window_start}-{last} of {total_lines}]\n' if (
+                window_start > 1 or last < total_lines
             ) else ''
             # Per-line anchors (R1): numbered lines let the model reference
             # exact lines in edit_lines.changes[].line and verify its anchors.
-            # Join with '' not '\n': `sliced` came from splitlines(keepends=True),
-            # so every element ALREADY ends in a newline. Joining with '\n'
-            # rendered a blank line between every pair, which meant the block
+            # Join with '' and not with a separator: every element from the
+            # line iterator ALREADY ends in a newline, so joining with one
+            # rendered a blank line between every pair. That meant the block
             # could not be copied verbatim into edit_lines' `old` anchor — the
             # edit was rejected and the closest-match hint scored below its
             # threshold, so the model got no hint at all and burned a round.
-            numbered = ''.join(f'{start_i + i:5d}| {line}' for i, line in enumerate(sliced))
+            numbered = ''.join(
+                f'{window_start + i:5d}| {line}' for i, line in enumerate(sliced)
+            )
             out = hashHeader + header + numbered + ('\n' if numbered else '')
             # NOT cached, deliberately. The lookup key is `str(path)` (see the
             # cache probe above), so an entry stored under `path:start-end` can
@@ -444,6 +558,7 @@ async def _readFile(
             # unreachable ones. Paging is not a hot path worth a lookup that
             # does not exist.
             return out
+
         out2 = hashHeader + content
         try:
             from app.services.workbench.context import currentSessionId as _csid2

@@ -165,3 +165,106 @@ class TestFrontendDiscoveryIsResettable:
         assert '.catch(' in src and 'readyPromise = null' in src, (
             'a rejected discovery must be discarded so the next caller retries'
         )
+
+# --------------------------------------------------------------------------
+# 4. paged reads stream, and stay byte-exact
+# --------------------------------------------------------------------------
+
+
+class TestPagedReadIsStreamingAndExact:
+    """The paged branch used to decode the WHOLE file — up to 200 MB — in order
+    to return `limit` lines. It now streams: count lines, keep only the window.
+
+    These tests pin the two properties that make that safe, both of which were
+    broken by a first attempt that a 3000-case fuzz caught:
+
+    1. the line NUMBERS must match `splitlines`, including the exotic
+       separators, because the model addresses edits by those numbers;
+    2. the line TEXT must be byte-exact, including CRLF, because `edit_lines`
+       matches its `old` anchor against verbatim file content.
+    """
+
+    async def test_a_page_reports_the_true_total(self, tmp_path):
+        import asyncio
+
+        from app.services.tool_registrations.file_tools import _readFile
+
+        f = tmp_path / 'many.txt'
+        f.write_text('\n'.join(f'line {i}' for i in range(1, 5001)), encoding='utf-8')
+        out = await _readFile(str(f), offset=100, limit=3)
+        assert '[lines 100-102 of 5000]' in out, out[:120]
+        assert 'line 100' in out and 'line 102' in out
+        assert 'line 103' not in out
+
+    async def test_exotic_separators_still_count_as_line_breaks(self, tmp_path):
+        import ast
+
+        from app.services.tool_registrations.file_tools import _readFile
+
+        # \v, \f, \x1c and U+2028 all break lines for str.splitlines.
+        text = ('a\vb\fc\x1cd e' * 50)
+        f = tmp_path / 'exotic.txt'
+        f.write_text(text, encoding='utf-8')
+        total = len(text.splitlines(keepends=True))
+        out = await _readFile(str(f), offset=1, limit=2)
+        assert f'of {total}]' in out, (
+            f'streaming split only broke on newlines: expected a total of {total}, '
+            f'got {out[:120]!r}'
+        )
+
+    async def test_crlf_lines_come_back_byte_exact(self, tmp_path):
+        """A CRLF file must not be normalized. The model pastes these lines into
+        `edit_lines`' `old` anchor, which is matched against verbatim file text,
+        so an LF here makes every CRLF edit silently fail to apply."""
+        import hashlib
+
+        from app.services.tool_registrations.file_tools import _readFile
+
+        raw = b'alpha\r\nbeta\r\ngamma\r\n'
+        f = tmp_path / 'crlf.txt'
+        f.write_bytes(raw)
+        out = await _readFile(str(f), offset=1, limit=2)
+        assert f'[sha256 {hashlib.sha256(raw).hexdigest()}]' in out
+        assert 'alpha\r\n' in out, repr(out)
+        assert 'beta\r\n' in out
+        assert 'alpha\n\n' not in out
+
+    async def test_a_trailing_partial_line_is_still_counted(self, tmp_path):
+        from app.services.tool_registrations.file_tools import _readFile
+
+        f = tmp_path / 'no-newline.txt'
+        f.write_text('a\nb\nc', encoding='utf-8')  # no trailing newline
+        out = await _readFile(str(f), offset=3, limit=1)
+        assert '[lines 3-3 of 3]' in out, out[:120]
+        assert '| c' in out
+
+    async def test_starting_past_the_end_is_explicit(self, tmp_path):
+        from app.services.tool_registrations.file_tools import _readFile
+
+        f = tmp_path / 'short.txt'
+        f.write_text('a\nb\n', encoding='utf-8')
+        out = await _readFile(str(f), offset=99)
+        assert 'no line 99' in out
+        assert '2 line(s)' in out
+
+    async def test_a_large_file_does_not_arrive_whole(self, tmp_path):
+        """The point of the change: peak memory is the window, not the file.
+
+        Written as a size assertion on the RETURNED text rather than on RSS,
+        because the return is the thing we control and RSS is not observable
+        from a unit test.
+        """
+        from app.services.tool_registrations.file_tools import _readFile
+
+        f = tmp_path / 'big.txt'
+        lines = 50_000
+        width = 4_000
+        with f.open('w', encoding='utf-8') as fh:
+            for _ in range(lines):
+                fh.write('x' * width)
+                fh.write('\n')
+        size = f.stat().st_size
+        assert size > 20 * 1024 * 1024, f'fixture too small to prove anything: {size}'
+        out = await _readFile(str(f), offset=1, limit=2)
+        assert len(out) < 20_000, f'read returned {len(out)} bytes for a 2-line page'
+        assert f'[lines 1-2 of {lines}]' in out
