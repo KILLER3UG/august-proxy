@@ -53,17 +53,37 @@ class TestDecide:
         assert d.policy == policy.DEFAULT_POLICY == 'ask'
         assert d.matched_key == ''
 
-    def test_exact_and_substring_both_match(self, configured):
+    def test_a_process_name_matches_the_app_a_user_types(self, configured):
+        """The resolver returns the PROCESS (`chrome`), the user typed `chrome`."""
         configured({'chrome': 'deny'})
         assert policy.decide('chrome').policy == 'deny'
-        assert policy.decide('Google Chrome - Work').policy == 'deny'
         assert policy.decide('CHROME.EXE').policy == 'deny'
+        assert policy.decide('notepad.exe', policies={'notepad': 'deny'}).policy == 'deny'
+
+    def test_a_title_alias_matches_too(self, configured):
+        """The same window also answers to its title, so a user who typed the
+        visible name is not silently unprotected."""
+        configured({'google chrome': 'deny'})
+        d = policy.decide('chrome', aliases=('Google Chrome - Work',))
+        assert d.policy == 'deny'
+        assert d.matched_key == 'google chrome'
+
+    def test_a_one_character_key_matches_nothing(self, configured):
+        """The old symmetric-substring rule meant a key of "e" matched almost
+        every title — a deny nobody wrote."""
+        configured({'e': 'deny'})
+        assert policy.decide('chrome').policy == 'ask'
+        assert policy.decide('Google Chrome - Work').policy == 'ask'
+
+    def test_a_different_app_is_not_matched(self, configured):
+        configured({'chrome': 'deny'})
+        assert policy.decide('firefox').policy == 'ask'
 
     def test_the_most_specific_key_wins(self, configured):
-        """Configured `chrome` deny and `Google Chrome` allow: the longer key is
-        what the user meant, and it must not be shadowed by the shorter one."""
-        configured({'chrome': 'deny', 'Google Chrome': 'allow'})
-        d = policy.decide('Google Chrome')
+        """Configured `chrome` deny and `google chrome` allow: for the window
+        whose identities are both, the longer key is the one they meant."""
+        configured({'chrome': 'deny', 'google chrome': 'allow'})
+        d = policy.decide('google chrome', aliases=('google chrome',))
         assert d.policy == 'allow'
         assert d.matched_key == 'google chrome'
 
@@ -160,7 +180,7 @@ class TestConsequences:
 
         monkeypatch.setattr(desktop_automation, 'clickMouse', _never)
         # automateAction resolves the app itself, so pin it.
-        monkeypatch.setattr(policy, 'resolveTargetApp', lambda: 'chrome')
+        monkeypatch.setattr(policy, 'resolveTargetApps', lambda: ('chrome', 'Google Chrome'))
         out = asyncio.run(desktop_dispatch.automateAction('click', {'x': 1, 'y': 2}))
         assert out['ok'] is False
         assert out['policy'] == 'deny'
@@ -180,7 +200,7 @@ class TestConsequences:
             'M', (), {'click': staticmethod(lambda *a, **k: seen.setdefault('clicked', a))}
         )
         monkeypatch.setitem(sys.modules, 'pyautogui', fake)
-        monkeypatch.setattr(policy, 'resolveTargetApp', lambda: 'chrome')
+        monkeypatch.setattr(policy, 'resolveTargetApps', lambda: ('chrome', 'Google Chrome'))
         out = asyncio.run(desktop_dispatch.automateAction('click', {'x': 5, 'y': 6}))
         assert out == {'x': 5, 'y': 6, 'button': 'left'}
         assert seen['clicked'][:2] == (5, 6)
@@ -194,7 +214,7 @@ class TestConsequences:
             raise AssertionError('the action ran on an unanswered ask')
 
         monkeypatch.setattr(desktop_automation, 'clickMouse', _never)
-        monkeypatch.setattr(policy, 'resolveTargetApp', lambda: 'chrome')
+        monkeypatch.setattr(policy, 'resolveTargetApps', lambda: ('chrome', 'Google Chrome'))
         monkeypatch.setattr(policy, '_currentSession', lambda: None)
         out = asyncio.run(desktop_dispatch.automateAction('click', {'x': 1, 'y': 1}))
         assert out['ok'] is False
@@ -208,7 +228,7 @@ class TestConsequences:
         not look at the approval flag.
         """
         configured({'chrome': 'deny'})
-        monkeypatch.setattr(policy, 'resolveTargetApp', lambda: 'chrome')
+        monkeypatch.setattr(policy, 'resolveTargetApps', lambda: ('chrome', 'Google Chrome'))
 
         async def _twoCalls():
             policy.markApproved()
@@ -231,7 +251,7 @@ class TestConsequences:
         """Headless box: pygetwindow missing. Denying everything would look like
         a broken product; allowing would be the original bug. So: ask."""
         configured({})
-        monkeypatch.setattr(policy, 'resolveTargetApp', lambda: '')
+        monkeypatch.setattr(policy, 'resolveTargetApps', lambda: ())
         assert policy.enforce('desktop_type').policy == 'ask'
 
     def test_a_resolver_error_never_fails_open(self, monkeypatch):

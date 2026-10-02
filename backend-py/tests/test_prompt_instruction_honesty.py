@@ -67,48 +67,61 @@ def _digest() -> str:
 
 class TestBareSurfaceInstructionHonesty:
     def test_the_digest_names_exactly_the_tools_we_expect(self):
-        """Guards the premise. If the digest stops naming these, the assertions
-        below become vacuous — so pin the naming first."""
-        digest = _digest()
-        named = [t for t in DIGEST_NAMED_TOOLS if t in digest]
-        assert named, (
-            'the digest no longer names any of the tools this file checks; update '
-            'DIGEST_NAMED_TOOLS rather than letting the assertions pass vacuously'
+        """Guards the premise. If the tool-directed lines move or disappear,
+        the assertions below become vacuous — so pin the tagging first."""
+        tagged = [tool for tool, _line in prompt_build._HARNESS_GUIDE_TOOL_LINES]
+        assert set(tagged) == set(DIGEST_NAMED_TOOLS), (
+            f'the tagged lines are {tagged}, but this file checks {list(DIGEST_NAMED_TOOLS)}'
         )
+        assert _digest(), 'the base digest is empty'
 
     @pytest.mark.parametrize('tool', DIGEST_NAMED_TOOLS)
-    def test_every_tool_the_digest_names_is_really_absent_from_bare(self, tool: str):
+    def test_every_tool_the_digest_mentions_is_absent_from_bare(self, tool: str):
         assert tool not in _BARE_TOOL_ALLOW, (
-            f'{tool} is now in _BARE_TOOL_ALLOW; the instruction is now actionable '
-            'and can be dropped from DIGEST_NAMED_TOOLS'
+            f'{tool} is now in _BARE_TOOL_ALLOW; the instruction is actionable '
+            'there and can be dropped from DIGEST_NAMED_TOOLS'
         )
 
-    @pytest.mark.parametrize('tool', DIGEST_NAMED_TOOLS)
-    def test_the_digest_names_it_unconditionally(self, tool: str):
-        """The digest is appended to the prompt with no `offeredTools` gate
-        (workbench.py ~:1005), so the name reaches a bare-surface model."""
-        assert tool in _digest(), f'{tool} is no longer named by the digest'
+    def test_a_bare_surface_hears_about_none_of_them(self):
+        """The fix. `harness_guide_for` must not name a tool the bare surface
+        lacks — that was the live defect."""
+        guide = prompt_build.harness_guide_for(set(_BARE_TOOL_ALLOW))
+        for tool in DIGEST_NAMED_TOOLS:
+            assert tool not in guide, (
+                f'the guide still names {tool!r} on a surface that does not offer it'
+            )
 
-    def test_the_gate_is_ungated_today(self):
-        """States the current condition precisely, so that FIXING it is a
-        deliberate, visible change to this test rather than an accident."""
-        src = inspect.getsource(prompt_build._harness_guide_text)
-        assert 'offeredTools' not in src and 'GATED' not in src, (
-            '_harness_guide_text() now filters by offeredTools — the mismatch is '
-            'fixed. Update this file to assert the fixed behaviour instead.'
-        )
+    def test_a_full_surface_hears_about_all_of_them(self):
+        """The other half: filtering must not silently drop real guidance."""
+        full = {'load_skill', 'module_context', 'harness_propose', 'submit_plan'}
+        guide = prompt_build.harness_guide_for(full)
+        for tool in DIGEST_NAMED_TOOLS:
+            assert tool in guide, f'{tool} is offered but the guide never mentions it'
 
-    def test_capabilities_prompt_tells_the_model_to_call_load_skill(self):
-        """The capability block says "call load_skill(name)", which the bare
-        surface cannot honour. Read from the real builder, not a guessed symbol
-        (the earlier version scanned module attributes and found none)."""
+    def test_the_loop_explanation_survives_on_every_surface(self):
+        """The unconditional half must always be present — it is the part that
+        teaches the model the loop contract the schemas omit."""
+        for surface in (set(), set(_BARE_TOOL_ALLOW), {'load_skill'}):
+            guide = prompt_build.harness_guide_for(surface)
+            assert 'update_state' in guide
+            assert 'Validation Error' in guide
+
+    def test_no_surface_information_keeps_the_loop_explanation(self):
+        """`None` means the caller has no surface. It gets the unconditional
+        half — the same as an empty set — because guessing that a tool IS
+        available is exactly the bug this gate exists to stop."""
+        guide = prompt_build.harness_guide_for(None)
+        assert guide == prompt_build.harness_guide_for(set())
+        assert 'update_state' in guide
+        assert 'Validation Error' in guide
+
+    def test_capabilities_prompt_names_load_skill_and_bare_cannot(self):
+        """The capability block says "call load_skill(name)"; the bare surface
+        cannot honour it. Assert the real builder exists so this cannot pass
+        vacuously (the earlier version of this file scanned a symbol that did
+        not exist)."""
         builder = getattr(capabilities_prompt, 'build_capabilities_block', None)
-        assert callable(builder), (
-            'capabilities_prompt.build_capabilities_block is missing — this test '
-            'would otherwise pass vacuously'
-        )
-        # The tool it names is absent from the bare surface, so the instruction
-        # is unreachable there.
+        assert callable(builder), 'capabilities_prompt.build_capabilities_block is missing'
         assert 'load_skill' not in _BARE_TOOL_ALLOW
 
 

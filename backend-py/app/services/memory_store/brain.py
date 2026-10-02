@@ -6,6 +6,7 @@ import sqlite3
 
 from app.adapters.case_converters import camelToSnake
 from app.json_narrowing import as_list, as_str
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 from app.services.memory_store.kv import _fts_match_query
 from app.services.memory_store.wire import _row_as_wire
@@ -808,7 +809,7 @@ def brain_delete_row(store: str, row_id: object) -> dict[str, object]:
             return {'ok': False, 'error': 'row not found'}
         beforeWire = _row_as_wire(before)
         cursor = conn.execute(f'DELETE FROM {table} WHERE {idCol} = ?', (row_id,))
-        conn.commit()
+        brain_commit(conn)
         if cursor.rowcount > 0:
             _record_row_rollback(resolved, str(row_id), beforeWire, None)
             _invalidate_fact_cache_if_facts(resolved)  # 2.6 (Part 25)
@@ -865,7 +866,7 @@ def brain_update_row(store: str, row_id: object, patch: dict[str, object]) -> di
         if 'updated_at' in colNames and 'updated_at' not in {s.split(' = ')[0] for s in sets}:
             sets.append("updated_at = datetime('now')")
         conn.execute(f"UPDATE {table} SET {', '.join(sets)} WHERE {idCol} = ?", (*params, row_id))
-        conn.commit()
+        brain_commit(conn)
         after = conn.execute(f'SELECT * FROM {table} WHERE {idCol} = ?', (row_id,)).fetchone()
         afterWire = _row_as_wire(after) if after is not None else None
         _record_row_rollback(resolved, str(row_id), beforeWire, afterWire)

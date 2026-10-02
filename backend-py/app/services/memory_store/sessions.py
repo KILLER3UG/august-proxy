@@ -5,6 +5,7 @@ import json
 from typing import cast
 
 from app.json_narrowing import as_int, as_str
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 from app.services.memory_store.transcript_blocks import encode_blocks
 from app.services.memory_store.wire import _row_as_wire, _session_field
@@ -26,7 +27,7 @@ def _begin_txn(conn) -> None:
     the atomicity the raw ``BEGIN`` was asking for, so we simply keep it.
     """
     if conn.in_transaction:
-        conn.commit()
+        brain_commit(conn)
     conn.execute('BEGIN')
 
 
@@ -95,7 +96,7 @@ def save_session(session: SessionRecord) -> None:
             updated_at,
         ),
     )
-    conn.commit()
+    brain_commit(conn)
 
 
 # Client-identity match window for the snapshot rewrite (migration 048). The
@@ -367,7 +368,7 @@ def save_workbench_session_sot(
                 f' VALUES ({", ".join(["?"] * len(cols))})',
                 [r[: len(cols)] for r in rows],
             )
-        conn.commit()
+        brain_commit(conn)
     except Exception:
         conn.rollback()
         raise
@@ -623,7 +624,7 @@ def delete_session_cascade(
             pass
         cur = conn.execute('DELETE FROM sessions WHERE id = ?', (sid,))
         parent_deleted = cur.rowcount > 0
-        conn.commit()
+        brain_commit(conn)
         any_child = bool(children)
         ok = parent_deleted or any_child
         if ok and notify:

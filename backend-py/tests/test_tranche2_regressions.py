@@ -440,14 +440,23 @@ class TestLifespanActuallyCallsTheDrains:
         )
 
     def test_the_deferred_lane_reaches_the_checkpoint(self):
-        """`note_commit` is called from `deferred_writes._commit`; reverting that
-        call leaves the function itself intact and every other test green."""
+        """The deferred lane must commit THROUGH `memory_conn.commit`, so the
+        WAL checkpoint counts it.
+
+        This used to assert on a private `_noteCheckpoint` helper that called
+        `note_commit()` from `deferred_writes._commit`. When both lanes were
+        unified onto `memory_conn.commit`, that helper disappeared — and the
+        assertion failed while the PROPERTY it guarded was still true. Assert
+        the funnel, not the implementation that happened to provide it.
+        """
         import inspect
 
         from app.services import deferred_writes
 
-        assert '_noteCheckpoint' in inspect.getsource(deferred_writes._commit), (
-            'deferred_writes._commit no longer triggers the WAL checkpoint'
+        src = inspect.getsource(deferred_writes._commit)
+        assert 'brain_commit' in src, (
+            'deferred_writes._commit no longer commits through '
+            'memory_conn.commit, so the WAL checkpoint stops counting these writes'
         )
 
 

@@ -58,8 +58,11 @@ class TestPromptSlim:
             f"harness_guide is {len(guide)} chars — the two full skill bodies "
             "inline ~12.9k; the digest must stay a digest (<4k)"
         )
-        # The loop contract essentials stay present…
-        for needle in ("update_state", "plan mode", "load_skill"):
+        # This prompt registers the full tool set (register_all above), so every
+        # tool-directed line is legitimately present here. What matters is that
+        # it stays a DIGEST — the loop contract plus those lines, never the full
+        # skill bodies.
+        for needle in ("update_state", "load_skill"):
             assert needle.lower() in guide.lower(), f"digest lost essential: {needle}"
         # …but not the full skill prose.
         assert "## When to Use" not in guide, "full skill body prose must be gone"

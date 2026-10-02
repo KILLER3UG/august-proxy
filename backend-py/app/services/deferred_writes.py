@@ -51,27 +51,22 @@ def _on_loop_thread() -> bool:
 
 
 def _commit(conn: sqlite3.Connection) -> None:
+    """Commit through memory_conn's helper so the WAL checkpoint counts it.
+
+    Previously this called `conn.commit()` and then poked `note_commit()`
+    itself, which meant the deferred lane and the direct-write lane had two
+    places to keep in step. Now every brain commit goes through
+    `memory_conn.commit`, so the checkpoint fires wherever the write happens.
+    """
+    from app.services.memory_conn import commit as brain_commit
+
     try:
         if conn.in_transaction:
-            conn.commit()
-            _noteCheckpoint()
+            brain_commit(conn)
     except sqlite3.ProgrammingError:
         pass  # closed between defer and flush — nothing to persist
     except Exception:
         logger.debug('deferred commit failed', exc_info=True)
-
-
-def _noteCheckpoint() -> None:
-    """Fold the WAL into the database file periodically. The packaged desktop
-    quit is `taskkill /T /F`, so main.py's lifespan flushes never run — without
-    this, everything since the last clean close is only in the `-wal` sidecar.
-    Best-effort: never raises into the write path."""
-    try:
-        from app.services.memory_conn import note_commit
-
-        note_commit()
-    except Exception:
-        logger.debug('wal checkpoint note failed', exc_info=True)
 
 
 def _flush_key(key: int) -> None:

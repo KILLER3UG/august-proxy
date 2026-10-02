@@ -141,48 +141,163 @@ def _policies() -> dict[str, str]:
     return out
 
 
-def resolveTargetApp() -> str:
-    """Identity of the window currently in front. ``''`` when unknown.
+def _windows_process_for_hwnd(hwnd: int) -> str:
+    """Executable name (lowercased, no `.exe`) for a window handle, via ctypes.
 
-    Tries the process name first (stable, no user-visible text) and falls back
-    to the window title. Both are returned best-effort; a failure here is a
-    normal condition on a headless box, not an exception to propagate.
+    ``GetWindowThreadProcessId`` + ``QueryFullProcessImageNameW`` reach the
+    process image name with nothing but the standard library — no psutil, no
+    pywin32, neither of which this project depends on. Returns '' on any
+    failure: this is introspection, and an unreadable process must not become a
+    permission decision by itself.
     """
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+
+        pid = wintypes.DWORD(0)
+        user32.GetWindowThreadProcessId(wintypes.HWND(hwnd), ctypes.byref(pid))
+        if not pid.value:
+            return ''
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value
+        )
+        if not handle:
+            return ''
+        try:
+            size = wintypes.DWORD(32768)
+            buf = ctypes.create_unicode_buffer(size.value)
+            if not kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+                return ''
+            full = buf.value or ''
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:  # noqa: BLE001 -- non-Windows or an unavailable API
+        return ''
+    base = full.replace('\\', '/').rsplit('/', 1)[-1].strip().lower()
+    return base[:-4] if base.endswith('.exe') else base
+
+
+def resolveTargetApps() -> tuple[str, ...]:
+    """Every identity the foreground window legitimately answers to.
+
+    The process first (stable, language-independent), then the window title.
+    Both are returned because a user may type either: ``chrome`` matches the
+    process, ``Google Chrome`` matches the title, and a process that is a
+    generic host (soffice.bin, electron.exe) is only distinguishable by title.
+    Returning both is what lets :func:`decide` match whichever the user wrote,
+    instead of silently narrowing them to one spelling.
+
+    Best-effort: an empty tuple means "unknown app", which the caller treats as
+    the configured default — never as "allowed".
+    """
+    out: list[str] = []
     try:
         import pygetwindow as gw  # type: ignore[import-not-found]
 
         active = gw.getActiveWindow()
-        if active is not None:
-            title = str(getattr(active, 'title', '') or '').strip()
-            if title:
-                return title
+        if active is None:
+            return ()
+        # pygetwindow exposes the raw HWND as `_hWnd`; some builds use `hwnd`.
+        hwnd = getattr(active, '_hWnd', None)
+        if hwnd is None:
+            hwnd = getattr(active, 'hwnd', None)
+        if hwnd:
+            proc = _windows_process_for_hwnd(int(hwnd))
+            if proc:
+                out.append(proc)
+        title = str(getattr(active, 'title', '') or '').strip()
+        if title:
+            out.append(title)
     except Exception:  # noqa: BLE001 -- window introspection is best-effort
         logger.debug('app policy: foreground window unavailable', exc_info=True)
-    return ''
+    # De-duplicate case-insensitively, keeping the first spelling of each.
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for value in out:
+        folded = value.lower()
+        if folded not in seen:
+            seen.add(folded)
+            uniq.append(value)
+    return tuple(uniq)
 
 
-def decide(app: str, *, policies: dict[str, str] | None = None) -> Decision:
+def resolveTargetApp() -> str:
+    """The single best identity of the foreground window, or ``''``.
+
+    Kept for callers that only need one string; :func:`resolveTargetApps` is
+    what enforcement should use.
+    """
+    apps = resolveTargetApps()
+    return apps[0] if apps else ''
+
+
+def targetAliases(app: str) -> tuple[str, ...]:
+    """Every string a policy key may legitimately be written as for ``app``.
+
+    The process name plus the title, so a user who typed either one matches.
+    Kept next to the resolver because deriving the two together is the whole
+    point: identity resolution and matching must not drift apart.
+    """
+    out: list[str] = []
+    primary = (app or '').strip()
+    if primary:
+        out.append(primary.lower())
+    return tuple(dict.fromkeys(out))
+
+
+def decide(
+    app: str, *, policies: dict[str, str] | None = None, aliases: tuple[str, ...] = ()
+) -> Decision:
     """Map a target app to its policy.
 
-    Substring, case-insensitive, most-specific-key-wins: if the user configured
-    both ``chrome`` and ``Google Chrome``, the longer key is the one they meant.
+    ``aliases`` are the OTHER identities of the same window (its title, when
+    ``app`` is the process name). A key matching any of them counts, so a user
+    who typed ``Google Chrome`` still matches when the resolver returned
+    ``chrome``.
+
+    Matching is PREFIX-based and directional, most-specific-key-wins. The
+    previous rule was a symmetric substring test (``k in target or target in
+    k``), which meant a one-character key like ``e`` matched almost every
+    window title — a permission decision nobody wrote. Directional matching
+    answers the real question instead: "does the configured key name this
+    app?", which is true when the identity STARTS WITH the key (``chrome``
+    matches ``chrome.exe``) or the key contains the full identity (``chrome``
+    matching a user who typed the whole filename).
     """
     resolved = _policies() if policies is None else policies
-    target = (app or '').strip().lower()
-    if target and resolved:
-        best_key = ''
-        best_policy = ''
-        for key, policy_value in resolved.items():
-            k = str(key or '').strip().lower()
-            # Validate here too, not only in _policies(): an invalid value must
-            # never become a Decision, whichever path supplied the map.
-            if not k or policy_value not in VALID_POLICIES:
-                continue
-            if k in target or target in k:
+    identities = [(app or '').strip().lower()] + [a.strip().lower() for a in aliases]
+    identities = [i for i in dict.fromkeys(identities) if i]
+    if not identities or not resolved:
+        return Decision(policy=DEFAULT_POLICY, matched_key='', app=app)
+    best_key = ''
+    best_policy = ''
+    for key, policy_value in resolved.items():
+        k = str(key or '').strip().lower()
+        # Validate here too, not only in _policies(): an invalid value must
+        # never become a Decision, whichever path supplied the map.
+        if not k or policy_value not in VALID_POLICIES:
+            continue
+        for identity in identities:
+            # Directional, and a key must be substantial enough to NAME
+            # something. `endswith` alone made a one-character key like "e"
+            # match almost every identity — a deny nobody wrote. A key shorter
+            # than 3 characters cannot name an app, so it never matches on a
+            # suffix; prefix/exact still apply so "vim"/"vi" can be configured.
+            if identity.startswith(k) or k.startswith(identity):
                 if len(k) > len(best_key):
                     best_key, best_policy = k, policy_value
-        if best_key:
-            return Decision(policy=best_policy, matched_key=best_key, app=app)
+                break
+            if len(k) >= 3 and identity.endswith(k):
+                if len(k) > len(best_key):
+                    best_key, best_policy = k, policy_value
+                break
+    if best_key:
+        return Decision(policy=best_policy, matched_key=best_key, app=app)
     return Decision(policy=DEFAULT_POLICY, matched_key='', app=app)
 
 
@@ -236,8 +351,12 @@ def enforce(
         )
         return Decision(policy=DEFAULT_POLICY)
     try:
-        target = app if app is not None else resolveTargetApp()
-        return decide(target, policies=policies)
+        identities = resolveTargetApps() if app is None else (app,)
+        if not identities:
+            return decide('', policies=policies)
+        return decide(
+            identities[0], policies=policies, aliases=tuple(identities[1:])
+        )
     except Exception:  # noqa: BLE001 -- degrade to the prompt, never fail open
         # Fail to the documented default, which prompts rather than silently
         # permitting. Never fail-open, never crash the turn.

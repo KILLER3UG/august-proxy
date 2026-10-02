@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.json_narrowing import as_int
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 from app.services.memory_conn import db_path as _db_path
 
@@ -109,7 +110,7 @@ def _expire_facts() -> int:
         "AND julianday(expires_at) IS NOT NULL "
         "AND julianday(expires_at) <= julianday('now')"
     )
-    conn.commit()
+    brain_commit(conn)
     # 2.6: a TTL delete must drop the cached BM25 corpus, or expired
     # facts keep being injected until an unrelated write clears it.
     if cur.rowcount:
@@ -150,7 +151,7 @@ def _sweep_episodic() -> int:
             "AND julianday(timestamp) < julianday('now', ?)",
             (f'-{days} days',),
         )
-        conn.commit()
+        brain_commit(conn)
         return cur.rowcount or 0
     except Exception:
         # Table absent (fresh store pre-migration) — nothing to sweep.
@@ -181,7 +182,7 @@ def _sweep_usage() -> int:
             "AND julianday(created_at) < julianday('now', ?)",
             (f'-{days} days',),
         )
-        conn.commit()
+        brain_commit(conn)
         return cur.rowcount or 0
     except Exception:
         # Fresh/legacy stores may not have usage_events yet; maintenance must
@@ -320,7 +321,7 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
         "UPDATE facts SET status = 'retired', updated_at = datetime('now') WHERE fact_key = ?",
         (key,),
     )
-    conn.commit()
+    brain_commit(conn)
     try:
         from app.services.memory_store.fact_retrieval import invalidate_fact_index
 
@@ -448,7 +449,7 @@ def _merge_duplicates(modelSummarize: bool = False) -> tuple[int, list[str]]:
         merged += 1
         notes.append(f'merged {older["key"]!r} into {newerKey!r}')
     if merged:
-        conn.commit()
+        brain_commit(conn)
         invalidate_fact_index()
     return merged, notes
 
@@ -483,7 +484,7 @@ def _supersede_contradictions() -> tuple[int, list[str]]:
             superseded += 1
             notes.append(f'superseded {older["key"]!r} (same title: {norm[:40]!r})')
     if superseded:
-        conn.commit()
+        brain_commit(conn)
         from app.services.memory_store.fact_retrieval import invalidate_fact_index
 
         invalidate_fact_index()

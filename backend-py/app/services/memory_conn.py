@@ -33,14 +33,14 @@ _WAL_RETRY_S = 0.05
 # it is best-effort and failures are ignored, because a checkpoint optimises
 # durability rather than constituting a write.
 #
-# SCOPE — read this before relying on it. The counter is driven from
-# `deferred_writes._commit()`, which is the funnel for the DEFERRED write lane
-# only. Most brain writes still call `conn.commit()` directly (facts, messages,
-# episodes, consolidation), so for those the WAL is checkpointed only when some
-# other lane happens to trigger one. This narrows the exposure; it does not
-# eliminate it. Closing that properly means routing every commit through one
-# `memory_conn.commit(conn)` helper — a much wider change, deliberately not
-# smuggled in here.
+# SCOPE — read this before relying on it. Every brain write routes through
+# :func:`commit` (the deferred lane via `deferred_writes._commit`, the direct
+# lane via `memory_store/*`), so the counter sees all of them.
+# ``tests/test_turn_limits_fields.py``-style conformance lives in
+# ``tests/test_brain_commit_routing.py``, which fails if a direct
+# ``.commit()`` reappears on a brain connection. Writes OUTSIDE
+# ``memory_store`` (harness tables, episode miner) still commit directly and
+# are not counted — they are on their own SQLite tables with their own risk.
 _CHECKPOINT_EVERY_N_WRITES = 50
 _writes_since_checkpoint: dict[int, int] = {}
 _CHECKPOINT_LOCK = threading.Lock()
@@ -183,6 +183,29 @@ def _register_live(c: sqlite3.Connection, path: Path) -> None:
             'path': str(path),
             'in_transaction': bool(getattr(c, 'in_transaction', False)),
         }
+
+
+def commit(c: sqlite3.Connection) -> None:
+    """Commit a brain connection AND count the write toward the WAL checkpoint.
+
+    Every brain write should go through here rather than calling
+    ``c.commit()`` directly. The reason is durability, not style: the packaged
+    desktop quit is ``taskkill /T /F``, so main.py's lifespan flushes never run
+    and whatever is still only in the ``-wal`` sidecar is what survives a power
+    cut. :func:`note_commit` folds the WAL back into the database file every
+    ``_CHECKPOINT_EVERY_N_WRITES`` writes — but only for commits that pass
+    through here. Before this helper existed, only the deferred lane did, so
+    facts/messages/episodes/consolidation writes were outside the guarantee
+    while the docstring claimed otherwise.
+
+    A ``conftest`` conformance test (``test_brain_commits_are_routed``) fails
+    when a direct ``.commit()`` reappears on a brain connection, because the
+    guarantee is only as good as its completeness.
+    """
+    try:
+        c.commit()
+    finally:
+        note_commit()
 
 
 def note_commit() -> None:

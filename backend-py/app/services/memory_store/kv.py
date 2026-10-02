@@ -7,6 +7,7 @@ import sqlite3
 
 from app.lib.paths import assertPytestDataDirIsolated
 from app.services.deferred_writes import defer_commit
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 from app.services.memory_schema import ensure_schema
 from app.services.memory_store.wire import _json
@@ -120,7 +121,7 @@ def save_internal(key: str, value: JsonValue) -> None:
         'ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
         (key, _json(value)),
     )
-    conn.commit()
+    brain_commit(conn)
 
 
 def get_memory(key: str) -> JsonValue | None:

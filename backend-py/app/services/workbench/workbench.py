@@ -1006,7 +1006,12 @@ def buildSystemPrompt(
     if hookTrustNotice:
         parts.append(hookTrustNotice)
     if not is_worker:
-        guide = _harness_guide_text()
+        # The tool-directed half of the guide is filtered by the surface the
+        # model was actually offered: a bare/reduced surface has no
+        # load_skill / module_context / harness_propose / submit_plan, and
+        # naming them there teaches the model to call a tool that cannot
+        # answer (see harness_guide_for).
+        guide = harness_guide_for(offeredTools)
         if guide:
             parts.append(f'<harness_guide>\n{guide}\n</harness_guide>')
     if workspacePath:
@@ -1218,10 +1223,11 @@ from app.services.workbench.prompt_build import (  # noqa: E402
     _caps_block_cache,
     _git_probe_cache,  # noqa: F401 -- re-export: tests clear the probe memo via wb
     _harness_guide_cache,  # noqa: F401 -- re-export: the memo dict is shared, not copied
-    _harness_guide_text,
+    _harness_guide_text,  # noqa: F401 -- re-export: tests clear/read the memo via wb
     _modelDisplayName,
     _probe_workspace_git,
     clear_skill_prompt_caches,  # noqa: F401 -- re-export: old import path (skill_service fallback, tests)
+    harness_guide_for,
     memory_nudge_block,
     queue_memory_habit_nudge,  # noqa: F401 -- re-export: tests + turn_close resolve via wb
 )

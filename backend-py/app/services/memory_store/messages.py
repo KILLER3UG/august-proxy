@@ -6,6 +6,7 @@ import json
 from typing import cast
 
 from app.json_narrowing import as_int
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 from app.services.memory_store.transcript_blocks import (
     MAX_ENRICHMENT_BYTES,
@@ -74,7 +75,7 @@ def save_message(
             normalize_client_message_id(client_message_id),
         ),
     )
-    conn.commit()
+    brain_commit(conn)
     return as_int(cursor.lastrowid)
 
 
@@ -125,7 +126,7 @@ def upsert_client_message(
             ' blocks_json = COALESCE(?, blocks_json) WHERE id = ?',
             (role, content_text, encoded, mid),
         )
-        conn.commit()
+        brain_commit(conn)
         return {'id': mid, 'status': 'updated'}
 
     twin = conn.execute(
@@ -140,7 +141,7 @@ def upsert_client_message(
             ' blocks_json = COALESCE(?, blocks_json) WHERE id = ?',
             (cid, encoded, mid),
         )
-        conn.commit()
+        brain_commit(conn)
         return {'id': mid, 'status': 'adopted'}
 
     cursor = conn.execute(
@@ -148,7 +149,7 @@ def upsert_client_message(
         ' VALUES (?, ?, ?, ?, ?)',
         (session_id, role, content_text, encoded, cid),
     )
-    conn.commit()
+    brain_commit(conn)
     return {'id': as_int(cursor.lastrowid), 'status': 'created'}
 
 
@@ -197,7 +198,7 @@ def enrich_client_message(
     if isinstance(current, str) and decode_blocks(current) == decode_blocks(encoded):
         return {'ok': True, 'id': mid, 'status': 'ok', 'unchanged': True}
     conn.execute('UPDATE messages SET blocks_json = ? WHERE id = ?', (encoded, mid))
-    conn.commit()
+    brain_commit(conn)
     return {'ok': True, 'id': mid, 'status': 'ok', 'unchanged': False}
 
 
@@ -287,7 +288,7 @@ def delete_session_messages(sessionId: str) -> int:
     """Delete all messages for a session."""
     conn = _conn()
     cursor = conn.execute('DELETE FROM messages WHERE session_id = ?', (sessionId,))
-    conn.commit()
+    brain_commit(conn)
     return cursor.rowcount
 
 

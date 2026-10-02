@@ -5,6 +5,7 @@ import json
 from typing import cast
 
 from app.json_narrowing import as_int, as_str
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 from app.services.memory_conn import db_path as _db_path
 from app.services.memory_store.wire import _json, _row_as_wire
@@ -156,7 +157,7 @@ def save_fact(
             normalize_scope(scope),
         ),
     )
-    conn.commit()
+    brain_commit(conn)
     try:
         from app.services.memory_store.fact_retrieval import invalidate_fact_index
 
@@ -189,7 +190,7 @@ def touch_fact_usage(factKeys: list[str]) -> int:
         )
         touched += max(0, int(cur.rowcount))
     if touched:
-        conn.commit()
+        brain_commit(conn)
         # M-1 usage decoupling: NO invalidate_fact_index here.
         # The cached corpus no longer carries use_count/last_used_at —
         # ranking fetches fresh usage per query for the candidate set — so
@@ -274,7 +275,7 @@ def delete_fact(factKey: str) -> bool:
     """Delete a fact by key."""
     conn = _conn()
     cursor = conn.execute('DELETE FROM facts WHERE fact_key = ?', (factKey,))
-    conn.commit()
+    brain_commit(conn)
     if cursor.rowcount > 0:
         try:
             from app.services.memory_store.fact_retrieval import invalidate_fact_index
@@ -292,7 +293,7 @@ def save_proposal(sessionId: str, proposalType: str, content: JsonValue) -> int:
         'INSERT INTO proposals (session_id, proposal_type, content) VALUES (?, ?, ?)',
         (sessionId, proposalType, _json(content)),
     )
-    conn.commit()
+    brain_commit(conn)
     return as_int(cursor.lastrowid)
 
 
@@ -325,7 +326,7 @@ def decide_proposal(proposalId: int, status: str, decidedBy: str = '') -> bool:
         "UPDATE proposals SET status = ?, decided_at = datetime('now'), decided_by = ? WHERE id = ?",
         (status, decidedBy, proposalId),
     )
-    conn.commit()
+    brain_commit(conn)
     return cursor.rowcount > 0
 
 
@@ -379,7 +380,7 @@ def record_config_audit(
             _json(after) if after is not None else None,
         ),
     )
-    conn.commit()
+    brain_commit(conn)
     return as_int(cursor.lastrowid)
 
 
@@ -427,7 +428,7 @@ def index_session_topic(
             "INSERT INTO session_topics (session_id, topic, parent_topic, confidence, classified_at)\n               VALUES (?, ?, ?, ?, datetime('now'))\n               ON CONFLICT(session_id) DO UPDATE SET\n                   topic=excluded.topic,\n                   parent_topic=excluded.parent_topic,\n                   confidence=excluded.confidence,\n                   classified_at=excluded.classified_at",
             (sessionId, topic, parentTopic, confidence),
         )
-        conn.commit()
+        brain_commit(conn)
         return True
     except Exception:
         return False
@@ -503,7 +504,7 @@ def record_usage(
         'VALUES (?, ?, ?, ?, ?, ?, ?)',
         (sot_id, model, inputTokens, outputTokens, contextTokens, cacheHitTokens, cacheMissTokens),
     )
-    conn.commit()
+    brain_commit(conn)
     return as_int(cursor.lastrowid)
 
 
@@ -655,5 +656,5 @@ def write_timeline_event(
         "VALUES (datetime('now'), ?, ?, ?, ?)",
         (sessionId, eventSummary, category, scope or 'global'),
     )
-    conn.commit()
+    brain_commit(conn)
     return as_int(cur.lastrowid)

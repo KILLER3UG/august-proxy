@@ -50,8 +50,21 @@ function installFetchPatch(): void {
   };
 }
 
-/** Attempts per discovery run, and the settled promise for the current one. */
-const DISCOVERY_ATTEMPTS = 120;
+/** Attempts per discovery run, and the settled promise for the current one.
+ *
+ *  `DISCOVERY_ATTEMPTS` is a mutable binding rather than a frozen constant so
+ *  tests can shrink the retry budget; production never reassigns it. */
+export let DISCOVERY_ATTEMPTS = 120;
+
+/** Per-attempt backoff ceiling, in ms. Linear ramp: 250ms → this. */
+export let DISCOVERY_MAX_BACKOFF_MS = 1500;
+
+/** Test-only: shrink the retry budget so a failing-discovery test does not
+ *  spend real wall-clock on the backoff ramp. Not called in production. */
+export function setDiscoveryBudget(attempts: number, maxBackoffMs = 1500): void {
+  DISCOVERY_ATTEMPTS = Math.max(1, Math.floor(attempts));
+  DISCOVERY_MAX_BACKOFF_MS = Math.max(0, Math.floor(maxBackoffMs));
+}
 
 /* Discovery must be RECOVERABLE.
  *
@@ -94,7 +107,7 @@ async function discoverBaseUrl(): Promise<void> {
       // The backend may be between process launches; keep polling.
     }
     // Linear backoff capped: 250ms → 1.5s — about three minutes worst case.
-    await new Promise((r) => setTimeout(r, Math.min(250 * (i + 1), 1500)));
+    await new Promise((r) => setTimeout(r, Math.min(250 * (i + 1), DISCOVERY_MAX_BACKOFF_MS)));
   }
   throw new Error('August backend did not become ready');
 }
@@ -117,11 +130,17 @@ export function resetDiscovery(): void {
   readyPromise = null;
 }
 
-const ready = ensureReady();
-
-/** Await by modules that make raw fetch calls (e.g. gateway health poll). */
+/** Await by modules that make raw fetch calls (e.g. gateway health poll).
+ *
+ *  Calls `ensureReady()` on EVERY await rather than closing over one promise.
+ *  The first version captured `const ready = ensureReady()` at module scope,
+ *  which made `resetDiscovery` a no-op for every consumer: nulling
+ *  `readyPromise` did nothing because `whenReady` still awaited the original,
+ *  already-rejected promise — so the recovery path was unreachable in
+ *  production, not just untested. Reading the current binding each time is
+ *  what makes the reset real. */
 export async function whenReady(): Promise<string | null> {
-  await ready;
+  await ensureReady();
   return baseUrl;
 }
 
@@ -160,7 +179,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  await ready;
+  await ensureReady();
   const url = baseUrl ? `${baseUrl}${path}` : path;
   const res = await fetch(url, {
     ...init,
@@ -207,7 +226,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 /** Multipart / binary upload: passes `body` through untouched (the browser
  *  sets the multipart boundary), unlike `api.post` which JSON-encodes. */
 async function requestRaw<T>(path: string, body: BodyInit, init?: RequestInit): Promise<T> {
-  await ready;
+  await ensureReady();
   const url = baseUrl ? `${baseUrl}${path}` : path;
   const res = await fetch(url, { ...init, body });
   if (!res.ok) throw new ApiError(res.status, 'unknown', res.statusText);
