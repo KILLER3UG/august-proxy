@@ -167,17 +167,17 @@ _HARNESS_GUIDE_TOOL_LINES: tuple[tuple[str, str], ...] = (
 )
 
 
-def harness_guide_for(offeredTools: set[str] | frozenset[str] | None = None) -> str:
+def harness_guide_for(offered_tools: set[str] | frozenset[str] | None = None) -> str:
     """The digest, plus only the tool-directed lines whose tool is offered.
 
-    ``offeredTools=None`` means "no surface information" (an internal caller
-    that has none), which keeps the full text — the historical behaviour —
-    rather than silently dropping guidance.
+    ``offered_tools=None`` means "no surface information" (an internal caller
+    that has none), which returns the unconditional half only — guessing that a
+    tool IS available is the bug this gate exists to prevent.
     """
     base = _harness_guide_text()
-    if offeredTools is None:
+    if offered_tools is None:
         return base
-    offered = set(offeredTools)
+    offered = set(offered_tools)
     # Substring membership: the surface is a set of tool names, the digest may
     # name `ask_clarify`-style aliases of the same tool.
     extra = ''.join(
