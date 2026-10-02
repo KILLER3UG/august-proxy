@@ -23,18 +23,8 @@ MAX_AUTO_HOPS = 3
 def _conn():
     from app.services.memory_store import _conn as mem_conn
 
-    conn = mem_conn()
-    _ensure_workspace_col(conn)
-    return conn
+    return mem_conn()
 
-
-def _ensure_workspace_col(conn) -> None:
-    for table in ('harness_specialists', 'harness_routines'):
-        try:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN workspace_path TEXT DEFAULT ''")
-            brain_commit(conn)
-        except Exception:
-            pass
 
 
 def _now() -> str:

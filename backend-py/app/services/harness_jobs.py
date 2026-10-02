@@ -58,20 +58,11 @@ def _wave_names(waves: list[list[dict[str, Any]]]) -> list[list[str]]:
     return out
 
 
-def _ensure_outcomes_col(conn) -> None:
-    try:
-        conn.execute("ALTER TABLE harness_jobs ADD COLUMN outcomes_json TEXT DEFAULT '{}'")
-        brain_commit(conn)
-    except Exception:
-        pass
-
-
 def record_lane(job_id: str, name: str, status: str, error: str = '', task_id: str = '') -> None:
     if not job_id or not name:
         return
     try:
         conn = _conn()
-        _ensure_outcomes_col(conn)
         row = conn.execute('SELECT outcomes_json FROM harness_jobs WHERE id = ?', (job_id,)).fetchone()
         if not row:
             return
@@ -238,7 +229,6 @@ def _row_to_job(r: Any) -> dict[str, Any]:
 
 def list_jobs(session_id: str, *, limit: int = 30) -> list[dict[str, Any]]:
     conn = _conn()
-    _ensure_outcomes_col(conn)
     rows = conn.execute(
         'SELECT id, session_id, status, dirty, error, waves_json, task_ids, outcomes_json, created_at, finished_at '
         'FROM harness_jobs WHERE session_id = ? ORDER BY created_at DESC LIMIT ?',
@@ -249,7 +239,6 @@ def list_jobs(session_id: str, *, limit: int = 30) -> list[dict[str, Any]]:
 
 def get_job(job_id: str) -> dict[str, Any] | None:
     conn = _conn()
-    _ensure_outcomes_col(conn)
     r = conn.execute(
         'SELECT id, session_id, status, dirty, error, waves_json, task_ids, outcomes_json, created_at, finished_at '
         'FROM harness_jobs WHERE id = ?',

@@ -31,16 +31,6 @@ def _conn():
         brain_commit(conn)
     except Exception:
         pass
-    for col, decl in (
-        ('schedule', "TEXT DEFAULT ''"),
-        ('paused', 'INTEGER DEFAULT 0'),
-        ('last_run', "TEXT DEFAULT ''"),
-    ):
-        try:
-            conn.execute(f'ALTER TABLE harness_routines ADD COLUMN {col} {decl}')
-            brain_commit(conn)
-        except Exception:
-            pass
     return conn
 
 
