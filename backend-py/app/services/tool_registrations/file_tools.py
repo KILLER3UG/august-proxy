@@ -497,10 +497,15 @@ async def _readFile(
         # returns — so it reads once and the hash rides a separate raw pass.
         content = ''
         if not paging:
-            async with aiofiles.open(
-                str(filePath), 'r', encoding='utf-8', errors='replace'
-            ) as f:
-                content = await f.read()
+            # BINARY for the same reason the paged branch is: text mode applies
+            # universal-newline translation, so a CRLF file came back
+            # LF-normalized. These lines are what the model copies into
+            # `edit_lines`' `old` anchor, which is matched against VERBATIM file
+            # text — so normalizing made every CRLF edit fail to apply. Decoding
+            # the raw bytes keeps the text exact and matches `splitlines`.
+            async with aiofiles.open(str(filePath), 'rb') as f:
+                rawAll = await f.read()
+            content = rawAll.decode('utf-8', 'replace')
 
         import hashlib
 

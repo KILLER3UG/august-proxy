@@ -518,7 +518,13 @@ class TestSpillInLoop:
         # The spill file holds the verbatim result.
         spilled = sorted((tmp_path / '.aug' / 'spill').rglob('*.txt'))
         assert len(spilled) == 1, f'expected one spill file, got {spilled}'
-        assert spilled[0].read_text(encoding='utf-8') == fullResult
+        # Compare BYTES, not decoded text. `write_text` above writes LF in the
+        # source string but CRLF lands on disk on Windows, and read_file now
+        # preserves the file's line endings verbatim — which is the point: these
+        # lines get pasted into `edit_lines` anchors matched against raw file
+        # text. `read_text` here would re-normalize them and the comparison
+        # would pass for the wrong reason.
+        assert spilled[0].read_bytes() == fullResult.encode('utf-8')
         # The history copy is the bounded preview with the notice line.
         toolMsgs = [m for m in session.messages if m.get('role') == 'tool']
         assert toolMsgs

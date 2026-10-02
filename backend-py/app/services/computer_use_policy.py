@@ -435,13 +435,20 @@ def clearApproved(token: object | None = None) -> None:
 
     Called after the approved call completes AND by the gate itself when it
     consumes the flag, so an approval can never outlive the action it covers.
+
+    ``reset`` raises ``RuntimeError`` — not ``ValueError`` — when a token has
+    already been used, and that happens on any path where the flag is cleared
+    twice (the gate consuming it, then the caller's ``finally``). Since this
+    runs in a ``finally`` inside tool dispatch, an escaping exception here would
+    replace the tool's real result with a bookkeeping error. Never raises.
     """
     if token is not None:
         try:
             _approved.reset(token)  # type: ignore[arg-type]
             return
-        except ValueError:
-            # Token created in a different context — fall back to a plain set.
+        except (ValueError, RuntimeError):
+            # Token created in a different context, or already spent. Either
+            # way the safe end state is "not approved".
             pass
     _approved.set(False)
 
