@@ -107,17 +107,58 @@ class TestGateIsUnavoidable:
     policy, or a new entry point bypasses a permission the user set."""
 
     def test_every_action_maps_to_a_registered_tool(self):
-        """TOTAL by construction. The primitives call the gate with an ACTION
-        (`press`, `navigate`, `open_url`) that is not a tool name; the map is
-        what stops `deny` degrading to `ask` for those. A new action added
-        without a mapping would prompt instead of refusing."""
+        """TOTAL, and pointed at REAL tools.
+
+        The first version built `'desktop_' + action` inline, which produced
+        `desktop_press` and `desktop_navigate` — neither exists — so `deny`
+        silently degraded to `ask`. Two properties are pinned here:
+
+        * totality: every action a caller can pass has a mapping;
+        * existence: every mapped name is an actually-REGISTERED tool, so the
+          approval path can queue it and `execute_approved_mutation` can
+          dispatch it. A name that is merely plausible is what broke the first
+          version.
+        """
+        from app.services import tool_definitions as tool_defs
+        from app.services.tool_registry import listTools
+
         for action, tool in policy.ACTION_TO_TOOL.items():
             assert tool in policy.GATED_TOOLS, (
                 f'action {action!r} maps to {tool!r}, which is not in GATED_TOOLS'
             )
-        # Every gated action a caller can actually pass must be mapped.
         for action in ('click', 'type', 'press', 'open_url', 'navigate', 'ui_act'):
             assert action in policy.ACTION_TO_TOOL, f'{action!r} has no tool mapping'
+
+        if not listTools():
+            tool_defs.registerAll()
+        registered = {
+            (t.get('name') or (t.get('function') or {}).get('name')) for t in listTools()
+        }
+        for tool in set(policy.ACTION_TO_TOOL.values()):
+            assert tool in registered, (
+                f'the policy maps to {tool!r}, which is not a registered tool — an '
+                'approval queued under that name can never be dispatched'
+            )
+
+    def test_the_queued_args_match_the_tool_schema(self):
+        """The `ask` path queues `{'action': <action>, **params}` and the replay
+        dispatches it as the mapped tool, so the params must be the tool's own
+        argument names."""
+        from app.services import tool_definitions as tool_defs
+        from app.services.tool_registry import listTools
+
+        if not listTools():
+            tool_defs.registerAll()
+        schema = {}
+        for t in listTools():
+            name = t.get('name') or (t.get('function') or {}).get('name')
+            if name == 'desktop_click':
+                schema = t.get('input_schema') or (t.get('function') or {}).get('parameters') or {}
+                break
+        props = set((schema or {}).get('properties', {}))
+        assert {'x', 'y'} <= props, f'desktop_click schema changed: {props}'
+        # `action` is our extra routing key; the real arguments ride alongside.
+        assert 'action' not in props
 
     @pytest.mark.parametrize(
         'primitive',
