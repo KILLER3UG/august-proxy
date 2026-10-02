@@ -40,6 +40,7 @@ from app.services.deferred_writes import defer_commit
 # ``error_class`` rows and ``guardrail_classes`` digests are diagnosable
 # against each other. The vocabulary itself lives in error_families.
 from app.services.error_families import family_for_class  # noqa: F401  (re-export)
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 
 logger = logging.getLogger(__name__)
@@ -606,7 +607,7 @@ def sweep_old_outcomes(days: int = _RETENTION_DAYS) -> int:
             "DELETE FROM turn_outcomes WHERE ts < datetime('now', ?)",
             (f'-{int(days)} days',),
         )
-        conn.commit()
+        brain_commit(conn)
         return cur.rowcount or 0
     except Exception:
         logger.debug('sweep_old_outcomes failed', exc_info=True)

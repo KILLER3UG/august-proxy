@@ -42,6 +42,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, cast
 
 from app.json_narrowing import as_list, as_str
+from app.services.memory_conn import commit as brain_commit
 from app.services.subagent_orchestrator import SubagentOrchestrator, SubagentSpawnRequest
 
 if TYPE_CHECKING:
@@ -116,7 +117,7 @@ def _expire_stale_proposals(now: float | None = None) -> int:
                     ('expired', datetime.now(timezone.utc).isoformat(), r['id']),
                 )
                 expired += 1
-        conn.commit()
+        brain_commit(conn)
     except Exception:
         logger.debug('proposal expiry sweep failed (non-fatal)', exc_info=True)
     return expired
@@ -143,7 +144,7 @@ def expire_proposals_for_session(session_id: str) -> int:
             'WHERE session_id = ? AND status = ?',
             (datetime.now(timezone.utc).isoformat(), session_id, 'pending'),
         )
-        conn.commit()
+        brain_commit(conn)
         expired += int(cur.rowcount or 0)
     except Exception:
         logger.debug('proposal session expiry failed (non-fatal)', exc_info=True)
@@ -309,7 +310,7 @@ def _mark_proposal_decided(proposal_id: str, status: str) -> None:
                     'UPDATE proposals SET status = ?, decided_at = ? WHERE id = ?',
                     (status, datetime.now(timezone.utc).isoformat(), r['id']),
                 )
-                conn.commit()
+                brain_commit(conn)
                 return
     except Exception:
         logger.debug('proposal decide failed (non-fatal)', exc_info=True)

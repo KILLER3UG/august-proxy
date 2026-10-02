@@ -47,6 +47,7 @@ from typing import Any, Callable
 
 from app.json_narrowing import as_float, as_int, as_str
 from app.services.agent_message_bus import AgentMessageBus, Handler, Subscription
+from app.services.memory_conn import commit as brain_commit
 from app.services.workbench.subagent_fanout import (
     # Re-exported: callers and tests read the ceiling off this module, which is
     # where the pool has always advertised it. noqa keeps autofix from
@@ -277,7 +278,7 @@ def _record_run(handle: SubagentHandle) -> None:
                     )
                 else:
                     raise
-        conn.commit()
+        brain_commit(conn)
     except Exception:
         logger.debug('subagent run record failed (non-fatal)', exc_info=True)
 
@@ -316,7 +317,7 @@ def sweep_orphaned_runs() -> int:
                 *_ORPHANABLE_STATUSES,
             ),
         )
-        conn.commit()
+        brain_commit(conn)
         count = int(cur.rowcount or 0)
         if count:
             logger.info('[Orchestrator] marked %d orphaned subagent run(s) as lost', count)

@@ -15,6 +15,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import cast
 
+from app.services.memory_conn import commit as brain_commit
 from app.type_aliases import BlackboardNoteDict
 
 
@@ -92,7 +93,7 @@ def writeNote(
         'INSERT INTO blackboard (session_id, agent, key, value, priority, expires_at, workspace_path, folder_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         (sessionId, agent, key, json.dumps(value) if not isinstance(value, str) else value, priority, expires, ws_path, fid),
     )
-    conn.commit()
+    brain_commit(conn)
 
 
 def readNotes(
@@ -136,7 +137,7 @@ def readNotes(
                 continue
             if n.get('id'):
                 conn.execute('DELETE FROM blackboard WHERE id = ?', (n['id'],))
-        conn.commit()
+        brain_commit(conn)
     return cast('list[BlackboardNoteDict]', notes)
 
 
@@ -155,18 +156,18 @@ def clearNotes(sessionId: str, agent: str = '', scope: str = 'session') -> int:
                 )
             else:
                 cursor = conn.execute('DELETE FROM blackboard WHERE workspace_path = ?', (ws_path,))
-            conn.commit()
+            brain_commit(conn)
             return cursor.rowcount
         return 0
     if agent:
         cursor = conn.execute('DELETE FROM blackboard WHERE session_id = ? AND agent = ?', (sessionId, agent))
     else:
         cursor = conn.execute('DELETE FROM blackboard WHERE session_id = ?', (sessionId,))
-    conn.commit()
+    brain_commit(conn)
     return cursor.rowcount
 
 
 def _cleanupExpired(conn) -> None:
     """Delete expired notes."""
     conn.execute("DELETE FROM blackboard WHERE expires_at IS NOT NULL AND expires_at < datetime('now')")
-    conn.commit()
+    brain_commit(conn)

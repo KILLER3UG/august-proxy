@@ -181,6 +181,7 @@ def _cascade_delete_bot_data(agent_id: str) -> None:
     Best-effort — a failure here never blocks the delete."""
     import json
 
+    from app.services.memory_conn import commit as brain_commit
     from app.services.memory_conn import conn as _conn
 
     scope = f'bot:{agent_id}'
@@ -205,7 +206,7 @@ def _cascade_delete_bot_data(agent_id: str) -> None:
                     'UPDATE bot_room SET members = ? WHERE id = ?',
                     (json.dumps(remaining), row['id']),
                 )
-        c.commit()
+        brain_commit(c)
     except Exception:
         logger.debug('bot cascade delete (db) failed for %s', agent_id, exc_info=True)
     # Canonical Bot Chat session.

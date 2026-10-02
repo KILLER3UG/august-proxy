@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.json_narrowing import as_int, as_list, as_str
 from app.services import exam_service
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_store import _conn
 
 logger = logging.getLogger(__name__)
@@ -172,7 +173,7 @@ async def generateExam(body: dict[str, object]):
             'INSERT INTO exam_questions (exam_id, position, stem, options, correct_index, rationale, origin) VALUES (?, ?, ?, ?, ?, ?, ?)',
             (examId, i + 1, q['stem'], json.dumps(q['options']), q['correct_index'], q['rationale'], 'generated'),
         )
-    conn.commit()
+    brain_commit(conn)
     first = conn.execute(
         'SELECT id, position, stem, options FROM exam_questions WHERE exam_id = ? ORDER BY position LIMIT 1', (examId,)
     ).fetchone()
@@ -244,7 +245,7 @@ async def addQuestion(examId: int, body: dict[str, object]):
         ),
     )
     questionId = cur.lastrowid
-    conn.commit()
+    brain_commit(conn)
     newQ = exam_service.stripAnswer(
         {'id': questionId, 'examId': examId, 'position': nextPos, 'stem': q['stem'], 'options': q['options']}
     )
@@ -281,7 +282,7 @@ async def answerQuestion(examId: int, body: dict[str, object]):
         "INSERT INTO exam_attempts (exam_id, question_id, selected_index, is_correct, answered_at) VALUES (?, ?, ?, ?, datetime('now'))",
         (examId, questionId, selectedIndex, isCorrect),
     )
-    conn.commit()
+    brain_commit(conn)
     return {'isCorrect': bool(isCorrect), 'correctIndex': q['correct_index'], 'rationale': q['rationale']}
 
 
@@ -305,7 +306,7 @@ async def helpQuestion(examId: int, body: dict[str, object]):
             'UPDATE exam_attempts SET asked_for_help = 1 WHERE question_id = ? AND exam_id = ?',
             (questionId, examId),
         )
-        conn.commit()
+        brain_commit(conn)
     except Exception:
         pass
     return {'explanation': explanation, 'bannerDismissed': False}

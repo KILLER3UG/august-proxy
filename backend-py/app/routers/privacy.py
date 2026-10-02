@@ -24,6 +24,7 @@ from fastapi import APIRouter
 
 from app.lib.paths import dataPath
 from app.services import memory_store
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import db_path
 from app.services.post_observation import count_observations
 
@@ -179,7 +180,7 @@ def _delete_rows(conn, tables: list[str]) -> dict[str, int]:
             deleted[table] = max(0, int(cur.rowcount))
         except Exception:
             deleted[table] = 0
-    conn.commit()
+    brain_commit(conn)
     return deleted
 
 
@@ -198,7 +199,7 @@ async def purgeMemories():
             _KV_KEEP_KEYS,
         )
         deleted['memoryStoreKv'] = max(0, int(cur.rowcount))
-        conn.commit()
+        brain_commit(conn)
     except Exception:
         deleted['memoryStoreKv'] = 0
     # auto_memories_fts rebuild removed:

@@ -31,6 +31,7 @@ from typing import Any
 
 from app.json_narrowing import as_dict, as_int, as_str
 from app.services.best_effort import best_effort
+from app.services.memory_conn import commit as brain_commit
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ def _ensure_schema() -> None:
         'CREATE INDEX IF NOT EXISTS idx_harness_outcome_pending '
         'ON harness_outcome(measured_at, applied_at)'
     )
-    conn.commit()
+    brain_commit(conn)
 
 
 def _window_days() -> int:
@@ -164,7 +165,7 @@ def record(
                 json.dumps(before, ensure_ascii=False),
             ),
         )
-        conn.commit()
+        brain_commit(conn)
     except Exception:
         logger.debug('harness_outcome record failed (%s %s)', source, key, exc_info=True)
 
@@ -245,7 +246,7 @@ def measure_pending() -> dict[str, Any]:
         if verdict == 'regressed':
             with best_effort('learning.revert-proposal'):
                 _file_revert_proposal(r, before, after, days)
-    conn.commit()
+    brain_commit(conn)
     return {'measured': len(rows), **{f'v_{k}': v for k, v in verdicts.items()}}
 
 

@@ -26,6 +26,7 @@ from typing import cast
 
 from app.json_narrowing import as_dict, as_str
 from app.services.bot_mode import protocol
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 
 logger = logging.getLogger('august.bot_mode.dm')
@@ -60,7 +61,7 @@ def enqueue(
             "VALUES (?, ?, ?, ?, ?, 'pending', ?)",
             (from_agent, to_agent, from_session, to_session, body, _now()),
         )
-        c.commit()
+        brain_commit(c)
         return int(cur.lastrowid or 0)
     except Exception:
         logger.debug('bot_dm enqueue failed', exc_info=True)
@@ -84,7 +85,7 @@ def _set_status(
                 'UPDATE bot_dm SET status = ?, reason_code = ? WHERE id = ?',
                 (status, reason_code, dm_id),
             )
-        c.commit()
+        brain_commit(c)
     except Exception:
         logger.debug('bot_dm status update failed', exc_info=True)
 

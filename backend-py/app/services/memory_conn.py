@@ -34,13 +34,15 @@ _WAL_RETRY_S = 0.05
 # durability rather than constituting a write.
 #
 # SCOPE — read this before relying on it. Every brain write routes through
-# :func:`commit` (the deferred lane via `deferred_writes._commit`, the direct
-# lane via `memory_store/*`), so the counter sees all of them.
-# ``tests/test_turn_limits_fields.py``-style conformance lives in
-# ``tests/test_brain_commit_routing.py``, which fails if a direct
-# ``.commit()`` reappears on a brain connection. Writes OUTSIDE
-# ``memory_store`` (harness tables, episode miner) still commit directly and
-# are not counted — they are on their own SQLite tables with their own risk.
+# :func:`commit`: the deferred lane via `deferred_writes._commit`, and every
+# direct writer (memory_store/*, the routers, harness services, the episode
+# miner, workstreams) via `commit as brain_commit`.
+# ``tests/test_brain_commit_routing.py`` DISCOVERS those writers rather than
+# listing them, so a new one is caught the day it is written; only
+# `memory_schema.py` (owns DDL) and `deferred_writes.py` (is the funnel) are
+# exempt, and the test asserts both exemptions still exist with a reason.
+# Databases OTHER than the brain — none today, but e.g. a job ledger with its
+# own file — are outside this guarantee by construction.
 _CHECKPOINT_EVERY_N_WRITES = 50
 _writes_since_checkpoint: dict[int, int] = {}
 _CHECKPOINT_LOCK = threading.Lock()

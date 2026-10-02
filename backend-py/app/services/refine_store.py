@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from app.json_narrowing import as_dict, as_int, as_list, as_str
+from app.services.memory_conn import commit as brain_commit
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ def _ensure_schema() -> None:
         "  scope TEXT DEFAULT '', detail TEXT DEFAULT '', raw TEXT)"
     )
     conn.execute('CREATE INDEX IF NOT EXISTS idx_refine_ledger_at ON refine_ledger(at)')
-    conn.commit()
+    brain_commit(conn)
 
 
 def _store_dir() -> Path:
@@ -171,7 +172,7 @@ def _import_legacy(ledger_to_sql: bool) -> None:
         except OSError:
             pass
     try:
-        conn.commit()
+        brain_commit(conn)
     except Exception:
         logger.debug('refine legacy import commit failed', exc_info=True)
     if n:

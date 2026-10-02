@@ -19,6 +19,7 @@ import re
 from datetime import datetime, timezone
 
 from app.json_narrowing import as_str
+from app.services.memory_conn import commit as brain_commit
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ def add_task(trigger: str, message: str, model: str = '') -> int | None:
             'INSERT INTO recurring_tasks (trigger, message, model) VALUES (?, ?, ?)',
             (trigger[:300], message[:2000], (model or '').strip()[:120]),
         )
-        conn.commit()
+        brain_commit(conn)
         return conn.execute('SELECT last_insert_rowid()').fetchone()[0]
     except Exception as exc:
         logger.error('recurring task add failed: %s', exc)
@@ -78,7 +79,7 @@ def delete_task(task_id: int) -> bool:
         conn = _conn()
         cur = conn.execute('DELETE FROM recurring_tasks WHERE id = ?', (task_id,))
         conn.execute('DELETE FROM recurring_task_runs WHERE task_id = ?', (task_id,))
-        conn.commit()
+        brain_commit(conn)
         return cur.rowcount > 0
     except Exception as exc:
         logger.debug('recurring task delete failed: %s', exc)
@@ -94,7 +95,7 @@ def set_active(task_id: int, active: bool) -> bool:
             'UPDATE recurring_tasks SET active = ? WHERE id = ?',
             (1 if active else 0, task_id),
         )
-        conn.commit()
+        brain_commit(conn)
         return cur.rowcount > 0
     except Exception as exc:
         logger.debug('recurring task set_active failed: %s', exc)
@@ -224,7 +225,7 @@ def check_and_fire(session_id: str, workspace_path: str = '') -> list[tuple[str,
                     (_now_iso(), task['id']),
                 )
                 _record_run(conn, task['id'], message)
-                conn.commit()
+                brain_commit(conn)
             except Exception as exc:
                 # Do NOT fall through to fired.append(). `last_fired_at` is the
                 # only thing standing between this task and firing again on the

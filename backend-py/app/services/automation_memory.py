@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.json_narrowing import as_bool, as_str
 from app.services.deferred_writes import defer_commit
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 
 logger = logging.getLogger(__name__)
@@ -394,7 +395,7 @@ def sweep(days: int = 30, *, now: datetime | None = None) -> int:
             (f'-{_INCIDENT_RETENTION_DAYS} days',),
         )
         removed += cur.rowcount or 0
-        c.commit()
+        brain_commit(c)
     except Exception:
         logger.debug('automation_memory sweep failed', exc_info=True)
         return 0

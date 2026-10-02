@@ -17,19 +17,19 @@ from app.services.config_service import getConfig
 
 logger = logging.getLogger('post_observation')
 
+# Registered tools that change the user's desktop, for which a screenshot after
+# the call is worth keeping. Trimmed to names that actually exist: the previous
+# list carried `desktop_hotkey` / `_scroll` / `_drag` and a whole `computer_*`
+# alias family that no module registers, which made it read as broader coverage
+# than it was and made the drift test in tests/test_computer_use_policy.py
+# certify names that can never be invoked.
 DESKTOP_MUTATING_TOOLS = frozenset(
     {
         'desktop_click',
         'desktop_type',
         'desktop_press_key',
-        'desktop_hotkey',
         'desktop_open_url',
-        'desktop_scroll',
-        'desktop_drag',
-        'computer_click',
-        'computer_type',
-        'computer_key',
-        'computer_open',
+        'desktop_ui_act',
     }
 )
 

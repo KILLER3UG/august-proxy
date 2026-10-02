@@ -9,6 +9,7 @@ import uuid
 from typing import Any
 
 from app.json_narrowing import as_list, as_str
+from app.services.memory_conn import commit as brain_commit
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ def _ensure_workspace_col(conn) -> None:
     for table in ('harness_specialists', 'harness_routines'):
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN workspace_path TEXT DEFAULT ''")
-            conn.commit()
+            brain_commit(conn)
         except Exception:
             pass
 
@@ -238,7 +239,7 @@ def upsert_specialist(session_id: str, body: dict[str, Any]) -> dict[str, Any]:
                 sid,
             ),
         )
-    conn.commit()
+    brain_commit(conn)
     row = conn.execute('SELECT * FROM harness_specialists WHERE id = ?', (sid,)).fetchone()
     if not row:
         raise ValueError('Specialist not found')
@@ -251,7 +252,7 @@ def set_autonomy(specialist_id: str, autonomy: str) -> dict[str, Any]:
         raise ValueError(f'autonomy must be one of {AUTONOMY_MODES}')
     conn = _conn()
     conn.execute('UPDATE harness_specialists SET autonomy = ? WHERE id = ?', (mode, specialist_id))
-    conn.commit()
+    brain_commit(conn)
     row = conn.execute('SELECT * FROM harness_specialists WHERE id = ?', (specialist_id,)).fetchone()
     if not row:
         raise ValueError('Specialist not found')
@@ -261,7 +262,7 @@ def set_autonomy(specialist_id: str, autonomy: str) -> dict[str, Any]:
 def delete_specialist(specialist_id: str) -> None:
     conn = _conn()
     conn.execute('DELETE FROM harness_specialists WHERE id = ?', (specialist_id,))
-    conn.commit()
+    brain_commit(conn)
 
 
 def list_routines(session_id: str, workspace: str = '') -> list[dict[str, Any]]:
@@ -303,7 +304,7 @@ def save_routine(session_id: str, body: dict[str, Any]) -> dict[str, Any]:
             workspace[:500],
         ),
     )
-    conn.commit()
+    brain_commit(conn)
     row = conn.execute('SELECT * FROM harness_routines WHERE id = ?', (rid,)).fetchone()
     return _row_routine(row)
 
@@ -347,7 +348,7 @@ def get_routine(routine_id: str) -> dict[str, Any] | None:
 def delete_routine(routine_id: str) -> None:
     conn = _conn()
     conn.execute('DELETE FROM harness_routines WHERE id = ?', (routine_id,))
-    conn.commit()
+    brain_commit(conn)
 
 
 def continue_work_item(

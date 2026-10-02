@@ -10,6 +10,7 @@ from typing import Any
 
 from app.json_narrowing import as_str
 from app.lib.paths import dataPath
+from app.services.memory_conn import commit as brain_commit
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ def _conn():
             'session_id TEXT NOT NULL, name TEXT NOT NULL, last_seen_seq INTEGER DEFAULT 0, '
             'seen_at TEXT, PRIMARY KEY (session_id, name))'
         )
-        conn.commit()
+        brain_commit(conn)
     except Exception:
         pass
     for col, decl in (
@@ -37,7 +38,7 @@ def _conn():
     ):
         try:
             conn.execute(f'ALTER TABLE harness_routines ADD COLUMN {col} {decl}')
-            conn.commit()
+            brain_commit(conn)
         except Exception:
             pass
     return conn
@@ -73,7 +74,7 @@ def mark_read(session_id: str, name: str, seq: int = 0) -> None:
         'ON CONFLICT(session_id, name) DO UPDATE SET last_seen_seq=excluded.last_seen_seq, seen_at=excluded.seen_at',
         (session_id, name, int(seq or 0), now),
     )
-    conn.commit()
+    brain_commit(conn)
 
 
 def last_seen_seq(session_id: str, name: str) -> int:
@@ -170,7 +171,7 @@ def set_routine_schedule(routine_id: str, schedule: str, paused: bool | None = N
             'UPDATE harness_routines SET schedule = ?, paused = ? WHERE id = ?',
             (schedule.strip(), 1 if paused else 0, routine_id),
         )
-    conn.commit()
+    brain_commit(conn)
     row = get_routine(routine_id)
     if not row:
         raise ValueError('Routine not found')
@@ -209,7 +210,7 @@ def mark_routine_ran(routine_id: str) -> None:
     conn = _conn()
     now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     conn.execute('UPDATE harness_routines SET last_run = ? WHERE id = ?', (now, routine_id))
-    conn.commit()
+    brain_commit(conn)
 
 
 async def fire_due_routines() -> int:

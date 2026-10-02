@@ -24,6 +24,7 @@ from typing import cast
 import httpx  # noqa: F401
 
 from app.json_narrowing import as_float, as_int, as_str
+from app.services.memory_conn import commit as brain_commit
 from app.type_aliases import DaemonStatusDict
 
 logger = logging.getLogger(__name__)
@@ -199,7 +200,7 @@ class DaemonManager:
                         f'{time.time() + as_float(info.get("expires_at"), 0.0) - time.monotonic():.3f}',
                     ),
                 )
-                c.commit()
+                brain_commit(c)
             except Exception:
                 pass
             return daemonId

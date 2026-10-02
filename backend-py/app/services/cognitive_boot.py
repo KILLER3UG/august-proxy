@@ -75,6 +75,7 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
     # `remember` tool) has passed. Defensive — skips silently if the facts table
     # or the expires_at column is not present yet on this install.
     try:
+        from app.services.memory_conn import commit as brain_commit
         from app.services.memory_conn import conn as _mem_conn
 
         c = _mem_conn()
@@ -94,7 +95,7 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
                     "AND expires_at != '' AND julianday(expires_at) IS NOT NULL "
                     "AND julianday(expires_at) <= julianday('now')"
                 )
-                c.commit()
+                brain_commit(c)
                 purged = cursor.rowcount
         if purged:
             logger.info('Facts expiry sweep: purged %d expired facts', purged)

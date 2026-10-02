@@ -37,6 +37,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
+from app.services.memory_conn import commit as brain_commit
+
 logger = logging.getLogger(__name__)
 
 # Ledger retention: keep the recent tail, prune the rest. The scheduler and
@@ -82,7 +84,7 @@ def _ensure_ledger() -> None:
         'CREATE INDEX IF NOT EXISTS idx_learning_job_run_job '
         'ON learning_job_run(job, id)'
     )
-    conn.commit()
+    brain_commit(conn)
 
 
 def _prune(conn) -> None:
@@ -101,7 +103,7 @@ def _start_run(job: str) -> int:
         "INSERT INTO learning_job_run (job, started_at, status) VALUES (?, ?, 'running')",
         (job, _iso(_utcnow())),
     )
-    conn.commit()
+    brain_commit(conn)
     return int(cur.lastrowid or 0)
 
 
@@ -123,7 +125,7 @@ def _finish_run(run_id: int, status: str, detail: dict[str, Any]) -> None:
         (_iso(_utcnow()), status, dur, json.dumps(detail, default=str)[:2000], run_id),
     )
     _prune(conn)
-    conn.commit()
+    brain_commit(conn)
 
 
 def last_run(job: str) -> dict[str, Any] | None:

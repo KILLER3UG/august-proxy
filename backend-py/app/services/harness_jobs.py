@@ -9,6 +9,7 @@ import uuid
 from typing import Any
 
 from app.json_narrowing import as_str
+from app.services.memory_conn import commit as brain_commit
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ def create_job(
             time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
         ),
     )
-    conn.commit()
+    brain_commit(conn)
     return job_id
 
 
@@ -60,7 +61,7 @@ def _wave_names(waves: list[list[dict[str, Any]]]) -> list[list[str]]:
 def _ensure_outcomes_col(conn) -> None:
     try:
         conn.execute("ALTER TABLE harness_jobs ADD COLUMN outcomes_json TEXT DEFAULT '{}'")
-        conn.commit()
+        brain_commit(conn)
     except Exception:
         pass
 
@@ -92,7 +93,7 @@ def record_lane(job_id: str, name: str, status: str, error: str = '', task_id: s
             'UPDATE harness_jobs SET outcomes_json = ? WHERE id = ?',
             (json.dumps(raw, ensure_ascii=False), job_id),
         )
-        conn.commit()
+        brain_commit(conn)
     except Exception:
         logger.debug('record_lane failed', exc_info=True)
 
@@ -119,7 +120,7 @@ def attach_task(job_id: str, task_id: str) -> None:
         if task_id not in ids:
             ids.append(task_id)
         conn.execute('UPDATE harness_jobs SET task_ids = ? WHERE id = ?', (json.dumps(ids), job_id))
-        conn.commit()
+        brain_commit(conn)
     except Exception:
         logger.debug('attach_task failed', exc_info=True)
 
@@ -158,7 +159,7 @@ def finish_job(
                 job_id,
             ),
         )
-        conn.commit()
+        brain_commit(conn)
     except Exception:
         logger.debug('finish_job failed', exc_info=True)
 
@@ -191,7 +192,7 @@ def sweep_orphaned_jobs() -> int:
                 time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
             ),
         )
-        conn.commit()
+        brain_commit(conn)
         return int(cur.rowcount or 0)
     except Exception:
         logger.debug('harness job orphan sweep skipped', exc_info=True)
@@ -207,7 +208,7 @@ def mark_dirty(job_id: str, note: str = '') -> None:
             'UPDATE harness_jobs SET dirty = 1, error = CASE WHEN error = "" OR error IS NULL THEN ? ELSE error END WHERE id = ?',
             (note[:2000] or 'Worker mutated the environment then exited without a clean episode.', job_id),
         )
-        conn.commit()
+        brain_commit(conn)
     except Exception:
         logger.debug('mark_dirty failed', exc_info=True)
 

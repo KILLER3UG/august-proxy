@@ -311,11 +311,38 @@ class TestConsequences:
 
 def test_gated_tool_set_matches_the_observed_mutating_set():
     """A tool that mutates the desktop but is absent from GATED_TOOLS is an
-    un-gated door — the same class as the five audit findings this mirrors."""
+    un-gated door. Note the direction is ONE-WAY: GATED_TOOLS is allowed to be
+    larger (a name may be gated before its tool lands), but nothing that
+    `post_observation` treats as mutating may be missing."""
     from app.services.post_observation import DESKTOP_MUTATING_TOOLS
 
     missing = DESKTOP_MUTATING_TOOLS - policy.GATED_TOOLS
     assert not missing, f'mutating desktop tools missing from the policy gate: {sorted(missing)}'
+
+
+def test_every_gated_tool_is_actually_registered():
+    """The reverse direction, and the one that caught nine dead names.
+
+    `GATED_TOOLS` listed `computer_click` … `desktop_drag` — none of which are
+    registered tools anywhere. They came from a UI comment describing an
+    intended surface, and listing them made the gate set look broader than the
+    enforcement while the drift test above certified against them. A name that
+    is not a tool can never be invoked, so gating it is theatre.
+    """
+    from app.services import tool_definitions as tool_defs
+    from app.services.tool_registry import listTools
+
+    if not listTools():
+        tool_defs.registerAll()
+    registered = {
+        (t.get('name') or (t.get('function') or {}).get('name')) for t in listTools()
+    }
+    dead = sorted(policy.GATED_TOOLS - registered)
+    assert not dead, (
+        f'GATED_TOOLS lists tools that are not registered: {dead}. Either register '
+        'the tool or drop the name — a permission for a tool that does not exist '
+        'reads as coverage it does not provide.'
+    )
 
 
 def test_a_new_mutating_primitive_cannot_be_added_ungated():

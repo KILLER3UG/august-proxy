@@ -42,6 +42,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.models.camel_base import CamelModel
 from app.services import brain_config_service
+from app.services.memory_conn import commit as brain_commit
 
 router = APIRouter(prefix='/api/brain', tags=['brain-config'])
 
@@ -453,7 +454,7 @@ async def recordArenaVerdict(body: _ArenaVerdict):
             (body.session_id, body.task_type or 'arena', loser.model_id, loser.provider, body.prompt),
         )
         recorded += 1
-    c.commit()
+    brain_commit(c)
     return {'ok': True, 'recorded': recorded}
 
 

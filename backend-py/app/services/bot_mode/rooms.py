@@ -33,6 +33,7 @@ from datetime import datetime, timezone
 from typing import cast
 
 from app.json_narrowing import as_dict, as_str
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 
 logger = logging.getLogger('august.bot_mode.rooms')
@@ -67,7 +68,7 @@ def create_room(name: str, members: list[str]) -> int:
             'INSERT INTO bot_room (name, members, created_at) VALUES (?, ?, ?)',
             ((name or 'Room').strip()[:120], json.dumps(clean), _now()),
         )
-        c.commit()
+        brain_commit(c)
         return int(cur.lastrowid or 0)
     except Exception:
         logger.debug('create_room failed', exc_info=True)
@@ -120,7 +121,7 @@ def delete_room(room_id: int) -> bool:
         c = _conn()
         c.execute('DELETE FROM bot_room_message WHERE room_id = ?', (room_id,))
         cur = c.execute('DELETE FROM bot_room WHERE id = ?', (room_id,))
-        c.commit()
+        brain_commit(c)
         return bool(cur.rowcount)
     except Exception:
         return False
@@ -150,7 +151,7 @@ def update_room(
             'UPDATE bot_room SET name = ?, members = ? WHERE id = ?',
             (new_name, members_json, room_id),
         )
-        c.commit()
+        brain_commit(c)
         return get_room(room_id)
     except Exception:
         logger.debug('update_room failed', exc_info=True)
@@ -161,7 +162,7 @@ def set_needs_you(room_id: int, value: bool) -> None:
     try:
         c = _conn()
         c.execute('UPDATE bot_room SET needs_you = ? WHERE id = ?', (1 if value else 0, room_id))
-        c.commit()
+        brain_commit(c)
     except Exception:
         logger.debug('set_needs_you failed', exc_info=True)
 
@@ -185,7 +186,7 @@ def add_message(
         mid = int(cur.lastrowid or 0)
         if thread_id is None and mid:
             c.execute('UPDATE bot_room_message SET thread_id = ? WHERE id = ?', (mid, mid))
-        c.commit()
+        brain_commit(c)
         return mid
     except Exception:
         logger.debug('add_message failed', exc_info=True)

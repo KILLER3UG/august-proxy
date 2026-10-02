@@ -70,23 +70,17 @@ ACTION_TO_TOOL: dict[str, str] = {
 
 # Tools that drive the real mouse/keyboard. A per-APP policy is meaningless for
 # the read-only ones (a screenshot is not "acting on Chrome"), so only the
-# mutating surface is gated. This mirrors
-# ``post_observation.DESKTOP_MUTATING_TOOLS`` — if a tool is added to one it
-# belongs here too, and ``tests/test_computer_use_policy.py`` fails if the two
-# sets drift.
-GATED_TOOLS = frozenset(ACTION_TO_TOOL.values()) | frozenset(
-    {
-        'desktop_hotkey',
-        'desktop_scroll',
-        'desktop_drag',
-        'computer_click',
-        'computer_type',
-        'computer_key',
-        'computer_open',
-        'computer_scroll',
-        'computer_drag',
-    }
-)
+# mutating surface is gated.
+#
+# These are the names that are ACTUALLY REGISTERED (verified against
+# tool_registry in tests/test_computer_use_policy.py). An earlier version also
+# listed `computer_*` aliases and `desktop_hotkey`/`_scroll`/`_drag`, none of
+# which exist as tools — aspirational names from a UI comment. Listing them
+# made the set look broader than the enforcement surface, and made the drift
+# test against post_observation.DESKTOP_MUTATING_TOOLS certify names that could
+# never be invoked. If one is ever implemented, add it HERE AND register it;
+# the registration test is what enforces that.
+GATED_TOOLS = frozenset(ACTION_TO_TOOL.values())
 
 # Read-only desktop tools: explicitly NOT gated, so they short-circuit to allow
 # instead of falling into the unknown-tool branch below.

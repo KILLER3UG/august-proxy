@@ -28,6 +28,7 @@ from typing import Any, cast
 
 from app.json_narrowing import as_int
 from app.lib.paths import assertPytestDataDirIsolated
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 from app.services.message_sources import MACHINE_SOURCES as _MACHINE_SOURCES
 
@@ -361,7 +362,7 @@ def upsert_fingerprint(fp: str) -> dict[str, Any]:
         """,
         (fp, now, now),
     )
-    conn.commit()
+    brain_commit(conn)
     row = conn.execute(
         'SELECT * FROM failure_fingerprints WHERE fingerprint = ?', (fp,)
     ).fetchone()
@@ -431,7 +432,7 @@ def save_episode(episode: dict[str, Any]) -> int:
             now,
         ),
     )
-    conn.commit()
+    brain_commit(conn)
     return int(as_int(cur.lastrowid, 0))
 
 
@@ -542,7 +543,7 @@ def flagged_episodes(limit: int = 50) -> list[dict[str, Any]]:
 def set_flagged(episodeId: int, flagged: bool) -> None:
     conn = _conn()
     conn.execute('UPDATE episodes SET tier = ? WHERE id = ?', (2 if flagged else 1, int(episodeId)))
-    conn.commit()
+    brain_commit(conn)
 
 
 def set_judge_verdict(episodeId: int, verdict: str) -> None:
@@ -551,7 +552,7 @@ def set_judge_verdict(episodeId: int, verdict: str) -> None:
         'UPDATE episodes SET judge_verdict = ?, tier = 2 WHERE id = ?',
         (verdict, int(episodeId)),
     )
-    conn.commit()
+    brain_commit(conn)
 
 
 # ── tier-1 rubric ───────────────────────────────
@@ -641,7 +642,7 @@ def flag_top_slice(
             (json.dumps({'tier1': result}, ensure_ascii=False), int(ep['id'])),
         )
         scored.append((result['score'], ep))
-    conn.commit()
+    brain_commit(conn)
 
     scored.sort(key=lambda pair: (-pair[0], -int(pair[1].get('id', 0))))
     # 2.14: floor at 1 when there are candidates — int(len*cap)
@@ -662,7 +663,7 @@ def flag_top_slice(
             conn.execute(
                 'UPDATE failure_fingerprints SET flagged = 1 WHERE fingerprint = ?', (fp,)
             )
-            conn.commit()
+            brain_commit(conn)
         flaggedCount += 1
     return {'scored': len(scored), 'flagged': flaggedCount}
 
@@ -716,7 +717,7 @@ def prune_old_episodes(days: int = EPISODE_RETENTION_DAYS) -> int:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     conn = _conn()
     cur = conn.execute('DELETE FROM episodes WHERE created_at < ?', (cutoff,))
-    conn.commit()
+    brain_commit(conn)
     return int(cur.rowcount)
 
 
@@ -835,7 +836,7 @@ def run_resolution_check(windowDays: int = _RESOLUTION_WINDOW_DAYS) -> dict[str,
             conn.execute(
                 "UPDATE failure_fingerprints SET status = 'resolved' WHERE fingerprint = ?", (fp,)
             )
-            conn.commit()
+            brain_commit(conn)
             status = 'resolved'  # downstream demotion check sees the update
             resolvedCount += 1
         elif status == 'resolved' and not stale:
@@ -845,7 +846,7 @@ def run_resolution_check(windowDays: int = _RESOLUTION_WINDOW_DAYS) -> dict[str,
                 "UPDATE failure_fingerprints SET status = 'open', flagged = 1 WHERE fingerprint = ?",
                 (fp,),
             )
-            conn.commit()
+            brain_commit(conn)
             recurredCount += 1
             _file_suggestion(
                 kind='observation',
@@ -890,7 +891,7 @@ def set_fingerprint_status(fp: str, status: str) -> None:
             "UPDATE failure_fingerprints SET status = ? WHERE fingerprint = ? AND status = 'open'",
             (str(status), str(fp)),
         )
-    conn.commit()
+    brain_commit(conn)
 
 
 def _file_suggestion(**kw: Any) -> bool:

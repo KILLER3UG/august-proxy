@@ -15,6 +15,7 @@ import re
 from typing import Any
 
 from app.json_narrowing import as_list, as_str
+from app.services.memory_conn import commit as brain_commit
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,7 @@ def ensure_workstream(session_id: str, name: str) -> int:
         'INSERT INTO workstreams (session_id, name) VALUES (?, ?)',
         (session_id, name),
     )
-    conn.commit()
+    brain_commit(conn)
     return int(cur.lastrowid)
 
 
@@ -167,7 +168,7 @@ def append_episode(
         "UPDATE workstreams SET updated_at = datetime('now') WHERE id = ?",
         (ws_id,),
     )
-    conn.commit()
+    brain_commit(conn)
     return {
         'workstream': name,
         'seq': seq,

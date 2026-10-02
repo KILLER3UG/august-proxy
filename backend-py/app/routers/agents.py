@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.json_narrowing import as_str
 from app.models.camel_base import CamelModel
+from app.services.memory_conn import commit as brain_commit
 from app.services.tools import agent_registry
 from app.services.workbench.subagent import register_detached_session_task
 
@@ -376,7 +377,7 @@ def _record_api_job_run(
                     (error or '')[:2000],
                 ),
             )
-        conn.commit()
+        brain_commit(conn)
     except Exception:
         logger.debug('api job run record failed (non-fatal)', exc_info=True)
 
