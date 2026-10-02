@@ -12,11 +12,36 @@ Camera capture (Windows) uses the ffmpeg binary bundled by
 ``imageio-ffmpeg`` against the DirectShow (``dshow``) input. Captured
 frames live in a temporary file that is deleted before the function
 returns; the resulting vision description is the only output.
+
+**Every mutating primitive in this module is policy-gated.** The gate lives
+here rather than at the call sites because there are three ways in — the
+``desktop_*`` managed tools, the ``computer_*`` tools, and
+``POST /api/desktop-automation/action`` via :mod:`app.services.desktop_dispatch`
+— and a prologue at each one is exactly the "an alias evades the gate" shape
+``tests/test_gate_participation.py`` exists to prevent. Down here, a new entry
+point is covered by construction. Read-only primitives (screenshot, window
+list, size, position) are deliberately NOT gated: a screenshot is not acting on
+an app.
+
+The dependency runs ONE WAY — this module imports
+:mod:`app.services.computer_use_policy`, never the reverse — so there is no
+import cycle between the primitives, the dispatcher and the policy.
 """
 
 from __future__ import annotations
 
 import os
+
+
+async def _refuseIfNotAllowed(action: str) -> dict[str, object] | None:
+    """Return a refusal dict when the per-app policy blocks ``action``, else None.
+
+    ``action`` is the ``desktop_*`` name so the policy's GATED_TOOLS set stays
+    the single list of what is gated.
+    """
+    from app.services.computer_use_policy import enforceDesktopAction
+
+    return await enforceDesktopAction(action)
 
 
 async def takeScreenshot() -> dict[str, object]:
@@ -77,6 +102,9 @@ async def getScreenSize() -> dict[str, object]:
 
 async def clickMouse(x: int, y: int, button: str = 'left') -> dict[str, object]:
     """Move the real mouse to (x, y) and click."""
+    refusal = await _refuseIfNotAllowed('click')
+    if refusal is not None:
+        return refusal
     try:
         import pyautogui
 
@@ -88,6 +116,9 @@ async def clickMouse(x: int, y: int, button: str = 'left') -> dict[str, object]:
 
 async def typeText(text: str) -> dict[str, object]:
     """Type ``text`` on the real keyboard."""
+    refusal = await _refuseIfNotAllowed('type')
+    if refusal is not None:
+        return refusal
     try:
         import pyautogui
 
@@ -99,6 +130,9 @@ async def typeText(text: str) -> dict[str, object]:
 
 async def pressKey(key: str) -> dict[str, object]:
     """Press a single real keyboard key (e.g. ``enter``, ``escape``)."""
+    refusal = await _refuseIfNotAllowed('press')
+    if refusal is not None:
+        return refusal
     try:
         import pyautogui
 
@@ -137,6 +171,9 @@ async def openUrl(url: str) -> dict[str, object]:
 
     from app.services.browser.handlers import _checkUrlAllowlist
 
+    refusal = await _refuseIfNotAllowed('open_url')
+    if refusal is not None:
+        return refusal
     target = str(url or '').strip()
     if not target:
         raise ValueError('url is empty')

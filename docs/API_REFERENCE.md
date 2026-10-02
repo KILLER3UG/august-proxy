@@ -340,9 +340,11 @@ separately under `/api/skills/packs`.
 | `GET /api/curator/scheduler` · `POST /scheduler/run/{job}` | Scheduler state / manual fire |
 
 Pin / archive / restore / usage-telemetry routes **do not exist**. Curation
-lifecycle is a `SKILL.md` **frontmatter status flag** (`active` → `stale` →
-`retired`/`archived`), not an endpoint and not a directory move, and usage is
-read from the `<dataDir>/skills/<name>/.usage.json` sidecar.
+lifecycle is a `SKILL.md` **frontmatter status flag** (draft / active /
+superseded / retired, per `skill_service.SKILL_STATUSES` — `stale` and `archived`
+are NOT valid values and `setStatus` refuses them), not an endpoint and not a
+directory move, and usage is read from the
+`<dataDir>/skills/<name>/.usage.json` sidecar.
 
 ---
 

@@ -403,7 +403,7 @@ than directory existence.
 
 [`routers/curator.py`](../backend-py/app/routers/curator.py)
 manages the agent-authored lifecycle. Status is a **frontmatter flag, not a file
-move**: `active` → `stale` → `retired`/`archived`, read back through `meta`
+move**: draft / active / superseded / retired (`skill_service.SKILL_STATUSES`), read back through `meta`
 because `_parseSkill` nests unrecognized frontmatter. Nothing relocates skills
 into a `.archive/` directory. The curator also drives the `refine` proposal set
 (`/refine`, `/refine/run`, `/refine/{id}/rollback`) and reports through
@@ -538,7 +538,7 @@ try/except so one failure does not block boot):
 ### Primary store
 
 **One SQLite database:** `data/august_brain.sqlite` (WAL) — sessions, messages,
-memory planes, audit, kv, graph/vector tables, etc.
+memory planes, audit, kv, episodes, etc.
 
 Brain schema identifiers are **snake_case** (tables/columns); HTTP/JSON wire
 stays **camelCase** via `memory_store` wire helpers.

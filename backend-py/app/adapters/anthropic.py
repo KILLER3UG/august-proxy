@@ -295,6 +295,24 @@ def translateMessages(
     return openaiMessages
 
 
+def _anthropicToolChoiceToOpenai(choice: object) -> object | None:
+    """Anthropic ``tool_choice`` → OpenAI ``tool_choice`` (the inverse of
+    ``openai._openaiToolChoiceToAnthropic``).
+
+    ``{"type": "any"}`` → ``"required"``; ``{"type": "tool", "name": n}`` →
+    ``{"type": "function", "function": {"name": n}}``. ``auto``/``none`` and
+    anything unrecognised produce ``None`` so the caller omits the key.
+    """
+    asObj = as_dict(choice)
+    kind = as_str(asObj.get('type'), '')
+    if kind == 'any':
+        return 'required'
+    if kind == 'tool':
+        name = as_str(asObj.get('name'), '')
+        return {'type': 'function', 'function': {'name': name}} if name else None
+    return None
+
+
 def buildOpenaiRequest(
     body: AnthropicRequest | dict[str, object], model: str, system: list[dict[str, object]] | None = None
 ) -> dict[str, object]:
@@ -316,6 +334,10 @@ def buildOpenaiRequest(
             openaiBody['top_k'] = body.top_k
         if body.stop_sequences is not None:
             openaiBody['stop'] = cast(JsonValue, body.stop_sequences)
+        if body.tool_choice is not None:
+            translated = _anthropicToolChoiceToOpenai(body.tool_choice)
+            if translated is not None:
+                openaiBody['tool_choice'] = translated
         thinking = as_dict(body.thinking, {})
         if thinking:
             budget = as_int(thinking.get('budget_tokens'), 0)
@@ -339,6 +361,10 @@ def buildOpenaiRequest(
         openaiBody['top_k'] = body['top_k']
     if 'stop_sequences' in body:
         openaiBody['stop'] = body['stop_sequences']
+    if 'tool_choice' in body:
+        translated = _anthropicToolChoiceToOpenai(body.get('tool_choice'))
+        if translated is not None:
+            openaiBody['tool_choice'] = translated
     thinking = as_dict(body.get('thinking'), {})
     if thinking:
         budget = as_int(thinking.get('budget_tokens'), 0)
@@ -446,7 +472,20 @@ def buildAnthropicUpstreamRequest(
     if isinstance(body, AnthropicRequest):
         anthropicBody: dict[str, object] = {'model': model, 'messages': as_list(body.messages, [])}
         anthropicBody['max_tokens'] = body.max_tokens or 8192
-        for key in ('temperature', 'top_p', 'top_k', 'stop_sequences', 'metadata'):
+        for key in (
+            'temperature',
+            'top_p',
+            'top_k',
+            'stop_sequences',
+            'metadata',
+            # tool_choice forces a specific tool / forces any tool. It was
+            # declared on the model and dropped here, so an SDK client (Claude
+            # Code) asking for `{"type":"tool","name":"x"}` was silently
+            # un-forced and answered with stop_reason "end_turn" and no
+            # tool_use. Unlike the numeric knobs a `None` means "unset", so the
+            # None check is correct.
+            'tool_choice',
+        ):
             val = getattr(body, key, None)
             if val is not None:
                 anthropicBody[key] = val
@@ -461,7 +500,7 @@ def buildAnthropicUpstreamRequest(
         anthropicBody['max_tokens'] = body.get('max_tokens') or body.get('max_output_tokens', 4096)
     else:
         anthropicBody['max_tokens'] = 8192
-    for key in ('temperature', 'top_p', 'top_k', 'stop_sequences', 'metadata'):
+    for key in ('temperature', 'top_p', 'top_k', 'stop_sequences', 'metadata', 'tool_choice'):
         if key in body:
             anthropicBody[key] = body[key]
     if 'thinking' in body:
@@ -941,9 +980,24 @@ async def _streamAnthropicNative(
         if not classification.get('has_managed'):
             break
         toolRound += 1
+        # A stream can end mid-``tool_use``, leaving `input` as the
+        # `{'_raw': '…'}` sentinel that stream_state stamps on a block whose
+        # JSON never completed. Sending that upstream again is the real defect;
+        # dispatching it is the other. Both siblings of this loop
+        # (_handleMessagesNonStreaming and the OpenAI-shaped path) already guard
+        # for it — this one did not, so a truncated stream produced a
+        # generic schema hint instead of the documented self-heal.
+        sanitizedBlocks: list[dict[str, object]] = []
+        for _blk in list(st.data.content_blocks):
+            _b = as_dict(_blk)
+            _in = as_dict(_b.get('input'), {}) if _b.get('type') == 'tool_use' else {}
+            if as_str(_in.get('_invalid_json') or _in.get('_raw'), ''):
+                sanitizedBlocks.append({**_b, 'input': {'_invalid_json': 'truncated'}})
+            else:
+                sanitizedBlocks.append(_b)
         assistantMsg: dict[str, object] = {
             'role': 'assistant',
-            'content': cast(JsonValue, list(st.data.content_blocks)),
+            'content': cast(JsonValue, sanitizedBlocks),
         }
         currentMessages.append(assistantMsg)
         for tu in as_list(classification.get('managed_tool_uses'), []):
@@ -952,6 +1006,21 @@ async def _streamAnthropicNative(
             toolName = as_str(tu.get('name'), '')
             toolInput = as_dict(tu.get('input'), {})
             toolUseId = as_str(tu.get('id'), f'toolu_{uuid.uuid4().hex[:16]}')
+            invalidRaw = as_str(toolInput.get('_invalid_json') or toolInput.get('_raw'), '')
+            if invalidRaw:
+                # Malformed tool JSON must never execute (not even with a
+                # phantom `_raw` arg) — surface a validation-error result so
+                # the model can self-heal.
+                currentMessages.append(
+                    _toolResultBlockMessage(
+                        ToolResultBlock(
+                            tool_use_id=toolUseId,
+                            content=validationErrorText(toolName, invalidRaw[:500], malformed=True),
+                            is_error=True,
+                        )
+                    )
+                )
+                continue
             try:
                 result = await execute_managed_proxy_tool(toolName, toolInput)
                 tr = ToolResultBlock(tool_use_id=toolUseId, content=format_managed_tool_result(toolName, result))

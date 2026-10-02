@@ -163,6 +163,41 @@ def finish_job(
         logger.debug('finish_job failed', exc_info=True)
 
 
+def sweep_orphaned_jobs() -> int:
+    """Resolve every ``harness_jobs`` row left ``running`` by the previous process.
+
+    The wave driver records the row in ``create_job`` and flips it to a terminal
+    status in ``finish_job``. The packaged desktop quit is ``taskkill /T /F``
+    (see ``src-tauri/src/backend.rs``), so the lifespan shutdown tail never runs
+    and a quit mid-fleet leaves the row at ``running`` FOREVER. Nothing swept it
+    at boot — only ``subagent_runs`` did, via ``sweep_orphaned_runs`` — so
+    ``harness_playbook`` computed ``workingCount`` from a dead job and the
+    sidebar reported a session as working indefinitely.
+
+    Same contract as the sub-agent sweep: runs before any request is served, so
+    every active row is by definition orphaned, and the partial work the job
+    managed to record is left alone rather than destroyed.
+    """
+    try:
+        conn = _conn()
+        cur = conn.execute(
+            'UPDATE harness_jobs SET status = ?, '
+            "error = CASE WHEN error = '' OR error IS NULL THEN ? ELSE error END, "
+            "finished_at = COALESCE(finished_at, ?) "
+            "WHERE status = 'running'",
+            (
+                'failed',
+                'Lost: the backend restarted while this job was running.',
+                time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+            ),
+        )
+        conn.commit()
+        return int(cur.rowcount or 0)
+    except Exception:
+        logger.debug('harness job orphan sweep skipped', exc_info=True)
+        return 0
+
+
 def mark_dirty(job_id: str, note: str = '') -> None:
     if not job_id:
         return

@@ -64,7 +64,17 @@ class FakeAuto:
 
 @pytest.fixture()
 def fake_uia(monkeypatch):
-    """Pretend uiautomation loaded; give each test a clean ref cache."""
+    """Pretend uiautomation loaded; give each test a clean ref cache.
+
+    Also stands the computer-use policy down. `act()` now consults it before
+    touching a handle, so without this every test here would get a policy
+    refusal instead of the UIA mechanics it is actually testing. The policy's
+    own behaviour is covered in tests/test_computer_use_policy.py — including
+    the sync UIA path — so this is scoping the fixture, not hiding a defect.
+    """
+    from app.services import computer_use_policy as policy
+
+    monkeypatch.setattr(policy, 'enforceSync', lambda *_a, **_k: None)
     restore = (duia._mod, duia._tried)  # noqa: SLF001
     duia._tried = True  # noqa: SLF001
     duia.reset_for_tests()

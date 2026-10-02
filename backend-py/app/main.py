@@ -192,6 +192,16 @@ async def lifespan(app: FastAPI):
         sweep_orphaned_runs()
     except Exception:
         logger.debug('Subagent orphan sweep skipped', exc_info=True)
+    # Same contract for the harness wave ledger. `create_job` writes `running`
+    # and only the wave driver's `finish_job` clears it, and the packaged quit
+    # force-kills the process, so a quit mid-fleet left the row `running` for
+    # good — `harness_playbook` then counted a dead job as working forever.
+    try:
+        from app.services.harness_jobs import sweep_orphaned_jobs
+
+        sweep_orphaned_jobs()
+    except Exception:
+        logger.debug('Harness job orphan sweep skipped', exc_info=True)
     # One verified safety copy per 12 h, off the event loop and after migrations
     # (the backup API needs a read lock, which a migration transaction holds).
     # An upgrade must never boot without something restorable behind it.
@@ -343,6 +353,23 @@ async def lifespan(app: FastAPI):
         await shutdownAll()
     except Exception:
         pass
+    # Every subprocess we own must be reaped by us, not left to the OS: a
+    # graceful stop (dev uvicorn, an in-process lifespan end) used to leave
+    # winpty shells and MCP stdio children resident, and the next backend
+    # spawned a fresh set. Both functions already existed or mirrored an
+    # existing one — what was missing was the CALL.
+    try:
+        from app.services.workbench.terminal_service import closeAllTerminalSessions
+
+        await closeAllTerminalSessions()
+    except Exception:
+        logger.debug('terminal session drain failed', exc_info=True)
+    try:
+        from app.services.tools.mcp_client import shutdownAllServers
+
+        await shutdownAllServers()
+    except Exception:
+        logger.debug('MCP server drain failed', exc_info=True)
     # Flush the session debounce before exit: a quit landing inside the
     # 150ms window would otherwise lose the last turn's messages, and the
     # user's chat history must survive every restart.

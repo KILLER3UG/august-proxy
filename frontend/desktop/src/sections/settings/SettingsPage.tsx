@@ -269,6 +269,10 @@ const SubagentsWrapper = lazySection(
   () => import('./CapabilitySections').then((m) => ({ default: m.SubagentsSection })),
   'SubagentsSection',
 );
+const TurnLimitsWrapper = lazySection(
+  () => import('./TurnLimitsSection').then((m) => ({ default: m.TurnLimitsSection })),
+  'TurnLimitsSection',
+);
 const PluginsWrapper = lazySection(
   () => import('./CapabilitySections').then((m) => ({ default: m.PluginsSection })),
   'PluginsSection',
@@ -349,6 +353,10 @@ export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps
   // from navigation and redirected to a real section.
   'browser-use': BrowserUseWrapper,
   subagents: SubagentsWrapper,
+  // The turn bounds the backend has always honoured (tool-round cap, budget
+  // ladder, runaway backstop) had no UI at all — the docs told users to set
+  // them and the app offered no door.
+  'turn-limits': TurnLimitsWrapper,
   plugins: PluginsWrapper,
   account: AccountWrapper,
   general: GeneralWrapper,

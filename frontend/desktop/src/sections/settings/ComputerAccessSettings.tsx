@@ -306,8 +306,9 @@ export function ComputerAccessSettings() {
         </div>
         <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-3">
           <p className="text-xs text-muted-foreground">
-            Per-app policy enforced at Workbench dispatch. Unknown apps default to
-            <span className="font-medium"> ask</span>.
+            Per-app policy, enforced before August clicks, types, presses a key or opens
+            a link — matched against the window in front. Apps you have not listed
+            default to <span className="font-medium">ask</span>, which asks you each time.
           </p>
           {Object.keys(apps).length === 0 && (
             <p className="text-xs text-muted-foreground italic">No app-specific policies yet.</p>

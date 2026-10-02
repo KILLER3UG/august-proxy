@@ -721,6 +721,28 @@ async def stopServer(serverId: str) -> bool:
     return True
 
 
+async def shutdownAllServers() -> int:
+    """Stop every MCP stdio child at backend shutdown. Returns the count.
+
+    There was a documented close-all for terminals (``closeAllTerminalSessions``)
+    with zero callers and NO equivalent here, so on any graceful stop the
+    stdio children survived and the next backend process spawned fresh ones —
+    orphaned python/node processes, one set per restart. The packaged desktop
+    quit force-kills instead (taskkill /T /F), so this only runs for a dev
+    uvicorn stop, an in-process lifespan end, or a future graceful quit path.
+    Either way it is the difference between "children die with us" and "they
+    do not".
+    """
+    stopped = 0
+    for serverId in list(_processes.keys()):
+        try:
+            await _stopServerProcess(serverId)
+            stopped += 1
+        except Exception:
+            logger.debug('mcp shutdown: server %s did not stop cleanly', serverId, exc_info=True)
+    return stopped
+
+
 def _parse_sse_block(block: str) -> tuple[str, str]:
     """Parse one SSE event block into (event_name, data_payload)."""
     event_name = 'message'

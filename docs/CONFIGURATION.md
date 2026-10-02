@@ -26,7 +26,7 @@ This document is the operator reference for current options.
 | `data/config.json` | `app.config.settings` | API keys, `modelAliases`, `activeProvider`, `subAgentFallback`, `auxiliary.*` (cognitive, background review, session export, …), `security`, `gateway` |
 | `data/providers.json` | `app.config.settings` | User-added providers (name, base URL, API format, models) |
 | `data/mcp-servers.json` | MCP client | MCP server process definitions |
-| `data/august_brain.sqlite` | `memory_store` | Sessions, messages, memory, audit, graph/vector |
+| `data/august_brain.sqlite` | `memory_store` | Sessions, messages, memory, audit, kv, episodes |
 | `.env` | Pydantic Settings + `load_dotenv` + Docker Compose | API keys, port, data dir, OAuth, gateway tokens |
 
 Most services call `settings.reload()` after a write so resolvers see changes
@@ -760,7 +760,7 @@ For model resolution, aliases take precedence over raw model ids
 | `config.json` | See above |
 | `providers.json` | User providers |
 | `mcp-servers.json` | MCP servers |
-| `august_brain.sqlite` | **SoT** for sessions, memory, audit, graph/vector |
+| `august_brain.sqlite` | **SoT** for sessions, memory, audit, kv, episodes (no graph/vector tables — removed in v10) |
 | `workbench-sessions.json` | Optional session **export** only |
 | `request-log.json` | Request inspector log |
 | `skills/` | Agent-authored skills + `.usage.json` + `.archive/` |

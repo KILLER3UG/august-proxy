@@ -308,7 +308,8 @@ words in description). See `skill_service` validation helpers.
 ### Curator retired a skill I need
 
 There is no `.archive/` directory and no restore endpoint — curation lifecycle is
-a **`SKILL.md` frontmatter flag** (`active` → `stale` → `retired`/`archived`), and
+a **`SKILL.md` frontmatter flag** (draft / active / superseded / retired; `stale` and `archived` are
+rejected by `setStatus` — see `skill_service.SKILL_STATUSES`), and
 the old `POST /api/curator/restore/{name}` / `/pin/{name}` routes never survived
 the curator rewrite.
 

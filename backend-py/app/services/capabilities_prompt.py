@@ -64,7 +64,16 @@ _BULK_TAGGED: frozenset[str] = frozenset(
     }
 )
 
-_EVOLVING_CREATED_BY: frozenset[str] = frozenset({'agent', 'auto-gen'})
+# Who counts as "still evolving" for the [evolving] marker. The set has to
+# match the values the WRITERS actually emit: the harness proposal applier
+# stamps `harness-proposal`, promotion stamps `promotion`, and skill_service
+# defaults new skills to `agent`. It previously listed `agent` and `auto-gen`,
+# and `auto-gen` has no producer anywhere in the tree — so the skills the
+# learning loop actually creates were exactly the ones never badged, and the
+# prompt's "tagged [evolving] below" claim was false.
+_EVOLVING_CREATED_BY: frozenset[str] = frozenset(
+    {'agent', 'auto-gen', 'harness-proposal', 'promotion'}
+)
 
 
 def classify_tool(name: str) -> str:

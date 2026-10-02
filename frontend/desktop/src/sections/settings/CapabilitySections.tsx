@@ -90,6 +90,8 @@ interface DelegationConfig {
 export function SubagentsSection() {
   const [cfg, setCfg] = useState<DelegationConfig | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const roster = useQuery({
     queryKey: ['subagents-active-settings'],
     queryFn: () => listActive(),
@@ -100,16 +102,21 @@ export function SubagentsSection() {
     void api
       .get<DelegationConfig>('/api/subagents/config')
       .then((d) => setCfg(d))
-      .catch(() => setCfg({ maxConcurrent: 5, maxIterations: 50, maxDepth: 1, worktreeIsolation: false }));
+      // A failed read must NOT invent values: this panel renders whatever
+      // `cfg` holds as the saved truth, and a subsequent toggle then writes
+      // those fabricated numbers into the config for real. Surface the
+      // failure instead and keep the panel honest about not having read.
+      .catch(() => setLoadError(true));
   }, []);
 
   const save = async (next: DelegationConfig) => {
     setCfg(next);
     setSaving(true);
+    setSaveError(null);
     try {
       await api.post('/api/subagents/config', next);
     } catch {
-      /* keep the optimistic value; the panel refetches on next visit */
+      setSaveError('Could not save — the change was not applied.');
     } finally {
       setSaving(false);
     }
@@ -128,7 +135,15 @@ export function SubagentsSection() {
         How the model delegates work to parallel sub-agents (spawn_subagents).
       </p>
 
-      {!cfg ? (
+      {loadError ? (
+        <div
+          className="mt-6 text-sm text-rose-400/90"
+          role="alert"
+          data-testid="subagent-config-error"
+        >
+          Could not read the current subagent limits. Nothing has been changed.
+        </div>
+      ) : !cfg ? (
         <Loader2 className="mt-6 size-5 animate-spin text-muted-foreground" />
       ) : (
         <>
@@ -173,6 +188,11 @@ export function SubagentsSection() {
             </Card>
           </div>
           {saving && <p className="mt-2 text-2xs text-muted-foreground">Saving…</p>}
+          {saveError ? (
+            <p className="mt-2 text-2xs text-rose-400/90" role="alert" data-testid="subagent-save-error">
+              {saveError}
+            </p>
+          ) : null}
         </>
       )}
     </div>

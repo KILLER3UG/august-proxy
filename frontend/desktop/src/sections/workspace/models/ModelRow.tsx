@@ -416,14 +416,14 @@ if (editing) {
                     />
                   </label>
                   <label className="flex items-center gap-2 text-xs">
-                    <span className="w-36 shrink-0">Result cap (KB)</span>
+                    <span className="w-36 shrink-0">Result cap (chars)</span>
                     <input
                       type="number"
                       min={0}
                       value={maxToolResultChars}
                       onChange={(e) => setMaxToolResultChars(e.target.value)}
-                      aria-label="Max tool result chars"
-                      placeholder="0 = 64 KB default"
+                      aria-label="Max tool result characters"
+                      placeholder="0 = 64,000 chars default"
                       className="h-7 flex-1 rounded border border-input bg-background px-2 text-2xs font-mono"
                     />
                   </label>

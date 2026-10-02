@@ -275,6 +275,13 @@ async def streamOpenaiSseToClient(
             return
         if event.get('_event_type'):
             del event['_event_type']
+        # August's own control-plane frame, never a wire event: an SDK client on
+        # /v1 would read `{"type":"upstreamRetry",...}` as a chunk with no
+        # choices/id. Siblings already filter it (streamUpstreamAndResolveToolsOpenai
+        # and _handleMessagesNonStreaming) — this path did not, so a 429/503 before
+        # first token leaked a non-standard chunk to the client.
+        if as_str(event.get('type'), '') == 'upstreamRetry':
+            continue
         yield write_openai_sse_data(event)
         choices = as_list(event.get('choices'), [])
         if choices and isinstance(choices[0], dict) and as_dict(choices[0], {}).get('finish_reason'):
@@ -321,6 +328,10 @@ async def _streamResponsesPassThrough(
             }
             yield f'event: response.failed\ndata: {json.dumps(payload)}\n\n'
             return
+        # Internal retry notice — not a Responses wire event. Forwarding it hands
+        # the client a frame with no `type` it can switch on.
+        if as_str(event.get('type'), '') == 'upstreamRetry':
+            continue
         yield _responsesEventLine(event)
 async def streamUpstreamAndResolveToolsOpenai(
     upstreamUrl: str,
@@ -763,6 +774,41 @@ def _openaiToolToAnthropic(tool: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _openaiToolChoiceToAnthropic(choice: object) -> dict[str, object] | None:
+    """OpenAI ``tool_choice`` → Anthropic ``tool_choice``.
+
+    The two dialects use the SAME key with DIFFERENT shapes, so forwarding the
+    OpenAI value unchanged makes strict Anthropic gateways 400:
+
+    ============  ============================  ==============================
+    OpenAI        Anthropic
+    ============  ============================  ==============================
+    ``"auto"``    (default — omit)             (default — omit)
+    ``"none"``    (omit; no equivalent)        (omit; no equivalent)
+    ``"required"``  ``{"type": "any"}``       ``{"type": "any"}``
+    ``{"type":    ``{"type": "tool",          ``{"type": "tool",
+      "function":   "name": <fn name>}``        "name": <fn name>}``
+      "name": …}``
+    ============  ============================  ==============================
+
+    ``auto``/``none`` return ``None`` so the caller omits the key entirely —
+    Anthropic rejects an explicit ``{"type":"auto"}`` from some gateways, and
+    omitting is the correct "no constraint" either way.
+    """
+    if choice is None:
+        return None
+    if isinstance(choice, str):
+        if choice == 'required':
+            return {'type': 'any'}
+        # 'auto', 'none', and anything unrecognised: no constraint.
+        return None
+    asObj = as_dict(choice)
+    if as_str(asObj.get('type'), '') == 'function':
+        fnName = as_str(as_dict(asObj.get('function')).get('name'), '')
+        return {'type': 'tool', 'name': fnName} if fnName else None
+    return None
+
+
 def _openaiToAnthropicBody(body: dict[str, object]) -> dict[str, object]:
     """Translate an OpenAI chat-completions request body to Anthropic messages."""
     system_parts: list[str] = []
@@ -838,6 +884,9 @@ def _openaiToAnthropicBody(body: dict[str, object]) -> dict[str, object]:
     for key in ('temperature', 'top_p'):
         if body.get(key) is not None:
             out[key] = body[key]
+    translatedChoice = _openaiToolChoiceToAnthropic(body.get('tool_choice'))
+    if translatedChoice is not None:
+        out['tool_choice'] = translatedChoice
     if body.get('stop') is not None:
         # Anthropic's parameter is `stop_sequences` and it must be an ARRAY —
         # forwarding an OpenAI `stop: "word"` string makes strict Anthropic

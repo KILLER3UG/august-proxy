@@ -57,7 +57,15 @@ class TestBuildCodeMap:
 
 
 class TestPromptMount:
-    def testWorkspaceBlockCarriesTheMap(self, tmp_path):
+    def testMapIsNotInTheCachedSystemPrefix(self, tmp_path):
+        """The map rides the per-turn tail, never the prefix-cached system block.
+
+        build_code_map has a 120 s TTL by design (a bounded walk + stat of the
+        workspace on every prompt build is too expensive). Inside <workspace>
+        that TTL mutated a byte of the prefix-cached system block and forced a
+        cold re-read of system + tools + history roughly every two minutes of
+        coding work.
+        """
         from app.services.workbench import workbench as wb
 
         (tmp_path / 'main.py').write_text('# entrypoint\nprint("go")\n', encoding='utf-8')
@@ -65,6 +73,15 @@ class TestPromptMount:
         session.workspacePath = str(tmp_path)
         prompt = wb.buildSystemPrompt(session)
         assert '<workspace>' in prompt
-        assert 'map: |' in prompt
-        assert 'main.py' in prompt
-        assert 'file map' in prompt  # intake manifest mentions it
+        assert f'path: {tmp_path}' in prompt
+        # The frozen prefix must stay free of a TTL'd workspace snapshot.
+        workspaceBlock = prompt.split('<workspace>', 1)[1].split('</workspace>', 1)[0]
+        assert 'main.py' not in workspaceBlock
+        assert 'Files:' not in workspaceBlock
+
+    def testTailSizesAccountForTheMap(self, tmp_path):
+        from app.services.workbench.workbench import tailSectionSizes
+
+        sizes = tailSectionSizes(None, None, None, None, None, '<workspace_map>x</workspace_map>')
+        assert sizes['workspaceMapBytes'] == len('<workspace_map>x</workspace_map>')
+        assert sizes['memoryBytes'] == 0

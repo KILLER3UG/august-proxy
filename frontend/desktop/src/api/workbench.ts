@@ -448,10 +448,23 @@ export async function answerWorkbenchBtw(
 export interface BrainConfig {
   enabled: boolean;
   maxAgentDepth: number;
+  /* Turn bounds. Every one of these is OFF / unbounded by default on purpose:
+     a rule that ends a turn early is opt-in here, the way `verifierEnforced`
+     was before it was removed. 0 is the OFF sentinel for all of them.
+     These had no UI at all — the backend accepted them and nothing rendered
+     them — so `maxWorkbenchToolLoops` existed in this file as a type only. */
   maxWorkbenchToolLoops: number;
+  budgetSoftUsd: number;
+  budgetSoftTokens: number;
+  budgetWallClockSec: number;
+  runawayNudgeRounds: number;
+  runawayStopRounds: number;
   // Camera access for the camera_snapshot / camera_list_devices model tools.
   // Off by default — frames captured during a call are transient regardless.
   cameraAccess?: boolean;
+  /* Anything else the backend's fieldTable accepts. The settings panel renders
+     from this shape, so a key added server-side appears without a TS change. */
+  [key: string]: unknown;
 }
 
 export type BrainConfigSource = 'persisted' | 'session' | 'fallback';

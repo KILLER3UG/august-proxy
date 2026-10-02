@@ -10,7 +10,7 @@ import {
   type ToolProgressMap,
 } from './AssistantBlockTimeline';
 import { AssistantMessageActions } from './AssistantMessageActions';
-import { turnEndPhrase } from '@/lib/turn-end';
+import { turnEndPhrase, turnEndRemedy } from '@/lib/turn-end';
 
 type DisplayBlock = MessageBlock;
 
@@ -174,23 +174,34 @@ export function AssistantMessageContent({
                 ? 'text-rose-400/90'
                 : 'text-warning/90'
             }`}
-            title={
-              message.turnEnd.reason
-                ? `turn_end: ${message.turnEnd.reason}${
-                    typeof message.turnEnd.rounds === 'number'
-                      ? ` · ${message.turnEnd.rounds} round${message.turnEnd.rounds === 1 ? '' : 's'}`
-                      : ''
-                  }`
-                : 'turn_end (no reason recorded)'
-            }
             data-testid="turn-end-badge"
           >
-            {message.turnEnd.reason
-              ? turnEndPhrase(message.turnEnd.reason)
-              : 'stopped'}
-            {typeof message.turnEnd.rounds === 'number'
-              ? ` · ${message.turnEnd.rounds} round${message.turnEnd.rounds === 1 ? '' : 's'}`
-              : ''}
+            {/* Visible + keyboard-reachable, not a `title` tooltip: a stop
+                reason the user cannot act on is decoration. The raw token
+                stays available for the event log / turn_outcomes column. */}
+            <details className="group">
+              <summary className="cursor-pointer list-none marker:content-none">
+                {message.turnEnd.reason
+                  ? turnEndPhrase(message.turnEnd.reason)
+                  : 'stopped'}
+                {typeof message.turnEnd.rounds === 'number'
+                  ? ` · ${message.turnEnd.rounds} round${message.turnEnd.rounds === 1 ? '' : 's'}`
+                  : ''}
+                <span className="ml-1 opacity-60 group-open:hidden">
+                  · why?
+                </span>
+              </summary>
+              <div className="mt-1 space-y-0.5">
+                {turnEndRemedy(message.turnEnd.reason ?? '') ? (
+                  <div data-testid="turn-end-remedy">
+                    {turnEndRemedy(message.turnEnd.reason ?? '')}
+                  </div>
+                ) : null}
+                <div className="opacity-60">
+                  turn_end: {message.turnEnd.reason ?? 'no reason recorded'}
+                </div>
+              </div>
+            </details>
           </div>
         ) : null}
         {/* Audit A6: the skills and facts that went into THIS answer, plus the

@@ -223,7 +223,7 @@ never to silence a finding.
 - Config / aliases / fallback: `data/config.json` (atomic rewrite).
 - Sessions: **SQLite SoT** (`memory_store.save_workbench_session_sot`); optional
   JSON export.
-- Memory / audit / graph / vector: `data/august_brain.sqlite`.
+- Memory / audit / kv / episodes: `data/august_brain.sqlite` (no graph or vector tables — removed in v10).
 - Config mutations: `memory_store.record_config_audit` (and related audit APIs).
 
 ### Datetimes

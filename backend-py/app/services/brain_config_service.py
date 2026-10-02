@@ -84,6 +84,17 @@ numKeys: tuple[str, ...] = (
     'subagentMaxDepth',
     'subagentMaxChildrenPerTurn',
     'subagentFanoutRoundBudget',
+    # Runaway backstop: a turn whose calls vary forever (a DIFFERENT
+    # tool_describe / brain_query / search every round) never trips the stall
+    # counter, because argument novelty resets it by design. These two are the
+    # only bound on that shape, and they count WORLD DELTA alone. Both default
+    # to OFF (absent/0), and both must be settable through this table or the
+    # feature AGENTS.md documents is unreachable: loop/guards.py reads the
+    # camelCase keys off the config, and a key absent from fieldTable is both
+    # rejected by validatePatch and dropped by _snakeToCamel, so a hand-edited
+    # config.json value was discarded before the guard could see it.
+    'runawayNudgeRounds',
+    'runawayStopRounds',
 )
 floatKeys: tuple[str, ...] = ('flagRateCap',)
 strKeys: tuple[str, ...] = ('titleModel', 'skillLearning', 'skillLearningJudgeModel')
@@ -116,6 +127,11 @@ subagentFanoutRoundBudgetRange = (0, 2000)
 budgetSoftUsdRange = (0, 10_000)
 budgetSoftTokensRange = (0, 50_000_000)
 budgetWallClockSecRange = (0, 86_400)  # 24h
+# Runaway-backstop thresholds. 0 = not armed (shipped state). The guard itself
+# clamps nudge into [0, stop-1] (loop/guards.py:_runawayBudget), so a nudge at or
+# past the stop is not rejected here — it is normalized at read, and the UI
+# shows the resolved pair.
+runawayRoundsRange = (0, 100_000)
 # Mirrors the clamp in consolidation._sweep_usage (`max(30, min(3650, days))`)
 # exactly, so the API door cannot accept a value the sweep then silently
 # rewrites behind the caller's back.
@@ -147,6 +163,15 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('budgetSoftUsd', 'budget_soft_usd', 0, 'num'),
     ('budgetSoftTokens', 'budget_soft_tokens', 0, 'num'),
     ('budgetWallClockSec', 'budget_wall_clock_sec', 0, 'num'),
+    # Runaway backstop thresholds. ABSENT = off, and `_snakeToCamel` builds the
+    # runtime config from `_defaultsCamel()`, so the default here must not be a
+    # number the guard would read as "configured". loop/guards.py uses -1 as its
+    # "unset" sentinel and falls the nudge back to RUNAWAY_NUDGE_ROUNDS when it
+    # is negative — registering these as 0 made that fallback unreachable and
+    # turned "set only a hard stop" into a silent kill at round 40 with no
+    # warning. The default is None so an unarmed key is genuinely ABSENT.
+    ('runawayNudgeRounds', 'runaway_nudge_rounds', None, 'num'),
+    ('runawayStopRounds', 'runaway_stop_rounds', None, 'num'),
     # Evidence-driven routing introspection: `autoRoute` /
     # `autoRouteMinWinRate` / `autoRouteWinGap` are REMOVED — no turn-loop
     # reader ever existed (the "auto-routing" claim was corrected in Part 25
@@ -446,6 +471,12 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 lo, hi = budgetWallClockSecRange
             elif key == 'usageRetentionDays':
                 lo, hi = usageRetentionDaysRange
+            elif key in ('runawayNudgeRounds', 'runawayStopRounds'):
+                # 0 is the OFF sentinel and must stay writable or an armed
+                # backstop could never be disarmed. The ceiling is far above
+                # any real turn for the same reason the budget rungs are: a
+                # bound that can never be reached is a silently dead knob.
+                lo, hi = runawayRoundsRange
             else:
                 lo, hi = maxWorkbenchLoopsRange
             if value < lo or value > hi:

@@ -39,6 +39,24 @@ _MAX_DEPTH_DEFAULT = 6
 _ACTIONS = ('click', 'double_click', 'right_click', 'type', 'focus')
 
 
+def _policyRefusal() -> dict[str, Any] | None:
+    """Per-app policy verdict for a mutating UIA action, or None to proceed."""
+    try:
+        from app.services.computer_use_policy import enforceSync
+
+        return enforceSync('ui_act')  # type: ignore[return-value]
+    except Exception:
+        # Fail to the documented default rather than permit: a policy layer that
+        # cannot decide must not become a policy layer that says yes.
+        logging.getLogger(__name__).debug('uia policy check failed; refusing', exc_info=True)
+        return {
+            'ok': False,
+            'error': 'Computer-use policy could not be checked; refusing to act.',
+            'policy': 'ask',
+            'action': 'ui_act',
+        }
+
+
 def available() -> bool:
     """True when the uiautomation package is importable on Windows."""
     global _mod, _tried
@@ -179,12 +197,23 @@ def describe_tree(
 
 def act(ref: int, action: str = 'click', text: str = '') -> dict[str, Any]:
     """Perform ``action`` on the element captured under ``ref`` by the last
-    tree walk. Stale handles come back as an explicit re-read receipt."""
+    tree walk. Stale handles come back as an explicit re-read receipt.
+
+    This drives the REAL foreground window through UIA (``ctl.Click()`` /
+    ``SendKeys``) and never touches :mod:`app.services.desktop_automation`, so
+    without the gate below it was the one desktop-mutating entry point no
+    per-app policy applied to. The gate is the same one the pyautogui
+    primitives use, and it runs BEFORE any handle lookup so a denied app cannot
+    even be resolved.
+    """
     if not available():
         return dict(_UNAVAILABLE)
     act_norm = (action or 'click').strip().lower()
     if act_norm not in _ACTIONS:
         return {'ok': False, 'error': f'unknown action {action!r} (use one of {_ACTIONS})'}
+    refusal = _policyRefusal()
+    if refusal is not None:
+        return refusal
     ctl = _refs.get(int(ref or 0))
     if ctl is None:
         return {

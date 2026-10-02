@@ -50,33 +50,74 @@ function installFetchPatch(): void {
   };
 }
 
-async function initBaseUrl(): Promise<void> {
-  if (isTauri) {
-    // Retry with backoff — first-launch bootstrap (venv + wheels) can take
-    // well over the old ~11s window before /api/health answers. Never guess
-    // 8085 here: the Rust supervisor may deliberately select 8086-8095 when
-    // the default port is occupied, and a guessed URL silently targets the
-    // wrong process (or the Vite asset origin).
-    for (let i = 0; i < 120; i++) {
-      try {
-        const status: string = await invoke<string>('proxy_status');
-        if (status.startsWith('ok:')) {
-          baseUrl = `http://127.0.0.1:${status.split(':')[1]}`;
-          installFetchPatch();
-          return;
-        }
-      } catch {
-        // The backend may be between process launches; keep polling.
+/** Attempts per discovery run, and the settled promise for the current one. */
+const DISCOVERY_ATTEMPTS = 120;
+
+/* Discovery must be RECOVERABLE.
+ *
+ * This used to be `const ready = initBaseUrl()` — one promise, one shot. A
+ * first launch or post-update re-materialization slower than ~3 minutes (its
+ * own overlay says "can take 1-2 minutes"; a cold AV scan or a slow disk blows
+ * past it) rejected it FOREVER: `const` cannot be reassigned, so every
+ * `await ready` in whenReady/apiUrl/wsUrl rejected from then on and
+ * installFetchPatch never ran, meaning every relative /api fetch went to the
+ * Tauri asset origin. Meanwhile BackendBootstrapGate polls `proxy_status` on
+ * its own 1s interval and reveals the app anyway — so the user got a fully
+ * mounted UI against a dead API layer, with restart as the only way out.
+ *
+ * A settled promise is now CACHED, and a failed run is DISCARDED so the next
+ * caller retries discovery rather than inheriting a dead promise. */
+let readyPromise: Promise<void> | null = null;
+let resolvedBaseUrl: string | null = null;
+
+async function discoverBaseUrl(): Promise<void> {
+  // Browser/Vite mode uses the same-origin proxy: there is no supervisor to
+  // poll and `invoke` does not exist. Resolve immediately (as `baseUrl` stays
+  // null, so rewriteApiUrl is a pass-through).
+  if (!isTauri) return;
+
+  // Retry with backoff — first-launch bootstrap (venv + wheels) can take
+  // well over the old ~11s window before /api/health answers. Never guess
+  // 8085 here: the Rust supervisor may deliberately select 8086-8095 when
+  // the default port is occupied, and a guessed URL silently targets the
+  // wrong process (or the Vite asset origin).
+  for (let i = 0; i < DISCOVERY_ATTEMPTS; i++) {
+    try {
+      const status: string = await invoke<string>('proxy_status');
+      if (status.startsWith('ok:')) {
+        resolvedBaseUrl = `http://127.0.0.1:${status.split(':')[1]}`;
+        baseUrl = resolvedBaseUrl;
+        installFetchPatch();
+        return;
       }
-      // Linear backoff capped: 250ms → 1.5s — about three minutes worst case.
-      await new Promise((r) => setTimeout(r, Math.min(250 * (i + 1), 1500)));
+    } catch {
+      // The backend may be between process launches; keep polling.
     }
-    throw new Error('August backend did not become ready');
+    // Linear backoff capped: 250ms → 1.5s — about three minutes worst case.
+    await new Promise((r) => setTimeout(r, Math.min(250 * (i + 1), 1500)));
   }
-  // Browser/Vite mode uses the same-origin proxy.
+  throw new Error('August backend did not become ready');
 }
 
-const ready = initBaseUrl();
+function ensureReady(): Promise<void> {
+  if (!readyPromise) {
+    readyPromise = discoverBaseUrl().catch((err) => {
+      // Do not cache the failure: the next caller (a later mount, a retry, the
+      // gate's own health poll resolving) must get a fresh attempt.
+      readyPromise = null;
+      throw err;
+    });
+  }
+  return readyPromise;
+}
+
+/** Discard a failed discovery so the next caller retries. Used by the bootstrap
+ *  gate when it observes the proxy come up after discovery gave up. */
+export function resetDiscovery(): void {
+  readyPromise = null;
+}
+
+const ready = ensureReady();
 
 /** Await by modules that make raw fetch calls (e.g. gateway health poll). */
 export async function whenReady(): Promise<string | null> {

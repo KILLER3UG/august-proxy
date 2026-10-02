@@ -3,7 +3,7 @@
  *
  * `eslint . --max-warnings=600` is a ceiling that never lowers: 600 warnings
  * is as acceptable on day one as on day one-hundred. This script compares the
- * CURRENT warning count against frontend/desktop/lint-budget.json and fails
+ * CURRENT warning count against scripts/lint-budget.json and fails
  * when it is WORSE; a PR that lowers the count lowers the budget with it.
  *
  *   node scripts/lint-ratchet.mjs            # enforce
@@ -59,7 +59,19 @@ if (UPDATE) {
   process.exit(0);
 }
 
-const budget = existsSync(BUDGET) ? JSON.parse(readFileSync(BUDGET, 'utf8')).warnings : warnings;
+// A guard that cannot measure is a guard that is always green — the sibling
+// coverage-ratchet states the rule and exits 2 on a missing report. A deleted
+// or renamed budget file must fail loudly, not adopt the current count as its
+// own ceiling.
+if (!existsSync(BUDGET)) {
+  console.error(
+    `[lint-ratchet] FAIL — ${BUDGET} is missing, so there is nothing to compare against.\n` +
+      `Run: node scripts/lint-ratchet.mjs --update`,
+  );
+  process.exit(2);
+}
+
+const budget = JSON.parse(readFileSync(BUDGET, 'utf8')).warnings;
 if (warnings <= budget) {
   console.log(`[lint-ratchet] ok — ${warnings} warnings (budget ${budget})`);
   if (warnings < budget) {

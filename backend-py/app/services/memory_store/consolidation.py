@@ -782,6 +782,18 @@ def _skill_catalogue() -> list[dict[str, Any]]:
         name = str(s.get('name') or '').strip()
         if not name:
             continue
+        # Usage lives in the per-skill sidecar, and `list_all`'s parse does NOT
+        # return it — reading it off the catalogue row reported every skill as
+        # `used=0 last=never` forever, which is the evidence a judge is asked to
+        # act on when it proposes a `skill_delete`. Use the one documented
+        # reader, same as the mechanical retire path below.
+        try:
+            usage = skill_service.read_skill_usage(name)
+            used_count = as_int(usage.get('count'), 0)
+            last_used = str(usage.get('lastUsed') or '')
+        except Exception:
+            logger.debug('skill review: usage read failed for %r', name, exc_info=True)
+            used_count, last_used = 0, ''
         out.append(
             {
                 'name': name,
@@ -790,8 +802,8 @@ def _skill_catalogue() -> list[dict[str, Any]]:
                 'category': str(s.get('category') or 'uncategorized'),
                 'scope': str(s.get('scope') or ''),
                 'enabled': bool(s.get('enabled', True)),
-                'usageCount': as_int(s.get('usage_count') or s.get('usageCount'), 0),
-                'lastUsed': str(s.get('last_used') or s.get('lastUsed') or ''),
+                'usageCount': used_count,
+                'lastUsed': last_used,
             }
         )
     return out[:_SKILL_REVIEW_MAX]

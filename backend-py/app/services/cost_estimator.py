@@ -34,17 +34,21 @@ import math
 import os
 from dataclasses import dataclass
 
-# (model-id substrings, input $/1M, output $/1M) — descending specificity so
-# the first match wins. Rates are public list prices, best-effort: anything
-# resolved from this table is reported as `estimated`.
+# (model-id substrings, input $/1M, output $/1M). Rows are ordered NARROWEST
+# FIRST and the lookup takes the FIRST substring hit, so `gpt-4o-mini` must
+# precede `gpt-4o` or the cheap model is billed at the flagship rate. The order
+# is load-bearing; `_tableRates` asserts it so a future row cannot silently
+# invert it. Rates are public list prices, best-effort: anything resolved from
+# this table is reported as `estimated`.
 _MODEL_PRICES: tuple[tuple[tuple[str, ...], float, float], ...] = (
     (('claude-opus', 'claude-4'), 15.0, 75.0),
-    (('claude-sonnet', 'claude-3-5-sonnet'), 3.0, 15.0),
     (('claude-3-7-sonnet',), 3.0, 15.0),
+    (('claude-sonnet', 'claude-3-5-sonnet'), 3.0, 15.0),
     (('claude-haiku', 'claude-3-5-haiku', 'claude-3-haiku'), 1.0, 5.0),
     (('gpt-5',), 1.25, 10.0),
-    (('gpt-4o', 'gpt-4.1', 'gpt-4-turbo'), 2.5, 10.0),
+    # Narrow before broad: every `-mini` row precedes the family it belongs to.
     (('gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4-mini'), 0.15, 0.6),
+    (('gpt-4o', 'gpt-4.1', 'gpt-4-turbo'), 2.5, 10.0),
     (('o1', 'o3', 'o4'), 5.0, 20.0),
     (('deepseek-chat', 'deepseek-v3'), 0.27, 1.1),
     (('deepseek-reasoner', 'deepseek-r1'), 0.55, 2.19),
@@ -162,6 +166,27 @@ def _specificity(entry: tuple[float | None, float | None, bool]) -> int:
     if entry[0] is not None or entry[1] is not None:
         return 2
     return 1 if entry[2] else 0
+
+
+def _assertNarrowestFirst() -> None:
+    """Guard the load-bearing table order: a row must never be reachable through
+    an earlier row's substring. `gpt-4o-mini` behind `gpt-4o` priced a cheap
+    model at ~16x; nothing else in the file would have caught it."""
+    for i, (prefixes, _in, _out) in enumerate(_MODEL_PRICES):
+        for earlier in _MODEL_PRICES[:i]:
+            # Shadowing: when a key of an EARLIER row is a substring of a key of
+            # this later row, that model matches the earlier row first and the
+            # later row is unreachable. (`gpt-4o` before `gpt-4o-mini` = the
+            # 16x mis-price.) The reverse — a narrow key first — is exactly what
+            # this table is ordered for.
+            if any(lower in p for lower in earlier[0] for p in prefixes):
+                raise AssertionError(
+                    f'_MODEL_PRICES row {i} ({prefixes[0]}) is shadowed by an earlier row '
+                    f'({earlier[0][0]}); put the narrower key first'
+                )
+
+
+_assertNarrowestFirst()
 
 
 def _tableRates(model_id: str) -> tuple[float, float, str]:

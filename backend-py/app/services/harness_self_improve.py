@@ -129,10 +129,11 @@ def _introspect_tools(out: dict[str, Any]) -> None:
 def _introspect_skills(out: dict[str, Any]) -> None:
     try:
         from app.services import skill_service
+        from app.services.capabilities_prompt import _EVOLVING_CREATED_BY
 
         catalogue = skill_service.catalogue()
         evolving = sum(
-            1 for s in catalogue if as_str(s.get('created_by'), '') in ('agent', 'auto-gen')
+            1 for s in catalogue if as_str(s.get('created_by'), '') in _EVOLVING_CREATED_BY
         )
         long_descs = [
             f"{as_str(s.get('name'))}({len(as_str(s.get('description'), ''))}ch)"
@@ -498,16 +499,18 @@ def _skill_frontmatter(
     supersedes: str = '',
     status: str = 'active',
     keywords: list[str] | None = None,
+    disabled: bool = False,
 ) -> str:
     """Learned-skill frontmatter with Part 16 Phase D provenance:
     origin (human|distilled|amended), learned_from (episode ids), version,
     status, and the supersedes lineage stamp.
 
-    ``status`` and ``keywords`` are carried from the file this write replaces:
-    this render REPLACES the whole frontmatter block, so a field the caller
-    does not restate is gone. ``keywords`` is the P2#15 search-keyword list,
-    and ``status`` is the P2#13 lifecycle label — both are properties of the
-    skill, not of one proposal."""
+    ``status``, ``keywords`` and ``disabled`` are carried from the file this
+    write replaces: this render REPLACES the whole frontmatter block, so a
+    field the caller does not restate is gone. ``keywords`` is the P2#15
+    search-keyword list, ``status`` the P2#13 lifecycle label, and ``disabled``
+    the enablement flag — all properties of the skill, not of one proposal.
+    Dropping the last one resurrects a retired skill."""
     lines = ['---', f'name: {name}', f'description: "{description}"']
     if trigger:
         lines.append(f'trigger: {trigger}')
@@ -519,6 +522,11 @@ def _skill_frontmatter(
         f'version: {version}',
         f'status: {status or "active"}',
     ]
+    # Enablement is a property of the SKILL, not of one proposal, and this
+    # render replaces the whole block — omit it and an approved text patch on a
+    # disabled/retired skill re-enables it with no signal.
+    if disabled:
+        lines.append('disabled: true')
     if supersedes:
         lines.append(f'supersedes: {supersedes}')
     rendered_keywords = render_keywords(keywords or [])
@@ -650,6 +658,13 @@ def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
         # A retired skill that gets a new body is back in service — an
         # approved patch is the explicit act of reviving it.
         status = as_str(prior.get('status'), '') or 'active'
+        # `disabled` is the one field whose loss is INVISIBLE and functional:
+        # setEnabled writes exactly `disabled: true`, supersession retires a v1
+        # with it, and _parseSkill keys enablement off it — so a patch that
+        # restated nothing would silently put a retired skill back into
+        # <capabilities>, <relevant_skills> and the intake line. The render
+        # below REPLACES the whole frontmatter block, so carry it explicitly.
+        disabled = as_str(prior.get('disabled'), '').strip().lower() in ('true', '1', 'yes')
         try:
             from app.services.skill_service import parse_keywords
 
@@ -684,6 +699,7 @@ def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
             supersedes=supersedes,
             status=status,
             keywords=keywords,
+            disabled=disabled,
         )
         content = frontmatter + normalized
         # P2#13: preserve the file this write replaces before it lands.

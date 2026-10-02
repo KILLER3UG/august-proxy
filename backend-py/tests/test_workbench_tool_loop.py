@@ -1186,6 +1186,9 @@ class TestContextPressureSections:
             'skillsBytes',
             'stateBytes',
             'nudgeBytes',
+            # The workspace file map moved here from the system block so its
+            # 120 s TTL could no longer bust the provider prefix cache.
+            'workspaceMapBytes',
             'skillsByName',
         }
         numbers = {k: v for k, v in sections.items() if k != 'skillsByName'}

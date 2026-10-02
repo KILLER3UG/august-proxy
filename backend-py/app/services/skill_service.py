@@ -280,11 +280,21 @@ def _validateName(name: str) -> None:
         raise SkillValidationError('Skill name must match ^[a-z0-9][a-z0-9._-]*$ (lowercase, dotted/hyphenated).')
 
 
-def _validateDescription(description: str) -> None:
+def _validateDescription(description: str, *, allow_long: bool = False) -> None:
+    """Reject a description that would bloat the BM25 index.
+
+    ``allow_long`` is for a patch that is NOT changing the description: the UI
+    prefills the form from the stored value and resubmits it, so every shipped
+    skill whose description was authored before the cap (5 of the 6 bundled
+    ones run 126–168 chars) became unsaveable — Settings → Edit → Save always
+    failed, even to change only the body. Truncating the durable text would
+    lose the operator's words; rejecting it just blocks the edit. The cap still
+    applies to every description the writer actually changes.
+    """
     if not description:
         raise SkillValidationError('Skill description is required.')
     desc = description.strip()
-    if len(desc) > _DESCRIPTIONMax:
+    if len(desc) > _DESCRIPTIONMax and not allow_long:
         raise SkillValidationError(f'Skill description exceeds {_DESCRIPTIONMax} chars (got {len(desc)}).')
     lowered = desc.lower()
     found = [w for w in _MARKETINGWords if w in lowered]
@@ -1093,7 +1103,13 @@ def patchSkill(
     if not existing:
         raise SkillValidationError(f"Skill '{name}' not found.")
     if description is not None:
-        _validateDescription(description)
+        # Only relax the length cap when this patch is resubmitting the value
+        # already on file (the UI round-trips it). A genuinely NEW long
+        # description is still refused, so the index cap still holds.
+        _validateDescription(
+            description,
+            allow_long=description.strip() == str(existing.get('description') or '').strip(),
+        )
     wsStr = str(workspace or '').strip()
     inProject = False
     md = None

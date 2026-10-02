@@ -199,7 +199,16 @@ class BasePlatformAdapter(ABC):
             return
         if cmd in {'stop', 'reset'}:
             await self._bridge.cancelRunning(sessionKey)
-            await self.sendMessage(event.source.chat_id, 'Stopped.')
+            # cancelRunning only cancels the in-flight turn; anything queued
+            # behind it would be picked up by _turnAndDrain and billed as more
+            # full turns after we told the user it stopped.
+            dropped = len(self._pending.pop(sessionKey, []) or [])
+            if dropped:
+                await self.sendMessage(
+                    event.source.chat_id, f'Stopped. Discarded {dropped} queued message(s).'
+                )
+            else:
+                await self.sendMessage(event.source.chat_id, 'Stopped.')
         elif cmd == 'new':
             await self._bridge.cancelRunning(sessionKey)
             await self._bridge.resetSession(sessionKey)

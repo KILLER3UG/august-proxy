@@ -219,27 +219,45 @@ class ProviderResponse:
         return quota_observations.record_headers(self.headers, provider=provider, model=model)
 
 
+# Ranges charged at the wide rate (~1.5 chars/token) by
+# estimateStringTokens. DERIVED mechanically from the original per-character
+# loop's four conditions — CJK punctuation + Hiragana/Katakana (0x3000-0x30FF),
+# CJK Extension A, CJK Unified Ideographs, Hangul syllables, and
+# halfwidth/fullwidth forms. Re-deriving them by eye produced ranges the loop
+# never had, so a test pins the two implementations to identical output.
+_WIDE_RANGES: tuple[tuple[int, int], ...] = (
+    (0x3000, 0x30FF),
+    (0x3400, 0x4DBF),
+    (0x4E00, 0x9FFF),
+    (0xAC00, 0xD7AF),
+    (0xFF00, 0xFFEF),
+)
+# Map every wide char to None so one translate pass DELETES everything else and
+# leaves only the wide characters — `len()` of the result is exactly the wide
+# count. Only the wide keys are needed (absent keys pass through untouched).
+_WIDE_CHAR_TABLE: dict[int, None] = {cp: None for lo, hi in _WIDE_RANGES for cp in range(lo, hi + 1)}
+
+
 def estimateStringTokens(s: str | None) -> int:
     """Estimate token count for a string using character heuristics.
 
     ASCII: ~4 chars/token, CJK/wide: ~1.5 chars/token.
+
+    Wide-character counting is one C-level `str.translate` pass rather than a
+    per-character Python loop. The loop cost four range comparisons for EVERY
+    character of the whole transcript, on the event loop, once per turn and once
+    more for the last 80 messages — tens to hundreds of milliseconds at a few
+    hundred kB, added to time-to-first-token and freezing every concurrent SSE
+    stream meanwhile. `translate` maps each wide char to itself and everything
+    else to None, so `len()` of the result IS the wide count.
     """
     if not s:
         return 0
-    tokens = 0.0
-    for ch in s:
-        code = ord(ch)
-        if 19968 <= code <= 40959 or 13312 <= code <= 19903 or 12288 <= code <= 12351:
-            tokens += 0.67
-        elif 65280 <= code <= 65519:
-            tokens += 0.67
-        elif 12352 <= code <= 12447 or 12448 <= code <= 12543:
-            tokens += 0.67
-        elif 44032 <= code <= 55215:
-            tokens += 0.67
-        else:
-            tokens += 0.25
-    return max(1, int(tokens + 0.999))
+    # Mapping the wide chars to None DELETES them, so the result length is the
+    # NON-wide count; the wide count is the remainder.
+    nonWide = len(s.translate(_WIDE_CHAR_TABLE))
+    wide = len(s) - nonWide
+    return max(1, int(nonWide * 0.25 + wide * 0.67 + 0.999))
 
 
 def estimateMessageTokens(msg: dict[str, object]) -> int:

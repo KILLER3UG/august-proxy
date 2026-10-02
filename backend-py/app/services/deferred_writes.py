@@ -54,10 +54,24 @@ def _commit(conn: sqlite3.Connection) -> None:
     try:
         if conn.in_transaction:
             conn.commit()
+            _noteCheckpoint()
     except sqlite3.ProgrammingError:
         pass  # closed between defer and flush — nothing to persist
     except Exception:
         logger.debug('deferred commit failed', exc_info=True)
+
+
+def _noteCheckpoint() -> None:
+    """Fold the WAL into the database file periodically. The packaged desktop
+    quit is `taskkill /T /F`, so main.py's lifespan flushes never run — without
+    this, everything since the last clean close is only in the `-wal` sidecar.
+    Best-effort: never raises into the write path."""
+    try:
+        from app.services.memory_conn import note_commit
+
+        note_commit()
+    except Exception:
+        logger.debug('wal checkpoint note failed', exc_info=True)
 
 
 def _flush_key(key: int) -> None:

@@ -227,6 +227,7 @@ def tailSectionSizes(
     state: str | None,
     nudge: str | None,
     skillsByName: dict[str, int] | None = None,
+    workspace_map: str | None = None,
 ) -> dict[str, object]:
     """Byte size of each volatile per-turn tail block, for the context meter.
 
@@ -244,6 +245,9 @@ def tailSectionSizes(
         'skillsBytes': len((skills or '').encode('utf-8')),
         'stateBytes': len((state or '').encode('utf-8')),
         'nudgeBytes': len((nudge or '').encode('utf-8')),
+        # The workspace map moved here from the system block so its TTL can no
+        # longer bust the provider prefix cache.
+        'workspaceMapBytes': len((workspace_map or '').encode('utf-8')),
         # Which skill cost what — same pass that built the block, so the two
         # can never disagree about what was injected.
         'skillsByName': {
@@ -1011,18 +1015,6 @@ def buildSystemPrompt(
             ws.append(f'vcs: {vcsInfo}')
         if whatsNew:
             ws.append(whatsNew)
-        # Environment bootstrapping: the workdir
-        # file map rides in the first prompt so the model navigates by map
-        # instead of spending 2–5 exploration turns guessing paths.
-        try:
-            from app.services.workbench.code_map import build_code_map
-
-            codeMap = build_code_map(workspacePath)
-            if codeMap:
-                ws.append('map: |')
-                ws.extend('  ' + ln for ln in codeMap.splitlines())
-        except Exception:
-            logger.debug('prompt: code map build failed', exc_info=True)
         ws.append('</workspace>')
         parts.append('\n'.join(ws))
         if augMdBody:
@@ -1109,8 +1101,14 @@ def buildSystemPrompt(
         if caps:
             parts.append(f'<capabilities>\n{caps}\n</capabilities>')
     # Conditional policy blocks: only when the matching tools are offered.
-    # CLARIFY stays unconditional — submit_clarify is intercepted by the turn
-    # loop, not registered, so the model only learns it from this block.
+    # CLARIFY stays unconditional. The stated reason was WRONG and has been
+    # corrected by tests/test_prompt_instruction_honesty.py: `submit_clarify`
+    # IS registered (tool_registrations/system_tools.py:498, asserted by
+    # test_part27_fixes.py) as well as loop-intercepted. So this block is not
+    # the model's only source of the schema, and on a bare/reduced surface
+    # `submit_clarify` is in neither _BARE_TOOL_ALLOW nor AUGUST_CORE_TOOLS —
+    # an instruction naming a tool that surface cannot call. It is left
+    # ungated deliberately for now; gating it on `offeredTools` is the fix.
     parts.append(_seg_cache.CLARIFY_BLOCK)
     if offeredTools & {
         'bulk',
@@ -2981,16 +2979,41 @@ async def _sendWorkbenchMessageStreamImpl(
                 _userText, _wsForTail or None, _session_scope.bot_agent_id(_turnScope)
             )
             _nudgeBlock = memory_nudge_block(session, _memWritesOn)
+            # The workdir file map used to ride INSIDE <workspace> in the
+            # system block. Its builder has a 120 s TTL by design (a bounded
+            # walk + stat of the workspace on every prompt build is too
+            # expensive), so any TTL expiry changed a byte inside the
+            # prefix-cached system block and forced a cold re-read of the
+            # whole system block + tools + history. Moving it to the per-turn
+            # tail is what the reference harnesses do: Hermes pins its
+            # workspace block per session, oh-my-pi keeps no workspace
+            # snapshot in the prompt at all, and only a cached prefix that
+            # never changes mid-session can actually be cached.
+            _mapBlock = ''
+            if _wsForTail:
+                try:
+                    from app.services.workbench.code_map import build_code_map
+
+                    _codeMap = build_code_map(_wsForTail)
+                    if _codeMap:
+                        _mapBlock = '<workspace_map>\n' + _codeMap + '\n</workspace_map>'
+                except Exception:
+                    logger.debug('prompt: code map build failed', exc_info=True)
             # Per-turn <session_state> carries the volatile
             # session fields purged from the (now byte-stable) system prompt.
             _stateBlock = _sessionStateBlock(session)
             _tailBlocks = '\n\n'.join(
                 b
-                for b in (_memoryBlock, _skillsBlock, _stateBlock, _nudgeBlock)
+                for b in (_memoryBlock, _skillsBlock, _mapBlock, _stateBlock, _nudgeBlock)
                 if b
             )
             _contextSections = tailSectionSizes(
-                _memoryBlock, _skillsBlock, _stateBlock, _nudgeBlock, _skillsDetail
+                _memoryBlock,
+                _skillsBlock,
+                _stateBlock,
+                _nudgeBlock,
+                _skillsDetail,
+                _mapBlock,
             )
             if _tailBlocks:
                 _patched = dict(_userMsg)
@@ -6501,7 +6524,18 @@ async def execute_approved_mutation(
                     pass
     except Exception:
         logger.debug('checkpoint before approved mutation failed', exc_info=True)
-    result = await _executeTool(tool_name, args, session)
+    # A human just approved THIS call. Desktop actions additionally consult the
+    # per-app computer-use policy at the primitive, and the window in front may
+    # have changed since the prompt was raised — re-evaluating would either
+    # re-prompt forever or act on the wrong target. The flag is consumed by the
+    # gate (one approval, one action).
+    from app.services.computer_use_policy import clearApproved, markApproved
+
+    approvalToken = markApproved()
+    try:
+        result = await _executeTool(tool_name, args, session)
+    finally:
+        clearApproved(approvalToken)
     try:
         recordMutation(session, tool_name, args, result)
     except Exception:

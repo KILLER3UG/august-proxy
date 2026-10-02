@@ -24,6 +24,26 @@ _TIMEOUT_MS = 10000
 # _WAL_RETRY_ATTEMPTS * _WAL_RETRY_S ≈ 1s.
 _WAL_RETRY_ATTEMPTS = 20
 _WAL_RETRY_S = 0.05
+# Durability must not depend on a graceful exit. The packaged desktop quit is
+# `taskkill /T /F`, so main.py's lifespan shutdown tail never runs and whatever
+# is still only in the `-wal` sidecar is what survives a power cut. A PASSIVE
+# checkpoint folds the WAL back into the database file so the loss window is
+# bounded rather than "everything since the last clean close". PASSIVE never
+# blocks or waits on a reader, so it is safe to interleave with normal traffic;
+# it is best-effort and failures are ignored, because a checkpoint optimises
+# durability rather than constituting a write.
+#
+# SCOPE — read this before relying on it. The counter is driven from
+# `deferred_writes._commit()`, which is the funnel for the DEFERRED write lane
+# only. Most brain writes still call `conn.commit()` directly (facts, messages,
+# episodes, consolidation), so for those the WAL is checkpointed only when some
+# other lane happens to trigger one. This narrows the exposure; it does not
+# eliminate it. Closing that properly means routing every commit through one
+# `memory_conn.commit(conn)` helper — a much wider change, deliberately not
+# smuggled in here.
+_CHECKPOINT_EVERY_N_WRITES = 50
+_writes_since_checkpoint: dict[int, int] = {}
+_CHECKPOINT_LOCK = threading.Lock()
 _local = threading.local()
 _dual_root_warned = False
 
@@ -165,6 +185,29 @@ def _register_live(c: sqlite3.Connection, path: Path) -> None:
         }
 
 
+def note_commit() -> None:
+    """Call after a committed write on a brain connection; folds the WAL back
+    into the database file every ``_CHECKPOINT_EVERY_N_WRITES`` writes.
+
+    Best-effort by construction: a checkpoint that fails loses nothing that the
+    next one would not recover, so it must never raise into the write path.
+    """
+    tid = threading.get_ident()
+    with _CHECKPOINT_LOCK:
+        count = _writes_since_checkpoint.get(tid, 0) + 1
+        if count < _CHECKPOINT_EVERY_N_WRITES:
+            _writes_since_checkpoint[tid] = count
+            return
+        _writes_since_checkpoint[tid] = 0
+    c = getattr(_local, 'conn', None)
+    if c is None:
+        return
+    try:
+        c.execute('PRAGMA wal_checkpoint(PASSIVE)')
+    except Exception:
+        pass
+
+
 def conn() -> sqlite3.Connection:
     """Get a thread-local connection to the brain database."""
     if not hasattr(_local, 'conn') or _local.conn is None:
@@ -189,3 +232,5 @@ def close() -> None:
         _local.conn = None
     with _LIVE_LOCK:
         _LIVE.pop(threading.get_ident(), None)
+    with _CHECKPOINT_LOCK:
+        _writes_since_checkpoint.pop(threading.get_ident(), None)

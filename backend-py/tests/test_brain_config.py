@@ -30,6 +30,12 @@ _ALLCamelKeys = {
     'budgetSoftUsd',
     'budgetSoftTokens',
     'budgetWallClockSec',
+    # Runaway backstop thresholds (each 0 = not armed). These two were readable
+    # by loop/guards.py but absent from fieldTable, so validatePatch 400'd a
+    # PUT naming them and _snakeToCamel dropped a hand-edited config.json value
+    # — the documented backstop had no door. See brain_config_service.numKeys.
+    'runawayNudgeRounds',
+    'runawayStopRounds',
     # Routing introspection: autoRoute/MinWinRate/WinGap are
     # removed — no turn-loop reader ever existed; MinSamples stays for the
     # harness flow map.

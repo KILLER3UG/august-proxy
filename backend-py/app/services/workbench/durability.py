@@ -45,6 +45,12 @@ _TAIL_MARKERS = (
     '\n\n<relevant_skills',
     '\n\n<session_state',
     '\n\n<memory_nudge',
+    # The workspace file map joined the tail when it moved OUT of the
+    # prefix-cached system block. This list is the FALLBACK strip path, used
+    # when a message has lost its `_tailFrom` marker (e.g. an older producer,
+    # or `as_int` returning -1). Omitting <workspace_map here meant such a
+    # message persisted its whole file map into history, permanently.
+    '\n\n<workspace_map',
 )
 
 

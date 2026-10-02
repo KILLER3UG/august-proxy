@@ -29,8 +29,17 @@ def test_absent_blocks_report_measured_zero():
         'skillsBytes': 0,
         'stateBytes': 0,
         'nudgeBytes': 0,
+        'workspaceMapBytes': 0,
         'skillsByName': {},
     }
+
+
+def test_the_workspace_map_is_accounted_for_separately():
+    """The map moved here from the system block; its TTL must not read as free."""
+    body = '<workspace_map>\nFiles: a.py\n</workspace_map>'
+    sizes = tailSectionSizes(None, None, None, None, None, body)
+    assert sizes['workspaceMapBytes'] == len(body.encode('utf-8'))
+    assert sizes['memoryBytes'] == 0
 
 
 def test_skill_detail_drops_anonymous_and_zero_entries():

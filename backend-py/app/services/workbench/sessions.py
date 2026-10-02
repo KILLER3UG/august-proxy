@@ -136,7 +136,10 @@ class WorkbenchSession:
     # Frozen (vcs, recent-commits) strings from the session's first
     # buildSystemPrompt(): the <workspace> block embeds them in the cached
     # prompt prefix, and re-probing would re-render the block after every
-    # commit or dirty flip. RAM-only — never serialized.
+    # commit or dirty flip. RAM-only — never serialized. The workspace FILE MAP
+    # is deliberately NOT frozen here: it is TTL'd, so it rides the per-turn
+    # tail instead — freezing a 120 s TTL into the prefix would just move the
+    # same cache-bust to a different byte.
     _frozen_vcs: tuple[str, str] | None = None
     # Memory-habit nudge (2026-08-29): set at turn end when a substantial turn
     # (>= _MEMORY_NUDGE_MIN_ROUNDS tool rounds) saved no memory. The next

@@ -8,6 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { CircleX, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { isTauri } from '@/lib/tauri-detect';
+import { resetDiscovery } from '@/api/client';
 import { useBackendSetup, type BackendSetupPhase } from '@/hooks/useBackendSetup';
 import { LaunchConversation } from '@/components/overlays/LaunchConversation';
 import { Button } from '@/components/ui/button';
@@ -57,6 +58,12 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
       const up = status.startsWith('ok:');
       setProxyUp(up);
       if (up) {
+        // If api/client's own discovery already gave up (it caps at ~3 min),
+        // this gate's 1 s poll can be the thing that sees the backend come up
+        // later. Clear the cached rejection so the next whenReady() re-runs
+        // discovery and installs the fetch patch — otherwise the app reveals
+        // itself against a dead API layer with no recovery but a restart.
+        resetDiscovery();
         $gateway.set({ status: 'open', port: Number(status.split(':')[1]) || 8085, uptime: 0 });
       }
     } catch {

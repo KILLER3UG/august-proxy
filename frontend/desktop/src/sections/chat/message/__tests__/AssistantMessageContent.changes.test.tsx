@@ -91,15 +91,27 @@ describe('AssistantMessageContent — turn_end stop-reason badge', () => {
     expect(badge()).toBeNull();
   });
 
-  it('names a stalled stop in plain words, with the raw token in the tooltip', () => {
+  /* The badge grew a `<details>`: the raw token used to live in a `title`
+ * attribute, which is unreachable by keyboard and by touch, and a stop reason
+ * the user cannot act on is decoration. The label, the round count, the
+ * wording and the warning/error coloring are unchanged — those are the
+ * contracts worth keeping — but the detail is now visible text and every
+ * non-`finished` reason except `interrupted` also names its remedy. */
+const badgeLabel = (el: HTMLElement | null) =>
+  el?.querySelector('summary')?.textContent ?? '';
+
+  it('names a stalled stop in plain words, with the raw token visible on expand', () => {
     renderContent(
       { isLast: true, streaming: false },
       { turnEnd: { reason: 'stall-stop', rounds: 12, error: false } },
     );
     const el = badge();
-    expect(el?.textContent).toBe('stalled then stopped · 12 rounds');
-    expect(el?.getAttribute('title')).toBe('turn_end: stall-stop · 12 rounds');
+    expect(badgeLabel(el)).toContain('stalled then stopped · 12 rounds');
     expect(el?.className).toContain('text-warning');
+    // Raw token kept for the event log / turn_outcomes column.
+    expect(el?.textContent).toContain('turn_end: stall-stop');
+    // And it says what to do, not just what happened.
+    expect(screen.queryByTestId('turn-end-remedy')?.textContent).toMatch(/continue|narrow/i);
   });
 
   it('reads as a failure, not a stall, when the turn errored', () => {
@@ -111,21 +123,27 @@ describe('AssistantMessageContent — turn_end stop-reason badge', () => {
 
   it('singularizes one round', () => {
     renderContent({ isLast: true, streaming: false }, { turnEnd: { reason: 'cap', rounds: 1 } });
-    expect(badge()?.textContent).toBe('tool-round cap · 1 round');
+    expect(badgeLabel(badge())).toContain('tool-round cap · 1 round');
+    expect(badgeLabel(badge())).not.toContain('1 rounds');
   });
 
   it('omits the round count when the frame carried none', () => {
     renderContent({ isLast: true, streaming: false }, { turnEnd: { reason: 'interrupted' } });
     const el = badge();
-    expect(el?.textContent).toBe('you stopped it');
-    expect(el?.getAttribute('title')).toBe('turn_end: interrupted');
+    expect(badgeLabel(el)).toBe('you stopped it· why?');
+    expect(el?.textContent).toContain('turn_end: interrupted');
   });
 
   it('never renders a blank label when the reason is missing', () => {
     renderContent({ isLast: true, streaming: false }, { turnEnd: { error: true } });
     const el = badge();
-    expect(el?.textContent).toBe('stopped');
-    expect(el?.getAttribute('title')).toBe('turn_end (no reason recorded)');
+    expect(badgeLabel(el)).toContain('stopped');
+    expect(el?.textContent).toContain('no reason recorded');
+  });
+
+  it('points the tool-round cap at the control that raises it', () => {
+    renderContent({ isLast: true, streaming: false }, { turnEnd: { reason: 'cap', rounds: 40 } });
+    expect(screen.queryByTestId('turn-end-remedy')?.textContent).toMatch(/Settings/);
   });
 
   it('withholds the badge while the last turn is still streaming', () => {
