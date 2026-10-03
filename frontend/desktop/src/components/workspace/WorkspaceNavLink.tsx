@@ -38,6 +38,7 @@ export function WorkspaceNavLink({
     <motion.button
       type="button"
       onClick={onSelect}
+      aria-current={active ? 'page' : undefined}
       initial="rest"
       whileHover="hover"
       whileTap="tap"

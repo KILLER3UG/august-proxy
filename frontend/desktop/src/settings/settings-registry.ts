@@ -18,7 +18,7 @@
  *   • Every keyword is owned by exactly one section. (Tags like
  *     `usage`, `error`, `host` are no longer claimed by the largest
  *     section just because it has room.)
- *   • Every section declares a valid `tier` (`basic` or `advanced`).
+ *   • Every section declares a valid `tier` (`basic` or `hidden`).
  */
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -45,7 +45,6 @@ import {
   Radio,
   Search as SearchIcon,
   Shield,
-  ShieldCheck,
   SlidersHorizontal,
   Timer,
   Palette,
@@ -56,7 +55,6 @@ import {
   Wand2,
   Database,
   Stethoscope,
-  ArrowRightLeft,
   Layers,
   AudioLines,
   Coins,
@@ -71,7 +69,7 @@ import {
 
 /** Visibility tier for the rail. `basic` items are always shown; the
  *  `advanced` tier is hidden until the user toggles "Show advanced". */
-export type SettingsTier = 'basic' | 'advanced' | 'hidden';
+export type SettingsTier = 'basic' | 'hidden';
 
 /**
  * A single settings screen. `id` doubles as the URL segment (`/settings/<id>`),
@@ -111,18 +109,23 @@ export interface SettingsCategory {
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   {
     id: 'basics',
-    label: 'Basics',
+    label: 'Setup',
     description: 'General preferences, appearance, model configuration, browser and desktop use.',
   },
   {
     id: 'capabilities',
-    label: 'Agent capabilities',
-    description: 'Memory, subagents, plugins, MCP servers, skills, commands, and hooks.',
+    label: 'Agent',
+    description: 'Memory, subagents, plugins, MCP servers, skills, and commands.',
   },
   {
     id: 'data',
-    label: 'Data and statistics',
-    description: 'Indexing and usage statistics.',
+    label: 'Data',
+    description: 'Usage statistics, activity log, and conversation history.',
+  },
+  {
+    id: 'app',
+    label: 'App',
+    description: 'Account, privacy, system health, and updates.',
   },
 ] as const;
 
@@ -133,8 +136,10 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
  * a section, change the `label` and re-export the old label as an
  * alias.
  *
- * `tier: 'basic'` items are shown by default. `tier: 'advanced'` items
- * are hidden until the user enables the "Show advanced" toggle.
+ * `tier: 'basic'` items are shown in the rail. `tier: 'hidden'` items
+ * are reachable through search and deep links only — the "Show advanced"
+ * toggle that used to gate an advanced tier never existed and was removed
+ * 2026-10-03.
  *
  * Array order = rail order within each header group.
  */
@@ -212,7 +217,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'System Status',
     description: 'Gateway status, uptime, RAM, endpoint URLs, and connect-an-app URLs.',
     icon: Activity,
-    category: 'basics',
+    category: 'app',
     tier: 'hidden',
     keywords: ['health', 'provider status', 'uptime', 'endpoints', 'host', 'port', 'ram'],
     legacyAliases: ['health'],
@@ -222,7 +227,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Account',
     description: 'Local August profiles on this device — create, switch, and edit your account.',
     icon: UserRound,
-    category: 'basics',
+    category: 'app',
     tier: 'hidden',
     keywords: ['account', 'login', 'sign up', 'display name', 'avatar', 'sign out'],
     legacyAliases: ['accounts', 'user'],
@@ -232,7 +237,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Data & Privacy',
     description: 'What August stores on this device — export, purge memories, clear logs, and delete usage.',
     icon: Database,
-    category: 'basics',
+    category: 'app',
     tier: 'hidden',
     keywords: ['privacy', 'data', 'export', 'retention', 'purge', 'wipe', 'cleanup', 'clear data', 'erase'],
   },
@@ -241,7 +246,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'About',
     description: 'App version, update checks, and release notes for the desktop build.',
     icon: Info,
-    category: 'basics',
+    category: 'app',
     tier: 'basic',
     keywords: ['about', 'update', 'release', 'version', 'download app', 'upgrade', 'changelog'],
     legacyAliases: ['updates', 'updater', 'version', 'about'],
@@ -317,7 +322,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       'Optional bounds on a single turn — tool-round cap, cost/token/time budget, and the backstop for a turn that varies its calls forever.',
     icon: Timer,
     category: 'capabilities',
-    tier: 'advanced',
+    tier: 'basic',
     keywords: [
       'turn limits',
       'budget',
@@ -398,16 +403,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     tier: 'basic',
     keywords: ['commands', 'prompt templates', 'templates', 'template', 'reusable', 'variable', 'shortcut'],
     legacyAliases: ['prompt-templates', 'custom-commands'],
-  },
-  {
-    id: 'hooks',
-    label: 'Hooks',
-    description: 'Turn hooks, tool execution intercepts, and custom event listeners.',
-    icon: ArrowRightLeft,
-    category: 'capabilities',
-    tier: 'hidden',
-    keywords: ['hooks', 'hook', 'tool intercepts', 'intercept', 'listeners'],
-    legacyAliases: ['hooks-tab', 'event-hooks'],
   },
   {
     id: 'model-catalog',
@@ -571,16 +566,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 
   /* ── Data and statistics header ────────────────────────────────── */
   {
-    id: 'indexing',
-    label: 'Indexing',
-    description: 'Workspace codebase indexing, vector search, and semantic knowledge cache.',
-    icon: ShieldCheck,
-    category: 'data',
-    tier: 'hidden',
-    keywords: ['indexing', 'indexer', 'codebase index', 'vector search', 'semantic cache'],
-    legacyAliases: ['index', 'workspace-index', 'vector-index'],
-  },
-  {
     id: 'usage',
     label: 'Usage stats',
     description: 'Token usage, model cost, quotas, and per-model consumption.',
@@ -649,7 +634,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Which wire parameters August may send per model — reasoning effort, thinking budget, default tier — and the family table that decides it.',
     icon: Blocks,
     category: 'capabilities',
-    tier: 'advanced',
+    tier: 'basic',
     keywords: [
       'model families',
       'family',
@@ -744,7 +729,7 @@ export function auditRegistry(): void {
     }
     ids.add(s.id);
 
-    if (s.tier !== 'basic' && s.tier !== 'advanced' && s.tier !== 'hidden') {
+    if (s.tier !== 'basic' && s.tier !== 'hidden') {
       throw new Error(
         `settings-registry: section "${s.id}" has invalid tier "${String(s.tier)}" — must be "basic", "advanced", or "hidden"`,
       );

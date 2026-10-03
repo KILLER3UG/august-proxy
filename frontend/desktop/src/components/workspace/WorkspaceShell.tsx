@@ -5,6 +5,7 @@
 /* retired when Settings absorbed the panel.                                   */
 
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import {
   ArrowUpCircle,
   BrainCircuit,
@@ -57,6 +58,7 @@ export function WorkspaceShell({
   active,
   children,
 }: WorkspaceShellProps) {
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
   const navigate = useNavigate();
   const location = useLocation();
   const [query, setQuery] = useState('');
@@ -102,10 +104,13 @@ export function WorkspaceShell({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return new Map<string, typeof decorated>();
+    // Tokenized AND matching: "auto update" finds a section carrying both
+    // words even when the phrase is not a substring of any single field.
+    // Single-substring search needed ~300 keyword crutches for this.
+    const tokens = q.split(/\s+/).filter(Boolean);
     const match = (s: (typeof decorated)[number]) => {
-      if (s.label.toLowerCase().includes(q)) return true;
-      if (s.description.toLowerCase().includes(q)) return true;
-      return s.keywords.some((k) => k.toLowerCase().includes(q));
+      const haystack = [s.label, s.description, ...s.keywords].join(' ').toLowerCase();
+      return tokens.every((t) => haystack.includes(t));
     };
     const ids = new Set<string>();
     for (const s of visibleForSearch) {
@@ -145,10 +150,18 @@ export function WorkspaceShell({
      * replaces it: the chat stays behind the scrim, and the panel owns its own
      * scroll so no section can stretch the frame. */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-3 sm:p-8"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-3 sm:p-8"
+      onClick={closeToWorkspace}
       data-testid="settings-backdrop"
     >
-      <div className="relative flex h-full max-h-full w-full max-w-[1180px] overflow-hidden rounded-2xl border border-white/[0.08] bg-background shadow-2xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+        ref={trapRef}
+        className="relative flex h-full max-h-full w-full max-w-[1180px] overflow-hidden rounded-2xl border border-hairline-strong bg-background shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Left rail */}
         <aside className="flex min-h-0 h-full w-60 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
           <div className="px-3 pb-2 pt-3">

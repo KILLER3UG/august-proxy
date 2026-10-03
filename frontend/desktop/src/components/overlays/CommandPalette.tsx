@@ -42,7 +42,6 @@ import { dispatchUiAction, hasChatSurface, type UiAction } from "@/api/ui-events
 import { openConversationSearch } from "@/store/conversation-search";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 
-const UNIMPLEMENTED_SETTINGS_TAB_IDS = new Set<string>(['hooks', 'indexing']);
 
 function CommandShortcut({ children }: { children: ReactNode }) {
   return (
@@ -392,7 +391,6 @@ export function CommandPalette() {
             className="px-3 pt-2 pb-1 text-xs font-medium text-tier-2 tracking-normal"
           >
             {SETTINGS_TABS
-              .filter(({ key }) => !UNIMPLEMENTED_SETTINGS_TAB_IDS.has(key))
               .map(({ key, label, Icon, path }) => (
                 <Command.Item
                   key={key}

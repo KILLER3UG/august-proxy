@@ -29,8 +29,9 @@ describe('settings-registry audit', () => {
     expect(() => auditRegistry()).not.toThrow();
   });
 
-  it('has 3 header groups with no singleton columns', () => {
-    expect(SETTINGS_CATEGORIES).toHaveLength(3);
+  it('has 4 header groups (Setup / Agent / Data / App) with no singleton columns', () => {
+    expect(SETTINGS_CATEGORIES).toHaveLength(4);
+    expect(SETTINGS_CATEGORIES.map((c) => c.label)).toEqual(['Setup', 'Agent', 'Data', 'App']);
     const counts = SETTINGS_CATEGORIES.map((c) => ({
       id: c.id,
       count: sectionsForCategory(c.id).length,
@@ -74,7 +75,7 @@ describe('settings-registry audit', () => {
 
   it('every section declares a valid tier', () => {
     for (const s of SETTINGS_SECTIONS) {
-      expect(['basic', 'advanced', 'hidden'], `${s.id} has invalid tier`).toContain(s.tier);
+      expect(['basic', 'hidden'], `${s.id} has invalid tier`).toContain(s.tier);
     }
   });
 

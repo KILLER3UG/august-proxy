@@ -908,7 +908,8 @@ export function MemorySection({ active }: { active: { id: string } }) {
                   setUnifiedShown(UNIFIED_RENDER);
                 }}
                 placeholder="Search memory…"
-                className="w-full rounded-lg border border-border/60 bg-card/60 py-1.5 pl-8 pr-3 text-xs text-foreground outline-none transition focus:border-primary/40"
+                aria-label="Search memory"
+                className="w-full rounded-lg border border-border/60 bg-card/60 py-1.5 pl-8 pr-3 text-xs text-foreground outline-none transition focus:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary/50"
                 data-testid="memory-search-input"
               />
             </div>
@@ -1677,6 +1678,7 @@ function KindChip({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={cn(
         'inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[0.65625rem] transition',
         active

@@ -46,25 +46,25 @@ function renderPage(path: string) {
 }
 
 describe('SettingsPage — unimplemented route fallback', () => {
-  it('redirects a hidden Hooks deep link to the first implemented capabilities section', async () => {
+  it('falls back for the REMOVED hooks deep link (section deleted 2026-10-03)', async () => {
     renderPage('/settings/hooks');
 
     await waitFor(() => {
       expect(screen.getByTestId('settings-page-shell')).toHaveAttribute(
         'data-active',
-        'memory-knowledge',
+        'general',
       );
     });
     expect(screen.queryByTestId('settings-section-hooks')).toBeNull();
   });
 
-  it('redirects a hidden Indexing deep link to the first implemented data section', async () => {
+  it('falls back for the REMOVED indexing deep link (section deleted 2026-10-03)', async () => {
     renderPage('/settings/indexing');
 
     await waitFor(() => {
       expect(screen.getByTestId('settings-page-shell')).toHaveAttribute(
         'data-active',
-        'usage',
+        'general',
       );
     });
     expect(screen.queryByTestId('settings-section-indexing')).toBeNull();
