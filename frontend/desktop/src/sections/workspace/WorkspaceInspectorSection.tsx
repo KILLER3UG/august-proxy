@@ -18,7 +18,7 @@ import { SettingsCard } from '@/components/settings/SettingsCard';
 import { WorkspaceStatCard } from '@/components/workspace/WorkspaceStatCard';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { StatusPill } from '@/components/StatusPill';
+import { StatusPill } from '@/components/workspace/StatusPill';
 import { formatTimeAgo, cn } from '@/lib/utils';
 import { type Period } from '@/api/api-client';
 
@@ -124,7 +124,7 @@ export function WorkspaceInspectorSection() {
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <StatusPill tone={r.isError ? 'bad' : r.status === 'completed' ? 'good' : 'muted'} label={r.status.slice(0, 8)} />
+                    <StatusPill variant={r.isError ? 'danger' : r.status === 'completed' ? 'ok' : 'muted'} label={r.status.slice(0, 8)} />
                     <span className="text-sm font-medium truncate flex-1">{r.clientType}</span>
                     {r.hasThinking && <Brain className="size-3 text-warning shrink-0" />}
                   </div>

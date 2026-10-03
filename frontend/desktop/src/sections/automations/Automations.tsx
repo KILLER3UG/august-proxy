@@ -4,7 +4,7 @@ import { SectionHeader } from '@/components/SectionHeader';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { StatusPill } from '@/components/StatusPill';
+import { StatusPill } from '@/components/workspace/StatusPill';
 import {
   Play,
   Trash2,
@@ -837,7 +837,7 @@ function AutomationCard({
 
             <div className="flex items-center gap-3 mt-1.5 text-2xs text-muted-foreground font-mono flex-wrap">
               <StatusPill
-                tone={job.enabled && !job.paused && !job.limitReached ? 'good' : 'muted'}
+                variant={job.enabled && !job.paused && !job.limitReached ? 'ok' : 'muted'}
                 label={
                   job.limitReached
                     ? 'limit reached'

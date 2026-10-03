@@ -12,7 +12,7 @@ import { Search, X, Zap, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useModels } from '@/hooks/useModels';
 import { useProviderAvailability } from '@/hooks/useProviderAvailability';
-import { StatusDot } from '@/components/StatusDot';
+import { StatusDot } from '@/components/workspace/StatusPill';
 import type { VoiceCommandCardProps } from '@/api/voice/registry';
 import { useNavigate } from 'react-router-dom';
 

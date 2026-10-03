@@ -19,8 +19,7 @@ import { AssistantMessageContent } from './message/AssistantMessageContent';
 import { ChatAttachmentService } from './services/ChatAttachmentService';
 import { useVerboseMode } from '@/lib/verbose-mode';
 
-export { ReasoningBlock } from './message/ReasoningBlock';
-export { ToolCallCard, ToolBlock } from './message/ToolCallCard';
+export { ToolCallCard } from './message/ToolCallCard';
 
 function MessageBubbleInner({
   message,

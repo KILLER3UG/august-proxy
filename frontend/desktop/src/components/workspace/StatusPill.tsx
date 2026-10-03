@@ -14,6 +14,7 @@
  *   - Observation gallery (focused app presence)
  */
 
+import type { ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
 
 export type StatusPillVariant = 'ok' | 'warn' | 'danger' | 'muted';
@@ -106,4 +107,24 @@ export function variantForHostStatus(status: string | null | undefined): StatusP
         default:
             return 'muted';
     }
+}
+
+/** Bare status dot for places that need the tone without the pill chrome
+ *  (model rows, inline indicators). Same tones as the pill. */
+export type StatusTone = 'good' | 'muted' | 'warn' | 'bad';
+
+const TONE_BG: Record<StatusTone, string> = {
+  good: 'bg-primary',
+  muted: 'bg-muted-foreground/40',
+  warn: 'bg-warning',
+  bad: 'bg-destructive',
+};
+
+export function StatusDot({ className, tone, ...props }: ComponentProps<'span'> & { tone: StatusTone }) {
+  return (
+    <span
+      className={cn('inline-block size-1.5 rounded-full', TONE_BG[tone], className)}
+      {...props}
+    />
+  );
 }

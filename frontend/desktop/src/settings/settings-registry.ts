@@ -713,12 +713,6 @@ const RAIL_PARENT: Readonly<Record<string, string>> = {
   'health-simulator': 'system-health',
 };
 
-/** Visible tree children: section id → child section ids rendered as
- *  indented sub-items under the parent in the rail tree (2026-08-28:
- *  UI Designer moved under Appearance per the UI enhancement request). */
-export const RAIL_CHILDREN: Readonly<Record<string, readonly string[]>> = {
-  appearance: ['ui-designer'],
-};
 
 /** Section id the left rail should mark active. */
 export function railCanonicalId(id: string): string {

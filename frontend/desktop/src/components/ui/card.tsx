@@ -27,3 +27,32 @@ export const CardContent = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElem
     return <div ref={ref} className={cn('px-5 py-4', className)} {...props} />;
   },
 );
+
+/* ── Surface — the one elevation ladder ──────────────────────────────────
+ * Four rungs, four tokens (`--elev-*` in styles/tokens.css, registered in
+ * tailwind.config.cjs as `shadow-elev-*`), one primitive:
+ *   flat     no shadow — the page itself, or a surface whose siblings all
+ *            are flat
+ *   ring     a 1px edge in the border colour — the rung that agrees with
+ *            bordered siblings without adding a drop shadow
+ *   raised   a card lifted off the page
+ *   overlay  a popover / dialog / floating panel
+ * A thin wrapper: it applies the elevation and nothing else, so a caller
+ * keeps full control of background, border, radius and padding. Prefer it
+ * over a hand-written `shadow-*` utility whenever the question is only
+ * "how lifted is this".
+ */
+export type SurfaceElevation = 'flat' | 'ring' | 'raised' | 'overlay';
+
+const ELEV_CLASS: Record<SurfaceElevation, string> = {
+  flat: 'shadow-elev-flat',
+  ring: 'shadow-elev-ring',
+  raised: 'shadow-elev-raised',
+  overlay: 'shadow-elev-overlay',
+};
+
+export const Surface = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement> & { elev?: SurfaceElevation }>(
+  function Surface({ elev = 'flat', className, ...props }, ref) {
+    return <div ref={ref} className={cn(ELEV_CLASS[elev], className)} {...props} />;
+  },
+);

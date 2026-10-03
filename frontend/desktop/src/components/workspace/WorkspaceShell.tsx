@@ -96,7 +96,7 @@ export function WorkspaceShell({
   // headers and surfaces matching sections directly (grouped by category)
   // so deep discovery still works. Hidden sections never appear as rail
   // rows; they live inside their parent's stacked cards or as tree
-  // grandchildren (RAIL_CHILDREN).
+  // (no tree grandchildren — the rail is flat; hidden-tier sections are search-only).
   const visibleForSearch = useMemo(() => decorated, [decorated]);
 
   const filtered = useMemo(() => {

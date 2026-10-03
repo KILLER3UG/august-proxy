@@ -258,17 +258,6 @@
   background: var(--dt-background);
 }
 
-.august-app-chrome {
-  color: color-mix(in srgb, var(--dt-foreground) 42%, transparent);
-  background: var(--dt-background);
-  border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 55%, transparent);
-  font-size: 0.78rem;
-  height: 28px !important;
-}
-
-.august-app-chrome button {
-  transition: background-color 0.12s cubic-bezier(0.16, 1, 0.3, 1), color 0.12s cubic-bezier(0.16, 1, 0.3, 1);
-}
 
 .august-session-sidebar,
 .august-right-drawer {
@@ -286,10 +275,6 @@
 
 .august-sidebar-brand {
   min-height: 2.25rem;
-}
-
-.august-brand-mark {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dt-primary) 20%, transparent);
 }
 
 .august-sidebar-nav button {
@@ -491,14 +476,6 @@
   padding-inline: 1rem;
   background: transparent !important;
   border-bottom-color: color-mix(in srgb, var(--dt-border) 80%, transparent) !important;
-}
-
-.august-drawer-card {
-  border-radius: 0.9rem;
-  /* Multi-section split only: a hairline separator on the shared surface,
-     no contrasting fill. */
-  border-color: color-mix(in srgb, var(--dt-border) 55%, transparent) !important;
-  background: transparent !important;
 }
 
 @media (max-width: 900px) {
@@ -1444,4 +1421,4 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: thought-summary-shimmer 1.8s linear infinite;
-}
+}

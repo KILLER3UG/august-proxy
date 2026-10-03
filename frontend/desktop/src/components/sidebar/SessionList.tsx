@@ -164,8 +164,6 @@ export function SessionList({
       case "create-account":
         setSwitchAccountOpen(true);
         break;
-      case "download":
-        toast.message("You're already in the desktop app.");
         break;
       case "whats-new":
         setWhatsNewOpen(true);
@@ -758,7 +756,7 @@ export function SessionList({
                   </Avatar>
                   <div className="min-w-0 flex-1 truncate text-[0.78125rem]">
                     <span className="font-medium text-sidebar-foreground">{dropdownUser.name}</span>
-                    <span className="text-muted-foreground/60 ml-1">· Free</span>
+                    
                   </div>
                   <ChevronUp className="size-3 shrink-0 text-muted-foreground/50" />
                 </motion.button>

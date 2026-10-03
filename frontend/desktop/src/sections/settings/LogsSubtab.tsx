@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { Copy, Check, ScrollText, Search, Inbox } from 'lucide-react';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
-import { StatusPill } from '@/components/StatusPill';
+import { StatusPill } from '@/components/workspace/StatusPill';
 import { Badge } from '@/components/ui/badge';
 import { formatTimeAgo, cn } from '@/lib/utils';
 import { useTrafficActivity, type Period, type LogLine } from './useTrafficActivity';
@@ -168,7 +168,7 @@ export function LogsSubtab({ showPeriod = true }: { showPeriod?: boolean }) {
 }
 
 function LevelBadge({ level }: { level: 'info' | 'warn' | 'error' }) {
-    if (level === 'error') return <StatusPill tone="bad" label="error" />;
+    if (level === 'error') return <StatusPill variant="danger" label="error" />;
     if (level === 'warn') return <Badge variant="outline" className="border-amber-500/50 text-amber-600">{level}</Badge>;
     return <Badge variant="outline">{level}</Badge>;
 }

@@ -11,27 +11,6 @@ import { visibleProgress } from '@/lib/tool-progress';
 import { getToolLabel, pathBasename } from '@/lib/tool-labels';
 import type { ChatMessage } from '@/types/chat';
 
-/** Renders a flat list of tool call items with per-tool progress. */
-export function ToolBlock({
-  tools,
-  toolProgress,
-}: {
-  tools: NonNullable<ChatMessage['tools']>;
-  toolProgress: Map<string, ReadonlyArray<{ path: string; status: 'reading' | 'read' }>>;
-}) {
-  return (
-    <>
-      {tools.map((tool) => (
-        <ToolCallItemComp
-          key={tool.id}
-          tool={tool}
-          progress={toolProgress.get(tool.id)}
-        />
-      ))}
-    </>
-  );
-}
-
 /**
  * Legacy role:'tool' message card — minimal-output policy:
  * invocation row + status pill only; no verbatim args/result dump. The

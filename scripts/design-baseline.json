@@ -387,7 +387,6 @@
   "frontend/desktop/src/sections/chat/message/AssistantMessageContent.tsx:style={{",
   "frontend/desktop/src/sections/chat/message/FileAttachmentCard.tsx:#1a1a1c",
   "frontend/desktop/src/sections/chat/message/FileAttachmentCard.tsx:<button",
-  "frontend/desktop/src/sections/chat/message/ReasoningBlock.tsx:style={{",
   "frontend/desktop/src/sections/chat/message/ToolCallCard.tsx:style={{",
   "frontend/desktop/src/sections/chat/message/UserMessageBubble.tsx:<button",
   "frontend/desktop/src/sections/chat/offline-queue-store.ts:fetch(",

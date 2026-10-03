@@ -1,7 +1,7 @@
 /* ── Appearance — theme + UI color designer ─────────────────────────── */
 /* New section from the 2026-08-28 restructure: the theme picker moved
  * out of the old profile-preferences hub, and the UI Designer lives here
- * as a tree sub-item (RAIL_CHILDREN: appearance → ui-designer). Navigating
+ * in its own hidden-tier section (ui-designer). Navigating
  * to /settings/ui-designer scrolls the designer into view. */
 
 import { useEffect } from 'react';

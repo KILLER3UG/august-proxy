@@ -8,7 +8,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Activity, Inbox } from 'lucide-react';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
-import { StatusPill } from '@/components/StatusPill';
+import { StatusPill } from '@/components/workspace/StatusPill';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { formatDuration, formatTimeAgo, cn } from '@/lib/utils';
@@ -140,7 +140,7 @@ function VirtualizedRequestsTable({ rows }: { rows: TrafficRow[] }) {
                                     className="grid grid-cols-[70px_90px_1fr_120px_90px_90px_90px] gap-2 px-3 py-2 text-xs items-center border-b border-border/40 hover:bg-accent/30 font-mono"
                                 >
                                     {isError ? (
-                                        <StatusPill tone="bad" label={r.status.slice(0, 8)} />
+                                        <StatusPill variant="danger" label={r.status.slice(0, 8)} />
                                     ) : (
                                         <Badge variant="outline" className="w-fit">{r.status.slice(0, 8)}</Badge>
                                     )}

@@ -141,7 +141,6 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
     element: React.createElement(LazySection, { name: 'Learning' }, React.createElement(LearningHub)),
     nav: true,
   },
-  { path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, element: React.createElement(Navigate, { to: '/settings/traffic-activity', replace: true }), nav: false },
 ] as const;
 
 /* Settings tabs are derived from the settings registry so the sidebar,

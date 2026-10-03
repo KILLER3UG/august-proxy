@@ -6,7 +6,7 @@
 
 import { useThemeStore, setThemeMode, setTextSize } from '@/lib/theme';
 import type { ThemeMode, TextSize } from '@/lib/theme';
-import { Surface, type SurfaceElevation } from '@/components/ui/Surface';
+import { Surface, type SurfaceElevation } from '@/components/ui/card';
 
 interface ColorToken {
   name: string;

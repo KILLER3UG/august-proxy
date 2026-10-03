@@ -4,7 +4,7 @@ import { motion, type Variants } from 'framer-motion';
 import {
   Bell,
   CircleHelp,
-  Download,
+
   ExternalLink,
   LogOut,
   Moon,
@@ -44,7 +44,6 @@ export type UserDropdownAction =
   | 'appearance'
   | 'settings'
   | 'notifications'
-  | 'download'
   | 'whats-new'
   | 'help'
   | 'switch'
@@ -119,11 +118,6 @@ const ICON_MOTION: Partial<Record<UserDropdownAction | 'status', Variants>> = {
     hover: { scale: 1.15, rotate: 12, transition: t.spring },
     tap: { scale: 0.9, transition: t.fast },
   },
-  download: {
-    rest: { scale: 1, y: 0 },
-    hover: { scale: 1.12, y: 2, transition: t.spring },
-    tap: { scale: 0.92, y: 0, transition: t.fast },
-  },
   'whats-new': {
     rest: { scale: 1, rotate: 0 },
     hover: { scale: 1.15, rotate: -8, transition: t.spring },
@@ -169,7 +163,6 @@ const MENU_ITEMS: {
     { Icon: Bell, label: 'Notifications', action: 'notifications' },
   ],
   support: [
-    { Icon: Download, label: 'Download app', action: 'download' },
     { Icon: Mail, label: "What's new?", action: 'whats-new' },
     { Icon: CircleHelp, label: 'Get help?', action: 'help', RightIcon: ExternalLink },
   ],
