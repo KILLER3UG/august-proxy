@@ -82,3 +82,30 @@ export function formatVersionStamp(ts: string): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return ts;
   return new Date(seconds * 1000).toLocaleString();
 }
+
+/* ── Per-skill measured effect ────────────────────────────────────────────
+ * GET /api/brain/skills/suggestions aggregates the turn ledger: the
+ * resolved rate on turns that carried a skill vs turns that did not. The
+ * numbers have been computed server-side since migration 050 and were
+ * rendered NOWHERE — this client is what finally surfaces them (2026-10-03).
+ */
+export interface SkillSuggestion {
+  skill: string;
+  turnsWith: number;
+  okRateWith: number | null;
+  turnsWithout: number;
+  okRateWithout: number | null;
+  /** okRateWith − okRateWithout, rounded; null when either side has no turns. */
+  lift: number | null;
+}
+
+export interface SkillSuggestionsResponse {
+  days: number;
+  suggestions: SkillSuggestion[];
+}
+
+export function listSkillSuggestions(days = 30, limit = 50): Promise<SkillSuggestionsResponse> {
+  return api.get<SkillSuggestionsResponse>(
+    `/api/brain/skills/suggestions?days=${days}&limit=${limit}`,
+  );
+}

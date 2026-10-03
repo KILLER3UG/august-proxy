@@ -9,6 +9,7 @@
 /* paths (create/edit/delete/toggle) route through the selected scope.  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { listSkillSuggestions } from '@/api/api-client/skills-versions';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -194,6 +195,32 @@ export function SkillsSection() {
     if (!older || older === selected?.name) return null;
     return { name: older, row: skills.find((s) => s.name === older) ?? null };
   }, [skills, selected?.supersedes, selected?.name]);
+  // Only fetched when a detail pane is open — the list never shows these.
+  const suggestionsQuery = useQuery({
+    queryKey: ['skill-suggestions', '30d'],
+    queryFn: () => listSkillSuggestions(30, 50),
+    staleTime: 10 * 60_000,
+    enabled: !!selected,
+  });
+
+  // The turn ledger's honest number: resolved rate on turns that carried
+  // this skill vs turns that did not. Rendered for the first time here —
+  // the endpoint's numbers existed since migration 050 and were visible
+  // nowhere (2026-10-03).
+  const liftFact = useMemo(() => {
+    const row = suggestionsQuery.data?.suggestions.find((x) => x.skill === selected?.name);
+    if (!row || row.turnsWith === 0) return null;
+    const pct = (v: number | null) => (v == null ? '—' : `${Math.round(v * 100)}%`);
+    const lift =
+      row.lift == null
+        ? 'not enough history to compare yet'
+        : row.lift > 0.02
+          ? `+${Math.round(row.lift * 100)} pts — turns with this skill resolve more often`
+          : row.lift < -0.02
+            ? `${Math.round(row.lift * 100)} pts — turns with this skill resolve less often`
+            : 'no measurable difference';
+    return `${pct(row.okRateWith)} on ${row.turnsWith} turns with it vs ${pct(row.okRateWithout)} on ${row.turnsWithout} without (${lift}).`;
+  }, [suggestionsQuery.data, selected?.name]);
   // A failed /api/skills call is not an empty catalogue — the "No skills yet"
   // empty state (and its "author your first skill" prompt) must not stand in
   // for a transport error. The same applies to the detail pane, which used to
@@ -601,6 +628,7 @@ export function SkillsSection() {
                   metadata rather than content. */}
               <div className="divide-y divide-white/[0.06] border-y border-white/[0.06]" data-testid="skill-facts">
                 <SkillFact label="Usage">{usageLine(selected)}</SkillFact>
+                {liftFact && <SkillFact label="Measured effect">{liftFact}</SkillFact>}
                 {selected.trigger && <SkillFact label="Trigger">{selected.trigger}</SkillFact>}
                 {selected.origin && <SkillFact label="Source">{originLine(selected)}</SkillFact>}
                 {superseded && (

@@ -24,6 +24,7 @@
  * /api/brain/stores/{name}/{id} (edit/delete). */
 
 import { useEffect, useMemo, useState } from 'react';
+import { BrainBackupsCard } from './BrainBackupsCard';
 import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -837,7 +838,9 @@ export function MemorySection({ active }: { active: { id: string } }) {
       )}
 
       <div className="space-y-5 pt-4">
-      {pane.kind !== 'global' && (
+      {/* The behavior gates are settings, not browse controls: they render
+          in EVERY pane, including Global. They used to disappear the moment
+          the global pane opened, and the layout test pinned that (2026-10-03). */}
       <MemoryGroup testId="memory-group-behavior" title="Memory behavior">
         {/* Model-memory toggles: one line each, separated by rules. */}
         <div className="divide-y divide-white/[0.06]">
@@ -875,7 +878,8 @@ export function MemorySection({ active }: { active: { id: string } }) {
         />
       </div>
       </MemoryGroup>
-      )}
+
+      <BrainBackupsCard />
 
       <MemoryGroup
         testId="memory-group-global"

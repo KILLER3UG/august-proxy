@@ -120,7 +120,9 @@ describe('MemorySection — one column of rows', () => {
     fireEvent.click(screen.getByTestId('memory-global-row'));
     expect(await screen.findByTestId('memory-flat-row')).toHaveTextContent('Prefers dark mode');
     expect(screen.getByTestId('memory-global-pane-header')).toBeInTheDocument();
-    expect(screen.queryByTestId('memory-group-behavior')).toBeNull();
+    // The behavior gates are settings: they stay visible while browsing
+    // global memory (they used to vanish here — 2026-10-03).
+    expect(screen.getByTestId('memory-group-behavior')).toBeInTheDocument();
   });
 
   it('dropped the card chrome the groups used to each sit inside', async () => {
@@ -190,6 +192,8 @@ describe('MemorySection — a pane replaces the column', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: /view/i }));
     await waitFor(() => expect(screen.getByTestId('memory-detail-view')).toBeInTheDocument());
     expect(screen.queryByTestId('memory-flat-list')).toBeNull();
+    // The detail replaces the whole column (gates included) — that state is
+    // the entry, not the browser. Browsing panes keep the gates visible.
     expect(screen.queryByTestId('memory-group-behavior')).toBeNull();
   });
 
