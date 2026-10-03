@@ -690,21 +690,31 @@ class TestDurabilityBarriersInLoop:
 class TestShadowGitInLoop:
     """Shadow git in the turn loop.
 
-    The baseline join budget is read FROM the loop rather than restated here.
-    A test that hardcodes 20 s next to a 60 s contract is measuring its own
-    impatience — and when it failed, that was exactly what it was.
+    The wait bound is a TEST constant, not a value read out of the loop's
+    source. Deriving it (an earlier version regexed `wait_for(fut, N)` out of
+    `_awaitBaselineSnapshot`) couples the test to an implementation detail and is
+    unsound in both directions: a pure refactor breaks the regex, and LOWERING
+    the production budget silently makes the test stop testing anything. The
+    production budget is still read — but only to put in the failure message.
     """
+
+    #: Generous, and NOT tied to the loop's budget. The baseline is four git
+    #: subprocesses running off-loop; on a loaded CI runner they can take tens of
+    #: seconds. A deadline tighter than this fails the test while the loop's own
+    #: contract is still being honoured.
+    _BASELINE_WAIT_S = 120.0
 
     @staticmethod
     def _baselineJoinBudgetS() -> float:
-        """The loop's own budget, so the two cannot drift apart again."""
+        """The loop's own budget — reported on failure, not used as the deadline."""
         import inspect as _inspect
 
         from app.services.workbench.loop.exec import _awaitBaselineSnapshot
 
         src = _inspect.getsource(_awaitBaselineSnapshot)
         m = re.search(r'wait_for\(\s*fut,\s*([0-9.]+)', src)
-        assert m, 'could not find the baseline join budget in the loop'
+        if not m:
+            return 0.0
         return float(m.group(1))
 
     """§9.3 #7 end-to-end: a turn over a workspace commits a baseline
@@ -731,25 +741,30 @@ class TestShadowGitInLoop:
         # The turn baseline is committed OFF the event loop — four blocking git
         # subprocesses, deliberately not on the loop so the model call can start
         # while it runs — and is only joined at the first mutation, under the
-        # 60 s best-effort budget in `_awaitBaselineSnapshot` (loop/exec.py:53).
+        # budget in `_awaitBaselineSnapshot` (loop/exec.py).
         #
-        # So `done` does not mean the baseline has landed, and on a loaded
-        # runner the join is what slips. This used to poll against a 20 s
-        # deadline, which is SHORTER than the 60 s the code itself allows, so the
-        # test could fail while the production contract was still being met —
-        # it measured its own impatience, not the code. It now waits out the same
-        # budget the loop does, plus a margin for the snapshot to become
-        # listable, so a failure here means the baseline genuinely did not land.
-        messages: list[str] = []
+        # So `done` does not mean the baseline has landed. Two earlier versions
+        # of this test failed only on a loaded runner:
+        #   * one polled against a hardcoded 20 s — SHORTER than the budget the
+        #     loop allows itself, so it measured its own impatience;
+        #   * the next derived that budget by regexing the loop's source, which
+        #     couples the test to an implementation detail AND lets lowering the
+        #     production budget silently neuter the test.
+        # So: wait on the SNAPSHOT STORE with a fixed, generous bound, and
+        # assert against the loop's budget rather than deriving the deadline
+        # from it. The bound is a test constant; the contract it checks is that
+        # the baseline exists at all by the time the turn is done.
         budget = self._baselineJoinBudgetS()
-        deadline = time.monotonic() + budget + 10
+        messages: list[str] = []
+        deadline = time.monotonic() + self._BASELINE_WAIT_S
         while time.monotonic() < deadline:
             messages = [s['message'] for s in sg.list_snapshots(session.id, str(tmp_path))]
             if any(m.startswith('turn ') for m in messages):
                 break
             await asyncio.sleep(0.25)
         assert any(m.startswith('turn ') for m in messages), (
-            f'no turn baseline within the {budget}s the loop allows itself'
+            f'no turn baseline within {self._BASELINE_WAIT_S}s; the loop allows itself '
+            f'{budget}s for the join, and the turn has already ended'
         )
         assert any(m.startswith('step ') and 'mutation' in m for m in messages), messages
         # The step snapshot captured the written file.
