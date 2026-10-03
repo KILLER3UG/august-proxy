@@ -174,11 +174,6 @@ export function SkillsSection() {
   const skills = useMemo(() => listQuery.data?.skills ?? [], [listQuery.data]);
   // Grouped by the scope that decides whether a skill shadows another — the
   // distinction a reader needs before they read any description.
-  const grouped = useMemo(() => {
-    const out: Record<SkillScopeKey, SkillSummary[]> = { project: [], agent: [], bundled: [], other: [] };
-    for (const s of skills) out[skillScopeKey(s)].push(s);
-    return out;
-  }, [skills]);
   const selected = detailQuery.data ?? null;
   const workspaces = workspacesQ.data?.workspaces ?? [];
   // What the learning loop wants changed about this skill right now. Matched
@@ -202,6 +197,26 @@ export function SkillsSection() {
     staleTime: 10 * 60_000,
     enabled: !!selected,
   });
+
+  // Sort: rows were grouped by scope but ordered by whatever the server sent
+  // (spec §10.2 — "rows are grouped by scope but ordered by server response").
+  const [sort, setSort] = useState<'name' | 'recent' | 'usage' | 'effect'>('name');
+  const grouped = useMemo(() => {
+    const out: Record<SkillScopeKey, SkillSummary[]> = { project: [], agent: [], bundled: [], other: [] };
+    for (const s of skills) out[skillScopeKey(s)].push(s);
+    const byName = (a: SkillSummary, b: SkillSummary) => a.name.localeCompare(b.name);
+    const byRecent = (a: SkillSummary, b: SkillSummary) =>
+      (b.lastUsed || '').localeCompare(a.lastUsed || '') || byName(a, b);
+    const byUsage = (a: SkillSummary, b: SkillSummary) =>
+      (b.usageCount ?? 0) - (a.usageCount ?? 0) || byName(a, b);
+    const liftOf = (s: SkillSummary) =>
+      suggestionsQuery.data?.suggestions.find((x) => x.skill === s.name)?.lift ?? -Infinity;
+    const byEffect = (a: SkillSummary, b: SkillSummary) =>
+      liftOf(b) - liftOf(a) || byName(a, b);
+    const cmp = sort === 'recent' ? byRecent : sort === 'usage' ? byUsage : sort === 'effect' ? byEffect : byName;
+    for (const key of Object.keys(out) as SkillScopeKey[]) out[key].sort(cmp);
+    return out;
+  }, [skills, sort, suggestionsQuery.data]);
 
   // The turn ledger's honest number: resolved rate on turns that carried
   // this skill vs turns that did not. Rendered for the first time here —
@@ -388,6 +403,18 @@ export function SkillsSection() {
                   className="h-8 w-full rounded-lg border border-border/60 bg-muted/40 pl-8 pr-3 text-xs placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none"
                 />
               </div>
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as typeof sort)}
+                aria-label="Sort skills"
+                className="h-8 rounded-lg border border-border/60 bg-muted/40 px-2 text-xs text-foreground/90 outline-none focus:border-primary/40"
+                data-testid="skills-sort"
+              >
+                <option value="name">Name</option>
+                <option value="recent">Recently used</option>
+                <option value="usage">Most used</option>
+                <option value="effect">Measured effect</option>
+              </select>
               <Button onClick={startCreate}>
                 <Plus className="size-4" /> New
               </Button>

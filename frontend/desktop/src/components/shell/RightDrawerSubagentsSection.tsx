@@ -307,6 +307,19 @@ function TabSearchDropdown({
   );
 }
 
+
+/** The only thing that ticks: the elapsed clock in the running header. It owns
+ *  its own interval so a running worker no longer re-renders the whole
+ *  section — including the selected transcript — every second. */
+function LiveElapsed({ startedMs, fmt }: { startedMs: number; fmt: (s: number) => string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  return <>{fmt(Math.max(0, (now - startedMs) / 1000))}</>;
+}
+
 export function RightDrawerSubagentsSection({
   sessionId,
   workbenchSessionId,
@@ -360,15 +373,7 @@ export function RightDrawerSubagentsSection({
   );
   const runByTask = new Map((runsQuery.data ?? []).map((r) => [r.taskId, r]));
 
-  // Live elapsed ticker for the "Working for …" header. Kept at
-  // the top level (hooks must not sit behind the selected-view branch).
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  const anyRunning = activeAgents.length > 0;
-  useEffect(() => {
-    if (!anyRunning) return;
-    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [anyRunning]);
+
 
   /** Unified transcript entries, chronological: live first, then finished. */
   const entries: Array<{ key: string; agent: SessionAgentRow }> = useMemo(() => {
@@ -583,17 +588,20 @@ export function RightDrawerSubagentsSection({
     const startedMs = selectedBlock?.startedAt
       ? (selectedBlock.startedAt > 1e12 ? selectedBlock.startedAt : selectedBlock.startedAt * 1000)
       : undefined;
-    const elapsedSec = running && startedMs
-      ? (nowMs - startedMs) / 1000
-      : selectedBlock?.finishedAt && startedMs
-        ? (selectedBlock.finishedAt - startedMs) / 1000
-        : typeof selectedAgent.elapsed === 'number'
-          ? selectedAgent.elapsed
-          : undefined;
+    // Only the SETTLED branch needs a number here; the running branch is
+    // rendered by <LiveElapsed>, which owns the clock.
+    const elapsedSec = !running && selectedBlock?.finishedAt && startedMs
+      ? (selectedBlock.finishedAt - startedMs) / 1000
+      : !running && typeof selectedAgent.elapsed === 'number'
+        ? selectedAgent.elapsed
+        : undefined;
 
-    const headerLabel = running
-      ? `Working for ${elapsedSec != null ? fmtElapsed(elapsedSec) : '…'}`
-      : elapsedSec != null
+    const headerLabel =
+      running && startedMs != null ? (
+        <>
+          Working for <LiveElapsed startedMs={startedMs} fmt={fmtElapsed} />
+        </>
+      ) : elapsedSec != null
         ? `Worked for ${fmtElapsed(elapsedSec)}`
         : statusWord(selectedAgent.status);
 
