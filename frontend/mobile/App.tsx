@@ -28,56 +28,50 @@ const MOBILE_WEB_BOOTSTRAP = `
     viewport.setAttribute('name', 'viewport');
     document.head.appendChild(viewport);
   }
-  viewport.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover');
+  viewport.setAttribute('content', 'width=device-width, initial-scale=1, viewport-fit=cover');
 
   var style = document.createElement('style');
   style.textContent = [
     ':root { color-scheme: light dark; }',
-    /* ── Kill all browser behaviors ── */
+    /* Kill browser behaviors that fight a chat surface. */
     'html, body { overscroll-behavior: none; -webkit-overflow-scrolling: touch; }',
     'body { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }',
     'input, textarea, [contenteditable] { -webkit-user-select: text; user-select: text; }',
     '* { touch-action: manipulation; -webkit-user-drag: none; }',
-    /* ── Mobile shell baseline ── */
     'html[data-august-mobile-shell="true"] body { -webkit-font-smoothing: antialiased; }',
-    'html[data-august-mobile-shell="true"] .bottom-nav, html[data-august-mobile-shell="true"] .tab-bar, html[data-august-mobile-shell="true"] [data-mobile-bottom-nav] { display: none !important; }',
-    'html[data-august-mobile-shell="true"] [class*="purple"], html[data-august-mobile-shell="true"] [class*="violet"], html[data-august-mobile-shell="true"] [class*="indigo"] { border-color: #d4d4d8 !important; }',
-    'html[data-august-mobile-shell="true"] [class*="bg-purple"], html[data-august-mobile-shell="true"] [class*="bg-violet"], html[data-august-mobile-shell="true"] [class*="bg-indigo"] { background-color: #f4f4f5 !important; color: #3f3f46 !important; }',
-    'html[data-august-mobile-shell="true"] [class*="text-purple"], html[data-august-mobile-shell="true"] [class*="text-violet"], html[data-august-mobile-shell="true"] [class*="text-indigo"] { color: #3f3f46 !important; }',
-    'html[data-august-mobile-shell="true"] [class*="from-purple"], html[data-august-mobile-shell="true"] [class*="from-violet"], html[data-august-mobile-shell="true"] [class*="from-indigo"], html[data-august-mobile-shell="true"] [class*="to-purple"], html[data-august-mobile-shell="true"] [class*="to-violet"], html[data-august-mobile-shell="true"] [class*="to-indigo"] { background-image: linear-gradient(135deg, #27272a, #52525b) !important; color: #ffffff !important; }',
-    'html[data-august-mobile-shell="true"] .accent-violet::before, html[data-august-mobile-shell="true"] .accent-indigo::before { background: linear-gradient(90deg, #3f3f46, #71717a) !important; }',
-    'html[data-august-mobile-shell="true"].dark [class*="bg-purple"], html[data-august-mobile-shell="true"].dark [class*="bg-violet"], html[data-august-mobile-shell="true"].dark [class*="bg-indigo"] { background-color: #27272a !important; color: #d4d4d8 !important; }',
-    'html[data-august-mobile-shell="true"].dark [class*="text-purple"], html[data-august-mobile-shell="true"].dark [class*="text-violet"], html[data-august-mobile-shell="true"].dark [class*="text-indigo"] { color: #d4d4d8 !important; }',
-    'html[data-august-mobile-shell="true"].dark [class*="purple"], html[data-august-mobile-shell="true"].dark [class*="violet"], html[data-august-mobile-shell="true"].dark [class*="indigo"] { border-color: #3f3f46 !important; }',
-    '@media (max-width: 768px) {',
-    '  html[data-august-mobile-shell="true"] .dashboard-shell { min-height: 100dvh; }',
-    '  html[data-august-mobile-shell="true"] .dashboard-main { max-width: 100vw !important; min-width: 0 !important; overflow-x: hidden !important; padding-bottom: env(safe-area-inset-bottom, 0px); }',
-    '  html[data-august-mobile-shell="true"] .dashboard-section, html[data-august-mobile-shell="true"] .surface, html[data-august-mobile-shell="true"] .subtle-surface, html[data-august-mobile-shell="true"] .card-hover { max-width: 100% !important; min-width: 0 !important; }',
-    '  html[data-august-mobile-shell="true"] .period-btn { flex: 1 1 auto !important; min-width: 42px !important; padding-left: 8px !important; padding-right: 8px !important; }',
-    '  html[data-august-mobile-shell="true"] button[onclick="loadModels()"] { flex: 1 1 100% !important; justify-content: center !important; margin-top: 6px !important; }',
-    '  html[data-august-mobile-shell="true"] pre, html[data-august-mobile-shell="true"] code { max-width: 100% !important; white-space: pre-wrap !important; word-break: break-word !important; }',
-    '  html[data-august-mobile-shell="true"] .overflow-x-auto { max-width: 100% !important; min-width: 0 !important; }',
-    '  html[data-august-mobile-shell="true"] #voicePanel { bottom: calc(env(safe-area-inset-bottom, 0px) + 14px) !important; right: 14px !important; }',
-    '  html[data-august-mobile-shell="true"] input, html[data-august-mobile-shell="true"] textarea, html[data-august-mobile-shell="true"] select { font-size: 16px !important; }',
-    '}'
-  ].join('\\n');
+    /* Text entry keeps 16px so iOS does not zoom on focus. */
+    'html[data-august-mobile-shell="true"] input, html[data-august-mobile-shell="true"] textarea, html[data-august-mobile-shell="true"] select { font-size: 16px !important; }',
+    /* Phone-width guards: long code/links must wrap, never scroll sideways. */
+    'html[data-august-mobile-shell="true"] pre, html[data-august-mobile-shell="true"] code { max-width: 100% !important; white-space: pre-wrap !important; word-break: break-word !important; }',
+    'html[data-august-mobile-shell="true"] .overflow-x-auto { max-width: 100% !important; min-width: 0 !important; }',
+    'html[data-august-mobile-shell="true"] .august-drawer { max-width: 100vw !important; }',
+    /* The dashboard-era selectors (.dashboard-shell, .bottom-nav, .period-btn,
+       button[onclick="loadModels()"], #voicePanel, and the purple de-branding
+       set) matched NOTHING since the desktop moved to React in June — they
+       were silently dead. The de-branding itself is now unnecessary: the
+       desktop tokenized those colors in phase 3. */
+  ].join('
+');
   document.head.appendChild(style);
 
-  function tuneMobileControls() {
-    var refresh = document.querySelector('button[onclick="loadModels()"]');
-    if (refresh && refresh.parentElement) {
-      refresh.parentElement.style.flexWrap = 'wrap';
-      refresh.parentElement.style.maxWidth = '100%';
-      refresh.parentElement.style.width = '100%';
-    }
+  // Theme bridge: the native chrome follows the WEB app's resolved theme,
+  // not the OS setting, so shell and content can never disagree.
+  function postTheme() {
+    try {
+      var dark = document.documentElement.classList.contains('dark');
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(
+          JSON.stringify({ type: 'august-theme', dark: dark })
+        );
+      }
+    } catch (e) { /* not in a WebView host */ }
   }
+  postTheme();
+  new MutationObserver(postTheme).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['class'],
+  });
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', tuneMobileControls);
-  } else {
-    tuneMobileControls();
-  }
-  setTimeout(tuneMobileControls, 500);
 })();
 true;
 `;
@@ -158,7 +152,13 @@ function getDefaultProxyUrl(): string {
 
 export default function App() {
   const webViewRef = useRef<WebView>(null);
-  const isDark = useColorScheme() === 'dark';
+  // The native chrome follows the WEB app's resolved theme (it posts
+  // {type:'august-theme'}) and only falls back to the OS setting before the
+  // first message — the two used to disagree whenever the user picked a
+  // theme in the app that differed from their phone.
+  const osDark = useColorScheme() === 'dark';
+  const [webTheme, setWebTheme] = useState<boolean | null>(null);
+  const isDark = webTheme ?? osDark;
   const colors = useMemo(() => getShellColors(isDark), [isDark]);
   const [proxyUrl, setProxyUrl] = useState(() =>
     normalizeProxyUrl(process.env.EXPO_PUBLIC_PROXY_URL || getDefaultProxyUrl()),
@@ -200,6 +200,17 @@ export default function App() {
         overScrollMode="never"
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
+        accessibilityLabel="August Proxy"
+        onMessage={(event) => {
+          try {
+            const msg = JSON.parse(event.nativeEvent.data) as { type?: string; dark?: boolean };
+            if (msg?.type === 'august-theme' && typeof msg.dark === 'boolean') {
+              setWebTheme(msg.dark);
+            }
+          } catch {
+            /* not one of ours */
+          }
+        }}
         onLoadStart={() => {
           setIsLoading(true);
           setLoadError(null);
@@ -218,7 +229,11 @@ export default function App() {
 
       {isLoading && !loadError ? (
         <View pointerEvents="none" style={styles.loadingOverlay}>
-          <View style={[styles.loadingPill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View
+            accessibilityRole="progressbar"
+            accessibilityLabel="Connecting to August Proxy"
+            style={[styles.loadingPill, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
             <ActivityIndicator color={colors.text} />
             <Text style={[styles.loadingText, { color: colors.muted }]}>Connecting</Text>
           </View>
@@ -226,7 +241,7 @@ export default function App() {
       ) : null}
 
       {loadError ? (
-        <View style={[styles.fallback, { backgroundColor: colors.background }]}>
+        <View accessibilityRole="alert" style={[styles.fallback, { backgroundColor: colors.background }]}>
           <View style={[styles.fallbackCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.eyebrow, { color: colors.subtle }]}>AUGUST PROXY</Text>
             <Text style={[styles.title, { color: colors.text }]}>Connect to the web app</Text>
@@ -240,6 +255,7 @@ export default function App() {
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="url"
+              accessibilityLabel="August Proxy address"
               placeholder="http://192.168.1.10:8085"
               placeholderTextColor={colors.subtle}
               style={[

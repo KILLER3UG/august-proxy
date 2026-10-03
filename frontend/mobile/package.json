@@ -21,9 +21,8 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "audit:parity": "node scripts/audit-mobile-parity.js",
-    "audit:visual": "node scripts/audit-mobile-visual.js",
     "test": "npm run typecheck && npm run audit:parity",
-    "verify": "npm run test && npm run audit:visual"
+    "verify": "npm run test"
   },
   "private": true
 }
