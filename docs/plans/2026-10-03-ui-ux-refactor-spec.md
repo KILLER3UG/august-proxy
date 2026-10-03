@@ -1,7 +1,19 @@
 # August Deep UI/UX Refactor — Design Spec (Stage 1)
 
-**Status: DRAFT v2 — awaiting approval. No code changes have been made.** On approval, Stage 2
-implements the phases below in order, each leaving the app working.
+**Status: v2 — APPROVED and IMPLEMENTED 2026-10-04** (18 commits on master; all 12 phases
+shipped; gates green: tsc, 1493/1493 vitest, mobile parity 25, check-design, check:docs,
+check:version). Post-approval additions: the sidebar destination dock was rebuilt as labeled
+rows (the 6-icon strip matched none of the four references), and the SavePointChip /
+SkillEvolvedChip landed with the sidebar trio.
+
+**Still deferred, with reasons:** per-control settings search index (needs a per-section
+control-label manifest); keystroke-search shortcuts page (needs the hotkey handlers
+centralized); skills bulk enable/disable + undo-delete (undo needs a backend snapshot
+contract); Hide-vs-Close drawer semantics — mounting every open section to preserve state
+would keep each hidden section's polling queries alive (2s for subagents) and no
+section-level suspend primitive exists; the one section whose draft mattered (Notes)
+already autosaves to localStorage, so the state loss it protected against is already
+covered.
 
 **v2 supersession note:** an earlier same-day draft existed at this path (docs-level reference
 research, lighter audit). v2 replaces it: all four references are now verified from local
