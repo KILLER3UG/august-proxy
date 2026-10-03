@@ -251,6 +251,8 @@
    surface, density, and hierarchy to the compact dark workbench reference. */
 
 .august-shell {
+  container-type: inline-size;
+  container-name: august-shell;
   background: var(--dt-background);
 }
 
@@ -472,19 +474,29 @@
   /* height set inline from --shell-drawer-header-h */
 }
 
-@media (max-width: 900px) {
-  .august-session-sidebar {
-    min-width: 0;
-  }
-
+/* ── Responsive shell tiers (container queries on .august-shell) ────────
+   The drawer closes independently of window width, so these bind to the
+   SHELL's width, not the viewport's. The old single @media
+   (max-width: 900px) could never fire in the packaged app (min window
+   is 960) — it styled a state the product cannot enter. */
+@container august-shell (max-width: 1100px) {
   .august-right-drawer {
-    margin-right: 0;
+    box-shadow: -16px 0 40px rgb(0 0 0 / 0.28);
   }
-
   .august-message-list,
   .august-composer-slot,
   .august-empty-state-content {
     padding-inline: 1rem;
+  }
+}
+
+@container august-shell (max-width: 760px) {
+  .august-session-sidebar {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    z-index: 40;
+    box-shadow: 16px 0 40px rgb(0 0 0 / 0.28);
   }
 }
 

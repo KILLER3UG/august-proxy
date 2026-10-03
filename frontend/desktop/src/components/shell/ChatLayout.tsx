@@ -4,6 +4,7 @@
 /* Preview, Diff, Terminal, Tasks, and Plan sections.                       */
 
 import { useState, useEffect, useRef } from "react";
+import { useShellWidth } from '@/hooks/useShellWidth';
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -565,9 +566,20 @@ export function ChatLayout() {
   // thread + right drawer hidden. The session sidebar stays visible.
   const isSettings = location.pathname.startsWith("/settings");
 
+  // Responsive tiers are container queries on the shell (styles/chat.css).
+  // The scrims are real DOM so click-outside works and Escape has a target.
+  const shell = useShellWidth();
+
   return (
-    <div className="august-shell h-full min-h-0 flex flex-col overflow-hidden bg-background text-foreground">
+    <div ref={shell.ref} className="august-shell h-full min-h-0 flex flex-col overflow-hidden bg-background text-foreground">
       <div className="august-shell-body flex-1 flex min-h-0 overflow-hidden">
+        {!isSettings && shell.sidebarOverlays && !collapsed && (
+          <div
+            className="absolute inset-0 z-30 bg-scrim"
+            onClick={() => setCollapsed(true)}
+            aria-hidden
+          />
+        )}
         {!isSettings && (
           <SessionSidebar
             activeId={active?.id}
@@ -594,6 +606,13 @@ export function ChatLayout() {
             workersBadge={workersBadge}
           />
           <div className="august-content-area flex-1 min-h-0 overflow-hidden relative flex">
+            {showRightSidebar && shell.drawerOverlays && (
+              <div
+                className="absolute inset-0 z-20 bg-scrim"
+                onClick={() => closeRightDrawer()}
+                aria-hidden
+              />
+            )}
             {/* Settings takes the full width (its own internal layout).
                 Do NOT key Outlet on location.pathname here — that remounted
                 the entire SettingsPage (shell + content) on every tab switch
