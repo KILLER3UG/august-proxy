@@ -109,11 +109,14 @@ export function SessionListNav({
         </motion.button>
       </div>
 
-      {/* Core navigation: Artifacts, Customize.
-          There is no `/projects` route — a "Projects" row used to sit here
-          pointing at `/board`, whose page is titled "Board" and which the dock
-          below already links, so the row could only ever mislabel a duplicate. */}
-      <div className="px-2 space-y-0.5 pb-1">
+      {/* Core navigation — one labeled list, the pattern every reference
+          uses (ChatGPT/Claude/DeepSeek/Hermes): icon + visible label, never
+          a bare icon strip. DeepSeek's sidebar spec is explicit that the
+          label is "plain visible text, the accessible name, and the
+          collapsed tooltip"; icon-only is for the collapsed rail alone.
+          The old 6-icon dock (audit A1 §3) hid six whole destinations
+          behind 28px glyphs nobody could name. */}
+      <div className="px-2 space-y-0.5 pb-1" role="navigation" aria-label="Workspace">
         <button
           type="button"
           onClick={() => {
@@ -129,6 +132,36 @@ export function SessionListNav({
           <span>Artifacts</span>
         </button>
 
+        {DESTINATIONS.map(({ to: path, label, Icon }) => {
+          const pending = REVIEW_INBOX_ROUTES.has(path) ? inbox.total : 0;
+          return (
+            <button
+              key={path}
+              type="button"
+              onClick={() => onNavigate(path)}
+              className={cn(
+                'w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[0.78125rem] transition-colors',
+                isActive(path)
+                  ? 'bg-white/[0.08] text-sidebar-foreground font-medium'
+                  : 'text-sidebar-foreground/70 hover:bg-white/[0.04] hover:text-sidebar-foreground',
+              )}
+              aria-current={isActive(path) ? 'page' : undefined}
+              data-testid={`sidebar-nav-${path.replace(/^\//, '')}`}
+            >
+              <Icon className="size-3 text-muted-foreground shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{label}</span>
+              {pending > 0 ? (
+                <span
+                  data-testid={`sidebar-nav-badge-${path.replace(/^\//, '')}`}
+                  className="shrink-0 rounded-sm bg-warning/20 px-1 text-2xs font-medium leading-4 text-warning-fg tabular-nums"
+                >
+                  {pending}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+
         <button
           type="button"
           onClick={() => onNavigate('/settings')}
@@ -142,42 +175,6 @@ export function SessionListNav({
           <Settings className="size-3 text-muted-foreground shrink-0" />
           <span>Customize</span>
         </button>
-      </div>
-
-      {/* Destination icon dock */}
-      <div className="px-2 pb-1.5 pt-0.5 flex items-center gap-1" role="navigation" aria-label="Workspace">
-        {DESTINATIONS.map(({ to: path, label, Icon }) => {
-          const pending = REVIEW_INBOX_ROUTES.has(path) ? inbox.total : 0;
-          return (
-            <button
-              key={path}
-              type="button"
-              onClick={() => onNavigate(path)}
-              className={cn(
-                'relative flex size-7 shrink-0 items-center justify-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
-                isActive(path)
-                  ? 'bg-white/[0.07] text-sidebar-foreground'
-                  : 'text-sidebar-foreground/55 hover:bg-white/[0.04] hover:text-sidebar-foreground/80',
-              )}
-              aria-current={isActive(path) ? 'page' : undefined}
-              title={pending > 0 ? `${label} — ${pending} awaiting review` : label}
-              aria-label={label}
-              data-testid={`sidebar-nav-${path.replace(/^\//, '')}`}
-            >
-              <Icon className="size-3" />
-              {/* Same amber pill the settings rail uses; the dock button is
-                  28px, so it rides the icon's top-right corner. */}
-              {pending > 0 ? (
-                <span
-                  data-testid={`sidebar-nav-badge-${path.replace(/^\//, '')}`}
-                  className="absolute -right-1.5 -top-1.5 min-w-3.5 rounded-sm bg-warning/20 px-0.5 text-2xs font-medium leading-3.5 text-warning-fg tabular-nums"
-                >
-                  {pending}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
       </div>
     </div>
   );

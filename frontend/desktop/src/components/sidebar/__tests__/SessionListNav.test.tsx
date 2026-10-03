@@ -131,14 +131,15 @@ describe('SessionListNav', () => {
     // control, and the accessible name stays the destination label.
     const dockButton = screen.getByTestId('sidebar-nav-learning');
     expect(dockButton.textContent).toContain('3');
-    expect(dockButton).toHaveAttribute('aria-label', 'Learning');
-    expect(dockButton).toHaveAttribute('title', 'Learning — 3 awaiting review');
+    // Labeled row: the visible text IS the accessible name — no aria-label
+    // or native title (2026-10-04, icon dock -> labeled rows).
+    expect(dockButton).not.toHaveAttribute('aria-label');
+    expect(dockButton).not.toHaveAttribute('title');
   });
 
   it('shows no badge when nothing is waiting for a decision', async () => {
     renderNav();
     await waitFor(() => expect(getMock).toHaveBeenCalled());
     expect(screen.queryByTestId('sidebar-nav-badge-learning')).toBeNull();
-    expect(screen.getByTestId('sidebar-nav-learning')).toHaveAttribute('title', 'Learning');
   });
 });
