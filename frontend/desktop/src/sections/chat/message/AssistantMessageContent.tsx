@@ -1,6 +1,9 @@
 import { ChangesCard } from '@/components/chat/ChangesCard';
 import { CircuitArtifactCard } from '@/components/chat/CircuitArtifactCard';
 import { TurnProvenanceChip } from '@/components/chat/TurnProvenanceChip';
+import { SavePointChip } from '@/components/chat/SavePointChip';
+import { SkillEvolvedChip } from '@/components/chat/SkillEvolvedChip';
+import type { WorkbenchCheckpoint } from '@/api/workbench';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 import type { GitDiffResult } from '@/api/git';
 import type { SubagentBlockState } from '../chat-stream-manager';
@@ -29,6 +32,7 @@ export function AssistantMessageContent({
   speaking,
   isRegenerating,
   toolProgress,
+  savePoints,
   subagentPrompts,
   subagentBlocks,
   subagentRoster,
@@ -54,6 +58,8 @@ export function AssistantMessageContent({
   speaking: boolean;
   isRegenerating: boolean;
   toolProgress?: ToolProgressMap;
+  /** File save points taken during this turn — rendered as SavePointChip. */
+  savePoints?: WorkbenchCheckpoint[];
   subagentPrompts?: Map<string, SubagentPromptEntry>;
   subagentBlocks?: Map<string, SubagentBlockState>;
   subagentRoster?: ReadonlyArray<{
@@ -225,6 +231,13 @@ export function AssistantMessageContent({
             gated on the same `!(isLast && streaming)` as its siblings: the
             frame that carries it is emitted at turn close, never mid-stream. */}
         {!(isLast && streaming) && <TurnProvenanceChip provenance={message.provenance} />}
+        {/* SavePointChip + SkillEvolvedChip join the provenance row; both hide
+            mid-stream on the same gate (nothing to say about a turn that is
+            still running). */}
+        {!(isLast && streaming) && (
+          <SavePointChip checkpoints={savePoints ?? []} sessionId={sessionId} />
+        )}
+        {!(isLast && streaming) && <SkillEvolvedChip tools={message.tools} />}
       </div>
       <AssistantMessageActions
         showActions={showActions}

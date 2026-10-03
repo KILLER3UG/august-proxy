@@ -2,7 +2,10 @@
 /* Scrollable message list, working indicator, scroll affordances, and the */
 /* sticky composer / plan banner strip under the transcript.               */
 
-import { useCallback, useState, type ReactNode, type RefObject } from 'react';
+import { useCallback, useMemo, useState, type ReactNode, type RefObject } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { listWorkbenchCheckpoints, type WorkbenchCheckpoint } from '@/api/workbench';
+import { resolveWorkbenchSessionId } from './stream/session-id-map';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import { messagePop, userMessagePop } from '@/lib/motion';
@@ -87,6 +90,50 @@ export function ChatThreadMessagePane({
   virtRef?: React.MutableRefObject<{ scrollToIndex: (index: number, opts?: object) => void } | null>;
 }) {
   const shouldAnimateEnter = useMessageEnterAnimation(messages, sessionId);
+
+  // Save points grouped per assistant turn (SavePointChip). The backend
+  // snapshots files before every mutating tool call; assigning each to the
+  // turn it belongs to is a local pass over message timestamps.
+  const wbSessionId = useMemo(
+    () => (sessionId ? resolveWorkbenchSessionId(sessionId) : null),
+    [sessionId],
+  );
+  const checkpointsQuery = useQuery({
+    queryKey: ['workbench-checkpoints', wbSessionId],
+    queryFn: () => listWorkbenchCheckpoints(wbSessionId!),
+    enabled: Boolean(wbSessionId),
+    staleTime: 30_000,
+  });
+  const savePointsByMsg = useMemo(() => {
+    const map = new Map<string, WorkbenchCheckpoint[]>();
+    const checkpoints = checkpointsQuery.data ?? [];
+    if (checkpoints.length === 0 || messages.length === 0) return map;
+    const times = messages.map((m) => {
+      const t = Date.parse(m.timestamp);
+      return Number.isFinite(t) ? t : -Infinity;
+    });
+    for (const cp of checkpoints) {
+      const t = Date.parse(cp.createdAt ?? '');
+      if (!Number.isFinite(t)) continue;
+      // The last user message that started at or before the snapshot…
+      let userIdx = -1;
+      for (let i = 0; i < messages.length; i++) {
+        if (messages[i].role === 'user' && times[i] <= t && times[i] >= 0) userIdx = i;
+      }
+      if (userIdx < 0) continue;
+      // …belongs to the first assistant reply after it.
+      for (let j = userIdx + 1; j < messages.length; j++) {
+        if (messages[j].role !== 'user') {
+          const list = map.get(messages[j].id) ?? [];
+          list.push(cp);
+          map.set(messages[j].id, list);
+          break;
+        }
+        break;
+      }
+    }
+    return map;
+  }, [messages, checkpointsQuery.data]);
   const [searchQuery, setSearchQuery] = useState('');
   const [matchedIndices, setMatchedIndices] = useState<number[]>([]);
 
@@ -204,6 +251,7 @@ export function ChatThreadMessagePane({
                   subagentPrompts={subagentPrompts}
                   subagentBlocks={subagentBlocks}
                   subagentRoster={subagentRoster}
+                  savePoints={savePointsByMsg.get(m.id)}
                   models={models}
                   onReanswerWithModel={
                     onReanswerWithModel

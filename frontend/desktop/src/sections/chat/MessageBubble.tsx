@@ -2,6 +2,7 @@
 /* Renders a single chat message: text, thinking, tool calls, and badges. */
 
 import { useState, useMemo, memo } from 'react';
+import type { WorkbenchCheckpoint } from '@/api/workbench';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import type { ChatMessage } from '@/types/chat';
 import type { ModelItem } from './model-display';
@@ -33,6 +34,7 @@ function MessageBubbleInner({
   onFork,
   onClarifyAnswer,
   toolProgress,
+  savePoints,
   subagentPrompts,
   subagentBlocks,
   subagentRoster,
@@ -54,6 +56,8 @@ function MessageBubbleInner({
   onFork?: () => void;
   onClarifyAnswer?: (answer: string) => void;
   toolProgress?: Map<string, ReadonlyArray<{ path: string; status: 'reading' | 'read' }>>;
+  /** File save points taken during THIS message's turn (SavePointChip). */
+  savePoints?: WorkbenchCheckpoint[];
   /** Visible model catalog for "answer this with another model" (A4). */
   models?: ModelItem[];
   onReanswerWithModel?: (model: ModelItem) => void;
@@ -337,6 +341,7 @@ function MessageBubbleInner({
           speaking={speaking}
           isRegenerating={isRegenerating}
           toolProgress={toolProgress}
+          savePoints={savePoints}
           subagentPrompts={subagentPrompts}
           subagentBlocks={subagentBlocks}
           subagentRoster={subagentRoster}
