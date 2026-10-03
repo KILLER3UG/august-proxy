@@ -18,6 +18,15 @@ export function shouldShowOnboarding(): boolean {
   }
 }
 
+/** True while the first-run tour still wants the screen (fresh install, not
+ *  dismissed). The provider checklist defers to it: both overlays mounted at
+ *  z-50 with no mutual gate, so on a truly fresh install both rendered and
+ *  their stacking was portal-timing luck (audit A1 §1). */
+export function tourPending(sessionCount: number): boolean {
+  return shouldShowOnboarding() && sessionCount === 0;
+}
+
+
 /** The other half of the gate, so Settings can offer a switch that actually
  *  controls the tour. `DONE_KEY` is owned by this file; the previous Settings
  *  toggle was a local `useState(true)` that wrote nothing and reset on

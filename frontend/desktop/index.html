@@ -6,16 +6,70 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
     <title>August Proxy</title>
-    <!-- Fill the webview before CSS/JS; avoids a white hairline under the UI. -->
+    <!-- First frame, before any CSS/JS: the ground colour plus a static
+         skeleton of the real shell (a sidebar strip with a few rows). The
+         window is therefore never a blank rectangle while the bundle and
+         backend boot — Claude Desktop paints the same placeholder from its
+         index.html and pins it to the theme tokens in a test. The skeleton
+         sits above #root and is removed the moment React mounts. -->
     <style>
       html, body, #root { height: 100%; width: 100%; margin: 0; overflow: hidden; background: #0e0e10; }
       @media (prefers-color-scheme: light) {
         html:not(.dark), html:not(.dark) body, html:not(.dark) #root { background: #fbfbfa; }
       }
+      #boot-skeleton { position: fixed; inset: 0; display: flex; background: inherit; z-index: 0; }
+      #boot-skeleton .boot-titlebar { height: 44px; flex: none; border-bottom: 1px solid rgba(255,255,255,0.08); }
+      html:not(.dark) #boot-skeleton .boot-titlebar { border-bottom-color: rgba(0,0,0,0.08); }
+      #boot-skeleton .boot-body { display: flex; flex: 1; min-height: 0; }
+      #boot-skeleton .boot-side { width: 280px; flex: none; padding: 12px; display: flex; flex-direction: column; gap: 10px; border-right: 1px solid rgba(255,255,255,0.06); }
+      html:not(.dark) #boot-skeleton .boot-side { border-right-color: rgba(0,0,0,0.06); }
+      #boot-skeleton .boot-row { height: 10px; border-radius: 5px; background: rgba(255,255,255,0.08); }
+      html:not(.dark) #boot-skeleton .boot-row { background: rgba(0,0,0,0.08); }
+      #boot-skeleton .boot-row.w-60 { width: 60%; }
+      #boot-skeleton .boot-row.w-40 { width: 40%; }
+      #boot-skeleton .boot-row.w-80 { width: 80%; }
+      #boot-skeleton .boot-main { flex: 1; display: flex; align-items: flex-end; justify-content: center; padding: 24px; }
+      #boot-skeleton .boot-composer { width: min(680px, 70%); height: 56px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); }
+      html:not(.dark) #boot-skeleton .boot-composer { border-color: rgba(0,0,0,0.1); background: rgba(0,0,0,0.02); }
+      @media (prefers-reduced-motion: no-preference) {
+        #boot-skeleton .boot-row, #boot-skeleton .boot-composer { animation: boot-pulse 1.8s ease-in-out infinite; }
+        @keyframes boot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+      }
     </style>
   </head>
   <body>
+    <div id="boot-skeleton" aria-hidden="true">
+      <div class="boot-titlebar"></div>
+      <div class="boot-body">
+        <div class="boot-side">
+          <div class="boot-row w-60"></div>
+          <div class="boot-row w-80"></div>
+          <div class="boot-row w-40"></div>
+          <div class="boot-row w-60"></div>
+          <div class="boot-row w-80"></div>
+        </div>
+        <div class="boot-main"><div class="boot-composer"></div></div>
+      </div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // The skeleton is a placeholder, never a second app: remove it as soon
+      // as React has painted the real shell.
+      (function () {
+        function clearBootSkeleton() {
+          var el = document.getElementById('boot-skeleton');
+          if (el && el.parentNode) el.parentNode.removeChild(el);
+        }
+        window.addEventListener('DOMContentLoaded', function () {
+          requestAnimationFrame(function () {
+            requestAnimationFrame(clearBootSkeleton);
+          });
+        });
+        // Belt and braces: a backend that never boots must not leave the
+        // skeleton over the boot gate (z-200) forever.
+        setTimeout(clearBootSkeleton, 4000);
+      })();
+    </script>
   </body>
 </html>

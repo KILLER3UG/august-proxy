@@ -199,9 +199,21 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
             {detail}
           </p>
           {lastError && lastError !== detail ? (
-            <p className="mx-auto mt-2 max-h-28 max-w-md overflow-y-auto break-words rounded-lg bg-black/30 p-2 text-left text-2xs text-danger-fg">
-              {lastError}
-            </p>
+            /* The install/bootstrap log auto-expands on failure (Hermes
+               parity): the first thing a broken backend needs is the log,
+               and a collapsed box is where people look second. */
+            <details
+              open
+              className="mx-auto mt-2 max-w-md text-left"
+              data-testid="boot-error-log"
+            >
+              <summary className="cursor-pointer select-none text-2xs font-medium text-danger-fg">
+                Startup log
+              </summary>
+              <pre className="mt-1 max-h-40 overflow-y-auto break-words whitespace-pre-wrap rounded-lg bg-sunken p-2 text-2xs text-muted-foreground">
+                {lastError}
+              </pre>
+            </details>
           ) : null}
           {/* Graceful degradation: common fixes (Phase 5.1) */}
           {waitPhase !== 'normal' && !proxyUp && (

@@ -181,7 +181,7 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
         onChange={(e) => setToken(e.target.value)}
         placeholder={placeholder}
         className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
-        autoComplete="off"
+        autoComplete="new-password"
       />
 
       {provider === 'slack' && (

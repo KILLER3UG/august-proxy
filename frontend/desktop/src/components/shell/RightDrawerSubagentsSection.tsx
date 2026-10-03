@@ -409,8 +409,15 @@ export function RightDrawerSubagentsSection({
     return out;
   }, [activeAgents, query.data?.agents, runsQuery.data, subagentBlocks]);
 
+  // Dismissed tabs (the × used to be a no-op: it only cleared the
+  // selection, because entries are derived from queries — audit A1 §4).
+  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
+  // Finished/failed while the user was elsewhere: the tab stays flagged
+  // until it is actually opened (Hermes' hidden-bot badge pattern).
+  const [seenKeys, setSeenKeys] = useState<Set<string>>(() => new Set());
+
   const selectedAgent = selectedTaskId
-    ? entries.find((e) => e.key === selectedTaskId)?.agent ?? null
+    ? entries.find((e) => e.key === selectedTaskId && !dismissed.has(e.key))?.agent ?? null
     : null;
   const selectedBlock = selectedTaskId ? subagentBlocks?.get(selectedTaskId) ?? null : null;
 
@@ -477,7 +484,24 @@ export function RightDrawerSubagentsSection({
   // A2: tabs/search strip is rendered whenever ≥1 entry exists, regardless of
   // selection state (was hidden until the user clicked a row — first-open
   // with multiple workers only showed a vertical list).
-  const tabs = entries.map((e) => ({
+  const unseenFinish = useMemo(() => {
+    const out = new Set<string>();
+    for (const e of entries) {
+      if (seenKeys.has(e.key)) continue;
+      const s = e.agent.status;
+      if (s === 'completed' || s === 'done' || s === 'failed' || s === 'error' || s === 'cancelled') {
+        out.add(e.key);
+      }
+    }
+    return out;
+  }, [entries, seenKeys]);
+
+  const visibleEntries = useMemo(
+    () => entries.filter((e) => !dismissed.has(e.key)),
+    [entries, dismissed],
+  );
+
+  const tabs = visibleEntries.map((e) => ({
     taskId: e.key,
     label: displayLabels.get(e.key) || getAgentRoleLabel(e.agent.agentId),
     elapsed: typeof e.agent.elapsed === 'number' ? e.agent.elapsed : undefined,
@@ -489,27 +513,44 @@ export function RightDrawerSubagentsSection({
         className="flex shrink-0 items-center gap-0.5 border-b border-border/40 px-2 py-1"
         data-testid="right-drawer-subagent-tabstrip"
       >
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+        <div
+          role="tablist"
+          aria-label="Subagent workers"
+          className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
+        >
           {tabs.map((t) => {
-            const agent = entries.find((e) => e.key === t.taskId)?.agent;
+            const agent = visibleEntries.find((e) => e.key === t.taskId)?.agent;
             if (!agent) return null;
             const active = t.taskId === selectedTaskId;
+            const unseen = unseenFinish.has(t.taskId);
             return (
               <div
                 key={t.taskId}
+                role="presentation"
                 className={cn(
                   'group flex max-w-[12rem] shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs',
-                  active ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-white/[0.05]',
+                  active ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-accent',
                 )}
               >
                 <StatusGlyph status={agent.status} />
                 <button
                   type="button"
-                  onClick={() => setSelectedTaskId(t.taskId)}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => {
+                    setSelectedTaskId(t.taskId);
+                    setSeenKeys((prev) => new Set(prev).add(t.taskId));
+                  }}
                   className="min-w-0 truncate text-left"
                   title={t.label}
                 >
                   {t.label}
+                  {unseen && (
+                    <span
+                      className="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"
+                      aria-label="finished while you were away"
+                    />
+                  )}
                 </button>
                 {typeof t.elapsed === 'number' && (
                   <span className="shrink-0 text-2xs tabular-nums text-muted-foreground/50">
@@ -518,9 +559,12 @@ export function RightDrawerSubagentsSection({
                 )}
                 <button
                   type="button"
-                  onClick={() => setSelectedTaskId((cur) => (cur === t.taskId ? null : cur))}
-                  className="shrink-0 rounded p-0.5 text-muted-foreground/60 hover:bg-white/[0.08] hover:text-foreground"
-                  aria-label="Remove subagent view"
+                  onClick={() => {
+                    setDismissed((prev) => new Set(prev).add(t.taskId));
+                    if (selectedTaskId === t.taskId) setSelectedTaskId(null);
+                  }}
+                  className="shrink-0 rounded p-0.5 text-muted-foreground/60 hover:bg-accent hover:text-foreground"
+                  aria-label={`Remove ${t.label} from this strip`}
                   title="Remove view"
                 >
                   ×
@@ -529,7 +573,7 @@ export function RightDrawerSubagentsSection({
             );
           })}
         </div>
-        <TabSearchDropdown tabs={tabs} onSelect={(id) => setSelectedTaskId(id)} />
+        <TabSearchDropdown tabs={tabs} onSelect={(id) => { setSelectedTaskId(id); setSeenKeys((prev) => new Set(prev).add(id)); }} />
       </div>
     ) : null;
 
@@ -659,13 +703,13 @@ export function RightDrawerSubagentsSection({
     <div className="flex h-full min-h-0 flex-col drawer-section-text" data-testid="right-drawer-subagents-list">
       {tabsStrip}
       <div className="min-h-0 flex-1 overflow-y-auto">
-      {entries.length === 0 ? (
+      {visibleEntries.length === 0 ? (
         <p className="px-4 py-6 text-center text-[0.8125rem] text-muted-foreground/60">
           No subagents yet. Delegate a task and it will show up here like a second conversation.
         </p>
       ) : (
         <div className="px-1.5 py-1.5">
-          {entries.map(({ key, agent }) => (
+          {visibleEntries.map(({ key, agent }) => (
             <div key={key} className="group relative">
               <button
                 type="button"

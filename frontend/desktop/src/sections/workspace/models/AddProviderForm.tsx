@@ -91,7 +91,7 @@ export function AddProviderForm({
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="Enter API key"
-              autoComplete="off"
+              autoComplete="new-password"
             />
             <button
               type="button"

@@ -102,11 +102,11 @@ describe('RightDrawerSubagentsSection', () => {
     expect(await screen.findByTestId('right-drawer-subagent-view-goodall-1')).toBeInTheDocument();
     expect(screen.getByText('Waiting for output…')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove subagent view' }));
+    // The × now DISMISSES the worker from the strip (it used to only clear
+    // the selection while the entry stayed — audit A1 §4).
+    fireEvent.click(screen.getByRole('button', { name: /Remove .* from this strip/ }));
     expect(screen.queryByTestId('right-drawer-subagent-view-goodall-1')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId('right-drawer-subagent-goodall-1'));
-    expect(screen.getByTestId('right-drawer-subagent-view-goodall-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('right-drawer-subagent-goodall-1')).not.toBeInTheDocument();
   });
 
   it('replays the persisted work transcript for a settled worker', async () => {
