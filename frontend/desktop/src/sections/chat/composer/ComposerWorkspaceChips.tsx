@@ -164,7 +164,7 @@ export function ComposerWorkspaceChips({
               {picking ? 'Choosing folder…' : 'Open folder…'}
             </button>
             <div className="mx-1.5 my-1 border-t border-border/40" />
-            <div className="px-2 pb-1 pt-0.5 text-3xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <div className="px-2 pb-1 pt-0.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground/70">
               Projects
             </div>
             {options.length === 0 ? (
@@ -196,7 +196,7 @@ export function ComposerWorkspaceChips({
                       <span className="block truncate text-xs text-foreground/90">
                         {w.name || workspaceBaseName(w.path)}
                       </span>
-                      <span className="block truncate font-mono text-3xs text-muted-foreground/70">
+                      <span className="block truncate font-mono text-2xs text-muted-foreground/70">
                         {w.path}
                       </span>
                     </span>

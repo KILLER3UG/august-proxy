@@ -116,7 +116,7 @@ function EndpointRow({
         </div>
         <button
           onClick={copy}
-          className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-background px-2 py-1 text-3xs font-mono hover:bg-accent transition shrink-0"
+          className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-background px-2 py-1 text-2xs font-mono hover:bg-accent transition shrink-0"
           title="Copy URL" aria-label="Copy URL"
         >
           {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
@@ -124,7 +124,7 @@ function EndpointRow({
         </button>
       </div>
       <code className="block mt-1.5 text-2xs font-mono text-foreground break-all">{url}</code>
-      <p className="text-3xs text-muted-foreground mt-1">{hint}</p>
+      <p className="text-2xs text-muted-foreground mt-1">{hint}</p>
     </div>
   );
 }
@@ -307,7 +307,7 @@ export function SystemHealthSection() {
                 <div className="min-w-0">
                   <p className="text-sm font-medium capitalize">{p.platform}</p>
                   {!p.available && p.reason ? (
-                    <p className="text-2xs text-amber-400/90 break-words">{p.reason}</p>
+                    <p className="text-2xs text-warning-fg break-words">{p.reason}</p>
                   ) : (
                     <p className="text-2xs text-muted-foreground">
                       {p.running ? 'Adapter running' : 'SDK available, not running'}
@@ -331,7 +331,7 @@ export function SystemHealthSection() {
         )}
       </div>
 
-      <p className="text-3xs text-muted-foreground font-mono">
+      <p className="text-2xs text-muted-foreground font-mono">
         🔒 The base URL works over the network this app is served from. Use a real API key from Model Providers for the upstream provider.{' '}
         <Link to="/settings/api-access" className="underline underline-offset-2 hover:text-foreground">
           Open the gateway →

@@ -40,7 +40,7 @@ export function Section({
             {title}
           </h3>
           {count > 0 && (
-            <span className="text-3xs text-sidebar-foreground/30 tabular-nums">
+            <span className="text-2xs text-sidebar-foreground/30 tabular-nums">
               {count}
             </span>
           )}
@@ -147,7 +147,7 @@ export function FolderHeader({
           {folder.name}
         </span>
         {count > 0 && (
-          <span className="text-3xs text-sidebar-foreground/25 tabular-nums shrink-0">
+          <span className="text-2xs text-sidebar-foreground/25 tabular-nums shrink-0">
             {count}
           </span>
         )}
@@ -229,7 +229,7 @@ export function UncategorizedHeader({
           Tasks
         </span>
         {count > 0 && (
-          <span className="text-3xs text-sidebar-foreground/25 tabular-nums shrink-0">
+          <span className="text-2xs text-sidebar-foreground/25 tabular-nums shrink-0">
             {count}
           </span>
         )}

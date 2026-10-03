@@ -752,7 +752,7 @@ export function SessionList({
                     {dropdownUser.avatar ? (
                       <AvatarImage src={dropdownUser.avatar} alt={dropdownUser.name} />
                     ) : null}
-                    <AvatarFallback className="text-3xs">{dropdownUser.initials}</AvatarFallback>
+                    <AvatarFallback className="text-2xs">{dropdownUser.initials}</AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1 truncate text-[0.78125rem]">
                     <span className="font-medium text-sidebar-foreground">{dropdownUser.name}</span>
@@ -769,7 +769,7 @@ export function SessionList({
             className={cn(
               "size-7 shrink-0 rounded-md flex items-center justify-center transition-colors",
               updateAvailable
-                ? "text-emerald-400 hover:bg-emerald-500/15"
+                ? "text-success-fg hover:bg-success/15"
                 : "text-muted-foreground/60 hover:text-sidebar-foreground hover:bg-white/[0.05]",
             )}
             title={updateAvailable ? `Update available: v${updateAvailable.version}` : "Check for updates"}

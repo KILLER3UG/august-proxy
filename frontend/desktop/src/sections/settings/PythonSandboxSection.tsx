@@ -93,7 +93,7 @@ export function PythonSandboxSection() {
 
       {result && (
         <div className="space-y-2 rounded-xl border border-white/[0.08] bg-black/30 p-3 text-xs font-mono">
-          <div className={result.ok ? 'text-emerald-400' : 'text-destructive'}>
+          <div className={result.ok ? 'text-success-fg' : 'text-destructive'}>
             {result.ok ? 'OK' : 'Error'}
             {result.elapsedMs != null ? ` · ${result.elapsedMs}ms` : ''}
             {result.cwd ? ` · cwd ${result.cwd}` : ''}

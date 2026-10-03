@@ -61,7 +61,7 @@ function BulletList({ items }: { items: string[] }) {
           transition={{ delay: 0.12 + i * 0.12, duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
           className="flex items-start gap-2 text-[0.78125rem] leading-snug text-foreground/90"
         >
-          <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded bg-primary/15 text-3xs font-bold text-primary">
+          <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded bg-primary/15 text-2xs font-bold text-primary">
             ✦
           </span>
           <span className="min-w-0">{it}</span>
@@ -105,7 +105,7 @@ function Bubble({
     <motion.div {...rise} className="flex items-start gap-2.5" data-testid="conv-assistant">
       <span
         aria-hidden
-        className="mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-[7px] border border-border bg-elevated text-3xs font-bold text-primary"
+        className="mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-[7px] border border-border bg-elevated text-2xs font-bold text-primary"
       >
         A
       </span>

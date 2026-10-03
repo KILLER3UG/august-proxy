@@ -36,7 +36,7 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
 
 function FilterChips<T extends string>({ items, value, onChange, label }: { items: { key: T; label: string }[]; value: T; onChange: (v: T) => void; label: string }) {
     return (
-        <div className="flex items-center gap-1 text-3xs">
+        <div className="flex items-center gap-1 text-2xs">
             <span className="flex items-center gap-1 px-1 text-muted-foreground/70 uppercase tracking-wider">
                 {label}
             </span>
@@ -109,7 +109,7 @@ function VirtualizedRequestsTable({ rows }: { rows: TrafficRow[] }) {
 
     return (
         <Card className="flex flex-col overflow-hidden">
-            <div className="grid grid-cols-[70px_90px_1fr_120px_90px_90px_90px] gap-2 px-3 py-2 text-3xs uppercase tracking-wider text-muted-foreground border-b border-border font-mono">
+            <div className="grid grid-cols-[70px_90px_1fr_120px_90px_90px_90px] gap-2 px-3 py-2 text-2xs uppercase tracking-wider text-muted-foreground border-b border-border font-mono">
                 <span>Status</span>
                 <span>Client</span>
                 <span>Endpoint</span>
@@ -165,7 +165,7 @@ function VirtualizedRequestsTable({ rows }: { rows: TrafficRow[] }) {
                     </div>
                 )}
             </div>
-            <div className="border-t border-border px-3 py-1.5 text-3xs text-muted-foreground font-mono flex items-center gap-3">
+            <div className="border-t border-border px-3 py-1.5 text-2xs text-muted-foreground font-mono flex items-center gap-3">
                 <span>{rows.length} rows</span>
                 <span>·</span>
                 <span>last: {rows[0] ? formatTimeAgo(rows[0].timestamp) : '—'}</span>

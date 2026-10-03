@@ -196,7 +196,7 @@ function Column({
               <select
                 value={card.agentId ?? ''}
                 onChange={(e) => onAssign(card.id, e.target.value)}
-                className="rounded border border-white/[0.08] bg-transparent px-1 py-0.5 text-3xs"
+                className="rounded border border-white/[0.08] bg-transparent px-1 py-0.5 text-2xs"
                 aria-label={`Agent for ${card.title}`}
               >
                 <option value="">Unassigned</option>
@@ -215,7 +215,7 @@ function Column({
                 <button
                   type="button"
                   onClick={() => onOpenSession(card.sessionId as string)}
-                  className="inline-flex items-center gap-1 text-3xs text-muted-foreground hover:text-foreground"
+                  className="inline-flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground"
                   title="Open the session that created this card"
                   aria-label="Open the session that created this card"
                 >
@@ -229,7 +229,7 @@ function Column({
                   key={c.id}
                   type="button"
                   className={cn(
-                    'rounded px-1.5 py-0.5 text-3xs border border-white/[0.08] hover:bg-white/[0.06]',
+                    'rounded px-1.5 py-0.5 text-2xs border border-white/[0.08] hover:bg-white/[0.06]',
                   )}
                   onClick={() => onMove(card.id, c.id)}
                 >

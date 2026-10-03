@@ -151,7 +151,7 @@ export function WorkspaceHeatmap({ cells, className, legend = true, activityMode
       </div>
 
       {legend && (
-        <div className="flex items-center justify-end gap-2 text-3xs text-muted-foreground">
+        <div className="flex items-center justify-end gap-2 text-2xs text-muted-foreground">
           <span>Less</span>
           <div className="flex gap-[3px]">
             {LEVELS.map((cls, i) => (

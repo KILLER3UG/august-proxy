@@ -29,7 +29,7 @@ export function ProviderListRail({
   return (
     <div className="rounded-xl border border-border/60 bg-card/60 flex flex-col overflow-hidden md:max-h-[calc(100vh-9rem)]">
       <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between shrink-0">
-        <p className="text-3xs uppercase tracking-widest text-muted-foreground/70 font-semibold">
+        <p className="text-2xs uppercase tracking-widest text-muted-foreground/70 font-semibold">
           Providers
         </p>
         <button

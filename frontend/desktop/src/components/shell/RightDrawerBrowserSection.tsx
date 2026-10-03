@@ -88,7 +88,7 @@ export function RightDrawerBrowserSection() {
           <span className="truncate">{title || 'No page loaded'}</span>
         </div>
         {url && (
-          <div className="mt-0.5 truncate text-3xs text-muted-foreground/70">{url}</div>
+          <div className="mt-0.5 truncate text-2xs text-muted-foreground/70">{url}</div>
         )}
       </div>
 
@@ -141,7 +141,7 @@ export function RightDrawerBrowserSection() {
                 <>
                   <Inbox className="size-5" />
                   <div className="mt-2 text-2xs">No browser activity yet</div>
-                  <div className="mt-0.5 text-3xs text-muted-foreground/50">
+                  <div className="mt-0.5 text-2xs text-muted-foreground/50">
                     Actions appear here when the model uses browser tools
                   </div>
                 </>
@@ -154,15 +154,15 @@ export function RightDrawerBrowserSection() {
         {latest && (
           <div className="absolute left-1.5 bottom-1.5 right-1.5 z-10 flex items-center gap-1.5 rounded-md bg-black/55 px-2 py-1 backdrop-blur-sm">
             <ActionDot name={latest.name} />
-            <span className="text-3xs font-medium text-foreground/90">
+            <span className="text-2xs font-medium text-foreground/90">
               {actionLabel(latest.name).verb}
             </span>
             {latest.typed && (
-              <span className="truncate text-3xs text-muted-foreground/80">
+              <span className="truncate text-2xs text-muted-foreground/80">
                 "{latest.typed.slice(0, 24)}{latest.typed.length > 24 ? '…' : ''}"
               </span>
             )}
-            <span className="ml-auto text-3xs text-muted-foreground/60">{clock(latest.ts)}</span>
+            <span className="ml-auto text-2xs text-muted-foreground/60">{clock(latest.ts)}</span>
           </div>
         )}
       </div>
@@ -170,7 +170,7 @@ export function RightDrawerBrowserSection() {
       {/* Action log */}
       <div className="shrink-0 border-t border-border/50">
         <div className="flex items-center justify-between px-3 py-1.5">
-          <span className="text-3xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+          <span className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground/70">
             Actions
           </span>
           {log.length > 0 && (
@@ -187,7 +187,7 @@ export function RightDrawerBrowserSection() {
         </div>
         <div className="max-h-[30%] overflow-y-auto px-2 pb-2">
           {log.length === 0 ? (
-            <div className="px-1 py-2 text-3xs text-muted-foreground/50">
+            <div className="px-1 py-2 text-2xs text-muted-foreground/50">
               No actions recorded
             </div>
           ) : (
@@ -229,7 +229,7 @@ function ActionDot({ name }: { name: string }) {
       : name === 'browser_type'
         ? 'bg-blue-400'
         : name === 'browser_open'
-          ? 'bg-emerald-400'
+          ? 'bg-success'
           : 'bg-muted-foreground/50';
   return <span className={cn('size-1.5 shrink-0 rounded-full', color)} />;
 }

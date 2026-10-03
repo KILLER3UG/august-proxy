@@ -77,7 +77,7 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
       <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
         <Cpu className="size-3 text-muted-foreground/70" />
         <span className="truncate text-xs font-semibold text-foreground">Circuit workbench</span>
-        <span className="ml-auto rounded bg-muted/40 px-1.5 py-0.5 text-3xs text-muted-foreground">
+        <span className="ml-auto rounded bg-muted/40 px-1.5 py-0.5 text-2xs text-muted-foreground">
           {artifacts.length}
         </span>
       </div>
@@ -131,7 +131,7 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
                     <span className="block truncate text-[0.75rem] font-medium text-foreground">
                       {a.label}
                     </span>
-                    <span className="block truncate text-3xs text-muted-foreground">
+                    <span className="block truncate text-2xs text-muted-foreground">
                       {describeArtifact(a)}
                     </span>
                   </span>

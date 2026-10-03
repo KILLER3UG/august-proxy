@@ -231,7 +231,7 @@ export function UserDropdown({
         badge: {
           text: 'Update',
           className:
-            'rounded-sm border-0 bg-amber-500/20 text-amber-400 text-3xs px-1.5 py-0',
+            'rounded-sm border-0 bg-warning/20 text-warning-fg text-2xs px-1.5 py-0',
         },
       };
     }
@@ -248,7 +248,7 @@ export function UserDropdown({
             badge: {
               text: 'New',
               className:
-                'rounded-sm border-0 bg-amber-500/20 text-amber-400 text-3xs px-1.5 py-0',
+                'rounded-sm border-0 bg-warning/20 text-warning-fg text-2xs px-1.5 py-0',
             },
           },
         ]
@@ -320,13 +320,13 @@ export function UserDropdown({
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       online:
-        'text-green-600 bg-green-100 border-green-300 dark:text-green-400 dark:bg-green-900/30 dark:border-green-500/50',
+        'text-success-fg bg-success border-success text-success-fg bg-success/30 border-success/50',
       offline:
         'text-gray-600 bg-gray-100 border-gray-300 dark:text-gray-400 dark:bg-gray-800 dark:border-gray-600',
       busy:
-        'text-red-600 bg-red-100 border-red-300 dark:text-red-400 dark:bg-red-900/30 dark:border-red-500/50',
+        'text-danger-fg bg-danger border-danger text-danger-fg bg-danger/30 border-danger/50',
       focus:
-        'text-amber-600 bg-amber-100 border-amber-300 dark:text-amber-400 dark:bg-amber-900/30 dark:border-amber-500/50',
+        'text-warning-fg bg-warning border-warning text-warning-fg bg-warning/30 border-warning/50',
     };
     return colors[status.toLowerCase()] || colors.online;
   };
@@ -348,7 +348,7 @@ export function UserDropdown({
         )}
       >
         <AvatarImage src={user.avatar} alt={user.name} />
-        <AvatarFallback className="text-3xs">{user.initials}</AvatarFallback>
+        <AvatarFallback className="text-2xs">{user.initials}</AvatarFallback>
       </Avatar>
     </button>
   );

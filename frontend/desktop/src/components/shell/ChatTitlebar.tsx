@@ -294,7 +294,7 @@ export function ChatTitlebar({
           </button>
           <button
             onClick={() => { void handleClose(); }}
-            className="w-[42px] h-10 flex items-center justify-center text-muted-foreground/70 hover:bg-red-500 hover:text-white transition-colors"
+            className="w-[42px] h-10 flex items-center justify-center text-muted-foreground/70 hover:bg-danger hover:text-white transition-colors"
             aria-label="Close"
           >
             <X className="size-3" />

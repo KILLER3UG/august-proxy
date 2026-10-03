@@ -103,7 +103,7 @@ export function ProviderQuotaConfig({ provider, onSave, pending }: Props) {
       >
         {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
         Quota endpoint
-        <span className="text-3xs text-muted-foreground font-normal">
+        <span className="text-2xs text-muted-foreground font-normal">
           {provider.quotaEndpoint?.url ? provider.quotaEndpoint.url : 'not configured'}
         </span>
       </button>

@@ -48,7 +48,7 @@ function QuotaRow({ q }: { q: ModelQuota }) {
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-2 min-w-0">
           <span className="font-mono text-foreground truncate">{q.model || 'account'}</span>
-          <Badge variant="outline" className="text-3xs py-0 h-4">{q.source}</Badge>
+          <Badge variant="outline" className="text-2xs py-0 h-4">{q.source}</Badge>
         </div>
         <div className="font-mono tabular-nums text-muted-foreground shrink-0 text-2xs">
           {hasLimit ? (
@@ -81,7 +81,7 @@ function QuotaRow({ q }: { q: ModelQuota }) {
       )}
       {/* Every row says where its numbers came from — a local estimate is
           August's own token count, never a provider cap. */}
-      <p className="text-3xs text-muted-foreground font-mono">
+      <p className="text-2xs text-muted-foreground font-mono">
         {isNative ? 'Reported by provider' : 'Local estimate'}
         {resetLabel ? ` · ${resetLabel}` : ''}
       </p>
@@ -132,7 +132,7 @@ export function QuotasPanel() {
                 <Gauge className="size-4 text-muted-foreground" />
                 {provider}
               </CardTitle>
-              <span className="text-3xs text-muted-foreground font-mono">
+              <span className="text-2xs text-muted-foreground font-mono">
                 {quotas.length} row{quotas.length === 1 ? '' : 's'}
                 {nativeCount > 0 ? ` · ${nativeCount} provider-reported` : ' · local usage window'}
               </span>

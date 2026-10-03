@@ -66,7 +66,7 @@ export function ModalityPills({
               <span
                 aria-hidden
                 className={
-                  'grid size-3 place-items-center rounded-sm border text-3xs ' +
+                  'grid size-3 place-items-center rounded-sm border text-2xs ' +
                   (checked
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-border bg-transparent')

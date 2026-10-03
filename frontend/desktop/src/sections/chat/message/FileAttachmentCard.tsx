@@ -60,7 +60,7 @@ export function FileAttachmentCard({
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 bg-gradient-to-b from-muted/80 to-muted/40 px-3">
             <Icon size={28} color={fi.color} />
-            <span className="line-clamp-2 text-center text-3xs font-medium text-foreground/80">
+            <span className="line-clamp-2 text-center text-2xs font-medium text-foreground/80">
               {file.name}
             </span>
           </div>
@@ -69,7 +69,7 @@ export function FileAttachmentCard({
         {/* Type badge — bottom-left (PDF / DOC / …) */}
         <span
           className={cn(
-            'absolute bottom-1.5 left-1.5 rounded px-1.5 py-0.5 text-3xs font-bold tracking-wide shadow-sm',
+            'absolute bottom-1.5 left-1.5 rounded px-1.5 py-0.5 text-2xs font-bold tracking-wide shadow-sm',
             isPdf
               ? 'bg-zinc-800/90 text-zinc-100'
               : 'bg-zinc-800/90 text-zinc-100',
@@ -80,7 +80,7 @@ export function FileAttachmentCard({
 
         {/* Size — bottom-right */}
         {file.size ? (
-          <span className="absolute bottom-1.5 right-1.5 rounded bg-black/55 px-1.5 py-0.5 text-3xs font-medium tabular-nums text-zinc-200">
+          <span className="absolute bottom-1.5 right-1.5 rounded bg-black/55 px-1.5 py-0.5 text-2xs font-medium tabular-nums text-zinc-200">
             {file.size}
           </span>
         ) : null}

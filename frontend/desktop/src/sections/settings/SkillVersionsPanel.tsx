@@ -138,12 +138,12 @@ function VersionRow({
           <span className="text-2xs font-medium text-foreground">
             {formatVersionStamp(version.ts)}
           </span>
-          <span className="text-3xs text-muted-foreground">
+          <span className="text-2xs text-muted-foreground">
             {version.actor || 'unknown writer'}
           </span>
           {version.sha && (
             <span
-              className="font-mono text-3xs text-muted-foreground/60"
+              className="font-mono text-2xs text-muted-foreground/60"
               title={`SHA-256 of this snapshot: ${version.sha}`}
             >
               {version.sha.slice(0, 7)}
@@ -151,12 +151,12 @@ function VersionRow({
           )}
         </span>
         {version.rationale && (
-          <span className="mt-0.5 block text-3xs leading-relaxed text-muted-foreground/80">
+          <span className="mt-0.5 block text-2xs leading-relaxed text-muted-foreground/80">
             {version.rationale}
           </span>
         )}
       </span>
-      <span className="shrink-0 text-3xs text-muted-foreground/60">
+      <span className="shrink-0 text-2xs text-muted-foreground/60">
         {selected ? 'Hide diff' : 'Show diff'}
       </span>
     </Button>
@@ -182,7 +182,7 @@ function VersionDiff({
 
   return (
     <div data-testid="skill-version-diff">
-      <p className="mb-1.5 text-3xs text-muted-foreground/70">
+      <p className="mb-1.5 text-2xs text-muted-foreground/70">
         {formatVersionStamp(version.ts)} against the current{' '}
         <span className="font-mono">SKILL.md</span>
       </p>

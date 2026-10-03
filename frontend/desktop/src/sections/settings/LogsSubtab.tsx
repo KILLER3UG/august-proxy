@@ -29,7 +29,7 @@ const LEVEL_FILTERS: { key: 'all' | 'info' | 'warn' | 'error'; label: string }[]
 
 function FilterChips<T extends string>({ items, value, onChange, label }: { items: { key: T; label: string }[]; value: T; onChange: (v: T) => void; label: string }) {
     return (
-        <div className="flex items-center gap-1 text-3xs">
+        <div className="flex items-center gap-1 text-2xs">
             <span className="flex items-center gap-1 px-1 text-muted-foreground/70 uppercase tracking-wider">
                 {label}
             </span>
@@ -96,15 +96,15 @@ export function LogsSubtab({ showPeriod = true }: { showPeriod?: boolean }) {
                 title="Log feed"
                 description="Activity events, request lifecycle, and pending requests merged into one chronological stream."
                 status={
-                    <div className="flex items-center gap-1.5 text-3xs font-mono">
+                    <div className="flex items-center gap-1.5 text-2xs font-mono">
                         <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">{counts.info} info</span>
-                        <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-600">{counts.warn} warn</span>
+                        <span className="rounded-full bg-warning/10 px-2 py-0.5 text-warning-fg">{counts.warn} warn</span>
                         <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-destructive">{counts.error} error</span>
                     </div>
                 }
             >
                 <div className="flex flex-wrap items-center gap-2 pb-2">
-                    <div className="flex items-center gap-1 text-3xs">
+                    <div className="flex items-center gap-1 text-2xs">
                         {LEVEL_FILTERS.map((f) => (
                             <button
                                 key={f.key}
@@ -160,7 +160,7 @@ export function LogsSubtab({ showPeriod = true }: { showPeriod?: boolean }) {
                     </div>
                 )}
             </SettingsCard>
-            <p className="text-3xs text-muted-foreground font-mono">
+            <p className="text-2xs text-muted-foreground font-mono">
                 🔒 Secret-shaped fields (keys, tokens, cookies) are redacted on copy. Pending requests surface as warnings.
             </p>
         </div>
@@ -169,7 +169,7 @@ export function LogsSubtab({ showPeriod = true }: { showPeriod?: boolean }) {
 
 function LevelBadge({ level }: { level: 'info' | 'warn' | 'error' }) {
     if (level === 'error') return <StatusPill variant="danger" label="error" />;
-    if (level === 'warn') return <Badge variant="outline" className="border-amber-500/50 text-amber-600">{level}</Badge>;
+    if (level === 'warn') return <Badge variant="outline" className="border-warning/50 text-warning-fg">{level}</Badge>;
     return <Badge variant="outline">{level}</Badge>;
 }
 

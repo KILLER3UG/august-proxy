@@ -55,12 +55,12 @@ function ThreadRow({ msg, bots }: { msg: RoomMessage; bots: Array<{ id: string; 
   return (
     <div className={cn('px-3 py-2 text-sm', isUser ? 'bg-accent/40' : 'bg-transparent')}>
       <div className="mb-0.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        {msg.kind === 'escalation' && <TriangleAlert className="h-3 w-3 text-amber-500" />}
+        {msg.kind === 'escalation' && <TriangleAlert className="h-3 w-3 text-warning-fg" />}
         <span>{isUser ? 'You' : `@${handleFor(msg.sender_agent, bots)}`}</span>
         {msg.kind === 'verdict' && (
           <span className="rounded bg-violet-500/15 px-1 text-violet-500">review</span>
         )}
-        <span className="ml-auto text-3xs text-muted-foreground/60">{timeAgo(msg.created_at)}</span>
+        <span className="ml-auto text-2xs text-muted-foreground/60">{timeAgo(msg.created_at)}</span>
       </div>
       <div className="whitespace-pre-wrap">{msg.body}</div>
     </div>
@@ -320,7 +320,7 @@ export function RoomView() {
               >
                 <MessagesSquare className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{r.name}</span>
-                {r.needs_you && <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-amber-500" title="needs you" />}
+                {r.needs_you && <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-warning" title="needs you" />}
               </button>
             </li>
           ))}
@@ -336,7 +336,7 @@ export function RoomView() {
         ) : (
           <>
             {/* Member tab strip (reference: uppercase names) */}
-            <div className="flex shrink-0 items-center gap-1 border-b border-border/60 px-3 py-1 text-3xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="flex shrink-0 items-center gap-1 border-b border-border/60 px-3 py-1 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
               {memberNames.map((n) => (
                 <span key={n} className="rounded px-1.5 py-0.5 hover:bg-white/[0.04]">
                   {n}
@@ -361,7 +361,7 @@ export function RoomView() {
               </button>
               <button
                 type="button"
-                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-red-500"
+                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-danger-fg"
                 onClick={() => deleteMut.mutate(selected)}
                 aria-label="Delete room"
               >
@@ -485,7 +485,7 @@ export function RoomView() {
               <label className="text-xs text-muted-foreground">Round caps</label>
               <div className="grid grid-cols-2 gap-2">
                 <label className="space-y-0.5">
-                  <span className="text-3xs text-muted-foreground/70">Max rounds</span>
+                  <span className="text-2xs text-muted-foreground/70">Max rounds</span>
                   <input
                     type="number"
                     min={0}
@@ -503,7 +503,7 @@ export function RoomView() {
                   />
                 </label>
                 <label className="space-y-0.5">
-                  <span className="text-3xs text-muted-foreground/70">Max messages</span>
+                  <span className="text-2xs text-muted-foreground/70">Max messages</span>
                   <input
                     type="number"
                     min={0}
@@ -521,7 +521,7 @@ export function RoomView() {
                   />
                 </label>
               </div>
-              <p className="text-3xs text-muted-foreground/60">
+              <p className="text-2xs text-muted-foreground/60">
                 0 = use room default. Caps bound every send until you change them.
               </p>
             </div>

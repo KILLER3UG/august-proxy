@@ -7,8 +7,8 @@ import { cn } from '@/lib/utils';
 import type { FileKind } from '@/lib/file-kind';
 
 const TONE_CLASSES: Record<FileKind, string> = {
-  document: 'bg-amber-500/15 text-amber-500',
-  pdf: 'bg-rose-500/15 text-rose-400',
+  document: 'bg-warning/15 text-warning-fg',
+  pdf: 'bg-danger/15 text-danger-fg',
   image: 'bg-sky-500/15 text-sky-400',
   video: 'bg-fuchsia-500/15 text-fuchsia-400',
   code: 'bg-muted text-muted-foreground',

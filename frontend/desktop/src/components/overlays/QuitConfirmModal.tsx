@@ -144,7 +144,7 @@ export function QuitConfirmModal() {
             disabled={quitting}
             className={cn(
               'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.8125rem] font-medium',
-              'bg-rose-600 text-white hover:bg-rose-500 transition',
+              'bg-danger text-white hover:bg-danger transition',
               'disabled:opacity-60',
             )}
             data-testid="quit-anyway-btn"

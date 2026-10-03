@@ -446,14 +446,14 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
         <div className="space-y-4 border-t border-border/60 px-4 py-3">
           {/* Raw telemetry behind an explicit expand (D3). */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-3xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <span className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground/70">
               Details
             </span>
             {metrics.map(([label, value]) => (
               <span
                 key={label}
                 data-testid={`learning-metric-${label.toLowerCase()}`}
-                className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-3xs text-muted-foreground"
+                className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-2xs text-muted-foreground"
               >
                 {label} {value ?? '—'}
               </span>
@@ -479,7 +479,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
             {reportQ.data?.skillsIndexOverflow && (
               <span
                 data-testid="learning-skills-index-overflow"
-                className="text-[0.65625rem] text-amber-600 dark:text-amber-400"
+                className="text-[0.65625rem] text-warning-fg text-warning-fg"
                 title="The skills catalogue outgrew the prompt byte budget; some skills are packed out of the descriptive index."
               >
                 Skills index over budget —{' '}
@@ -494,7 +494,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
               writes per turn; a reason is a turn that already delivered its
               answer, never a withheld one. */}
           <div data-testid="learning-turn-verdicts">
-            <p className="mb-1.5 text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
               Turn verdicts ({verdicts?.days ?? 7}d)
             </p>
             {!verdicts || !verdicts.turns ? (
@@ -511,7 +511,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
                       key={r.reason}
                       data-testid={`learning-verdict-${r.reason}`}
                       title={`end_reason = ${r.reason}`}
-                      className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-3xs text-muted-foreground"
+                      className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-2xs text-muted-foreground"
                     >
                       {turnEndPhrase(r.reason)} {r.turns}
                     </span>
@@ -520,7 +520,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
                     <span
                       data-testid="learning-verdict-unrecorded"
                       title="Rows written before the verdict was recorded, or turns whose reason never reached the ledger — not a reason of their own"
-                      className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-3xs text-muted-foreground/80"
+                      className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-2xs text-muted-foreground/80"
                     >
                       {verdicts.reasonUnrecorded} turn(s) not recorded
                     </span>
@@ -540,7 +540,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
                 </ul>
                 <p
                   data-testid="learning-verdict-no-gate"
-                  className="mt-1 text-3xs text-muted-foreground/70"
+                  className="mt-1 text-2xs text-muted-foreground/70"
                 >
                   These are finished turns — every answer still reached you. Nothing here gates a
                   response.
@@ -551,7 +551,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
 
           {/* Flagged episodes */}
           <div>
-            <p className="mb-1.5 text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
               Flagged episodes
             </p>
             {!episodesQ.data?.episodes?.length ? (
@@ -570,7 +570,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
                     <span className="min-w-0 truncate text-foreground/90" title={ep.fingerprint}>
                       {describeEpisode(ep)}
                     </span>
-                    <span className="shrink-0 rounded-full bg-muted/40 px-2 py-0.5 text-3xs text-muted-foreground">
+                    <span className="shrink-0 rounded-full bg-muted/40 px-2 py-0.5 text-2xs text-muted-foreground">
                       confidence {typeof ep.rubric?.score === 'number' ? ep.rubric.score.toFixed(2) : '—'}
                     </span>
                   </li>
@@ -581,7 +581,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
 
           {/* Distiller drafts */}
           <div>
-            <p className="mb-1.5 text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
               Distiller drafts ({draftsQ.data?.proposals?.length ?? 0})
             </p>
             {!draftsQ.data?.proposals?.length ? (
@@ -634,7 +634,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
               background job, so a 24h writer never looks dead. Manual "run"
               rides the same code path (and ledger) the cadence uses. */}
           <div data-testid="learning-scheduler">
-            <p className="mb-1.5 text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
               Background jobs
             </p>
             {!schedulerQ.data?.jobs?.length ? (
@@ -681,7 +681,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
               a diff you can undo. */}
           <div data-testid="learning-refine">
             <div className="mb-1.5 flex items-center justify-between gap-2">
-              <p className="text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Refine store ({refineQ.data?.entries?.length ?? 0} active)
               </p>
               <label className="flex items-center gap-1.5 text-[0.65625rem] text-muted-foreground">
@@ -742,7 +742,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
               {refineQ.data?.config?.autoRefine &&
                 refineQ.data?.config?.producerModel &&
                 refineQ.data?.config?.producerModel === refineQ.data?.config?.reviewModel && (
-                  <span data-testid="learning-refine-same-model" className="text-amber-600 dark:text-amber-400">
+                  <span data-testid="learning-refine-same-model" className="text-warning-fg text-warning-fg">
                     producer and reviewer are the same model — passes will be discarded
                   </span>
                 )}
@@ -762,7 +762,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
                     className="flex items-start justify-between gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-1.5 text-xs"
                   >
                     <span className="min-w-0">
-                      <span className="mr-1.5 inline-block rounded-full border border-border/60 bg-muted/30 px-1.5 py-px text-3xs uppercase text-muted-foreground">
+                      <span className="mr-1.5 inline-block rounded-full border border-border/60 bg-muted/30 px-1.5 py-px text-2xs uppercase text-muted-foreground">
                         {en.kind} · {en.scope} · v{en.version}
                       </span>
                       <span className="text-foreground/90">
@@ -794,7 +794,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
                 <summary className="cursor-pointer text-[0.65625rem] text-muted-foreground">
                   Recent refine journal
                 </summary>
-                <ul className="mt-1 space-y-0.5 text-3xs text-muted-foreground/80">
+                <ul className="mt-1 space-y-0.5 text-2xs text-muted-foreground/80">
                   {refineQ.data!.ledger.slice(-6).reverse().map((row, i) => (
                     <li key={i} className="flex items-center gap-1.5 truncate">
                       <Asterisk className="size-2.5 shrink-0" />

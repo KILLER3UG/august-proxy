@@ -165,8 +165,8 @@ export function SubagentSpawnModal({
         <div className="space-y-3 px-4 py-3">
           <div>
             <label className="text-2xs font-medium text-muted-foreground" htmlFor="spawn-goals">
-              One work item per line — <code className="text-3xs">name: goal</code> or{' '}
-              <code className="text-3xs">name after:dep: goal</code>
+              One work item per line — <code className="text-2xs">name: goal</code> or{' '}
+              <code className="text-2xs">name after:dep: goal</code>
             </label>
             <textarea
               id="spawn-goals"
@@ -202,7 +202,7 @@ export function SubagentSpawnModal({
                       setSkillPick((prev) => (on ? prev.filter((x) => x !== name) : [...prev, name]))
                     }
                     className={cn(
-                      'rounded-full border px-2 py-0.5 text-3xs',
+                      'rounded-full border px-2 py-0.5 text-2xs',
                       on ? 'border-primary/50 bg-primary/15 text-foreground' : 'border-border/60 text-muted-foreground',
                     )}
                   >
@@ -290,7 +290,7 @@ export function SubagentSpawnModal({
             </div>
           </div>
           {!sessionId && (
-            <p className="text-2xs text-amber-600">
+            <p className="text-2xs text-warning-fg">
               No active chat session — agents will not stream into a transcript.
             </p>
           )}
@@ -341,7 +341,7 @@ export function SubagentSpawnModal({
                     className="mt-1 w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-2xs outline-none"
                   />
                   {schemaInvalid && (
-                    <p className="mt-1 text-3xs text-danger">Invalid JSON — the schema will not be sent.</p>
+                    <p className="mt-1 text-2xs text-danger">Invalid JSON — the schema will not be sent.</p>
                   )}
                 </div>
               </div>

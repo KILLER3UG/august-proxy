@@ -71,7 +71,7 @@ function SubagentToolBody({ tool }: { tool: ToolEntry }) {
               if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) e.stopPropagation();
             }}
           >
-            <div className="mb-1 text-3xs uppercase tracking-widest font-semibold text-muted-foreground/55">
+            <div className="mb-1 text-2xs uppercase tracking-widest font-semibold text-muted-foreground/55">
               Prompt
             </div>
             <div className="min-w-0 text-sm text-foreground/90 chat-message-text">
@@ -87,7 +87,7 @@ function SubagentToolBody({ tool }: { tool: ToolEntry }) {
               if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) e.stopPropagation();
             }}
           >
-            <div className="mb-1 text-3xs uppercase tracking-widest font-semibold text-muted-foreground/55">
+            <div className="mb-1 text-2xs uppercase tracking-widest font-semibold text-muted-foreground/55">
               Subagent output
             </div>
             <div className="min-w-0 text-sm text-foreground/90 chat-message-text">
@@ -227,7 +227,7 @@ export function ToolCallItemBody({
     if (visible.length > 0) {
       parts.push(
         <div key="progress" className="my-1.5 space-y-0.5" aria-label="Tool progress" data-tool-progress>
-          <div className="flex items-center gap-1 text-3xs uppercase tracking-widest text-muted-foreground/70 font-semibold">
+          <div className="flex items-center gap-1 text-2xs uppercase tracking-widest text-muted-foreground/70 font-semibold">
             <FileSearch className="size-3" />
             <span>
               {tool.status === 'running' ? 'Exploring' : 'Files'}
@@ -258,7 +258,7 @@ export function ToolCallItemBody({
             </div>
           ))}
           {overflow > 0 && (
-            <div className="text-3xs text-muted-foreground/50 italic pl-4">
+            <div className="text-2xs text-muted-foreground/50 italic pl-4">
               + {overflow} more
             </div>
           )}

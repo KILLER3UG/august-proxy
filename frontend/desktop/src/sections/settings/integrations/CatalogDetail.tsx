@@ -118,10 +118,10 @@ export function CatalogDetail({
             <h3 className="text-xl font-semibold text-foreground">{entry.name}</h3>
             {entry.verified && <BadgeCheck className="size-4 text-muted-foreground" />}
             {entry.isNew && (
-              <span className="text-2xs font-medium text-rose-400/90">New</span>
+              <span className="text-2xs font-medium text-danger-fg">New</span>
             )}
             {entry.isCommunity && (
-              <Badge variant="outline" className="text-3xs">
+              <Badge variant="outline" className="text-2xs">
                 Community
               </Badge>
             )}
@@ -150,7 +150,7 @@ export function CatalogDetail({
       </p>
 
       <div className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-2xs leading-relaxed text-muted-foreground">
-        <AlertTriangle className="mb-1 inline size-3 text-amber-400/90" /> Only use extensions
+        <AlertTriangle className="mb-1 inline size-3 text-warning-fg" /> Only use extensions
         from developers you trust. August does not control third-party MCP tools.
       </div>
 
@@ -211,7 +211,7 @@ export function CatalogDetail({
                 className={cn('w-full px-3 py-2 font-mono text-xs', FIELD)}
               />
               {field.help && (
-                <p className="text-3xs text-muted-foreground">{field.help}</p>
+                <p className="text-2xs text-muted-foreground">{field.help}</p>
               )}
             </div>
           ))}
@@ -230,7 +230,7 @@ export function CatalogDetail({
 
       <div className="flex flex-wrap gap-1.5">
         {entry.categories.map((c) => (
-          <Badge key={c} variant="outline" className="text-3xs">
+          <Badge key={c} variant="outline" className="text-2xs">
             {c}
           </Badge>
         ))}

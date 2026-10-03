@@ -156,7 +156,7 @@ export function RoutinesPane({ agentId, botName }: RoutinesPaneProps) {
           <CalendarClock className="size-3" />
           <span className="text-2xs">Routines</span>
           {routines.length > 0 && (
-            <span className="text-3xs text-sidebar-foreground/30 tabular-nums">{routines.length}</span>
+            <span className="text-2xs text-sidebar-foreground/30 tabular-nums">{routines.length}</span>
           )}
         </div>
         <button
@@ -293,7 +293,7 @@ export function RoutinesPane({ agentId, botName }: RoutinesPaneProps) {
             <span
               className={cn(
                 'size-1.5 shrink-0 rounded-full',
-                j.paused ? 'bg-sidebar-foreground/20' : 'bg-emerald-400/70',
+                j.paused ? 'bg-sidebar-foreground/20' : 'bg-success/70',
               )}
               title={j.paused ? 'paused' : 'enabled'}
             />
@@ -301,13 +301,13 @@ export function RoutinesPane({ agentId, botName }: RoutinesPaneProps) {
               <span className="truncate text-[0.75rem] text-sidebar-foreground/80" title={j.prompt}>
                 {(j.name || '').replace(/^\[bot:[^\]]+\]\s*/, '')}
               </span>
-              <span className="truncate text-3xs text-sidebar-foreground/35">
+              <span className="truncate text-2xs text-sidebar-foreground/35">
                 {prettySchedule(j)} · {lastRunLabel(j)}
               </span>
             </div>
             {incidentCountByJob.has(j.id) && (
               <span
-                className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-3xs text-amber-500/90"
+                className="flex shrink-0 items-center gap-0.5 rounded-full bg-warning/15 px-1.5 py-0.5 text-2xs text-warning-fg"
                 title={`Open incident${(incidentCountByJob.get(j.id) ?? 0) > 1 ? 's' : ''} — repeated failures`}
                 data-testid={`routine-incident-${j.id}`}
               >
@@ -328,7 +328,7 @@ export function RoutinesPane({ agentId, botName }: RoutinesPaneProps) {
               <button
                 type="button"
                 onClick={() => togglePause.mutate(j)}
-                className="rounded px-1 py-0.5 text-3xs text-sidebar-foreground/40 hover:text-sidebar-foreground/90 border border-sidebar-border/40"
+                className="rounded px-1 py-0.5 text-2xs text-sidebar-foreground/40 hover:text-sidebar-foreground/90 border border-sidebar-border/40"
                 title={j.paused ? 'Resume' : 'Pause'}
               >
                 {j.paused ? '▶' : '❙❙'}

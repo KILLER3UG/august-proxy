@@ -134,7 +134,7 @@ export function WhatsNewModal({ open, onClose }: Props) {
                             {rel.name}
                           </span>
                           {rel.prerelease && (
-                            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-3xs font-medium text-amber-600 dark:text-amber-400">
+                            <span className="rounded bg-warning/15 px-1.5 py-0.5 text-2xs font-medium text-warning-fg text-warning-fg">
                               pre
                             </span>
                           )}

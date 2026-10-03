@@ -201,7 +201,7 @@ export function FeatureFlowSection() {
               )}
             >
               <div className="font-medium text-foreground/90">{f.name}</div>
-              <div className="text-3xs text-muted-foreground line-clamp-2">{f.description}</div>
+              <div className="text-2xs text-muted-foreground line-clamp-2">{f.description}</div>
             </button>
           ))}
         </aside>
@@ -242,7 +242,7 @@ export function FeatureFlowSection() {
               Errors only{errorCount > 0 ? ` (${errorCount})` : ''}
             </button>
             {activeTraceId && (
-              <span className="text-3xs font-mono text-muted-foreground ml-auto truncate max-w-[14rem]">
+              <span className="text-2xs font-mono text-muted-foreground ml-auto truncate max-w-[14rem]">
                 trace {activeTraceId}
               </span>
             )}
@@ -301,16 +301,16 @@ export function FeatureFlowSection() {
                         STATUS_DOT[e.status] || 'bg-muted-foreground',
                       )}
                     />
-                    <span className="shrink-0 w-20 truncate font-mono text-3xs uppercase text-muted-foreground">
+                    <span className="shrink-0 w-20 truncate font-mono text-2xs uppercase text-muted-foreground">
                       {e.feature}
                     </span>
-                    <span className="shrink-0 w-16 truncate font-mono text-3xs text-primary/80">
+                    <span className="shrink-0 w-16 truncate font-mono text-2xs text-primary/80">
                       {e.stage}
                     </span>
                     <span className="flex-1 min-w-0">
                       <span className={cn(isErr && 'text-danger font-medium')}>{e.summary}</span>
                       {e.error && (
-                        <div className="mt-0.5 text-3xs text-danger/90 font-mono break-all">
+                        <div className="mt-0.5 text-2xs text-danger/90 font-mono break-all">
                           {e.error}
                         </div>
                       )}

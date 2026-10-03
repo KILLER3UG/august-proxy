@@ -87,10 +87,10 @@ export function InitAugCard({ draft, existing, workspacePath, sessionId, onClose
 
   if (savedPath) {
     return (
-      <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-4 text-sm">
-        <p className="font-medium text-emerald-300">AUG.md saved to:</p>
-        <code className="block mt-1 break-all text-xs text-emerald-200/80">{savedPath}</code>
-        <p className="mt-2 text-emerald-200/70">
+      <div className="rounded-lg border border-success/40 bg-success/5 p-4 text-sm">
+        <p className="font-medium text-success-fg">AUG.md saved to:</p>
+        <code className="block mt-1 break-all text-xs text-success-fg">{savedPath}</code>
+        <p className="mt-2 text-success-fg">
           It will be loaded into the system prompt on your next message.
         </p>
       </div>
@@ -124,9 +124,9 @@ export function InitAugCard({ draft, existing, workspacePath, sessionId, onClose
               key={i}
               className={
                 line.type === 'add'
-                  ? 'text-emerald-300'
+                  ? 'text-success-fg'
                   : line.type === 'del'
-                    ? 'text-rose-300 line-through'
+                    ? 'text-danger-fg line-through'
                     : 'text-zinc-500'
               }
             >
@@ -143,13 +143,13 @@ export function InitAugCard({ draft, existing, workspacePath, sessionId, onClose
         </div>
       )}
 
-      {error && <p className="mb-2 text-xs text-rose-400">{error}</p>}
+      {error && <p className="mb-2 text-xs text-danger-fg">{error}</p>}
 
       <div className="flex gap-2">
         <button
           onClick={() => { void save(); }}
           disabled={busy}
-          className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+          className="flex items-center gap-1 rounded bg-success px-3 py-1.5 text-xs font-medium text-white hover:bg-success disabled:opacity-50"
         >
           <Check className="size-3" /> {currentExisting ? 'Refine & Save' : 'Save AUG.md'}
         </button>

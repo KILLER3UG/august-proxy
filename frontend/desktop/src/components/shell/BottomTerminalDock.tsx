@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
+import { terminalTheme } from '@/lib/terminal-theme';
 import {
   approveTerminalRequest,
   createTerminalSession,
@@ -180,9 +181,9 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
       fontFamily:
         '"Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace',
       theme: {
-        background: '#181818',
-        foreground: '#d4d4d4',
-        cursor: '#d4d4d4',
+        background: terminalTheme().background,
+        foreground: terminalTheme().foreground,
+        cursor: terminalTheme().cursor,
       },
     });
     const fit = new FitAddon();
@@ -313,7 +314,7 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="relative flex shrink-0 flex-col border-t border-border bg-[#181818]"
+      className="relative flex shrink-0 flex-col border-t border-border bg-sunken"
       style={{ height: dockH }}
       data-testid="bottom-terminal-dock"
     >
@@ -390,7 +391,7 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
       {/* Body */}
       <div className="relative min-h-0 flex-1">
         {inErrorState && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-[#181818]/95 p-6 text-center">
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-sunken-fade p-6 text-center">
             <AlertCircle className="size-8 text-destructive" />
             <div className="max-w-xs">
               <p className="text-sm font-medium text-foreground">Shell failed to start</p>
@@ -451,7 +452,7 @@ function ApprovalList({
 }) {
   return (
     <div className="rounded-md border border-warning/30 bg-warning/5 p-2 shadow-lg space-y-1.5">
-      <div className="flex items-center gap-1.5 text-3xs font-semibold uppercase tracking-wider text-warning">
+      <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-warning">
         <ShieldAlert className="size-3" />
         {approvals.length} approval{approvals.length > 1 ? 's' : ''} required
       </div>
@@ -461,7 +462,7 @@ function ApprovalList({
             <pre className="whitespace-pre-wrap break-all font-mono text-[0.65625rem] text-foreground/85">
               {approval.command || approval.inputPreview || '(no command)'}
             </pre>
-            <div className="mt-0.5 text-3xs text-muted-foreground">{approval.reason || approval.cwd}</div>
+            <div className="mt-0.5 text-2xs text-muted-foreground">{approval.reason || approval.cwd}</div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <Button size="sm" onClick={() => approve.mutate(approval.requestId)} disabled={approve.isPending}>

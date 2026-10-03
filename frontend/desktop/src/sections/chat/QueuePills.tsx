@@ -116,14 +116,14 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
       data-testid="queue-pills"
     >
       <div className="flex items-center justify-between px-0.5">
-        <span className="text-3xs uppercase tracking-wider text-muted-foreground font-semibold">
+        <span className="text-2xs uppercase tracking-wider text-muted-foreground font-semibold">
           Queue ({items.length})
         </span>
         {items.length > 1 && (
           <button
             type="button"
             onClick={clearAll}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-3xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
             title="Clear all queued messages" aria-label="Clear all queued messages"
           >
             <Trash2 className="size-3" />

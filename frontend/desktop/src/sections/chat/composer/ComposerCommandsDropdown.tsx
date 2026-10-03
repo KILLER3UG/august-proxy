@@ -46,7 +46,7 @@ export function ComposerCommandsDropdown({
       }}
       className="z-50 w-72 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
     >
-      <div className="px-2 py-1 text-3xs text-muted-foreground uppercase font-semibold">
+      <div className="px-2 py-1 text-2xs text-muted-foreground uppercase font-semibold">
         Commands & Tools
       </div>
       {commands.map((c, idx) => (
@@ -59,7 +59,7 @@ export function ComposerCommandsDropdown({
           )}
         >
           <span className="font-mono font-medium text-warning shrink-0">{c.name}</span>
-          <span className="text-3xs text-muted-foreground truncate">{c.desc}</span>
+          <span className="text-2xs text-muted-foreground truncate">{c.desc}</span>
         </button>
       ))}
       {noMatch && (

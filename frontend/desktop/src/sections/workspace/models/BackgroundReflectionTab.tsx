@@ -84,7 +84,7 @@ export function BackgroundReflectionTab() {
         <div className="flex items-center justify-between p-3 rounded-lg border border-white/[0.06] bg-black/10">
           <div>
             <p className="text-xs font-semibold">Enable background tasks</p>
-            <p className="text-3xs text-muted-foreground">Route background tasks to the models configured below.</p>
+            <p className="text-2xs text-muted-foreground">Route background tasks to the models configured below.</p>
           </div>
           <WorkspaceToggle
             enabled={activeConfig.enabled}

@@ -60,7 +60,7 @@ export function WorkspaceNavLink({
       </motion.span>
       <span className="truncate flex-1">{label}</span>
       {badge ? (
-        <span className="shrink-0 rounded-sm bg-amber-500/20 px-1.5 py-0.5 text-3xs font-medium text-amber-400">
+        <span className="shrink-0 rounded-sm bg-warning/20 px-1.5 py-0.5 text-2xs font-medium text-warning-fg">
           {badge}
         </span>
       ) : null}

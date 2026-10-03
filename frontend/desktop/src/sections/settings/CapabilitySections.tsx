@@ -137,7 +137,7 @@ export function SubagentsSection() {
 
       {loadError ? (
         <div
-          className="mt-6 text-sm text-rose-400/90"
+          className="mt-6 text-sm text-danger-fg"
           role="alert"
           data-testid="subagent-config-error"
         >
@@ -189,7 +189,7 @@ export function SubagentsSection() {
           </div>
           {saving && <p className="mt-2 text-2xs text-muted-foreground">Saving…</p>}
           {saveError ? (
-            <p className="mt-2 text-2xs text-rose-400/90" role="alert" data-testid="subagent-save-error">
+            <p className="mt-2 text-2xs text-danger-fg" role="alert" data-testid="subagent-save-error">
               {saveError}
             </p>
           ) : null}
@@ -268,7 +268,7 @@ export function PluginsSection() {
           ) : (
             skills.data!.skills.slice(0, 12).map((s) => (
               <Row key={s.name} label={s.name} hint={s.description?.slice(0, 90)}>
-                {s.source ? <span className="text-3xs uppercase text-muted-foreground">{s.source}</span> : null}
+                {s.source ? <span className="text-2xs uppercase text-muted-foreground">{s.source}</span> : null}
               </Row>
             ))
           )}
@@ -339,7 +339,7 @@ export function BrowserUseSection() {
           ) : (
             browserTools.map((t) => (
               <Row key={t.name} label={t.name} hint={t.description?.slice(0, 110)}>
-                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-px text-3xs text-emerald-400">
+                <span className="rounded-full border border-success/30 bg-success/10 px-1.5 py-px text-2xs text-success-fg">
                   on
                 </span>
               </Row>

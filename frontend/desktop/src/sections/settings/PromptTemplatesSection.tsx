@@ -153,7 +153,7 @@ export function PromptTemplatesSection() {
                 {t.variables.length > 0 && (
                   <div className="flex gap-1 mt-1.5 flex-wrap">
                     {t.variables.map(v => (
-                      <span key={v} className="text-3xs px-1 py-0.5 bg-muted rounded">
+                      <span key={v} className="text-2xs px-1 py-0.5 bg-muted rounded">
                         {'{{' + v + '}}'}
                       </span>
                     ))}

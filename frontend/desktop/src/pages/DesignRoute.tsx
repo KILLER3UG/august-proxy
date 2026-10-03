@@ -123,7 +123,7 @@ function ColorSwatch({ token }: { token: ColorToken }) {
       />
       <div className="px-3 py-2 text-xs">
         <p className="font-medium text-foreground">{token.name}</p>
-        <p className="font-mono text-3xs text-muted-foreground">{token.cssVar}</p>
+        <p className="font-mono text-2xs text-muted-foreground">{token.cssVar}</p>
       </div>
     </div>
   );
@@ -163,7 +163,7 @@ function RadiiGrid() {
         <div key={r.name} className="rounded-lg border border-border bg-card p-4 text-center">
           <div className="mx-auto mb-3 size-12 bg-primary/20 border border-primary/40" style={{ borderRadius: r.value }} />
           <p className="text-sm font-medium text-foreground">{r.name}</p>
-          <p className="font-mono text-3xs text-muted-foreground">{r.value}</p>
+          <p className="font-mono text-2xs text-muted-foreground">{r.value}</p>
         </div>
       ))}
     </div>
@@ -180,7 +180,7 @@ function ShadowsGrid() {
             className="mx-auto mb-4 size-16 rounded-md bg-card"
           />
           <p className="text-sm font-medium text-foreground">{s.name}</p>
-          <p className="font-mono text-3xs text-muted-foreground break-all">{s.token}</p>
+          <p className="font-mono text-2xs text-muted-foreground break-all">{s.token}</p>
         </div>
       ))}
     </div>
@@ -194,7 +194,7 @@ function TypeScale() {
         <div key={token.name} className="rounded-lg border border-border bg-card px-4 py-3 grid grid-cols-[12rem_1fr] gap-4 items-baseline">
           <div>
             <p className="text-sm font-medium text-foreground">{token.name}</p>
-            <p className="font-mono text-3xs text-muted-foreground">.{token.className}</p>
+            <p className="font-mono text-2xs text-muted-foreground">.{token.className}</p>
           </div>
           <p className={token.className}>{token.sample}</p>
         </div>
@@ -320,7 +320,7 @@ export function DesignRoute() {
                 <p className="bubble-body">Can you summarize the changes you made to the design system?</p>
                 <div className="flex items-center justify-between gap-2 mt-2 pt-1.5 border-t border-border/30">
                   <span className="bubble-footer-text text-muted-foreground/70 font-medium">06:43 PM</span>
-                  <span className="text-3xs text-muted-foreground/70">copied</span>
+                  <span className="text-2xs text-muted-foreground/70">copied</span>
                 </div>
               </div>
             </div>

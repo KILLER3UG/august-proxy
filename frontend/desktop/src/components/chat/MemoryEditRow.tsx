@@ -133,7 +133,7 @@ export function MemoryEditRow({
               </div>
             ) : null}
             {errored && tool.error ? (
-              <div className="mt-1 whitespace-pre-wrap break-words font-mono text-2xs text-rose-400">
+              <div className="mt-1 whitespace-pre-wrap break-words font-mono text-2xs text-danger-fg">
                 {tool.error}
               </div>
             ) : null}

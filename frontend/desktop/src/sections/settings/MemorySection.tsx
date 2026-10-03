@@ -254,8 +254,8 @@ type EntryKind = 'profile' | 'fact' | 'lesson' | 'pref' | 'note';
 const KIND_META: Record<EntryKind, { label: string; className: string }> = {
   profile: { label: 'profile', className: 'border-violet-500/30 bg-violet-500/10 text-violet-400' },
   fact: { label: 'fact', className: 'border-sky-500/30 bg-sky-500/10 text-sky-400' },
-  lesson: { label: 'lesson', className: 'border-amber-500/30 bg-amber-500/10 text-amber-400' },
-  pref: { label: 'pref', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' },
+  lesson: { label: 'lesson', className: 'border-warning/30 bg-warning/10 text-warning-fg' },
+  pref: { label: 'pref', className: 'border-success/30 bg-success/10 text-success-fg' },
   note: { label: 'note', className: 'border-border/60 bg-muted/30 text-muted-foreground' },
 };
 
@@ -1742,7 +1742,7 @@ function FlatEntryRow({
       />
       <span
         className={cn(
-          'w-14 shrink-0 rounded-md border px-1 py-0.5 text-center text-3xs font-medium uppercase tracking-wide',
+          'w-14 shrink-0 rounded-md border px-1 py-0.5 text-center text-2xs font-medium uppercase tracking-wide',
           kind.className,
         )}
         data-testid="memory-kind-label"
@@ -1769,7 +1769,7 @@ function FlatEntryRow({
         </span>
       )}
       {entry.legacy && (
-        <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 py-0.5 text-[0.53125rem] font-medium uppercase text-amber-400">
+        <span className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1 py-0.5 text-[0.53125rem] font-medium uppercase text-warning-fg">
           legacy
         </span>
       )}
@@ -1792,7 +1792,7 @@ function FlatEntryRow({
         </span>
       ) : null}
       <span
-        className="shrink-0 text-3xs tabular-nums text-muted-foreground/60"
+        className="shrink-0 text-2xs tabular-nums text-muted-foreground/60"
         title={absoluteDate(asUtc(entry.updated)) || entry.updated}
       >
         {timeAgo(asUtc(entry.updated))}
@@ -1980,7 +1980,7 @@ function HealthFooter({
         type="button"
         onClick={onRunNow}
         disabled={consolidating}
-        className="rounded-md border border-border/60 px-1.5 py-0.5 text-3xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
+        className="rounded-md border border-border/60 px-1.5 py-0.5 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
         title="Run one consolidation pass now (expire, merge duplicates, supersede contradictions)" aria-label="Run one consolidation pass now (expire, merge duplicates, supersede contradictions)"
         data-testid="memory-consolidate-now"
       >
@@ -2059,27 +2059,27 @@ function DetailView({
           )}
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {category && (
-              <span className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide text-muted-foreground">
+              <span className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
                 {category}
               </span>
             )}
             {source && (
               <span
-                className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide text-muted-foreground"
+                className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground"
                 data-testid="memory-detail-source"
               >
                 {source}
               </span>
             )}
             {meta.legacy && (
-              <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide text-amber-400">
+              <span className="rounded-md border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-warning-fg">
                 legacy
               </span>
             )}
             {expiresAt && (
               <span
                 className={cn(
-                  'rounded-md border px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide',
+                  'rounded-md border px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide',
                   expired
                     ? 'border-destructive/30 bg-destructive/10 text-destructive'
                     : 'border-warning/30 bg-warning/10 text-warning',
@@ -2179,7 +2179,7 @@ function DetailView({
               {details && <Markdown content={details} />}
             </div>
           )}
-          <p className="text-3xs text-muted-foreground/80">
+          <p className="text-2xs text-muted-foreground/80">
             {[
               source ? `source: ${source}` : '',
               confidence ? `confidence: ${confidence}` : '',

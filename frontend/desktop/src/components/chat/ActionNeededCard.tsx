@@ -94,14 +94,14 @@ export function ActionNeededCard({
   return (
     <div
       className={cn(
-        'my-1.5 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-3',
+        'my-1.5 rounded-xl border border-warning/30 bg-warning/[0.06] p-3',
       )}
       data-testid="action-needed-card"
     >
       <div className="mb-1 flex items-center gap-2">
-        <Monitor className="size-3 text-amber-400/90" />
+        <Monitor className="size-3 text-warning-fg" />
         <span className="text-[0.8125rem] font-semibold text-foreground">Computer</span>
-        <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-3xs font-medium text-amber-300">
+        <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-2xs font-medium text-warning-fg">
           Action needed
         </span>
       </div>

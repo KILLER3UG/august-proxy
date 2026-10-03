@@ -25,7 +25,7 @@ function LaneBlocks({ message }: { message: ChatMessage }) {
     return (
       <div
         role="alert"
-        className="rounded border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-2xs text-rose-300"
+        className="rounded border border-danger/40 bg-danger/10 px-3 py-2 text-2xs text-danger-fg"
         data-testid="arena-pane-error"
       >
         ⚠ {errorBlock.content || 'Generation failed.'}
@@ -42,7 +42,7 @@ function LaneBlocks({ message }: { message: ChatMessage }) {
           <button
             type="button"
             onClick={() => setThinkingOpen((v) => !v)}
-            className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-3xs text-muted-foreground hover:text-foreground"
+            className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-2xs text-muted-foreground hover:text-foreground"
             aria-expanded={thinkingOpen}
           >
             {thinkingOpen ? (
@@ -101,19 +101,19 @@ export function ArenaPane({
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <Brain className="size-3 text-primary shrink-0" />
         <span className="text-xs font-medium truncate">{lane.modelName}</span>
-        <span className="text-3xs text-muted-foreground truncate max-w-28">
+        <span className="text-2xs text-muted-foreground truncate max-w-28">
           {lane.provider}
         </span>
         <span className="ml-auto flex items-center gap-1.5 shrink-0">
           {streaming ? (
-            <span className="inline-flex items-center gap-1 text-3xs text-sky-400">
+            <span className="inline-flex items-center gap-1 text-2xs text-sky-400">
               <Loader2 className="size-3 animate-spin" />
               streaming
             </span>
           ) : (
             <span
               className={cn(
-                'text-3xs',
+                'text-2xs',
                 done ? 'text-success' : 'text-muted-foreground',
               )}
             >
@@ -122,7 +122,7 @@ export function ArenaPane({
           )}
           {usage && (usage.inputTokens > 0 || usage.outputTokens > 0) ? (
             <span
-              className="text-3xs text-muted-foreground"
+              className="text-2xs text-muted-foreground"
               title={`Input ${usage.inputTokens.toLocaleString()} · Output ${usage.outputTokens.toLocaleString()} tokens`}
             >
               {formatTokenCount(usage.inputTokens + usage.outputTokens)} tok

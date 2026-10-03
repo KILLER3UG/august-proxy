@@ -133,7 +133,7 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
 
   if (error) {
     return (
-      <div className="my-3 mx-auto max-w-2xl bg-card border border-border rounded-lg shadow-lg p-8 text-center text-sm text-red-500">
+      <div className="my-3 mx-auto max-w-2xl bg-card border border-border rounded-lg shadow-lg p-8 text-center text-sm text-danger-fg">
         Failed to load models.
       </div>
     );
@@ -252,7 +252,7 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
                         />
                         <span className="text-sm font-medium">{model.name}</span>
                         {model.isFree && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-success/10 text-success-fg text-success-fg">
                             Free
                           </span>
                         )}

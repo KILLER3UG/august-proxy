@@ -167,7 +167,7 @@ export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string |
                 <div className="truncate text-2xs leading-tight text-muted-foreground/70" title={a.href}>
                   {a.kind === 'link' ? a.meta : a.snippet}
                 </div>
-                <div className="mt-0.5 flex items-center gap-1 text-3xs text-muted-foreground/50">
+                <div className="mt-0.5 flex items-center gap-1 text-2xs text-muted-foreground/50">
                   <Clock className="size-2.5" />
                   <span>{timeAgo(a.timestamp)}</span>
                   <span className="opacity-40">·</span>

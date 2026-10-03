@@ -169,7 +169,7 @@ export function TurnLimitsSection() {
   if (configQ.isError) {
     return (
       <div className="px-8 py-6">
-        <p role="alert" className="text-sm text-rose-400/90" data-testid="turn-limits-error">
+        <p role="alert" className="text-sm text-danger-fg" data-testid="turn-limits-error">
           Could not read the current turn limits. Nothing has been changed.
         </p>
       </div>

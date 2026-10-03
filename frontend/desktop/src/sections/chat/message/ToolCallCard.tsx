@@ -81,7 +81,7 @@ export function ToolCallCard({
           {tool.status === 'error' && <span className="text-destructive text-[0.75rem]">error</span>}
           {isCommand && typeof tool.result === 'string' && tool.result.includes('[sandbox:') && (
             <span
-              className="text-3xs uppercase tracking-wide text-muted-foreground/80 border border-border/50 rounded px-1"
+              className="text-2xs uppercase tracking-wide text-muted-foreground/80 border border-border/50 rounded px-1"
               title={tool.result.includes('|unsandboxed]') ? 'Ran outside sandbox (approved)' : 'Ran inside sandbox'}
             >
               {tool.result.includes('|unsandboxed]') ? 'unsandboxed' : 'sandboxed'}
@@ -120,7 +120,7 @@ export function ToolCallCard({
               </div>
             ))}
             {overflow > 0 && (
-              <div className="text-3xs text-muted-foreground/50 italic pl-4">+ {overflow} more</div>
+              <div className="text-2xs text-muted-foreground/50 italic pl-4">+ {overflow} more</div>
             )}
           </div>
         );

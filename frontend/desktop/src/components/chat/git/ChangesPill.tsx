@@ -119,8 +119,8 @@ export function ChangesPill({
       >
         <FileDiff className="size-3 shrink-0 text-muted-foreground" />
         <span className="font-medium text-foreground/90">Changes</span>
-        <span className="font-mono tabular-nums text-emerald-500">+{added}</span>
-        <span className="font-mono tabular-nums text-red-400">-{removed}</span>
+        <span className="font-mono tabular-nums text-success-fg">+{added}</span>
+        <span className="font-mono tabular-nums text-danger-fg">-{removed}</span>
       </button>
 
       {open && (
@@ -152,8 +152,8 @@ export function ChangesPill({
                 <FileDiff className="size-3 shrink-0 text-muted-foreground" />
                 Changes
                 <span className="ml-auto font-mono tabular-nums text-2xs">
-                  <span className="text-emerald-500">+{added}</span>{' '}
-                  <span className="text-red-400">-{removed}</span>
+                  <span className="text-success-fg">+{added}</span>{' '}
+                  <span className="text-danger-fg">-{removed}</span>
                 </span>
               </button>
               {showFiles && (
@@ -167,8 +167,8 @@ export function ChangesPill({
                       <span className="min-w-0 flex-1 truncate font-mono text-foreground/75">
                         {f.path}
                       </span>
-                      <span className="shrink-0 font-mono tabular-nums text-emerald-500">+{f.added}</span>
-                      <span className="shrink-0 font-mono tabular-nums text-red-400">-{f.removed}</span>
+                      <span className="shrink-0 font-mono tabular-nums text-success-fg">+{f.added}</span>
+                      <span className="shrink-0 font-mono tabular-nums text-danger-fg">-{f.removed}</span>
                     </div>
                   ))}
                 </div>
@@ -235,7 +235,7 @@ export function ChangesPill({
                         <span className="min-w-0 flex-1 truncate text-foreground/80">
                           {a.task || a.agentId}
                         </span>
-                        <span className="shrink-0 text-3xs text-muted-foreground">{a.status}</span>
+                        <span className="shrink-0 text-2xs text-muted-foreground">{a.status}</span>
                       </div>
                     ))}
                   </div>
@@ -375,8 +375,8 @@ function CommitModal({
             <span className="max-w-[220px] truncate font-mono">{branch || '—'}</span>
           </span>
           <span className="ml-auto font-mono text-xs tabular-nums">
-            <span className="text-emerald-500">+{added}</span>{' '}
-            <span className="text-red-400">-{removed}</span>
+            <span className="text-success-fg">+{added}</span>{' '}
+            <span className="text-danger-fg">-{removed}</span>
           </span>
         </div>
 
@@ -439,7 +439,7 @@ function CommitModal({
           >
             <ArrowUp className="size-4 shrink-0 text-muted-foreground" />
             Commit and push
-            <span className="ml-auto rounded border border-border/60 px-1 py-0.5 font-mono text-3xs text-muted-foreground">
+            <span className="ml-auto rounded border border-border/60 px-1 py-0.5 font-mono text-2xs text-muted-foreground">
               Ctrl+↵
             </span>
           </button>

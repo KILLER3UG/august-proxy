@@ -353,7 +353,7 @@ if (editing) {
                     </select>
                   </label>
                   {!format && suggestModelApiFormat(model.id) && (
-                    <p className="text-2xs text-amber-500/90">
+                    <p className="text-2xs text-warning-fg">
                       {model.id} looks like an Anthropic model — multi-format gateways
                       (e.g. OpenCode Zen) need{' '}
                       <button
@@ -380,7 +380,7 @@ if (editing) {
                     </select>
                   </label>
                   {editing && reasoningEffortSupport === '' && familyAnswer ? (
-                    <p className="text-3xs text-muted-foreground" data-testid="model-family-hint">
+                    <p className="text-2xs text-muted-foreground" data-testid="model-family-hint">
                       {familyAnswer.family
                         ? `Auto resolves to the “${familyAnswer.family.id}” family (${
                             familyAnswer.family.source === 'config' ? 'your table' : 'built-in'
@@ -481,7 +481,7 @@ if (editing) {
                       className="h-7 flex-1 rounded border border-input bg-background px-2 text-2xs font-mono disabled:opacity-50"
                     />
                   </label>
-                  <p className="text-3xs text-muted-foreground" data-testid="model-price-hint">
+                  <p className="text-2xs text-muted-foreground" data-testid="model-price-hint">
                     {free
                       ? 'Marked free, so spend for this model always reads $0 — a local host charges the electricity, not the API.'
                       : 'Blank leaves August guessing from its model-family table, and the spend readout says “estimated”. Set 0 for a local or free-tier host.'}
@@ -547,7 +547,7 @@ if (editing) {
         </div>
         {ctxLabel && (
           <span
-            className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-3xs font-mono text-muted-foreground"
+            className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-2xs font-mono text-muted-foreground"
             title={`Context window: ${(model.contextWindow ?? 128000).toLocaleString()} tokens`}
           >
             {ctxLabel}
@@ -555,7 +555,7 @@ if (editing) {
         )}
         <span
           className={cn(
-            'inline-flex items-center rounded px-1.5 py-0.5 text-3xs font-mono',
+            'inline-flex items-center rounded px-1.5 py-0.5 text-2xs font-mono',
             model.source === 'fetched'
               ? 'bg-blue-500/15 text-blue-400'
               : 'bg-muted text-muted-foreground',
@@ -566,7 +566,7 @@ if (editing) {
         </span>
         {model.apiFormat && (
           <span
-            className="inline-flex items-center rounded px-1.5 py-0.5 text-3xs font-mono bg-primary/10 text-primary"
+            className="inline-flex items-center rounded px-1.5 py-0.5 text-2xs font-mono bg-primary/10 text-primary"
             title="Per-model wire-format override (overrides the provider format)"
           >
             {apiFormatShortLabel(model.apiFormat)}
@@ -669,7 +669,7 @@ if (editing) {
         <div
           className={cn(
             'flex items-start gap-1.5 text-2xs mt-1.5 pl-0.5',
-            probeResult.toolOk ? 'text-success' : 'text-amber-500',
+            probeResult.toolOk ? 'text-success' : 'text-warning-fg',
           )}
           data-testid="model-probe-result"
         >

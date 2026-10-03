@@ -105,9 +105,9 @@ export function TaskProgressPill({ sessionId, className }: TaskProgressPillProps
             </span>
             {(added > 0 || removed > 0) && (
               <span className="font-mono text-[0.65625rem]">
-                {added > 0 && <span className="text-emerald-500 font-semibold">+{added}</span>}
+                {added > 0 && <span className="text-success-fg font-semibold">+{added}</span>}
                 {removed > 0 && (
-                  <span className={cn('text-rose-500 font-semibold', added > 0 && 'ml-0.5')}>
+                  <span className={cn('text-danger-fg font-semibold', added > 0 && 'ml-0.5')}>
                     -{removed}
                   </span>
                 )}
@@ -145,7 +145,7 @@ export function TaskProgressPill({ sessionId, className }: TaskProgressPillProps
                     >
                       <span className="mt-0.5 shrink-0" aria-hidden>
                         {t.status === 'completed' ? (
-                          <Check className="size-3 text-emerald-400" />
+                          <Check className="size-3 text-success-fg" />
                         ) : t.status === 'in_progress' ? (
                           <Loader2 className="size-3 animate-spin text-primary" />
                         ) : t.status === 'cancelled' ? (
@@ -185,7 +185,7 @@ export function TaskProgressPill({ sessionId, className }: TaskProgressPillProps
                       <span className="truncate max-w-[200px]" title={f.path}>
                         {f.path.split(/[/\\]/).pop()}
                       </span>
-                      <span className="text-3xs uppercase opacity-70">
+                      <span className="text-2xs uppercase opacity-70">
                         {f.status}
                       </span>
                     </div>

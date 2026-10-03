@@ -188,7 +188,7 @@ export function AccountSection() {
                       <p className="truncate text-sm font-medium text-foreground">
                         {account.displayName}
                         {account.provider === 'google' && (
-                          <span className="ml-2 text-3xs font-normal text-muted-foreground">
+                          <span className="ml-2 text-2xs font-normal text-muted-foreground">
                             Google
                           </span>
                         )}

@@ -65,7 +65,7 @@ export function UserMessageBubble({
         {(editing || displayContent || message.queued) && (
           <div className="rounded-2xl bg-user-bubble px-4 py-2.5 w-full border border-border/20 shadow-2xs hover:border-border/40 transition-colors duration-150 text-[0.84375rem] leading-relaxed">
             {message.queued && (
-              <div className="mb-1 flex items-center gap-1 text-3xs font-semibold uppercase tracking-wider text-warning">
+              <div className="mb-1 flex items-center gap-1 text-2xs font-semibold uppercase tracking-wider text-warning">
                 <span className="size-1.5 rounded-full bg-warning" />
                 Queued
               </div>
@@ -128,16 +128,16 @@ export function UserMessageBubble({
               title={`${editCount} previous version${editCount > 1 ? 's' : ''}`}
             >
               <History className="size-3" />
-              <span className="text-3xs">{editCount}</span>
+              <span className="text-2xs">{editCount}</span>
             </button>
             {showHistory && (
               <div className="absolute bottom-full right-0 mb-1 w-64 bg-card border border-border rounded-lg shadow-lg p-2 z-50 max-h-48 overflow-y-auto">
-                <div className="text-3xs uppercase tracking-wide text-muted-foreground font-semibold mb-1.5">
+                <div className="text-2xs uppercase tracking-wide text-muted-foreground font-semibold mb-1.5">
                   Version History
                 </div>
                 {message.editHistory?.map((v, i) => (
                   <div key={i} className="text-xs p-1.5 rounded bg-muted/30 mb-1 last:mb-0">
-                    <div className="text-3xs text-muted-foreground mb-0.5">
+                    <div className="text-2xs text-muted-foreground mb-0.5">
                       {new Date(v.timestamp).toLocaleString()}
                     </div>
                     <div className="line-clamp-3 text-foreground/80">{v.content}</div>

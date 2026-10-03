@@ -146,7 +146,7 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
 
       {scopes.length > 0 && (
         <div className="space-y-1">
-          <p className="text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
             Scopes checklist
           </p>
           <ul className="max-h-36 space-y-1 overflow-auto rounded-md border border-white/[0.06] p-2">
@@ -233,7 +233,7 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
       </div>
 
       {testResult && (
-        <p className={cn('text-right text-2xs text-emerald-400')}>{testResult}</p>
+        <p className={cn('text-right text-2xs text-success-fg')}>{testResult}</p>
       )}
       {error && <p className="text-right text-2xs text-destructive">{error}</p>}
     </form>

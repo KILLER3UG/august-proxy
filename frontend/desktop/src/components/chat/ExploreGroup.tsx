@@ -56,7 +56,7 @@ export function ExploreGroup({
         <Search className="size-3 shrink-0 text-muted-foreground/70" aria-hidden />
         <span className="shrink-0 font-medium">{label}</span>
         {running && (
-          <span className="shrink-0 text-3xs italic text-muted-foreground/70">working…</span>
+          <span className="shrink-0 text-2xs italic text-muted-foreground/70">working…</span>
         )}
         <ChevronDown
           className={cn(

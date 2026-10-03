@@ -104,9 +104,9 @@ export function AgentSandboxSection() {
             {backend}
           </span>
           <span
-            className={`text-3xs uppercase tracking-wide px-1.5 py-0.5 rounded border ${
+            className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded border ${
               strong
-                ? 'text-emerald-400/90 border-emerald-400/30 bg-emerald-400/10'
+                ? 'text-success-fg border-success/30 bg-success/10'
                 : 'text-warning/90 border-warning/30 bg-warning/10'
             }`}
             data-testid="sandbox-strength"

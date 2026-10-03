@@ -82,6 +82,21 @@ const RULES = [
       'Move the styling to a className. Inline objects cannot use theme tokens or be overridden by the\n' +
       '  variant system, and they re-render on every parent render.',
   },
+  {
+    id: 'raw-status-color',
+    // Raw Tailwind palette status classes: they bypass the --dt-*-rgb
+    // theme tokens, so the -400 shades fail contrast in light mode
+    // (green-400 on white = 1.74:1). Use success/warning/danger/info
+    // (+ -fg for text) — registered in tailwind.config.cjs. The blue/
+    // violet families are deliberately NOT banned here: they are the
+    // categorical accent palette (per-model chart hues, provider chips),
+    // not status colors.
+    re: /\b(?:[a-z-]+:)*(?:text|bg|border|ring|divide|from|to|via|fill|stroke)-(?:green|emerald|red|rose|amber|yellow|lime|orange)-\d{3}\b/g,
+    advice:
+      'Use the status tokens: success / warning / danger / info (base for fills and borders,\n' +
+      '  -fg variants for text) — they re-theme light/dark. The raw Tailwind warm palettes\n' +
+      '  do not follow the theme and fail contrast on light backgrounds.',
+  },
 ];
 
 function walkFiles(dir) {

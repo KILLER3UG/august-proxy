@@ -204,7 +204,7 @@ function PixelWorker({
         transition={running ? { duration: 0.28, repeat: Infinity } : undefined}
       />
       {error && (
-        <span className="absolute -top-0.5 -right-0.5 text-3xs text-danger font-bold leading-none">
+        <span className="absolute -top-0.5 -right-0.5 text-2xs text-danger font-bold leading-none">
           !
         </span>
       )}
@@ -301,9 +301,9 @@ export function FeatureFlowCanvas({
       >
         {/* Ceiling lights */}
         <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/40 to-transparent pointer-events-none" />
-        <div className="absolute top-2 left-1/4 size-2 rounded-full bg-amber-100/40 blur-[1px]" />
-        <div className="absolute top-2 left-1/2 size-2 rounded-full bg-amber-100/40 blur-[1px]" />
-        <div className="absolute top-2 left-3/4 size-2 rounded-full bg-amber-100/40 blur-[1px]" />
+        <div className="absolute top-2 left-1/4 size-2 rounded-full bg-warning/40 blur-[1px]" />
+        <div className="absolute top-2 left-1/2 size-2 rounded-full bg-warning/40 blur-[1px]" />
+        <div className="absolute top-2 left-3/4 size-2 rounded-full bg-warning/40 blur-[1px]" />
 
         {/* Dept nameplate (room label only — not on characters) */}
         <div
@@ -319,7 +319,7 @@ export function FeatureFlowCanvas({
         </div>
 
         {/* Wall whiteboard / status ticker */}
-        <div className="absolute top-3 right-3 z-20 max-w-[45%] rounded-md border border-white/10 bg-black/50 px-2 py-1 text-3xs font-mono text-muted-foreground truncate">
+        <div className="absolute top-3 right-3 z-20 max-w-[45%] rounded-md border border-white/10 bg-black/50 px-2 py-1 text-2xs font-mono text-muted-foreground truncate">
           {ticker ? (
             <span className="text-sky-200">{ticker}</span>
           ) : (
@@ -420,7 +420,7 @@ export function FeatureFlowCanvas({
         className="rounded-xl border border-white/[0.06] bg-card/50 px-3 py-2.5"
         data-testid="feature-flow-legend"
       >
-        <div className="mb-2 text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="mb-2 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
           Team legend · {dept.name}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -441,13 +441,13 @@ export function FeatureFlowCanvas({
                 )}
               >
                 <span
-                  className="grid size-5 place-items-center rounded text-3xs font-bold text-white"
+                  className="grid size-5 place-items-center rounded text-2xs font-bold text-white"
                   style={{ background: `hsl(${j.hue} 60% 42%)` }}
                 >
                   {j.glyph.slice(0, 1)}
                 </span>
                 <span className="font-medium text-foreground/90">{j.title}</span>
-                <span className="font-mono text-3xs opacity-60">{j.stage}</span>
+                <span className="font-mono text-2xs opacity-60">{j.stage}</span>
               </div>
             );
           })}

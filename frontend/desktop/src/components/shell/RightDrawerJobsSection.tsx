@@ -79,7 +79,7 @@ function JobRow({ task, onDismiss }: { task: BackgroundTask; onDismiss?: () => v
         ) : null}
       </div>
       {spanMs > 0 ? (
-        <span className="shrink-0 pt-0.5 font-mono text-3xs tabular-nums text-muted-foreground/60">
+        <span className="shrink-0 pt-0.5 font-mono text-2xs tabular-nums text-muted-foreground/60">
           {fmtElapsed(spanMs)}
         </span>
       ) : null}
@@ -133,7 +133,7 @@ export function RightDrawerJobsSection({ sessionId }: { sessionId: string | null
           <button
             type="button"
             onClick={clearFinished}
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-3xs text-muted-foreground/70 transition-colors hover:bg-muted/40 hover:text-foreground"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-2xs text-muted-foreground/70 transition-colors hover:bg-muted/40 hover:text-foreground"
             data-testid="jobs-clear-finished"
           >
             <ListX className="size-3" aria-hidden />

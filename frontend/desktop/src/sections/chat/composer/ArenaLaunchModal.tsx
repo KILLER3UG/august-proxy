@@ -162,7 +162,7 @@ export function ArenaLaunchModal({
         <div className="flex items-center gap-2">
           <Swords className="size-4 text-primary" />
           <h3 className="font-medium text-sm">Ask in parallel</h3>
-          <span className="text-3xs text-muted-foreground/70 ml-auto">
+          <span className="text-2xs text-muted-foreground/70 ml-auto">
             {targets.length}/{MAX_LANES} models
           </span>
           <button
@@ -171,7 +171,7 @@ export function ArenaLaunchModal({
               onClose();
               openArenaArchive();
             }}
-            className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2 py-1 text-3xs text-muted-foreground hover:text-foreground"
+            className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2 py-1 text-2xs text-muted-foreground hover:text-foreground"
             data-testid="arena-open-archive"
           >
             <History className="size-3" />
@@ -194,7 +194,7 @@ export function ArenaLaunchModal({
             {templates.map((t) => (
               <span
                 key={t.id}
-                className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-3xs"
+                className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-2xs"
               >
                 <button
                   type="button"
@@ -235,7 +235,7 @@ export function ArenaLaunchModal({
             {suggestions.slice(0, 2).map((s) => (
               <span
                 key={s.modelId}
-                className="rounded-full bg-primary/10 px-2 py-0.5 text-3xs text-primary"
+                className="rounded-full bg-primary/10 px-2 py-0.5 text-2xs text-primary"
                 title={`${s.wins}/${s.total} wins · ${s.avgTokens} avg tokens`}
               >
                 {s.modelId} wins {s.wins}/{s.total} · {s.avgTokens} tok avg
@@ -264,7 +264,7 @@ export function ArenaLaunchModal({
                     data-testid={`arena-model-${m.id}`}
                   />
                   <span className="flex-1 min-w-0 truncate">{m.name || m.id}</span>
-                  <span className="text-3xs text-muted-foreground truncate max-w-40">
+                  <span className="text-2xs text-muted-foreground truncate max-w-40">
                     {m.provider}
                   </span>
                 </label>

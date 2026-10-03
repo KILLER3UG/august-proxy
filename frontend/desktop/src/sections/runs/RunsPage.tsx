@@ -71,10 +71,10 @@ function runPhase(run: WorkbenchRun): {
     return { label: 'Working', tone: 'bg-sky-500/15 text-sky-400 animate-pulse', live: true, done: false };
   }
   if (run.status === 'awaiting_approval') {
-    return { label: 'Awaiting approval', tone: 'bg-amber-500/15 text-amber-500', live: true, done: false };
+    return { label: 'Awaiting approval', tone: 'bg-warning/15 text-warning-fg', live: true, done: false };
   }
   if (run.messageCount > 0 || run.turnCount > 0) {
-    return { label: 'Completed', tone: 'bg-emerald-500/15 text-emerald-500', live: false, done: true };
+    return { label: 'Completed', tone: 'bg-success/15 text-success-fg', live: false, done: true };
   }
   return { label: 'Empty', tone: 'bg-zinc-500/15 text-zinc-400', live: false, done: true };
 }
@@ -117,9 +117,9 @@ function fmtCost(c?: number): string {
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-xl border border-white/[0.06] bg-card/60 p-3.5">
-      <p className="text-3xs uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-2xs uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="mt-1 text-xl font-semibold text-foreground">{value}</p>
-      {hint ? <p className="mt-0.5 text-3xs text-muted-foreground/70">{hint}</p> : null}
+      {hint ? <p className="mt-0.5 text-2xs text-muted-foreground/70">{hint}</p> : null}
     </div>
   );
 }
@@ -290,7 +290,7 @@ export function RunsPage() {
             {f.label}
           </button>
         ))}
-        <span className="ml-auto inline-flex items-center gap-1 text-3xs text-muted-foreground/70">
+        <span className="ml-auto inline-flex items-center gap-1 text-2xs text-muted-foreground/70">
           <RefreshCw className={`size-3 ${isFetching ? 'animate-spin' : ''}`} />
           {isFetching ? 'Refreshing…' : 'Live'}
         </span>
@@ -330,7 +330,7 @@ export function RunsPage() {
                 data-testid={`run-row-${run.id}`}
               >
                 <span
-                  className={`text-3xs px-2 py-0.5 rounded-full shrink-0 ${phase.tone}`}
+                  className={`text-2xs px-2 py-0.5 rounded-full shrink-0 ${phase.tone}`}
                   data-testid={`run-status-${run.id}`}
                 >
                   {phase.label}
@@ -339,7 +339,7 @@ export function RunsPage() {
                   <p className="text-sm font-medium truncate">
                     {run.title || 'Untitled run'}
                     {run.model ? (
-                      <span className="ml-2 text-3xs text-muted-foreground font-mono">
+                      <span className="ml-2 text-2xs text-muted-foreground font-mono">
                         {run.model}
                         {run.provider ? ` @ ${run.provider}` : ''}
                       </span>
@@ -372,7 +372,7 @@ export function RunsPage() {
                     <button
                       type="button"
                       onClick={() => cancelRun(run)}
-                      className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-2xs text-foreground hover:bg-rose-500/15 hover:text-rose-400"
+                      className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-2xs text-foreground hover:bg-danger/15 hover:text-danger-fg"
                       title="Stop the active stream"
                       data-testid={`run-cancel-${run.id}`}
                     >

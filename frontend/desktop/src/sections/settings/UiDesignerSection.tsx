@@ -1,7 +1,7 @@
 /* ── UI Designer — customize colors with live preview + Apply ──────── */
 /* Draft edits update the preview only. Apply paints the real app.      */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Palette,
   Check,
@@ -33,6 +33,7 @@ import {
   type UiTokenDef,
 } from '@/lib/ui-customization';
 import { updateUiCustomization } from '@/api/api-client';
+import { useThemeStore } from '@/lib/theme';
 
 const GROUPS: { id: UiTokenDef['group']; label: string; hint: string }[] = [
   { id: 'app', label: 'App & settings', hint: 'Background, cards, text, borders' },
@@ -42,6 +43,22 @@ const GROUPS: { id: UiTokenDef['group']; label: string; hint: string }[] = [
 ];
 
 export function UiDesignerSection() {
+  // The curated presets are hand-tuned against dark surfaces; in light mode
+  // only the theme-neutral default is offered (2026-10-03 audit §1).
+  const themeMode = useThemeStore((s) => s.mode);
+  const [systemDark, setSystemDark] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches,
+  );
+  useEffect(() => {
+    if (themeMode !== 'system') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => setSystemDark(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [themeMode]);
+  const resolvedDark = themeMode === 'dark' || (themeMode === 'system' && systemDark);
+  const visiblePresets = resolvedDark ? THEME_PRESETS : THEME_PRESETS.filter((p) => p.id === 'default');
+
   const draft = useUiCustomizationStore((s) => s.draft);
   const applied = useUiCustomizationStore((s) => s.applied);
   const dirty = draftIsDirty(draft, applied);
@@ -90,7 +107,7 @@ export function UiDesignerSection() {
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             {dirty && (
-              <Badge variant="outline" className="font-mono text-3xs">
+              <Badge variant="outline" className="font-mono text-2xs">
                 unsaved draft
               </Badge>
             )}
@@ -143,11 +160,11 @@ export function UiDesignerSection() {
             <SettingsCard
               icon={Palette}
               title="Theme presets"
-              description="Curated palettes — pick one, tweak if you like, then Apply."
+              description={resolvedDark ? "Curated palettes — pick one, tweak if you like, then Apply." : "Curated palettes are tuned for dark mode — switch to dark to see them all."}
               inert
             >
               <div className="flex flex-wrap items-center gap-2">
-                {THEME_PRESETS.map((preset) => (
+                {visiblePresets.map((preset) => (
                   <Button
                     key={preset.id}
                     type="button"
@@ -207,7 +224,7 @@ export function UiDesignerSection() {
                                 {t.label}
                               </span>
                               {overridden && (
-                                <span className="text-3xs uppercase tracking-wider text-primary font-semibold">
+                                <span className="text-2xs uppercase tracking-wider text-primary font-semibold">
                                   custom
                                 </span>
                               )}
@@ -282,7 +299,7 @@ export function UiDesignerSection() {
                     borderColor: 'var(--dt-sidebar-border)',
                   }}
                 >
-                  <div className="px-3 py-2.5 text-3xs font-semibold uppercase tracking-wider opacity-70">
+                  <div className="px-3 py-2.5 text-2xs font-semibold uppercase tracking-wider opacity-70">
                     Sessions
                   </div>
                   <div className="space-y-1 px-2">
@@ -329,7 +346,7 @@ export function UiDesignerSection() {
                       Recap and tools use these surfaces.
                     </div>
                     <div
-                      className="inline-flex items-center rounded-md px-2 py-1 text-3xs font-medium"
+                      className="inline-flex items-center rounded-md px-2 py-1 text-2xs font-medium"
                       style={{
                         background: 'var(--dt-primary)',
                         color: 'var(--dt-primary-foreground)',
@@ -364,7 +381,7 @@ export function UiDesignerSection() {
                   background: 'var(--dt-muted)',
                 }}
               >
-                <div className="text-3xs font-semibold uppercase tracking-wider" style={{ color: 'var(--dt-muted-foreground)' }}>
+                <div className="text-2xs font-semibold uppercase tracking-wider" style={{ color: 'var(--dt-muted-foreground)' }}>
                   Settings card
                 </div>
                 <div

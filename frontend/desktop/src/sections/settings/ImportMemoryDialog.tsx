@@ -360,9 +360,9 @@ interface AiOp {
 }
 
 const ACTION_BADGE: Record<AiOp['action'], { label: string; className: string }> = {
-  add: { label: 'add', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' },
+  add: { label: 'add', className: 'border-success/30 bg-success/10 text-success-fg' },
   update: { label: 'update', className: 'border-sky-500/30 bg-sky-500/10 text-sky-400' },
-  delete: { label: 'delete', className: 'border-rose-500/30 bg-rose-500/10 text-rose-400' },
+  delete: { label: 'delete', className: 'border-danger/30 bg-danger/10 text-danger-fg' },
 };
 
 export function ImportMemoryDialog({
@@ -703,11 +703,11 @@ export function ImportMemoryDialog({
               <div className="flex items-center justify-between border-b border-border/60 px-3 py-1.5 text-2xs text-muted-foreground">
                 <span>
                   {aiOps.length} operations ·{' '}
-                  <span className="text-emerald-400">{aiCounts.add} add</span> ·{' '}
+                  <span className="text-success-fg">{aiCounts.add} add</span> ·{' '}
                   <span className="text-sky-400">{aiCounts.update} update</span> ·{' '}
-                  <span className="text-rose-400">{aiCounts.delete} delete</span>
+                  <span className="text-danger-fg">{aiCounts.delete} delete</span>
                 </span>
-                <span className="text-3xs text-muted-foreground/70">
+                <span className="text-2xs text-muted-foreground/70">
                   by {model?.name || model?.id}
                 </span>
               </div>
@@ -716,7 +716,7 @@ export function ImportMemoryDialog({
                   <li key={`${o.action}-${o.key}-${i}`} className="flex items-start gap-3 px-3 py-2 text-xs">
                     <span
                       className={cn(
-                        'mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide',
+                        'mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide',
                         ACTION_BADGE[o.action].className,
                       )}
                     >
@@ -729,13 +729,13 @@ export function ImportMemoryDialog({
                       )}
                     </div>
                     {o.action !== 'delete' && (
-                      <span className="shrink-0 text-3xs text-muted-foreground/70">{o.category}</span>
+                      <span className="shrink-0 text-2xs text-muted-foreground/70">{o.category}</span>
                     )}
                   </li>
                 ))}
               </ul>
               {aiOps.length > 80 && (
-                <div className="border-t border-border/60 px-3 py-1.5 text-3xs text-muted-foreground">
+                <div className="border-t border-border/60 px-3 py-1.5 text-2xs text-muted-foreground">
                   showing 80 of {aiOps.length} — all will be applied
                 </div>
               )}
@@ -754,7 +754,7 @@ export function ImportMemoryDialog({
                     placeholder="claude, chatgpt, …"
                     className="w-full rounded-md border border-border/60 bg-background/60 px-2 py-1.5 text-xs outline-none focus:border-primary/40"
                   />
-                  <span className="block text-3xs text-muted-foreground/80">
+                  <span className="block text-2xs text-muted-foreground/80">
                     Stored as <code className="font-mono">{providerSource}</code> on each row.
                   </span>
                 </label>
@@ -777,7 +777,7 @@ export function ImportMemoryDialog({
                   <button
                     type="button"
                     onClick={applyCategoryOverride}
-                    className="text-3xs text-primary hover:underline"
+                    className="text-2xs text-primary hover:underline"
                     title="Apply the default category to every parsed row" aria-label="Apply the default category to every parsed row"
                   >
                     apply to all rows
@@ -793,7 +793,7 @@ export function ImportMemoryDialog({
                       .map(([k, v]) => `${k}:${v}`)
                       .join(' · ')}
                   </span>
-                  <span className="text-3xs text-muted-foreground/70">
+                  <span className="text-2xs text-muted-foreground/70">
                     source: <code className="font-mono">{providerSource}</code>
                   </span>
                 </div>
@@ -820,7 +820,7 @@ export function ImportMemoryDialog({
                             prev ? prev.map((p) => (p.uid === e.uid ? { ...p, category: next } : p)) : prev,
                           );
                         }}
-                        className="rounded border border-border/60 bg-background/60 px-1.5 py-0.5 text-3xs outline-none focus:border-primary/40"
+                        className="rounded border border-border/60 bg-background/60 px-1.5 py-0.5 text-2xs outline-none focus:border-primary/40"
                       >
                         {CATEGORIES.map((c) => (
                           <option key={c} value={c}>
@@ -832,7 +832,7 @@ export function ImportMemoryDialog({
                   ))}
                 </ul>
                 {entries.length > 50 && (
-                  <div className="border-t border-border/60 px-3 py-1.5 text-3xs text-muted-foreground">
+                  <div className="border-t border-border/60 px-3 py-1.5 text-2xs text-muted-foreground">
                     showing 50 of {entries.length} — all will be imported
                   </div>
                 )}

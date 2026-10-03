@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ExternalLink, Loader2, Plus, RefreshCw, ShieldAlert, Trash2, X, Inbox, AlertCircle } from 'lucide-react';import { Button } from '@/components/ui/button';
+import { Check, ExternalLink, Loader2, Plus, RefreshCw, ShieldAlert, Trash2, X, Inbox, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
+import { terminalTheme } from '@/lib/terminal-theme';
 import {
   approveTerminalRequest,
   createTerminalSession,
@@ -136,8 +138,8 @@ export function RightDrawerTerminalSection() {
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
       fontSize: 14,
       theme: {
-        background: '#181818',
-        foreground: '#e5e7eb',
+        background: terminalTheme().background,
+        foreground: terminalTheme().foreground,
       },
     });
     const fit = new FitAddon();
@@ -330,7 +332,7 @@ export function RightDrawerTerminalSection() {
       </div>
 
       {inErrorState && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-lg bg-[#181818]/95 p-6 text-center">
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-lg bg-sunken-fade p-6 text-center">
           <AlertCircle className="size-8 text-destructive" />
           <div className="max-w-xs">
             <p className="text-sm font-medium text-foreground">Shell failed to start</p>
@@ -374,7 +376,7 @@ export function RightDrawerTerminalSection() {
       <div
         ref={containerRef}
         className={cn(
-          'absolute inset-0 overflow-hidden rounded-lg border border-black/20 bg-[#181818]',
+          'absolute inset-0 overflow-hidden rounded-lg border border-black/20 bg-sunken',
           !socketReady && !connectedRef.current && 'opacity-95'
         )}
       />
@@ -406,7 +408,7 @@ function ApprovalList({
 }) {
   return (
     <div className="rounded-md border border-warning/30 bg-warning/5 p-2 space-y-1.5 shadow">
-      <div className="flex items-center gap-1.5 text-3xs uppercase tracking-wider text-warning font-semibold">
+      <div className="flex items-center gap-1.5 text-2xs uppercase tracking-wider text-warning font-semibold">
         <ShieldAlert className="size-3" />
         {approvals.length} approval{approvals.length > 1 ? 's' : ''} required
       </div>
@@ -416,7 +418,7 @@ function ApprovalList({
             <pre className="whitespace-pre-wrap break-all text-[0.65625rem] font-mono text-foreground/85">
               {approval.command || approval.inputPreview || '(no command)'}
             </pre>
-            <div className="mt-0.5 text-3xs text-muted-foreground">{approval.reason || approval.cwd}</div>
+            <div className="mt-0.5 text-2xs text-muted-foreground">{approval.reason || approval.cwd}</div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <Button size="sm" onClick={() => approve.mutate(approval.requestId)} disabled={approve.isPending}>

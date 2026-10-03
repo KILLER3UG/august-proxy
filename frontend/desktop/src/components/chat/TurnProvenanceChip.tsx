@@ -79,7 +79,7 @@ export function TurnProvenanceChip({ provenance }: { provenance?: WorkbenchTurnP
           data-testid="turn-provenance-chip"
           className={cn(
             'inline-flex max-w-full cursor-help flex-wrap items-center gap-1.5 rounded-md',
-            'border border-border/50 bg-muted/30 px-1.5 py-0.5 text-3xs font-medium',
+            'border border-border/50 bg-muted/30 px-1.5 py-0.5 text-2xs font-medium',
             'uppercase tracking-wide text-muted-foreground',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
           )}

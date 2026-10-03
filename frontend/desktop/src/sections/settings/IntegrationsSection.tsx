@@ -400,7 +400,7 @@ function Section({
           {icon}
           <h2 className="text-sm font-semibold text-foreground">{title}</h2>
           {count && (
-            <span className="rounded-full border border-border bg-muted/40 px-1.5 py-0.5 text-3xs font-mono text-muted-foreground">
+            <span className="rounded-full border border-border bg-muted/40 px-1.5 py-0.5 text-2xs font-mono text-muted-foreground">
               {count}
             </span>
           )}

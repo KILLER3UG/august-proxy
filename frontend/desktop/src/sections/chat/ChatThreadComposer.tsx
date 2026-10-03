@@ -511,7 +511,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
                 aria-label="Message preview"
                 data-testid="composer-preview"
               >
-                <div className="text-3xs uppercase tracking-wider text-muted-foreground/70 mb-1.5 font-semibold">
+                <div className="text-2xs uppercase tracking-wider text-muted-foreground/70 mb-1.5 font-semibold">
                   Preview
                 </div>
                 <Markdown content={input} />

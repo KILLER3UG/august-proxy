@@ -136,7 +136,7 @@ export function CommandOutputPane({
         </span>
         {!running && contentTruncated && (
           <span
-            className="inline-flex shrink-0 items-center rounded-full bg-amber-500/10 px-1.5 py-px text-3xs font-medium text-amber-400"
+            className="inline-flex shrink-0 items-center rounded-full bg-warning/10 px-1.5 py-px text-2xs font-medium text-warning-fg"
             title={
               contentFullLength
                 ? `Result cut at 100 KB — full output was ${contentFullLength.toLocaleString()} bytes`
@@ -151,7 +151,7 @@ export function CommandOutputPane({
           <button
             type="button"
             onClick={() => setShowOutput((v) => !v)}
-            className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-px text-3xs text-muted-foreground hover:text-foreground"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-px text-2xs text-muted-foreground hover:text-foreground"
             aria-expanded={showOutput}
             data-testid="command-output-toggle"
           >
@@ -165,7 +165,7 @@ export function CommandOutputPane({
       </div>
       {isError && errorLine && (
         <div
-          className="truncate border-t border-border/50 px-4 py-1.5 font-mono text-2xs text-rose-400"
+          className="truncate border-t border-border/50 px-4 py-1.5 font-mono text-2xs text-danger-fg"
           title={errorLine}
           data-testid="command-error-line"
         >

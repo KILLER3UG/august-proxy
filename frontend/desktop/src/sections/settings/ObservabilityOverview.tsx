@@ -36,8 +36,8 @@ export function ObservabilityOverview({
   return (
     <ErrorBoundary
       fallback={
-        <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-4 text-sm">
-          <p className="font-semibold text-rose-300">Observability render error</p>
+        <div className="rounded-lg border border-danger/30 bg-danger/5 p-4 text-sm">
+          <p className="font-semibold text-danger-fg">Observability render error</p>
         </div>
       }
     >
@@ -130,7 +130,7 @@ function StatCard({
           <Icon className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-3xs uppercase tracking-widest text-muted-foreground">{label}</div>
+          <div className="text-2xs uppercase tracking-widest text-muted-foreground">{label}</div>
           <div className={`mt-1 text-lg font-semibold truncate ${accent || ''}`}>{value}</div>
         </div>
       </CardContent>

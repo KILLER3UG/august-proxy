@@ -196,7 +196,7 @@ export function ToolStepRow({
   const showLiveTimer = running && elapsedMs !== undefined && elapsedMs >= 1000;
   const liveTimer = showLiveTimer ? (
     <span
-      className="shrink-0 font-mono text-3xs tabular-nums text-muted-foreground/60"
+      className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground/60"
       data-testid="tool-live-timer"
     >
       · {fmtElapsed(elapsedMs)}
@@ -344,8 +344,8 @@ export function ToolStepRow({
                 className={cn(
                   'inline-flex shrink-0 items-center rounded-full border px-1.5 py-px',
                   errored
-                    ? 'border-rose-500/30 bg-rose-500/10 text-rose-400'
-                    : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+                    ? 'border-danger/30 bg-danger/10 text-danger-fg'
+                    : 'border-success/30 bg-success/10 text-success-fg',
                 )}
                 data-testid="tool-status-pill"
                 aria-label={errored ? 'Command failed' : 'Command succeeded'}
@@ -359,7 +359,7 @@ export function ToolStepRow({
             )}
             {showReadDuration && (
               <span
-                className="shrink-0 text-3xs tabular-nums text-muted-foreground/60"
+                className="shrink-0 text-2xs tabular-nums text-muted-foreground/60"
                 data-testid="tool-read-duration"
               >
                 {(tool.duration! / 1000).toFixed(1)}s
@@ -367,7 +367,7 @@ export function ToolStepRow({
             )}
             {commandErrorLine && (
               <span
-                className="min-w-0 truncate font-mono text-[0.65625rem] text-rose-400"
+                className="min-w-0 truncate font-mono text-[0.65625rem] text-danger-fg"
                 title={commandErrorLine}
                 data-testid="tool-error-line"
               >

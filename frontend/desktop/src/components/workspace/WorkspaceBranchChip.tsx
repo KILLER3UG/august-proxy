@@ -151,19 +151,19 @@ export function BranchMenuBody({
           className="w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground/50"
         />
       </div>
-      <div className="px-2 pb-1 pt-1 text-3xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+      <div className="px-2 pb-1 pt-1 text-2xs font-semibold uppercase tracking-wider text-muted-foreground/70">
         Branches
       </div>
       {pendingSwitch && (
         <div
-          className="mx-1.5 mb-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2.5 text-2xs"
+          className="mx-1.5 mb-1.5 rounded-lg border border-warning/30 bg-warning/5 p-2.5 text-2xs"
           data-testid="branch-dirty-prompt"
         >
           <div className="font-medium text-foreground/90">
             Uncommitted changes block the switch to {pendingSwitch.name}.
           </div>
           {pendingSwitch.files.length > 0 && (
-            <div className="mt-1 max-h-16 overflow-y-auto font-mono text-3xs text-muted-foreground chat-scroll">
+            <div className="mt-1 max-h-16 overflow-y-auto font-mono text-2xs text-muted-foreground chat-scroll">
               {pendingSwitch.files.slice(0, 20).map((f) => (
                 <div key={f} className="truncate" title={f}>{f}</div>
               ))}
@@ -220,7 +220,7 @@ export function BranchMenuBody({
               detached HEAD
             </span>
             {headSha && (
-              <span className="shrink-0 font-mono text-3xs text-muted-foreground">{headSha}</span>
+              <span className="shrink-0 font-mono text-2xs text-muted-foreground">{headSha}</span>
             )}
           </div>
         )}
@@ -254,10 +254,10 @@ export function BranchMenuBody({
               )}
               {/* Upstream sync state (↑ahead ↓behind) for the tracked branch. */}
               {b.upstream && ((b.ahead ?? 0) > 0 || (b.behind ?? 0) > 0) && (
-                <span className="mt-0.5 block font-mono text-3xs text-muted-foreground/80" data-testid="branch-track">
+                <span className="mt-0.5 block font-mono text-2xs text-muted-foreground/80" data-testid="branch-track">
                   {b.upstream}
-                  {(b.ahead ?? 0) > 0 && <span className="text-emerald-400/80"> ↑{b.ahead}</span>}
-                  {(b.behind ?? 0) > 0 && <span className="text-amber-400/80"> ↓{b.behind}</span>}
+                  {(b.ahead ?? 0) > 0 && <span className="text-success-fg"> ↑{b.ahead}</span>}
+                  {(b.behind ?? 0) > 0 && <span className="text-warning-fg"> ↓{b.behind}</span>}
                 </span>
               )}
             </span>
@@ -330,7 +330,7 @@ export function BranchMenuBody({
             const subject = sep > 0 ? line.slice(sep + 1) : '';
             return (
               <div key={sha} className="flex items-baseline gap-1.5 rounded px-1.5 py-0.5">
-                <span className="shrink-0 font-mono text-3xs text-muted-foreground/60">{sha.slice(0, 7)}</span>
+                <span className="shrink-0 font-mono text-2xs text-muted-foreground/60">{sha.slice(0, 7)}</span>
                 <span className="min-w-0 truncate text-2xs text-foreground/85">{subject}</span>
               </div>
             );

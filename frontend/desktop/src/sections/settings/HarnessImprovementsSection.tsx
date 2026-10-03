@@ -67,9 +67,9 @@ interface MemoryProposalRow {
 type Filter = 'open' | 'all';
 
 const STATUS_META: Record<Proposal['status'], { label: string; className: string }> = {
-  open: { label: 'Open', className: 'border-amber-500/30 bg-amber-500/10 text-amber-400' },
-  applied: { label: 'Applied', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' },
-  apply_failed: { label: 'Apply failed', className: 'border-rose-500/30 bg-rose-500/10 text-rose-400' },
+  open: { label: 'Open', className: 'border-warning/30 bg-warning/10 text-warning-fg' },
+  applied: { label: 'Applied', className: 'border-success/30 bg-success/10 text-success-fg' },
+  apply_failed: { label: 'Apply failed', className: 'border-danger/30 bg-danger/10 text-danger-fg' },
   rejected: { label: 'Rejected', className: 'border-border bg-muted/40 text-muted-foreground' },
   dismissed: { label: 'Dismissed', className: 'border-border bg-muted/40 text-muted-foreground' },
 };
@@ -343,27 +343,27 @@ export function HarnessImprovementsSection() {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="font-mono text-2xs text-muted-foreground">{selected.id}</span>
-                  <Badge variant="outline" className="text-3xs uppercase">{selected.kind}</Badge>
+                  <Badge variant="outline" className="text-2xs uppercase">{selected.kind}</Badge>
                   <Badge
                     variant="outline"
                     className={cn(
-                      'flex items-center gap-1 text-3xs',
+                      'flex items-center gap-1 text-2xs',
                       selected.queue === 'memory' ? 'text-violet-400 border-violet-500/30' : 'text-muted-foreground',
                     )}
                   >
                     {selected.queue === 'memory' ? <Database className="size-3" /> : <HeartPulse className="size-3" />}
                     {selected.queue}
                   </Badge>
-                  <Badge className={cn('border text-3xs', STATUS_META[selected.status].className)}>
+                  <Badge className={cn('border text-2xs', STATUS_META[selected.status].className)}>
                     {STATUS_META[selected.status].label}
                   </Badge>
                   {selected.queue === 'harness' && !APPROVABLE.has(selected.kind) && selected.status === 'open' && (
                     <Badge
                       data-testid="measured-regression-tag"
                       className={cn(
-                        'border text-3xs',
+                        'border text-2xs',
                         selected.kind === 'revert'
-                          ? 'border-rose-500/30 bg-rose-500/10 text-rose-400'
+                          ? 'border-danger/30 bg-danger/10 text-danger-fg'
                           : 'border-sky-500/30 bg-sky-500/10 text-sky-400',
                       )}
                     >
@@ -478,7 +478,7 @@ export function HarnessImprovementsSection() {
           )}
           {!fetching && !harnessQ.isLoading && rows.length === 0 && (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 bg-card/40 px-6 py-12 text-center">
-              <CircleCheck className="mb-3 size-8 text-emerald-400/70" />
+              <CircleCheck className="mb-3 size-8 text-success-fg" />
               <p className="text-sm font-medium text-foreground">
                 {filter === 'open' ? 'Nothing waiting for you' : 'No proposals yet'}
               </p>
@@ -526,9 +526,9 @@ export function HarnessImprovementsSection() {
                       />
                     </button>
                   ) : p.status === 'applied' ? (
-                    <CircleCheck className="size-4 text-emerald-400" />
+                    <CircleCheck className="size-4 text-success-fg" />
                   ) : p.status === 'apply_failed' ? (
-                    <CircleX className="size-4 text-rose-400" />
+                    <CircleX className="size-4 text-danger-fg" />
                   ) : (
                     <Clock className="size-4 text-muted-foreground" />
                   )}
@@ -539,28 +539,28 @@ export function HarnessImprovementsSection() {
                   className="min-w-0 flex-1 text-left"
                 >
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge className={cn('border text-3xs uppercase', STATUS_META[p.status].className)}>
+                    <Badge className={cn('border text-2xs uppercase', STATUS_META[p.status].className)}>
                       {STATUS_META[p.status].label}
                     </Badge>
-                    <Badge variant="outline" className="text-3xs uppercase">{p.kind}</Badge>
+                    <Badge variant="outline" className="text-2xs uppercase">{p.kind}</Badge>
                     {p.kind === 'revert' && (
                       <Badge
                         data-testid="measured-regression-tag"
-                        className="border border-rose-500/30 bg-rose-500/10 text-3xs text-rose-400"
+                        className="border border-danger/30 bg-danger/10 text-2xs text-danger-fg"
                       >
                         measured regression
                       </Badge>
                     )}
                     <span
                       className={cn(
-                        'text-3xs uppercase tracking-wide',
+                        'text-2xs uppercase tracking-wide',
                         p.queue === 'memory' ? 'text-violet-400/80' : 'text-muted-foreground/70',
                       )}
                     >
                       {p.queue === 'memory' ? <Database className="mr-0.5 inline size-2.5" /> : null}
                       {p.queue}
                     </span>
-                    <span className="text-3xs text-muted-foreground">
+                    <span className="text-2xs text-muted-foreground">
                       {p.createdAt ? formatTimeAgo(p.createdAt) : ''}
                     </span>
                   </div>
@@ -580,7 +580,7 @@ function InfoRow({ label, body, mono }: { label: string; body: string; mono: boo
   if (!body?.trim()) return null;
   return (
     <div>
-      <p className="text-3xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
       <pre
         className={cn(
           'mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border/40 bg-muted/20 px-3 py-2 text-[0.75rem] leading-relaxed text-foreground/90',
@@ -643,13 +643,13 @@ function EvidenceRow({ label, body }: { label: string; body: string }) {
   const { sections, structured } = parseEvidence(body);
   return (
     <div>
-      <p className="text-3xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
       {structured ? (
         <div data-testid="evidence-chips" className="mt-1 max-h-52 space-y-2 overflow-y-auto">
           {sections.map((sec, i) => (
             <div key={i} data-testid="evidence-section">
               {sec.title ? (
-                <p className="text-3xs font-medium uppercase tracking-wide text-muted-foreground/80">
+                <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground/80">
                   {sec.title}
                 </p>
               ) : null}

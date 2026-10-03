@@ -41,7 +41,7 @@ const CATEGORY_META: Record<string, { label: string; chip: string; row: string; 
     auto_memory:           { label: 'Auto-Memory',   chip: 'bg-purple-500/10 text-purple-300 border-purple-500/30',     row: 'text-purple-300',                    icon: Activity },
     scheduler:             { label: 'Scheduler',     chip: 'bg-orange-500/10 text-orange-300 border-orange-500/30',     row: 'text-orange-300',                    icon: Activity },
     security:              { label: 'Security',      chip: 'bg-danger/10 text-danger border-danger/30',                 row: 'text-danger font-semibold',           icon: AlertTriangle },
-    'feature_flow':        { label: 'Feature Flow',  chip: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30', row: 'text-emerald-300',                    icon: Activity },
+    'feature_flow':        { label: 'Feature Flow',  chip: 'bg-success/10 text-success-fg border-success/30', row: 'text-success-fg',                    icon: Activity },
     error:                 { label: 'Error',         chip: 'bg-danger/10 text-danger border-danger/30',                 row: 'text-danger font-semibold',           icon: AlertTriangle },
     info:                  { label: 'Info',          chip: 'bg-muted text-muted-foreground border-border',              row: 'text-foreground/80',                 icon: CircleDot },
 };
@@ -71,9 +71,9 @@ function statusBadge(status: StreamStatus, retryInMs: number | null) {
     if (status === 'paused') return { cls: 'bg-warning/15 text-warning ring-warning/30', label: 'Paused', dot: 'bg-warning' };
     if (status === 'connecting') return { cls: 'bg-white/[0.06] text-muted-foreground ring-white/10', label: 'Connecting…', dot: 'bg-zinc-400 animate-pulse' };
     return {
-        cls: 'bg-rose-400/15 text-rose-300 ring-rose-400/30',
+        cls: 'bg-danger/15 text-danger-fg ring-danger/30',
         label: retryInMs ? `Disconnected · retry in ${Math.round(retryInMs / 1000)}s` : 'Disconnected',
-        dot: 'bg-rose-400 animate-pulse',
+        dot: 'bg-danger animate-pulse',
     };
 }
 
@@ -247,7 +247,7 @@ export function BackendMonitorSection() {
                       (backend.proxy === 'up'
                         ? 'bg-success/15 text-success ring-success/30'
                         : backend.proxy === 'down'
-                          ? 'bg-rose-400/15 text-rose-300 ring-rose-400/30'
+                          ? 'bg-danger/15 text-danger-fg ring-danger/30'
                           : 'bg-white/[0.06] text-muted-foreground ring-white/10')
                     }
                   >
@@ -257,7 +257,7 @@ export function BackendMonitorSection() {
                         (backend.proxy === 'up'
                           ? 'bg-success'
                           : backend.proxy === 'down'
-                            ? 'bg-rose-400 animate-pulse'
+                            ? 'bg-danger animate-pulse'
                             : 'bg-zinc-400')
                       }
                     />
@@ -272,7 +272,7 @@ export function BackendMonitorSection() {
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 <Stat label="Events" value={stats.total.toLocaleString()} />
-                <Stat label="Errors" value={String(stats.errors)} accent={stats.errors > 0 ? 'text-rose-300' : undefined} />
+                <Stat label="Errors" value={String(stats.errors)} accent={stats.errors > 0 ? 'text-danger-fg' : undefined} />
                 <Stat label="Auto-Memory" value={String(stats.autoMem)} />
                 <Stat label="Tokens in/out" value={`${formatNum(stats.tokensIn)} / ${formatNum(stats.tokensOut)}`} />
                 <Stat label="Scheduler ticks" value={String(stats.schedTicks)} />
@@ -310,7 +310,7 @@ export function BackendMonitorSection() {
                                 key={cat}
                                 onClick={() => toggleCategory(cat)}
                                 className={cn(
-                                    'rounded-md border px-2 py-1 text-3xs font-mono uppercase tracking-wider transition',
+                                    'rounded-md border px-2 py-1 text-2xs font-mono uppercase tracking-wider transition',
                                     on ? m.chip : 'bg-muted/40 text-muted-foreground/50 border-transparent hover:bg-muted',
                                 )}
                             >
@@ -322,9 +322,9 @@ export function BackendMonitorSection() {
                         type="button"
                         onClick={() => setHttpOnly((v) => !v)}
                         className={cn(
-                            'rounded-md border px-2 py-1 text-3xs font-mono uppercase tracking-wider transition',
+                            'rounded-md border px-2 py-1 text-2xs font-mono uppercase tracking-wider transition',
                             httpOnly
-                                ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                ? 'bg-success/15 text-success-fg border-success/30'
                                 : 'bg-muted/40 text-muted-foreground/50 border-transparent hover:bg-muted',
                         )}
                         data-testid="backend-monitor-http-only"
@@ -391,17 +391,17 @@ export function BackendMonitorSection() {
                                             onClick={() => toggleExpanded(event.id)}
                                             className={cn(
                                                 'group flex w-full items-start gap-2 px-2 py-1 text-left hover:bg-white/[0.04] transition border-b border-border/30',
-                                                event.level === 'error' && 'bg-rose-500/[0.04]',
+                                                event.level === 'error' && 'bg-danger/[0.04]',
                                             )}
                                         >
                                             <span className="shrink-0 text-muted-foreground/70 w-28 tabular-nums">{formatTime(event.timestamp)}</span>
-                                            <span className={cn('shrink-0 rounded border px-1.5 py-px text-3xs uppercase tracking-wider w-20 text-center', m.chip)}>
+                                            <span className={cn('shrink-0 rounded border px-1.5 py-px text-2xs uppercase tracking-wider w-20 text-center', m.chip)}>
                                                 {m.label}
                                             </span>
                                             {pill ? (
                                                 <span
                                                     className={cn(
-                                                        'shrink-0 rounded border px-1.5 py-px text-3xs font-semibold tracking-wide w-[4.5rem] text-center',
+                                                        'shrink-0 rounded border px-1.5 py-px text-2xs font-semibold tracking-wide w-[4.5rem] text-center',
                                                         pill.cls,
                                                     )}
                                                     data-testid="http-status-pill"
@@ -415,7 +415,7 @@ export function BackendMonitorSection() {
                                             <span className={cn('flex-1 whitespace-pre-wrap break-all', m.row)}>{event.message}</span>
                                         </button>
                                         {isExpanded && (
-                                            <div className="border-b border-border/30 bg-black/30 px-3 py-2 text-3xs text-muted-foreground space-y-1">
+                                            <div className="border-b border-border/30 bg-black/30 px-3 py-2 text-2xs text-muted-foreground space-y-1">
                                                 <div className="grid grid-cols-[80px_1fr] gap-2">
                                                     <span className="text-muted-foreground/70 uppercase tracking-wider">ID</span>
                                                     <span className="text-foreground/80 break-all">{event.id}</span>
@@ -445,7 +445,7 @@ export function BackendMonitorSection() {
                     )}
                 </div>
 
-                <p className="pt-2 text-3xs text-muted-foreground font-mono">
+                <p className="pt-2 text-2xs text-muted-foreground font-mono">
                     Secret-shaped fields (keys, tokens, cookies) are redacted on export. Up to 10,000 events are retained; the ring is FIFO.
                 </p>
             </SettingsCard>
@@ -456,9 +456,9 @@ export function BackendMonitorSection() {
 function Stat({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: string }) {
     return (
         <div className="rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
-            <div className="text-3xs uppercase tracking-widest text-muted-foreground/70 font-semibold">{label}</div>
+            <div className="text-2xs uppercase tracking-widest text-muted-foreground/70 font-semibold">{label}</div>
             <div className={cn('mt-0.5 text-base font-semibold tabular-nums', accent || 'text-foreground')}>{value}</div>
-            {sub && <div className="text-3xs text-muted-foreground/60 truncate">{sub}</div>}
+            {sub && <div className="text-2xs text-muted-foreground/60 truncate">{sub}</div>}
         </div>
     );
 }

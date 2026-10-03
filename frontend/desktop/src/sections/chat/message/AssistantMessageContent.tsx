@@ -145,7 +145,7 @@ export function AssistantMessageContent({
         {/* Fallback chip (D8): a chain/promotion switch answered this turn. */}
         {!(isLast && streaming) && message.usedFallback ? (
           <div
-            className="text-3xs text-muted-foreground/60"
+            className="text-2xs text-muted-foreground/60"
             title="The primary model failed; this model answered the turn"
             data-testid="fallback-chip"
           >
@@ -157,7 +157,7 @@ export function AssistantMessageContent({
             text above LOOKS complete but isn't. The recovery event log
             carries the attempt detail (recovery{kind, attempt, degraded}). */}
         {!(isLast && streaming) && message.turnEnd?.reason === 'length' ? (
-          <div className="text-3xs text-warning/90" data-testid="truncated-answer-note">
+          <div className="text-2xs text-warning/90" data-testid="truncated-answer-note">
             cut off at the output limit — the answer above is incomplete
           </div>
         ) : null}
@@ -169,9 +169,9 @@ export function AssistantMessageContent({
           message.turnEnd &&
           message.turnEnd.reason !== 'finished' ? (
           <div
-            className={`text-3xs ${
+            className={`text-2xs ${
               message.turnEnd.error
-                ? 'text-rose-400/90'
+                ? 'text-danger-fg'
                 : 'text-warning/90'
             }`}
             data-testid="turn-end-badge"

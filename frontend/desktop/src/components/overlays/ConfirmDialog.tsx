@@ -93,7 +93,7 @@ export function ConfirmDialog({
             className={cn(
               'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.8125rem] font-medium transition',
               variant === 'destructive'
-                ? 'bg-rose-600 text-white hover:bg-rose-500'
+                ? 'bg-danger text-white hover:bg-danger'
                 : 'bg-primary text-primary-foreground hover:bg-primary/90',
             )}
             data-testid="confirm-dialog-confirm"

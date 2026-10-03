@@ -20,7 +20,7 @@ import type { IntegrationSetupResult } from '@/types/chat';
 function StatusBadge({ ok, text }: { ok: boolean; text: string }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-3xs font-semibold ${
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-semibold ${
         ok ? 'bg-success/15 text-success' : 'bg-muted/50 text-muted-foreground'
       }`}
     >
@@ -108,7 +108,7 @@ function TokenPasteForm({
         />
       )}
 
-      {error && <p className="text-3xs text-destructive">{error}</p>}
+      {error && <p className="text-2xs text-destructive">{error}</p>}
 
       <div className="flex items-center justify-end gap-2">
         <Button type="button" size="sm" onClick={() => void apply()} disabled={!canApply}>
@@ -162,7 +162,7 @@ export function IntegrationSetupWidget({ setup }: { setup: IntegrationSetupResul
 
   return (
     <div className="mt-2 rounded-md border border-primary/25 bg-card/70 p-3 space-y-2.5">
-      <div className="flex items-center gap-1.5 text-3xs uppercase tracking-widest text-primary/80 font-semibold">
+      <div className="flex items-center gap-1.5 text-2xs uppercase tracking-widest text-primary/80 font-semibold">
         <Shield className="size-3" />
         {isMcp ? 'MCP server installed' : isGoogle ? 'Connect Google account' : `${setup.label ?? 'Integration'} setup`}
       </div>
@@ -191,7 +191,7 @@ export function IntegrationSetupWidget({ setup }: { setup: IntegrationSetupResul
                 Sign in with Google {setup.facet ? `(${setup.facet})` : ''}
               </Button>
               {setup.needsClientId && (
-                <p className="text-3xs text-muted-foreground">
+                <p className="text-2xs text-muted-foreground">
                   Needs GOOGLE_OAUTH_CLIENT_ID configured in Settings → Integrations.
                 </p>
               )}
@@ -212,12 +212,12 @@ export function IntegrationSetupWidget({ setup }: { setup: IntegrationSetupResul
           {Array.isArray(setup.tools) && setup.tools.length > 0 && (
             <p className="font-mono text-2xs text-muted-foreground">{setup.tools.slice(0, 8).join(', ')}</p>
           )}
-          {setup.error && <p className="text-3xs text-destructive">{setup.error}</p>}
+          {setup.error && <p className="text-2xs text-destructive">{setup.error}</p>}
         </div>
       ) : null}
 
       {note && <p className="flex items-center gap-1.5 text-2xs text-success"><CheckCircle2 className="size-3" />{note}</p>}
-      {err && <p className="text-3xs text-destructive">{err}</p>}
+      {err && <p className="text-2xs text-destructive">{err}</p>}
     </div>
   );
 }

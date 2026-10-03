@@ -800,11 +800,11 @@ function AutomationCard({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-semibold">{job.name || job.id}</span>
-              <Badge variant="secondary" className="text-3xs">
+              <Badge variant="secondary" className="text-2xs">
                 {jobType}
               </Badge>
               {job.paused && (
-                <Badge variant="outline" className="text-3xs">
+                <Badge variant="outline" className="text-2xs">
                   paused
                 </Badge>
               )}
@@ -813,7 +813,7 @@ function AutomationCard({
               {job.limitReached && (
                 <Badge
                   variant="outline"
-                  className="text-3xs border-warning/50 text-warning"
+                  className="text-2xs border-warning/50 text-warning"
                   title={`Stopped after ${job.maxRuns} runs`}
                 >
                   limit reached
@@ -822,14 +822,14 @@ function AutomationCard({
               {job.approvalRequired && (
                 <Badge
                   variant="outline"
-                  className="text-3xs border-info/50 text-info"
+                  className="text-2xs border-info/50 text-info"
                   title="A human confirms each run of this job"
                 >
                   needs approval
                 </Badge>
               )}
               {job.status === 'running' && (
-                <Badge variant="outline" className="text-3xs border-info/50 text-info">
+                <Badge variant="outline" className="text-2xs border-info/50 text-info">
                   running
                 </Badge>
               )}

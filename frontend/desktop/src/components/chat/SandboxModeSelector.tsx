@@ -124,7 +124,7 @@ export function SandboxModeSelector({ selectedMode, onChange, className }: Sandb
             style={{ top: pos.top, right: pos.right }}
             data-testid="sandbox-mode-menu"
           >
-            <div className="px-2 py-1.5 text-3xs uppercase tracking-wider text-muted-foreground font-semibold">
+            <div className="px-2 py-1.5 text-2xs uppercase tracking-wider text-muted-foreground font-semibold">
               Sandbox
             </div>
             {options.map((option) => (

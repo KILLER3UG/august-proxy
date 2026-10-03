@@ -4,7 +4,7 @@
 /* Renders a diff in the same style as the ZCode reference:              */
 /*   • line numbers in a muted right-aligned column                      */
 /*   • removed lines: rgba(248,113,113,0.09) bg + 2-px #f87171 border    */
-/*   • added   lines: rgba(74,222,128,0.09) bg + 2-px #4ade80 border    */
+/*   • added   lines: --dt-code-added-wash bg + 2-px #4ade80 border     */
 /*   • container:  rgba(0,0,0,0.3) on the already-dark surface           */
 /*   • ─── N more lines ─── truncation after `maxLines`                  */
 /*                                                                       */
@@ -234,7 +234,7 @@ export function DiffView({ diff, oldContent, newContent, maxLines = 40, classNam
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="w-full text-3xs text-zinc-500 hover:text-zinc-300 text-center py-1.5 select-none cursor-pointer transition-colors"
+          className="w-full text-2xs text-zinc-500 hover:text-zinc-300 text-center py-1.5 select-none cursor-pointer transition-colors"
         >
           ─── Show {hidden} more line{hidden === 1 ? '' : 's'} ───
         </button>
@@ -243,7 +243,7 @@ export function DiffView({ diff, oldContent, newContent, maxLines = 40, classNam
         <button
           type="button"
           onClick={() => setExpanded(false)}
-          className="w-full text-3xs text-zinc-500 hover:text-zinc-300 text-center py-1.5 select-none cursor-pointer transition-colors"
+          className="w-full text-2xs text-zinc-500 hover:text-zinc-300 text-center py-1.5 select-none cursor-pointer transition-colors"
         >
           ─── Show less ───
         </button>
@@ -277,13 +277,13 @@ function DiffLineRow({ line, anchors, idPrefix }: { line: DiffLine; anchors?: Di
             'border-success text-success',
           line.kind === 'removed' &&
             'border-danger text-danger',
-          line.kind === 'context' && 'border-transparent text-zinc-300'
+          line.kind === 'context' && 'border-transparent text-[color:var(--dt-code-surface-fg)]'
         )}
         style={
           line.kind === 'added'
-            ? { backgroundColor: 'rgba(74,222,128,0.09)' }
+            ? { backgroundColor: 'var(--dt-code-added-wash)' }
             : line.kind === 'removed'
-              ? { backgroundColor: 'rgba(248,113,113,0.09)' }
+              ? { backgroundColor: 'var(--dt-code-removed-wash)' }
               : undefined
         }
       >
@@ -294,7 +294,7 @@ function DiffLineRow({ line, anchors, idPrefix }: { line: DiffLine; anchors?: Di
           key={i}
           title={a.title}
           data-testid="diff-line-anchor"
-          className="shrink-0 self-center ml-2 mr-2 max-w-[14rem] truncate rounded border border-destructive/40 bg-destructive/15 px-1 py-0.5 text-3xs font-semibold text-destructive/90"
+          className="shrink-0 self-center ml-2 mr-2 max-w-[14rem] truncate rounded border border-destructive/40 bg-destructive/15 px-1 py-0.5 text-2xs font-semibold text-destructive/90"
         >
           {a.tag} {a.title}
         </span>

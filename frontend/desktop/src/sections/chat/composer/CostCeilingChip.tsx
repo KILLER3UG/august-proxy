@@ -54,7 +54,7 @@ export function CostCeilingChip({
 
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-3xs font-mono tabular-nums"
+      className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-2xs font-mono tabular-nums"
       title={
         ceiling > 0
           ? `Per-session spend ceiling: $${cost.toFixed(3)} of $${ceiling.toFixed(2)} used${
@@ -68,7 +68,7 @@ export function CostCeilingChip({
     >
       <Wallet className="size-3 text-muted-foreground" />
       <span
-        className={over ? 'text-amber-500' : 'text-muted-foreground'}
+        className={over ? 'text-warning-fg' : 'text-muted-foreground'}
         data-testid="cost-ceiling-value"
       >
         {est ? '~' : ''}${cost.toFixed(3)}
@@ -82,7 +82,7 @@ export function CostCeilingChip({
               setValue(String(ceiling));
               setEditing(true);
             }}
-            className={pct >= 0.8 ? 'text-amber-500 hover:text-amber-400' : 'text-muted-foreground hover:text-foreground'}
+            className={pct >= 0.8 ? 'text-warning-fg hover:text-warning-fg' : 'text-muted-foreground hover:text-foreground'}
           >
             ${ceiling.toFixed(2)}
           </button>
@@ -112,7 +112,7 @@ export function CostCeilingChip({
           }}
           placeholder="0.00"
           inputMode="decimal"
-          className="w-14 rounded border border-primary/40 bg-background px-1 py-0 text-3xs font-mono outline-none"
+          className="w-14 rounded border border-primary/40 bg-background px-1 py-0 text-2xs font-mono outline-none"
           aria-label="Cost ceiling in USD"
         />
       )}

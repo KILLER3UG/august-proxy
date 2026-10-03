@@ -420,7 +420,7 @@ export function ClarifyTool({
             >
               <Send className="size-3" />
               {submitting ? 'Sending…' : 'Send answer'}
-              <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-3xs font-mono">
+              <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-2xs font-mono">
                 ↵
               </kbd>
             </BannerButton>

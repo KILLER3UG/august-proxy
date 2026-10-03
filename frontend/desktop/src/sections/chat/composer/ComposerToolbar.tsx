@@ -301,7 +301,7 @@ export function ComposerToolbar({
       <div className="flex items-center gap-1 shrink-0">
         {handoffPreparing && (
           <span
-            className="inline-flex items-center gap-1 text-3xs text-muted-foreground/70 px-1"
+            className="inline-flex items-center gap-1 text-2xs text-muted-foreground/70 px-1"
             aria-live="polite"
           >
             <Loader2 className="size-3 animate-spin" />
@@ -406,7 +406,7 @@ export function ComposerToolbar({
         <button
           type="button"
           onClick={() => addRightDrawerSection('artifacts')}
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-3xs leading-none text-muted-foreground/50 hover:bg-muted/40 hover:text-foreground/80 transition"
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-2xs leading-none text-muted-foreground/50 hover:bg-muted/40 hover:text-foreground/80 transition"
           title="Artifacts — files, images, links from this chat"
         >
           <GalleryVertical className="size-3 opacity-70" />

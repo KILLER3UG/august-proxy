@@ -31,9 +31,9 @@ interface RunRecord {
 const RUN_TONES: Record<string, string> = {
   pending: 'bg-muted text-muted-foreground',
   running: 'bg-sky-500/15 text-sky-400 animate-pulse',
-  completed: 'bg-emerald-500/15 text-emerald-500',
-  partial: 'bg-amber-500/15 text-amber-500',
-  failed: 'bg-rose-500/15 text-rose-500',
+  completed: 'bg-success/15 text-success-fg',
+  partial: 'bg-warning/15 text-warning-fg',
+  failed: 'bg-danger/15 text-danger-fg',
   cancelled: 'bg-zinc-500/15 text-zinc-400',
 };
 
@@ -161,7 +161,7 @@ export function BoardPage() {
         <div className="flex items-center gap-2">
           <Rocket className="size-4 text-primary" />
           <h2 className="text-sm font-medium text-foreground">Launch a team</h2>
-          <span className="text-3xs text-muted-foreground/60 ml-auto">
+          <span className="text-2xs text-muted-foreground/60 ml-auto">
             one agent per goal line — runs in parallel, cards advance as they finish
           </span>
         </div>
@@ -203,16 +203,16 @@ export function BoardPage() {
           <div className="flex items-center gap-2">
             <Bot className="size-4 text-primary" />
             <h2 className="text-sm font-medium text-foreground">Working now</h2>
-            <span className="rounded-full bg-primary/15 px-2 py-0.5 text-3xs text-primary">{active.length}</span>
+            <span className="rounded-full bg-primary/15 px-2 py-0.5 text-2xs text-primary">{active.length}</span>
           </div>
           <ul className="space-y-1.5">
             {active.map((r) => (
               <li key={r.taskId ?? r.id} className="flex items-center gap-2 text-xs py-1">
-                <span className={`text-3xs px-2 py-0.5 rounded-full ${RUN_TONES[r.status ?? ''] ?? 'bg-muted text-muted-foreground'}`}>
+                <span className={`text-2xs px-2 py-0.5 rounded-full ${RUN_TONES[r.status ?? ''] ?? 'bg-muted text-muted-foreground'}`}>
                   {r.status}
                 </span>
                 <span className="font-medium truncate">{r.goal || r.agentId || 'agent'}</span>
-                <span className="text-muted-foreground/60 font-mono text-3xs">{r.agentId}</span>
+                <span className="text-muted-foreground/60 font-mono text-2xs">{r.agentId}</span>
                 <button
                   type="button"
                   onClick={() => r.taskId && void kill(r.taskId)}

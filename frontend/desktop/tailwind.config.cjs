@@ -43,6 +43,26 @@ module.exports = {
           2: 'var(--dt-fg-2)',
           3: 'var(--dt-fg-3)',
         },
+        // Role tokens that carry their own per-theme value (plain hex/rgb
+        // vars, no alpha slot — same restriction as `tier`).
+        sunken: 'var(--dt-surface-sunken)',
+        paper: 'var(--dt-paper)',
+        scrim: 'var(--dt-overlay-scrim)',
+        wash: 'var(--dt-wash)',
+        'hairline-strong': 'var(--dt-hairline-strong)',
+        // Status colors: RGB triplets, so every alpha modifier works
+        // natively (bg-success/15, border-danger/30, text-warning-fg, …).
+        // The -fg variants are the contrast-tuned TEXT colors per theme
+        // (plain vars — no alpha needed). These replace the raw Tailwind
+        // green/red/amber/emerald palette classes (2026-10-03 audit §2).
+        success: 'rgb(var(--dt-success-rgb) / <alpha-value>)',
+        warning: 'rgb(var(--dt-warning-rgb) / <alpha-value>)',
+        danger: 'rgb(var(--dt-danger-rgb) / <alpha-value>)',
+        info: 'rgb(var(--dt-info-rgb) / <alpha-value>)',
+        'success-fg': 'var(--dt-success-fg)',
+        'warning-fg': 'var(--dt-warning-fg)',
+        'danger-fg': 'var(--dt-danger-fg)',
+        'info-fg': 'var(--dt-info-fg)',
       },
       fontFamily: {
         sans: [

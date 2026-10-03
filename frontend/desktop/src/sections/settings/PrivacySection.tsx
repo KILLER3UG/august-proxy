@@ -59,7 +59,7 @@ function fmtBytes(b?: number): string {
 function StatCard({ label, value, icon: Icon }: { label: string; value: string; icon: typeof Database }) {
   return (
     <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4">
-      <div className="flex items-center gap-1.5 text-3xs uppercase tracking-wider text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-2xs uppercase tracking-wider text-muted-foreground">
         <Icon className="size-3" />
         {label}
       </div>
@@ -87,7 +87,7 @@ function ActionRow({
 }) {
   return (
     <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-card/60 p-4">
-      <Icon className={`size-4 shrink-0 ${destructive ? 'text-rose-500' : 'text-primary'}`} />
+      <Icon className={`size-4 shrink-0 ${destructive ? 'text-danger-fg' : 'text-primary'}`} />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-foreground">{title}</p>
         <p className="text-xs text-muted-foreground">{description}</p>
@@ -98,7 +98,7 @@ function ActionRow({
         onClick={onClick}
         className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-xs disabled:opacity-50 ${
           destructive
-            ? 'bg-rose-500/15 text-rose-400 hover:bg-rose-500/25'
+            ? 'bg-danger/15 text-danger-fg hover:bg-danger/25'
             : 'bg-primary text-primary-foreground hover:bg-primary/90'
         }`}
         data-testid={`privacy-${title.toLowerCase().replace(/\s+/g, '-')}`}

@@ -77,7 +77,7 @@ export function RightDrawerNotesSection({ sessionId }: { sessionId: string | nul
         className="flex-1 min-h-0 w-full resize-none rounded-lg border border-border/60 bg-card/40 p-3 text-[0.8125rem] leading-relaxed text-foreground/90 outline-none placeholder:text-muted-foreground/50 focus:border-primary/40"
         spellCheck={false}
       />
-      <div className="flex items-center justify-between text-3xs text-muted-foreground/70">
+      <div className="flex items-center justify-between text-2xs text-muted-foreground/70">
         <span className="inline-flex items-center gap-1">
           <StickyNote className="size-3" />
           {words} word{words === 1 ? '' : 's'}
@@ -88,7 +88,7 @@ export function RightDrawerNotesSection({ sessionId }: { sessionId: string | nul
             onClick={() => void promote()}
             disabled={promoting || !value.trim()}
             title="Save this note into memory — searchable via brain_query(store=facts) in any session"
-            className="inline-flex items-center gap-1 rounded border border-border/60 px-1.5 py-0.5 text-3xs text-muted-foreground hover:border-primary/40 hover:text-primary disabled:opacity-40"
+            className="inline-flex items-center gap-1 rounded border border-border/60 px-1.5 py-0.5 text-2xs text-muted-foreground hover:border-primary/40 hover:text-primary disabled:opacity-40"
             data-testid="promote-note-to-memory"
           >
             {promoting ? (

@@ -169,7 +169,7 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
                   </span>
                 </div>
                 <UpdateProgressBar progress={progress} />
-                <p className="text-3xs tabular-nums text-muted-foreground">
+                <p className="text-2xs tabular-nums text-muted-foreground">
                   {progress.totalBytes != null && progress.totalBytes > 0
                     ? `${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}`
                     : progress.downloadedBytes > 0
@@ -292,14 +292,14 @@ function NotificationRow({
         className={cn(
           'w-full rounded-lg px-2.5 py-2.5 text-left transition',
           'hover:bg-muted/40 disabled:opacity-60',
-          item.kind === 'update' && 'bg-amber-500/8 hover:bg-amber-500/12',
+          item.kind === 'update' && 'bg-warning/8 hover:bg-warning/12',
         )}
       >
         <div className="flex items-start gap-2.5">
           <Icon
             className={cn(
               'mt-0.5 size-3 shrink-0',
-              item.kind === 'update' ? 'text-amber-500' : 'text-muted-foreground',
+              item.kind === 'update' ? 'text-warning-fg' : 'text-muted-foreground',
             )}
           />
           <div className="min-w-0 flex-1">
@@ -308,7 +308,7 @@ function NotificationRow({
                 {item.title}
               </span>
               {item.kind === 'release' && item.prerelease && (
-                <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-3xs font-medium text-amber-600 dark:text-amber-400">
+                <span className="rounded bg-warning/15 px-1.5 py-0.5 text-2xs font-medium text-warning-fg text-warning-fg">
                   pre
                 </span>
               )}
@@ -316,10 +316,10 @@ function NotificationRow({
             <p className="mt-0.5 line-clamp-2 text-2xs leading-snug text-muted-foreground">
               {item.detail}
             </p>
-            <div className="mt-1 flex items-center gap-2 text-3xs text-muted-foreground/70">
+            <div className="mt-1 flex items-center gap-2 text-2xs text-muted-foreground/70">
               {item.when ? <span>{formatTimeAgo(item.when)}</span> : null}
               {item.kind === 'update' && (
-                <span className="font-medium text-amber-500">
+                <span className="font-medium text-warning-fg">
                   {updateBusy
                     ? progressPercent != null
                       ? `Downloading ${progressPercent}%`

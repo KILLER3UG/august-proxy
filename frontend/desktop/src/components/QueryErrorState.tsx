@@ -86,7 +86,7 @@ export function QueryErrorState({
         <p
           className={cn(
             'text-muted-foreground/70',
-            compact ? 'mt-0.5 text-3xs' : 'mx-auto mt-1 max-w-md text-2xs',
+            compact ? 'mt-0.5 text-2xs' : 'mx-auto mt-1 max-w-md text-2xs',
           )}
         >
           {note}

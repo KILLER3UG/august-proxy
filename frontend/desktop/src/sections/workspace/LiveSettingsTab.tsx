@@ -150,7 +150,7 @@ export function LiveSettingsTab() {
             <span
               className={`rounded-full px-2 py-0.5 border ${
                 sttReady
-                  ? 'border-emerald-500/40 text-emerald-400'
+                  ? 'border-success/40 text-success-fg'
                   : 'border-white/10 text-muted-foreground'
               }`}
             >
@@ -159,7 +159,7 @@ export function LiveSettingsTab() {
             <span
               className={`rounded-full px-2 py-0.5 border ${
                 ttsReady
-                  ? 'border-emerald-500/40 text-emerald-400'
+                  ? 'border-success/40 text-success-fg'
                   : 'border-white/10 text-muted-foreground'
               }`}
             >
@@ -167,13 +167,13 @@ export function LiveSettingsTab() {
             </span>
           </div>
           {Boolean(active.sttProvider) && !sttReady && editCfg === null && (
-            <p className="text-xs text-amber-400/90 mt-2" data-testid="live-stt-not-ready">
+            <p className="text-xs text-warning-fg mt-2" data-testid="live-stt-not-ready">
               STT provider is set but has no usable API key — Live will keep using
               browser speech (or error if the browser has no Web Speech).
             </p>
           )}
           {Boolean(active.ttsProvider) && !ttsReady && editCfg === null && (
-            <p className="text-xs text-amber-400/90 mt-2" data-testid="live-tts-not-ready">
+            <p className="text-xs text-warning-fg mt-2" data-testid="live-tts-not-ready">
               TTS provider is set but has no usable API key — Live will keep using
               browser speechSynthesis.
             </p>

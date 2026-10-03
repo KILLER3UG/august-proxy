@@ -10,7 +10,7 @@ import type { CodeReviewResult, ReviewFinding } from '@/api/codeReview';
 const TAG_STYLES: Record<string, string> = {
   P0: 'bg-destructive/20 text-destructive border-destructive/40',
   P1: 'bg-orange-500/15 text-orange-400 border-orange-500/40',
-  P2: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/40',
+  P2: 'bg-warning/15 text-warning-fg border-warning/40',
   P3: 'bg-white/[0.06] text-muted-foreground border-white/10',
 };
 
@@ -18,7 +18,7 @@ function TagBadge({ tag }: { tag: string }) {
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center rounded border px-1 font-mono text-3xs font-semibold',
+        'inline-flex shrink-0 items-center rounded border px-1 font-mono text-2xs font-semibold',
         TAG_STYLES[tag] || TAG_STYLES.P3,
       )}
     >
@@ -46,7 +46,7 @@ function FindingRow({
         </span>
         {finding.failSafe && (
           <span
-            className="shrink-0 rounded bg-white/[0.06] px-1 text-3xs text-muted-foreground"
+            className="shrink-0 rounded bg-white/[0.06] px-1 text-2xs text-muted-foreground"
             title="Finding had no leading severity tag — escalated to P1 fail-safe"
           >
             untagged → P1
@@ -58,7 +58,7 @@ function FindingRow({
           type="button"
           data-testid="review-finding-anchor"
           onClick={() => onSelectFile?.(finding.file)}
-          className="block max-w-full truncate font-mono text-3xs text-primary/80 hover:text-primary hover:underline"
+          className="block max-w-full truncate font-mono text-2xs text-primary/80 hover:text-primary hover:underline"
           title={`Jump to ${finding.file}${finding.line ? `:${finding.line}` : ''}`}
         >
           {finding.file}
@@ -98,15 +98,15 @@ export function ReviewFindingsPanel({
         <div className="flex items-center gap-1.5" data-testid="review-counts">
           <span className="text-xs font-medium text-foreground/85">Review</span>
           {counts.p0 > 0 && <TagBadge tag="P0" />}
-          {counts.p0 > 0 && <span className="text-3xs tabular-nums text-destructive">{counts.p0}</span>}
+          {counts.p0 > 0 && <span className="text-2xs tabular-nums text-destructive">{counts.p0}</span>}
           {counts.p1 > 0 && <TagBadge tag="P1" />}
-          {counts.p1 > 0 && <span className="text-3xs tabular-nums text-orange-400">{counts.p1}</span>}
+          {counts.p1 > 0 && <span className="text-2xs tabular-nums text-orange-400">{counts.p1}</span>}
           {counts.p2 > 0 && <TagBadge tag="P2" />}
-          {counts.p2 > 0 && <span className="text-3xs tabular-nums text-yellow-300">{counts.p2}</span>}
+          {counts.p2 > 0 && <span className="text-2xs tabular-nums text-warning-fg">{counts.p2}</span>}
           {counts.p3 > 0 && <TagBadge tag="P3" />}
-          {counts.p3 > 0 && <span className="text-3xs tabular-nums text-muted-foreground">{counts.p3}</span>}
+          {counts.p3 > 0 && <span className="text-2xs tabular-nums text-muted-foreground">{counts.p3}</span>}
           {total === 0 && !result.skipped && (
-            <span className="text-3xs text-muted-foreground">no findings</span>
+            <span className="text-2xs text-muted-foreground">no findings</span>
           )}
         </div>
         {onDismiss && (
@@ -125,7 +125,7 @@ export function ReviewFindingsPanel({
       {result.skipped && (
         <div
           data-testid="review-notice"
-          className="flex items-start gap-1.5 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-2 text-2xs text-yellow-200"
+          className="flex items-start gap-1.5 rounded-md border border-warning/30 bg-warning/10 p-2 text-2xs text-warning-fg"
         >
           <Info className="mt-0.5 size-3 shrink-0" />
           <span>{result.notice || 'Review skipped.'}</span>
@@ -137,20 +137,20 @@ export function ReviewFindingsPanel({
       ))}
 
       {!!result.droppedUngrounded && result.droppedUngrounded > 0 && (
-        <div className="text-3xs text-muted-foreground/70">
+        <div className="text-2xs text-muted-foreground/70">
           {result.droppedUngrounded} finding{result.droppedUngrounded === 1 ? '' : 's'} dropped —
           quoted code matched no file (Layer-1 grounding).
         </div>
       )}
 
       {result.judge?.ran && (
-        <div className="text-3xs text-muted-foreground/70" data-testid="review-judge-line">
+        <div className="text-2xs text-muted-foreground/70" data-testid="review-judge-line">
           Independent judge{result.judge.judgeModel ? ` (${result.judge.judgeModel})` : ''}:
           {' '}dropped {result.judge.discarded ?? 0}, clustered {result.judge.clusteredDuplicates ?? 0}.
         </div>
       )}
 
-      <div className="text-3xs text-muted-foreground/50">
+      <div className="text-2xs text-muted-foreground/50">
         Advisory only — review never blocks or withholds.
       </div>
     </div>

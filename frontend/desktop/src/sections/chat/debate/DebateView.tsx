@@ -229,7 +229,7 @@ export function DebateView({
             {run.models.map((m) => m.modelName).join(' vs ')}
             {run.judge ? ` · judged by ${run.judge.modelName}` : ''}
           </p>
-          <span className="text-3xs text-muted-foreground/70 shrink-0">
+          <span className="text-2xs text-muted-foreground/70 shrink-0">
             round {Math.min(run.round, run.maxRounds)}/{run.maxRounds}
             {run.judge ? ' + judge' : ''}
           </span>
@@ -308,20 +308,20 @@ export function DebateView({
 
         {finished && !winnerRecorded ? (
           <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-white/[0.06]">
-            <span className="text-3xs text-muted-foreground/70">Who made the better case?</span>
+            <span className="text-2xs text-muted-foreground/70">Who made the better case?</span>
             {run.models.map((m) => (
               <button
                 key={m.modelId}
                 type="button"
                 disabled={postingWinner !== null}
                 onClick={() => void recordWinner(m)}
-                className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-1 text-3xs text-foreground hover:bg-muted disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-1 text-2xs text-foreground hover:bg-muted disabled:opacity-50"
                 data-testid={`debate-winner-${m.modelId}`}
               >
                 {postingWinner === m.modelId ? 'Recording…' : m.modelName}
               </button>
             ))}
-            <span className="text-3xs text-muted-foreground/50">
+            <span className="text-2xs text-muted-foreground/50">
               Feeds the routing-evidence loop.
             </span>
           </div>

@@ -55,7 +55,7 @@ export function Section({
       >
         <div
           className={cn(
-            'mb-0.5 text-3xs uppercase tracking-widest font-semibold',
+            'mb-0.5 text-2xs uppercase tracking-widest font-semibold',
             tone === 'error' ? 'text-destructive' : 'text-muted-foreground/60',
           )}
         >
@@ -106,7 +106,7 @@ export function FormattedSection({
       >
         <div
           className={cn(
-            'mb-0.5 flex items-center gap-1 text-3xs uppercase tracking-widest font-semibold',
+            'mb-0.5 flex items-center gap-1 text-2xs uppercase tracking-widest font-semibold',
             tone === 'error'
               ? 'text-destructive'
               : isSuccess
@@ -161,7 +161,7 @@ export function FormattedErrorSection({ toolName, raw }: { toolName: string; raw
 
   return (
     <div className="mt-1.5 flex gap-3">
-      <span className="text-3xs shrink-0 w-16 pt-0.5 text-destructive">error</span>
+      <span className="text-2xs shrink-0 w-16 pt-0.5 text-destructive">error</span>
       <div className="flex-1 min-w-0">
         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-[0.71875rem] leading-relaxed">
           <div className="flex items-start gap-1.5">
@@ -182,7 +182,7 @@ export function FormattedErrorSection({ toolName, raw }: { toolName: string; raw
               <button
                 type="button"
                 onClick={() => setShowRaw(v => !v)}
-                className="inline-flex items-center gap-0.5 text-3xs text-destructive/70 hover:text-destructive transition-colors"
+                className="inline-flex items-center gap-0.5 text-2xs text-destructive/70 hover:text-destructive transition-colors"
                 title={showRaw ? 'Hide raw error' : 'Show raw error'}
               >
                 <Code2 className="size-2.5" />

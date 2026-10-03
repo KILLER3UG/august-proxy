@@ -117,7 +117,7 @@ const badgeLabel = (el: HTMLElement | null) =>
   it('reads as a failure, not a stall, when the turn errored', () => {
     renderContent({ isLast: true, streaming: false }, { turnEnd: { reason: 'error', rounds: 2, error: true } });
     const el = badge();
-    expect(el?.className).toContain('text-rose-400/90');
+    expect(el?.className).toContain('text-danger-fg');
     expect(el?.className).not.toContain('text-warning');
   });
 

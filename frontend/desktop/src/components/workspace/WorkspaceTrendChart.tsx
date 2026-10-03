@@ -218,7 +218,7 @@ export function WorkspaceTrendChart({ data, className }: Props) {
                           cy={pt.y}
                           r="5"
                           fill={color}
-                          stroke="#18181b"
+                          stroke="var(--dt-background)"
                           strokeWidth="2"
                         />
                       </g>
@@ -243,7 +243,7 @@ export function WorkspaceTrendChart({ data, className }: Props) {
                 y={H - 8}
                 textAnchor="middle"
                 className={cn(
-                  'text-3xs transition-colors',
+                  'text-2xs transition-colors',
                   isHovered ? 'fill-foreground font-semibold' : 'fill-muted-foreground/70',
                 )}
               >
@@ -277,7 +277,7 @@ export function WorkspaceTrendChart({ data, className }: Props) {
         {/* Floating tooltip popover matching Image 5 */}
         {activeDay && hoverIndex !== null && (
           <div
-            className="absolute z-20 pointer-events-none rounded-xl border border-white/[0.12] bg-[#1a1c20]/95 backdrop-blur-md p-3.5 shadow-2xl transition-all duration-75 text-xs"
+            className="absolute z-20 pointer-events-none rounded-xl border border-border bg-popover/95 backdrop-blur-md p-3.5 shadow-2xl transition-all duration-75 text-xs"
             style={{
               left: `${Math.min(
                 Math.max(10, (hoverIndex / Math.max(1, data.length - 1)) * 100),
@@ -287,7 +287,7 @@ export function WorkspaceTrendChart({ data, className }: Props) {
               minWidth: '220px',
             }}
           >
-            <div className="font-semibold text-foreground pb-2 mb-2 border-b border-white/[0.08]">
+            <div className="font-semibold text-foreground pb-2 mb-2 border-b border-border">
               {formatDateLabel(activeDay.date)} - {formatShortTokens(activeDay.tokens)} tokens
             </div>
             <div className="space-y-1.5">

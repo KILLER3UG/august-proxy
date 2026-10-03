@@ -148,7 +148,7 @@ export function ChangesCard({
                 </span>
               )}
               {totals.removed > 0 && (
-                <span className="text-rose-400" data-testid="changes-card-removed">
+                <span className="text-danger-fg" data-testid="changes-card-removed">
                   -{totals.removed} removed
                 </span>
               )}
@@ -204,7 +204,7 @@ export function ChangesCard({
           })}
           {overflow > 0 && (
             <div
-              className="px-0.5 text-3xs text-muted-foreground/60"
+              className="px-0.5 text-2xs text-muted-foreground/60"
               data-testid="changes-card-overflow"
             >
               +{overflow} more
@@ -247,7 +247,7 @@ function CodeFileRow({
           trailing={
             <span className="font-mono text-[0.65625rem] tabular-nums">
               {file.added > 0 && <span className="text-success">+{file.added}</span>}{' '}
-              {file.removed > 0 && <span className="text-rose-400">-{file.removed}</span>}
+              {file.removed > 0 && <span className="text-danger-fg">-{file.removed}</span>}
               {file.added === 0 && file.removed === 0 && (
                 <span className="text-muted-foreground/50">0</span>
               )}

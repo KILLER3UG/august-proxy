@@ -354,7 +354,7 @@ function ProfileRailRow() {
         <ArrowUpCircle
           className={cn(
             'size-3 shrink-0',
-            updateAvailable ? 'text-amber-400' : 'text-sidebar-foreground/40',
+            updateAvailable ? 'text-warning-fg' : 'text-sidebar-foreground/40',
           )}
           aria-hidden="true"
         />

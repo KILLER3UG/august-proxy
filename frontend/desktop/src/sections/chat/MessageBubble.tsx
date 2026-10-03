@@ -368,7 +368,7 @@ function MessageBubbleInner({
                 className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-2xs hover:bg-muted/60"
               >
                 <span className="flex-1 min-w-0 truncate">{m.name || m.id}</span>
-                <span className="text-3xs text-muted-foreground truncate max-w-24">
+                <span className="text-2xs text-muted-foreground truncate max-w-24">
                   {m.provider}
                 </span>
               </button>

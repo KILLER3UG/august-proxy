@@ -219,7 +219,7 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {file.status && <Badge variant="secondary" className="text-3xs">{file.status}</Badge>}
+                  {file.status && <Badge variant="secondary" className="text-2xs">{file.status}</Badge>}
                   <span className="font-mono text-xs text-success">+{file.added}</span>
                   <span className="font-mono text-xs text-danger">-{file.removed}</span>
                   <ArrowRight className="size-3 text-muted-foreground/50" />
@@ -343,7 +343,7 @@ function CommitComposer({ sessionId, onCommitted }: { sessionId: string; onCommi
           {generating ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
           Generate
         </Button>
-        <span className="ml-auto text-3xs text-muted-foreground">
+        <span className="ml-auto text-2xs text-muted-foreground">
           Commits staged + unstaged changes
         </span>
       </div>

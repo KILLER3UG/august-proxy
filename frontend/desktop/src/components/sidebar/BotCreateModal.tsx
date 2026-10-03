@@ -277,7 +277,7 @@ export function BotCreateModal({
                   )}
                 >
                   {i === 0 ? (
-                    <span className="flex size-8 items-center justify-center text-3xs text-muted-foreground">
+                    <span className="flex size-8 items-center justify-center text-2xs text-muted-foreground">
                       Auto
                     </span>
                   ) : (
@@ -304,7 +304,7 @@ export function BotCreateModal({
                 <Shuffle className="size-3" />
                 {salt ? 'Reshuffle' : 'Shuffle face'}
               </button>
-              <p className="text-3xs text-muted-foreground/70">
+              <p className="text-2xs text-muted-foreground/70">
                 Roll until you find one. Lock freezes the pick from re-hashing on rename.
               </p>
             </div>
@@ -335,15 +335,15 @@ export function BotCreateModal({
                 />
               </label>
               {uploadStatus === 'unsupported' && (
-                <p className="text-center text-3xs text-muted-foreground/70">
+                <p className="text-center text-2xs text-muted-foreground/70">
                   Upload not yet wired on this build — pick a Shape or Shuffle instead.
                 </p>
               )}
               {uploadStatus === 'uploading' && (
-                <p className="text-3xs text-muted-foreground/70">Uploading {uploadFileName}…</p>
+                <p className="text-2xs text-muted-foreground/70">Uploading {uploadFileName}…</p>
               )}
               {uploadStatus === 'ok' && (
-                <p className="text-3xs text-muted-foreground/70">Saved {uploadFileName}.</p>
+                <p className="text-2xs text-muted-foreground/70">Saved {uploadFileName}.</p>
               )}
             </div>
           )}
@@ -439,7 +439,7 @@ export function BotCreateModal({
                 />
               </div>
               <div>
-                <span className="mb-1 block text-3xs font-medium uppercase tracking-wide text-muted-foreground/70">
+                <span className="mb-1 block text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">
                   Skills
                 </span>
                 {skillsQuery.isLoading ? (
@@ -471,7 +471,7 @@ export function BotCreateModal({
                 )}
               </div>
               <div>
-                <span className="mb-1 block text-3xs font-medium uppercase tracking-wide text-muted-foreground/70">
+                <span className="mb-1 block text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">
                   Memory scope
                 </span>
                 <div className="flex gap-1">

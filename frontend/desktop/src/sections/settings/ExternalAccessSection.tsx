@@ -58,7 +58,7 @@ function CopyButton({ value, label = 'copy' }: { value: string; label?: string }
   return (
     <button
       onClick={copy}
-      className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-background px-2 py-1 text-3xs font-mono hover:bg-accent transition shrink-0"
+      className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-background px-2 py-1 text-2xs font-mono hover:bg-accent transition shrink-0"
       title="Copy" aria-label="Copy"
     >
       {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
@@ -71,7 +71,7 @@ function CodeBlock({ code, language = 'bash' }: { code: string; language?: strin
   return (
     <div className="rounded-md border border-white/[0.06] bg-black/40 overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-white/[0.06] bg-white/[0.02]">
-        <span className="text-3xs uppercase tracking-wider text-muted-foreground font-mono">
+        <span className="text-2xs uppercase tracking-wider text-muted-foreground font-mono">
           {language}
         </span>
         <CopyButton value={code} />
@@ -269,7 +269,7 @@ export function ExternalAccessSection() {
               {hasKey ? 'Regenerate key' : 'Generate key'}
             </Button>
             {cfg.source && (
-              <span className="text-3xs font-mono text-muted-foreground">
+              <span className="text-2xs font-mono text-muted-foreground">
                 source: {cfg.source}
               </span>
             )}
@@ -375,7 +375,7 @@ export function ExternalAccessSection() {
         </div>
       </section>
 
-      <p className="text-3xs text-muted-foreground/80 font-mono">
+      <p className="text-2xs text-muted-foreground/80 font-mono">
         🔒 The proxy server binds to your local network. Anyone able to reach
         the port can attempt authentication — keep{' '}
         <code>GATEWAY_API_KEY</code> private.
@@ -394,7 +394,7 @@ function EndpointRow({ url, label, hint }: { url: string; label: string; hint: s
         <CopyButton value={url} />
       </div>
       <code className="block mt-1.5 text-2xs font-mono text-foreground break-all">{url}</code>
-      <p className="text-3xs text-muted-foreground mt-1">{hint}</p>
+      <p className="text-2xs text-muted-foreground mt-1">{hint}</p>
     </div>
   );
 }

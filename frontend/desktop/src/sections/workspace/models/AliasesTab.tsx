@@ -128,7 +128,7 @@ export function AliasesTab() {
           <div>
             <p className="text-sm font-semibold">User-defined model aliases</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Map a custom alias (e.g. <code className="text-3xs font-mono">my-claude-opus</code>) to
+              Map a custom alias (e.g. <code className="text-2xs font-mono">my-claude-opus</code>) to
               any real model. The alias shows up in the chat dropdown and proxies to the target provider.
             </p>
           </div>
@@ -170,7 +170,7 @@ export function AliasesTab() {
           />
         ) : (
           <div className="rounded-lg border border-white/[0.06] overflow-hidden">
-            <div className="grid grid-cols-[1fr_2fr_120px_36px] gap-2 px-3 py-2 text-3xs uppercase tracking-wider text-muted-foreground border-b border-white/[0.06] font-mono">
+            <div className="grid grid-cols-[1fr_2fr_120px_36px] gap-2 px-3 py-2 text-2xs uppercase tracking-wider text-muted-foreground border-b border-white/[0.06] font-mono">
               <span>Alias name</span>
               <span>Target model</span>
               <span>Provider</span>
@@ -194,7 +194,7 @@ export function AliasesTab() {
                       onChange={(modelId, provider) => commitAliasChange(i, { targetModel: modelId, targetProvider: provider })}
                       disabled={!editing}
                     />
-                    <span className="text-muted-foreground truncate text-3xs">
+                    <span className="text-muted-foreground truncate text-2xs">
                       {a.targetProvider || '—'}
                     </span>
                     <Button
@@ -215,13 +215,13 @@ export function AliasesTab() {
         )}
 
         {!dirty && aliases.length > 0 && (
-          <p className="text-3xs text-muted-foreground font-mono">
-            Aliases persist to <code className="text-3xs">config.json → modelAliases</code>.
+          <p className="text-2xs text-muted-foreground font-mono">
+            Aliases persist to <code className="text-2xs">config.json → modelAliases</code>.
             Restart the backend for changes to take effect.
           </p>
         )}
         {dirty && (
-          <Badge variant="warning" className="text-3xs">unsaved changes</Badge>
+          <Badge variant="warning" className="text-2xs">unsaved changes</Badge>
         )}
       </div>
       <ConfirmDialog

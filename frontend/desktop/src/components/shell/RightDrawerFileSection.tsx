@@ -34,7 +34,7 @@ function TextPreview({ content }: { content: string }) {
   const truncated = lines.length < allLines.length;
 
   return (
-    <div className="min-h-full bg-[#171717] py-3 font-mono text-[0.75rem] leading-6 text-foreground/90">
+    <div className="min-h-full bg-sunken py-3 font-mono text-[0.75rem] leading-6 text-foreground/90">
       {lines.map((line, index) => (
         <div key={index} className="grid grid-cols-[3.5rem_minmax(0,1fr)] px-4 hover:bg-white/[0.035]">
           <span className="select-none pr-4 text-right text-muted-foreground/45">{index + 1}</span>
@@ -85,7 +85,7 @@ function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom:
       className={zoom !== 1 ? 'h-full w-full' : 'contents'}
     >
       {isImage ? (
-        <div className="flex min-h-full items-center justify-center bg-[#111] p-6">
+        <div className="flex min-h-full items-center justify-center bg-sunken p-6">
           <img
             src={imageSrc}
             alt={file.name}
@@ -102,7 +102,7 @@ function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom:
               title={`Interactive preview of ${file.name}`}
               sandbox="allow-scripts allow-pointer-lock"
               srcDoc={liveSrcDoc}
-              className="min-h-[24rem] w-full flex-1 border-0 bg-white dark:bg-[#111]"
+              className="min-h-[24rem] w-full flex-1 border-0 bg-white dark:bg-sunken"
             />
           )}
         </div>
@@ -306,12 +306,12 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
           <Icon size={17} color={fileIcon.color} className="shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-foreground">{file.name}</div>
-            <div className="text-3xs uppercase tracking-[0.12em] text-muted-foreground/70">
+            <div className="text-2xs uppercase tracking-[0.12em] text-muted-foreground/70">
               {extensionLabel(file.name)} · {file.size || 'Attached file'}
             </div>
           </div>
           {file.truncated && (
-            <span className="rounded border border-warning/30 bg-warning/10 px-2 py-1 text-3xs text-warning">
+            <span className="rounded border border-warning/30 bg-warning/10 px-2 py-1 text-2xs text-warning">
               Truncated
             </span>
           )}
@@ -360,7 +360,7 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
             <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border/70 bg-card/70 px-4">
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold text-foreground">{file.name}</div>
-                <div className="text-3xs uppercase tracking-[0.12em] text-muted-foreground/70">
+                <div className="text-2xs uppercase tracking-[0.12em] text-muted-foreground/70">
                   {extensionLabel(file.name)} · Fullscreen
                 </div>
               </div>

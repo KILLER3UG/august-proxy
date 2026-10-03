@@ -109,14 +109,14 @@ export function Terminal() {
       {approvals.length > 0 && (
         <Card className="border-warning/50 bg-warning/5">
           <CardContent className="p-3 space-y-2">
-            <p className="text-3xs uppercase tracking-wider text-warning font-semibold flex items-center gap-1">
+            <p className="text-2xs uppercase tracking-wider text-warning font-semibold flex items-center gap-1">
               <ShieldAlert className="size-3" /> {approvals.length} approval{approvals.length > 1 ? 's' : ''} required
             </p>
             {approvals.map((a) => (
               <div key={a.requestId} className="flex items-start justify-between gap-3 rounded-md bg-card/70 border border-warning/30 px-3 py-2">
                 <div className="min-w-0">
                   <pre className="text-xs font-mono whitespace-pre-wrap break-all">{a.command || a.inputPreview || '(no command)'}</pre>
-                  <p className="text-3xs text-muted-foreground mt-1">{a.reason || a.cwd}</p>
+                  <p className="text-2xs text-muted-foreground mt-1">{a.reason || a.cwd}</p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <Button size="sm" onClick={() => approve.mutate(a.requestId)} disabled={approve.isPending}>
@@ -135,7 +135,7 @@ export function Terminal() {
       <div className="flex-1 flex gap-3 min-h-0">
         {/* Session list */}
         <div className="w-52 shrink-0 border-r border-border pr-3 overflow-auto">
-          <p className="text-3xs uppercase tracking-wider text-muted-foreground mb-1 font-mono">Sessions</p>
+          <p className="text-2xs uppercase tracking-wider text-muted-foreground mb-1 font-mono">Sessions</p>
           {sessions.length === 0 && !isLoading && (
             <p className="text-xs text-muted-foreground py-4">No sessions</p>
           )}
@@ -151,7 +151,7 @@ export function Terminal() {
                 <TerminalSquare className="size-3 shrink-0 text-muted-foreground" />
                 <span className="font-mono truncate">{s.title || s.id}</span>
               </div>
-              {s.cwd && <p className="text-3xs text-muted-foreground/60 font-mono truncate mt-0.5">{s.cwd}</p>}
+              {s.cwd && <p className="text-2xs text-muted-foreground/60 font-mono truncate mt-0.5">{s.cwd}</p>}
             </button>
           ))}
         </div>
@@ -161,11 +161,11 @@ export function Terminal() {
           {active ? (
             <>
               <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground font-mono">
-                <Badge variant="secondary" className="text-3xs">{active.id}</Badge>
+                <Badge variant="secondary" className="text-2xs">{active.id}</Badge>
                 <span className="truncate">{active.cwd}</span>
               </div>
               <div className="flex-1 rounded-md bg-black/80 dark:bg-black/60 border border-border overflow-auto p-3 min-h-[180px]">
-                <pre className="text-2xs font-mono whitespace-pre-wrap break-all text-green-400/90">
+                <pre className="text-2xs font-mono whitespace-pre-wrap break-all text-success-fg">
                   {buffer?.buffer || '(empty buffer — run a command)'}
                 </pre>
               </div>

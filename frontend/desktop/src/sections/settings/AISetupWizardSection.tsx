@@ -189,7 +189,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
             <li key={s.id} className="flex-1 min-w-0">
               <div className={`flex items-center gap-1.5 ${current ? 'text-primary' : done ? 'text-success' : 'text-muted-foreground/50'}`}>
                 <span
-                  className={`grid size-5 shrink-0 place-items-center rounded-full text-3xs font-semibold border ${
+                  className={`grid size-5 shrink-0 place-items-center rounded-full text-2xs font-semibold border ${
                     current ? 'border-primary/50 bg-primary/15'
                     : done ? 'border-success/40 bg-success/15'
                     : 'border-white/[0.08] bg-muted/30'
@@ -221,7 +221,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                     <Check className="size-3 text-success shrink-0" />
                     <span className="font-medium">{p.name}</span>
                     <span className="text-muted-foreground font-mono">{p.apiFormat}</span>
-                    <span className={`ml-auto text-3xs ${p.apiKeySet ? 'text-success' : 'text-amber-500'}`}>
+                    <span className={`ml-auto text-2xs ${p.apiKeySet ? 'text-success' : 'text-warning-fg'}`}>
                       {p.apiKeySet ? 'Key set' : 'No key yet'}
                     </span>
                   </div>
@@ -297,7 +297,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                 Test connection
               </button>
               {testResult ? (
-                <span className={`text-xs ${testResult.ok ? 'text-success' : 'text-amber-500'}`}>
+                <span className={`text-xs ${testResult.ok ? 'text-success' : 'text-warning-fg'}`}>
                   {testResult.ok
                     ? `Connected! ${testResult.latencyMs}ms`
                     : `Failed: ${testResult.error ?? 'no response'}`}
@@ -345,7 +345,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
               Used for new chats until you switch — the picker remembers your choice per chat.
             </p>
             {models.length === 0 ? (
-              <p className="text-xs text-amber-500">No models yet — go back and refresh the model list.</p>
+              <p className="text-xs text-warning-fg">No models yet — go back and refresh the model list.</p>
             ) : (
               <ul className="space-y-1.5 max-h-64 overflow-y-auto">
                 {models.map((m) => (
@@ -362,7 +362,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                     >
                       <span className={`size-3 rounded-full border ${(defaultModel?.id ?? selectedModel?.id) === m.id ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`} />
                       <span className="font-mono">{m.id}</span>
-                      {m.free ? <span className="ml-auto text-3xs text-success">free</span> : null}
+                      {m.free ? <span className="ml-auto text-2xs text-success">free</span> : null}
                     </button>
                   </li>
                 ))}

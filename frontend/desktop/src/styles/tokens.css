@@ -43,6 +43,19 @@
     --dt-popover-foreground-hsl: 240 3.45% 11.37%;
     --dt-elevated: #ffffff;
 
+    /* Sunken chrome — wells that sit BELOW the page (terminal, file preview,
+     * bottom dock). One value replaces the old #181818/#171717/#111 hexes. */
+    --dt-surface-sunken: #f0f0ee;
+    /* Full-screen scrim behind modals/drawers; heavier over dark ground. */
+    --dt-overlay-scrim: rgb(17 17 17 / 0.32);
+    /* A separator that must stay visible over sunken or imagery surfaces —
+     * one step stronger than --dt-border, never a state colour. */
+    --dt-hairline-strong: #d9d9d5;
+    /* "Paper" role — the schematic canvas and other drawing surfaces. */
+    --dt-paper: #fdfdfb;
+    /* A barely-there glow/wash used behind boot and empty states. */
+    --dt-wash: rgb(0 0 0 / 0.03);
+
     /* Brand — desaturated, reserved for action/focus */
     --dt-primary: #2f6df6;
     --dt-primary-hsl: 221.31 91.71% 57.45%;
@@ -68,6 +81,13 @@
     --dt-info-fg: #1d4ed8;
     --dt-danger: #d2503f;
     --dt-danger-fg: #b91c1c;
+
+    /* RGB triplets so Tailwind alpha modifiers work on status colors
+     * (bg-success/15, border-danger/30, …) without a per-step class. */
+    --dt-success-rgb: 46 158 107;
+    --dt-warning-rgb: 201 138 20;
+    --dt-danger-rgb: 210 80 63;
+    --dt-info-rgb: 59 130 246;
 
     /* Code surfaces */
     --dt-code-inline: #b3215f;
@@ -151,6 +171,13 @@
     --dt-popover-foreground-hsl: 0 0% 94.1%;
     --dt-elevated: #232323;
 
+    /* Sunken chrome / scrim / hairline / paper / wash — see :root above. */
+    --dt-surface-sunken: #121212;
+    --dt-overlay-scrim: rgb(0 0 0 / 0.55);
+    --dt-hairline-strong: #3d3d3d;
+    --dt-paper: #161618;
+    --dt-wash: rgb(255 255 255 / 0.04);
+
     /* Brand — bright enough for AAA on charcoal, still restrained */
     --dt-primary: #6f9bff;
     --dt-primary-hsl: 221.67 100% 71.76%;
@@ -176,6 +203,12 @@
     --dt-info-fg: #93c5fd;
     --dt-danger: #f0766a;
     --dt-danger-fg: #fca5a5;
+
+    /* RGB triplets — see :root above. */
+    --dt-success-rgb: 69 192 138;
+    --dt-warning-rgb: 224 179 65;
+    --dt-danger-rgb: 240 118 106;
+    --dt-info-rgb: 96 165 250;
 
     /* Code surfaces */
     --dt-code-inline: #9ec1ff;
@@ -315,4 +348,7 @@
   /* Focus rings */
   .ring-ring { --tw-ring-color: var(--dt-ring); }
 }
-
+
+/* Utility bridges for tokens that need alpha via color-mix (the Tailwind
+   registrations above are plain vars without an <alpha-value> slot). */
+.bg-sunken-fade { background-color: color-mix(in srgb, var(--dt-surface-sunken) 95%, transparent); }

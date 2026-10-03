@@ -319,13 +319,13 @@ export function CircuitSchematicEditor({
       <div className="flex items-center gap-1.5">
         <Waves className="size-3 text-muted-foreground/70" />
         <span className="truncate text-2xs font-semibold text-foreground">Schematic</span>
-        <span className="truncate text-3xs text-muted-foreground/70">{netlistPath.split(/[\\/]/).pop()}</span>
+        <span className="truncate text-2xs text-muted-foreground/70">{netlistPath.split(/[\\/]/).pop()}</span>
         <span className="ml-auto flex items-center gap-1">
           <button
             type="button"
             onClick={() => setFlow((f) => !f)}
             className={cn(
-              'rounded px-1.5 py-0.5 text-3xs transition',
+              'rounded px-1.5 py-0.5 text-2xs transition',
               flow ? 'bg-primary/15 text-primary' : 'text-muted-foreground/70 hover:bg-muted/50',
             )}
             title="Animate current flow along the wires"
@@ -364,7 +364,7 @@ export function CircuitSchematicEditor({
         <svg
           ref={svgRef}
           viewBox={`${bounds.minx} ${bounds.miny} ${bounds.w} ${bounds.h}`}
-          className="w-full touch-none select-none rounded-lg border border-border/50 bg-[#fdfdfb]"
+          className="w-full touch-none select-none rounded-lg border border-border/50 bg-paper"
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
@@ -420,7 +420,7 @@ export function CircuitSchematicEditor({
         <p className="px-1 py-3 text-2xs text-muted-foreground/70">No components in this deck.</p>
       )}
       {dirty ? (
-        <p className="px-1 text-3xs text-muted-foreground/70">
+        <p className="px-1 text-2xs text-muted-foreground/70">
           Unsaved layout — saving writes the sidecar only; the netlist is untouched.
         </p>
       ) : null}

@@ -267,7 +267,7 @@ describe('ToolStepRow — command status pill (plan 15.1)', () => {
     );
     const pill = screen.getByTestId('tool-status-pill');
     expect(pill).toHaveAttribute('aria-label', 'Command succeeded');
-    expect(pill.className).toContain('emerald');
+    expect(pill.className).toContain('text-success-fg');
   });
 
   it('failed command rows carry a red ✗ pill next to the error line', () => {
@@ -288,7 +288,7 @@ describe('ToolStepRow — command status pill (plan 15.1)', () => {
     );
     const pill = screen.getByTestId('tool-status-pill');
     expect(pill).toHaveAttribute('aria-label', 'Command failed');
-    expect(pill.className).toContain('rose');
+    expect(pill.className).toContain('text-danger-fg');
     expect(screen.getByTestId('tool-error-line')).toBeInTheDocument();
   });
 

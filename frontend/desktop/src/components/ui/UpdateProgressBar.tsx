@@ -2,6 +2,7 @@
 /* Shared by Updates settings + Notifications so install animation matches. */
 
 import { motion } from 'framer-motion';
+import { t } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import type { AppUpdateProgress } from '@/store/app-update-install';
 
@@ -52,7 +53,7 @@ export function UpdateProgressBar({
         )}
         initial={false}
         animate={{ width: `${fill}%` }}
-        transition={{ type: 'spring', stiffness: 140, damping: 26, mass: 0.55 }}
+        transition={t.springSoft}
       >
         <div
           className={cn(

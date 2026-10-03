@@ -62,7 +62,7 @@ export function IntegrationDetail({ item, onBack, onRemove }: IntegrationDetailP
               <h1 className="text-xl font-semibold tracking-tight text-foreground">{item.name}</h1>
               {item.verified && <BadgeCheck className="size-4 text-muted-foreground" />}
               {item.isNew && (
-                <span className="ml-1 rounded text-2xs font-medium text-rose-400/90">New</span>
+                <span className="ml-1 rounded text-2xs font-medium text-danger-fg">New</span>
               )}
             </div>
             <p className="mt-1 text-sm text-muted-foreground">{item.tagline}</p>
@@ -122,7 +122,7 @@ export function IntegrationDetail({ item, onBack, onRemove }: IntegrationDetailP
       {item.categories.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {item.categories.map((c) => (
-            <Badge key={c} variant="outline" className="text-3xs">
+            <Badge key={c} variant="outline" className="text-2xs">
               {c}
             </Badge>
           ))}
@@ -302,7 +302,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
         : provider;
     return (
       <div className="flex flex-col items-end gap-2">
-        <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+        <Badge variant="outline" className="border-success/30 bg-success/10 text-success-fg">
           <CheckCircle2 className="mr-1 size-3" /> Connected
         </Badge>
         {conn?.account && (
@@ -324,7 +324,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
           Disconnect {serviceLabel}
         </Button>
         {provider === 'google' && (
-          <p className="max-w-[14rem] text-right text-3xs text-muted-foreground">
+          <p className="max-w-[14rem] text-right text-2xs text-muted-foreground">
             Disconnects {item.name} only. Other Google services stay connected if you enabled them separately.
           </p>
         )}
@@ -339,7 +339,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
           {needsClientId && (
             <div className="w-72 space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3 text-left">
               <p className="text-2xs font-medium text-foreground">One-time Google setup</p>
-              <p className="text-3xs leading-relaxed text-muted-foreground">
+              <p className="text-2xs leading-relaxed text-muted-foreground">
                 Create an OAuth <span className="text-foreground/80">Desktop app</span> in Google
                 Cloud Console. Copy the Client ID only — no secret needed (secure PKCE). Enable
                 Gmail/Calendar/Drive APIs and add yourself as a test user if the app is in Testing.
@@ -353,7 +353,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
                 className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-2xs text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
               />
               {conn?.redirectUri && (
-                <p className="break-all font-mono text-3xs text-muted-foreground">
+                <p className="break-all font-mono text-2xs text-muted-foreground">
                   Redirect: {conn.redirectUri}
                 </p>
               )}
@@ -382,11 +382,11 @@ function AccountAction({ item }: { item: IntegrationItem }) {
                 )}
                 {waiting ? 'Waiting for sign-in…' : `Sign in with ${item.name}`}
               </Button>
-              <p className="max-w-[14rem] text-right text-3xs text-muted-foreground">
+              <p className="max-w-[14rem] text-right text-2xs text-muted-foreground">
                 One-click browser sign-in (Desktop OAuth + PKCE). Only requests access for{' '}
                 {item.name}.
               </p>
-              <details className="max-w-[18rem] text-right text-3xs text-muted-foreground">
+              <details className="max-w-[18rem] text-right text-2xs text-muted-foreground">
                 <summary className="cursor-pointer hover:text-foreground">
                   Use a different Client ID
                 </summary>
@@ -417,7 +417,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
             </div>
           )}
           {waiting && (
-            <p className="max-w-xs text-right text-3xs text-muted-foreground">
+            <p className="max-w-xs text-right text-2xs text-muted-foreground">
               Complete Google consent in your browser. This screen updates automatically when
               sign-in finishes.
             </p>

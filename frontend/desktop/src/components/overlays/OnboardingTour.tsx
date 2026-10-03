@@ -111,7 +111,7 @@ export function OnboardingTour() {
         <div className="flex items-center gap-2">
           <Icon className="size-5 text-primary" />
           <h2 className="text-base font-semibold">{stepData.title}</h2>
-          <span className="ml-auto text-3xs text-muted-foreground">
+          <span className="ml-auto text-2xs text-muted-foreground">
             {step + 1}/{STEPS.length}
           </span>
           <button

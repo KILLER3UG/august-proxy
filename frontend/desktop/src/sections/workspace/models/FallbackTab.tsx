@@ -89,7 +89,7 @@ export function FallbackTab() {
         <div className="flex items-center justify-between p-3 rounded-lg border border-white/[0.06] bg-black/10">
           <div>
             <p className="text-xs font-semibold">Enable fallback</p>
-            <p className="text-3xs text-muted-foreground">Route unknown/non-alias model requests to the fallback model.</p>
+            <p className="text-2xs text-muted-foreground">Route unknown/non-alias model requests to the fallback model.</p>
           </div>
           <WorkspaceToggle
             enabled={activeFallback.enabled}
@@ -133,17 +133,17 @@ export function FallbackTab() {
         </div>
 
         {activeFallback.enabled && activeFallback.mode === 'always' && (
-          <div className="p-3 rounded-lg border border-yellow-500/20 bg-yellow-500/5 text-yellow-500 text-xs flex gap-2">
+          <div className="p-3 rounded-lg border border-warning/20 bg-warning/5 text-warning-fg text-xs flex gap-2">
             <span className="font-semibold shrink-0">Warning:</span>
             <span>Always mode may route misspelled model names to the fallback instead of failing with an error.</span>
           </div>
         )}
 
         {activeFallback.enabled && activeFallback.model && (
-          <p className="text-3xs text-muted-foreground font-mono">
-            Unknown sub-agent model requests will route to <code className="text-3xs text-foreground">{activeFallback.model}</code>
+          <p className="text-2xs text-muted-foreground font-mono">
+            Unknown sub-agent model requests will route to <code className="text-2xs text-foreground">{activeFallback.model}</code>
             {activeFallback.provider && (
-              <> via <code className="text-3xs text-foreground">{activeFallback.provider}</code></>
+              <> via <code className="text-2xs text-foreground">{activeFallback.provider}</code></>
             )}.
           </p>
         )}

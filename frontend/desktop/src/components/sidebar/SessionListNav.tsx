@@ -170,7 +170,7 @@ export function SessionListNav({
               {pending > 0 ? (
                 <span
                   data-testid={`sidebar-nav-badge-${path.replace(/^\//, '')}`}
-                  className="absolute -right-1.5 -top-1.5 min-w-3.5 rounded-sm bg-amber-500/20 px-0.5 text-3xs font-medium leading-3.5 text-amber-400 tabular-nums"
+                  className="absolute -right-1.5 -top-1.5 min-w-3.5 rounded-sm bg-warning/20 px-0.5 text-2xs font-medium leading-3.5 text-warning-fg tabular-nums"
                 >
                   {pending}
                 </span>

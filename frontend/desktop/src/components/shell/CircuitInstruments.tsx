@@ -170,7 +170,7 @@ function ScopeView({ traces }: { traces: Record<string, TraceData> }) {
   return (
     <div className="flex flex-col gap-1" data-testid="circuit-scope">
       <div ref={ref} className="w-full" />
-      <p className="text-3xs leading-relaxed text-muted-foreground/80">
+      <p className="text-2xs leading-relaxed text-muted-foreground/80">
         Drag horizontally to zoom a time window — legend values follow the
         cursor for Δ measurements.
       </p>
@@ -333,7 +333,7 @@ export function CircuitInstruments({ messages }: { messages?: ChatMessage[] | nu
       <div className="flex items-center gap-2">
         <active.icon className="size-3 shrink-0 text-muted-foreground/70" />
         <span className="shrink-0 text-xs font-semibold text-foreground">Instruments</span>
-        <span className="truncate text-3xs text-muted-foreground">{active.hint}</span>
+        <span className="truncate text-2xs text-muted-foreground">{active.hint}</span>
       </div>
 
       {/* Vertical rail — no horizontal pill tabs (design directive). */}

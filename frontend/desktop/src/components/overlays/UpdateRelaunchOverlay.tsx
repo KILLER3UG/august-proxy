@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react';
 import { CalendarDays, Download, RefreshCw, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { t } from '@/lib/motion';
 import { UpdateProgressBar } from '@/components/ui/UpdateProgressBar';
 import { useAppUpdate, useAppUpdateVersion } from '@/hooks/useAppUpdate';
 import { useAppUpdateInstallStore } from '@/store/app-update-install';
@@ -79,7 +80,7 @@ export function UpdateRelaunchOverlay() {
             initial={{ opacity: 0, y: 14, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
-            transition={{ type: 'spring', stiffness: 280, damping: 28 }}
+            transition={t.spring}
           >
             {/* Titlebar — matches ConversationStage */}
             <div className="flex items-center gap-2 border-b border-border/60 bg-card/40 px-4 py-2.5">
@@ -106,7 +107,7 @@ export function UpdateRelaunchOverlay() {
               <div className="flex items-start gap-2.5" data-testid="update-assistant">
                 <span
                   aria-hidden
-                  className="mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-[7px] border border-border bg-elevated text-3xs font-bold text-primary"
+                  className="mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-[7px] border border-border bg-elevated text-2xs font-bold text-primary"
                 >
                   A
                 </span>

@@ -123,7 +123,7 @@ function StatusGlyph({ status }: { status: string }) {
       className={cn(
         'size-4 shrink-0',
         ACTIVE_STATUSES.has(status) && status !== 'queued' ? 'animate-spin text-primary/80' : '',
-        (status === 'completed' || status === 'recovered') && 'text-emerald-400/80',
+        (status === 'completed' || status === 'recovered') && 'text-success-fg',
         status === 'failed' && 'text-danger/80',
         status === 'cancelled' && 'text-muted-foreground/50',
         status === 'queued' && 'text-muted-foreground/60',
@@ -274,7 +274,7 @@ function TabSearchDropdown({
               className="min-w-0 flex-1 bg-transparent text-[0.75rem] text-foreground outline-none placeholder:text-muted-foreground/50"
             />
           </div>
-          <p className="px-1.5 pb-0.5 pt-1 text-3xs font-medium uppercase tracking-wide text-muted-foreground/60">
+          <p className="px-1.5 pb-0.5 pt-1 text-2xs font-medium uppercase tracking-wide text-muted-foreground/60">
             Open tabs
           </p>
           <div className="max-h-64 overflow-y-auto">
@@ -512,7 +512,7 @@ export function RightDrawerSubagentsSection({
                   {t.label}
                 </button>
                 {typeof t.elapsed === 'number' && (
-                  <span className="shrink-0 text-3xs tabular-nums text-muted-foreground/50">
+                  <span className="shrink-0 text-2xs tabular-nums text-muted-foreground/50">
                     {fmtElapsed(t.elapsed)}
                   </span>
                 )}

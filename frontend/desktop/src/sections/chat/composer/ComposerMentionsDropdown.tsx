@@ -84,7 +84,7 @@ export function ComposerMentionsDropdown({
       }}
       className="z-50 w-80 max-h-72 overflow-auto bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
     >
-      <div className="px-2 py-1 text-3xs text-muted-foreground uppercase font-semibold flex items-center justify-between">
+      <div className="px-2 py-1 text-2xs text-muted-foreground uppercase font-semibold flex items-center justify-between">
         <span>{mentionQuery !== null ? 'Mentions' : 'Skills & tools'}</span>
         {skillsLoading && <Loader2 className="size-3 animate-spin" />}
       </div>
@@ -123,10 +123,10 @@ export function ComposerMentionsDropdown({
                 {item.kind === 'skill' ? `@${item.name}` : item.name}
               </span>
               <span className="flex shrink-0 items-center gap-1.5">
-                <span className="rounded border border-border/50 bg-muted/30 px-1 py-px text-3xs uppercase tracking-wide text-muted-foreground">
+                <span className="rounded border border-border/50 bg-muted/30 px-1 py-px text-2xs uppercase tracking-wide text-muted-foreground">
                   {KIND_CHIP[item.kind]}
                 </span>
-                <span className="max-w-[45%] truncate text-3xs text-muted-foreground">
+                <span className="max-w-[45%] truncate text-2xs text-muted-foreground">
                   {item.desc}
                 </span>
               </span>

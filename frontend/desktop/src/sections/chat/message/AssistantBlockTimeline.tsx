@@ -218,7 +218,7 @@ function PlanPhaseGroup({
           ) : null}
         </span>
         {active ? (
-          <span className="shrink-0 text-3xs italic text-muted-foreground/70">
+          <span className="shrink-0 text-2xs italic text-muted-foreground/70">
             working…
           </span>
         ) : null}
@@ -1069,8 +1069,8 @@ export function AssistantBlockTimeline({
                     <span
                       className={
                         m.scope === 'project'
-                          ? 'shrink-0 rounded bg-emerald-500/15 px-1 text-3xs uppercase tracking-wide text-emerald-300/90'
-                          : 'shrink-0 rounded bg-sky-500/15 px-1 text-3xs uppercase tracking-wide text-sky-300/90'
+                          ? 'shrink-0 rounded bg-success/15 px-1 text-2xs uppercase tracking-wide text-success-fg'
+                          : 'shrink-0 rounded bg-sky-500/15 px-1 text-2xs uppercase tracking-wide text-sky-300/90'
                       }
                       title={m.scope === 'project' ? 'Project memory' : 'Global memory'}
                     >
@@ -1297,31 +1297,31 @@ export function AssistantBlockTimeline({
         >
           <span
             aria-hidden="true"
-            className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-rose-500/30 bg-rose-500/15 text-[0.8125rem] text-rose-400"
+            className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-danger/30 bg-danger/15 text-[0.8125rem] text-danger-fg"
           >
             !
           </span>
-          <div className="relative min-w-0 flex-1 rounded-2xl border border-rose-500/30 bg-rose-500/[0.07] px-4 py-3">
+          <div className="relative min-w-0 flex-1 rounded-2xl border border-danger/30 bg-danger/[0.07] px-4 py-3">
             {onDismissError ? (
               <button
                 type="button"
                 onClick={onDismissError}
                 aria-label="Dismiss error"
                 data-testid="chat-error-dismiss"
-                className="absolute right-2 top-2 flex size-5 items-center justify-center rounded text-rose-300/70 transition hover:bg-rose-500/15 hover:text-rose-200"
+                className="absolute right-2 top-2 flex size-5 items-center justify-center rounded text-danger-fg transition hover:bg-danger/15 hover:text-danger-fg"
               >
                 ✕
               </button>
             ) : null}
-            <div className="pr-5 text-[0.8125rem] leading-relaxed text-rose-200">
+            <div className="pr-5 text-[0.8125rem] leading-relaxed text-danger-fg">
               {block.content || 'Generation failed.'}
             </div>
             {raw ? (
-              <details className="mt-1.5 text-[0.75rem] text-rose-300/80">
+              <details className="mt-1.5 text-[0.75rem] text-danger-fg">
                 <summary className="cursor-pointer select-none">
                   Show provider details
                 </summary>
-                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-rose-950/40 p-2 font-mono text-3xs">
+                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-danger/40 p-2 font-mono text-2xs">
                   {raw}
                 </pre>
               </details>
@@ -1333,7 +1333,7 @@ export function AssistantBlockTimeline({
                     type="button"
                     onClick={onRetryTurn}
                     data-testid="chat-error-retry"
-                    className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2.5 py-1 text-2xs font-medium text-rose-100 transition hover:bg-rose-500/25"
+                    className="inline-flex items-center gap-1 rounded-lg border border-danger/40 bg-danger/15 px-2.5 py-1 text-2xs font-medium text-danger-fg transition hover:bg-danger/25"
                   >
                     ↻ Try again
                   </button>
@@ -1342,7 +1342,7 @@ export function AssistantBlockTimeline({
                   <button
                     type="button"
                     onClick={onSwitchModel}
-                    className="rounded-lg border border-rose-500/30 px-2.5 py-1 text-2xs font-medium text-rose-200 transition hover:bg-rose-500/10"
+                    className="rounded-lg border border-danger/30 px-2.5 py-1 text-2xs font-medium text-danger-fg transition hover:bg-danger/10"
                   >
                     Switch model
                   </button>

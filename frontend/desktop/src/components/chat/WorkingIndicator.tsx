@@ -134,7 +134,7 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
               type="button"
               onClick={() => setTodosOpen((v) => !v)}
               aria-expanded={todosOpen}
-              className="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-px text-3xs font-medium tracking-wide text-primary transition-colors hover:bg-primary/15"
+              className="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-px text-2xs font-medium tracking-wide text-primary transition-colors hover:bg-primary/15"
               data-testid="working-todos-toggle"
             >
               <span className="max-w-[240px] truncate">{todos?.title || 'Plan'}</span>
@@ -157,7 +157,7 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
                   >
                     <span className="mt-px shrink-0" aria-hidden>
                       {t.status === 'completed' ? (
-                        <Check className="size-3 text-emerald-400" />
+                        <Check className="size-3 text-success-fg" />
                       ) : t.status === 'in_progress' ? (
                         <Loader2 className="size-3 animate-spin text-primary" />
                       ) : t.status === 'cancelled' ? (
@@ -193,7 +193,7 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
           </div>
         ) : execution ? (
           <div
-            className="rounded-full border border-primary/25 bg-primary/10 px-2 py-px text-3xs font-medium uppercase tracking-wide text-primary"
+            className="rounded-full border border-primary/25 bg-primary/10 px-2 py-px text-2xs font-medium uppercase tracking-wide text-primary"
             data-testid="working-phase"
           >
             {execution.phase}

@@ -74,19 +74,19 @@ export function UpdateSection() {
           <>
             <div className="mt-3 min-h-[1.25rem] text-sm">
               {error ? (
-                <span className="flex items-center gap-2 text-red-400">
+                <span className="flex items-center gap-2 text-danger-fg">
                   <AlertTriangle className="size-3 shrink-0" />
                   Update check failed: {error.message || 'could not reach the release feed'}
                 </span>
               ) : available ? (
-                <span className="flex items-center gap-2 font-medium text-amber-400">
+                <span className="flex items-center gap-2 font-medium text-warning-fg">
                   <Download className="size-3 shrink-0" />
                   A new update is ready: v{available.version}
                 </span>
               ) : checking ? (
                 <span className="text-muted-foreground">Checking for updates…</span>
               ) : (
-                <span className="flex items-center gap-2 text-green-400">
+                <span className="flex items-center gap-2 text-success-fg">
                   <CheckCircle className="size-3 shrink-0" />
                   You&apos;re on the latest version
                 </span>
@@ -229,9 +229,9 @@ function BackendDepsCard({
         : 'Backend: unknown';
   const proxyCls =
     backend.proxy === 'up'
-      ? 'text-green-400'
+      ? 'text-success-fg'
       : backend.proxy === 'down'
-        ? 'text-red-400'
+        ? 'text-danger-fg'
         : 'text-muted-foreground';
 
   // `unknown` is the initial value of BackendSync and nothing polls it, so this
@@ -242,16 +242,16 @@ function BackendDepsCard({
   let syncCls = 'text-muted-foreground';
   if (backend.sync === 'up-to-date') {
     syncLabel = 'Dependencies: up to date';
-    syncCls = 'text-green-400';
+    syncCls = 'text-success-fg';
   } else if (backend.sync === 'syncing') {
     syncLabel = 'Syncing backend dependencies…';
-    syncCls = 'text-amber-400';
+    syncCls = 'text-warning-fg';
   } else if (backend.sync === 'needs_setup') {
     syncLabel = 'Backend needs first-launch setup';
-    syncCls = 'text-amber-400';
+    syncCls = 'text-warning-fg';
   } else if (backend.sync === 'error') {
     syncLabel = `Sync failed: ${backend.syncError ?? 'unknown error'}`;
-    syncCls = 'text-red-400';
+    syncCls = 'text-danger-fg';
   }
 
   return (
@@ -265,7 +265,7 @@ function BackendDepsCard({
           <p className={`mt-1 text-xs ${proxyCls}`}>{proxyLabel}</p>
           <p className={`mt-0.5 text-xs ${syncCls}`}>{syncLabel}</p>
           {backend.lastError && (
-            <p className="mt-1 text-2xs text-red-400/80 break-words">
+            <p className="mt-1 text-2xs text-danger-fg break-words">
               Last error: {backend.lastError}
             </p>
           )}

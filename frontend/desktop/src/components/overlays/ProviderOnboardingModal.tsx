@@ -157,12 +157,12 @@ export function ProviderOnboardingModal() {
                       className={cn(
                         'flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition-colors',
                         item.done
-                          ? 'border-emerald-500/25 bg-emerald-500/5'
+                          ? 'border-success/25 bg-success/5'
                           : 'border-white/[0.06] bg-black/20 hover:bg-white/[0.06]',
                       )}
                     >
                       {item.done ? (
-                        <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-400" />
+                        <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-success-fg" />
                       ) : (
                         <Circle className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
                       )}
@@ -172,7 +172,7 @@ export function ProviderOnboardingModal() {
                           <p className="text-sm font-medium">
                             {item.label}
                             {item.optional && (
-                              <span className="ml-1.5 text-3xs font-normal text-muted-foreground">
+                              <span className="ml-1.5 text-2xs font-normal text-muted-foreground">
                                 optional
                               </span>
                             )}

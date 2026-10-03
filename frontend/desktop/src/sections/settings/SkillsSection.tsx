@@ -470,7 +470,7 @@ export function SkillsSection() {
                   <section key={key} data-testid={`skill-group-${key}`}>
                     <h3 className="flex items-baseline gap-2 pb-0.5 text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55">
                       {label}
-                      <span className="text-3xs font-normal normal-case tracking-normal text-muted-foreground/60">
+                      <span className="text-2xs font-normal normal-case tracking-normal text-muted-foreground/60">
                         {group.length}
                       </span>
                     </h3>
@@ -520,14 +520,14 @@ export function SkillsSection() {
                       <Info className="size-3" />
                       {selected.createdBy ? `by ${selected.createdBy}` : 'bundled'}
                     </span>
-                    <Badge variant="outline" className="text-3xs capitalize">{selected.category}</Badge>
+                    <Badge variant="outline" className="text-2xs capitalize">{selected.category}</Badge>
                     {/* C-2: scope + overrides badges */}
                     {selected.scope && (
                       <span
                         className={cn(
-                          'rounded-md border px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide',
+                          'rounded-md border px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide',
                           selected.scope === 'project'
-                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                            ? 'border-success/30 bg-success/10 text-success-fg'
                             : 'border-border/50 bg-muted/30 text-muted-foreground',
                         )}
                         data-testid="skill-scope-badge"
@@ -537,7 +537,7 @@ export function SkillsSection() {
                     )}
                     {selected.overrides && (
                       <span
-                        className="rounded-md border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide text-sky-400"
+                        className="rounded-md border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-sky-400"
                         data-testid="skill-overrides-badge"
                       >
                         overrides {selected.overrides}
@@ -786,7 +786,7 @@ function UsageChip({ skill }: { skill: SkillSummary }) {
   const lastMs = skill.lastUsed ? Date.parse(skill.lastUsed) : NaN;
   return (
     <span
-      className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-3xs font-medium uppercase tracking-wide text-muted-foreground"
+      className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground"
       data-testid="skill-usage-badge"
       title={
         Number.isFinite(lastMs)
@@ -803,7 +803,7 @@ function UsageChip({ skill }: { skill: SkillSummary }) {
 function SkillFact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-baseline gap-3 py-2">
-      <span className="w-[52px] shrink-0 text-3xs font-semibold uppercase tracking-widest text-muted-foreground/55">
+      <span className="w-[52px] shrink-0 text-2xs font-semibold uppercase tracking-widest text-muted-foreground/55">
         {label}
       </span>
       <span className="min-w-0 flex-1 text-[0.78125rem] leading-relaxed text-muted-foreground">
@@ -886,13 +886,13 @@ function SkillRow({ skill, onOpen }: { skill: SkillSummary; onOpen: () => void }
         <span className="flex items-center gap-1.5">
           <span className="truncate text-[0.8125rem] font-medium text-foreground/90">{skill.name}</span>
           {skill.enabled === false && (
-            <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 py-0.5 text-3xs uppercase tracking-wide text-amber-400">
+            <span className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1 py-0.5 text-2xs uppercase tracking-wide text-warning-fg">
               disabled
             </span>
           )}
           {skill.overrides && (
             <span
-              className="shrink-0 rounded border border-sky-500/30 bg-sky-500/10 px-1 py-0.5 text-3xs uppercase tracking-wide text-sky-400"
+              className="shrink-0 rounded border border-sky-500/30 bg-sky-500/10 px-1 py-0.5 text-2xs uppercase tracking-wide text-sky-400"
               data-testid="skill-row-overrides"
             >
               overrides {skill.overrides}
@@ -904,7 +904,7 @@ function SkillRow({ skill, onOpen }: { skill: SkillSummary; onOpen: () => void }
         </span>
       </span>
       {skill.createdBy && (
-        <span className="shrink-0 text-3xs uppercase tracking-wide text-muted-foreground/50">
+        <span className="shrink-0 text-2xs uppercase tracking-wide text-muted-foreground/50">
           {skill.createdBy}
         </span>
       )}

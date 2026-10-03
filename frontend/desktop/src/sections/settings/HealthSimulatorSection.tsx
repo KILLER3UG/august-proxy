@@ -127,7 +127,7 @@ export function HealthSimulatorSection() {
               {running ? 'Running probes…' : 'Run simulation'}
             </button>
             {result && (
-              <span className={`inline-flex items-center gap-1.5 text-xs ${result.healthy ? 'text-success' : 'text-amber-500'}`}>
+              <span className={`inline-flex items-center gap-1.5 text-xs ${result.healthy ? 'text-success' : 'text-warning-fg'}`}>
                 {result.healthy ? <Check className="size-3" /> : <X className="size-3" />}
                 {result.healthy ? 'Route is healthy' : 'Issues found'}
               </span>
@@ -136,7 +136,7 @@ export function HealthSimulatorSection() {
 
           {/* Results */}
           {result?.error ? (
-            <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 text-xs text-rose-400">
+            <div className="rounded-xl border border-danger/20 bg-danger/5 p-4 text-xs text-danger-fg">
               {result.error}
             </div>
           ) : result && result.checks.length > 0 ? (
@@ -148,17 +148,17 @@ export function HealthSimulatorSection() {
                 const Icon = CHECK_ICONS[c.id] ?? Zap;
                 return (
                   <div key={c.id} className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-card/60 p-4">
-                    <Icon className={`size-4 shrink-0 mt-0.5 ${c.success ? 'text-success' : 'text-rose-500'}`} />
+                    <Icon className={`size-4 shrink-0 mt-0.5 ${c.success ? 'text-success' : 'text-danger-fg'}`} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-foreground">{c.name}</span>
-                        <span className={`text-3xs px-1.5 py-0.5 rounded-full ${
-                          c.success ? 'bg-emerald-500/15 text-emerald-500' : 'bg-rose-500/15 text-rose-500'
+                        <span className={`text-2xs px-1.5 py-0.5 rounded-full ${
+                          c.success ? 'bg-success/15 text-success-fg' : 'bg-danger/15 text-danger-fg'
                         }`} data-testid={`sim-check-${c.id}`}>
                           {c.success ? 'PASS' : 'FAIL'}
                         </span>
                         {c.latencyMs > 0 ? (
-                          <span className="ml-auto text-3xs text-muted-foreground shrink-0">{c.latencyMs}ms</span>
+                          <span className="ml-auto text-2xs text-muted-foreground shrink-0">{c.latencyMs}ms</span>
                         ) : null}
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground break-words">{c.detail}</p>

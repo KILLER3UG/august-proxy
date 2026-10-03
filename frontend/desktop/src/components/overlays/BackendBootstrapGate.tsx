@@ -186,20 +186,20 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(255,255,255,0.04),_transparent_55%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--dt-wash),_transparent_55%)]" />
       {failed ? (
         <motion.div
           className="relative w-[min(92vw,480px)] rounded-xl border border-border bg-card p-6 text-center shadow-2xl"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.2, 0.65, 0.3, 0.9] } }}
         >
-          <CircleX className="mx-auto mb-3 size-10 text-red-500" />
+          <CircleX className="mx-auto mb-3 size-10 text-danger-fg" />
           <h2 className="text-base font-semibold">{headline}</h2>
           <p className="mx-auto mt-2 max-w-md whitespace-pre-wrap break-words text-sm text-muted-foreground">
             {detail}
           </p>
           {lastError && lastError !== detail ? (
-            <p className="mx-auto mt-2 max-h-28 max-w-md overflow-y-auto break-words rounded-lg bg-black/30 p-2 text-left text-2xs text-red-400/90">
+            <p className="mx-auto mt-2 max-h-28 max-w-md overflow-y-auto break-words rounded-lg bg-black/30 p-2 text-left text-2xs text-danger-fg">
               {lastError}
             </p>
           ) : null}
