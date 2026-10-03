@@ -24,7 +24,7 @@ import {
 import { CommandOutputPane } from './CommandOutputPane';
 
 /** Pull the full prompt/task text out of a spawn_subagent tool's JSON args. */
-function extractSubagentPrompt(context?: string): string | null {
+function extractSubagentPromptUncached(context?: string): string | null {
   if (!context) return null;
   try {
     const parsed = JSON.parse(context);
@@ -38,7 +38,19 @@ function extractSubagentPrompt(context?: string): string | null {
   } catch { /* not JSON */ }
   return null;
 }
+function extractSubagentPrompt(context?: string): string | null {
+  if (!context) return null;
+  const hit = _promptCache.get(context);
+  if (hit !== undefined) return hit;
+  const value = extractSubagentPromptUncached(context);
+  if (_promptCache.size > 200) _promptCache.clear();
+  _promptCache.set(context, value);
+  return value;
+}
 
+/** Cache for the pure JSON-arg extractor: the expanded body re-renders on
+ *  every stream flush, and each render used to re-parse the same string. */
+const _promptCache = new Map<string, string | null>();
 /** Subagent body: one container with a role header and nested
  *  PROMPT + SUBAGENT OUTPUT boxes. Replaces the generic context/result rows
  *  for spawn_subagent / run_team tool calls. */
@@ -103,16 +115,14 @@ function SubagentToolBody({ tool }: { tool: ToolEntry }) {
 
 /**
  * Expanded tool-call body — context, progress, diffs, search hits, errors,
- * approval. Shared by ToolCallItem (legacy path) and ToolSummary drill-down.
- *
- * `hideProgress`: the Task-based timeline rows (ToolStepRow) render progress
- * entries themselves — pass true there so files aren't listed twice.
+ * approval. Shared by ToolStepRow (transcript), ToolCallItem (subagent
+ * rows) and ToolSummary drill-down. Progress entries render HERE — the
+ * single owner — so no caller needs to suppress them.
  */
 export function ToolCallItemBody({
   tool,
   progress,
   sessionId,
-  hideProgress = false,
   hideDiff = false,
   hideContext = false,
   verbose = false,
@@ -123,8 +133,6 @@ export function ToolCallItemBody({
    *  action-needed card. Without this the card's "I'm done" handler
    *  has no session to queue the follow-up into (was previously a no-op). */
   sessionId?: string;
-  /** Progress entries are rendered as Task rows by the timeline chrome. */
-  hideProgress?: boolean;
   /** Suppress the diff + streaming-preview sections (the edit rail renders its
    *  own syntax-highlighted code panel instead). */
   hideDiff?: boolean;
@@ -220,7 +228,7 @@ export function ToolCallItemBody({
     );
   }
 
-  if (!isSubagent && !hideProgress) {
+  if (!isSubagent) {
     const visible = progress ? visibleProgress(progress) : [];
     const total = progress?.length ?? 0;
     const overflow = Math.max(0, total - visible.length);

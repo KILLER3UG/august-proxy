@@ -36,44 +36,16 @@ import type { ToolEntry } from '@/components/chat/ToolCallItem';
 function TaskItemRows({
   tool,
   isCommand,
-  progress,
 }: {
   tool: ToolEntry;
   isCommand: boolean;
-  progress?: ReadonlyArray<ProgressEntry>;
 }) {
   const bucket = classifyTool(tool.name);
   const rows: ReactNode[] = [];
 
-  // Per-file progress (read/view sub-steps) — one row per file, basename only.
-  const visible = progress ? visibleProgress(progress) : [];
-  const overflow = Math.max(0, (progress?.length ?? 0) - visible.length);
-  for (const entry of visible) {
-    rows.push(
-      <TaskItem
-        key={`progress-${entry.path}`}
-        className="flex min-w-0 items-center gap-2"
-        title={entry.path}
-      >
-        <span className="inline-flex w-3.5 shrink-0 justify-center">
-          {entry.status === 'reading' ? (
-            <Loader2 className="size-3 animate-spin text-info" />
-          ) : (
-            <Check className="size-3 text-muted-foreground" />
-          )}
-        </span>
-        <span className="shrink-0">{entry.status === 'reading' ? 'Reading' : 'Read'}</span>
-        <TaskItemFile className="min-w-0">{pathBasename(entry.path)}</TaskItemFile>
-      </TaskItem>,
-    );
-  }
-  if (overflow > 0) {
-    rows.push(
-      <TaskItem key="progress-overflow" className="text-xs italic opacity-70">
-        + {overflow} more
-      </TaskItem>,
-    );
-  }
+  // Per-file progress used to render here AND in ToolCallItemBody — the
+  // timeline passed hideProgress so files were not listed twice. The body
+  // is now the single owner; this renders the edit-class rows only.
 
   if (bucket === 'edit') {
     // File edit — pencil, short change description, filename pill, diff stat.
@@ -99,7 +71,6 @@ function TaskItemRows({
         ) : null}
       </TaskItem>,
     );
-    // Close the edit run with a bare checkmark + Done row.
     if (tool.status === 'done') {
       rows.push(
         <TaskItem key="edit-done" className="flex items-center gap-2">
@@ -108,8 +79,8 @@ function TaskItemRows({
         </TaskItem>,
       );
     }
-  } else if (!isCommand && visible.length === 0) {
-    // Everything else (non-command, non-edit, no progress): one-line hint.
+  } else if (!isCommand) {
+    // Everything else (non-command, non-edit): one-line hint.
     const ctx = tool.context ? formatToolContext(tool.name, tool.context) : null;
     const summary = ctx?.summary?.trim();
     if (summary) {
@@ -145,7 +116,8 @@ export function ToolStepRow({
   /** /verbose: minimal locking is lifted — settled read and
    *  successful command rows become expandable into their raw output. */
   verbose?: boolean;
-  /** Live per-file progress entries for this tool call. */
+  /** Live per-file progress entries. Used for the expand decision
+   *  only — the expanded body (ToolCallItemBody) renders them. */
   progress?: ReadonlyArray<ProgressEntry>;
   /** Expanded response body */
   children?: ReactNode;
@@ -394,7 +366,7 @@ export function ToolStepRow({
             className="mb-1 ml-[26px]"
             aria-live={running ? 'polite' : undefined}
           >
-            <TaskItemRows tool={tool} isCommand={isCommand} progress={progress} />
+            <TaskItemRows tool={tool} isCommand={isCommand} />
             {hasChildren ? childNodes : null}
             {showEmptyFallback ? (
               <TaskItem className="italic opacity-75">

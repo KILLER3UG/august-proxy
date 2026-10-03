@@ -110,17 +110,35 @@ export function ClarifyTool({
     setMultiSelections(new Set());
   }, [currentIndex]);
 
-  // Keyboard: Esc / ← / → / 1-9
+  // Keyboard: Esc / ← / → / 1-9 — scoped to THIS card. The handler was
+  // document-wide, so digits and arrows typed into any other surface
+  // (a contenteditable search box, another card) could pick an answer, and
+  // several mounted ClarifyTools each raced to consume the key (audit A2 §9).
+  const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (submitting) return;
+      const card = cardRef.current;
+      if (!card) return;
+      const target = e.target as HTMLElement | null;
+      const ownsKey =
+        card.contains(target ?? null) || target === document.body || target === null;
+      if (!ownsKey) return;
+      // Escape is the one gesture that must always work (dismiss = submit a
+      // skip), so it is handled before the typing guard.
       if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         handleDismiss();
         return;
       }
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') {
+      const tag = target?.tagName;
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        target?.isContentEditable ||
+        target?.getAttribute?.('role') === 'textbox'
+      ) {
         return;
       }
       if (e.key === 'ArrowLeft' && currentIndex > 0) {
@@ -234,6 +252,7 @@ export function ClarifyTool({
 
   return (
     <div
+      ref={cardRef}
       className="mx-auto my-3 w-full max-w-3xl px-2"
       role="dialog"
       aria-modal="false"

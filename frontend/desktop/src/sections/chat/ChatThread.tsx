@@ -15,7 +15,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
-import { UploadCloud } from 'lucide-react';
+import { AlertCircle, UploadCloud } from 'lucide-react';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import {
   useSessionsStore,
@@ -58,6 +58,8 @@ import { ChatSendService } from './services/ChatSendService';
 import { ComposerDecisionStack } from './ComposerDecisionStack';
 import { ChatCheckpoints } from './ChatCheckpoints';
 import { useSessionStream } from './hooks/useSessionStream';
+import { useSessionStreamStore } from './stream/session-stream-store';
+import { retrySessionHistory } from './stream/session-history';
 import { useSessionHistory } from './hooks/useSessionHistory';
 import { useStickToBottomScroll } from './hooks/useStickToBottomScroll';
 import { useChatModels } from './hooks/useChatModels';
@@ -287,6 +289,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     // a stream is open — the roster fills the post-reload/evicted gap.
     refetchInterval: 10_000,
   });
+  // The roster refetches every 10s; its identity must track CONTENT, not
+  // fetch timing. Before, each poll handed MessageBubble a fresh array and
+  // re-rendered every completed tool-bearing row in the transcript.
+  const rosterSignature = useMemo(
+    () =>
+      (agentsQuery.data?.agents ?? [])
+        .map((a) => `${a.taskId}|${a.agentId}|${a.status}|${a.goal ?? ''}`)
+        .join(''),
+    [agentsQuery.data],
+  );
   const subagentRoster = useMemo(
     () =>
       (agentsQuery.data?.agents ?? []).map((a) => ({
@@ -303,7 +315,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           | 'done'
           | 'error',
       })),
-    [agentsQuery.data],
+    // Content signature on purpose: an unchanged roster keeps its identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rosterSignature],
   );
   // Keep the approval banner up whenever tokens remain — do not require
   // status === awaiting_approval alone (multi-approve used to clear status
@@ -341,6 +355,27 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   const queuedMessages = useQueuedMessagesStore(
     (s) => s.bySession[sessionId ?? ''] ?? EMPTY_QUEUED_MESSAGES,
+  );
+
+  // 'loading' was never rendered: a restoring session showed nothing at all,
+  // and a failed load left a silently blank transcript (audit A2 §5/§7).
+  // Roster backfill only matters when subagent rows are on screen; the
+  // failure note stays quiet otherwise (the query retries every 10s).
+  const hasSubagentRows = useMemo(
+    () =>
+      messages.some(
+        (m) =>
+          m.role !== 'user' &&
+          (m.blocks ?? []).some((b) => b.type === 'subagent'),
+      ),
+    [messages],
+  );
+
+  const historyStatus = useSessionStreamStore(
+    (s) => (sessionId ? s.bySession[sessionId]?.history?.status : undefined),
+  );
+  const historyError = useSessionStreamStore(
+    (s) => (sessionId ? s.bySession[sessionId]?.history?.error : undefined),
   );
 
   const [examActive, setExamActive] = useState(false);
@@ -1567,8 +1602,49 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               </div>
             </div>
           )}
+          {agentsQuery.isError && hasSubagentRows && (
+            <div
+              className="mx-auto w-full max-w-3xl px-6 pt-3"
+              role="status"
+              data-testid="roster-error"
+            >
+              <div className="flex items-center gap-2 rounded-lg border border-warning/25 bg-warning/5 px-3 py-1.5 text-2xs text-muted-foreground">
+                <AlertCircle className="size-3 shrink-0 text-warning" aria-hidden />
+                <span>Sub-agent status is temporarily unavailable — retrying.</span>
+              </div>
+            </div>
+          )}
           <AnimatePresence initial={false}>
-            {messages.length === 0 ? (
+            {messages.length === 0 && historyStatus === 'loading' ? (
+              <div
+                className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-10"
+                role="status"
+                aria-label="Loading conversation"
+              >
+                {[68, 92, 54].map((w, i) => (
+                  <div
+                    key={i}
+                    className="h-4 animate-pulse rounded bg-muted"
+                    style={{ width: `${w}%` }}
+                  />
+                ))}
+              </div>
+            ) : messages.length === 0 && historyError ? (
+              <div className="mx-auto flex w-full max-w-md flex-col items-center gap-3 px-6 py-16 text-center">
+                <AlertCircle className="size-6 text-danger" />
+                <p className="text-sm font-medium text-foreground">Couldn't load this conversation</p>
+                <p className="text-2xs text-muted-foreground">{historyError}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (sessionId) retrySessionHistory(sessionId);
+                  }}
+                  className="rounded-md border border-border px-3 py-1.5 text-xs text-foreground transition hover:bg-accent"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : messages.length === 0 ? (
               <ChatEmptyState
                 workspacePath={activeSession?.workspacePath}
                 agentMode={workbenchSession?.agentMode}

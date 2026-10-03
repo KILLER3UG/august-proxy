@@ -23,16 +23,14 @@ import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Clock, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { summarizeThoughtHeader } from '@/lib/process-summary';
+import {
+  THOUGHT_CLAMP_LINES,
+  THOUGHT_CLAMP_CHARS,
+} from '@/lib/thought-presentation';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 
-/** Lines of prose visible before the clamp + fade kick in (Claude-parity:
- * a short paragraph window with a bottom fade, not the whole thought). */
-const CLAMP_LINES = 6;
-
-/** Rough char equivalent of CLAMP_LINES (~80 chars/line) — the overflow
- *  measurement can read 0/stale when a whole-turn burst arrives at once, so
- *  a long thought must also truncate by length alone. */
-const CLAMP_CHARS = 480;
+// Clamp constants live in lib/thought-presentation.ts — one owner shared
+// with the plain (subagent) disclosure variant.
 
 export function ThoughtStep({
   content,
@@ -69,7 +67,7 @@ export function ThoughtStep({
     if (!el) return;
     const measure = () => {
       const lh = parseFloat(getComputedStyle(el).lineHeight) || 24;
-      setOverflowing(el.scrollHeight > lh * CLAMP_LINES + 4);
+      setOverflowing(el.scrollHeight > lh * THOUGHT_CLAMP_LINES + 4);
     };
     measure();
     // ResizeObserver is absent in some test runtimes (jsdom); a single
@@ -106,7 +104,7 @@ export function ThoughtStep({
   // thought is already truncated). Only an explicit Show more unclamps it.
   // `longThought` falls back to a length check when the pixel measurement is
   // unavailable or stale — a long thought must never render untruncated.
-  const longThought = overflowing || text.length > CLAMP_CHARS;
+  const longThought = overflowing || text.length > THOUGHT_CLAMP_CHARS;
   const clamped = longThought && !showFull;
 
   // Claude-style think row (2026-09-22): when the collapsed default is on,

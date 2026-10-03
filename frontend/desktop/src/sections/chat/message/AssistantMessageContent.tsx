@@ -9,6 +9,7 @@ import {
   type SubagentPromptEntry,
   type ToolProgressMap,
 } from './AssistantBlockTimeline';
+import { Clock } from 'lucide-react';
 import { AssistantMessageActions } from './AssistantMessageActions';
 import { turnEndPhrase, turnEndRemedy } from '@/lib/turn-end';
 
@@ -79,6 +80,19 @@ export function AssistantMessageContent({
   return (
     <>
       <div className="flex min-w-0 flex-col w-full gap-2">
+        {message.queued && !streaming ? (
+          // Backend accepted the message into the queue — a structural
+          // notice, not model prose (the QueuePills row above the composer
+          // carries the same state).
+          <div
+            className="flex items-start gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-2xs text-muted-foreground"
+            role="status"
+            data-testid="queued-notice"
+          >
+            <Clock className="mt-0.5 size-3 shrink-0 text-info" aria-hidden />
+            <span>Queued — this runs when the current response finishes.</span>
+          </div>
+        ) : (
         <AssistantBlockTimeline
           displayBlocks={displayBlocks}
           message={message}
@@ -95,6 +109,7 @@ export function AssistantMessageContent({
           onSwitchModel={onReanswer}
           onDismissError={onDismissError}
         />
+        )}
         {/* Unified ZCode-style changes card (plan §4.5): aggregate
             `X files changed +N −M [Undo]` header with type-aware per-file
             rows. Deferred until the turn finishes — mid-stream the totals

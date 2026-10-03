@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { ToolStepRow } from '../ToolStepRow';
+import { ToolCallItemBody } from '@/components/chat/tool/ToolCallItemBody';
 import type { ToolEntry } from '@/components/chat/ToolCallItem';
 
 function makeTool(partial: Partial<ToolEntry> & { name: string }): ToolEntry {
@@ -45,8 +46,15 @@ describe('ToolStepRow — Task block', () => {
     expect(screen.getByText('Done')).toBeInTheDocument();
   });
 
-  it('progress entries render as per-file Task rows with basenames', () => {
+  it('per-file progress renders once, from the body (single owner)', () => {
+    // The row chrome no longer renders progress — ToolCallItemBody is the
+    // single owner, so the timeline passes progress to the body and the
+    // hideProgress flag is gone (2026-10-03 phase 6).
     const tool = makeTool({ name: 'read_file', status: 'running' });
+    const progress = [
+      { path: '/etc/august/config.yaml', status: 'read' as const },
+      { path: '/etc/august/other.toml', status: 'reading' as const },
+    ];
 
     render(
       <ToolStepRow
@@ -54,17 +62,20 @@ describe('ToolStepRow — Task block', () => {
         label="Reading config.yaml"
         expanded
         onToggle={() => {}}
-        progress={[
-          { path: '/etc/august/config.yaml', status: 'read' },
-          { path: '/etc/august/other.toml', status: 'reading' },
-        ]}
-      />,
+        progress={progress}
+      >
+        <ToolCallItemBody tool={tool} progress={progress} />
+      </ToolStepRow>,
     );
 
-    expect(screen.getByText('config.yaml')).toBeInTheDocument();
-    expect(screen.getByText('other.toml')).toBeInTheDocument();
-    expect(screen.getByText('Read')).toBeInTheDocument();
-    expect(screen.getByText('Reading')).toBeInTheDocument();
+    // The body renders "Read <basename>" as adjacent text nodes, so match
+    // inside the progress list rather than on a single text node.
+    const lists = document.querySelectorAll('[data-tool-progress]');
+    // One list, not two (the old row+body double render).
+    expect(lists).toHaveLength(1);
+    const list = within(lists[0] as HTMLElement);
+    expect(list.getAllByText((_, el) => el?.textContent === 'Read config.yaml').length).toBeGreaterThan(0);
+    expect(list.getAllByText((_, el) => el?.textContent === 'Reading other.toml').length).toBeGreaterThan(0);
   });
 
   it('does not force-collapse when the tool completes', () => {

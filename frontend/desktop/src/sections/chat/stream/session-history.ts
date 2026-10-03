@@ -234,12 +234,29 @@ export function ensureSessionHistory(sessionId: string): Promise<void> {
       subagentBlocks,
     }));
     persistMessages(sessionId, messages);
-  }).catch(() => {
+  }).catch((err) => {
     if (useSessionStreamStore.getState().bySession[sessionId]?.history !== history) return;
-    updateSessionStreamState(sessionId, () => ({ history: { status: 'missing' } }));
-    scheduleHistoryRetry(sessionId);
+    const exhausted =
+      (_historyRetryAttempts.get(sessionId) ?? 0) >= HISTORY_RETRY_DELAYS_MS.length;
+    updateSessionStreamState(sessionId, () => ({
+      history: exhausted
+        ? {
+            status: 'missing',
+            error: err instanceof Error ? err.message : 'Failed to load this conversation.',
+          }
+        : { status: 'missing' },
+    }));
+    if (!exhausted) scheduleHistoryRetry(sessionId);
   });
   return history.promise;
+}
+
+/** Manual retry from the inline error surface — the bounded retry ladder
+ *  has already given up by the time the error renders. */
+export function retrySessionHistory(sessionId: string): void {
+  cancelHistoryRetry(sessionId);
+  _historyRetryAttempts.set(sessionId, 0);
+  void ensureSessionHistory(sessionId);
 }
 
 export function injectSessionMessage(sessionId: string, injected: ChatMessage): void {

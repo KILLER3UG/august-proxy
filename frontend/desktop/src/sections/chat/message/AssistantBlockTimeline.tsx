@@ -77,6 +77,21 @@ function isFinalOutput(block: DisplayBlock): boolean {
   );
 }
 
+/** One memo per string for pure JSON-arg extractors. The timeline re-renders
+ *  the last row on every stream flush, and each render used to JSON.parse
+ *  every visible tool's args again (measured cost, audit 2026-09-27). */
+function memoizeByString<A extends string | undefined, R>(fn: (a: A) => R): (a: A) => R {
+  const cache = new Map<string, R>();
+  return (a: A): R => {
+    const key = a ?? '';
+    if (cache.has(key)) return cache.get(key) as R;
+    const value = fn(a);
+    if (cache.size > 200) cache.clear();
+    cache.set(key, value);
+    return value;
+  };
+}
+
 /** Pull the search query out of a web_search tool's JSON args. */
 function extractSearchQuery(context?: string): string {
   if (!context) return 'Search';
@@ -113,6 +128,9 @@ function parseSubagentToolContext(context?: string): { task: string; agentId: st
     return { task: '', agentId: '' };
   }
 }
+
+const extractSearchQueryCached = memoizeByString(extractSearchQuery);
+const parseSubagentToolContextCached = memoizeByString(parseSubagentToolContext);
 
 /** "6s" / "1m 06s" — total elapsed for a tool-execution sequence. */
 function formatSequenceDuration(ms: number): string {
@@ -746,7 +764,7 @@ export function AssistantBlockTimeline({
               });
             }
           } else {
-            const ctx = parseSubagentToolContext(tool.context);
+            const ctx = parseSubagentToolContextCached(tool.context);
             tagged.push({
               kind: 'block',
               node: (
@@ -849,7 +867,7 @@ export function AssistantBlockTimeline({
                           verbose={verbose}
                           onToggle={(next) => toggleExpand(rtId, next)}
                         >
-                          <ToolCallItemBody tool={rt} hideProgress verbose={verbose} />
+                          <ToolCallItemBody tool={rt} verbose={verbose} />
                         </ToolStepRow>
                       );
                     })}
@@ -883,7 +901,7 @@ export function AssistantBlockTimeline({
             node: (
               <SearchResultsTask
                 key={toolId}
-                query={extractSearchQuery(tool.context)}
+                query={extractSearchQueryCached(tool.context)}
                 hits={tool.searchHits}
                 expanded={expanded}
                 onToggle={(next) => toggleExpand(toolId, next)}
@@ -961,7 +979,6 @@ export function AssistantBlockTimeline({
                 >
                   <ToolCallItemBody
                     tool={tool}
-                    hideProgress
                     verbose={verbose}
                   />
                 </ToolStepRow>
@@ -1006,7 +1023,6 @@ export function AssistantBlockTimeline({
               <ToolCallItemBody
                 tool={tool}
                 progress={tool.id ? toolProgress?.get(tool.id) : undefined}
-                hideProgress
                 verbose={verbose}
               />
             </ToolStepRow>

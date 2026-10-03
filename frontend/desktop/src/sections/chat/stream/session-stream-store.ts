@@ -22,6 +22,9 @@ import { snapshotsFromMessages } from './subagent-blocks';
 export interface SessionHistoryState {
   status: 'missing' | 'loading' | 'ready';
   promise?: Promise<void>;
+  /** Set only when the bounded retries are EXHAUSTED — the UI shows an
+   *  inline error + Retry instead of a silently blank transcript. */
+  error?: string;
 }
 
 export type SessionStreamUpdateMode = 'replace' | 'stream';

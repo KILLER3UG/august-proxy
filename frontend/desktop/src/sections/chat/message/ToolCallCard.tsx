@@ -1,25 +1,23 @@
-import { Check, Loader2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import {
-  ToolCallItem as ToolCallItemComp,
-} from '@/components/chat/ToolCallItem';
-import { FormattedResultSection } from '@/components/chat/tool/sections';
-import { ToolIcon as NewToolIcon } from '@/components/ui/ToolIcon';
-import { FileIcon as NewFileIcon } from '@/components/ui/FileIcon';
-import { DisclosureRow } from '@/components/chat/DisclosureRow';
-import { visibleProgress } from '@/lib/tool-progress';
-import { getToolLabel, pathBasename } from '@/lib/tool-labels';
+import { ToolStepRow } from '@/components/chat/ToolStepRow';
+import { ToolCallItemBody } from '@/components/chat/tool/ToolCallItemBody';
+import { getToolLabel } from '@/lib/tool-labels';
+import type { ToolEntry } from '@/components/chat/tool/types';
 import type { ChatMessage } from '@/types/chat';
 
 /**
- * Legacy role:'tool' message card — minimal-output policy:
- * invocation row + status pill only; no verbatim args/result dump. The
- * full output lives in the drawer/trajectory. /verbose lifts
- * the rule and renders the raw result inline.
+ * Legacy `role:'tool'` message card — thin adapter over the canonical
+ * transcript row.
+ *
+ * Only pre-migration sessions (restored through
+ * `stream/session-history.ts` — live SSE never emits role:'tool') reach
+ * here. The card used to own its own chrome (a non-expandable
+ * DisclosureRow), its own running-state animation, and a THIRD copy of
+ * the per-file progress list; legacy rows were therefore the only rows
+ * a user could not open. It now maps the stored shape onto a ToolEntry
+ * and renders ToolStepRow + ToolCallItemBody like every live row.
  */
 export function ToolCallCard({
   tool,
-  timestamp: _timestamp,
   progress,
   verbose = false,
 }: {
@@ -28,103 +26,29 @@ export function ToolCallCard({
   progress?: ReadonlyArray<{ path: string; status: 'reading' | 'read' }>;
   verbose?: boolean;
 }) {
-  const toolNameForIcon = tool.name.replace(/^@/, '');
-  const isCommand = toolNameForIcon === 'run_command' || tool.name.startsWith('@run_command');
-  // Try to extract a filename hint from the args JSON for a brand-aware file icon.
-  let legacyFilename: string | null = null;
-  if (!isCommand && tool.args) {
-    try {
-      const parsed = JSON.parse(tool.args) as Record<string, unknown>;
-      for (const key of ['filePath', 'file_path', 'path', 'filename', 'file', 'filepath']) {
-        const v = parsed?.[key];
-        if (typeof v === 'string' && v.length > 0) { legacyFilename = v; break; }
-      }
-    } catch { /* not JSON — ignore */ }
-  }
+  const name = tool.name.replace(/^@/, '');
+  const isCommand = name === 'run_command' || tool.name.startsWith('@run_command');
+  const entry: ToolEntry = {
+    id: `legacy-${tool.name}-${tool.duration ?? 0}`,
+    name: tool.name,
+    context: tool.args || undefined,
+    summary: typeof tool.result === 'string' && tool.result.trim() ? tool.result : undefined,
+    status: tool.status === 'running' ? 'running' : tool.status === 'error' ? 'error' : 'done',
+  };
+
   return (
-    <div className="text-sm text-muted-foreground w-full py-0.5" data-slot="tool-block">
-      <DisclosureRow open={false}>
-        <span className="flex min-w-0 items-center gap-2">
-          {legacyFilename ? (
-            <NewFileIcon name={legacyFilename} size={14} className="shrink-0" />
-          ) : (
-            <NewToolIcon name={toolNameForIcon} kind={isCommand ? 'command' : 'tool'} size={14} className="shrink-0" />
-          )}
-          <span
-            className={cn(
-              'text-sm font-medium leading-5',
-              tool.status === 'running' && 'shimmer text-foreground/55'
-            )}
-          >
-            <span className={cn('thinking-text', tool.status === 'running' && 'animating')}>
-              <span className="thinking-label">
-                {Array.from(getToolLabel(tool.name)).map((ch, i) => (
-                  <span
-                    key={i}
-                    className={cn('thinking-char', i === 0 && 'thinking-cap')}
-                    style={{ animationDelay: `${i * 100}ms` }}
-                  >
-                    {ch}
-                  </span>
-                ))}
-              </span>
-              {tool.status === 'running' && (
-                <span className="thinking-dots">
-                  <span className="dot" style={{ animationDelay: '0ms' }}>.</span>
-                  <span className="dot" style={{ animationDelay: '200ms' }}>.</span>
-                  <span className="dot" style={{ animationDelay: '400ms' }}>.</span>
-                </span>
-              )}
-            </span>
-          </span>
-          {tool.status === 'done' && <span className="text-primary/80 text-[0.75rem]">done</span>}
-          {tool.status === 'error' && <span className="text-destructive text-[0.75rem]">error</span>}
-          {isCommand && typeof tool.result === 'string' && tool.result.includes('[sandbox:') && (
-            <span
-              className="text-2xs uppercase tracking-wide text-muted-foreground/80 border border-border/50 rounded px-1"
-              title={tool.result.includes('|unsandboxed]') ? 'Ran outside sandbox (approved)' : 'Ran inside sandbox'}
-            >
-              {tool.result.includes('|unsandboxed]') ? 'unsandboxed' : 'sandboxed'}
-            </span>
-          )}
-        </span>
-      </DisclosureRow>
-      {verbose && typeof tool.result === 'string' && tool.result.trim() && (
-        <FormattedResultSection toolName={tool.name} raw={tool.result} />
-      )}
-      {(() => {
-        const visible = progress ? visibleProgress(progress) : [];
-        const total = progress?.length ?? 0;
-        const overflow = Math.max(0, total - visible.length);
-        if (visible.length === 0) return null;
-        return (
-          <div className="ml-3 mt-0.5 mb-1 space-y-0.5 chat-rail pl-2" aria-label="Tool progress" data-tool-progress>
-            {visible.map((entry) => (
-              <div key={entry.path} className="flex items-center gap-1.5 text-[0.71875rem] truncate" title={entry.path}>
-                <span className="w-2.5 shrink-0 inline-flex justify-center">
-                  {entry.status === 'reading' ? (
-                    <Loader2 className="size-3 animate-spin text-info" />
-                  ) : (
-                    <Check className="size-3 text-muted-foreground/50" />
-                  )}
-                </span>
-                <span
-                  className={cn(
-                    'truncate font-mono',
-                    entry.status === 'reading' ? 'text-info italic' : 'text-muted-foreground/60 line-through'
-                  )}
-                >
-                  {entry.status === 'reading' ? 'Reading ' : 'Read '}
-                  {pathBasename(entry.path)}
-                </span>
-              </div>
-            ))}
-            {overflow > 0 && (
-              <div className="text-2xs text-muted-foreground/50 italic pl-4">+ {overflow} more</div>
-            )}
-          </div>
-        );
-      })()}
+    <div data-slot="tool-block">
+      <ToolStepRow
+        tool={entry}
+        label={getToolLabel(tool.name)}
+        isCommand={isCommand}
+        expanded={false}
+        verbose={verbose}
+        onToggle={() => {}}
+        progress={progress}
+      >
+        <ToolCallItemBody tool={entry} progress={progress} verbose={verbose} />
+      </ToolStepRow>
     </div>
   );
 }

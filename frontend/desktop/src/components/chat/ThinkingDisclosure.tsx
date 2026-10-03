@@ -2,6 +2,7 @@ import { memo, useRef, useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
+import { thoughtCollapsedTitle } from '@/lib/thought-presentation';
 
 /**
  * ThinkingDisclosure — auto-open while streaming, collapse when done
@@ -73,15 +74,13 @@ export const ThinkingDisclosure = memo(function ThinkingDisclosure({
       ? pending && liveElapsed
         ? `${label} ${liveElapsed}`
         : label
-      : pending
-        ? liveElapsed
-          ? `Thinking ${liveElapsed}`
-          : 'Thinking'
-        : duration !== undefined && !omitDurationLabel
-          ? `Thought for ${fmtElapsed(duration)}`
-          : omitDurationLabel && !pending
-            ? 'Thought'
-            : 'Thought';
+      : thoughtCollapsedTitle({
+          // duration/elapsed arrive in SECONDS on this component.
+          generating: pending,
+          elapsedMs: pending && elapsed !== undefined ? elapsed * 1000 : undefined,
+          durationMs: duration !== undefined ? duration * 1000 : undefined,
+          omitDurationLabel,
+        });
 
   return (
     <div

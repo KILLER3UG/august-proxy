@@ -167,7 +167,7 @@ export function EditRailRow({
             ) : null}
             {/* Approval / error only — diff + context are suppressed so the
                 code panel is the single source of truth for the change. */}
-            <ToolCallItemBody tool={tool} hideProgress hideDiff hideContext />
+            <ToolCallItemBody tool={tool} hideDiff hideContext />
           </div>
         ) : null}
       </div>

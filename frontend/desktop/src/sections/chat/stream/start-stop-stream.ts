@@ -125,6 +125,9 @@ export async function startChatStream(
               msg.id === assistantMsgId
                 ? {
                     ...msg,
+                    // Typed marker, not prose: the note rendered through the
+                    // markdown path as if the model had said it (audit A2 §2).
+                    queued: true,
                     content:
                       'Your message is queued and will run when the current response finishes.',
                   }
