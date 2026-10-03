@@ -201,7 +201,8 @@ def _append_ledger(row: dict[str, Any]) -> None:
     try:
         _import_legacy(ledger_to_sql=False)
         _ledger_insert(_conn(), row)
-        _conn().commit()
+        _conn()
+        brain_commit(_conn())
     except Exception:
         logger.debug('refine_store ledger append failed', exc_info=True)
 
@@ -241,7 +242,7 @@ def _write_entry(entry: dict[str, Any]) -> None:
             json.dumps(entry, ensure_ascii=False),
         ),
     )
-    _conn().commit()
+    brain_commit(_conn())
 
 
 def _now() -> str:

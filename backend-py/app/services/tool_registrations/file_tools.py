@@ -350,42 +350,49 @@ async def _streamLines(
     limit_i = window_end if window_end > 0 else 1 << 62
     kept: list[str] = []
     idx = 0
+    import codecs
+
+    decoder = codecs.getincrementaldecoder('utf-8')('replace')
     # BINARY, not text mode. Text mode applies universal-newline translation,
     # so a CRLF file came back LF-normalized — and the returned lines are what
     # the model pastes into edit_lines' `old` anchor, which is matched against
     # verbatim file text. Normalizing would make every CRLF edit fail to apply.
     # Decoding here keeps the bytes exact and reproduces `splitlines` semantics.
-    raw = bytearray()
+    carry = ''
     async with aiofiles.open(str(filePath), 'rb') as f:
         while True:
             chunk = await f.read(_HASH_CHUNK_BYTES)
             if not chunk:
                 break
-            raw += chunk
-            # Decode incrementally; a multi-byte character may straddle chunks,
-            # so hold back any trailing bytes that are not yet a whole char.
-            text = raw.decode('utf-8', 'replace')
-            cut = len(text)
-            for back in range(1, 4):
-                if cut - back >= 0 and ord(text[cut - back]) >= 0x80:
-                    cut -= back
-                else:
-                    break
-            complete, remainder = _splitCompleteLines(text[:cut])
+            # A TRUE incremental decoder. The previous version decoded the whole
+            # carry buffer with errors='replace' and re-encoded the result: a
+            # multi-byte character split across a chunk boundary became U+FFFD
+            # (three bytes) and its original continuation bytes were thrown away,
+            # so every paged read of a >1 MB file containing non-ASCII text near
+            # a boundary returned text that was not the file's text — which
+            # breaks the verbatim-anchor contract `edit_lines` depends on.
+            # codecs' incremental decoder buffers the partial tail itself and
+            # emits the replacement character ONLY for genuinely invalid bytes.
+            text = decoder.decode(bytes(chunk))
+            # Carry the incomplete line FORWARD INTO the next split, not just
+            # into a side buffer: the line that straddles the boundary is only
+            # complete once the next chunk's text is appended, so splitting the
+            # chunk alone emits the tail as its own short line and drops the
+            # prefix accumulated on the previous pass.
+            complete, remainder = _splitCompleteLines(carry + text)
             for piece in complete:
                 idx += 1
                 if window_start <= idx <= limit_i:
                     kept.append(piece)
-            # Carry BOTH the undecoded tail and the incomplete line forward, so
-            # a separator or a character split across the boundary is rejoined
-            # rather than counted twice.
-            raw = bytearray(text[cut:].encode('utf-8') + remainder.encode('utf-8'))
-    if raw:
-        # End of file: whatever is left is a final line with no terminator.
+            carry = remainder
+    # End of stream: flush the decoder's own partial tail (it emits U+FFFD for a
+    # genuinely truncated character at EOF, matching the whole-file decode).
+    tail = decoder.decode(b'', True)
+    if tail or carry:
         idx += 1
-        tail = raw.decode('utf-8', 'replace')
-        if tail and window_start <= idx <= limit_i:
-            kept.append(tail)
+        final = tail + carry
+        if final and window_start <= idx <= limit_i:
+            kept.append(final)
     return kept, idx
 
 
@@ -395,8 +402,9 @@ def _splitCompleteLines(buf: str) -> tuple[list[str], str]:
     A line is finished when one of :data:`_LINE_SEPS` terminates it, and the
     separator stays WITH the line: `edit_lines` anchors are matched against
     verbatim file text, so a window whose lines lost their terminators would no
-    longer apply. A trailing ``\\r`` is held back for the same reason — the next
-    chunk may begin with ``\\n`` and complete a CRLF pair.
+    longer apply. Text after the LAST separator is always returned as the
+    incomplete remainder — including a trailing ``\\r``, which may be the first
+    half of a CRLF completed by the next chunk.
     """
     if not buf:
         return [], ''
@@ -405,22 +413,21 @@ def _splitCompleteLines(buf: str) -> tuple[list[str], str]:
     i = 0
     n = len(buf)
     while i < n:
-        if buf[i] in _LINE_SEPS:
-            step = 2 if (buf[i] == '\r' and i + 1 < n and buf[i + 1] == '\n') else 1
+        ch = buf[i]
+        if ch in _LINE_SEPS:
+            if ch == '\r' and i + 1 >= n:
+                # A trailing '\r' is NOT a finished line break on its own: the
+                # next chunk may begin with '\n', and emitting it as one turns a
+                # CRLF straddling a boundary into two lines. Everything from
+                # `start` carries forward, including the '\r'.
+                break
+            step = 2 if (ch == '\r' and i + 1 < n and buf[i + 1] == '\n') else 1
             lines.append(buf[start : i + step])
             i += step
             start = i
         else:
             i += 1
-    remainder = buf[start:]
-    if remainder.endswith('\r'):
-        # Might be the first half of a CRLF. The text before it is finished and
-        # belongs in `lines`; the '\r' itself is carried forward. Returning the
-        # same text as BOTH a completed line and the remainder is what made a
-        # 300-line file report 301.
-        lines.append(remainder[:-1])
-        remainder = '\r'
-    return lines, remainder
+    return lines, buf[start:]
 
 
 async def _readFile(

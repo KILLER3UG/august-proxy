@@ -12,6 +12,14 @@ import json as _json
 import sqlite3
 import threading
 
+from app.services import memory_conn
+
+
+def _resetCheckpointCounter() -> None:
+    """The counter is module-global; each test starts it from zero so one
+    test's writes cannot satisfy another's threshold."""
+    memory_conn._writes_since_checkpoint = 0  # noqa: SLF001
+
 # --------------------------------------------------------------------------
 # cost_estimator: a cheap model priced at the flagship rate
 # --------------------------------------------------------------------------
@@ -203,11 +211,10 @@ def test_wal_is_checkpointed_periodically_not_only_on_a_clean_close():
         def execute(self, sql: str):
             seen.append(sql)
 
-    tid = threading.get_ident()
     saved = getattr(_local, 'conn', None)
     _local.conn = _Spy()
     try:
-        _writes_since_checkpoint.pop(tid, None)
+        _resetCheckpointCounter()
         for _ in range(_CHECKPOINT_EVERY_N_WRITES - 1):
             note_commit()
         assert not seen, 'checkpointed before the threshold'
@@ -215,7 +222,7 @@ def test_wal_is_checkpointed_periodically_not_only_on_a_clean_close():
         assert seen == ['PRAGMA wal_checkpoint(PASSIVE)']
     finally:
         _local.conn = saved
-        _writes_since_checkpoint.pop(tid, None)
+        _resetCheckpointCounter()
 
 
 def test_a_checkpoint_failure_never_raises_into_the_write_path():
@@ -240,21 +247,54 @@ def test_a_checkpoint_failure_never_raises_into_the_write_path():
         memory_conn._local.conn = original
 
 
-def test_the_checkpoint_counter_is_per_thread():
-    from app.services.memory_conn import _writes_since_checkpoint
+def test_a_threshold_crossed_without_a_connection_is_deferred_not_lost():
+    """The counter is global, but the thread that crosses the threshold may hold
+    no brain connection of its own. Spending the checkpoint on nothing would let
+    a non-writing thread burn the threshold and skip the write that should have
+    triggered one, so the obligation is DEFERRED to the next real commit.
 
-    tid = threading.get_ident()
-    _writes_since_checkpoint[tid] = 7
-    seen: dict[str, int] = {}
+    Under the old per-thread counter this never even fired: four worker threads
+    writing 49 times each made 196 writes and zero checkpoints — exactly the
+    shape this backend runs (consolidation, the episode miner, harness jobs,
+    the deferred lane).
+    """
+    import threading as _t
 
-    def _probe():
-        seen['count'] = _writes_since_checkpoint.get(threading.get_ident(), 0)
+    from app.services.memory_conn import _CHECKPOINT_EVERY_N_WRITES, note_commit
 
-    t = threading.Thread(target=_probe)
-    t.start()
-    t.join()
-    assert seen['count'] == 0, 'a worker thread saw the owner thread counter'
-    assert _writes_since_checkpoint[tid] == 7
+    mc = memory_conn
+    hits: list[str] = []
+
+    class _Spy:
+        def execute(self, sql: str):
+            hits.append(sql)
+
+    _resetCheckpointCounter()
+    saved = getattr(mc._local, 'conn', None)
+    mc._local.conn = None  # this thread holds no brain connection
+    try:
+        def _writer():
+            for _ in range(_CHECKPOINT_EVERY_N_WRITES + 10):
+                note_commit()
+
+        t = _t.Thread(target=_writer)
+        t.start()
+        t.join()
+
+        assert not hits, 'no connection was available to checkpoint on'
+        assert mc._pending_checkpoint, (
+            'the threshold was crossed with no connection and the obligation was '
+            'dropped — the WAL grows unbounded again'
+        )
+
+        mc._local.conn = _Spy()
+        mc.drainPendingCheckpoint(mc._local.conn)
+        assert hits == ['PRAGMA wal_checkpoint(PASSIVE)'], hits
+        assert not mc._pending_checkpoint, 'the deferred checkpoint was not cleared'
+    finally:
+        mc._local.conn = saved
+        mc._pending_checkpoint = False
+        _resetCheckpointCounter()
 
 
 # --------------------------------------------------------------------------

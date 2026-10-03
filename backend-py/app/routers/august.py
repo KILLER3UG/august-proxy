@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.models.camel_base import CamelModel
 from app.services import alias_service
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_store import list_config_audit
 from app.type_aliases import JsonValue
 
@@ -544,7 +545,8 @@ async def manage_memory(body: ActionBody):
         if action in ('delete', 'forget'):
             conn_kv = memory_store._conn()  # noqa: SLF001
             cur = conn_kv.execute('DELETE FROM memory_store WHERE key = ?', (key,))
-            conn_kv.commit()
+            conn_kv
+            brain_commit(conn_kv)
             return {'ok': cur.rowcount > 0, 'store': 'memory', 'key': key}
     if action in ('set', 'upsert') and key:
         before_fact = memory_store.get_fact(key)

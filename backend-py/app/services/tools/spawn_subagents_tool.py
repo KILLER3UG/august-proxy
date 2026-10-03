@@ -192,7 +192,7 @@ def _persist_proposal(
                 datetime.now(timezone.utc).isoformat(),
             ),
         )
-        _conn().commit()
+        brain_commit(_conn())
     except Exception:
         logger.debug('proposal persist failed (non-fatal)', exc_info=True)
 

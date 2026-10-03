@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from typing import AsyncIterator
 
@@ -687,6 +688,25 @@ class TestDurabilityBarriersInLoop:
 
 
 class TestShadowGitInLoop:
+    """Shadow git in the turn loop.
+
+    The baseline join budget is read FROM the loop rather than restated here.
+    A test that hardcodes 20 s next to a 60 s contract is measuring its own
+    impatience — and when it failed, that was exactly what it was.
+    """
+
+    @staticmethod
+    def _baselineJoinBudgetS() -> float:
+        """The loop's own budget, so the two cannot drift apart again."""
+        import inspect as _inspect
+
+        from app.services.workbench.loop.exec import _awaitBaselineSnapshot
+
+        src = _inspect.getsource(_awaitBaselineSnapshot)
+        m = re.search(r'wait_for\(\s*fut,\s*([0-9.]+)', src)
+        assert m, 'could not find the baseline join budget in the loop'
+        return float(m.group(1))
+
     """§9.3 #7 end-to-end: a turn over a workspace commits a baseline
     snapshot, and a round that runs a mutating tool commits a step snapshot."""
 
@@ -710,19 +730,27 @@ class TestShadowGitInLoop:
         assert 'done' in [e['type'] for e in events]
         # The turn baseline is committed OFF the event loop — four blocking git
         # subprocesses, deliberately not on the loop so the model call can start
-        # while it runs — and is only joined at the first mutation under a 60s
-        # best-effort budget. So `done` does not mean it has landed, and on a
-        # loaded runner the join is the thing that slips. Poll for it instead of
-        # asserting instantly; the `step ` snapshot below is committed inline,
-        # which is why only the baseline ever flakes.
+        # while it runs — and is only joined at the first mutation, under the
+        # 60 s best-effort budget in `_awaitBaselineSnapshot` (loop/exec.py:53).
+        #
+        # So `done` does not mean the baseline has landed, and on a loaded
+        # runner the join is what slips. This used to poll against a 20 s
+        # deadline, which is SHORTER than the 60 s the code itself allows, so the
+        # test could fail while the production contract was still being met —
+        # it measured its own impatience, not the code. It now waits out the same
+        # budget the loop does, plus a margin for the snapshot to become
+        # listable, so a failure here means the baseline genuinely did not land.
         messages: list[str] = []
-        deadline = time.monotonic() + 20
+        budget = self._baselineJoinBudgetS()
+        deadline = time.monotonic() + budget + 10
         while time.monotonic() < deadline:
             messages = [s['message'] for s in sg.list_snapshots(session.id, str(tmp_path))]
             if any(m.startswith('turn ') for m in messages):
                 break
             await asyncio.sleep(0.25)
-        assert any(m.startswith('turn ') for m in messages), messages
+        assert any(m.startswith('turn ') for m in messages), (
+            f'no turn baseline within the {budget}s the loop allows itself'
+        )
         assert any(m.startswith('step ') and 'mutation' in m for m in messages), messages
         # The step snapshot captured the written file.
         assert (tmp_path / 'new.txt').read_text(encoding='utf-8') == 'hello\n'

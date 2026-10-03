@@ -44,15 +44,48 @@ def _calls(tree: ast.AST) -> list[ast.Call]:
     return [n for n in ast.walk(tree) if isinstance(n, ast.Call)]
 
 
+def _directCommits(src: str) -> list[str]:
+    """Names committed DIRECTLY, i.e. `<x>.commit()` rather than
+    `brain_commit(<x>)`.
+
+    Matching on the substring `.commit()` alone counted the helper as a
+    direct commit — ``brain_commit(c)`` contains `commit(` but not `.commit()`,
+    so the distinction has to be made on the attribute access itself. Getting
+    this wrong makes the guard report every routed writer as a violation (or,
+    once the funnel was completed, report nothing at all).
+    """
+    offenders: list[str] = []
+    for node in _calls(ast.parse(src)):
+        func = node.func
+        if isinstance(func, ast.Attribute) and func.attr == 'commit':
+            base = func.value
+            if isinstance(base, ast.Name):
+                offenders.append(base.id)
+            elif isinstance(base, ast.Call):
+                inner = base.func
+                if isinstance(inner, ast.Name):
+                    offenders.append(f'{inner.id}()')
+    return offenders
+
+
 def _brain_writers() -> list[pathlib.Path]:
-    """Every module that commits to the brain DB, minus the exempt ones."""
+    """Every module that commits to the brain DB, minus the exempt ones.
+
+    A writer is anything reaching the brain connection at all — routed through
+    the helper or committing directly — so the discovery set does not change
+    shape when the last direct commit is fixed. That matters: when discovery
+    keyed off `.commit()`, completing the funnel emptied the set and the guard
+    silently stopped covering anything.
+    """
     out: list[pathlib.Path] = []
     for p in sorted(_APP.rglob('*.py')):
         rel = p.relative_to(_APP).as_posix()
         if rel in _EXEMPT or rel.endswith('memory_conn.py'):
             continue
         src = p.read_text('utf-8')
-        if '.commit()' not in src or not _BRAIN_CONN.search(src):
+        if not _BRAIN_CONN.search(src):
+            continue
+        if 'commit(' not in src and 'brain_commit(' not in src:
             continue
         out.append(p)
     return out
@@ -68,21 +101,19 @@ class TestNoDirectCommitsRemain:
         assert writers, 'discovery found no brain writers at all — the matcher is broken'
         for p in writers:
             rel = p.relative_to(_APP).as_posix()
-            src = p.read_text('utf-8')
-            tree = ast.parse(src)
-            offenders = [
-                node.func.value.id
-                for node in _calls(tree)
-                if isinstance(node.func, ast.Attribute)
-                and node.func.attr == 'commit'
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id in ('conn', 'c')
-            ]
+            offenders = _directCommits(p.read_text('utf-8'))
             assert not offenders, (
-                f'{rel} calls {offenders}.commit() directly; route it through '
+                f'{rel} commits directly ({offenders}); route it through '
                 'memory_conn.commit (imported as brain_commit) or the WAL '
                 'checkpoint stops counting these writes'
             )
+
+    def test_the_helper_itself_is_excluded_from_discovery(self):
+        """`memory_conn.commit` IS the funnel, so it must never appear as a
+        direct commit. Discovery excludes it, which means nothing checks it."""
+        assert 'def commit(c: sqlite3.Connection)' in (
+            _APP / 'services' / 'memory_conn.py'
+        ).read_text('utf-8')
 
     def test_the_exempt_modules_are_still_justified(self):
         """An exemption with no reason is a hole with paperwork."""

@@ -564,9 +564,17 @@ def _queueApproval(session: object, action: str, params: dict[str, object]) -> s
     try:
         from app.services.workbench.workbench import createPendingMutation
 
+        # The tool name comes from the MAP, never from string assembly. This is
+        # the same derivation that produced `desktop_press` — not a registered
+        # tool — which silently downgraded `deny` to `ask`. The queued name also
+        # drives the sandbox gate category and the "always allow" grant scope, so
+        # a wrong one mints a grant for a tool that does not exist.
+        toolName = ACTION_TO_TOOL.get(action, '')
+        if not toolName:
+            return ''
         mutation = createPendingMutation(
             session,  # type: ignore[arg-type]
-            'desktop_' + action,
+            toolName,
             {'action': action, **params},
         )
         return str((mutation or {}).get('token') or '')

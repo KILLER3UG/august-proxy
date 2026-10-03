@@ -223,7 +223,8 @@ class DaemonManager:
 
                 c2 = _mem_conn2()
                 c2.execute('DELETE FROM daemons WHERE id = ?', (daemonId,))
-                c2.commit()
+                c2
+                brain_commit(c2)
             except Exception:
                 pass
             return True

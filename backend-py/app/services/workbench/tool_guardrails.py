@@ -18,6 +18,8 @@ import logging
 import time
 from collections import defaultdict
 
+from app.services.memory_conn import commit as brain_commit
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,7 +39,7 @@ def record_guardrail_block(session_id: str, tool_name: str, reason: str) -> None
             'INSERT INTO tool_guardrail_log (session_id, tool_name, reason) VALUES (?, ?, ?)',
             (str(session_id or ''), str(tool_name or ''), str(reason or '')[:600]),
         )
-        conn().commit()
+        brain_commit(conn())
     except Exception:
         logger.debug('guardrail block log write failed', exc_info=True)
 

@@ -268,3 +268,66 @@ class TestPagedReadIsStreamingAndExact:
         out = await _readFile(str(f), offset=1, limit=2)
         assert len(out) < 20_000, f'read returned {len(out)} bytes for a 2-line page'
         assert f'[lines 1-2 of {lines}]' in out
+
+
+class TestStreamedReadSurvivesChunkBoundaries:
+    """The streamed paged reader walks the file in 1 MiB chunks, so every
+    interesting case is a character or a separator sitting ON a boundary.
+
+    Two real defects lived here and both are invisible without a fixture that
+    straddles:
+
+    - the incremental decode round-tripped the carry buffer through
+      `decode(errors='replace')` + `encode`, so a multi-byte character split
+      across a boundary became U+FFFD and its continuation bytes were dropped —
+      the page then returned text that was not the file's text;
+    - the incomplete line was carried in a side buffer instead of being
+      prepended to the next chunk, so a line straddling the boundary was
+      emitted as a short line and the accumulated prefix was lost.
+
+    Both break the verbatim-anchor contract `edit_lines` depends on, which is
+    why they are silent: the read still succeeds and still looks plausible.
+    """
+
+    CHUNK = 1024 * 1024
+
+    async def _roundTrip(self, tmp_path, name, body, offset=-1, limit=10**9):
+        from app.services.tool_registrations.file_tools import _streamLines
+
+        f = tmp_path / f'{name}.txt'
+        f.write_bytes(body)
+        text = body.decode('utf-8')
+        lines, total = await _streamLines(f, 1, limit)
+        assert total == len(text.splitlines(keepends=True)), (
+            f'{name}: streamed {total} lines, the file has '
+            f'{len(text.splitlines(keepends=True))}'
+        )
+        assert ''.join(lines) == text, f'{name}: reconstructed text is not the file text'
+
+    @pytest.mark.parametrize('char', ['你', 'é', '\U0001f600', 'ñ'])
+    @pytest.mark.parametrize('offset', [-4, -3, -2, -1])
+    async def test_a_multibyte_char_on_the_boundary(self, tmp_path, char, offset):
+        body = b'a' * (self.CHUNK + offset) + char.encode('utf-8') + b'b' * 50
+        await self._roundTrip(tmp_path, f'mb_{char}_{offset}'.replace('/', ''), body)
+
+    @pytest.mark.parametrize('sep', [b'\r\n', b'\n', b'\r'])
+    @pytest.mark.parametrize('offset', [-3, -2, -1])
+    async def test_a_separator_on_the_boundary(self, tmp_path, sep, offset):
+        body = b'a' * (self.CHUNK + offset) + sep + b'b' * 50
+        await self._roundTrip(
+            tmp_path, f'sep_{sep.hex()}_{offset}'.replace('/', ''), body
+        )
+
+    async def test_exotic_separators_still_count(self, tmp_path):
+        body = ('a\vb\fc\x1d e').encode('utf-8') * 3000
+        await self._roundTrip(tmp_path, 'exotic', body)
+
+    async def test_a_line_longer_than_the_chunk(self, tmp_path):
+        """The pathological case: ONE line spanning several chunks. An earlier
+        version returned only the last chunk of it."""
+        body = b'x' * (self.CHUNK * 2 + 7) + b'\n' + b'tail\n'
+        await self._roundTrip(tmp_path, 'longline', body)
+
+    async def test_no_trailing_newline_and_empty(self, tmp_path):
+        await self._roundTrip(tmp_path, 'noeol', b'x' * 50)
+        await self._roundTrip(tmp_path, 'empty', b'')

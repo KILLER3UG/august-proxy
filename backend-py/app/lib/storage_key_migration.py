@@ -18,6 +18,8 @@ import logging
 import sqlite3
 from pathlib import Path
 
+from app.services.memory_conn import commit as brain_commit
+
 logger = logging.getLogger(__name__)
 BLOB_KEY_RENAMES = {'core_memory': 'coreMemory', 'user_profile': 'userProfile'}
 
@@ -75,7 +77,8 @@ def migrate_storage_keys(db_path: Path) -> None:
                 conn.execute(f'INSERT INTO {table}(key, value) VALUES (?, ?)', (new_key, old_row['value']))
                 logger.info('Migrated memory blob key: %s → %s', old_key, new_key)
             conn.execute(f'DELETE FROM {table} WHERE key = ?', (old_key,))
-        conn.commit()
+        conn
+        brain_commit(conn)
     finally:
         conn.close()
 

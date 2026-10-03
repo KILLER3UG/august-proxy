@@ -33,18 +33,25 @@ _WAL_RETRY_S = 0.05
 # it is best-effort and failures are ignored, because a checkpoint optimises
 # durability rather than constituting a write.
 #
-# SCOPE — read this before relying on it. Every brain write routes through
-# :func:`commit`: the deferred lane via `deferred_writes._commit`, and every
-# direct writer (memory_store/*, the routers, harness services, the episode
-# miner, workstreams) via `commit as brain_commit`.
+# SCOPE — read this before relying on it. Every write to the brain database
+# routes through :func:`commit`: the deferred lane via
+# `deferred_writes._commit`, and every direct writer (memory_store/*, the
+# routers, harness services, the episode miner, workstreams, refine/turn-outcome
+# ledgers, daemon + bot stores) via `commit as brain_commit`.
 # ``tests/test_brain_commit_routing.py`` DISCOVERS those writers rather than
 # listing them, so a new one is caught the day it is written; only
-# `memory_schema.py` (owns DDL) and `deferred_writes.py` (is the funnel) are
-# exempt, and the test asserts both exemptions still exist with a reason.
-# Databases OTHER than the brain — none today, but e.g. a job ledger with its
-# own file — are outside this guarantee by construction.
+# `memory_schema.py` (owns the base schema and runs before the runner) and
+# `deferred_writes.py` (is the deferred funnel) are exempt, and the test
+# asserts both exemptions still exist with a reason.
+#
+# A database OTHER than the brain is outside this guarantee by construction —
+# it has its own WAL, its own checkpoint schedule, and its own risk.
 _CHECKPOINT_EVERY_N_WRITES = 50
-_writes_since_checkpoint: dict[int, int] = {}
+# A checkpoint owed but not yet run because the thread that crossed the
+# threshold held no brain connection. Drained on the next commit that has one.
+_pending_checkpoint = False
+_PENDING_CHECKPOINT_LOCK = threading.Lock()
+_writes_since_checkpoint = 0
 _CHECKPOINT_LOCK = threading.Lock()
 _local = threading.local()
 _dual_root_warned = False
@@ -208,29 +215,60 @@ def commit(c: sqlite3.Connection) -> None:
         c.commit()
     finally:
         note_commit()
+        drainPendingCheckpoint(c)
 
 
 def note_commit() -> None:
     """Call after a committed write on a brain connection; folds the WAL back
     into the database file every ``_CHECKPOINT_EVERY_N_WRITES`` writes.
 
+    The counter is GLOBAL, not per-thread. It was keyed by ``thread_ident``,
+    which meant the threshold was "per thread": four worker threads (the
+    consolidation loop, the episode miner, harness jobs, the deferred lane) each
+    writing 49 times produced 196 writes and ZERO checkpoints — precisely the
+    shape this backend runs. One counter under the lock is what the guarantee
+    describes.
+
     Best-effort by construction: a checkpoint that fails loses nothing that the
     next one would not recover, so it must never raise into the write path.
     """
-    tid = threading.get_ident()
+    global _writes_since_checkpoint
     with _CHECKPOINT_LOCK:
-        count = _writes_since_checkpoint.get(tid, 0) + 1
-        if count < _CHECKPOINT_EVERY_N_WRITES:
-            _writes_since_checkpoint[tid] = count
+        _writes_since_checkpoint += 1
+        if _writes_since_checkpoint < _CHECKPOINT_EVERY_N_WRITES:
             return
-        _writes_since_checkpoint[tid] = 0
+        _writes_since_checkpoint = 0
     c = getattr(_local, 'conn', None)
-    if c is None:
+    if c is not None:
+        _checkpoint_one(c)
         return
+    # The thread that crossed the threshold may hold no brain connection of its
+    # own (a worker that writes only through someone else's). Rather than
+    # spend the checkpoint on nothing — which let a non-writing thread burn the
+    # threshold and skip the write that should have triggered one — checkpoint
+    # on the NEXT connection to be handed to us. A missed checkpoint costs one
+    # write of WAL growth; a lost one costs the guarantee.
+    with _PENDING_CHECKPOINT_LOCK:
+        global _pending_checkpoint
+        _pending_checkpoint = True
+
+
+def _checkpoint_one(c: sqlite3.Connection) -> None:
+    """Fold one connection's WAL into the database file. Never raises."""
     try:
         c.execute('PRAGMA wal_checkpoint(PASSIVE)')
-    except Exception:
+    except Exception:  # noqa: BLE001 -- best-effort, must not reach the write path
         pass
+
+
+def drainPendingCheckpoint(c: sqlite3.Connection) -> None:
+    """Run a checkpoint deferred by :func:`note_commit`, if one is owed."""
+    global _pending_checkpoint
+    with _PENDING_CHECKPOINT_LOCK:
+        if not _pending_checkpoint:
+            return
+        _pending_checkpoint = False
+    _checkpoint_one(c)
 
 
 def conn() -> sqlite3.Connection:
@@ -257,5 +295,3 @@ def close() -> None:
         _local.conn = None
     with _LIVE_LOCK:
         _LIVE.pop(threading.get_ident(), None)
-    with _CHECKPOINT_LOCK:
-        _writes_since_checkpoint.pop(threading.get_ident(), None)
