@@ -12,7 +12,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { t } from '@/lib/motion';
 import { UpdateProgressBar } from '@/components/ui/UpdateProgressBar';
 import { useAppUpdate, useAppUpdateVersion } from '@/hooks/useAppUpdate';
-import { useAppUpdateInstallStore } from '@/store/app-update-install';
+import { useAppUpdateInstallStore, UPDATE_FAILURE_COPY } from '@/store/app-update-install';
 import { cn } from '@/lib/utils';
 
 export function UpdateRelaunchOverlay() {
@@ -25,8 +25,9 @@ export function UpdateRelaunchOverlay() {
   const downloading = progress.phase === 'downloading';
   const ready = progress.phase === 'ready';
   const restarting = progress.phase === 'restarting';
-  const installingWizard = progress.phase === 'installing';
-  const visible = installing && (downloading || ready || installingWizard || restarting);
+  const failed = progress.phase === 'failed';
+  const visible =
+    installing || failed || progress.phase === 'cancelled';
   const targetVersion = available?.version ?? cachedVersion;
   const vLabel = targetVersion ? `v${targetVersion}` : 'the update';
 
@@ -36,17 +37,27 @@ export function UpdateRelaunchOverlay() {
 
   const showDialog = visible && (!ready || !readyDismissed);
 
+  // Honest vocabulary: under Windows the installer is an external NSIS
+  // process, so there is no "installing %" — only "opening the installer".
   const pill = downloading
     ? { text: 'downloading', ok: false }
     : ready
       ? { text: 'ready', ok: true }
-      : { text: 'installing', ok: false };
+      : failed
+        ? { text: 'failed', ok: false }
+        : restarting
+          ? { text: 'restarting', ok: false }
+          : { text: 'idle', ok: true };
 
   const userLine = downloading
     ? 'grab the latest build'
     : ready
       ? 'is it ready?'
-      : 'apply it';
+      : failed
+        ? 'what went wrong?'
+        : restarting
+          ? 'opening the installer'
+          : 'apply it';
 
   const assistantLine = downloading
     ? `Downloading ${vLabel}. The latest desktop build is coming down — you can keep working while it finishes.`
@@ -135,7 +146,7 @@ export function UpdateRelaunchOverlay() {
                       </span>
                     </div>
                   )}
-                  {(installingWizard || restarting) && (
+                  {restarting && (
                     <div className="mt-3 space-y-2">
                       <UpdateProgressBar
                         progress={progress}
@@ -158,8 +169,35 @@ export function UpdateRelaunchOverlay() {
                   ? 'Downloading in the background…'
                   : ready
                     ? 'Ready to restart'
-                    : 'Applying the update…'}
+                    : failed
+                      ? (UPDATE_FAILURE_COPY[progress.failureKind ?? 'unknown'] ??
+                         'The update failed.')
+                      : restarting
+                        ? 'Opening the installer…'
+                        : 'Applying the update…'}
               </div>
+              {failed && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => { void install(); }}
+                    className="update-flow-primary-button inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium"
+                    data-testid="update-retry"
+                  >
+                    <RefreshCw className="size-3" />
+                    Retry
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelDownload}
+                    className="update-flow-secondary-button shrink-0 rounded-lg px-3 py-2 text-sm"
+                    data-testid="update-failed-dismiss"
+                    aria-label="Dismiss"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </>
+              )}
               {downloading && (
                 <button
                   type="button"

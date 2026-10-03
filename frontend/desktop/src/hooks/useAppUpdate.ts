@@ -87,6 +87,8 @@ export function useAppUpdate() {
   const progress = useAppUpdateInstallStore((s) => s.progress);
   const setInstalling = useAppUpdateInstallStore((s) => s.setInstalling);
   const setProgress = useAppUpdateInstallStore((s) => s.setProgress);
+  const failInstall = useAppUpdateInstallStore((s) => s.fail);
+  const markCancelled = useAppUpdateInstallStore((s) => s.markCancelled);
   const resetInstall = useAppUpdateInstallStore((s) => s.reset);
 
   const query = useQuery({
@@ -162,8 +164,7 @@ export function useAppUpdate() {
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        toast.error(message || 'Failed to install update');
-        resetInstall();
+        failInstall(message || 'Failed to install update');
       }
       return;
     }
@@ -210,8 +211,11 @@ export function useAppUpdate() {
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (!cancelRequested) toast.error(message || 'Failed to download the installer');
-        resetInstall();
+        if (cancelRequested) {
+          markCancelled();
+        } else {
+          failInstall(message || 'Failed to download the installer');
+        }
       } finally {
         unlisten?.();
       }
@@ -260,10 +264,10 @@ export function useAppUpdate() {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      toast.error(message || 'Failed to download update');
-      resetInstall();
+      if (cancelRequested) markCancelled();
+      else failInstall(message || 'Failed to download update');
     }
-  }, [query.data, queryClient, setInstalling, setProgress, resetInstall]);
+  }, [query.data, queryClient, setInstalling, setProgress, resetInstall, failInstall, markCancelled]);
 
   const cancelDownload = useCallback(() => {
     cancelRequested = true;
@@ -273,13 +277,32 @@ export function useAppUpdate() {
     void pendingNativeUpdate?.close().catch(() => undefined);
     pendingNativeUpdate = null;
     pendingInstallerPath = null;
-    resetInstall();
-  }, [resetInstall]);
+    markCancelled();
+  }, [markCancelled]);
+
+  const check = useCallback(async () => {
+    useAppUpdateInstallStore.getState().setProgress({
+      percent: null,
+      downloadedBytes: 0,
+      totalBytes: null,
+      phase: 'checking',
+    });
+    await queryClient.invalidateQueries({ queryKey: ['app-update'] });
+  }, [queryClient]);
 
   return {
     isTauri,
     available: query.data ?? null,
     checking: query.isFetching,
+    /** Manual check — runs through the state machine so every surface
+     *  shows "checking" at once. */
+    check,
+    /** Terminal failure from the last download/install attempt. */
+    failure:
+      progress.phase === 'failed'
+        ? { message: progress.error ?? '', kind: progress.failureKind ?? 'unknown' }
+        : null,
+    cancelled: progress.phase === 'cancelled',
     /** Non-null when the update check itself failed (network / endpoint /
      *  missing latest.json) — distinct from "no update available". */
     error: query.isError ? (query.error as Error | null) : null,

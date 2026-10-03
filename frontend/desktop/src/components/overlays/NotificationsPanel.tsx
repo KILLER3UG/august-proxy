@@ -156,12 +156,14 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
                       ? `${update?.version ?? 'Update'} is ready`
                       : progress.phase === 'restarting'
                         ? 'Restarting app…'
-                      : progress.phase === 'installing'
-                        ? 'Installing update…'
-                        : 'Downloading update…'}
+                        : progress.phase === 'failed'
+                          ? 'Update failed'
+                          : progress.phase === 'cancelled'
+                            ? 'Download cancelled'
+                            : 'Downloading update…'}
                   </p>
                   <span className="text-xs font-semibold tabular-nums text-foreground">
-                    {progress.phase === 'ready' || progress.phase === 'installing' || progress.phase === 'restarting'
+                    {progress.phase === 'ready' || progress.phase === 'restarting'
                       ? '100%'
                       : progress.percent != null
                         ? `${progress.percent}%`
@@ -262,7 +264,15 @@ function NotificationRow({
   item: NotificationItem;
   installing: boolean;
   progressPercent: number | null;
-  progressPhase: 'idle' | 'downloading' | 'ready' | 'installing' | 'restarting';
+  progressPhase:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'downloading'
+    | 'ready'
+    | 'restarting'
+    | 'failed'
+    | 'cancelled';
   onInstall: () => void;
   onOpenUrl: (url: string) => void;
 }) {

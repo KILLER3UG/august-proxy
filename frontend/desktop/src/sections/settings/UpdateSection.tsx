@@ -21,11 +21,25 @@ import { useBackendStatus } from '@/hooks/useBackendStatus';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { isTauri } from '@/lib/tauri-detect';
 import { openExternal } from '@/lib/tauri-shell';
+import { UPDATE_FAILURE_COPY } from '@/store/app-update-install';
 
 const RELEASES_URL = 'https://github.com/KILLER3UG/august-proxy/releases';
 
 export function UpdateSection() {
-  const { available, checking, error, installing, progress, formatBytes, install, refresh } =
+  const {
+    available,
+    checking,
+    error,
+    installing,
+    progress,
+    formatBytes,
+    install,
+    refresh,
+    check,
+    failure,
+    cancelled,
+    cancelDownload,
+  } =
     useAppUpdate();
   const { status: backend, sync, isTauri: backendTauri } = useBackendStatus();
   const [currentVersion, setCurrentVersion] = useState<string>('…');
@@ -73,11 +87,19 @@ export function UpdateSection() {
         ) : (
           <>
             <div className="mt-3 min-h-[1.25rem] text-sm">
-              {error ? (
+              {failure ? (
+                <span className="flex items-start gap-2 text-danger-fg">
+                  <AlertTriangle className="mt-0.5 size-3 shrink-0" />
+                  {UPDATE_FAILURE_COPY[failure.kind]}{' '}
+                  <span className="text-muted-foreground">{failure.message}</span>
+                </span>
+              ) : error ? (
                 <span className="flex items-center gap-2 text-danger-fg">
                   <AlertTriangle className="size-3 shrink-0" />
                   Update check failed: {error.message || 'could not reach the release feed'}
                 </span>
+              ) : cancelled ? (
+                <span className="text-muted-foreground">Download cancelled.</span>
               ) : available ? (
                 <span className="flex items-center gap-2 font-medium text-warning-fg">
                   <Download className="size-3 shrink-0" />
@@ -110,7 +132,7 @@ export function UpdateSection() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => refresh()}
+                onClick={() => { void check(); }}
                 disabled={checking || installing}
                 data-testid="about-check-now"
               >
@@ -125,16 +147,39 @@ export function UpdateSection() {
                   {ready ? 'Restart to update' : 'Update now'}
                 </Button>
               )}
-              {installing && !ready && (
-                <span className="text-xs font-medium text-primary">
-                  {progress.phase === 'restarting'
-                    ? 'Installing…'
-                    : progress.phase === 'installing'
-                      ? 'Launching installer…'
-                      : progress.percent != null
-                        ? `Downloading ${progress.percent}%`
-                        : 'Downloading…'}
-                </span>
+              {installing && progress.phase === 'downloading' && (
+                <>
+                  <span className="text-xs font-medium text-primary">
+                    {progress.percent != null
+                      ? `Downloading ${progress.percent}%`
+                      : 'Downloading…'}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={cancelDownload}
+                    data-testid="about-update-cancel"
+                  >
+                    Cancel
+                  </Button>
+                </>
+              )}
+              {progress.phase === 'restarting' && (
+                <span className="text-xs font-medium text-primary">Launching installer…</span>
+              )}
+              {failure && (
+                <>
+                  <Button size="sm" onClick={() => { void install(); }} data-testid="about-update-retry">
+                    <RefreshCw className="mr-1.5 size-3" /> Retry
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { void openExternal(RELEASES_URL); }}
+                  >
+                    Download manually
+                  </Button>
+                </>
               )}
               <button
                 type="button"
@@ -169,23 +214,19 @@ export function UpdateSection() {
                 {ready
                   ? `${available?.version ?? 'Update'} is ready`
                   : progress.phase === 'restarting'
-                    ? 'Installing update…'
-                    : progress.phase === 'installing'
-                      ? 'Launching installer…'
-                      : 'Downloading update…'}
+                    ? 'Opening the installer…'
+                    : 'Downloading update…'}
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {ready
                   ? 'The update is downloaded. Restart when you’re ready to apply it.'
                   : progress.phase === 'restarting'
-                    ? 'Updating now. The old version is removed automatically; you’ll see the install wizard, then the app reopens.'
-                    : progress.phase === 'installing'
-                      ? 'The setup window will appear in a moment.'
-                      : 'The installer opens after the download finishes.'}
+                    ? 'The setup window will appear in a moment. August closes while the installer runs and reopens when it finishes.'
+                    : 'The installer opens after the download finishes.'}
               </p>
             </div>
             <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
-              {ready || progress.phase === 'installing' || progress.phase === 'restarting'
+              {ready || progress.phase === 'restarting'
                 ? '100%'
                 : progress.percent != null
                   ? `${progress.percent}%`

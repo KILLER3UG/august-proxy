@@ -19,7 +19,7 @@ export function UpdateProgressBar({
     progress.phase === 'downloading' && progress.percent == null;
   const restarting = progress.phase === 'restarting';
   const fill =
-    progress.phase === 'installing' || restarting
+    restarting
       ? 100
       : progress.percent != null
         ? Math.min(100, Math.max(0, progress.percent))
@@ -39,9 +39,9 @@ export function UpdateProgressBar({
       aria-valuenow={indeterminate ? undefined : fill}
       aria-label={
         restarting
-          ? 'Update restarting'
-          : progress.phase === 'installing'
-            ? 'Update installing'
+          ? 'Update restarting — the installer will open'
+          : progress.phase === 'failed'
+            ? 'Update failed'
             : 'Update download progress'
       }
       data-phase={progress.phase}
