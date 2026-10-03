@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { BackdropEscape } from '@/components/overlays/BackdropEscape';
 import { X, HelpCircle, CheckCircle2, XCircle, ChevronRight, Lightbulb, Plus } from 'lucide-react';
 import { api } from '@/api/client';
 
@@ -170,11 +171,20 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
 
       {/* Explanation modal (overlay, non-blocking) */}
       {showExplanation && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30" onClick={() => setShowExplanation(false)}>
-          <div className="bg-card border border-border rounded-xl shadow-2xl max-w-lg w-full mx-4 p-5 space-y-3 animate-in fade-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
+        <BackdropEscape onEscape={() => setShowExplanation(false)} />
+      )}
+      {showExplanation && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-scrim" onClick={() => setShowExplanation(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Explanation"
+            className="bg-card border border-border rounded-xl shadow-2xl max-w-lg w-full mx-4 p-5 space-y-3 animate-in fade-in zoom-in-95"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium">Explanation</h3>
-              <button onClick={() => setShowExplanation(false)} className="text-muted-foreground hover:text-foreground">
+              <button onClick={() => setShowExplanation(false)} className="text-muted-foreground hover:text-foreground" aria-label="Close explanation">
                 <X className="size-4" />
               </button>
             </div>

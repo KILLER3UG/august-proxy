@@ -43,6 +43,12 @@
     --dt-popover-foreground-hsl: 240 3.45% 11.37%;
     --dt-elevated: #ffffff;
 
+    /* Shell chrome — one titlebar height, one drawer-header height.
+       The CSS classes that used to hardcode 2.85rem !important next to the
+       h-10 utility claimed to own this and disagreed by 5.6px. */
+    --shell-titlebar-h: 44px;
+    --shell-drawer-header-h: 48px;
+
     /* Sunken chrome — wells that sit BELOW the page (terminal, file preview,
      * bottom dock). One value replaces the old #181818/#171717/#111 hexes. */
     --dt-surface-sunken: #f0f0ee;

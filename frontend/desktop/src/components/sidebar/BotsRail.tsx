@@ -5,6 +5,7 @@
  * the eye toggle in the row menu. */
 
 import { useMemo, useState, useEffect, useLayoutEffect, useRef, useId } from 'react';
+import { BackdropEscape } from '@/components/overlays/BackdropEscape';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { EyeOff, Eye, EllipsisVertical, Plus, Trash2, Copy, Shuffle, Search, Bell, BellOff, Users, X, Bot as BotIcon } from 'lucide-react';
@@ -514,6 +515,7 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
             </button>
             {menuOpen && (
               <>
+                <BackdropEscape onEscape={() => setMenuOpen(false)} />
                 <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
                 <div
                   role="menu"

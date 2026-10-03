@@ -233,7 +233,11 @@ function useModalDismiss(open: boolean, onClose: () => void) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        // Consume here so a Settings-scoped Escape listener does not also fire.
+        e.stopPropagation();
+        onClose();
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);

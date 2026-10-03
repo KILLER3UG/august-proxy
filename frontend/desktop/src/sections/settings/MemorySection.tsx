@@ -1872,7 +1872,10 @@ function RowMenu({
       if (!el?.closest('[data-slot="memory-row-menu-pop"]')) onClose();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);

@@ -274,7 +274,7 @@
 }
 
 .august-sidebar-brand {
-  min-height: 2.25rem;
+  /* height set inline from --shell-titlebar-h */
 }
 
 .august-sidebar-nav button {
@@ -368,10 +368,7 @@
 }
 
 .august-titlebar {
-  height: 2.85rem !important;
-  padding-inline: 0.6rem;
-  background: var(--dt-background);
-  border-bottom-color: color-mix(in srgb, var(--dt-border) 65%, transparent) !important;
+  /* height comes from --shell-titlebar-h (components/shell/ChatTitlebar) */
 }
 
 .august-titlebar h1 {
@@ -472,10 +469,7 @@
 }
 
 .august-right-drawer-header {
-  height: 3.35rem !important;
-  padding-inline: 1rem;
-  background: transparent !important;
-  border-bottom-color: color-mix(in srgb, var(--dt-border) 80%, transparent) !important;
+  /* height set inline from --shell-drawer-header-h */
 }
 
 @media (max-width: 900px) {

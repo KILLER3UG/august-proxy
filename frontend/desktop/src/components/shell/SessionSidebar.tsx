@@ -1,7 +1,8 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { SessionList } from "@/components/sidebar/SessionList";
 import { PANEL_EASE, PANEL_MS } from "@/lib/motion";
+import { useResizablePane } from "@/hooks/useResizablePane";
 
 interface SessionSidebarProps {
   activeId?: string;
@@ -17,17 +18,9 @@ const DEFAULT_WIDTH = 280;
 const MIN_WIDTH = 220;
 const MAX_VIEWPORT_FRACTION = 0.33;
 
-function loadStoredWidth(): number {
+function sidebarMax(): number {
   if (typeof window === "undefined") return DEFAULT_WIDTH;
-  const raw = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
-  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-  if (!Number.isFinite(parsed)) return DEFAULT_WIDTH;
-  return clampWidth(parsed);
-}
-
-function clampWidth(value: number): number {
-  const max = Math.max(MIN_WIDTH, Math.floor(window.innerWidth * MAX_VIEWPORT_FRACTION));
-  return Math.min(max, Math.max(MIN_WIDTH, value));
+  return Math.max(MIN_WIDTH, Math.floor(window.innerWidth * MAX_VIEWPORT_FRACTION));
 }
 
 export function SessionSidebar({
@@ -38,51 +31,14 @@ export function SessionSidebar({
   onNewInFolder,
   onNavigate,
 }: SessionSidebarProps) {
-  const [width, setWidth] = useState<number>(loadStoredWidth);
-  const [isDragging, setIsDragging] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
-  }, [width]);
-
-  // Stop dragging if the component unmounts mid-drag.
-  useEffect(() => {
-    if (!isDragging) return;
-    const stop = () => setIsDragging(false);
-    window.addEventListener("mouseup", stop);
-    window.addEventListener("touchend", stop);
-    return () => {
-      window.removeEventListener("mouseup", stop);
-      window.removeEventListener("touchend", stop);
-    };
-  }, [isDragging]);
-
-  const startResize = (clientX: number) => {
-    const startX = clientX;
-    const startW = width;
-    setIsDragging(true);
-
-    const onMove = (ev: MouseEvent | TouchEvent) => {
-      const next = "touches" in ev && ev.touches.length
-        ? ev.touches[0].clientX
-        : (ev as MouseEvent).clientX;
-      const delta = next - startX;
-      setWidth(clampWidth(startW + delta));
-    };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove as (e: MouseEvent) => void);
-      window.removeEventListener("mouseup", onUp);
-      window.removeEventListener("touchmove", onMove as (e: TouchEvent) => void);
-      window.removeEventListener("touchend", onUp);
-      setIsDragging(false);
-    };
-
-    window.addEventListener("mousemove", onMove as (e: MouseEvent) => void);
-    window.addEventListener("mouseup", onUp);
-    window.addEventListener("touchmove", onMove as (e: TouchEvent) => void, { passive: true });
-    window.addEventListener("touchend", onUp);
-  };
+  const { size: width, isDragging, handleProps } = useResizablePane({
+    initial: DEFAULT_WIDTH,
+    min: MIN_WIDTH,
+    max: sidebarMax,
+    axis: "x",
+    storageKey: SIDEBAR_WIDTH_KEY,
+    "aria-label": "Resize session sidebar",
+  });
 
   const innerStyle: CSSProperties = { width };
 
@@ -113,16 +69,7 @@ export function SessionSidebar({
           </div>
 
           <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize session sidebar"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              startResize(e.clientX);
-            }}
-            onTouchStart={(e) => {
-              if (e.touches.length) startResize(e.touches[0].clientX);
-            }}
+            {...handleProps}
             className={`absolute top-0 right-0 h-full w-1 cursor-col-resize select-none touch-none transition-colors hover:bg-primary/40 ${isDragging ? "bg-primary/50" : "bg-transparent"}`}
           />
         </motion.aside>

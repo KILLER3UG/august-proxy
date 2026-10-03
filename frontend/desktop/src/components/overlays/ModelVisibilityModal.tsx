@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 
 import { useState, useMemo, useEffect } from 'react';
+import { BackdropEscape } from '@/components/overlays/BackdropEscape';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Search, Check } from 'lucide-react';
 import { modelDisplayParts, getModelDisplayName } from '@/sections/chat/ChatThread';
@@ -93,6 +94,7 @@ export function ModelVisibilityModal({ open, onClose, models, loading, hiddenMod
     <AnimatePresence>
       {open && (
         <>
+          <BackdropEscape onEscape={onClose} />
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -106,11 +108,20 @@ export function ModelVisibilityModal({ open, onClose, models, loading, hiddenMod
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
             className="fixed left-1/2 top-[15%] z-50 -translate-x-1/2 w-[420px] h-[500px] bg-popover rounded-xl shadow-2xl flex flex-col overflow-hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Edit Models"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.stopPropagation();
+                onClose();
+              }
+            }}
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
               <h2 className="text-sm font-semibold text-foreground">Edit Models</h2>
-              <button onClick={onClose} className="p-1 hover:bg-white/10 rounded text-muted-foreground hover:text-foreground transition">
+              <button onClick={onClose} aria-label="Close model visibility" className="p-1 hover:bg-white/10 rounded text-muted-foreground hover:text-foreground transition">
                 <X className="size-4" />
               </button>
             </div>

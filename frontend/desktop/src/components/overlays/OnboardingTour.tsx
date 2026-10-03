@@ -100,12 +100,18 @@ export function OnboardingTour() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Welcome"
       data-testid="onboarding-tour"
       ref={trapRef}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          finish();
+        }
+      }}
     >
       <div className="w-full max-w-md rounded-xl border border-border bg-popover p-5 shadow-xl space-y-4">
         <div className="flex items-center gap-2">

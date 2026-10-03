@@ -33,17 +33,16 @@ import {
   type TerminalApproval,
 } from '@/api/api-client';
 import { useSessionsStore } from '@/store/sessions';
+import { useResizablePane } from '@/hooks/useResizablePane';
 import { useParams } from 'react-router-dom';
 
 const MIN_DOCK_H = 120;
 const DEFAULT_DOCK_H = 280;
 const DOCK_H_KEY = 'august-bottom-terminal-h';
 
-function loadDockH(): number {
+function dockMax(): number {
   if (typeof window === 'undefined') return DEFAULT_DOCK_H;
-  const raw = window.localStorage.getItem(DOCK_H_KEY);
-  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-  return Number.isFinite(parsed) ? Math.max(MIN_DOCK_H, parsed) : DEFAULT_DOCK_H;
+  return Math.floor(window.innerHeight * 0.7);
 }
 
 export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
@@ -57,8 +56,16 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [socketReady, setSocketReady] = useState(false);
   const [spawnError, setSpawnError] = useState<string | null>(null);
-  const [dockH, setDockH] = useState<number>(() => loadDockH());
-  const [isDragging, setIsDragging] = useState(false);
+  // The dock grows upward, so the shared hook runs with direction -1 on y.
+  const { size: dockH, isDragging, handleProps } = useResizablePane({
+    initial: DEFAULT_DOCK_H,
+    min: MIN_DOCK_H,
+    max: dockMax,
+    axis: 'y',
+    direction: -1,
+    storageKey: DOCK_H_KEY,
+    'aria-label': 'Resize terminal',
+  });
   const terminalRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -73,31 +80,6 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
     window.localStorage.setItem(DOCK_H_KEY, String(dockH));
   }, [dockH]);
 
-  // Vertical resize: drag the top edge.
-  useEffect(() => {
-    if (!isDragging) return;
-    const stop = () => setIsDragging(false);
-    window.addEventListener('mouseup', stop);
-    return () => window.removeEventListener('mouseup', stop);
-  }, [isDragging]);
-
-  const startResize = (clientY: number) => {
-    const startY = clientY;
-    const startH = dockH;
-    setIsDragging(true);
-    const onMove = (ev: MouseEvent) => {
-      // Dragging up grows the dock.
-      const next = startH + (startY - ev.clientY);
-      setDockH(Math.min(Math.max(MIN_DOCK_H, next), Math.floor(window.innerHeight * 0.7)));
-    };
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      setIsDragging(false);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  };
 
   const { data, isLoading } = useQuery({
     queryKey: ['terminal-sessions'],
@@ -320,13 +302,7 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
     >
       {/* Resize handle — drag to grow/shrink. */}
       <div
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label="Resize terminal"
-        onMouseDown={(e) => {
-          e.preventDefault();
-          startResize(e.clientY);
-        }}
+        {...handleProps}
         className={cn(
           'absolute -top-px left-0 right-0 z-20 h-1.5 cursor-row-resize touch-none transition-colors hover:bg-primary/40',
           isDragging ? 'bg-primary/50' : 'bg-transparent',

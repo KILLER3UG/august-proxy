@@ -67,9 +67,9 @@ export function SessionListNav({
 
   return (
     <div className="august-sidebar-nav flex flex-col shrink-0">
-      {/* Top 40px bar aligned with main ChatTitlebar */}
+      {/* Brand bar — same height token as the ChatTitlebar */}
       <div
-        className="august-sidebar-brand h-10 border-b border-sidebar-border/30 flex items-center justify-between px-2.5 shrink-0 select-none"
+        className="august-sidebar-brand h-[var(--shell-titlebar-h)] border-b border-sidebar-border/30 flex items-center justify-between px-2.5 shrink-0 select-none"
         data-tauri-drag-region
       >
         <div className="flex min-w-0 items-center gap-2 px-0.5">

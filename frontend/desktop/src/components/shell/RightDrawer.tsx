@@ -50,6 +50,7 @@ import type { WorkbenchSession } from '@/types/workbench';
 import { useRightDrawer } from './RightDrawerState';
 import { getFileIcon } from '@/lib/file-icon';
 import { PANEL_EASE, PANEL_MS } from '@/lib/motion';
+import { useResizablePane } from '@/hooks/useResizablePane';
 
 const DEFAULT_BASE_WIDTH = 420;   // Zed-like breathing room for the single view
 // v2 keys: the old defaults pinned returning installs to cramped widths.
@@ -59,17 +60,9 @@ const MIN_WIDTH = 200;
 // the drawer previously swallowed the conversation (audit finding).
 const MAX_VIEWPORT_FRACTION = 0.6;
 
-function loadStoredWidth(key: string, fallback: number): number {
-  if (typeof window === 'undefined') return fallback;
-  const raw = window.localStorage.getItem(key);
-  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-  if (!Number.isFinite(parsed)) return fallback;
-  return clampWidth(parsed);
-}
-
-function clampWidth(value: number): number {
-  const max = Math.max(MIN_WIDTH, Math.floor(window.innerWidth * MAX_VIEWPORT_FRACTION));
-  return Math.min(max, Math.max(MIN_WIDTH, value));
+function drawerMax(): number {
+  if (typeof window === 'undefined') return DEFAULT_BASE_WIDTH;
+  return Math.max(MIN_WIDTH, Math.floor(window.innerWidth * MAX_VIEWPORT_FRACTION));
 }
 
 export function RightDrawer({
@@ -95,18 +88,21 @@ export function RightDrawer({
   const { file: filePreview, activeSection, chooserActive } = useRightDrawer();
   const showingFile = sections.length === 1 && sections[0] === 'file' && !!filePreview;
   const HeaderFileIcon = filePreview ? getFileIcon(filePreview.name).Icon : null;
-  const [baseWidth, setBaseWidth] = useState<number>(() => loadStoredWidth(BASE_WIDTH_KEY, DEFAULT_BASE_WIDTH));
-  const [isDragging, setIsDragging] = useState(false);
   const ctx = { sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan };
 
-  // Single active view — one width, no wide/narrow split.
-  const width = baseWidth;
-  const setWidth = setBaseWidth;
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(BASE_WIDTH_KEY, String(baseWidth));
-  }, [baseWidth]);
+  // Single active view — one width, no wide/narrow split. The drawer grows
+  // as the handle is dragged left, so the shared hook runs with direction -1.
+  const { size: width, isDragging, handleProps } = useResizablePane({
+    initial: DEFAULT_BASE_WIDTH,
+    min: MIN_WIDTH,
+    max: drawerMax,
+    axis: 'x',
+    direction: -1,
+    storageKey: BASE_WIDTH_KEY,
+    step: 10,
+    stepLarge: 50,
+    'aria-label': 'Resize workbench sidebar',
+  });
 
   // ZCode-style chooser: Escape backs out without changing open sections.
   useEffect(() => {
@@ -133,60 +129,6 @@ export function RightDrawer({
     return () => document.removeEventListener('keydown', onKey);
   }, [open, chooserActive, onClose]);
 
-  // Stop dragging if the component unmounts mid-drag.
-  useEffect(() => {
-    if (!isDragging) return;
-    const stop = () => setIsDragging(false);
-    window.addEventListener('mouseup', stop);
-    window.addEventListener('touchend', stop);
-    return () => {
-      window.removeEventListener('mouseup', stop);
-      window.removeEventListener('touchend', stop);
-    };
-  }, [isDragging]);
-
-  // Re-clamp when the window shrinks below the stored drawer width — the
-  // drawer previously overflowed the viewport until the next drag.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const onResize = () => {
-      setBaseWidth((w) => clampWidth(w));
-    };
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
-  const resizeByKeyboard = (delta: number) => {
-    setWidth(clampWidth(width + delta));
-  };
-
-  const startResize = (clientX: number) => {
-    const startX = clientX;
-    const startW = width;
-    setIsDragging(true);
-
-    const onMove = (ev: MouseEvent | TouchEvent) => {
-      const next = 'touches' in ev && ev.touches.length
-        ? ev.touches[0].clientX
-        : (ev as MouseEvent).clientX;
-      // Right drawer expands when dragged left (delta is negative on leftward drag).
-      const delta = startX - next;
-      setWidth(clampWidth(startW + delta));
-    };
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove as (e: MouseEvent) => void);
-      window.removeEventListener('mouseup', onUp);
-      window.removeEventListener('touchmove', onMove as (e: TouchEvent) => void);
-      window.removeEventListener('touchend', onUp);
-      setIsDragging(false);
-    };
-
-    window.addEventListener('mousemove', onMove as (e: MouseEvent) => void);
-    window.addEventListener('mouseup', onUp);
-    window.addEventListener('touchmove', onMove as (e: TouchEvent) => void, { passive: true });
-    window.addEventListener('touchend', onUp);
-  };
-
   // Keep AnimatePresence mounted so exit width/opacity can play.
   // Part 15.4 hard rule — content renders in the middle column: the drawer
   // OVERLAYS the right edge (absolute inside the relative .august-content-area)
@@ -209,40 +151,12 @@ export function RightDrawer({
           {/* Inner shell keeps content at target width while the outer panel animates. */}
           <div className="flex h-full min-h-0 flex-col" style={{ width }} data-testid="drawer-inner">
             <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize workbench sidebar"
-              aria-valuemin={MIN_WIDTH}
-              aria-valuemax={Math.max(MIN_WIDTH, Math.floor(window.innerWidth * MAX_VIEWPORT_FRACTION))}
-              aria-valuenow={Math.round(width)}
+              {...handleProps}
               aria-valuetext={`${Math.round(width)} pixels`}
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'ArrowLeft') {
-                  e.preventDefault();
-                  resizeByKeyboard(e.shiftKey ? 50 : 10);
-                } else if (e.key === 'ArrowRight') {
-                  e.preventDefault();
-                  resizeByKeyboard(e.shiftKey ? -50 : -10);
-                } else if (e.key === 'Home') {
-                  e.preventDefault();
-                  setWidth(MIN_WIDTH);
-                } else if (e.key === 'End') {
-                  e.preventDefault();
-                  setWidth(Math.max(MIN_WIDTH, Math.floor(window.innerWidth * MAX_VIEWPORT_FRACTION)));
-                }
-              }}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                startResize(e.clientX);
-              }}
-              onTouchStart={(e) => {
-                if (e.touches.length) startResize(e.touches[0].clientX);
-              }}
               className={`absolute top-0 left-0 z-20 h-full w-1 cursor-col-resize select-none touch-none transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/60 hover:bg-primary/40 ${isDragging ? 'bg-primary/50' : 'bg-transparent'}`}
             />
 
-            <div className="august-right-drawer-header flex h-10 shrink-0 items-center justify-between border-b border-border/60 bg-transparent px-3">
+            <div className="august-right-drawer-header flex h-[var(--shell-drawer-header-h)] shrink-0 items-center justify-between border-b border-border/60 bg-transparent px-3">
               {showingFile ? (
                 <div className="flex min-w-0 items-center gap-2">
                   {HeaderFileIcon && (

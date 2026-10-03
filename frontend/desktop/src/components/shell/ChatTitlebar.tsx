@@ -82,13 +82,28 @@ export function ChatTitlebar({
   // ── Window controls (Tauri only) ──
   useEffect(() => {
     if (!isTauri) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
     void (async () => {
       try {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         const win = getCurrentWindow();
         setIsMaximized(await win.isMaximized());
+        // External maximize (Win+Up, drag-to-edge, double-click on the drag
+        // region) never routes through this component's toggle, so the
+        // restore glyph stayed stale (2026-10-03 audit A1 §2).
+        unlisten = await win.onResized(async () => {
+          if (disposed) return;
+          try {
+            setIsMaximized(await win.isMaximized());
+          } catch { /* silent */ }
+        });
       } catch { /* silent */ }
     })();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
 
   const handleMinimize = async () => {
@@ -120,7 +135,7 @@ export function ChatTitlebar({
   return (
     <header
       data-tauri-drag-region
-      className="august-titlebar h-10 bg-background flex items-center justify-between shrink-0 select-none border-b border-border/25 px-2"
+      className="august-titlebar h-[var(--shell-titlebar-h)] bg-background flex items-center justify-between shrink-0 select-none border-b border-border/25 px-2"
     >
       <div className="flex items-center min-w-0 gap-1" data-tauri-drag-region>
         {sidebarCollapsed && (
@@ -276,30 +291,33 @@ export function ChatTitlebar({
           workersBadge={workersBadge}
         />
 
-        {/* Windows-style title bar buttons */}
-        <div className="flex items-stretch ml-1 -mr-2">
-          <button
-            onClick={() => { void handleMinimize(); }}
-            className="w-[38px] h-10 flex items-center justify-center text-muted-foreground/70 hover:bg-white/10 transition-colors"
-            aria-label="Minimize"
-          >
-            <Minus className="size-3" />
-          </button>
-          <button
-            onClick={() => { void handleToggleMaximize(); }}
-            className="w-[38px] h-10 flex items-center justify-center text-muted-foreground/70 hover:bg-white/10 transition-colors"
-            aria-label={isMaximized ? "Restore" : "Maximize"}
-          >
-            {isMaximized ? <Minimize2 className="size-3" /> : <Square className="size-3" />}
-          </button>
-          <button
-            onClick={() => { void handleClose(); }}
-            className="w-[42px] h-10 flex items-center justify-center text-muted-foreground/70 hover:bg-danger hover:text-white transition-colors"
-            aria-label="Close"
-          >
-            <X className="size-3" />
-          </button>
-        </div>
+        {/* Windows-style title bar buttons — Tauri only (dead no-ops in the
+            mobile WebView). One height token, one width, token hover fills. */}
+        {isTauri && (
+          <div className="flex items-stretch ml-1 -mr-2 h-[var(--shell-titlebar-h)]">
+            <button
+              onClick={() => { void handleMinimize(); }}
+              className="w-10 flex items-center justify-center text-muted-foreground/70 hover:bg-accent transition-colors"
+              aria-label="Minimize"
+            >
+              <Minus className="size-3" />
+            </button>
+            <button
+              onClick={() => { void handleToggleMaximize(); }}
+              className="w-10 flex items-center justify-center text-muted-foreground/70 hover:bg-accent transition-colors"
+              aria-label={isMaximized ? "Restore" : "Maximize"}
+            >
+              {isMaximized ? <Minimize2 className="size-3" /> : <Square className="size-3" />}
+            </button>
+            <button
+              onClick={() => { void handleClose(); }}
+              className="w-10 flex items-center justify-center text-muted-foreground/70 hover:bg-danger hover:text-danger-foreground transition-colors"
+              aria-label="Close"
+            >
+              <X className="size-3" />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

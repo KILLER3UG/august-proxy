@@ -35,6 +35,9 @@ export function ConfirmDialog({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
+        // One Escape closes one layer: stop the Settings shell's own
+        // window-level handler from also firing (2026-10-03 audit A3 §8).
+        e.stopPropagation();
         onCancel();
       }
     };
