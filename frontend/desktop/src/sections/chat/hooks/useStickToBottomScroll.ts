@@ -19,8 +19,21 @@ import {
   type RefObject,
 } from 'react';
 import { useReducedMotion } from '@/lib/motion';
+import { OVERSIZE_STREAMING_ROW_RATIO } from '@/lib/chat-scroll';
 
 const FREE_CLASS = 'chat-scroll--free';
+
+
+/** The live streaming message row (`.chat-streaming-block` inside the last
+ *  message), measured against the viewport height. */
+function streamingRowExceedsViewport(scrollEl: HTMLElement): boolean {
+  const block = scrollEl.querySelector('.chat-streaming-block');
+  const row = block?.closest('[data-artifact-source]') as HTMLElement | null;
+  if (!row) return false;
+  const viewport = scrollEl.clientHeight;
+  if (viewport <= 0) return false;
+  return row.offsetHeight > viewport * OVERSIZE_STREAMING_ROW_RATIO;
+}
 
 export function useStickToBottomScroll({
   scrollRef,
@@ -218,6 +231,15 @@ export function useStickToBottomScroll({
     const tick = () => {
       if (!alive) return;
       const el = getScrollTarget();
+      // A streaming message taller than the viewport has no stable anchor:
+      // following its bottom drags the content ABOVE the user away instead of
+      // revealing new text (audit P1). Hold position and let the "New content"
+      // pill do its job — the user can still jump to the live tail.
+      if (el && pinnedToBottomRef.current && streamingRowExceedsViewport(el)) {
+        setPinned(false);
+        raf = requestAnimationFrame(tick);
+        return;
+      }
       if (el && pinnedToBottomRef.current) {
         const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
         const gap = maxScroll - el.scrollTop;
@@ -249,6 +271,7 @@ export function useStickToBottomScroll({
     pinnedToBottomRef,
     applyScrollTop,
     reducedMotion,
+    setPinned,
   ]);
 
   // When idle (or stream just ended), snap if anchoring slipped.

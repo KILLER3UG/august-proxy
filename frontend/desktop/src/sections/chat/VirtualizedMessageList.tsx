@@ -34,6 +34,10 @@ export function VirtualizedMessageList({
     count: messages.length,
     getScrollElement: () => scrollParentRef.current,
     estimateSize: () => ESTIMATE_ROW_PX,
+    // Match the short transcript's `space-y-5` rhythm: virtualized rows are
+    // absolutely positioned, so without an explicit gap the vertical rhythm
+    // visibly changed as the transcript crossed the 40-message threshold.
+    gap: 20,
     // Key measurements by message id, not index: the virtualizer instance
     // survives session switches, and index keys would apply the previous
     // session's measured row heights to the new transcript's layout.

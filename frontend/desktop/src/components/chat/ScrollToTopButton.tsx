@@ -2,7 +2,7 @@ import { useEffect, useState, type RefObject } from 'react';
 import { ChevronUp } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
-const SHOW_AFTER_PX = 200;
+import { SHOW_SCROLL_TO_TOP_PX as SHOW_AFTER_PX } from '@/lib/chat-scroll';
 
 /**
  * Floating scroll-to-top control. Mount next to the scroll-to-bottom chevron

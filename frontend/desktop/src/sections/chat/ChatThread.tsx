@@ -34,6 +34,7 @@ import {
 } from '@/store/contextSectionsLive';
 import { AnimatePresence } from 'framer-motion';
 import { SCROLL_TO_TOP_THRESHOLD } from '@/components/chat/ScrollToTopButton';
+import { NEAR_BOTTOM_PX } from '@/lib/chat-scroll';
 import { ModelVisibilityModal } from '@/components/overlays/ModelVisibilityModal';
 import { ArenaLaunchModal } from './composer/ArenaLaunchModal';
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
@@ -399,7 +400,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const messageVirtRef = useRef<{ scrollToIndex: (index: number, opts?: object) => void } | null>(null);
   const mountedRef = useRef(false);
 
-  const NEAR_BOTTOM_PX = 80;
+
 
   const composerDropdownRef = useRef<ComposerDropdownApi | null>(null);
   const dropdownClosers = useMemo(
@@ -472,6 +473,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         setScrolledFromTop(scrollable.scrollTop > SCROLL_TO_TOP_THRESHOLD);
         return;
       }
+      if (nearBottom) setHasNewContentWhileUnpinned(false);
       // Re-pin only when the user scrolls back near the bottom; upward release
       // is handled immediately by wheel/touch in useStickToBottomScroll.
       setPinned(nearBottom);
@@ -498,13 +500,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     contentVersionRef.current = 0;
     setHasNewContentWhileUnpinned(false);
   }, [sessionId]);
+  const lastPillAtRef = useRef(0);
   useEffect(() => {
     contentVersionRef.current += 1;
     if (contentVersionRef.current <= 1) return;
-    if (!pinnedToBottomRef.current) {
-      setHasNewContentWhileUnpinned(true);
-    }
-  }, [messages, streaming]);
+    if (pinnedToBottomRef.current) return;
+    // Throttle: the transcript grows on every stream frame, and the pill
+    // only needs to APPEAR once, not be re-armed ~30×/s.
+    const now = performance.now();
+    if (now - lastPillAtRef.current < 1500) return;
+    lastPillAtRef.current = now;
+    setHasNewContentWhileUnpinned(true);
+  }, [messages, streaming, pinnedToBottomRef]);
 
   const isTurnVisible = (turnSessionId: string | null) =>
     mountedRef.current && visibleSessionId === turnSessionId;
