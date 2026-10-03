@@ -226,7 +226,7 @@ export function ActivitySummary({
           <>
             <ChevronDown
               className={cn(
-                'size-3.5 shrink-0 text-muted-foreground transition-transform duration-200',
+                'size-3 shrink-0 text-muted-foreground transition-transform duration-200',
                 open && 'rotate-180',
               )}
               aria-hidden
@@ -242,7 +242,7 @@ export function ActivitySummary({
               </span>
               {!live && errors > 0 ? (
                 <AlertCircle
-                  className="size-3.5 shrink-0 text-danger"
+                  className="size-3 shrink-0 text-danger"
                   aria-label="Some steps failed"
                 />
               ) : null}
@@ -333,7 +333,7 @@ export function ActivitySummary({
             ) : null}
             <ChevronDown
               className={cn(
-                'size-3.5 shrink-0 text-muted-foreground transition-transform duration-200',
+                'size-3 shrink-0 text-muted-foreground transition-transform duration-200',
                 open && 'rotate-180',
               )}
               aria-hidden

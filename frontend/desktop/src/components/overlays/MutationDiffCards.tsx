@@ -294,7 +294,7 @@ export function MutationDiffCards({
     >
       {items.length > 1 && (
         <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
-          <ShieldAlert className="size-3.5 text-warning" />
+          <ShieldAlert className="size-3 text-warning" />
           <span className="font-medium">
             {items.length} changes need approval — confirm each one
           </span>

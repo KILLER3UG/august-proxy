@@ -253,7 +253,7 @@ export function RunsPage() {
           className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs text-primary-foreground shrink-0"
           data-testid="runs-new"
         >
-          <Plus className="size-3.5" />
+          <Plus className="size-3" />
           New run
         </button>
       </div>

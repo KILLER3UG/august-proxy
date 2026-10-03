@@ -69,7 +69,7 @@ export function SettingsTabs({
               {Icon && (
                 <Icon
                   className={cn(
-                    'size-3.5 mt-0.5 shrink-0',
+                    'size-3 mt-0.5 shrink-0',
                     active ? 'text-primary' : 'text-muted-foreground',
                   )}
                 />
@@ -116,7 +116,7 @@ export function SettingsTabs({
                 : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground',
             )}
           >
-            {Icon && <Icon className="size-3.5" />}
+            {Icon && <Icon className="size-3" />}
             {tabLabel}
           </button>
         );

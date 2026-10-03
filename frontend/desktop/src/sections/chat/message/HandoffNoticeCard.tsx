@@ -24,7 +24,7 @@ export function HandoffNoticeCard({
     <div className="text-sm text-muted-foreground w-full py-0.5" data-slot="handoff-notice">
       <DisclosureRow onToggle={() => setOpen(!open)} open={open}>
         <span className="flex min-w-0 items-center gap-2">
-          <ArrowRightLeft className="size-3.5 shrink-0 text-muted-foreground/80" />
+          <ArrowRightLeft className="size-3 shrink-0 text-muted-foreground/80" />
           <span className="text-[0.78125rem] font-medium leading-5 text-muted-foreground/85">
             {label}
             {toModel && <span className="text-muted-foreground/55"> → {toModel}</span>}

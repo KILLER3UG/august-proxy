@@ -52,7 +52,7 @@ export function Section({
                 type="button"
                 onClick={onToggleSort}
                 className="text-sidebar-foreground/40 hover:text-sidebar-foreground p-0.5 rounded transition-colors hover:bg-white/[0.04]"
-                title="Sort chats"
+                title="Sort chats" aria-label="Sort chats"
               >
                 <ArrowUpDown className="size-3" />
               </button>
@@ -61,7 +61,7 @@ export function Section({
               <button
                 onClick={onUploadFolder}
                 className="text-sidebar-foreground/30 hover:text-sidebar-foreground/55 p-0.5 rounded transition-colors hover:bg-white/[0.03]"
-                title="Open Workspace Folder"
+                title="Open Workspace Folder" aria-label="Open Workspace Folder"
               >
                 <FolderPlus className="size-3" />
               </button>
@@ -174,14 +174,14 @@ export function FolderHeader({
         <button
           onClick={onRename}
           className="p-0.5 hover:bg-white/[0.06] rounded text-sidebar-foreground/40 hover:text-sidebar-foreground/70"
-          title="Rename Folder"
+          title="Rename Folder" aria-label="Rename Folder"
         >
           <Edit3 className="size-2.5" />
         </button>
         <button
           onClick={onDelete}
           className="p-0.5 hover:bg-white/[0.06] rounded text-destructive/70 hover:text-destructive"
-          title="Delete Folder"
+          title="Delete Folder" aria-label="Delete Folder"
         >
           <Trash2 className="size-2.5" />
         </button>

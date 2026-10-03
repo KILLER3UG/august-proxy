@@ -130,7 +130,7 @@ export function ChatTitlebar({
             title="Show sidebar"
             aria-label="Show sidebar"
           >
-            <PanelLeftClose className="size-3.5" />
+            <PanelLeftClose className="size-3" />
           </button>
         )}
 
@@ -142,7 +142,7 @@ export function ChatTitlebar({
             title="Back"
             aria-label="Back"
           >
-            <ChevronLeft className="size-3.5" />
+            <ChevronLeft className="size-3" />
           </button>
           <button
             type="button"
@@ -151,7 +151,7 @@ export function ChatTitlebar({
             title="Forward"
             aria-label="Forward"
           >
-            <ChevronRight className="size-3.5" />
+            <ChevronRight className="size-3" />
           </button>
         </div>
 
@@ -164,7 +164,7 @@ export function ChatTitlebar({
                 <button
                   type="button"
                   className="group flex items-center gap-1 px-2 py-1 rounded-md hover:bg-accent/60 text-left transition-colors min-w-0"
-                  title="Session menu"
+                  title="Session menu" aria-label="Session menu"
                   data-testid="titlebar-session-trigger"
                 >
                   <h1 className="text-[0.8125rem] font-medium text-foreground/90 min-w-0 truncate">
@@ -185,7 +185,7 @@ export function ChatTitlebar({
                     if (trimmed && trimmed !== session.title) renameSession(session.id, trimmed);
                   }}
                 >
-                  <Pencil className="size-3.5 mr-2" /> Rename chat…
+                  <Pencil className="size-3 mr-2" /> Rename chat…
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => {
@@ -193,7 +193,7 @@ export function ChatTitlebar({
                   }}
                   disabled={!session.workspacePath}
                 >
-                  <ExternalLink className="size-3.5 mr-2" /> Open workspace folder
+                  <ExternalLink className="size-3 mr-2" /> Open workspace folder
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => {
@@ -203,7 +203,7 @@ export function ChatTitlebar({
                   }}
                   disabled={!session.workspacePath}
                 >
-                  <Copy className="size-3.5 mr-2" /> Copy workspace path
+                  <Copy className="size-3 mr-2" /> Copy workspace path
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -251,7 +251,7 @@ export function ChatTitlebar({
           className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md hover:bg-accent text-xs text-muted-foreground hover:text-foreground transition"
           title="Open Artifacts"
         >
-          <FileText className="size-3.5" />
+          <FileText className="size-3" />
           <span>Artifacts</span>
         </button>
 
@@ -266,7 +266,7 @@ export function ChatTitlebar({
           className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md hover:bg-accent text-xs text-muted-foreground hover:text-foreground transition"
           title="Share / Copy Link"
         >
-          <Share2 className="size-3.5" />
+          <Share2 className="size-3" />
           <span>Share</span>
         </button>
 
@@ -283,7 +283,7 @@ export function ChatTitlebar({
             className="w-[38px] h-10 flex items-center justify-center text-muted-foreground/70 hover:bg-white/10 transition-colors"
             aria-label="Minimize"
           >
-            <Minus className="size-3.5" />
+            <Minus className="size-3" />
           </button>
           <button
             onClick={() => { void handleToggleMaximize(); }}
@@ -297,7 +297,7 @@ export function ChatTitlebar({
             className="w-[42px] h-10 flex items-center justify-center text-muted-foreground/70 hover:bg-red-500 hover:text-white transition-colors"
             aria-label="Close"
           >
-            <X className="size-3.5" />
+            <X className="size-3" />
           </button>
         </div>
       </div>

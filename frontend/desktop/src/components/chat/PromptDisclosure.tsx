@@ -35,8 +35,8 @@ export function PromptDisclosure({ content, tokens, label = 'PROMPT', className 
         )}
         aria-expanded={open}
       >
-        {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-        <FileText size={11} />
+        {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+        <FileText className="size-3" />
         <span className="font-medium">{label}</span>
         {typeof tokens === 'number' && (
           <span className="ml-1 text-muted-foreground/50 normal-case tracking-normal">

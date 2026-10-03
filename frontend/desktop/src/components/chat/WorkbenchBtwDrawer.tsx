@@ -26,7 +26,7 @@ export function WorkbenchBtwDrawer({
       <div className="flex items-start justify-between gap-3 border-b border-border p-3">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <Bot className="size-3.5 text-primary" />
+            <Bot className="size-3 text-primary" />
             Workbench BTW
           </div>
           <p className="mt-0.5 text-2xs text-muted-foreground">
@@ -34,7 +34,7 @@ export function WorkbenchBtwDrawer({
           </p>
         </div>
         <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close BTW drawer">
-          <X className="size-3.5" />
+          <X className="size-3" />
         </Button>
       </div>
       <div className="max-h-[320px] overflow-auto p-3 text-xs leading-relaxed">

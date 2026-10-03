@@ -252,7 +252,7 @@ export function WorkspaceUsageSection() {
           onClick={handleRefresh}
           className="flex items-center gap-2 rounded-xl border border-white/[0.1] bg-[#1c1d22]/90 backdrop-blur-md px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-[#25272e] shadow-lg transition-all"
         >
-          <RefreshCw className={cn('size-3.5', statsQ.isFetching ? 'animate-spin' : '')} />
+          <RefreshCw className={cn('size-3', statsQ.isFetching ? 'animate-spin' : '')} />
           <span>Refresh</span>
         </button>
       </div>

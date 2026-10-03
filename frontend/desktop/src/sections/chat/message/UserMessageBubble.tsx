@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, History } from 'lucide-react';
+import { Check, Copy, History, Pencil, RotateCw } from 'lucide-react';
 import { cn, formatClockTime } from '@/lib/utils';
 import type { ChatMessage } from '@/types/chat';
 import { Markdown } from '../ChatMarkdown';
@@ -157,9 +157,7 @@ export function UserMessageBubble({
             {copied ? (
               <Check className="size-3 text-success" />
             ) : (
-              <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
+              <Copy className="size-3" />
             )}
           </button>
         )}
@@ -167,15 +165,14 @@ export function UserMessageBubble({
           onClick={onStartEdit}
           className="rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
           title="Edit message"
+          aria-label="Edit message"
         >
-          <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>
-          </svg>
+          <Pencil className="size-3" />
         </button>
         <button
           onClick={onRevert}
           className="rounded p-1 font-mono text-2xs leading-none text-muted-foreground transition hover:bg-muted hover:text-foreground"
-          title="Revert changes after this message"
+          title="Revert changes after this message" aria-label="Revert changes after this message"
         >
           &larr;
         </button>
@@ -185,18 +182,11 @@ export function UserMessageBubble({
             disabled={streaming || isRegenerating}
             className="rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50"
             title="Regenerate response"
+            aria-label="Regenerate response"
           >
-            <svg
+            <RotateCw
               className={cn('size-3', isRegenerating && 'animate-spin')}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-            </svg>
+            />
           </button>
         )}
       </div>

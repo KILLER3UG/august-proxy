@@ -218,7 +218,7 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
           <div className="mt-5 flex justify-center gap-2">
             <Button disabled={retrying} onClick={() => { void onRetry(); }}>
               {retrying ? (
-                <RefreshCw className="mr-1.5 size-3.5 animate-spin" />
+                <RefreshCw className="mr-1.5 size-3 animate-spin" />
               ) : null}
               {retrying ? 'Retrying…' : 'Retry setup'}
             </Button>

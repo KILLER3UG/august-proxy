@@ -60,10 +60,14 @@ function renderCode(token: Tokens.Code): string {
     ? escapeHtml(token.text)
     : highlightCode(token.text, rawLang);
 
+  // The code block renderer returns raw HTML (marked), so the copy glyph
+  // cannot be a React component. These are lucide's official `copy` paths —
+  // keep byte-identical with the lucide-react Copy icon so every copy
+  // affordance in the app renders the same glyph.
   const copyIconSvg =
-    `<svg class="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
-      `<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>` +
-      `<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>` +
+    `<svg class="size-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+      `<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>` +
+      `<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>` +
     `</svg>`;
 
   return (

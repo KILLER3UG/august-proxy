@@ -124,7 +124,7 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
             type="button"
             onClick={clearAll}
             className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-3xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
-            title="Clear all queued messages"
+            title="Clear all queued messages" aria-label="Clear all queued messages"
           >
             <Trash2 className="size-3" />
             Clear all
@@ -159,7 +159,7 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
             title="Drag to reorder"
             aria-label="Drag to reorder"
           >
-            <GripVertical className="size-3.5" />
+            <GripVertical className="size-3" />
           </span>
           <span
             className={cn(

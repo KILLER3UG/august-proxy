@@ -41,7 +41,7 @@ export function SubagentProposalBar({ sessionId }: { sessionId: string | null })
       data-testid="subagent-proposal-bar"
     >
       <div className="flex items-center gap-2">
-        <Play className="size-3.5 text-primary" />
+        <Play className="size-3 text-primary" />
         <p className="font-medium text-foreground">
           Agent breakdown proposed — {count} sub-agent{count === 1 ? '' : 's'} ready to launch
         </p>
@@ -51,7 +51,7 @@ export function SubagentProposalBar({ sessionId }: { sessionId: string | null })
           className="ml-auto p-1 rounded text-muted-foreground hover:text-foreground"
           onClick={() => sessionId && clearSubagentProposal(sessionId)}
         >
-          <X className="size-3.5" />
+          <X className="size-3" />
         </button>
       </div>
       {(proposal.workBreakdown ?? []).slice(0, 4).map((item, i) => (

@@ -149,7 +149,7 @@ export function ProviderDetailForm({
                 title="Edit provider name"
                 className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition"
               >
-                <Pencil className="size-3.5" />
+                <Pencil className="size-3" />
               </button>
             </>
           )}
@@ -266,7 +266,7 @@ export function ProviderDetailForm({
           <p className="text-sm font-medium mb-2">Model list</p>
           {provider.models.length > 0 && (
             <div className="relative mb-2">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/40 pointer-events-none" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3 text-muted-foreground/40 pointer-events-none" />
               <Input
                 value={modelQuery}
                 onChange={(e) => setModelQuery(e.target.value)}

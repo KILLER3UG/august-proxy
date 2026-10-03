@@ -113,7 +113,7 @@ export function InitAugCard({ draft, existing, workspacePath, sessionId, onClose
           className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
           aria-label="Dismiss"
         >
-          <X size={16} />
+          <X className="size-4" />
         </button>
       </div>
 
@@ -151,14 +151,14 @@ export function InitAugCard({ draft, existing, workspacePath, sessionId, onClose
           disabled={busy}
           className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
         >
-          <Check size={14} /> {currentExisting ? 'Refine & Save' : 'Save AUG.md'}
+          <Check className="size-3" /> {currentExisting ? 'Refine & Save' : 'Save AUG.md'}
         </button>
         <button
           onClick={() => { void regenerate(); }}
           disabled={busy}
           className="flex items-center gap-1 rounded bg-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-100 hover:bg-zinc-600 disabled:opacity-50"
         >
-          <RefreshCw size={14} /> Regenerate
+          <RefreshCw className="size-3" /> Regenerate
         </button>
         <button
           onClick={close}

@@ -30,7 +30,7 @@ export function LiveToolRail({ events }: LiveToolRailProps) {
             className="bg-card border border-border rounded-md p-2 flex items-start gap-2 text-xs"
           >
             <Icon
-              className={`size-3.5 mt-0.5 shrink-0 ${
+              className={`size-3 mt-0.5 shrink-0 ${
                 e.status === 'running' ? 'animate-spin text-warning' : 'text-success'
               }`}
             />

@@ -431,11 +431,11 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
         aria-expanded={expanded}
       >
         {expanded ? (
-          <ChevronDown className="size-3.5 text-muted-foreground" />
+          <ChevronDown className="size-3 text-muted-foreground" />
         ) : (
-          <ChevronRight className="size-3.5 text-muted-foreground" />
+          <ChevronRight className="size-3 text-muted-foreground" />
         )}
-        <Brain className="size-3.5 text-primary" />
+        <Brain className="size-3 text-primary" />
         <span className="text-sm font-medium text-foreground">Learning</span>
         <span className="min-w-0 flex-1 truncate text-right text-[0.71875rem] text-muted-foreground">
           {summaryLine}
@@ -609,7 +609,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
                           className="rounded p-1 text-success hover:bg-success/10"
                           aria-label="Approve draft"
                         >
-                          <Check className="size-3.5" />
+                          <Check className="size-3" />
                         </button>
                         <button
                           type="button"
@@ -619,7 +619,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
                           className="rounded p-1 text-destructive hover:bg-destructive/10"
                           aria-label="Reject draft"
                         >
-                          <X className="size-3.5" />
+                          <X className="size-3" />
                         </button>
                       </span>
                     </div>
@@ -783,7 +783,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
                       aria-label={`Roll back refine entry ${en.id}`}
                       className="shrink-0 rounded p-1 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
                     >
-                      <RotateCcw className="size-3.5" />
+                      <RotateCcw className="size-3" />
                     </button>
                   </li>
                 ))}

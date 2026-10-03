@@ -56,7 +56,7 @@ export function CameraPopover({
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 text-xs font-medium">
-          <Camera className="size-3.5 text-muted-foreground" />
+          <Camera className="size-3 text-muted-foreground" />
           Camera
           {isStreaming && (
             <span
@@ -149,7 +149,7 @@ export function CameraPopover({
               type="button"
               onClick={stop}
               className="inline-flex items-center justify-center gap-1.5 rounded-md bg-foreground/10 px-2 py-1.5 text-xs hover:bg-foreground/15"
-              title="Stop the camera stream"
+              title="Stop the camera stream" aria-label="Stop the camera stream"
             >
               <Square className="size-3" />
               Stop

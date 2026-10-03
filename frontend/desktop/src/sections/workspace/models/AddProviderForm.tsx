@@ -99,7 +99,7 @@ export function AddProviderForm({
               aria-label={showKey ? 'Hide API key' : 'Show API key'}
               className="absolute right-2 top-1/2 -translate-y-1/2 grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground transition"
             >
-              {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+              {showKey ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
             </button>
           </div>
         </WorkspaceField>
@@ -117,7 +117,7 @@ export function AddProviderForm({
             onClick={() => create.mutate()}
             disabled={!valid || create.isPending}
           >
-            {create.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+            {create.isPending ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
             Add provider
           </Button>
         </div>

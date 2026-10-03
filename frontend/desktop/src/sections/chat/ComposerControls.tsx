@@ -15,7 +15,7 @@ export function ToolBtn({ Icon, label, onClick, className, buttonRef }: { Icon: 
       title={label}
       aria-label={label}
     >
-      <Icon className="size-3.5" />
+      <Icon className="size-3" />
     </button>
   );
 }

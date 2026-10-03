@@ -117,7 +117,7 @@ export function ChangesPill({
           open && 'bg-muted/60',
         )}
       >
-        <FileDiff className="size-3.5 shrink-0 text-muted-foreground" />
+        <FileDiff className="size-3 shrink-0 text-muted-foreground" />
         <span className="font-medium text-foreground/90">Changes</span>
         <span className="font-mono tabular-nums text-emerald-500">+{added}</span>
         <span className="font-mono tabular-nums text-red-400">-{removed}</span>
@@ -149,7 +149,7 @@ export function ChangesPill({
                 onClick={() => setShowFiles((v) => !v)}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8125rem] text-foreground/90 transition hover:bg-muted/50"
               >
-                <FileDiff className="size-3.5 shrink-0 text-muted-foreground" />
+                <FileDiff className="size-3 shrink-0 text-muted-foreground" />
                 Changes
                 <span className="ml-auto font-mono tabular-nums text-2xs">
                   <span className="text-emerald-500">+{added}</span>{' '}
@@ -180,9 +180,9 @@ export function ChangesPill({
                 onClick={() => setView('branches')}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8125rem] text-foreground/90 transition hover:bg-muted/50"
               >
-                <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
+                <GitBranch className="size-3 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate font-mono">{current || '—'}</span>
-                <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
               </button>
               {/* Commit or push */}
               <button
@@ -194,9 +194,9 @@ export function ChangesPill({
                 }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8125rem] text-foreground/90 transition hover:bg-muted/50"
               >
-                <GitCommitHorizontal className="size-3.5 shrink-0 text-muted-foreground" />
+                <GitCommitHorizontal className="size-3 shrink-0 text-muted-foreground" />
                 Commit or push
-                <ChevronRight className="ml-auto size-3.5 shrink-0 text-muted-foreground" />
+                <ChevronRight className="ml-auto size-3 shrink-0 text-muted-foreground" />
               </button>
 
               {planSteps.length > 0 && (
@@ -371,7 +371,7 @@ function CommitModal({
       >
         <div className="flex items-center gap-2">
           <span className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-foreground/90">
-            <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
+            <GitBranch className="size-3 shrink-0 text-muted-foreground" />
             <span className="max-w-[220px] truncate font-mono">{branch || '—'}</span>
           </span>
           <span className="ml-auto font-mono text-xs tabular-nums">
@@ -391,7 +391,7 @@ function CommitModal({
           />
           <button
             type="button"
-            title="Generate a commit message from the diff"
+            title="Generate a commit message from the diff" aria-label="Generate a commit message from the diff"
             data-testid="generate-commit-message"
             disabled={busy !== null}
             onClick={() => void generateMessage().then((msg) => msg && setMessage(msg))}
@@ -411,7 +411,7 @@ function CommitModal({
             checked={includeUnstaged}
             onChange={(e) => setIncludeUnstaged(e.target.checked)}
             data-testid="include-unstaged"
-            className="size-3.5 accent-[var(--dt-primary)]"
+            className="size-3 accent-[var(--dt-primary)]"
           />
           Include unstaged changes
           <span className="ml-auto text-2xs text-muted-foreground">
@@ -452,7 +452,7 @@ function CommitModal({
           >
             <ArrowUp className="size-4 shrink-0" />
             Push
-            {busy !== null && <Loader2 className="ml-auto size-3.5 animate-spin" />}
+            {busy !== null && <Loader2 className="ml-auto size-3 animate-spin" />}
           </button>
         </div>
       </div>

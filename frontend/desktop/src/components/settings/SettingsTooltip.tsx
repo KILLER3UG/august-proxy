@@ -91,7 +91,7 @@ export function SettingsTooltip({
             setOpen((o) => !o);
           }}
         >
-          <HelpCircle className="size-3.5" />
+          <HelpCircle className="size-3" />
         </button>
       )}
       {open && (

@@ -184,7 +184,7 @@ function ViewModeToggle({
           hasRenderable && !showSource && 'bg-muted/60 text-foreground',
         )}
       >
-        <Eye size={14} />
+        <Eye className="size-3" />
       </button>
       <button
         type="button"
@@ -198,7 +198,7 @@ function ViewModeToggle({
           showSource && 'bg-muted/60 text-foreground',
         )}
       >
-        <Code2 size={14} />
+        <Code2 className="size-3" />
       </button>
     </div>
   );
@@ -235,7 +235,7 @@ function CopyFileButton({ content }: { content: string }) {
       data-testid="file-preview-copy"
       className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition hover:bg-muted/50 hover:text-foreground cursor-pointer"
     >
-      {copied ? <Check size={14} className="text-success" /> : <Copy size={14} />}
+      {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
       <span className="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
     </button>
   );
@@ -251,7 +251,7 @@ function ZoomControls({ zoom, setZoom }: { zoom: number; setZoom: (fn: (z: numbe
         data-testid="file-preview-zoom-out"
         className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
       >
-        <Minus size={14} />
+        <Minus className="size-3" />
       </button>
       <span
         className="min-w-[3rem] text-center text-2xs tabular-nums text-muted-foreground"
@@ -266,7 +266,7 @@ function ZoomControls({ zoom, setZoom }: { zoom: number; setZoom: (fn: (z: numbe
         data-testid="file-preview-zoom-in"
         className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
       >
-        <Plus size={14} />
+        <Plus className="size-3" />
       </button>
     </>
   );
@@ -330,16 +330,16 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
             data-testid="file-preview-fullscreen"
             className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground cursor-pointer"
           >
-            <Maximize2 size={14} />
+            <Maximize2 className="size-3" />
           </button>
           <button
             type="button"
             onClick={closeRightDrawer}
-            title="Close preview"
+            title="Close preview" aria-label="Close preview"
             data-testid="file-preview-close"
             className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground cursor-pointer"
           >
-            <X size={15} />
+            <X className="size-4" />
           </button>
         </div>
 
@@ -379,7 +379,7 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
                 data-testid="file-preview-fullscreen-exit"
                 className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
               >
-                <Minimize2 size={14} />
+                <Minimize2 className="size-3" />
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-auto">

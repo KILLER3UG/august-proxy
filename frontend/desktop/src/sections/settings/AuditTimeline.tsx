@@ -132,7 +132,7 @@ function TimelineRow({ entry, expanded, onToggle }: { entry: AuditEntry; expande
                     'border-white/30 bg-card'
                 )} aria-hidden="true" />
                 <div className="flex items-center gap-2 text-sm">
-                    {expanded ? <ChevronDown className="size-3.5 text-muted-foreground" /> : <ChevronRight className="size-3.5 text-muted-foreground" />}
+                    {expanded ? <ChevronDown className="size-3 text-muted-foreground" /> : <ChevronRight className="size-3 text-muted-foreground" />}
                     <span className="font-mono text-xs text-muted-foreground">{formatTimeAgo(new Date(entry.at))}</span>
                     <span className="text-foreground/90 font-medium truncate">{entry.action}</span>
                     {entry.target && <code className="text-xs text-muted-foreground truncate">{entry.target}</code>}

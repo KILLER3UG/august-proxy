@@ -86,7 +86,7 @@ export function WhatsNewModal({ open, onClose }: Props) {
               title="Refresh"
               aria-label="Refresh"
             >
-              <RefreshCw className={`size-3.5 ${query.isFetching ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`size-3 ${query.isFetching ? 'animate-spin' : ''}`} />
             </button>
             <button
               type="button"
@@ -95,7 +95,7 @@ export function WhatsNewModal({ open, onClose }: Props) {
               title="Close"
               aria-label="Close"
             >
-              <X className="size-3.5" />
+              <X className="size-3" />
             </button>
           </div>
         </header>
@@ -127,7 +127,7 @@ export function WhatsNewModal({ open, onClose }: Props) {
                     className="rounded-xl border border-border/70 bg-muted/30 px-3 py-2.5"
                   >
                     <div className="flex items-start gap-2">
-                      <Package className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                      <Package className="mt-0.5 size-3 shrink-0 text-primary" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="truncate text-sm font-medium text-foreground">
@@ -178,7 +178,7 @@ export function WhatsNewModal({ open, onClose }: Props) {
                       className="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left hover:bg-accent/60 transition"
                       onClick={() => c.url && void openExternal(c.url)}
                     >
-                      <GitCommitHorizontal className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                      <GitCommitHorizontal className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm text-foreground">{c.message || '(no message)'}</p>
                         <p className="mt-0.5 text-2xs text-muted-foreground">

@@ -190,7 +190,7 @@ export function BoardPage() {
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs text-primary-foreground disabled:opacity-50"
             data-testid="board-launch"
           >
-            {launching ? <Loader2 className="size-3.5 animate-spin" /> : <Rocket className="size-3.5" />}
+            {launching ? <Loader2 className="size-3 animate-spin" /> : <Rocket className="size-3" />}
             Launch {goals.trim().split('\n').filter((g) => g.trim()).length || ''} agent
             {goals.trim().split('\n').filter((g) => g.trim()).length === 1 ? '' : 's'}
           </button>

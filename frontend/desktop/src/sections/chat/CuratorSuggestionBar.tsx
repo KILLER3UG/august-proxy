@@ -83,7 +83,7 @@ export function CuratorSuggestionBar() {
       ))}
       <button
         type="button"
-        title="Dismiss"
+        title="Dismiss" aria-label="Dismiss"
         className="p-0.5 rounded text-muted-foreground hover:bg-muted"
         onClick={() => setReport(null)}
       >

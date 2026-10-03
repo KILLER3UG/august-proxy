@@ -84,7 +84,7 @@ export function HistoryPage() {
         </button>
       </div>
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Search className="absolute left-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -117,7 +117,7 @@ export function HistoryPage() {
                       className="flex min-w-0 flex-1 items-center gap-2 text-left"
                       data-testid={`history-session-${s.id}`}
                     >
-                      <MessageSquare className="size-3.5 shrink-0 text-muted-foreground/70" />
+                      <MessageSquare className="size-3 shrink-0 text-muted-foreground/70" />
                       <span className="min-w-0">
                         <span className="block truncate text-xs font-medium text-foreground">
                           {s.title || 'Untitled chat'}
@@ -139,7 +139,7 @@ export function HistoryPage() {
                       onClick={() => void requestDelete(s)}
                       data-testid={`history-delete-${s.id}`}
                     >
-                      <Trash2 className="size-3.5" />
+                      <Trash2 className="size-3" />
                     </button>
                   </div>
                 </li>

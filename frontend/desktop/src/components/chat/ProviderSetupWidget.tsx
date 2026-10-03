@@ -92,7 +92,7 @@ export function ProviderSetupWidget({ setup }: { setup: ProviderSetupResult }) {
 
       {status === 'ok' ? (
         <div className="flex items-center gap-1.5 rounded-md border border-success/30 bg-success/10 p-2 text-xs text-success">
-          <Check className="size-3.5" />
+          <Check className="size-3" />
           {message}
         </div>
       ) : (
@@ -116,7 +116,7 @@ export function ProviderSetupWidget({ setup }: { setup: ProviderSetupResult }) {
               className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               aria-label={showKey ? 'Hide key' : 'Show key'}
             >
-              {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+              {showKey ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
             </button>
           </div>
 

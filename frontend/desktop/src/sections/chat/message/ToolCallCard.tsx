@@ -103,9 +103,9 @@ export function ToolCallCard({
               <div key={entry.path} className="flex items-center gap-1.5 text-[0.71875rem] truncate" title={entry.path}>
                 <span className="w-2.5 shrink-0 inline-flex justify-center">
                   {entry.status === 'reading' ? (
-                    <Loader2 size={10} className="animate-spin text-info" />
+                    <Loader2 className="size-3 animate-spin text-info" />
                   ) : (
-                    <Check size={10} className="text-muted-foreground/50" />
+                    <Check className="size-3 text-muted-foreground/50" />
                   )}
                 </span>
                 <span

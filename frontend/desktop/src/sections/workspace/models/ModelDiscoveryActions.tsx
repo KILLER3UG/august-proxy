@@ -37,7 +37,7 @@ export function ModelDiscoveryActions({
           aria-label="Refresh models now"
           className="text-muted-foreground hover:text-foreground transition disabled:opacity-50"
         >
-          <RefreshCw className={cn('size-3.5', refreshPending && 'animate-spin')} />
+          <RefreshCw className={cn('size-3', refreshPending && 'animate-spin')} />
         </button>
         <button
           type="button"

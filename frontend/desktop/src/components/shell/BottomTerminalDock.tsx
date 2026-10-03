@@ -382,7 +382,7 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
             {createSession.isPending ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
           </Button>
           <Button variant="ghost" size="icon-sm" onClick={onClose} title="Close terminal" aria-label="Close terminal">
-            <X className="size-3.5" />
+            <X className="size-3" />
           </Button>
         </div>
       </div>

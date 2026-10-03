@@ -296,7 +296,7 @@ export function RightDrawer({
               )}
 
               <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close Workbench sidebar">
-                <X className="size-3.5" />
+                <X className="size-3" />
               </Button>
             </div>
 
@@ -417,7 +417,7 @@ function DrawerAddSectionButton() {
       onClick={() => openRightDrawerChooser()}
       className="rounded p-1 text-muted-foreground/60 transition hover:bg-muted/50 hover:text-foreground"
     >
-      <Plus className="size-3.5" />
+      <Plus className="size-3" />
     </button>
   );
 }

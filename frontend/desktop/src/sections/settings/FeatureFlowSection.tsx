@@ -172,7 +172,7 @@ export function FeatureFlowSection() {
           data-testid="feature-inventory-directory"
         >
           <div className="flex items-center gap-1.5 px-1 pb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            <Asterisk className="size-3.5" />
+            <Asterisk className="size-3" />
             Inventory
           </div>
           <button
@@ -251,7 +251,7 @@ export function FeatureFlowSection() {
           {activeFeature && (
             <div className="space-y-2">
               <div className="text-xs font-medium text-foreground/80 flex items-center gap-2">
-                <Activity className="size-3.5" />
+                <Activity className="size-3" />
                 {activeFeature.name} pipeline
               </div>
               <FeatureFlowCanvas

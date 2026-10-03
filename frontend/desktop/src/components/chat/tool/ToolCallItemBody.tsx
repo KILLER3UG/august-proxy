@@ -228,7 +228,7 @@ export function ToolCallItemBody({
       parts.push(
         <div key="progress" className="my-1.5 space-y-0.5" aria-label="Tool progress" data-tool-progress>
           <div className="flex items-center gap-1 text-3xs uppercase tracking-widest text-muted-foreground/70 font-semibold">
-            <FileSearch size={10} />
+            <FileSearch className="size-3" />
             <span>
               {tool.status === 'running' ? 'Exploring' : 'Files'}
             </span>
@@ -241,9 +241,9 @@ export function ToolCallItemBody({
             >
               <span className="w-2.5 shrink-0 inline-flex justify-center">
                 {entry.status === 'reading' ? (
-                  <Loader2 size={10} className="animate-spin text-info" />
+                  <Loader2 className="size-3 animate-spin text-info" />
                 ) : (
-                  <Check size={10} className="text-muted-foreground/50" />
+                  <Check className="size-3 text-muted-foreground/50" />
                 )}
               </span>
               <span

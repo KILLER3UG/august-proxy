@@ -65,7 +65,7 @@ export function ComposerActionsMenu({
               className="w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-muted transition flex items-center justify-between"
             >
               <span>Attach file</span>
-              <Paperclip className="size-3.5 text-muted-foreground" />
+              <Paperclip className="size-3 text-muted-foreground" />
             </button>
             <button
               type="button"
@@ -73,7 +73,7 @@ export function ComposerActionsMenu({
               className="w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-muted transition flex items-center justify-between"
             >
               <span>Mention skill / tool</span>
-              <AtSign className="size-3.5 text-muted-foreground" />
+              <AtSign className="size-3 text-muted-foreground" />
             </button>
             <button
               type="button"
@@ -81,7 +81,7 @@ export function ComposerActionsMenu({
               className="w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-muted transition flex items-center justify-between"
             >
               <span>Voice input</span>
-              <Mic className="size-3.5 text-muted-foreground" />
+              <Mic className="size-3 text-muted-foreground" />
             </button>
             {onCamera && (
               <button
@@ -91,7 +91,7 @@ export function ComposerActionsMenu({
                 data-testid="composer-camera-open"
               >
                 <span>Camera capture</span>
-                <Camera className="size-3.5 text-muted-foreground" />
+                <Camera className="size-3 text-muted-foreground" />
               </button>
             )}
             {onSpawn && (
@@ -102,7 +102,7 @@ export function ComposerActionsMenu({
                 data-testid="composer-spawn-subagents"
               >
                 <span>Dispatch workstreams</span>
-                <Bot className="size-3.5 text-muted-foreground" />
+                <Bot className="size-3 text-muted-foreground" />
               </button>
             )}
             {onAskParallel && (
@@ -113,7 +113,7 @@ export function ComposerActionsMenu({
                 data-testid="arena-open"
               >
                 <span>Ask in parallel</span>
-                <Swords className="size-3.5 text-muted-foreground" />
+                <Swords className="size-3 text-muted-foreground" />
               </button>
             )}
             {onStartDebate && (
@@ -124,7 +124,7 @@ export function ComposerActionsMenu({
                 data-testid="debate-open"
               >
                 <span>Debate</span>
-                <Gavel className="size-3.5 text-muted-foreground" />
+                <Gavel className="size-3 text-muted-foreground" />
               </button>
             )}
             {extras && (

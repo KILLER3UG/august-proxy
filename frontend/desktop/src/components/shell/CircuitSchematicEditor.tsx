@@ -317,7 +317,7 @@ export function CircuitSchematicEditor({
   return (
     <div className={cn('flex flex-col gap-1.5', className)} data-testid="circuit-schematic-editor">
       <div className="flex items-center gap-1.5">
-        <Waves className="size-3.5 text-muted-foreground/70" />
+        <Waves className="size-3 text-muted-foreground/70" />
         <span className="truncate text-2xs font-semibold text-foreground">Schematic</span>
         <span className="truncate text-3xs text-muted-foreground/70">{netlistPath.split(/[\\/]/).pop()}</span>
         <span className="ml-auto flex items-center gap-1">

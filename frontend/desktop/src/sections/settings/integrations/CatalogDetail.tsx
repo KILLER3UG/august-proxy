@@ -150,14 +150,14 @@ export function CatalogDetail({
       </p>
 
       <div className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-2xs leading-relaxed text-muted-foreground">
-        <AlertTriangle className="mb-1 inline size-3.5 text-amber-400/90" /> Only use extensions
+        <AlertTriangle className="mb-1 inline size-3 text-amber-400/90" /> Only use extensions
         from developers you trust. August does not control third-party MCP tools.
       </div>
 
       {tools.length > 0 && (
         <div>
           <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-foreground">
-            <Wrench className="size-3.5" /> Tools
+            <Wrench className="size-3" /> Tools
             <span className="font-mono font-normal text-muted-foreground">{tools.length}</span>
           </div>
           <ul className="flex flex-wrap gap-1.5">
@@ -247,11 +247,11 @@ export function CatalogDetail({
           className="min-w-[140px]"
         >
           {busy ? (
-            <Loader2 className="size-3.5 animate-spin" />
+            <Loader2 className="size-3 animate-spin" />
           ) : installed ? (
-            <Check className="size-3.5" />
+            <Check className="size-3" />
           ) : (
-            <Plus className="size-3.5" />
+            <Plus className="size-3" />
           )}
           {installed ? 'Already added' : entry.kind === 'mcp-extension' ? 'Install' : 'Add'}
         </Button>
@@ -265,7 +265,7 @@ export function CatalogDetail({
             }}
             title="Check that this MCP server is registered / running"
           >
-            {smokeBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+            {smokeBusy ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
             Smoke test
           </Button>
         )}

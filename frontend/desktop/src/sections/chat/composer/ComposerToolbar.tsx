@@ -317,7 +317,7 @@ export function ComposerToolbar({
             className="h-8 w-8 flex items-center justify-center text-muted-foreground"
             aria-live="polite"
           >
-            <Loader2 className="size-3.5 animate-spin" />
+            <Loader2 className="size-3 animate-spin" />
           </span>
         ) : null}
 
@@ -381,7 +381,7 @@ export function ComposerToolbar({
               'disabled:opacity-40 disabled:pointer-events-none',
             )}
           >
-            <ArrowUp className="size-3.5" />
+            <ArrowUp className="size-3" />
           </button>
         )}
       </div>

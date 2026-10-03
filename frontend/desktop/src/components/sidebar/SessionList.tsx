@@ -775,7 +775,7 @@ export function SessionList({
             title={updateAvailable ? `Update available: v${updateAvailable.version}` : "Check for updates"}
             aria-label="Check for updates"
           >
-            <ArrowDownToLine className="size-3.5" />
+            <ArrowDownToLine className="size-3" />
           </button>
         </div>
       </div>

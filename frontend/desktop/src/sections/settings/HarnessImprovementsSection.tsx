@@ -294,7 +294,7 @@ export function HarnessImprovementsSection() {
             title="Refresh"
             aria-label="Refresh proposals"
           >
-            <RefreshCw className={cn('size-3.5', fetching && 'animate-spin')} />
+            <RefreshCw className={cn('size-3', fetching && 'animate-spin')} />
           </button>
         </div>
       </header>
@@ -315,7 +315,7 @@ export function HarnessImprovementsSection() {
             onClick={() => void batchReject()}
             className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/40 px-2.5 py-1 font-medium text-destructive transition hover:bg-destructive/10 disabled:opacity-40"
           >
-            <CircleX className="size-3.5" /> Reject selected
+            <CircleX className="size-3" /> Reject selected
           </button>
           <button
             type="button"
@@ -427,7 +427,7 @@ export function HarnessImprovementsSection() {
                     className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
                     data-testid="proposal-approve"
                   >
-                    {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                    {busy ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
                     {selected.queue === 'memory' ? 'Approve (retire)' : 'Approve & apply'}
                   </button>
                   <button
@@ -437,7 +437,7 @@ export function HarnessImprovementsSection() {
                     className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/40 px-3 py-1.5 text-xs font-medium text-destructive transition hover:bg-destructive/10 disabled:opacity-40"
                     data-testid="proposal-reject"
                   >
-                    <CircleX className="size-3.5" /> {selected.queue === 'memory' ? 'Keep' : 'Reject'}
+                    <CircleX className="size-3" /> {selected.queue === 'memory' ? 'Keep' : 'Reject'}
                   </button>
                   {selected.queue === 'harness' && (
                     <button
@@ -447,7 +447,7 @@ export function HarnessImprovementsSection() {
                       className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-muted-foreground transition hover:bg-muted/50 hover:text-foreground disabled:opacity-40"
                       data-testid="proposal-dismiss"
                     >
-                      <X className="size-3.5" /> Dismiss
+                      <X className="size-3" /> Dismiss
                     </button>
                   )}
                 </div>
@@ -462,7 +462,7 @@ export function HarnessImprovementsSection() {
                   className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-xs text-muted-foreground transition hover:text-foreground disabled:opacity-40"
                   data-testid="proposal-reopen"
                 >
-                  <Undo2 className="size-3.5" /> Reopen
+                  <Undo2 className="size-3" /> Reopen
                 </button>
               </div>
             )}

@@ -57,9 +57,9 @@ function TaskItemRows({
       >
         <span className="inline-flex w-3.5 shrink-0 justify-center">
           {entry.status === 'reading' ? (
-            <Loader2 className="size-3.5 animate-spin text-info" />
+            <Loader2 className="size-3 animate-spin text-info" />
           ) : (
-            <Check className="size-3.5 text-muted-foreground" />
+            <Check className="size-3 text-muted-foreground" />
           )}
         </span>
         <span className="shrink-0">{entry.status === 'reading' ? 'Reading' : 'Read'}</span>
@@ -82,7 +82,7 @@ function TaskItemRows({
     const stats = diffStats(extractDiffData(tool));
     rows.push(
       <TaskItem key="edit" className="flex min-w-0 items-center gap-2">
-        <Pencil className="size-3.5 shrink-0" />
+        <Pencil className="size-3 shrink-0" />
         <span className="min-w-0 flex-1 truncate">
           {ctx?.summary?.trim() || 'Edited'}
         </span>
@@ -103,7 +103,7 @@ function TaskItemRows({
     if (tool.status === 'done') {
       rows.push(
         <TaskItem key="edit-done" className="flex items-center gap-2">
-          <Check className="size-3.5 text-success" />
+          <Check className="size-3 text-success" />
           Done
         </TaskItem>,
       );

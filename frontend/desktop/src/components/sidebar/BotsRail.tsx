@@ -646,7 +646,7 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
                 data-testid={`bots-room-row-${room.id}`}
                 title={room.name}
               >
-                <Users className="size-3.5 shrink-0 text-muted-foreground/60" />
+                <Users className="size-3 shrink-0 text-muted-foreground/60" />
                 <span className="min-w-0 flex-1 truncate text-xs text-foreground/85">
                   {room.name}
                 </span>

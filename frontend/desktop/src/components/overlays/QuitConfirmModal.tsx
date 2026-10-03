@@ -149,7 +149,7 @@ export function QuitConfirmModal() {
             )}
             data-testid="quit-anyway-btn"
           >
-            <LogOut className="size-3.5" aria-hidden />
+            <LogOut className="size-3" aria-hidden />
             {quitting ? 'Quitting…' : 'Quit Anyway'}
           </button>
         </div>

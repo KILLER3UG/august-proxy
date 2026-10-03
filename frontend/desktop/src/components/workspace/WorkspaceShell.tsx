@@ -339,7 +339,7 @@ function ProfileRailRow() {
             {account.email || `@${account.username}` || 'Local account'}
           </span>
         </span>
-        <Settings2 className="size-3.5 shrink-0 text-sidebar-foreground/40" aria-hidden="true" />
+        <Settings2 className="size-3 shrink-0 text-sidebar-foreground/40" aria-hidden="true" />
       </button>
       {/* Updates status row — same affordance as the model dropdown: current
           state ("Up to date" / "Update available") rendered under the item. */}
@@ -353,7 +353,7 @@ function ProfileRailRow() {
       >
         <ArrowUpCircle
           className={cn(
-            'size-3.5 shrink-0',
+            'size-3 shrink-0',
             updateAvailable ? 'text-amber-400' : 'text-sidebar-foreground/40',
           )}
           aria-hidden="true"

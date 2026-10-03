@@ -183,7 +183,7 @@ export function ArenaLaunchModal({
             className="p-1 text-muted-foreground hover:text-foreground"
             aria-label="Close"
           >
-            <X className="size-3.5" />
+            <X className="size-3" />
           </button>
         </div>
 

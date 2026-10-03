@@ -40,9 +40,9 @@ export function RightDrawerDropdown({
       data-testid="workbench-launcher"
     >
       {drawerOpen ? (
-        <PanelRightClose className="size-3.5" />
+        <PanelRightClose className="size-3" />
       ) : (
-        <PanelRight className="size-3.5" />
+        <PanelRight className="size-3" />
       )}
       {workersBadge > 0 ? (
         <span className="absolute right-1.5 top-1.5 min-w-3.5 rounded-full bg-warning px-1 text-3xs font-semibold leading-4 text-warning-foreground">

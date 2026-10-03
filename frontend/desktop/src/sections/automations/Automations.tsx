@@ -253,7 +253,7 @@ export function Automations() {
               setShowCreate((v) => !v);
             }}
           >
-            <Plus className="size-3.5" /> New
+            <Plus className="size-3" /> New
           </Button>
         }
       />
@@ -290,7 +290,7 @@ export function Automations() {
               fresh chat session in the sidebar.
             </p>
             <Button size="sm" className="mt-3" onClick={() => setShowCreate(true)}>
-              <Plus className="size-3.5" /> Create automation
+              <Plus className="size-3" /> Create automation
             </Button>
           </CardContent>
         </Card>
@@ -714,7 +714,7 @@ function AutomationForm({
                 aria-label="Choose workspace folder"
                 className="shrink-0"
               >
-                <FolderOpen className="size-3.5" />
+                <FolderOpen className="size-3" />
                 <span className="hidden sm:inline">Browse</span>
               </Button>
             </div>

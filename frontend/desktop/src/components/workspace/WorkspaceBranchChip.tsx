@@ -142,7 +142,7 @@ export function BranchMenuBody({
     <div data-testid="branch-menu-body">
       {/* Search */}
       <div className="flex items-center gap-1.5 px-2 pb-1.5 pt-0.5">
-        <Search className="size-3.5 shrink-0 text-muted-foreground/60" />
+        <Search className="size-3 shrink-0 text-muted-foreground/60" />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -429,7 +429,7 @@ export function WorkspaceBranchChip({
         aria-expanded={open}
         aria-haspopup="listbox"
       >
-        <GitBranch className="size-3.5 shrink-0" />
+        <GitBranch className="size-3 shrink-0" />
         {branch.isLoading && !current ? (
           <Loader2 className="size-3 animate-spin shrink-0" />
         ) : (

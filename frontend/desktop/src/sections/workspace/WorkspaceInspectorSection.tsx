@@ -98,7 +98,7 @@ export function WorkspaceInspectorSection() {
         <aside className="w-72 shrink-0 rounded-xl border border-white/[0.06] bg-card/60 overflow-hidden flex flex-col">
           <div className="p-2 border-b border-white/[0.06]">
             <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
               <input
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}

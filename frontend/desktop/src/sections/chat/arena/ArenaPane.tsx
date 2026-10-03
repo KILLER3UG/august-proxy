@@ -99,7 +99,7 @@ export function ArenaPane({
       data-testid={`arena-pane-${lane.modelId}`}
     >
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <Brain className="size-3.5 text-primary shrink-0" />
+        <Brain className="size-3 text-primary shrink-0" />
         <span className="text-xs font-medium truncate">{lane.modelName}</span>
         <span className="text-3xs text-muted-foreground truncate max-w-28">
           {lane.provider}

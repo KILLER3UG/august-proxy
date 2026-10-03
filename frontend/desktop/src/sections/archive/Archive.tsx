@@ -85,7 +85,7 @@ export function Archive() {
       <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between pb-4 border-b border-border/40">
         <div className="flex flex-1 max-w-md gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
             <input
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
@@ -126,7 +126,7 @@ export function Archive() {
               return (
                 <div key={folder.id} className="space-y-2">
                   <div className="flex items-center gap-1.5 text-foreground/80 px-1 font-semibold text-xs border-b border-border/10 pb-1">
-                    <FolderIcon className="size-3.5 text-muted-foreground/75" />
+                    <FolderIcon className="size-3 text-muted-foreground/75" />
                     <span>📁 {folder.name}</span>
                     <span className="text-3xs text-muted-foreground/50 font-normal">({folderSessions.length})</span>
                   </div>
@@ -154,7 +154,7 @@ export function Archive() {
               return (
                 <div className="space-y-2">
                   <div className="flex items-center gap-1.5 text-foreground/80 px-1 font-semibold text-xs border-b border-border/10 pb-1">
-                    <MessageSquare className="size-3.5 text-muted-foreground/75" />
+                    <MessageSquare className="size-3 text-muted-foreground/75" />
                     <span>Other Chats</span>
                     <span className="text-3xs text-muted-foreground/50 font-normal">({uncategorizedSessions.length})</span>
                   </div>

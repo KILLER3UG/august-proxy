@@ -104,7 +104,7 @@ export function CircuitWaveformViewer({
   return (
     <div className="flex flex-col gap-2 border-b border-border/60 px-3 py-2.5" data-testid="circuit-waveforms">
       <div className="flex items-center gap-2">
-        <FileClock className="size-3.5 shrink-0 text-muted-foreground/70" />
+        <FileClock className="size-3 shrink-0 text-muted-foreground/70" />
         <span className="shrink-0 text-xs font-semibold text-foreground">Waveforms</span>
         <span className="truncate text-3xs text-muted-foreground">
           Digital captures open in the embedded waveform viewer.

@@ -65,7 +65,7 @@ export function SwitchAccountModal({ open, onClose, onCreateNew }: Props) {
             className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition"
             aria-label="Close"
           >
-            <X className="size-3.5" />
+            <X className="size-3" />
           </button>
         </header>
 
@@ -110,7 +110,7 @@ export function SwitchAccountModal({ open, onClose, onCreateNew }: Props) {
             disabled={googleBusy}
             onClick={() => void handleGoogle()}
           >
-            <SiGoogle className="size-3.5" />
+            <SiGoogle className="size-3" />
             {googleBusy ? 'Waiting for Google…' : 'Continue with Google'}
           </Button>
           <Button

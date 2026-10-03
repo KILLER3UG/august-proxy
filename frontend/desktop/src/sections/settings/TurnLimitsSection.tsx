@@ -265,7 +265,7 @@ export function TurnLimitsSection() {
               mutate.mutate(next);
             }}
           >
-            <RotateCcw className="size-3.5" />
+            <RotateCcw className="size-3" />
             Turn everything off
           </Button>
         </div>
@@ -277,7 +277,7 @@ export function TurnLimitsSection() {
       </div>
 
       <div className="mt-4 flex items-start gap-2 text-xs text-muted-foreground">
-        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+        <AlertTriangle className="mt-0.5 size-3 shrink-0" />
         <p>
           A stopped turn is always explained in the transcript — expand the reason under the
           amber badge to see what to do next.

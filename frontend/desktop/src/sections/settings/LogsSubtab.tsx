@@ -120,7 +120,7 @@ export function LogsSubtab({ showPeriod = true }: { showPeriod?: boolean }) {
                         ))}
                     </div>
                     <div className="relative ml-auto max-w-xs flex-1 min-w-[180px]">
-                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
                         <input
                             value={filter}
                             onChange={(e) => setFilter(e.target.value)}

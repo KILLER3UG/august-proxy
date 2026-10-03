@@ -137,9 +137,9 @@ export function SubagentDelegateRow({
             />
             <span className="flex shrink-0 items-center gap-1.5 font-semibold text-foreground/90">
               {running ? (
-                <Loader2 className="size-3.5 animate-spin text-primary/80" aria-hidden />
+                <Loader2 className="size-3 animate-spin text-primary/80" aria-hidden />
               ) : (
-                <Bot className="size-3.5 text-muted-foreground/70" aria-hidden />
+                <Bot className="size-3 text-muted-foreground/70" aria-hidden />
               )}
               SubAgent
             </span>
@@ -187,9 +187,9 @@ export function SubagentDelegateRow({
           >
             <span className="flex shrink-0 items-center gap-1.5 font-semibold text-foreground/90">
               {running ? (
-                <Loader2 className="size-3.5 animate-spin text-primary/80" aria-hidden />
+                <Loader2 className="size-3 animate-spin text-primary/80" aria-hidden />
               ) : (
-                <Bot className="size-3.5 text-muted-foreground/70" aria-hidden />
+                <Bot className="size-3 text-muted-foreground/70" aria-hidden />
               )}
               SubAgent
             </span>

@@ -204,9 +204,9 @@ export function CustomIntegrationForm({ onSubmit, busy, className }: Props) {
 
       <Button type="submit" size="sm" disabled={!canSubmit} data-testid="custom-integration-submit">
         {busy ? (
-          <Loader2 className="size-3.5 animate-spin" />
+          <Loader2 className="size-3 animate-spin" />
         ) : (
-          <Plus className="size-3.5" />
+          <Plus className="size-3" />
         )}
         {busy ? 'Creating…' : 'Create integration'}
       </Button>

@@ -1,4 +1,4 @@
-import { Check, RefreshCw, Play, Pause, GitBranch, ArrowLeftRight, GitCompare } from 'lucide-react';
+import { Check, Copy, RefreshCw, Play, Pause, GitBranch, ArrowLeftRight, GitCompare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /** Speak / copy / re-answer / regenerate / fork controls under an assistant message. */
@@ -49,9 +49,9 @@ export function AssistantMessageActions({
         title={speaking ? "Pause reading" : "Read aloud"}
       >
         {speaking ? (
-          <Pause className="size-3.5" />
+          <Pause className="size-3" />
         ) : (
-          <Play className="size-3.5" />
+          <Play className="size-3" />
         )}
       </button>
       <button
@@ -62,11 +62,9 @@ export function AssistantMessageActions({
       >
         <div className={cn("transition-transform duration-200", copied ? "scale-110 text-success" : "scale-100")}>
           {copied ? (
-            <Check className="size-3.5" />
+            <Check className="size-3" />
           ) : (
-            <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-            </svg>
+            <Copy className="size-3" />
           )}
         </div>
       </button>
@@ -83,7 +81,7 @@ export function AssistantMessageActions({
           aria-expanded={reanswerOpen}
           data-testid="reanswer-open"
         >
-          <ArrowLeftRight className="size-3.5" />
+          <ArrowLeftRight className="size-3" />
         </button>
       )}
       {onCompare && (
@@ -95,7 +93,7 @@ export function AssistantMessageActions({
           aria-label="Compare models side by side"
           data-testid="compare-open"
         >
-          <GitCompare className="size-3.5" />
+          <GitCompare className="size-3" />
         </button>
       )}
       <button
@@ -106,7 +104,7 @@ export function AssistantMessageActions({
         aria-label="Retry / Regenerate"
       >
         <RefreshCw
-          className={cn("size-3.5", isRegenerating && "animate-spin")}
+          className={cn("size-3", isRegenerating && "animate-spin")}
         />
       </button>
       {onFork && (
@@ -117,7 +115,7 @@ export function AssistantMessageActions({
           title="Fork conversation from here"
           aria-label="Fork conversation from here"
         >
-          <GitBranch className="size-3.5" />
+          <GitBranch className="size-3" />
         </button>
       )}
     </div>

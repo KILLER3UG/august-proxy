@@ -127,7 +127,7 @@ export function InThreadSearch({
       className="absolute top-2 right-4 z-50 flex items-center gap-1.5 bg-card border border-border rounded-lg shadow-lg px-3 py-2"
       data-testid="in-thread-search"
     >
-      <Search className="size-3.5 text-muted-foreground shrink-0" />
+      <Search className="size-3 text-muted-foreground shrink-0" />
       <input
         ref={inputRef}
         type="text"
@@ -153,7 +153,7 @@ export function InThreadSearch({
         className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-30"
         aria-label="Previous match"
       >
-        <ChevronUp className="size-3.5" />
+        <ChevronUp className="size-3" />
       </button>
       <button
         onClick={() => navigateMatch('next')}
@@ -161,14 +161,14 @@ export function InThreadSearch({
         className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-30"
         aria-label="Next match"
       >
-        <ChevronDown className="size-3.5" />
+        <ChevronDown className="size-3" />
       </button>
       <button
         onClick={handleClose}
         className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition"
         aria-label="Close search"
       >
-        <X className="size-3.5" />
+        <X className="size-3" />
       </button>
     </div>
   );

@@ -39,7 +39,7 @@ export function WorkspaceStatCard({
       )}
     >
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        {Icon && <Icon className={cn('size-3.5', ACCENT_CLASSES[accent])} />}
+        {Icon && <Icon className={cn('size-3', ACCENT_CLASSES[accent])} />}
         <span>{label}</span>
       </div>
       <div className="text-2xl font-semibold tracking-tight tabular-nums">{value}</div>

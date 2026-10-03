@@ -63,7 +63,7 @@ export function ProviderListRail({
                   : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
               )}
             >
-              <Server className="size-3.5 shrink-0" />
+              <Server className="size-3 shrink-0" />
               <span className="flex-1 truncate">{p.name}</span>
               {p.enabled && <span className="size-2 rounded-full bg-success shrink-0" title="enabled" />}
             </button>
@@ -76,7 +76,7 @@ export function ProviderListRail({
           onClick={onAdd}
           className="w-full flex items-center justify-center gap-1.5 rounded-md border border-white/[0.08] px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition"
         >
-          <Plus className="size-3.5" />
+          <Plus className="size-3" />
           Add provider
         </button>
       </div>

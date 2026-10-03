@@ -99,7 +99,7 @@ export function ActionNeededCard({
       data-testid="action-needed-card"
     >
       <div className="mb-1 flex items-center gap-2">
-        <Monitor className="size-3.5 text-amber-400/90" />
+        <Monitor className="size-3 text-amber-400/90" />
         <span className="text-[0.8125rem] font-semibold text-foreground">Computer</span>
         <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-3xs font-medium text-amber-300">
           Action needed
@@ -123,7 +123,7 @@ export function ActionNeededCard({
           className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[0.78125rem] font-medium text-background transition hover:opacity-90"
           data-testid="action-needed-take-over"
         >
-          <MousePointerClick className="size-3.5" /> Take over
+          <MousePointerClick className="size-3" /> Take over
         </button>
         <button
           type="button"
@@ -131,7 +131,7 @@ export function ActionNeededCard({
           className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-1.5 text-[0.78125rem] text-foreground transition hover:bg-muted/40"
           data-testid="action-needed-im-done"
         >
-          <Check className="size-3.5" /> I&apos;m done
+          <Check className="size-3" /> I&apos;m done
         </button>
       </div>
     </div>

@@ -1,6 +1,6 @@
 /* ── IntegrationCard — tile in Your integrations list ──────────────── */
 
-import { useState, type ComponentType } from 'react';
+import { useState } from 'react';
 import {
   BadgeCheck,
   Plus,
@@ -9,13 +9,10 @@ import {
   RotateCw,
   Loader2,
   type LucideIcon,
-  FolderOpen,
-  Brain,
-  Globe,
 } from 'lucide-react';
-import { SiGithub, SiGoogle, SiSlack } from 'react-icons/si';
 import { cn } from '@/lib/utils';
 import type { IntegrationItem, IntegrationLogoSpec } from './useIntegrations';
+import { resolveBrandIcon } from './integrations/brandIcons';
 
 interface IntegrationCardProps {
   item: IntegrationItem;
@@ -23,18 +20,6 @@ interface IntegrationCardProps {
   onPrimaryAction?: (item: IntegrationItem) => void;
   busy?: boolean;
 }
-
-const BRAND_ICONS: Record<
-  string,
-  ComponentType<{ className?: string; style?: React.CSSProperties }>
-> = {
-  google: SiGoogle,
-  github: SiGithub,
-  slack: SiSlack,
-  filesystem: FolderOpen,
-  memory: Brain,
-  browser: Globe,
-};
 
 export function IntegrationCard({ item, onOpen, onPrimaryAction, busy }: IntegrationCardProps) {
   const { primary, icon: ActionIcon, label } = actionFor(item, busy);
@@ -59,7 +44,7 @@ export function IntegrationCard({ item, onOpen, onPrimaryAction, busy }: Integra
             <span className="truncate text-sm font-semibold text-foreground">{item.name}</span>
             {item.verified && (
               <BadgeCheck
-                className="size-3.5 shrink-0 text-muted-foreground"
+                className="size-3 shrink-0 text-muted-foreground"
                 aria-label="Verified publisher"
               />
             )}
@@ -122,7 +107,7 @@ function BrandLogo({
   const iconDim = size === 'lg' ? 'size-7' : 'size-5';
 
   if (logo.kind === 'brand' && logo.brand) {
-    const Icon = BRAND_ICONS[logo.brand];
+    const Icon = resolveBrandIcon(logo.brand);
     if (Icon) {
       return (
         <div

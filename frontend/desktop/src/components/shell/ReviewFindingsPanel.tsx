@@ -115,9 +115,9 @@ export function ReviewFindingsPanel({
             onClick={onDismiss}
             data-testid="review-dismiss"
             className="rounded p-0.5 text-muted-foreground/60 hover:text-foreground"
-            title="Dismiss review results"
+            title="Dismiss review results" aria-label="Dismiss review results"
           >
-            <X className="size-3.5" />
+            <X className="size-3" />
           </button>
         )}
       </div>

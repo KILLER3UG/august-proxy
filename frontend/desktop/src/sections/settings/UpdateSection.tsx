@@ -75,19 +75,19 @@ export function UpdateSection() {
             <div className="mt-3 min-h-[1.25rem] text-sm">
               {error ? (
                 <span className="flex items-center gap-2 text-red-400">
-                  <AlertTriangle className="size-3.5 shrink-0" />
+                  <AlertTriangle className="size-3 shrink-0" />
                   Update check failed: {error.message || 'could not reach the release feed'}
                 </span>
               ) : available ? (
                 <span className="flex items-center gap-2 font-medium text-amber-400">
-                  <Download className="size-3.5 shrink-0" />
+                  <Download className="size-3 shrink-0" />
                   A new update is ready: v{available.version}
                 </span>
               ) : checking ? (
                 <span className="text-muted-foreground">Checking for updates…</span>
               ) : (
                 <span className="flex items-center gap-2 text-green-400">
-                  <CheckCircle className="size-3.5 shrink-0" />
+                  <CheckCircle className="size-3 shrink-0" />
                   You&apos;re on the latest version
                 </span>
               )}
@@ -114,14 +114,14 @@ export function UpdateSection() {
                 disabled={checking || installing}
                 data-testid="about-check-now"
               >
-                <RefreshCw className={checking ? 'size-3.5 mr-1.5 animate-spin' : 'size-3.5 mr-1.5'} />
+                <RefreshCw className={checking ? 'size-3 mr-1.5 animate-spin' : 'size-3 mr-1.5'} />
                 Check now
               </Button>
               {available && (!installing || ready) && (
                 <Button size="sm" onClick={() => { void install(); }} data-testid="about-update-now">
                   {ready
-                    ? <CheckCircle className="size-3.5 mr-1.5" />
-                    : <Download className="size-3.5 mr-1.5" />}
+                    ? <CheckCircle className="size-3 mr-1.5" />
+                    : <Download className="size-3 mr-1.5" />}
                   {ready ? 'Restart to update' : 'Update now'}
                 </Button>
               )}
@@ -142,7 +142,7 @@ export function UpdateSection() {
                 className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground"
                 data-testid="about-release-notes"
               >
-                <ExternalLink className="size-3.5" /> Release notes
+                <ExternalLink className="size-3" /> Release notes
               </button>
             </div>
           </>

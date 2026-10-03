@@ -146,7 +146,7 @@ export function AccountSection() {
             disabled={googleBusy}
             className="gap-2"
           >
-            <SiGoogle className="size-3.5" />
+            <SiGoogle className="size-3" />
             {googleBusy ? 'Waiting for Google…' : 'Continue with Google'}
           </Button>
         </SettingsCard>
@@ -205,10 +205,10 @@ export function AccountSection() {
                   <button
                     type="button"
                     className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition"
-                    title="Delete account"
+                    title="Delete account" aria-label="Delete account"
                     onClick={() => handleDelete(account.id)}
                   >
-                    <Trash2 className="size-3.5" />
+                    <Trash2 className="size-3" />
                   </button>
                 </div>
               );
@@ -233,7 +233,7 @@ export function AccountSection() {
                 setAvatar('');
               }}
             >
-              <Plus className="size-3.5" />
+              <Plus className="size-3" />
               New local account
             </Button>
           </div>
@@ -301,7 +301,7 @@ export function AccountSection() {
               </Button>
               {active && !creating && (
                 <Button type="button" variant="outline" onClick={handleLogout}>
-                  <LogOut className="size-3.5" />
+                  <LogOut className="size-3" />
                   Sign out
                 </Button>
               )}

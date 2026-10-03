@@ -79,7 +79,7 @@ export function SkillPacksPanel() {
       data-testid="skill-packs-panel"
     >
       <div className="flex items-center gap-2">
-        <Package className="size-3.5 text-muted-foreground/70" />
+        <Package className="size-3 text-muted-foreground/70" />
         <span className="text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">
           Skill packs
         </span>
@@ -101,7 +101,7 @@ export function SkillPacksPanel() {
           className="h-8 min-w-0 flex-1 rounded-lg border border-border/60 bg-muted/40 px-3 text-xs placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none"
         />
         <Button size="sm" variant="outline" onClick={() => void install()} disabled={busy || !source.trim()}>
-          {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+          {busy ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}
           Install
         </Button>
       </div>
@@ -123,7 +123,7 @@ export function SkillPacksPanel() {
                 onClick={() => void uninstall(p.pack)}
                 aria-label={`Uninstall ${p.pack}`}
               >
-                <Trash2 className="size-3.5" />
+                <Trash2 className="size-3" />
               </Button>
             </li>
           ))}

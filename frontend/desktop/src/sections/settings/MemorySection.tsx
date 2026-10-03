@@ -899,7 +899,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
           {/* Search + filters + sort + refresh + export-store */}
           <div className="flex flex-wrap items-center gap-2 pb-1">
             <div className="relative flex-1 max-w-sm min-w-44">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/60" />
               <input
                 value={search}
                 onChange={(e) => {
@@ -985,16 +985,16 @@ export function MemorySection({ active }: { active: { id: string } }) {
               title="Refresh"
               className="rounded-lg border border-border/60 bg-card/60 p-1.5 text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
             >
-              <RefreshCw className={cn('size-3.5', (unifiedQa.isFetching || unifiedQb.isFetching) && 'animate-spin')} />
+              <RefreshCw className={cn('size-3', (unifiedQa.isFetching || unifiedQb.isFetching) && 'animate-spin')} />
             </button>
             <button
               type="button"
               onClick={exportStore}
               disabled={flatEntries.length === 0}
-              title="Export as Markdown"
+              title="Export as Markdown" aria-label="Export as Markdown"
               className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
             >
-              <Download className="size-3.5" /> Export
+              <Download className="size-3" /> Export
             </button>
           </div>
 
@@ -1154,7 +1154,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
                       className="rounded-md border border-border/60 p-1 transition enabled:hover:text-foreground disabled:opacity-40"
                       title="Previous 200"
                     >
-                      <ChevronLeft className="size-3.5" />
+                      <ChevronLeft className="size-3" />
                     </button>
                     <button
                       type="button"
@@ -1167,7 +1167,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
                       className="rounded-md border border-border/60 p-1 transition enabled:hover:text-foreground disabled:opacity-40"
                       title="Next 200"
                     >
-                      <ChevronRight className="size-3.5" />
+                      <ChevronRight className="size-3" />
                     </button>
                   </div>
                 </div>
@@ -1308,7 +1308,7 @@ function PaneHeader({
         className="-ml-1 mt-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[0.71875rem] text-muted-foreground transition hover:text-foreground"
         data-testid={`${testId}-back`}
       >
-        <ChevronLeft className="size-3.5" /> {backLabel}
+        <ChevronLeft className="size-3" /> {backLabel}
       </button>
       <div className="min-w-0 flex-1">
         <h2 className="truncate text-[1.0625rem] font-semibold tracking-tight text-foreground">{title}</h2>
@@ -1465,7 +1465,7 @@ function ProjectMemoryPane({
       ) : (
         <>
           <div className="relative">
-            <Search className="pointer-events-none absolute left-0 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+            <Search className="pointer-events-none absolute left-0 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/60" />
             <input
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
@@ -1524,7 +1524,7 @@ function ProjectMemoryPane({
                         className="rounded p-1 text-muted-foreground/50 transition hover:text-destructive"
                         data-testid="memory-project-delete"
                       >
-                        <Trash2 className="size-3.5" />
+                        <Trash2 className="size-3" />
                       </button>
                     }
                   />
@@ -1655,7 +1655,7 @@ function BottomAddBar({
           className="rounded-lg bg-primary p-1.5 text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
           data-testid={`${testId}-submit`}
         >
-          <ArrowUp className="size-3.5" />
+          <ArrowUp className="size-3" />
         </button>
       </div>
     </div>
@@ -1736,7 +1736,7 @@ function FlatEntryRow({
         type="checkbox"
         checked={checked}
         onChange={(e) => onCheck(e.target.checked)}
-        className="size-3.5 shrink-0 accent-primary"
+        className="size-3 shrink-0 accent-primary"
         aria-label={`Select ${entry.title}`}
         data-testid="memory-bulk-check"
       />
@@ -1806,7 +1806,7 @@ function FlatEntryRow({
           aria-expanded={menuOpen}
           data-testid="memory-row-menu"
         >
-          <MoreHorizontal className="size-3.5" />
+          <MoreHorizontal className="size-3" />
         </button>
         {menuOpen && (
           <RowMenu
@@ -1981,7 +1981,7 @@ function HealthFooter({
         onClick={onRunNow}
         disabled={consolidating}
         className="rounded-md border border-border/60 px-1.5 py-0.5 text-3xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
-        title="Run one consolidation pass now (expire, merge duplicates, supersede contradictions)"
+        title="Run one consolidation pass now (expire, merge duplicates, supersede contradictions)" aria-label="Run one consolidation pass now (expire, merge duplicates, supersede contradictions)"
         data-testid="memory-consolidate-now"
       >
         {consolidating ? 'Running…' : 'Run now'}
@@ -2047,7 +2047,7 @@ function DetailView({
             onClick={onBack}
             className="mb-1 inline-flex items-center gap-1 text-2xs text-muted-foreground transition hover:text-foreground"
           >
-            <ChevronLeft className="size-3.5" /> Back to {store}
+            <ChevronLeft className="size-3" /> Back to {store}
           </button>
           <h2 className="text-lg font-semibold leading-snug text-foreground [overflow-wrap:anywhere]">
             {title}
@@ -2098,7 +2098,7 @@ function DetailView({
               onClick={onStartEdit}
               className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2 py-1.5 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
             >
-              <Pencil className="size-3.5" /> Edit
+              <Pencil className="size-3" /> Edit
             </button>
           )}
           <button
@@ -2106,7 +2106,7 @@ function DetailView({
             onClick={onExport}
             className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2 py-1.5 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
           >
-            <Download className="size-3.5" /> Export
+            <Download className="size-3" /> Export
           </button>
           {meta.deletable && (
             <button
@@ -2114,7 +2114,7 @@ function DetailView({
               onClick={onDelete}
               className="inline-flex items-center gap-1 rounded-lg border border-destructive/40 px-2 py-1.5 text-2xs text-destructive transition hover:bg-destructive/10"
             >
-              <Trash2 className="size-3.5" /> Delete
+              <Trash2 className="size-3" /> Delete
             </button>
           )}
         </div>

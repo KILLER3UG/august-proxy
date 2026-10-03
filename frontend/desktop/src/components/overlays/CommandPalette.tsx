@@ -128,7 +128,7 @@ export function CommandPalette() {
               onSelect={run(() => { void navigate("/"); })}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Plus className="size-3.5" /> New chat
+              <Plus className="size-3" /> New chat
               <CommandShortcut>{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘N' : 'Ctrl+N'}</CommandShortcut>
             </Command.Item>
             <Command.Item
@@ -136,63 +136,63 @@ export function CommandPalette() {
               onSelect={run(() => openConversationSearch())}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Search className="size-3.5" /> Search conversations…
+              <Search className="size-3" /> Search conversations…
             </Command.Item>
             <Command.Item
               value="action undo last turn"
               onSelect={chatAction('undo_last_turn')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Undo2 className="size-3.5" /> Undo last turn
+              <Undo2 className="size-3" /> Undo last turn
             </Command.Item>
             <Command.Item
               value="action stop generation"
               onSelect={chatAction('stop_chat')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Square className="size-3.5" /> Stop generation
+              <Square className="size-3" /> Stop generation
             </Command.Item>
             <Command.Item
               value="action switch model picker"
               onSelect={chatAction('open_model_picker')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <ArrowLeftRight className="size-3.5" /> Switch model…
+              <ArrowLeftRight className="size-3" /> Switch model…
             </Command.Item>
             <Command.Item
               value="action branch chat fork"
               onSelect={chatAction('branch_session')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <GitBranch className="size-3.5" /> Branch this chat
+              <GitBranch className="size-3" /> Branch this chat
             </Command.Item>
             <Command.Item
               value="action free up chat memory compact"
               onSelect={chatAction('compact_now')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Shrink className="size-3.5" /> Free up chat memory
+              <Shrink className="size-3" /> Free up chat memory
             </Command.Item>
             <Command.Item
               value="action export conversation download markdown transcript"
               onSelect={chatAction('export_conversation')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <FileDown className="size-3.5" /> Export conversation (Markdown)
+              <FileDown className="size-3" /> Export conversation (Markdown)
             </Command.Item>
             <Command.Item
               value="action export conversation pdf print"
               onSelect={chatAction('export_conversation_pdf')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <FileDown className="size-3.5" /> Export conversation (PDF)
+              <FileDown className="size-3" /> Export conversation (PDF)
             </Command.Item>
             <Command.Item
               value="action copy conversation clipboard markdown"
               onSelect={chatAction('copy_conversation')}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Copy className="size-3.5" /> Copy conversation
+              <Copy className="size-3" /> Copy conversation
             </Command.Item>
             <Command.Item
               value="mode ask before changes"
@@ -201,7 +201,7 @@ export function CommandPalette() {
               )}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Shield className="size-3.5" /> Mode: Ask before changes
+              <Shield className="size-3" /> Mode: Ask before changes
             </Command.Item>
             <Command.Item
               value="mode edit automatically"
@@ -210,7 +210,7 @@ export function CommandPalette() {
               )}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Shield className="size-3.5" /> Mode: Edit automatically
+              <Shield className="size-3" /> Mode: Edit automatically
             </Command.Item>
             <Command.Item
               value="mode plan mode"
@@ -219,7 +219,7 @@ export function CommandPalette() {
               )}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Shield className="size-3.5" /> Mode: Plan mode
+              <Shield className="size-3" /> Mode: Plan mode
             </Command.Item>
             <Command.Item
               value="mode full access"
@@ -228,7 +228,7 @@ export function CommandPalette() {
               )}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Shield className="size-3.5" /> Mode: Full access
+              <Shield className="size-3" /> Mode: Full access
             </Command.Item>
             <Command.Item
               value="open plan panel drawer"
@@ -240,7 +240,7 @@ export function CommandPalette() {
               )}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <ListTodo className="size-3.5" /> Open plan panel
+              <ListTodo className="size-3" /> Open plan panel
             </Command.Item>
             <Command.Item
               value="open tasks todos panel drawer"
@@ -252,7 +252,7 @@ export function CommandPalette() {
               )}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <ListTodo className="size-3.5" /> Open tasks panel
+              <ListTodo className="size-3" /> Open tasks panel
             </Command.Item>
             <Command.Item
               value="open diff changed files panel drawer"
@@ -264,7 +264,7 @@ export function CommandPalette() {
               )}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <FileDiff className="size-3.5" /> Open diffs panel
+              <FileDiff className="size-3" /> Open diffs panel
             </Command.Item>
             <Command.Item
               value="open notepad notes scratch panel drawer"
@@ -276,7 +276,7 @@ export function CommandPalette() {
               )}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <StickyNote className="size-3.5" /> Open notepad
+              <StickyNote className="size-3" /> Open notepad
             </Command.Item>
             <Command.Item
               value="open artifacts files gallery browse generated outputs"
@@ -288,7 +288,7 @@ export function CommandPalette() {
               )}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <GalleryVertical className="size-3.5" /> Artifacts — Browse generated outputs
+              <GalleryVertical className="size-3" /> Artifacts — Browse generated outputs
             </Command.Item>
           </Command.Group>
 
@@ -303,21 +303,21 @@ export function CommandPalette() {
               onSelect={run(() => { void navigate('/settings/memory-knowledge'); })}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Brain className="size-3.5" /> What the assistant knows about you
+              <Brain className="size-3" /> What the assistant knows about you
             </Command.Item>
             <Command.Item
               value="action brain pending skills"
               onSelect={run(() => { void navigate("/settings/skills"); })}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Asterisk className="size-3.5" /> Review pending skills
+              <Asterisk className="size-3" /> Review pending skills
             </Command.Item>
             <Command.Item
               value="action subagent runs"
               onSelect={run(() => { void navigate('/runs'); })}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Network className="size-3.5" /> Sub-agent runs
+              <Network className="size-3" /> Sub-agent runs
             </Command.Item>
             <Command.Item
               value="action brain run consolidation"
@@ -329,7 +329,7 @@ export function CommandPalette() {
               })}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Clock className="size-3.5" /> Run sleep cycle now
+              <Clock className="size-3" /> Run sleep cycle now
             </Command.Item>
           </Command.Group>
 
@@ -344,7 +344,7 @@ export function CommandPalette() {
               onSelect={run(() => { void navigate("/settings"); })}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Settings className="size-3.5" /> Settings…
+              <Settings className="size-3" /> Settings…
               <CommandShortcut>,</CommandShortcut>
             </Command.Item>
             <Command.Item
@@ -352,7 +352,7 @@ export function CommandPalette() {
               onSelect={run(() => { void qc.invalidateQueries(); })}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <RefreshCw className="size-3.5" /> Refresh all data
+              <RefreshCw className="size-3" /> Refresh all data
             </Command.Item>
             <Command.Item
               value="action toggle theme"
@@ -360,9 +360,9 @@ export function CommandPalette() {
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
               {isDark ? (
-                <Sun className="size-3.5" />
+                <Sun className="size-3" />
               ) : (
-                <Moon className="size-3.5" />
+                <Moon className="size-3" />
               )}{" "}
               Toggle theme
             </Command.Item>
@@ -373,14 +373,14 @@ export function CommandPalette() {
               )}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Copy className="size-3.5" /> Copy current path
+              <Copy className="size-3" /> Copy current path
             </Command.Item>
             <Command.Item
               value="action keyboard shortcuts hotkeys help"
               onSelect={run(openShortcutsModal)}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
             >
-              <Keyboard className="size-3.5" /> Keyboard shortcuts
+              <Keyboard className="size-3" /> Keyboard shortcuts
               <CommandShortcut>?</CommandShortcut>
             </Command.Item>
           </Command.Group>
@@ -400,7 +400,7 @@ export function CommandPalette() {
                   onSelect={run(() => { void navigate(path); })}
                   className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
                 >
-                  <Icon className="size-3.5" /> {label}
+                  <Icon className="size-3" /> {label}
                 </Command.Item>
               ))}
           </Command.Group>
@@ -418,7 +418,7 @@ export function CommandPalette() {
                 onSelect={run(() => { void navigate(to); })}
                 className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
               >
-                <Icon className="size-3.5" /> {label}
+                <Icon className="size-3" /> {label}
               </Command.Item>
             ))}
           </Command.Group>
@@ -435,7 +435,7 @@ export function CommandPalette() {
                   onSelect={run(() => { void navigate(`/c/${s.id}`); })}
                   className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
                 >
-                  <Search className="size-3.5 opacity-60" />
+                  <Search className="size-3 opacity-60" />
                   <span className="truncate">{s.title || 'Untitled chat'}</span>
                   <span className="ml-auto text-xs text-muted-foreground/50 font-mono">{s.id.slice(0, 8)}</span>
                 </Command.Item>

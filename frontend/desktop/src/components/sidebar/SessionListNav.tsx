@@ -87,7 +87,7 @@ export function SessionListNav({
           title="Hide sidebar"
           aria-label="Hide sidebar"
         >
-          <PanelLeft className="size-3.5" />
+          <PanelLeft className="size-3" />
         </button>
       </div>
 
@@ -103,7 +103,7 @@ export function SessionListNav({
           variants={rowMotion}
         >
           <motion.span className="inline-flex shrink-0 opacity-80" variants={plusIconMotion}>
-            <Plus className="size-3.5" />
+            <Plus className="size-3" />
           </motion.span>
           <span>New chat</span>
         </motion.button>
@@ -125,7 +125,7 @@ export function SessionListNav({
           }}
           className="w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[0.78125rem] text-sidebar-foreground/70 hover:bg-white/[0.04] hover:text-sidebar-foreground transition-colors"
         >
-          <FileText className="size-3.5 text-muted-foreground shrink-0" />
+          <FileText className="size-3 text-muted-foreground shrink-0" />
           <span>Artifacts</span>
         </button>
 
@@ -139,7 +139,7 @@ export function SessionListNav({
               : 'text-sidebar-foreground/70 hover:bg-white/[0.04] hover:text-sidebar-foreground',
           )}
         >
-          <Settings className="size-3.5 text-muted-foreground shrink-0" />
+          <Settings className="size-3 text-muted-foreground shrink-0" />
           <span>Customize</span>
         </button>
       </div>
@@ -164,7 +164,7 @@ export function SessionListNav({
               aria-label={label}
               data-testid={`sidebar-nav-${path.replace(/^\//, '')}`}
             >
-              <Icon className="size-3.5" />
+              <Icon className="size-3" />
               {/* Same amber pill the settings rail uses; the dock button is
                   28px, so it rides the icon's top-right corner. */}
               {pending > 0 ? (

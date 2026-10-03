@@ -36,9 +36,9 @@ function LiveRow({ ready, label, detail }: { ready: boolean; label?: string; det
   return (
     <div className="mt-2 flex items-center gap-2 text-xs">
       {ready ? (
-        <Check className="size-3.5 shrink-0 text-success" aria-hidden />
+        <Check className="size-3 shrink-0 text-success" aria-hidden />
       ) : (
-        <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" aria-hidden />
+        <Loader2 className="size-3 shrink-0 animate-spin text-primary" aria-hidden />
       )}
       <span className={cn('font-medium', ready ? 'text-foreground' : 'text-foreground/80')}>
         {ready ? 'Ready' : label || 'Starting'}

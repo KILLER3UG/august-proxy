@@ -130,9 +130,9 @@ export function ChangesCard({
           data-testid="changes-card-header"
         >
           {expanded ? (
-            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+            <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
           ) : (
-            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+            <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
           )}
           <span className="shrink-0 text-[0.71875rem] text-foreground/85">
             <span className="font-medium">{paths.length}</span>
@@ -266,7 +266,7 @@ function CodeFileRow({
             type="button"
             onClick={onReview}
             className="shrink-0 rounded-md border border-border/50 bg-background/50 px-2 py-0.5 text-[0.65625rem] font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground"
-            title="Open full diff in drawer"
+            title="Open full diff in drawer" aria-label="Open full diff in drawer"
             data-testid="changes-card-review"
           >
             Review
@@ -277,7 +277,7 @@ function CodeFileRow({
           onClick={onOpen}
           disabled={busy}
           className="shrink-0 rounded-md border border-border/50 bg-background/50 px-2 py-0.5 text-[0.65625rem] font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground disabled:opacity-50"
-          title="Open file in side panel"
+          title="Open file in side panel" aria-label="Open file in side panel"
           data-testid="changes-card-open"
         >
           {busy ? <Loader2 className="size-3 animate-spin" /> : 'Open'}
@@ -331,7 +331,7 @@ function DocumentFileRow({
         onClick={onOpen}
         disabled={busy}
         className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border/60 bg-background/60 px-2.5 py-1 text-2xs font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground disabled:opacity-50 cursor-pointer"
-        title="Open file in side panel"
+        title="Open file in side panel" aria-label="Open file in side panel"
         data-testid="changes-card-open"
       >
         Download

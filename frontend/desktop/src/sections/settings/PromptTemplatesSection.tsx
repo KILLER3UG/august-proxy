@@ -125,7 +125,7 @@ export function PromptTemplatesSection() {
             disabled={!name.trim() || !content.trim()}
             className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition disabled:opacity-50"
           >
-            <Check className="size-3.5" />
+            <Check className="size-3" />
             {editing ? 'Update' : 'Create'}
           </button>
         </div>
@@ -166,21 +166,21 @@ export function PromptTemplatesSection() {
                   className="p-1 rounded hover:bg-muted text-muted-foreground"
                   title="Copy template"
                 >
-                  <Copy className="size-3.5" />
+                  <Copy className="size-3" />
                 </button>
                 <button
                   onClick={() => handleEdit(t)}
                   className="p-1 rounded hover:bg-muted text-muted-foreground"
                   title="Edit template"
                 >
-                  <Pencil className="size-3.5" />
+                  <Pencil className="size-3" />
                 </button>
                 <button
                   onClick={() => handleDelete(t.id)}
                   className="p-1 rounded hover:bg-muted text-destructive"
                   title="Delete template"
                 >
-                  <Trash2 className="size-3.5" />
+                  <Trash2 className="size-3" />
                 </button>
               </div>
             </div>
@@ -193,7 +193,7 @@ export function PromptTemplatesSection() {
           onClick={() => setShowForm(true)}
           className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted transition"
         >
-          <Plus className="size-3.5" />
+          <Plus className="size-3" />
           New Template
         </button>
       )}

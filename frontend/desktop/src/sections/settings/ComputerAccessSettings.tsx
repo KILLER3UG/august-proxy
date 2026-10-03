@@ -188,7 +188,7 @@ export function ComputerAccessSettings() {
               to="/settings/observability"
               className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
             >
-              <Eye className="size-3.5" /> View observation gallery →
+              <Eye className="size-3" /> View observation gallery →
             </Link>
           </div>
           <div className="flex items-start justify-between gap-4 border-t border-white/[0.06] pt-3">

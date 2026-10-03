@@ -113,7 +113,7 @@ export function SettingsSelect({
                 >
                   <Check
                     className={cn(
-                      'size-3.5 shrink-0',
+                      'size-3 shrink-0',
                       isSelected ? 'opacity-100 text-primary' : 'opacity-0',
                     )}
                   />

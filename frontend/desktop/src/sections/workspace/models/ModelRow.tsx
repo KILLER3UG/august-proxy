@@ -319,12 +319,12 @@ if (editing) {
                   <Button size="sm" variant="ghost" onClick={() => probe.mutate()} disabled={probe.isPending}>
                     {probe.isPending ? (
                       <>
-                        <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                        <Loader2 className="size-3 mr-1.5 animate-spin" />
                         Probing…
                       </>
                     ) : (
                       <>
-                        <ScanSearch className="size-3.5 mr-1.5" />
+                        <ScanSearch className="size-3 mr-1.5" />
                         Probe capabilities
                       </>
                     )}
@@ -591,7 +591,7 @@ if (editing) {
               : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
           )}
         >
-          <Pin className="size-3.5" />
+          <Pin className="size-3" />
         </button>
         <button
           onClick={() => connect.mutate()}
@@ -601,9 +601,9 @@ if (editing) {
           className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground transition disabled:opacity-50"
         >
           {connect.isPending ? (
-            <Loader2 className="size-3.5 animate-spin" />
+            <Loader2 className="size-3 animate-spin" />
           ) : (
-            <Plug className="size-3.5" />
+            <Plug className="size-3" />
           )}
         </button>
         <button
@@ -612,7 +612,7 @@ if (editing) {
           title="Edit display name and metadata"
           className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground transition"
         >
-          <Pencil className="size-3.5" />
+          <Pencil className="size-3" />
         </button>
         <button
           onClick={async () => {
@@ -630,7 +630,7 @@ if (editing) {
           title="Remove this model"
           className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition"
         >
-          <Trash2 className="size-3.5" />
+          <Trash2 className="size-3" />
         </button>
       </div>
       {testResult && (

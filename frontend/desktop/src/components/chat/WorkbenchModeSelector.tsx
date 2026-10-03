@@ -360,7 +360,7 @@ export function WorkbenchModeSelector({
               <span className="text-sm text-foreground">How I work</span>
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                 {harnessMeta.label}
-                <ChevronRight className="size-3.5 opacity-60" />
+                <ChevronRight className="size-3 opacity-60" />
               </span>
             </motion.button>
 
@@ -380,7 +380,7 @@ export function WorkbenchModeSelector({
               <span className="text-sm text-foreground">Tool reach</span>
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                 {sandbox.shortLabel}
-                <ChevronRight className="size-3.5 opacity-60" />
+                <ChevronRight className="size-3 opacity-60" />
               </span>
             </motion.button>
           </motion.div>
@@ -433,10 +433,10 @@ export function WorkbenchModeSelector({
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="flex items-center gap-2 text-sm font-medium">
-                          <Icon className="size-3.5 opacity-80" />
+                          <Icon className="size-3 opacity-80" />
                           {option.label}
                         </span>
-                        {selected && <Check className="size-3.5 shrink-0" />}
+                        {selected && <Check className="size-3 shrink-0" />}
                       </div>
                       <p className="mt-0.5 pl-5 text-2xs leading-snug text-muted-foreground">
                         {option.description}
@@ -475,7 +475,7 @@ export function WorkbenchModeSelector({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium">{option.label}</span>
-                    {selected && <Check className="size-3.5 shrink-0" />}
+                    {selected && <Check className="size-3 shrink-0" />}
                   </div>
                   <p className="mt-0.5 text-2xs leading-snug text-muted-foreground">
                     {option.description}
@@ -515,9 +515,9 @@ export function WorkbenchModeSelector({
         data-testid="agent-mode-chip"
       >
         {harness === 'orchestrator' ? (
-          <GitBranch className="size-3.5 shrink-0 opacity-80" aria-hidden />
+          <GitBranch className="size-3 shrink-0 opacity-80" aria-hidden />
         ) : (
-          <ModeIcon className="size-3.5 shrink-0 opacity-80" aria-hidden />
+          <ModeIcon className="size-3 shrink-0 opacity-80" aria-hidden />
         )}
         <span className="truncate">
           {harness === 'orchestrator' ? 'Orchestrator' : harness === 'chat' || harness === 'code' ? harnessMeta.label : guard.label}

@@ -10,6 +10,7 @@
 /* ──────────────────────────────────────────────────────────────────────── */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { ChevronDown, Search, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -176,9 +177,7 @@ export function ModelPickerDropdown({ models, value, onChange, disabled }: Model
           {/* Search bar */}
           <div className="px-1.5 pt-1.5 pb-0.5 bg-popover">
             <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1">
-              <svg className="size-2.5 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-              </svg>
+              <Search className="size-3 shrink-0 text-muted-foreground" />
               <input
                 ref={searchRef}
                 type="text"
@@ -192,9 +191,7 @@ export function ModelPickerDropdown({ models, value, onChange, disabled }: Model
                   onClick={() => setSearchQuery('')}
                   className="p-0.5 rounded hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground transition"
                 >
-                  <svg className="size-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
+                  <X className="size-3" />
                 </button>
               )}
             </div>
@@ -309,20 +306,12 @@ export function ModelPickerDropdown({ models, value, onChange, disabled }: Model
         ) : (
           <span className="truncate text-muted-foreground leading-none">Select model</span>
         )}
-        <svg
+        <ChevronDown
           className={cn(
             "size-3 shrink-0 opacity-60 ml-0.5 transition-transform duration-200",
             open && "rotate-180",
           )}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
+        />
       </button>
       {typeof document !== 'undefined' && createPortal(dropdownContent, document.body)}
     </>

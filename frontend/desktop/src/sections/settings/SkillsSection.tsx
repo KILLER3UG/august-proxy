@@ -351,7 +351,7 @@ export function SkillsSection() {
           {mode === 'list' && (
             <>
               <div className="relative w-56">
-                <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Search className="absolute left-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
                 <input
                   type="text"
                   value={search}
@@ -369,7 +369,7 @@ export function SkillsSection() {
           {mode === 'detail' && selected && (
             <>
               <Button variant="outline" onClick={startEdit}>
-                <Pencil className="size-3.5" /> Edit
+                <Pencil className="size-3" /> Edit
               </Button>
               {/* M6 item 7: deletable only when authored (non-bundled) origin.
                   Bundled skills carry an empty createdBy; also treat explicit
@@ -385,7 +385,7 @@ export function SkillsSection() {
                   className="border-destructive/40 text-destructive hover:bg-destructive/10"
                   onClick={() => setConfirmDelete(selected.name)}
                 >
-                  <Trash2 className="size-3.5" /> Delete
+                  <Trash2 className="size-3" /> Delete
                 </Button>
               )}
             </>
@@ -410,7 +410,7 @@ export function SkillsSection() {
       {/* ── C-1: scope selector ─────────────────────────────────────── */}
       {mode === 'list' && (
         <div className="flex shrink-0 items-center gap-2" data-testid="skills-scope-row">
-          <FolderTree className="size-3.5 text-muted-foreground/70" />
+          <FolderTree className="size-3 text-muted-foreground/70" />
           <span className="text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">Scope</span>
           <div className="max-w-xs flex-1">
             <WorkspaceSelect
@@ -587,7 +587,7 @@ export function SkillsSection() {
                   >
                     <span
                       className={cn(
-                        'inline-block size-3.5 transform rounded-full bg-background shadow transition-transform',
+                        'inline-block size-3 transform rounded-full bg-background shadow transition-transform',
                         selected.enabled !== false ? 'translate-x-[18px]' : 'translate-x-[3px]',
                       )}
                     />

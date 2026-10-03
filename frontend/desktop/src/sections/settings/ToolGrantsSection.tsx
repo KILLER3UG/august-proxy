@@ -86,7 +86,7 @@ export function ToolGrantsSection() {
                     className="flex items-center gap-3 px-3 py-2 text-sm"
                     title={`Why allowed: always grant for ${g.tool} on ${g.path}`}
                   >
-                    <ShieldOff className="size-3.5 shrink-0 text-warning" />
+                    <ShieldOff className="size-3 shrink-0 text-warning" />
                     <div className="min-w-0 flex-1">
                       <div className="font-medium truncate">{g.tool}</div>
                       <div className="text-2xs text-muted-foreground truncate font-mono">

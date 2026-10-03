@@ -75,7 +75,7 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="circuit-panel">
       <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
-        <Cpu className="size-3.5 text-muted-foreground/70" />
+        <Cpu className="size-3 text-muted-foreground/70" />
         <span className="truncate text-xs font-semibold text-foreground">Circuit workbench</span>
         <span className="ml-auto rounded bg-muted/40 px-1.5 py-0.5 text-3xs text-muted-foreground">
           {artifacts.length}

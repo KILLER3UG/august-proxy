@@ -52,7 +52,7 @@ export function CompactionNoticeCard({ info }: { info: CompactionNoticeInfo }) {
             animate={{ rotate: 0, scale: 1 }}
             transition={{ ...t.spring, delay: 0.05 }}
           >
-            <Archive className="size-3.5 text-primary/80" />
+            <Archive className="size-3 text-primary/80" />
           </motion.span>
           <span className="text-[0.78125rem] font-medium leading-5 text-foreground/80">
             {label}

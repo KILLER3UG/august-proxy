@@ -123,12 +123,12 @@ export function HealthSimulatorSection() {
               className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground disabled:opacity-50"
               data-testid="sim-run"
             >
-              {running ? <Loader2 className="size-3.5 animate-spin" /> : <Zap className="size-3.5" />}
+              {running ? <Loader2 className="size-3 animate-spin" /> : <Zap className="size-3" />}
               {running ? 'Running probes…' : 'Run simulation'}
             </button>
             {result && (
               <span className={`inline-flex items-center gap-1.5 text-xs ${result.healthy ? 'text-success' : 'text-amber-500'}`}>
-                {result.healthy ? <Check className="size-3.5" /> : <X className="size-3.5" />}
+                {result.healthy ? <Check className="size-3" /> : <X className="size-3" />}
                 {result.healthy ? 'Route is healthy' : 'Issues found'}
               </span>
             )}

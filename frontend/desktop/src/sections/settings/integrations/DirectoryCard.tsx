@@ -39,7 +39,7 @@ export function DirectoryCard({
               {entry.name}
             </span>
             {entry.verified && (
-              <BadgeCheck className="size-3.5 shrink-0 text-muted-foreground" />
+              <BadgeCheck className="size-3 shrink-0 text-muted-foreground" />
             )}
             {installed && (
               <span className="rounded bg-emerald-500/15 px-1.5 py-px text-3xs font-medium text-emerald-400">

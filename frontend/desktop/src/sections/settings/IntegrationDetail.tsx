@@ -87,7 +87,7 @@ export function IntegrationDetail({ item, onBack, onRemove }: IntegrationDetailP
         )}
         {item.source.kind === 'mcp' && item.source.server.error && (
           <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
-            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+            <AlertCircle className="mt-0.5 size-3 shrink-0" />
             <pre className="whitespace-pre-wrap font-mono">{item.source.server.error}</pre>
           </div>
         )}
@@ -96,7 +96,7 @@ export function IntegrationDetail({ item, onBack, onRemove }: IntegrationDetailP
       {tools.length > 0 && (
         <section className="space-y-2">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-            <Wrench className="size-3.5" /> Tools
+            <Wrench className="size-3" /> Tools
             <span className="font-mono font-normal text-muted-foreground">{tools.length}</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -139,7 +139,7 @@ export function IntegrationDetail({ item, onBack, onRemove }: IntegrationDetailP
             className="border-destructive/40 text-destructive hover:bg-destructive/10"
             onClick={() => void onRemove()}
           >
-            <Trash2 className="size-3.5" />
+            <Trash2 className="size-3" />
             Remove from integrations
           </Button>
         </div>

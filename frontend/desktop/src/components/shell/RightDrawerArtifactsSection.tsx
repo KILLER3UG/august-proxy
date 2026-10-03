@@ -26,7 +26,7 @@ function kindIcon(kind: ArtifactKind) {
 function KindIcon({ kind, href }: { kind: ArtifactKind; href: string }) {
   if (kind === 'file') return <FileIcon name={href} size={14} className="shrink-0" />;
   const Icon = kindIcon(kind);
-  return <Icon className="size-3.5 shrink-0 text-muted-foreground/70" />;
+  return <Icon className="size-3 shrink-0 text-muted-foreground/70" />;
 }
 
 export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string | null }) {
@@ -142,7 +142,7 @@ export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string |
         {filtered.length === 0 ? (
           <div className="py-12 text-center">
             <div className="mx-auto mb-2 flex size-8 items-center justify-center rounded-full bg-muted/40 text-muted-foreground/50">
-              <Search className="size-3.5" />
+              <Search className="size-3" />
             </div>
             <p className="text-xs font-medium text-muted-foreground/70">
               {artifacts.length === 0 ? 'No artifacts yet' : 'No matches'}
@@ -182,7 +182,7 @@ export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string |
                 className="shrink-0 rounded-md p-1 text-muted-foreground/60 hover:bg-muted hover:text-foreground transition"
                 title={a.kind === 'link' ? 'Open in browser' : 'Open'}
               >
-                <ExternalLink className="size-3.5" />
+                <ExternalLink className="size-3" />
               </button>
             </div>
           ))

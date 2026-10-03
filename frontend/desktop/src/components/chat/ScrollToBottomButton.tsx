@@ -34,7 +34,7 @@ export function ScrollToBottomButton({
           }
           aria-label={showNewContentPill ? 'Jump to new content' : 'Scroll to bottom'}
         >
-          <ChevronDown className={showNewContentPill ? 'size-3.5 shrink-0' : 'size-4'} />
+          <ChevronDown className={showNewContentPill ? 'size-3 shrink-0' : 'size-4'} />
           {showNewContentPill ? 'New content' : null}
         </motion.button>
       )}

@@ -101,7 +101,7 @@ export function ProviderQuotaConfig({ provider, onSave, pending }: Props) {
         className="flex items-center gap-2 text-xs font-medium text-foreground/80 hover:text-foreground transition"
         aria-expanded={open}
       >
-        {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+        {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
         Quota endpoint
         <span className="text-3xs text-muted-foreground font-normal">
           {provider.quotaEndpoint?.url ? provider.quotaEndpoint.url : 'not configured'}
@@ -209,7 +209,7 @@ export function ProviderQuotaConfig({ provider, onSave, pending }: Props) {
               'text-xs text-muted-foreground hover:text-foreground hover:border-foreground/40 transition disabled:opacity-50',
             )}
           >
-            <Trash2 className="size-3.5" />
+            <Trash2 className="size-3" />
             Clear quota endpoint
           </button>
         </>

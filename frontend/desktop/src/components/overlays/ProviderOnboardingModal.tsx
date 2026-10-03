@@ -168,7 +168,7 @@ export function ProviderOnboardingModal() {
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <Icon className="size-3.5 text-primary shrink-0" />
+                          <Icon className="size-3 text-primary shrink-0" />
                           <p className="text-sm font-medium">
                             {item.label}
                             {item.optional && (

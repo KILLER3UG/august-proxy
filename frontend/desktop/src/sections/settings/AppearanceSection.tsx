@@ -91,7 +91,7 @@ function ThemeModeButton({ mode, currentMode, onSelect, Icon }: ThemeModeButtonP
     >
       <Icon className="size-4" />
       {label}
-      {active && <Check className="ml-auto size-3.5 text-primary" />}
+      {active && <Check className="ml-auto size-3 text-primary" />}
     </button>
   );
 }

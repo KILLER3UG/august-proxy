@@ -181,7 +181,7 @@ export function AllModelsTab() {
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -196,9 +196,9 @@ export function AllModelsTab() {
             title="Fetch each provider's baseUrl/models and merge into the catalog"
           >
             {discovering || refreshAll.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
+              <Loader2 className="size-3 animate-spin" />
             ) : (
-              <Asterisk className="size-3.5" />
+              <Asterisk className="size-3" />
             )}
             {discovering || refreshAll.isPending ? 'Discovering…' : 'Discover all'}
           </Button>
@@ -218,7 +218,7 @@ export function AllModelsTab() {
           action={
             providersDiscoverable(listQ.data ?? []) ? (
               <Button onClick={startDiscoverAll}>
-                <Asterisk className="size-3.5" /> Discover all
+                <Asterisk className="size-3" /> Discover all
               </Button>
             ) : null
           }
@@ -235,7 +235,7 @@ export function AllModelsTab() {
             return (
               <section key={providerId} className="space-y-3">
                 <div className="flex items-center gap-2 px-0.5">
-                  <Server className="size-3.5 text-muted-foreground" />
+                  <Server className="size-3 text-muted-foreground" />
                   <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {first.providerName}
                   </h4>
@@ -289,7 +289,7 @@ function AllModelCard({ row }: { row: AllModelRow }) {
             : 'text-muted-foreground/30 hover:text-muted-foreground/70 opacity-0 group-hover:opacity-100',
         )}
       >
-        <Pin className="size-3.5" />
+        <Pin className="size-3" />
       </button>
       <p className="text-sm font-medium font-mono text-foreground break-all leading-snug pr-6">
         {row.name || row.id}

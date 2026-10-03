@@ -59,7 +59,7 @@ function CopyButton({ value, label = 'copy' }: { value: string; label?: string }
     <button
       onClick={copy}
       className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-background px-2 py-1 text-3xs font-mono hover:bg-accent transition shrink-0"
-      title="Copy"
+      title="Copy" aria-label="Copy"
     >
       {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
       {copied ? 'copied' : label}
@@ -218,7 +218,7 @@ export function ExternalAccessSection() {
           </div>
           {mutation.isError && (
             <p className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+              <AlertTriangle className="size-3 mt-0.5 shrink-0" />
               <span>
                 Could not update: {(mutation.error)?.message ?? 'unknown error'}
               </span>
@@ -244,14 +244,14 @@ export function ExternalAccessSection() {
               </div>
               {revealedKey && (
                 <p className="text-xs text-warning flex items-start gap-1.5">
-                  <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                  <AlertTriangle className="size-3 mt-0.5 shrink-0" />
                   Copy this key now — after you leave this page only a masked preview is shown.
                 </p>
               )}
             </>
           ) : (
             <div className="flex items-start gap-2 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-3 text-xs text-muted-foreground">
-              <KeyRound className="size-3.5 mt-0.5 shrink-0 text-primary" />
+              <KeyRound className="size-3 mt-0.5 shrink-0 text-primary" />
               <div>
                 No gateway key yet. Generate one to open external API access for Claude Code,
                 Cursor, SDKs, and other clients.
@@ -265,7 +265,7 @@ export function ExternalAccessSection() {
               disabled={generateMutation.isPending}
               data-testid="generate-gateway-key"
             >
-              <RefreshCw className={`size-3.5 mr-1.5 ${generateMutation.isPending ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`size-3 mr-1.5 ${generateMutation.isPending ? 'animate-spin' : ''}`} />
               {hasKey ? 'Regenerate key' : 'Generate key'}
             </Button>
             {cfg.source && (

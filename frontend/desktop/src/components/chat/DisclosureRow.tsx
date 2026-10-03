@@ -1,3 +1,4 @@
+import { ChevronRight } from 'lucide-react';
 import { type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -55,19 +56,12 @@ export function DisclosureRow({
 
 function DisclosureCaret({ open }: { open: boolean }) {
   return (
-    <svg
+    <ChevronRight
       className={cn(
-        'size-3.5 shrink-0 transition-transform duration-200 text-muted-foreground',
+        'size-3 shrink-0 transition-transform duration-200 text-muted-foreground',
         open && 'rotate-90'
       )}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polyline points="9 18 15 12 9 6" />
-    </svg>
+      strokeWidth={2}
+    />
   );
 }

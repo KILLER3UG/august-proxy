@@ -52,7 +52,7 @@ function JobRow({ task, onDismiss }: { task: BackgroundTask; onDismiss?: () => v
     >
       <Glyph
         className={cn(
-          'mt-0.5 size-3.5 shrink-0',
+          'mt-0.5 size-3 shrink-0',
           running && 'animate-spin text-muted-foreground',
           task.status === 'done' && 'text-success',
           task.status === 'error' && 'text-danger',

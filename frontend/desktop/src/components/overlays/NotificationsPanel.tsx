@@ -117,7 +117,7 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
         >
           <header className="flex items-center justify-between gap-3 border-b border-border/50 px-3.5 py-3">
             <div className="flex min-w-0 items-center gap-2">
-              <Bell className="size-3.5 shrink-0 text-muted-foreground" />
+              <Bell className="size-3 shrink-0 text-muted-foreground" />
               <div className="min-w-0">
                 <h2 className="text-sm font-semibold text-foreground">Notifications</h2>
                 <p className="text-2xs text-muted-foreground">
@@ -133,7 +133,7 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
                 title="Refresh"
                 aria-label="Refresh"
               >
-                <RefreshCw className={cn('size-3.5', query.isFetching && 'animate-spin')} />
+                <RefreshCw className={cn('size-3', query.isFetching && 'animate-spin')} />
               </button>
               <button
                 type="button"
@@ -142,7 +142,7 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
                 title="Close"
                 aria-label="Close"
               >
-                <X className="size-3.5" />
+                <X className="size-3" />
               </button>
             </div>
           </header>
@@ -298,7 +298,7 @@ function NotificationRow({
         <div className="flex items-start gap-2.5">
           <Icon
             className={cn(
-              'mt-0.5 size-3.5 shrink-0',
+              'mt-0.5 size-3 shrink-0',
               item.kind === 'update' ? 'text-amber-500' : 'text-muted-foreground',
             )}
           />

@@ -92,7 +92,7 @@ function TokenPasteForm({
           className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
           aria-label={show ? 'Hide token' : 'Show token'}
         >
-          {show ? <Shield className="size-3.5" /> : <Eye className="size-3.5" />}
+          {show ? <Shield className="size-3" /> : <Eye className="size-3" />}
         </button>
       </div>
 
@@ -201,7 +201,7 @@ export function IntegrationSetupWidget({ setup }: { setup: IntegrationSetupResul
       ) : isMcp ? (
         <div className="space-y-1 text-xs text-foreground/90">
           <div className="flex items-center gap-2">
-            <Inbox className="size-3.5 text-muted-foreground" />
+            <Inbox className="size-3 text-muted-foreground" />
             <span className="font-medium">{setup.name}</span>
             {setup.serverId && <span className="font-mono text-muted-foreground">#{setup.serverId}</span>}
             <StatusBadge ok={!!setup.started} text={setup.started ? 'Active' : 'Registered'} />
@@ -216,7 +216,7 @@ export function IntegrationSetupWidget({ setup }: { setup: IntegrationSetupResul
         </div>
       ) : null}
 
-      {note && <p className="flex items-center gap-1.5 text-2xs text-success"><CheckCircle2 className="size-3.5" />{note}</p>}
+      {note && <p className="flex items-center gap-1.5 text-2xs text-success"><CheckCircle2 className="size-3" />{note}</p>}
       {err && <p className="text-3xs text-destructive">{err}</p>}
     </div>
   );

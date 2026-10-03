@@ -305,7 +305,7 @@ export function UserDropdown({
             {item.label}
           </span>
           {item.badge && <Badge className={item.badge.className}>{item.badge.text}</Badge>}
-          {ItemRightIcon && <ItemRightIcon className="size-3.5 shrink-0 text-muted-foreground" />}
+          {ItemRightIcon && <ItemRightIcon className="size-3 shrink-0 text-muted-foreground" />}
           {item.showAvatar && (
             <Avatar className="size-6 cursor-pointer border border-white shadow dark:border-gray-700">
               <AvatarImage src={user.avatar} alt={user.name} />

@@ -349,7 +349,7 @@ function Header({
           {mcpRunningCount} MCP running
         </Badge>
         <Button size="sm" onClick={onAdd} data-testid="integrations-add">
-          <Plus className="size-3.5" />
+          <Plus className="size-3" />
           Add
         </Button>
       </div>
@@ -367,7 +367,7 @@ function SearchAndFilters({
   return (
     <div className="flex flex-wrap items-center gap-3">
       <div className="relative flex-1 min-w-[280px] max-w-md">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
           value={q}
@@ -427,7 +427,7 @@ function Empty({
       <span className="flex-1">{message}</span>
       {actionLabel && onAction && (
         <Button variant="outline" size="sm" onClick={onAction}>
-          <Plus className="size-3.5" />
+          <Plus className="size-3" />
           {actionLabel}
         </Button>
       )}

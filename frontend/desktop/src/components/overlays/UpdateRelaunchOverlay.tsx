@@ -114,7 +114,7 @@ export function UpdateRelaunchOverlay() {
                   {assistantLine}
                   {available?.date && (
                     <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground/80">
-                      <CalendarDays className="size-3.5" aria-hidden />
+                      <CalendarDays className="size-3" aria-hidden />
                       {new Date(available.date).toLocaleDateString()}
                     </p>
                   )}
@@ -142,7 +142,7 @@ export function UpdateRelaunchOverlay() {
                         className="h-2 rounded-full border-0 bg-muted"
                       />
                       <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Download className="size-3.5" /> Setup wizard opening…
+                        <Download className="size-3" /> Setup wizard opening…
                       </span>
                     </div>
                   )}
@@ -187,7 +187,7 @@ export function UpdateRelaunchOverlay() {
                     className="update-flow-primary-button inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium"
                     data-testid="update-restart"
                   >
-                    <RefreshCw className="size-3.5" />
+                    <RefreshCw className="size-3" />
                     Restart to update
                   </button>
                 </>

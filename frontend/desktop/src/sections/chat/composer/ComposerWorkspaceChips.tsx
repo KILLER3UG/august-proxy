@@ -136,7 +136,7 @@ export function ComposerWorkspaceChips({
             !sessionId && 'opacity-50 pointer-events-none',
           )}
         >
-          <Folder className="size-3.5 shrink-0" />
+          <Folder className="size-3 shrink-0" />
           <span className="truncate">{label}</span>
           <ChevronDown
             className={cn('size-3 shrink-0 transition-transform', open && 'rotate-180')}
@@ -160,7 +160,7 @@ export function ComposerWorkspaceChips({
               data-testid="composer-open-folder"
               className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-foreground transition hover:bg-muted"
             >
-              <FolderPlus className="size-3.5 shrink-0 text-muted-foreground" />
+              <FolderPlus className="size-3 shrink-0 text-muted-foreground" />
               {picking ? 'Choosing folder…' : 'Open folder…'}
             </button>
             <div className="mx-1.5 my-1 border-t border-border/40" />
@@ -191,7 +191,7 @@ export function ComposerWorkspaceChips({
                       active && 'bg-primary/10',
                     )}
                   >
-                    <Folder className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
+                    <Folder className="mt-0.5 size-3 shrink-0 text-muted-foreground/70" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-xs text-foreground/90">
                         {w.name || workspaceBaseName(w.path)}
@@ -200,7 +200,7 @@ export function ComposerWorkspaceChips({
                         {w.path}
                       </span>
                     </span>
-                    {active && <Check className="mt-0.5 size-3.5 shrink-0" />}
+                    {active && <Check className="mt-0.5 size-3 shrink-0" />}
                   </button>
                 );
               })

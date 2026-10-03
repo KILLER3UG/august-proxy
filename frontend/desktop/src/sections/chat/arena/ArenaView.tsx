@@ -341,7 +341,7 @@ export function ArenaView() {
             title="Line-diff the two oldest finished answers"
             data-testid="arena-diff-open"
           >
-            <FileDiff className="size-3.5" />
+            <FileDiff className="size-3" />
             Diff answers
           </button>
         ) : null}
@@ -401,7 +401,7 @@ export function ArenaView() {
                 className="p-1 text-muted-foreground hover:text-foreground"
                 aria-label="Close"
               >
-                <X className="size-3.5" />
+                <X className="size-3" />
               </button>
             </div>
             <DiffView

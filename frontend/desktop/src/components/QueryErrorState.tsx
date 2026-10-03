@@ -68,7 +68,7 @@ export function QueryErrorState({
         )}
         aria-hidden
       >
-        <AlertTriangle className={compact ? 'size-3.5' : 'size-5'} />
+        <AlertTriangle className={compact ? 'size-3' : 'size-5'} />
       </div>
       <p className={cn('font-medium text-foreground', compact ? 'mt-1.5 text-2xs' : 'mt-2.5 text-sm')}>
         {title}

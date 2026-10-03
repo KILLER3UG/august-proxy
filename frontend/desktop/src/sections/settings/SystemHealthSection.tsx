@@ -117,7 +117,7 @@ function EndpointRow({
         <button
           onClick={copy}
           className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-background px-2 py-1 text-3xs font-mono hover:bg-accent transition shrink-0"
-          title="Copy URL"
+          title="Copy URL" aria-label="Copy URL"
         >
           {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
           {copied ? 'copied' : 'copy'}
@@ -212,7 +212,7 @@ export function SystemHealthSection() {
           status={<Badge variant={hostConnected ? 'success' : 'secondary'}>{hostStatus}</Badge>}
         >
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            {hostConnected ? <Wifi className="size-3.5 text-success" /> : <WifiOff className="size-3.5" />}
+            {hostConnected ? <Wifi className="size-3 text-success" /> : <WifiOff className="size-3" />}
             {hostConnected ? 'Reachable and accepting commands.' : 'Not running.'}
           </div>
         </StatCard>
@@ -251,9 +251,9 @@ export function SystemHealthSection() {
           Point any OpenAI- or Anthropic-compatible app at this proxy. Models from every provider are available on all paths.
         </p>
         <div className="space-y-2">
-          <EndpointRow url={`http://127.0.0.1:${port}/v1/messages`} label="Anthropic (Claude Code)" hint="Sends /v1/messages." icon={<Brain className="size-3.5" />} />
-          <EndpointRow url={`http://127.0.0.1:${port}/v1/chat/completions`} label="OpenAI Chat Completions" hint="Sends /v1/chat/completions." icon={<Terminal className="size-3.5" />} />
-          <EndpointRow url={`http://127.0.0.1:${port}/v1/models`} label="Model list" hint="Any OpenAI-compatible client." icon={<Link2 className="size-3.5" />} />
+          <EndpointRow url={`http://127.0.0.1:${port}/v1/messages`} label="Anthropic (Claude Code)" hint="Sends /v1/messages." icon={<Brain className="size-3" />} />
+          <EndpointRow url={`http://127.0.0.1:${port}/v1/chat/completions`} label="OpenAI Chat Completions" hint="Sends /v1/chat/completions." icon={<Terminal className="size-3" />} />
+          <EndpointRow url={`http://127.0.0.1:${port}/v1/models`} label="Model list" hint="Any OpenAI-compatible client." icon={<Link2 className="size-3" />} />
         </div>
       </div>
 

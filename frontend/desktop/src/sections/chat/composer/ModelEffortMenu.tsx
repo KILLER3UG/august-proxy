@@ -471,6 +471,7 @@ export function ModelEffortMenu({
         <button
           type="button"
           title={m.pinned ? 'Unpin' : 'Pin'}
+          aria-label={m.pinned ? 'Unpin' : 'Pin'}
           onClick={(e) => {
             e.stopPropagation();
             toggleModelPin(m);
@@ -482,9 +483,9 @@ export function ModelEffortMenu({
               : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground',
           )}
         >
-          <Pin className="size-3.5" />
+          <Pin className="size-3" />
         </button>
-        {isSel && <Check className="size-3.5 shrink-0 text-primary" />}
+        {isSel && <Check className="size-3 shrink-0 text-primary" />}
       </div>
     );
   };
@@ -538,7 +539,7 @@ export function ModelEffortMenu({
         aria-haspopup="dialog"
         data-testid="effort-chip"
       >
-        <Gauge className="size-3.5 shrink-0 opacity-70" />
+        <Gauge className="size-3 shrink-0 opacity-70" />
         <span className="shrink-0">{effortOpt.triggerLabel}</span>
         <ChevronDown
           className={cn(
@@ -593,7 +594,7 @@ export function ModelEffortMenu({
                     className="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted/40 hover:text-foreground transition disabled:opacity-50"
                   >
                     <RefreshCw
-                      className={cn('size-3.5', refreshAll.isPending && 'animate-spin')}
+                      className={cn('size-3', refreshAll.isPending && 'animate-spin')}
                     />
                   </button>
                 </div>
@@ -627,11 +628,11 @@ export function ModelEffortMenu({
                             : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
                         )}
                       >
-                        {isCur && <Check className="size-3.5 shrink-0 text-primary" />}
+                        {isCur && <Check className="size-3 shrink-0 text-primary" />}
                         <span className="min-w-0 flex-1 truncate">{g.provider}</span>
                         <ChevronRight
                           className={cn(
-                            'size-3.5 shrink-0 transition-opacity',
+                            'size-3 shrink-0 transition-opacity',
                             isActive ? 'opacity-90' : 'opacity-30',
                           )}
                         />
@@ -710,7 +711,7 @@ export function ModelEffortMenu({
                         )}
                       >
                         <span>{o.triggerLabel}</span>
-                        {isSel && <Check className="size-3.5 shrink-0" />}
+                        {isSel && <Check className="size-3 shrink-0" />}
                       </button>
                     );
                   })}

@@ -331,7 +331,7 @@ export function CircuitInstruments({ messages }: { messages?: ChatMessage[] | nu
   return (
     <div className="flex flex-col gap-2 border-b border-border/60 px-3 py-2.5" data-testid="circuit-instruments">
       <div className="flex items-center gap-2">
-        <active.icon className="size-3.5 shrink-0 text-muted-foreground/70" />
+        <active.icon className="size-3 shrink-0 text-muted-foreground/70" />
         <span className="shrink-0 text-xs font-semibold text-foreground">Instruments</span>
         <span className="truncate text-3xs text-muted-foreground">{active.hint}</span>
       </div>
@@ -354,7 +354,7 @@ export function CircuitInstruments({ messages }: { messages?: ChatMessage[] | nu
               }`}
               data-testid={`instrument-${k}`}
             >
-              <meta.icon className="size-3.5 shrink-0" />
+              <meta.icon className="size-3 shrink-0" />
               <span className="text-2xs font-medium">{meta.label}</span>
             </button>
           );

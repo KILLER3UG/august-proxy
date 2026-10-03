@@ -218,7 +218,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
               <div className="space-y-2">
                 {(providers.length > 0 ? providers : addedProvider ? [addedProvider] : []).map((p) => (
                   <div key={p.id} className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-muted/30 px-3 py-2 text-xs">
-                    <Check className="size-3.5 text-success shrink-0" />
+                    <Check className="size-3 text-success shrink-0" />
                     <span className="font-medium">{p.name}</span>
                     <span className="text-muted-foreground font-mono">{p.apiFormat}</span>
                     <span className={`ml-auto text-3xs ${p.apiKeySet ? 'text-success' : 'text-amber-500'}`}>
@@ -293,7 +293,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                 className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs text-primary-foreground disabled:opacity-50"
                 data-testid="wizard-test"
               >
-                {test.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Plug className="size-3.5" />}
+                {test.isPending ? <Loader2 className="size-3 animate-spin" /> : <Plug className="size-3" />}
                 Test connection
               </button>
               {testResult ? (
@@ -321,7 +321,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                 className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs text-primary-foreground disabled:opacity-50"
                 data-testid="wizard-refresh-models"
               >
-                {refreshModels.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                {refreshModels.isPending ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
                 Refresh model list
               </button>
               <span className="text-xs text-muted-foreground">
@@ -430,9 +430,9 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
               </div>
             </div>
             <ul className="space-y-1.5 text-xs text-muted-foreground">
-              <li className="flex gap-2"><Asterisk className="size-3.5 text-primary shrink-0" /> Chat with tool-calling agents that can read and edit your workspace.</li>
-              <li className="flex gap-2"><Shield className="size-3.5 text-success shrink-0" /> Safety mode is set to {SANDBOX_OPTIONS.find((o) => o.id === sandboxMode)?.label}.</li>
-              <li className="flex gap-2"><Wand2 className="size-3.5 text-primary shrink-0" /> Everything here is changeable later in Settings.</li>
+              <li className="flex gap-2"><Asterisk className="size-3 text-primary shrink-0" /> Chat with tool-calling agents that can read and edit your workspace.</li>
+              <li className="flex gap-2"><Shield className="size-3 text-success shrink-0" /> Safety mode is set to {SANDBOX_OPTIONS.find((o) => o.id === sandboxMode)?.label}.</li>
+              <li className="flex gap-2"><Wand2 className="size-3 text-primary shrink-0" /> Everything here is changeable later in Settings.</li>
             </ul>
             <button
               type="button"
@@ -456,7 +456,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
             className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
             data-testid="wizard-back"
           >
-            <ChevronLeft className="size-3.5" />
+            <ChevronLeft className="size-3" />
             Back
           </button>
         ) : (
@@ -471,7 +471,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
             data-testid="wizard-next"
           >
             Next
-            <ChevronRight className="size-3.5" />
+            <ChevronRight className="size-3" />
           </button>
         ) : null}
         <button

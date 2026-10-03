@@ -113,8 +113,8 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
               return (
                 <button key={i} onClick={() => { void handleSelect(i); }} className={className} disabled={answerResult !== null || isSubmitting}>
                   <span className="flex items-center gap-2">
-                    {answerResult !== null && i === answerResult.correctIndex && <CheckCircle2 className="size-3.5 shrink-0" />}
-                    {answerResult !== null && i === selected && !isCorrect && <XCircle className="size-3.5 shrink-0" />}
+                    {answerResult !== null && i === answerResult.correctIndex && <CheckCircle2 className="size-3 shrink-0" />}
+                    {answerResult !== null && i === selected && !isCorrect && <XCircle className="size-3 shrink-0" />}
                     <span className="text-xs font-medium text-muted-foreground w-5">{String.fromCharCode(65 + i)}.</span>
                     {opt}
                   </span>
@@ -162,7 +162,7 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
               onKeyDown={(e) => { if (e.key === 'Enter') { void handleAddQuestion(); } }}
             />
             <button onClick={() => { void handleAddQuestion(); }} disabled={isSubmitting || !addRequest.trim()} className="text-primary hover:underline text-xs font-medium shrink-0">
-              <Plus className="size-3.5" />
+              <Plus className="size-3" />
             </button>
           </div>
         </div>

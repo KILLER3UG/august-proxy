@@ -144,7 +144,7 @@ function RollbackRow({ entry, expanded, onToggle, onUndo, undoing }: {
                             disabled={undoing}
                             onClick={(e) => { e.stopPropagation(); onUndo(); }}
                         >
-                            <Undo2 className="size-3.5 mr-1" /> Undo
+                            <Undo2 className="size-3 mr-1" /> Undo
                         </Button>
                     )}
                 </td>

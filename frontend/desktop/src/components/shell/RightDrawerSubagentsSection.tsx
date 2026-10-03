@@ -260,7 +260,7 @@ function TabSearchDropdown({
         className="rounded p-1 text-muted-foreground/70 transition hover:bg-white/[0.06] hover:text-foreground"
         data-testid="subagent-tab-search"
       >
-        <Search className="size-3.5" />
+        <Search className="size-3" />
       </button>
       {open && (
         <div className="absolute right-0 top-full z-30 mt-1 w-64 rounded-lg border border-border/60 bg-popover p-1.5 shadow-xl">

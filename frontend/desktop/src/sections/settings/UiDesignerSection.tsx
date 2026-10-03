@@ -102,7 +102,7 @@ export function UiDesignerSection() {
               disabled={!dirty}
               title="Discard draft and match what is currently applied"
             >
-              <Undo2 className="size-3.5" />
+              <Undo2 className="size-3" />
               Discard
             </Button>
             <Button
@@ -114,7 +114,7 @@ export function UiDesignerSection() {
                 toast.message('Draft cleared');
               }}
             >
-              <RotateCcw className="size-3.5" />
+              <RotateCcw className="size-3" />
               Clear draft
             </Button>
             <Button
@@ -128,7 +128,7 @@ export function UiDesignerSection() {
               Reset app
             </Button>
             <Button type="button" size="sm" onClick={onApply} disabled={!dirty}>
-              <Check className="size-3.5" />
+              <Check className="size-3" />
               Apply
             </Button>
           </div>

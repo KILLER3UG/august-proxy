@@ -85,9 +85,9 @@ export function ShortcutsModal() {
           <button
             onClick={closeShortcutsModal}
             className="rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-            title="Close"
+            title="Close" aria-label="Close"
           >
-            <X className="size-3.5" />
+            <X className="size-3" />
           </button>
         </div>
         <div className="max-h-[60vh] overflow-y-auto p-4 space-y-4">

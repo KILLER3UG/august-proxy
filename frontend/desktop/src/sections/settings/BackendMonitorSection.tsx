@@ -286,17 +286,17 @@ export function BackendMonitorSection() {
                 actions={
                     <div className="flex items-center gap-2">
                         <Button size="sm" variant="ghost" onClick={() => (status === 'paused' ? resume() : pause())}>
-                            {status === 'paused' ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+                            {status === 'paused' ? <Play className="size-3" /> : <Pause className="size-3" />}
                             {status === 'paused' ? 'Resume' : 'Pause'}
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => setAutoScroll((v) => !v)}>
                             {autoScroll ? 'Auto-scroll on' : 'Auto-scroll off'}
                         </Button>
                         <Button size="sm" variant="ghost" onClick={clear} disabled={visible.length === 0}>
-                            <Trash2 className="size-3.5" /> Clear
+                            <Trash2 className="size-3" /> Clear
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => exportEvents(visible)} disabled={visible.length === 0}>
-                            <Download className="size-3.5" /> Export
+                            <Download className="size-3" /> Export
                         </Button>
                     </div>
                 }
@@ -332,7 +332,7 @@ export function BackendMonitorSection() {
                         HTTP
                     </button>
                     <div className="relative ml-auto max-w-xs flex-1 min-w-[180px]">
-                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
                         <input
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}

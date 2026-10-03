@@ -244,7 +244,7 @@ export function DebateView({
             aria-label="Close debate"
             data-testid="debate-exit"
           >
-            <X className="size-3.5" />
+            <X className="size-3" />
           </button>
         </div>
 

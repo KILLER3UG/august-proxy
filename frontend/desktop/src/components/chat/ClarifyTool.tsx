@@ -346,7 +346,7 @@ export function ClarifyTool({
                   'disabled:cursor-not-allowed disabled:opacity-50',
                 )}
               >
-                <Send className="size-3.5" />
+                <Send className="size-3" />
                 Confirm ({multiSelections.size} selected)
               </button>
             )}
@@ -372,7 +372,7 @@ export function ClarifyTool({
                     'disabled:cursor-not-allowed disabled:opacity-50',
                   )}
                 >
-                  <Eye className="size-3.5" />
+                  <Eye className="size-3" />
                   Use this
                 </button>
               </div>
@@ -409,7 +409,7 @@ export function ClarifyTool({
           {/* Action row — same control family as PlanProposalBanner, larger padding */}
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             <BannerButton onClick={handleDismiss} disabled={submitting}>
-              <SkipForward className="size-3.5" />
+              <SkipForward className="size-3" />
               Skip
             </BannerButton>
             <BannerButton
@@ -418,7 +418,7 @@ export function ClarifyTool({
               disabled={submitting || !draft.trim()}
               className="ml-auto"
             >
-              <Send className="size-3.5" />
+              <Send className="size-3" />
               {submitting ? 'Sending…' : 'Send answer'}
               <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-3xs font-mono">
                 ↵

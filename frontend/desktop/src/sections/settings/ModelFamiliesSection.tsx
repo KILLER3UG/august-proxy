@@ -179,14 +179,14 @@ export function ModelFamiliesSection() {
         )}
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={() => setDraft([...rows, { ...EMPTY }])}>
-            <Plus className="size-3.5" /> Add family
+            <Plus className="size-3" /> Add family
           </Button>
           <Button size="sm" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
             Save
           </Button>
           {dirty && (
             <Button size="sm" variant="ghost" onClick={() => setDraft(null)} title="Discard edits">
-              <RotateCcw className="size-3.5" /> Discard
+              <RotateCcw className="size-3" /> Discard
             </Button>
           )}
         </div>

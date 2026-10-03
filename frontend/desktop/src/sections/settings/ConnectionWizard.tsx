@@ -162,9 +162,9 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
                     aria-label={`Toggle ${scope}`}
                   >
                     {checked[scope] ? (
-                      <CheckCircle2 className="size-3.5" />
+                      <CheckCircle2 className="size-3" />
                     ) : (
-                      <Circle className="size-3.5 text-muted-foreground" />
+                      <Circle className="size-3 text-muted-foreground" />
                     )}
                   </button>
                   <code className="font-mono text-foreground/90">{scope}</code>

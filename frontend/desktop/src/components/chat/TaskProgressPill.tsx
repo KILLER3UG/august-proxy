@@ -145,13 +145,13 @@ export function TaskProgressPill({ sessionId, className }: TaskProgressPillProps
                     >
                       <span className="mt-0.5 shrink-0" aria-hidden>
                         {t.status === 'completed' ? (
-                          <Check className="size-3.5 text-emerald-400" />
+                          <Check className="size-3 text-emerald-400" />
                         ) : t.status === 'in_progress' ? (
-                          <Loader2 className="size-3.5 animate-spin text-primary" />
+                          <Loader2 className="size-3 animate-spin text-primary" />
                         ) : t.status === 'cancelled' ? (
-                          <Minus className="size-3.5 text-muted-foreground/40" />
+                          <Minus className="size-3 text-muted-foreground/40" />
                         ) : (
-                          <Circle className="size-3.5 text-muted-foreground/40" />
+                          <Circle className="size-3 text-muted-foreground/40" />
                         )}
                       </span>
                       <span

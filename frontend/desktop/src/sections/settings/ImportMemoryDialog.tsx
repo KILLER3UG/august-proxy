@@ -612,7 +612,7 @@ export function ImportMemoryDialog({
               )}
               data-testid="import-mode-ai"
             >
-              <Asterisk className="size-3.5" /> AI arrange
+              <Asterisk className="size-3" /> AI arrange
             </button>
             <button
               type="button"
@@ -671,7 +671,7 @@ export function ImportMemoryDialog({
               onClick={() => fileInputRef.current?.click()}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-card/60 px-3 py-1.5 text-xs text-foreground hover:border-primary/40"
             >
-              <Upload className="size-3.5" /> Choose file…
+              <Upload className="size-3" /> Choose file…
             </button>
             {fileName && (
               <span className="text-2xs text-muted-foreground" title={fileName}>
@@ -692,7 +692,7 @@ export function ImportMemoryDialog({
           )}
           {aiLoading && (
             <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-card/40 px-3 py-3 text-xs text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
+              <Loader2 className="size-3 animate-spin" />
               {model?.name || model?.id || 'The model'} is arranging the memories…
             </div>
           )}
@@ -778,7 +778,7 @@ export function ImportMemoryDialog({
                     type="button"
                     onClick={applyCategoryOverride}
                     className="text-3xs text-primary hover:underline"
-                    title="Apply the default category to every parsed row"
+                    title="Apply the default category to every parsed row" aria-label="Apply the default category to every parsed row"
                   >
                     apply to all rows
                   </button>
