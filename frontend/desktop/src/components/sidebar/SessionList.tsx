@@ -4,8 +4,10 @@
 /* Bottom: Settings                                                        */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useNeedsHandoffStore } from './needs-handoff-store';
+import { PromptDialog } from '@/components/overlays/PromptDialog';
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import { ArrowDownToLine, ChevronUp, Search, X } from "lucide-react";
+import { ArrowDownToLine, ChevronUp, Search, X, AlertCircle } from "lucide-react";
 import { openConversationSearch } from "@/store/conversation-search";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { openFolderViaTauri, folderNameFromPath } from "@/api/folder";
@@ -362,19 +364,15 @@ export function SessionList({
     localStorage.setItem(SESSIONS_KEY, JSON.stringify([...next]));
   }, []);
 
-  const handleCreateFolder = () => {
-    const name = prompt("Enter folder name:");
-    if (name && name.trim()) {
-      createFolder(name.trim());
-    }
-  };
+  // Folder naming goes through PromptDialog: window.prompt is unstyled and
+  // a silent no-op in some Tauri webviews (rename did nothing at all).
+  const [folderPrompt, setFolderPrompt] = useState<
+    { mode: 'create' } | { mode: 'rename'; id: string; currentName: string } | null
+  >(null);
 
-  const handleRenameFolder = (id: string, currentName: string) => {
-    const name = prompt("Rename folder:", currentName);
-    if (name && name.trim() && name.trim() !== currentName) {
-      renameFolder(id, name.trim());
-    }
-  };
+  const handleCreateFolder = () => setFolderPrompt({ mode: 'create' });
+  const handleRenameFolder = (id: string, currentName: string) =>
+    setFolderPrompt({ mode: 'rename', id, currentName });
 
   const handleDeleteFolder = async (id: string) => {
     const ok = await confirmStyled({
@@ -451,17 +449,41 @@ export function SessionList({
     // onSelect/activeId so we don't have to rebuild on every keystroke.
   }, [visible, togglePin, confirmDeleteSession]);
 
-  // ── Session search — client-side title filter across every section ──
+  // ── Session search — title OR id, across every section ──
+  // The model quotes session ids (handoffs, run ids, `forget(key=…)`); a
+  // search that only matched titles made those unfindable (DeepSeek matches
+  // both — R4 §3). One token AND-match over `title + id`.
   const searchTrim = searchQuery.trim().toLowerCase();
   const searching = searchTrim.length > 0;
+  const searchTokens = useMemo(
+    () => searchTrim.split(/\s+/).filter(Boolean),
+    [searchTrim],
+  );
   const matchesSearch = useCallback(
-    (s: Session) => !searching || (s.title || "").toLowerCase().includes(searchTrim),
-    [searching, searchTrim],
+    (s: Session) => {
+      if (!searching) return true;
+      const haystack = `${(s.title || "").toLowerCase()} ${s.id.toLowerCase()}`;
+      return searchTokens.every((t) => haystack.includes(t));
+    },
+    [searching, searchTokens],
   );
   // Bucketed views memoized on the search term so each keystroke costs one
   // O(n) pass instead of three (Pinned + Projects + uncategorized all filter
   // `others`/`pinned` independently). Without this, a typing-heavy search
   // re-rendered every SessionRow on every keypress (audit finding).
+  // Needs-attention lane (Hermes "Active now" pattern): sessions with
+  // workstreams waiting on a human decision, grouped at the top instead of
+  // scattered amber dots (2026-10-03 spec §3.3.5).
+  const attentionBySession = useNeedsHandoffStore((s) => s.bySession);
+  const attentionSessions = useMemo(
+    () =>
+      Object.entries(attentionBySession)
+        .filter(([, info]) => info.needs > 0)
+        .map(([id]) => sessions.find((x) => x.id === id))
+        .filter((x): x is Session => Boolean(x)),
+    [attentionBySession, sessions],
+  );
+
   const visiblePinned = useMemo(
     () => (searching ? pinned.filter(matchesSearch) : pinned),
     [searching, pinned, matchesSearch],
@@ -524,7 +546,7 @@ export function SessionList({
               onKeyDown={(e) => {
                 if (e.key === "Escape") setSearchQuery("");
               }}
-              placeholder="Search sessions…"
+              placeholder="Search sessions or ids…"
               aria-label="Search sessions"
               className="w-full rounded-md bg-white/[0.04] border border-sidebar-border/50 pl-7 pr-7 py-1 text-xs text-tier-1 placeholder:text-tier-3 outline-none focus:border-sidebar-ring/70 transition-colors"
             />
@@ -547,6 +569,40 @@ export function SessionList({
             <p className="py-4 text-center text-xs text-tier-3 italic">
               No sessions match “{searchQuery.trim()}”
             </p>
+          )}
+          {attentionSessions.length > 0 && (
+            <div
+              className="px-2 pb-1"
+              role="region"
+              aria-label="Sessions needing attention"
+              data-testid="needs-attention-lane"
+            >
+              <div className="flex items-center gap-1.5 px-1 pb-1 text-2xs font-semibold uppercase tracking-wider text-warning-fg">
+                <AlertCircle className="size-3" aria-hidden />
+                Needs attention
+                <span className="tabular-nums">{attentionSessions.length}</span>
+              </div>
+              {attentionSessions.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onSelect(s)}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[0.78125rem] transition-colors',
+                    activeId === s.id
+                      ? 'bg-white/[0.08] text-sidebar-foreground'
+                      : 'text-sidebar-foreground/75 hover:bg-white/[0.04] hover:text-sidebar-foreground',
+                  )}
+                  data-testid={`needs-attention-${s.id}`}
+                >
+                  <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">{s.title || 'Untitled'}</span>
+                  <span className="shrink-0 text-2xs tabular-nums text-warning-fg">
+                    {attentionBySession[s.id].needs}
+                  </span>
+                </button>
+              ))}
+            </div>
           )}
           {visiblePinned.length > 0 && (
           <Section
@@ -799,6 +855,23 @@ export function SessionList({
         open={switchAccountOpen}
         onClose={() => setSwitchAccountOpen(false)}
         onCreateNew={() => openSettingsSection("account")}
+      />
+      <PromptDialog
+        open={folderPrompt !== null}
+        title={folderPrompt?.mode === 'rename' ? 'Rename folder' : 'New folder'}
+        label="Folder name"
+        initialValue={folderPrompt?.mode === 'rename' ? folderPrompt.currentName : ''}
+        placeholder="Folder name"
+        confirmLabel={folderPrompt?.mode === 'rename' ? 'Rename' : 'Create'}
+        onSubmit={(name) => {
+          if (folderPrompt?.mode === 'rename' && name !== folderPrompt.currentName) {
+            renameFolder(folderPrompt.id, name);
+          } else if (folderPrompt?.mode === 'create') {
+            createFolder(name);
+          }
+          setFolderPrompt(null);
+        }}
+        onCancel={() => setFolderPrompt(null)}
       />
     </div>
   );

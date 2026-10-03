@@ -15,7 +15,6 @@ import {
 import { cn, timeAgo, absoluteDate } from "@/lib/utils";
 import { sessionRow, hoverScale } from "@/lib/motion";
 import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
-import { useNeedsAttention } from "./needs-handoff-store";
 import {
   clearSessionStatus,
   type Session,
@@ -59,8 +58,6 @@ function SessionRowInner({
   const liveHeadline = useLiveActivityStore(
     (s) => selectSessionLiveActivity(s, session.id).headline,
   );
-  const attention = useNeedsAttention(session.id);
-  const needsHandoff = attention?.needs ?? 0;
   const [showMenu, setShowMenu] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -375,13 +372,7 @@ function SessionRowInner({
               {timeAgo(session.startedAt)}
             </span>
           )}
-          {needsHandoff > 0 && (
-            <span
-              className="inline-block size-1.5 rounded-full bg-warning shrink-0"
-              title={`${needsHandoff} workstream${needsHandoff === 1 ? "" : "s"} need${needsHandoff === 1 ? "s" : ""} a handoff`}
-              aria-label={`${needsHandoff} workstream${needsHandoff === 1 ? "" : "s"} need${needsHandoff === 1 ? "s" : ""} a handoff`}
-            />
-          )}
+
         </div>
         <AnimatePresence>
           {(status === "working" || status === "streaming") && (

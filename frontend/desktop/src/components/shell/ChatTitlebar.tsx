@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { PromptDialog } from '@/components/overlays/PromptDialog';
 import { useLocation } from "react-router-dom";
 import {
   Minus,
@@ -52,6 +53,9 @@ export function ChatTitlebar({
   workersBadge = 0,
 }: ChatTitlebarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
+  // Rename goes through PromptDialog — window.prompt is a silent no-op in
+  // some Tauri webviews and unstyled next to every other dialog.
+  const [renameOpen, setRenameOpen] = useState(false);
   const location = useLocation();
 
   /* Route-aware title (2026-09-16 UI scan B2): the bar used to render
@@ -193,13 +197,7 @@ export function ChatTitlebar({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="min-w-48">
-                <DropdownMenuItem
-                  onClick={() => {
-                    const next = window.prompt('Rename chat', session.title ?? '');
-                    const trimmed = next?.trim();
-                    if (trimmed && trimmed !== session.title) renameSession(session.id, trimmed);
-                  }}
-                >
+                <DropdownMenuItem onClick={() => setRenameOpen(true)}>
                   <Pencil className="size-3 mr-2" /> Rename chat…
                 </DropdownMenuItem>
                 <DropdownMenuItem
@@ -319,6 +317,20 @@ export function ChatTitlebar({
           </div>
         )}
       </div>
+      {session && (
+        <PromptDialog
+          open={renameOpen}
+          title="Rename chat"
+          label="Chat name"
+          initialValue={session.title ?? ''}
+          confirmLabel="Rename"
+          onSubmit={(title) => {
+            if (title !== session.title) renameSession(session.id, title);
+            setRenameOpen(false);
+          }}
+          onCancel={() => setRenameOpen(false)}
+        />
+      )}
     </header>
   );
 }
