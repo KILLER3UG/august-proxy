@@ -331,3 +331,24 @@ class TestStreamedReadSurvivesChunkBoundaries:
     async def test_no_trailing_newline_and_empty(self, tmp_path):
         await self._roundTrip(tmp_path, 'noeol', b'x' * 50)
         await self._roundTrip(tmp_path, 'empty', b'')
+
+    async def test_the_UNPAGED_path_preserves_crlf(self, tmp_path):
+        """The paged branch preserved line endings; the unpaged one did not, and
+        no test covered it because the spill test read through `read_text`,
+        which re-normalizes whatever `read_file` returns.
+
+        These lines get pasted into `edit_lines`' `old` anchor, matched against
+        verbatim file text — so LF normalization makes every CRLF edit on Windows
+        silently fail to apply, and the failure looks like a bad edit.
+        """
+        import hashlib
+
+        from app.services.tool_registrations.file_tools import _readFile
+
+        raw = b'alpha\r\nbeta\r\ngamma\r\n'
+        f = tmp_path / 'unpaged_crlf.txt'
+        f.write_bytes(raw)
+        out = await _readFile(str(f))  # NO paging arguments
+        assert f'[sha256 {hashlib.sha256(raw).hexdigest()}]' in out
+        assert 'alpha\r\n' in out, repr(out)
+        assert 'beta\r\n' in out and 'gamma\r\n' in out

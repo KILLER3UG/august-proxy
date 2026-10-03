@@ -24,6 +24,21 @@ import pytest
 from app.services import computer_use_policy as policy
 
 
+def _rebind(tool_name: str, handler) -> None:
+    """Point a registered tool at a fake handler for the duration of a test.
+
+    Dispatch reads ``_registry[name]['handler']``. `listTools()` returns COPIES,
+    so patching one is a no-op — which is how a whole round-trip test can be
+    green while the real handler never runs. Patch the live registry entry.
+    """
+    from app.services import tool_registry
+
+    tool = tool_registry._registry.get(tool_name)  # noqa: SLF001
+    if not tool:
+        raise AssertionError(f'{tool_name} is not registered')
+    tool['handler'] = handler
+
+
 @pytest.fixture(autouse=True)
 def _cleanApproval():
     policy.clearApproved()
@@ -82,75 +97,143 @@ class TestTheAskQueuesARealMutation:
 
 
 class TestTheApproveReplaysTheAction:
-    async def test_approving_executes_the_tool_under_the_approval(
-        self, deniedChrome, monkeypatch
-    ):
-        """The full round-trip. Without `markApproved` the primitive would
-        re-consult the policy and ask AGAIN — the user's Approve would appear
-        to do nothing."""
-        from app.services.workbench import workbench as wb
+    """These drive the GATE, not a hand-built mutation.
 
-        seen: list[tuple] = []
+    The previous version queued the mutation itself, with `action` in the args
+    on one side and without it on the other — so the two halves never met, and
+    the test passed while production was broken. In the real chain
+    `createPendingMutation` was handed `{'action': 'click', 'x': 11, 'y': 22}`
+    under the name `desktop_click`, whose schema is `{x, y, button}`: on replay
+    the extra key failed validation and every desktop approval except `ui_act`
+    returned a TypeError. Only a test that asks the GATE for its own args can
+    catch that.
+    """
 
-        async def _fake(x, y, button='left'):
-            seen.append((x, y))
-            return {'x': x, 'y': y, 'button': button}
-
-        monkeypatch.setattr('app.services.desktop_automation.clickMouse', _fake)
+    @staticmethod
+    def _register():
         from app.services import tool_definitions as tool_defs
         from app.services.tool_registry import listTools
 
         if not listTools():
             tool_defs.registerAll()
 
+    @pytest.mark.parametrize(
+        'action,params',
+        [
+            ('click', {'x': 11, 'y': 22}),
+            ('type', {'text': 'hello'}),
+            ('press', {'key': 'enter'}),
+            ('open_url', {'url': 'https://example.test/'}),
+        ],
+    )
+    async def test_the_gates_own_args_replay_through_the_primitives(
+        self, askChrome, monkeypatch, action, params
+    ):
+        import app.services.desktop_automation as desk
+        from app.services.workbench import workbench as wb
+
+        self._register()
+
+        seen: list[tuple] = []
+
+        async def _click(x, y, button='left'):
+            seen.append(('click', x, y))
+            return {'ok': True}
+
+        async def _type(text):
+            seen.append(('type', text))
+            return {'ok': True}
+
+        async def _press(key):
+            seen.append(('press', key))
+            return {'ok': True}
+
+        async def _open(url):
+            seen.append(('open_url', url))
+            return {'ok': True}
+
+        # Patch the REGISTRY'S handler, not the module attribute: each tool is
+        # registered with a direct reference to the primitive
+        # (`_desktop.clickMouse`), captured at registration time, so
+        # monkeypatching the module does not change what dispatch calls.
+        _rebind('desktop_click', _click)
+        _rebind('desktop_type', _type)
+        _rebind('desktop_press_key', _press)
+        _rebind('desktop_open_url', _open)
+
         session = wb.createWorkbenchSession(provider='stub-anthropic')
-        from app.services.workbench.workbench import createPendingMutation
+        monkeypatch.setattr(policy, '_currentSession', lambda: session)
 
-        token = createPendingMutation(
-            session, 'desktop_click', {'x': 11, 'y': 22}
-        )['token']
+        refusal = await policy.enforceDesktopAction(action, params=dict(params))
+        assert refusal is not None and refusal.get('pendingToken'), (
+            f'{action} queued no token: {refusal}'
+        )
+        assert refusal['policy'] == 'ask'
 
-        consumed = wb.consumePendingMutation(token)
+        consumed = wb.consumePendingMutation(refusal['pendingToken'])
         assert consumed is not None
-        # Consuming alone must NOT be enough — approval is what authorises it.
-        from app.services.computer_use_policy import markApproved
+        # The queued args must already be the tool's own schema — no routing key.
+        assert 'action' not in (consumed.get('args') or {}), (
+            f"{action}: queued args still carry the dispatcher routing key, which "
+            'the tool schema rejects on replay'
+        )
 
-        approval = markApproved()
+        approval = policy.markApproved()
         try:
-            result = await wb.execute_approved_mutation(
+            out = await wb.execute_approved_mutation(
                 session, consumed['toolName'], consumed.get('args')
             )
         finally:
             policy.clearApproved(approval)
 
-        assert seen == [(11, 22)], f'the approved click did not reach the primitive: {result!r}'
+        assert 'Error' not in out, f'{action} replayed broken: {out}'
+        assert seen, f'{action} never reached the primitive'
+
+    async def test_the_ui_act_tool_keeps_its_action_argument(
+        self, askChrome, monkeypatch
+    ):
+        """`desktop_ui_act` really is parameterised by action, so it keeps it.
+        The shape is per-tool, which is why it lives in `_queuedArgs`."""
+        from app.services.workbench import workbench as wb
+
+        self._register()
+        session = wb.createWorkbenchSession(provider='stub-anthropic')
+        monkeypatch.setattr(policy, '_currentSession', lambda: session)
+
+        refusal = await policy.enforceDesktopAction('ui_act', params={'ref': 3})
+        assert refusal is not None and refusal.get('pendingToken')
+        consumed = wb.consumePendingMutation(refusal['pendingToken'])
+        assert consumed['toolName'] == 'desktop_ui_act'
+        assert (consumed.get('args') or {}).get('action') == 'ui_act'
 
     async def test_the_approval_does_not_leak_to_the_next_action(
         self, deniedChrome, monkeypatch
     ):
         """One approval authorises one action. If the flag leaked, a SECOND
         denied click would slip through unreviewed."""
+        import app.services.desktop_automation as desk
         from app.services.workbench import workbench as wb
 
+        self._register()
         seen: list[tuple] = []
 
-        async def _fake(x, y, button='left'):
+        async def _click(x, y, button='left'):
             seen.append((x, y))
             return {'ok': True}
 
-        monkeypatch.setattr('app.services.desktop_automation.clickMouse', _fake)
-        from app.services import tool_definitions as tool_defs
-        from app.services.tool_registry import listTools
-
-        if not listTools():
-            tool_defs.registerAll()
+        _rebind('desktop_click', _click)
 
         session = wb.createWorkbenchSession(provider='stub-anthropic')
-        from app.services.computer_use_policy import markApproved
+        from app.services.workbench.workbench import createPendingMutation
 
-        approval = markApproved()
+        token = createPendingMutation(session, 'desktop_click', {'x': 1, 'y': 1})['token']
+        consumed = wb.consumePendingMutation(token)
+
+        approval = policy.markApproved()
         try:
-            await wb.execute_approved_mutation(session, 'desktop_click', {'x': 1, 'y': 1})
+            await wb.execute_approved_mutation(
+                session, consumed['toolName'], consumed.get('args')
+            )
         finally:
             policy.clearApproved(approval)
         assert seen == [(1, 1)]

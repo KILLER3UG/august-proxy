@@ -553,6 +553,26 @@ def _currentSession() -> object | None:
         return None
 
 
+def _queuedArgs(tool_name: str, action: str, params: dict[str, object]) -> dict[str, object]:
+    """The args to queue for ``tool_name`` — in ITS schema's shape.
+
+    The primitive is reached through the dispatcher, which takes
+    ``{'action': ..., **params}``. Queueing that dict verbatim under the
+    concrete tool name looked right and was not: `desktop_click`'s schema is
+    ``{x, y, button}``, so on replay the extra `action` key failed validation and
+    the approved click returned a TypeError — every desktop approval except
+    `ui_act` was broken, and the test claiming the round-trip worked was green
+    because it hand-built the mutation without `action`.
+
+    So: same shape the primitive will receive, keyed by the name the approval
+    will dispatch.
+    """
+    if tool_name == 'desktop_ui_act':
+        # The UIA tool IS parameterised by action, so it keeps it.
+        return {'action': action, **params}
+    return dict(params or {})
+
+
 def _queueApproval(session: object, action: str, params: dict[str, object]) -> str:
     """Hand the action to the EXISTING approval machinery.
 
@@ -569,13 +589,13 @@ def _queueApproval(session: object, action: str, params: dict[str, object]) -> s
         # tool — which silently downgraded `deny` to `ask`. The queued name also
         # drives the sandbox gate category and the "always allow" grant scope, so
         # a wrong one mints a grant for a tool that does not exist.
-        toolName = ACTION_TO_TOOL.get(action, '')
-        if not toolName:
+        tool_name = ACTION_TO_TOOL.get(action, '')
+        if not tool_name:
             return ''
         mutation = createPendingMutation(
             session,  # type: ignore[arg-type]
-            toolName,
-            {'action': action, **params},
+            tool_name,
+            _queuedArgs(tool_name, action, params),
         )
         return str((mutation or {}).get('token') or '')
     except Exception:  # noqa: BLE001 -- caller treats an empty token as a refusal

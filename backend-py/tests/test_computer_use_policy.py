@@ -397,10 +397,12 @@ def test_the_uia_path_is_gated():
     src = inspect.getsource(desktop_uia.act)
     assert '_policyRefusal' in src, 'desktop_uia.act bypasses the computer-use policy'
 
-    from app.services import computer_use_policy as pol
+    from app.services.computer_use_policy import enforceSync
 
-    assert pol.enforceSync('ui_act') is not None or True  # signature exists
-    assert callable(pol.enforceSync)
+    assert callable(enforceSync)
+    # `x or True` used to sit here and was always true, so the assertion could
+    # not fail. The behavioural claim belongs in the next test; what belongs
+    # HERE is only that the sync gate exists and is reachable from `act`.
 
 
 def test_the_ui_act_deny_is_a_refusal():
