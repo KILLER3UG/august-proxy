@@ -175,8 +175,20 @@ async function requestText(endpoint) {
 }
 
 async function runLiveAudit() {
-  const html = await requestText('/');
-  check(/August|Workbench|dashboard/i.test(html), 'web app root is reachable');
+  // The web app root is only served when August runs as an APP (or serves
+  // web-dist). Under `npm run dev:desktop` the backend is API-only and the
+  // SPA lives on Vite, so a 404 here is the expected dev shape, not a
+  // failure — the API probes below are what must hold in both modes.
+  try {
+    const html = await requestText('/');
+    check(/August|Workbench|dashboard/i.test(html), 'web app root is reachable');
+  } catch (error) {
+    if (error && /returned 404/.test(String(error.message))) {
+      console.warn('Note: backend does not serve the SPA at / (dev mode) — probing the API only.');
+    } else {
+      throw error;
+    }
+  }
 
   const health = await requestJson('/api/health');
   check(Boolean(health.status || health.ok !== undefined || health.checks), '/api/health returns health data');
@@ -206,7 +218,16 @@ async function runLiveAudit() {
 
   const capabilities = await requestJson('/api/workbench/capabilities');
   check(
-    Boolean(capabilities.groups || capabilities.tools || capabilities.families || capabilities.sources),
+    // The live response is grouped by family: { tools_by_group: { file: […] } }.
+    // (This shape drifted from the old flat keys while the live checks only
+    // ever ran against a packaged app — 2026-10-03.)
+    Boolean(
+      capabilities.tools_by_group ||
+        capabilities.groups ||
+        capabilities.tools ||
+        capabilities.families ||
+        capabilities.sources,
+    ),
     '/api/workbench/capabilities returns tool data',
   );
 
