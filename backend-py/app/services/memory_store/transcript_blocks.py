@@ -165,7 +165,7 @@ def derive_blocks(message: dict[str, object]) -> list[dict[str, object]]:
                         tool={
                             'id': tool_id,
                             'name': str(raw.get('name', '')),
-                            'status': 'done',
+                            'status': 'error' if raw.get('is_error') else 'done',
                             'result': result,
                         },
                     )
@@ -200,9 +200,14 @@ def derive_blocks(message: dict[str, object]) -> list[dict[str, object]]:
     if role == 'tool':
         # A standalone tool-result message. `name` rides along so the desktop
         # can render a labelled tool card instead of raw result text.
+        # `is_error` is the harness's own verdict, set at the one choke point
+        # every result passes through (tool_protocol.normalize_tool_result);
+        # carrying it as the UI's existing ``status: 'error'`` is what lets
+        # episode mining read a receipt instead of guessing from prose.
         result = _text(content)
         tool_id = str(message.get('tool_use_id') or message.get('toolUseId') or '')
         name = str(message.get('name') or '')
+        status = 'error' if message.get('is_error') else 'done'
         blocks.append(
             _block(
                 tool_id or 'b_tool_result',
@@ -211,7 +216,7 @@ def derive_blocks(message: dict[str, object]) -> list[dict[str, object]]:
                 tool={
                     'id': tool_id or 'b_tool_result',
                     'name': name,
-                    'status': 'done',
+                    'status': status,
                     'result': result,
                 },
             )
@@ -240,7 +245,7 @@ def structured_fields(message: dict[str, object]) -> dict[str, object]:
         fields['tool'] = {
             'name': str(message.get('name') or ''),
             'result': _text(message.get('content')),
-            'status': 'done',
+            'status': 'error' if message.get('is_error') else 'done',
         }
     return fields
 

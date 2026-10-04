@@ -32,18 +32,42 @@ from typing import Any
 from app.json_narrowing import as_list, as_str
 
 __all__ = [
+    'ERROR_RECEIPT_PREFIXES',
     'SYNTHETIC_TOOL_RESULT_PREFIX',
     'ToolResultReconciliation',
     'canonical_tool_calls',
     'normalize_tool_result',
     'reconcile_tool_results',
     'synthetic_tool_result',
+    'tool_result_failed',
 ]
 
 # Prefix for a result the harness invented rather than a tool returning one.
 # Model-visible on purpose — the loop's whole self-heal story depends on the
 # model recognising "this never ran" and issuing a fresh, smaller call.
 SYNTHETIC_TOOL_RESULT_PREFIX = '[Tool result missing]'
+
+# The receipt prefixes that mean "this call did not succeed". Each one is
+# written by the harness itself at a known site, and matched at the START of a
+# receipt — never searched inside it. The anchoring is the whole point: the
+# retired episode detector scanned arbitrary tool text for these words, so a
+# tool result that merely *quoted* the error vocabulary (skills/august-harness
+# documents it) mined as a failure — measured at 41/41 false positives.
+ERROR_RECEIPT_PREFIXES: tuple[str, ...] = (
+    'Error',  # the loop's documented tool return contract ("Error: …")
+    '[Validation Error]',  # validator.validationErrorText
+    '[Blocked]',  # sandbox / permission / sub-agent guards
+    SYNTHETIC_TOOL_RESULT_PREFIX,  # a call that never executed
+)
+
+
+def tool_result_failed(text: str) -> bool:
+    """Whether one tool receipt declares its own call unsuccessful.
+
+    One implementation on purpose: the SSE status the UI renders and the
+    durable ``is_error`` the episode miner reads must never disagree.
+    """
+    return bool(text) and text.startswith(ERROR_RECEIPT_PREFIXES)
 
 # Cap on a non-string payload dumped into history. A tool returning a huge
 # dict must not turn a missing-result receipt into a context bomb; the
@@ -150,8 +174,15 @@ def normalize_tool_result(
         # must read as a failure to the model and to any UI status mapping.
         out['is_error'] = True
         out['synthetic'] = True
-    elif not text.strip() and 'is_error' not in out:
+    elif not text.strip():
         out['is_error'] = True
+    else:
+        # Total by construction: every result that leaves this choke point
+        # carries a decided bool. A caller that knows better wins; otherwise
+        # the receipt's own declaration decides. An undecided receipt was the
+        # hole that let a failure go unrecorded downstream, and the durable
+        # transcript is what episode mining reads.
+        out['is_error'] = bool(out.get('is_error', False)) or tool_result_failed(text)
     return out
 
 

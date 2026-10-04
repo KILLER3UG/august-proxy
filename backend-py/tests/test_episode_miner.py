@@ -21,9 +21,16 @@ def brain(isolatedData):
     return isolatedData
 
 
-def _seedSession(sessionId: str, msgs: list[tuple[str, str]]) -> None:
-    """Seed the messages table the way the app does (role + JSON content)."""
+def _seedSession(sessionId: str, msgs: list[tuple[str, object]]) -> None:
+    """Seed the messages table the way the app does.
+
+    A str payload stores plain prose. A dict payload is the transcript message
+    itself, and ``blocks_json`` is derived by the SAME encoder the real write
+    path uses — which is what turns a tool error into a receipt the miner can
+    read, rather than a sentence that merely happens to look like one.
+    """
     from app.services.memory_store import init
+    from app.services.memory_store.transcript_blocks import encode_blocks
 
     init()
     from app.services.memory_conn import conn
@@ -32,12 +39,30 @@ def _seedSession(sessionId: str, msgs: list[tuple[str, str]]) -> None:
     c.execute(
         "INSERT OR IGNORE INTO sessions (id, title) VALUES (?, ?)", (sessionId, 't')
     )
-    for role, text in msgs:
+    for role, payload in msgs:
+        if isinstance(payload, dict):
+            msg = dict(payload)
+            msg.setdefault('role', role)
+            content = msg.get('content', '')
+            text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+            c.execute(
+                'INSERT INTO messages (session_id, role, content, blocks_json) VALUES (?, ?, ?, ?)',
+                (sessionId, role, text, encode_blocks(msg)),
+            )
+            continue
         c.execute(
             'INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)',
-            (sessionId, role, json.dumps(text)),
+            (sessionId, role, json.dumps(payload)),
         )
     c.commit()
+
+
+def _failedCall(name: str = 'run_command', content: str = 'Error: build failed') -> tuple[str, dict]:
+    """One tool result the harness decided had failed."""
+    return (
+        'tool',
+        {'role': 'tool', 'tool_use_id': f'toolu_{name}', 'name': name, 'content': content, 'is_error': True},
+    )
 
 
 class TestWindowExtraction:
@@ -46,7 +71,7 @@ class TestWindowExtraction:
             's1',
             [
                 ('user', 'install ngspice'),
-                ('assistant', 'Running install… [Error] command failed with exit code:1'),
+                _failedCall('run_command', 'Error: ngspice: command not found'),
                 ('user', 'ok'),
                 ('assistant', 'Installed and verified — simulation runs clean now.'),
             ],
@@ -57,14 +82,14 @@ class TestWindowExtraction:
         ep = fr[0]
         assert ep['outcome'] == 'resolved'
         assert ep['events'][0]['type'] == 'tool_error'
-        assert 'ngspice' in ep['events'][0]['excerpt'].lower() or ep['events'][0]['excerpt']
+        assert 'ngspice' in ep['events'][0]['excerpt'].lower()
         assert ep['start_message_id'] < ep['end_message_id']
 
     def test_failure_rescued_by_user(self, brain):
         _seedSession(
             's2',
             [
-                ('assistant', '[Error] tracebacks below: ValueError…'),
+                _failedCall('run_command', 'Error: ValueError in deck'),
                 ('user', 'My bad — I had set the wrong path. I fixed it already.'),
             ],
         )
@@ -73,7 +98,7 @@ class TestWindowExtraction:
         assert len(fr) == 1 and fr[0]['outcome'] == 'rescued'
 
     def test_failure_unresolved_at_session_end(self, brain):
-        _seedSession('s3', [('assistant', '[Error] command failed')])
+        _seedSession('s3', [_failedCall()])
         episodes = em.extract_episodes('s3')
         assert episodes[0]['outcome'] == 'unresolved'
 
@@ -128,22 +153,31 @@ class TestWindowExtraction:
         assert em.extract_episodes('s7') == []
 
     def test_block_list_content_flattened(self, brain):
-        # Stored content can be a block list — text blocks flatten.
-        from app.services.memory_conn import conn
-
-        _seedSession('s8', [])
-        c = conn()
-        c.execute(
-            'INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)',
-            (
-                's8',
-                'assistant',
-                json.dumps([{'type': 'text', 'text': 'boom [Error] exit code:2'}]),
-            ),
+        # Stored content can be an Anthropic block list — the receipt inside it
+        # still reads as a failure, and its text still flattens into excerpt.
+        _seedSession(
+            's8',
+            [
+                (
+                    'assistant',
+                    {
+                        'role': 'assistant',
+                        'content': [
+                            {
+                                'type': 'tool_result',
+                                'tool_use_id': 'toolu_1',
+                                'name': 'run_command',
+                                'content': 'boom exit code:2',
+                                'is_error': True,
+                            }
+                        ],
+                    },
+                )
+            ],
         )
-        c.commit()
         episodes = em.extract_episodes('s8')
         assert episodes and episodes[0]['events'][0]['type'] == 'tool_error'
+        assert 'exit code:2' in episodes[0]['events'][0]['excerpt']
 
 
 class TestNoLiveTurnCoupling:
@@ -159,7 +193,7 @@ class TestStorage:
     def test_save_episode_dedupes_on_window(self, brain):
         from app.services.memory_conn import conn
 
-        _seedSession('s10', [('assistant', '[Error] x')])
+        _seedSession('s10', [_failedCall()])
         ep = em.extract_episodes('s10')[0]
         ep['session_id'] = 's10'
         id1 = em.save_episode(ep)

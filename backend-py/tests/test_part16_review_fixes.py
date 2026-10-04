@@ -29,16 +29,34 @@ def brain(isolatedData):
 def _seedRealShape(sessionId: str, msgs: list[tuple[str, object]]) -> None:
     """Seed messages the way the WORKBENCH persistence path stores them
     (memory_store/sessions.py: dict payloads with content/tool_calls,
-    tool-role results, plus raw-text rows)."""
+    tool-role results, plus raw-text rows).
+
+    ``blocks_json`` is derived by the same encoder the real save uses, because
+    that is where the tool-error receipt lives — the miner reads what the
+    harness recorded, not prose that happens to look like an error.
+    """
     from app.services.memory_conn import conn
+    from app.services.memory_store.transcript_blocks import encode_blocks
 
     c = conn()
     c.execute("INSERT OR IGNORE INTO sessions (id, title) VALUES (?, ?)", (sessionId, 't'))
     for role, payload in msgs:
-        content = payload if isinstance(payload, str) else json.dumps(payload)
+        if isinstance(payload, str):
+            c.execute(
+                'INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)',
+                (sessionId, role, payload),
+            )
+            continue
+        msg = dict(payload)
+        msg.setdefault('role', role)
         c.execute(
-            'INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)',
-            (sessionId, role, content),
+            'INSERT INTO messages (session_id, role, content, blocks_json) VALUES (?, ?, ?, ?)',
+            (
+                sessionId,
+                role,
+                json.dumps(msg.get('content', '')),
+                encode_blocks(msg),
+            ),
         )
     c.commit()
 
@@ -50,7 +68,7 @@ class TestF1RealTranscriptShape:
             [
                 ('user', 'run the ngspice sim'),
                 ('assistant', {'content': '', 'tool_calls': [{'id': 't1', 'type': 'function', 'function': {'name': 'run_command', 'arguments': '{"command":"ngspice -b a.cir"}'}}]}),
-                ('tool', {'content': 'Error: command failed with exit code:1 — ngspice: command not found', 'tool_use_id': 't1'}),
+                ('tool', {'content': 'Error: command failed with exit code:1 — ngspice: command not found', 'tool_use_id': 't1', 'is_error': True}),
                 ('assistant', {'content': 'Installed ngspice via vcpkg; sim now runs clean.'}),
             ],
         )
@@ -66,7 +84,7 @@ class TestF1RealTranscriptShape:
             's2',
             [
                 ('user', 'do it'),
-                ('tool', {'content': '[Error] command failed', 'tool_use_id': 't1'}),
+                ('tool', {'content': '[Error] command failed', 'tool_use_id': 't1', 'is_error': True}),
                 ('assistant', {'content': '', 'tool_calls': [{'id': 't2', 'type': 'function', 'function': {'name': 'run_command', 'arguments': '{}'}}]}),
                 ('tool', {'content': 'ok done', 'tool_use_id': 't2'}),
                 ('assistant', {'content': 'All finished — verified.'}),
@@ -84,7 +102,7 @@ class TestF1RealTranscriptShape:
             's3',
             [
                 ('user', 'compile the circuit'),
-                ('tool', {'content': 'command failed with exit code:2 — quartus not found', 'tool_use_id': 't1'}),
+                ('tool', {'content': 'command failed with exit code:2 — quartus not found', 'tool_use_id': 't1', 'is_error': True}),
                 ('assistant', {'content': 'Found quartus at /opt/altera — compiled clean.'}),
             ],
         )
@@ -237,7 +255,7 @@ class TestF6NoReMineInflation:
             's7',
             [
                 ('user', 'build it'),
-                ('tool', {'content': 'Error: build failed exit code:1', 'tool_use_id': 't1'}),
+                ('tool', {'content': 'Error: build failed exit code:1', 'tool_use_id': 't1', 'is_error': True}),
                 ('assistant', {'content': 'rebuilt with the fix, green.'}),
             ],
         )

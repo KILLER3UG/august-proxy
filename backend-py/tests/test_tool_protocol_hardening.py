@@ -43,6 +43,10 @@ class TestNormalizeToolResult:
             'tool_use_id': 't1',
             'tool_call_id': 't1',
             'content': 'all good',
+            # Total by construction — a receipt the harness never marked as a
+            # failure says so, instead of leaving the field for a downstream
+            # reader to guess at from the text.
+            'is_error': False,
         }
 
     def test_null_content_becomes_a_synthetic_receipt(self):

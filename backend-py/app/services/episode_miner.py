@@ -68,11 +68,12 @@ _ABANDON_RE = re.compile(
     r'|\bthat approach (?:isn.t|is not) working\b',
     re.IGNORECASE,
 )
-_TOOL_ERROR_RE = re.compile(
-    r'\[Validation Error\]|\[Error\]|\bexit code:?[1-9]|\btraceback\b'
-    r'|\bcommand failed\b|\btool (?:error|failed)\b',
-    re.IGNORECASE,
-)
+# There is deliberately NO tool-error text matcher here. Mining failures from
+# prose was measured at 41/41 false positives on the dev database: a tool
+# result that merely *quoted* the error vocabulary read as a failure — and the
+# string it quoted lives in skills/august-harness/SKILL.md, so the skill that
+# documents the receipts manufactured fake episodes about itself. Tool errors
+# are read from the durable receipt instead (see _errorReceipts).
 
 
 def _messageText(content: object) -> str:
@@ -159,24 +160,51 @@ def _isMachineRow(source: str, text: str) -> bool:
 # ── window extraction ─────────────────────────────────────────
 
 
-def _extractEvents(role: str, text: str, source: str = '') -> list[dict[str, str]]:
+def _errorReceipts(blocksJson: object) -> list[str]:
+    """The failures this message's structured blocks record, as excerpts.
+
+    ``blocks_json`` (migration 047) carries the tool cards the harness itself
+    decided were errors — ``tool.status == 'error'``, written from
+    ``normalize_tool_result``'s ``is_error`` verdict. That is the difference
+    between "this call failed" and "this text contains the word traceback".
+    """
+    from app.services.memory_store.transcript_blocks import decode_blocks
+
+    out: list[str] = []
+    blocks = decode_blocks(blocksJson).get('blocks')
+    if not isinstance(blocks, list):
+        return out
+    for block in blocks:
+        if not isinstance(block, dict) or block.get('type') != 'toolCall':
+            continue
+        tool = block.get('tool')
+        if not isinstance(tool, dict) or tool.get('status') != 'error':
+            continue
+        name = str(tool.get('name') or '')
+        body = str(block.get('content') or tool.get('result') or '')
+        out.append(f'{name}: {body}'.strip(': '))
+    return out
+
+
+def _extractEvents(
+    role: str,
+    text: str,
+    source: str = '',
+    errorReceipts: tuple[str, ...] = (),
+) -> list[dict[str, str]]:
     """Typed events observable in one stored message.
 
-    §12 F-1: tool-role messages are where error receipts actually live in
-    real transcripts (assistant-role hits are rare — the model narrates,
-    the tool result carries the failure). Both roles are scanned now.
+    Tool errors come from the durable receipt, never from the message's text;
+    the user-role events below stay text-detected because a correction is
+    something the user *said*.
     """
     events: list[dict[str, str]] = []
     stripped = text.strip()
+    if role in ('assistant', 'tool') and errorReceipts:
+        for excerpt in errorReceipts:
+            events.append({'type': 'tool_error', 'excerpt': excerpt[:_MAX_EXCERPT]})
     if not stripped:
         return events
-    if role in ('assistant', 'tool') and _TOOL_ERROR_RE.search(stripped):
-        events.append(
-            {
-                'type': 'tool_error',
-                'excerpt': stripped[:_MAX_EXCERPT],
-            }
-        )
     if role != 'user' or _isMachineRow(source, stripped):
         # Harness-injected user-role blocks are not human speech.
         return events
@@ -215,23 +243,24 @@ def extract_episodes(sessionId: str) -> list[dict[str, Any]]:
       * abandoned_approach — user abandon marker → continuation
     """
     rows = _conn().execute(
-        'SELECT id, role, content, source FROM messages WHERE session_id = ? ORDER BY id',
+        'SELECT id, role, content, source, blocks_json FROM messages WHERE session_id = ? ORDER BY id',
         (sessionId,),
     ).fetchall()
     # Content is parsed defensively — raw-text rows are real
     # (sessions.py stores str payloads verbatim) and must never abort mining.
     parsed = [_loadContent(r['content']) for r in rows]
+    receipts: list[list[str]] = [_errorReceipts(r['blocks_json']) for r in rows]
     msgs: list[tuple[int, str, str, str]] = [
         (int(r['id']), str(r['role']), _messageText(p), str(r['source'] or ''))
         for r, p in zip(rows, parsed)
     ]
     clean: list[bool] = [
-        bool(_innerText(p)) and not _TOOL_ERROR_RE.search(_innerText(p)) for p in parsed
+        bool(_innerText(p)) and not receipts[i] for i, p in enumerate(parsed)
     ]
     episodes: list[dict[str, Any]] = []
     n = len(msgs)
     for i, (mid, role, text, source) in enumerate(msgs):
-        events = _extractEvents(role, text, source)
+        events = _extractEvents(role, text, source, tuple(receipts[i]))
         if not events:
             continue
         kinds = {e['type'] for e in events}

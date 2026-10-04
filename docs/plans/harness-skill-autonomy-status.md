@@ -3,9 +3,47 @@
 Resumes Pass 1 of the four-pass plan. Read this before touching code.
 
 ## Done
-- **Nothing committed yet.** Tip is `c332b526`. Pass 1 not started.
+- **Item 1 — the structured tool-error receipt.** Mined failures now come from what the
+  harness recorded, never from prose.
+  - `tool_protocol.tool_result_failed()` is the ONE classifier: prefix-anchored on the
+    receipt's own declaration, over `ERROR_RECEIPT_PREFIXES = ('Error', '[Validation Error]',
+    '[Blocked]', '[Tool result missing]')`. All four literals verified as harness-written
+    (`validator.py:128`, `kernel.py:642`, `subagent.py:1164,1224`, `tool_protocol.py:46`).
+  - `normalize_tool_result` now makes `is_error` **total** (always a bool) — the ~15 gate
+    sites needed no edits because they all pass through this one choke point.
+  - `workbench.py`: `toolStatus` computed once from the shared rule and used by BOTH the SSE
+    frame and the returned transcript message (previously duplicated inline at :5172).
+  - `transcript_blocks.derive_blocks` / `structured_fields` map it onto the UI's existing
+    `tool.status = 'error'`. **No migration** — `blocks_json` is a JSON blob and
+    `types/chat.ts:119` already declares `'running' | 'done' | 'error'`;
+    `ToolStepRow.tsx:130` already renders it.
+  - `episode_miner`: `_TOOL_ERROR_RE` is **deleted**; `extract_episodes` selects
+    `blocks_json` and reads receipts via `_errorReceipts()`. Legacy rows with no receipt
+    mine nothing — by design, the prose fallback was the 41/41.
+  - **USER-VISIBLE:** `[Blocked]` / `[Validation Error]` / `[Tool result missing]` tool cards
+    now render red instead of neutral. Adjacent to `d73022be` B6 but NOT it — B6's four prose
+    patterns stay unimplemented.
+  - **Verified no provider leak:** every `role == 'tool'` translator rebuilds the message from
+    scratch, so `is_error` never reaches an upstream body
+    (`openai.py:511,704,826`; `anthropic.py:275,1268`). Checked, not assumed — AGENTS.md's
+    0.12.21 null-forwarding bug is the precedent.
+  - Tests: 21 new (`tests/test_tool_error_receipt.py`, incl. end-to-end through
+    `save_workbench_session_sot`); 6 pre-existing tests rewritten to the receipt contract
+    (`test_episode_miner.py` ×5, `test_tool_protocol_hardening.py` ×1) + 4 seeds in
+    `test_part16_review_fixes.py`, each keeping its original purpose.
 - Backup taken: `%LOCALAPPDATA%\Temp\august_brain.pre-signal-fix.<ts>.sqlite` (copy of
-  `data/august_brain.sqlite`). No data mutated.
+  `data/august_brain.sqlite`). **No data mutated yet** — the 41 bogus episodes are still in
+  the dev DB for item 4 to quarantine.
+
+## Item 2 finding (measured, ready to implement)
+Dedupe identity is `episodes (session_id, start_message_id, kind)` (`_episodeExists:439`,
+`save_episode:406`) and `start_message_id` is a **`messages.rowid`** — while
+`save_workbench_session_sot` rewrites the transcript as DELETE-all + re-INSERT
+(`memory_store/sessions.py:297`). So every durability barrier mints new ids, the same window
+never matches, and each 24h pass re-inserts and re-increments `failure_fingerprints.episode_count`.
+That is the "4 windows → 41 firings" mechanism, independent of the detector fix.
+Fix without a new column: the episodes table already stores `events` (JSON with excerpts), so
+a content-derived key over `(session_id, kind, first excerpt)` is stable across rewrites.
 
 ## Verified facts (re-measured by hand, not inherited from a subagent)
 - `data/august_brain.sqlite`: **54** `turn_outcomes`, **41** `episodes`, **3** `failure_fingerprints`.
@@ -23,12 +61,17 @@ Resumes Pass 1 of the four-pass plan. Read this before touching code.
 - **UNVERIFIED:** "distiller judge 13 failures / 0 successes" — the lifecycle table's columns are
   not named as reported. Re-derive in Pass 1 item 7 with a real call.
 
-## Key discovery for item 1
-`messages` has **no `is_error` column** (`memory_schema.py:82-98`). The structured flag exists at
-the adapter layer (`ToolResultBlock(is_error=True)`: `anthropic.py:669,679,1019,1119`;
-`resp.is_error`: `openai.py:221,561,634,1085`). **First task: confirm whether it survives into
-`blocks_json` (migration 047) tool blocks.** If it does not, the receipt must be persisted there
-before the miner can read it — that is the real scope of item 1, and it is larger than a swap.
+## Key discovery for item 1 — CONFIRMED, `is_error` does NOT survive
+`messages` has **no `is_error` column** (`memory_schema.py:82-98`). Read over the real dev DB:
+268 messages yielded only two block kinds, `finalOutput` (49) and `toolCall` (252). A `toolCall`
+block is exactly `{id, type, tool, content}` with `tool = {id, name, args, status}`, and `status`
+is observed **only** as `"running"`. Only 126/252 carry `content` at all. `is_error` appears
+nowhere in `workbench.py`; it exists only at the adapter layer
+(`ToolResultBlock(is_error=True)`: `anthropic.py:669,679,1019,1119`; `resp.is_error`:
+`openai.py:221,561,634,1085`). **So the receipt has to be persisted before the miner can read it —
+item 1 is a write-path change plus a migration, not a regex swap.**
+Write path located: `app/services/memory_store/transcript_blocks.py` (builder) and
+`app/routers/sessions.py:218,247` (writer).
 Do NOT add a second prose matcher. `d73022be` item B6 stays stale and unimplemented.
 
 ## Decisions already made (do not re-open)
@@ -79,7 +122,15 @@ Dirty with **another session's** in-flight work (`app-update-install.ts`, `useAp
 `git add -A`.** My own uncommitted UI work is listed in `docs/ui-refactor/minimalism/` and
 `docs/plans/2026-10-05-harness-pattern-gap-analysis.md`.
 
+## Resume facts
+- Worktree: `C:\Dev\august-harness-wt`, branch `harness-skill-autonomy`, from `70ee6744`.
+  It is a SIBLING of `C:\Dev\august-proxy`, not nested inside it.
+- Tests/lint/typecheck run from the worktree with the MAIN venv (the worktree has none):
+  `cd /c/Dev/august-harness-wt/backend-py && PYTHONPATH=. /c/Dev/august-proxy/backend-py/.venv/Scripts/python.exe -m pytest <files> --no-cov -q`
+  (`--no-cov` on a partial run, otherwise the 55% project gate fails spuriously and the real
+  result is buried. Full suite: `-n auto`, ~14 min on this box.)
+- Autonomous apply is **OFF** and stays off until the end-of-run review.
+
 ## Next
-Pass 1 item 1 — confirm `is_error` persistence in `blocks_json`, then replace the prose regex with
-the structured receipt. Red test first: a transcript whose text contains `[Validation Error]` but
-whose tool block is not an error must produce **no** episode.
+Item 2 — make episode dedupe idempotent across transcript rewrites (finding above).
+Then items 3-15 in the recorded order.

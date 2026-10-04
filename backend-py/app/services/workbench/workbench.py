@@ -75,6 +75,9 @@ from app.services.workbench.tool_protocol import (
 from app.services.workbench.tool_protocol import (
     reconcile_tool_results as _reconcileToolResults,
 )
+from app.services.workbench.tool_protocol import (
+    tool_result_failed as _toolResultFailed,
+)
 from app.services.workbench.validator import validationErrorText
 
 logger = logging.getLogger('workbench')
@@ -5138,6 +5141,11 @@ async def _sendWorkbenchMessageStreamImpl(
                 )
             else:
                 sseContent = result
+            # Authoritative status for this round's receipt: the tool declares
+            # failure at the START of its own text. Computed ONCE here from the
+            # shared rule so the SSE frame and the durable transcript message
+            # can never disagree (``tool_protocol.tool_result_failed``).
+            toolStatus = 'error' if _toolResultFailed(str(result)) else 'done'
             if emit:
                 providerSetup = None
                 integrationSetup = None
@@ -5167,9 +5175,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         'contentTruncated': contentTruncated,
                         'contentFullLength': len(result),
                         'summary': str(result)[:2000],
-                        # Authoritative status: failures begin with "Error:" —
-                        # the UI maps this to the red/error tool card.
-                        'status': 'error' if str(result).startswith('Error') else 'done',
+                        'status': toolStatus,
                         'durationMs': tool_duration_ms,
                         'startedAtMs': tool_started_at,
                         'providerSetup': providerSetup,
@@ -5248,7 +5254,15 @@ async def _sendWorkbenchMessageStreamImpl(
                     + f'\n\n[... Tool result truncated at {resultCap // 1024} KB '
                     + f'— full length: {len(result)} bytes]'
                 )
-            return {'tool_use_id': toolUseId, 'role': 'tool', 'content': historyContent}
+            return {
+                'tool_use_id': toolUseId,
+                'role': 'tool',
+                'content': historyContent,
+                # The same verdict the UI was just told, now durable: this is
+                # the message ``normalize_tool_result`` will carry into the
+                # transcript, and the only thing episode mining reads.
+                'is_error': toolStatus == 'error',
+            }
 
         try:
             if pending_regular:
