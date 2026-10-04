@@ -95,6 +95,7 @@ export function dispatchWorkbenchEvent(
         blocked: p?.blocked === true,
         providerSetup: p?.providerSetup,
         integrationSetup: p?.integrationSetup,
+        tone: p?.tone === 'failure' || p?.tone === 'denial' ? p.tone : undefined,
         contentTruncated: p?.contentTruncated === true,
         contentFullLength: typeof p?.contentFullLength === 'number' ? p.contentFullLength : undefined,
       });

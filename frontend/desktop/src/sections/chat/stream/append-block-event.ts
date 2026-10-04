@@ -305,6 +305,7 @@ export function appendBlockEvent(
           // the a405e996 fix.
           preview: undefined,
           previewDropped: undefined,
+          tone: event.tone,
           contentTruncated: event.contentTruncated,
           contentFullLength: event.contentFullLength,
         };

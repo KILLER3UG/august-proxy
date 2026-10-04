@@ -128,6 +128,11 @@ export function ToolStepRow({
   const panelId = `tool-step-panel-${toolId}`;
   const running = tool.status === 'running';
   const errored = tool.status === 'error';
+  // A guardrail denial or a call that never ran did not succeed — the
+  // receipt says so and mining keeps counting it — but it is not the
+  // model losing, so it renders quietly. Only an explicit 'denial' is
+  // muted; a missing tone stays red.
+  const denied = errored && tool.tone === 'denial';
   const filename = !isCommand ? extractFilename(tool.context) : null;
   // Command rows carry the shell line as secondary muted text on the row
   // (the primary label is the fixed "Terminal"/"Running" word), matching the
@@ -264,7 +269,9 @@ export function ToolStepRow({
               {running ? (
                 <Loader2 className="process-step-icon animate-spin" />
               ) : errored ? (
-                <AlertCircle className="process-step-icon text-danger" />
+                <AlertCircle
+                  className={cn('process-step-icon', !denied && 'text-danger')}
+                />
               ) : filename ? (
                 <FileIcon name={filename} size={12} className="process-step-icon-wrap" />
               ) : (
@@ -315,9 +322,11 @@ export function ToolStepRow({
               <span
                 className={cn(
                   'inline-flex shrink-0 items-center rounded-full border px-1.5 py-px',
-                  errored
+                  errored && !denied
                     ? 'border-danger/30 bg-danger/10 text-danger-fg'
-                    : 'border-success/30 bg-success/10 text-success-fg',
+                    : errored
+                      ? 'border-border/60 bg-muted/25 text-muted-foreground'
+                      : 'border-success/30 bg-success/10 text-success-fg',
                 )}
                 data-testid="tool-status-pill"
                 aria-label={errored ? 'Command failed' : 'Command succeeded'}

@@ -421,7 +421,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       });
       scheduleUpdate();
     },
-    onToolResult: ({ id, content, isError, status, providerSetup, integrationSetup, contentTruncated, contentFullLength }) => {
+    onToolResult: ({ id, content, isError, status, providerSetup, integrationSetup, tone, contentTruncated, contentFullLength }) => {
       retryNotice = undefined;
       let parsedResult: Record<string, unknown> | null;
       try {
@@ -583,6 +583,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         providerSetup: providerSetupResult,
         integrationSetup: integrationSetupResult,
         actionNeeded: actionNeededResult,
+        tone,
         contentTruncated,
         contentFullLength,
       });

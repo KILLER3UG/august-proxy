@@ -232,6 +232,12 @@ genuinely missing.
   print the data dir in any script that reports counts.
 
 ## RUN RULES (effective 2026-10-05, user-set; read before doing anything)
+- **Do not stop voluntarily.** Work the backlog in order until it is finished
+  or a hard stop is reached (user data, security/permissions, turning on auto-apply, a product
+  decision the user has not made). Nothing tells you context is running out unless it actually
+  does — a session-timing counter is not that signal, and acting on one stopped this run twice
+  mid-backlog. Every item is committed and logged here, so a platform cut-off loses nothing: the
+  next session resumes from this file. Never stop on a guess.
 - **Report the suite result from pytest itself** — never from a wrapper `echo`, never from a
   background-task completion notice. Capture the exit code immediately after pytest returns
   (`set -o pipefail` if piping to tee), and ALSO read the final summary line from the log, and
@@ -351,3 +357,37 @@ pytest's own final summary line. They agree, which is the point of the rule.
 3. Pass 2 (items 8-11), then Pass 3 (12-15) if room remains. Autonomy stays **OFF**.
 4. Tidy pass: the top "## Done" and "## Key discovery for item 1" sections now describe
    pre-commit state and are marked stale — worth folding into the Item log when convenient.
+
+## Item log — session 3
+- **Correction to `da7cf07f`'s message:** it says 145 passed; the run reported **165 passed**
+  (ruff clean, mypy clean on the three modules). The commit is not amended — a typo in history
+  is cheaper than rewriting a branch. This is the record.
+- Frontend half of the tone split → committed with this file. `ToolEntry.tone`,
+  `MessageBlockToolCall.tone` and `AppendBlockEvent.tone` added; threaded from the SSE
+  `toolResult` frame (`schemas/workbench.ts` → `streamEvents.ts` → `makeStreamHandlers.ts` →
+  `append-block-event.ts`) and from persisted `tool.tone` in `blocks_json`.
+  `ToolStepRow` now mutes a denial (icon drops `text-danger` and inherits the gutter's existing
+  `--dt-muted-foreground`; the command pill uses the existing `border-border/60 bg-muted/25
+  text-muted-foreground`) and keeps `failure` red. **No new colors, no new UI, no new CSS.**
+- **Compatibility decision (yours):** a missing tone renders RED. Rows stored before this field,
+  or a frame that omits it, are unknowns, and an unknown error must look like an error — the
+  muted-by-default mistake hides a real failure. There is no backfill, and the frontend does NOT
+  re-match the marker text: that would be a second list to keep in step with the first. Pinned by
+  a test, not just intended.
+- **The user-visible change from item 1 is now complete:** `[Blocked]` / `[Tool result missing]`
+  render quiet, real failures stay red, and the receipt underneath is unchanged for mining.
+- Frontend test/verification facts:
+  - Render tests assert the class, never pixels: failure red, denial not red, missing tone red,
+    and a settled row never tinted by tone alone. 25 passed in `ToolStepRow.test.tsx`;
+    full frontend suite **195 files / 1517 tests passed**; `tsc --noEmit` clean.
+  - **A worktree has no `node_modules`** (same class of gap as the missing venv). Vitest could
+    not run until junctions were created:
+    `C:\Devugust-harness-wt
+ode_modules` → `C:\Devugust-proxy
+ode_modules`, and the
+    same pair under `frontend/desktop`. Created with PowerShell `New-Item -ItemType Junction`; `mklink` through Git Bash mangles the quoting and fails. Junctions are
+    untracked and must be deleted before the worktree is removed.
+  - Two red-test failures were MY harness, not the feature: I wrote `describe(..., () {` and
+    `it(..., () {` without the `=>`, and I asserted the command pill without passing the
+    `isCommand` prop. Both fixed before implementing, so the one remaining failure was genuinely
+    the unimplemented case.

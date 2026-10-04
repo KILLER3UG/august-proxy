@@ -75,6 +75,7 @@ export const WorkbenchToolResultEventSchema = WorkbenchBaseSchema.extend({
   content: ToolResultContentSchema,
   contentTruncated: z.boolean().optional(),
   contentFullLength: z.number().optional(),
+  tone: z.string().optional(),
   summary: z.string().optional(),
   status: z.string().optional(),
   error: z.string().optional(),

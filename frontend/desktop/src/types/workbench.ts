@@ -266,6 +266,7 @@ export interface WorkbenchEventHandlers {
     durationMs?: number;
     startedAtMs?: number;
     blocked?: boolean;
+    tone?: 'failure' | 'denial';
     providerSetup?: unknown;
     integrationSetup?: unknown;
     /** Backend cut the SSE content at its 100 KB cap. */

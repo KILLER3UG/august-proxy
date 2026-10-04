@@ -536,3 +536,47 @@ describe('ToolStepRow — /verbose lifts the minimal lock', () => {
     expect(screen.getByText('output body')).toBeInTheDocument();
   });
 });
+
+describe('ToolStepRow — receipt tone (red vs muted)', () => {
+  const gutterIconClass = (container: HTMLElement) =>
+    container.querySelector('.process-step-gutter svg')?.getAttribute('class') ?? '';
+  const renderError = (tone?: string) => {
+    const tool: ToolEntry = {
+      id: 't1',
+      name: 'run_command',
+      status: 'error',
+      context: JSON.stringify({ command: 'ngspice -b a.cir' }),
+      ...(tone ? { tone } : {}),
+    } as ToolEntry;
+    return render(
+      <ToolStepRow tool={tool} label="Ran ngspice" isCommand expanded onToggle={() => {}} />,
+    );
+  };
+
+  it('a failure tone renders red', () => {
+    const { container } = renderError('failure');
+    expect(gutterIconClass(container)).toContain('text-danger');
+    const pill = screen.getByTestId('tool-status-pill');
+    expect(pill.className).toContain('text-danger-fg');
+  });
+
+  it('a denial tone is muted, not red', () => {
+    const { container } = renderError('denial');
+    expect(gutterIconClass(container)).not.toContain('text-danger');
+    expect(screen.getByTestId('tool-status-pill').className).not.toContain('danger');
+  });
+
+  it('a row with no tone still renders red — an unknown error looks like an error', () => {
+    // History stored before tone existed, and any frame that omits it. The
+    // frontend must not guess the marker from the text: absence means loud.
+    const { container } = renderError(undefined);
+    expect(gutterIconClass(container)).toContain('text-danger');
+    expect(screen.getByTestId('tool-status-pill').className).toContain('text-danger-fg');
+  });
+
+  it('a settled row is never tinted by tone alone', () => {
+    const tool = { id: 't2', name: 'run_command', status: 'done', tone: 'denial' } as ToolEntry;
+    const { container } = render(<ToolStepRow tool={tool} label="Ran" expanded onToggle={() => {}} />);
+    expect(gutterIconClass(container)).not.toContain('text-danger');
+  });
+});

@@ -117,6 +117,14 @@ export interface MessageBlockToolCall {
   summary?: string;
   error?: string;
   status: 'running' | 'done' | 'error';
+  /** How loud this settled receipt is, decided by the backend from the
+   *  receipt's own marker (`tool_protocol.RECEIPT_TONE`): 'failure' red,
+   *  'denial' muted. Absent means unknown — rows stored before this field
+   *  existed, or a frame that omitted it — and an unknown error renders RED,
+   *  because a muted-by-default mistake hides a real failure. The frontend
+  never re-matches the marker text: that would be a second list to keep in
+   *  step with the first. */
+  tone?: 'failure' | 'denial';
   duration?: number;
   startedAt?: number;
   /** For web_search results: structured search hits rendered as a linked
@@ -414,6 +422,9 @@ export interface AppendBlockEvent {
    *  the pane can show a "truncated" badge instead of silently cutting. */
   contentTruncated?: boolean;
   contentFullLength?: number;
+  /** Loudness decided by the backend from the receipt's own marker
+   *  (`tool_protocol.RECEIPT_TONE`). Missing renders red. */
+  tone?: 'failure' | 'denial';
   /** For type === 'recalledMemories': the recalled auto-memory rows. */
   memories?: RecalledMemoryItem[];
   /**
