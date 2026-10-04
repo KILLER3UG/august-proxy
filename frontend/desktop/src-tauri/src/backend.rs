@@ -1061,13 +1061,53 @@ fn stopBackend(app: &AppHandle, reason: &str) {
     };
     setSetupPhase(app, "updating", Some(detail.into()));
     killStoredChild(app);
-    #[cfg(windows)]
-    killAugustPythonOrphans(app);
-    #[cfg(not(windows))]
-    killProxyPortListeners();
-    // Brief settle so Windows releases mapped DLLs before the installer runs.
-    std::thread::sleep(Duration::from_millis(400));
+
+    // `killStoredChild` is a synchronous taskkill /T /F on the process tree we
+    // spawned, so on the ordinary path the port is already free when it
+    // returns. The Windows orphan sweep is a PowerShell process enumeration
+    // (Get-CimInstance + Get-NetTCPConnection, twice, with a 500ms sleep in
+    // between) and took seconds of a frozen window on every quit for nothing.
+    // Probe the port first (sub-millisecond TCP connect) and only pay for the
+    // sweep when something is genuinely still holding it.
+    let updating = reason != "quit";
+    if updating || !portIsFree(proxyPort()) {
+        #[cfg(windows)]
+        killAugustPythonOrphans(app);
+        #[cfg(not(windows))]
+        killProxyPortListeners();
+    } else {
+        log::info!("[backend] port free after kill — orphan sweep skipped ({reason})");
+    }
+    if updating {
+        // Brief settle so Windows releases mapped DLLs before the installer
+        // runs. Only the update path needs it: a plain quit replaces nothing.
+        std::thread::sleep(Duration::from_millis(400));
+    }
     log::info!("[backend] stopped for {reason} (holdoff on)");
+}
+
+/// Can `port` be bound right now? If nothing is listening, the answer is
+/// "free" and the teardown can skip the process sweep.
+///
+/// A connect-probe cannot answer this on Windows: after a listener is killed,
+/// connecting to its port gets NO RST — the SYN is silently dropped and the
+/// connect times out, which is indistinguishable from "something is
+/// listening" (measured on this machine: 500 ms+ timeout, no reset).
+/// Binding is a local syscall and fails instantly (WSAEADDRINUSE) when a
+/// listener holds the port. The only false "held" is a lingering socket in
+/// TIME_WAIT, and that bias runs the sweep — the safe direction.
+fn portIsFree(port: u16) -> bool {
+    use std::net::TcpListener;
+    match TcpListener::bind(("127.0.0.1", port)) {
+        Ok(l) => {
+            drop(l);
+            true
+        }
+        Err(e) => {
+            log::debug!("[backend] port {port} still held: {e}");
+            false
+        }
+    }
 }
 
 /// Best-effort: terminate leftover python/node that lock bundled
@@ -2912,5 +2952,34 @@ mod update_signature_tests {
         assert!(decodeInstallerSignature("").is_err());
         assert!(decodeInstallerSignature("not a signature at all").is_err());
         assert!(decodeInstallerSignature(&STANDARD.encode(b"junk")).is_err());
+    }
+}
+
+#[cfg(test)]
+mod port_probe_tests {
+    use super::portIsFree;
+    use std::net::TcpListener;
+
+    #[test]
+    fn a_listening_port_is_not_free() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        assert!(!portIsFree(port), "a live listener must read as held");
+    }
+
+    #[test]
+    fn a_never_bound_port_is_free() {
+        // Take a port, release it before anything ever listens on it, and
+        // probe a DIFFERENT never-used port to avoid TIME_WAIT ambiguity.
+        let seed = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = seed.local_addr().expect("addr").port();
+        drop(seed);
+        let probe = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let fresh = probe.local_addr().expect("addr").port();
+        drop(probe);
+        // `port` may still be settling on Windows; `fresh` is the honest case.
+        if port != fresh {
+            assert!(portIsFree(fresh), "a never-used port must read as free");
+        }
     }
 }

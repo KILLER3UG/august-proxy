@@ -3,7 +3,7 @@
 /* bootstrap; surfaces errors with Retry. The main shell is not mounted  */
 /* until /api/health succeeds so users never land in a dead UI.          */
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { CircleX, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -39,6 +39,9 @@ function writeUnlocked(value: boolean) {
 export function BackendBootstrapGate({ children }: { children: ReactNode }) {
   const { status: setup, refresh } = useBackendSetup();
   const [proxyUp, setProxyUp] = useState(false);
+  // Mirrors readiness for the poll cadence (a ref, so the interval never
+  // re-subscribes on every flip).
+  const readyRef = useRef(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   // Set once the launch conversation has finished its closing beat. The app
@@ -56,6 +59,7 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
     try {
       const status = await invoke<string>('proxy_status');
       const up = status.startsWith('ok:');
+      readyRef.current = up;
       setProxyUp(up);
       if (up) {
         // If api/client's own discovery already gave up (it caps at ~3 min),
@@ -67,6 +71,7 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
         $gateway.set({ status: 'open', port: Number(status.split(':')[1]) || 8085, uptime: 0 });
       }
     } catch {
+      readyRef.current = false;
       setProxyUp(false);
     }
     try {
@@ -78,13 +83,28 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
+  // Readiness cadence: while the backend is still coming up, poll fast
+  // (200ms) so the window reveals the moment it is ready — a 1s grid added
+  // up to a full second of dead time on every launch. Once up, fall back to
+  // 1s: this is a health heartbeat, not a spinner.
   useEffect(() => {
     if (!isTauri) return;
-    void poll();
-    const id = window.setInterval(() => {
-      void poll();
-    }, 1000);
-    return () => window.clearInterval(id);
+    let id = 0;
+    let stopped = false;
+    let slow = false;
+    const tick = async () => {
+      if (stopped) return;
+      await poll();
+      if (stopped) return;
+      // proxyUp flipped inside poll(); read it from the DOM-free ref below.
+      slow = !readyRef.current;
+      id = window.setTimeout(tick, slow ? 200 : 1000);
+    };
+    void tick();
+    return () => {
+      stopped = true;
+      window.clearTimeout(id);
+    };
   }, [poll]);
 
   // If the supervisor hasn't become healthy after a longer wait, ask it to
