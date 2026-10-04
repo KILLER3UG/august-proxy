@@ -1,5 +1,6 @@
 /* ── RightDrawerPreviewSection ─ browser preview workflow ────────── */
 
+import { useRightDrawerHidden } from './RightDrawerState';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, Check, Globe, Loader2, Play, RefreshCw, ShieldAlert, Square, X } from 'lucide-react';
@@ -25,6 +26,7 @@ export function RightDrawerPreviewSection({
   sessionId: string | null;
   workspacePath: string | null;
 }) {
+  const hidden = useRightDrawerHidden('preview');
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [command, setCommand] = useState('npm run dev');
@@ -34,7 +36,7 @@ export function RightDrawerPreviewSection({
   const { data, isLoading } = useQuery({
     queryKey: ['preview-sessions', sessionId],
     queryFn: getPreviewSessions,
-    refetchInterval: 2_500,
+    refetchInterval: hidden ? false : 2_500,
   });
 
   const sessions = data?.sessions ?? [];
@@ -45,14 +47,14 @@ export function RightDrawerPreviewSection({
     queryKey: ['preview-session', active?.id],
     queryFn: () => (active?.id ? getPreviewSession(active.id) : Promise.resolve(null)),
     enabled: !!active?.id,
-    refetchInterval: 1_500,
+    refetchInterval: hidden ? false : 1_500,
   });
 
   const { data: requests } = useQuery({
     queryKey: ['preview-requests', sessionId],
     queryFn: () => getRequests('today'),
     enabled: !!sessionId,
-    refetchInterval: 5_000,
+    refetchInterval: hidden ? false : 5_000,
   });
 
   const start = useMutation({

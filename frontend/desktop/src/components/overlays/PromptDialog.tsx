@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { Backdrop } from './Backdrop';
+import { BackdropEscape } from './BackdropEscape';
 
 /**
  * PromptDialog — the styled replacement for `window.prompt`.
@@ -45,20 +46,6 @@ export function PromptDialog({
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        // One Escape closes one layer (see ConfirmDialog).
-        e.stopPropagation();
-        onCancel();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onCancel]);
-
-  useEffect(() => {
-    if (!open) return;
     // Focus + full preselection: typing replaces, like window.prompt did.
     const id = window.setTimeout(() => {
       inputRef.current?.focus();
@@ -82,6 +69,9 @@ export function PromptDialog({
 
   return (
     <Backdrop onClose={onCancel} className="z-[70]">
+      {/* Same one-layer Escape contract as ConfirmDialog: capture-phase, so an
+          enclosing window-level handler never double-fires. */}
+      <BackdropEscape onEscape={onCancel} />
       <div
         className="w-[min(92vw,400px)] rounded-2xl border border-border bg-card shadow-2xl px-5 pt-5 pb-4"
         role="dialog"

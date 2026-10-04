@@ -1188,6 +1188,141 @@ def patchSkill(
     return parsed or {'name': name, 'description': frontmatter.get('description', '')}
 
 
+# ---------------------------------------------------------------------------
+# Delete trash — one-level undo for a skill delete (2026-10-03)
+#
+# A delete used to be a plain rmtree: the UI could confirm it and then offer
+# nothing, so a mis-click destroyed a hand-authored skill. The directory now
+# moves into a trash folder and comes back through `restoreSkill`.
+#
+# An entry is <dataDir>/.trash/skills/<trashId>/ holding the moved directory
+# as `skill/` plus a `manifest.json` with the original name, scope and restore
+# target. The id itself is a bare timestamp: a dotted skill name
+# (`chart.js.helper` is legal) cannot be mis-split out of it, and a project
+# override returns to its project instead of the global root.
+# ---------------------------------------------------------------------------
+
+_TRASH_RETENTION = 24 * 60 * 60  # seconds
+_TRASH_ID_PATTERN = re.compile(r'^\d{8}T\d{6}\d{6}(-\d+)?$')
+
+
+def _trashRoot() -> Path:
+    """`<dataDir>/.trash/skills` — beside the skills root, never inside it."""
+    try:
+        from app.config import settings
+
+        base = Path(settings.dataDir)
+    except Exception:
+        base = SKILLS_DIR.parent / 'data'
+    return base / '.trash' / 'skills'
+
+
+def _nowStamp() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')
+
+
+def _trashDir(
+    source: Path, name: str, *, scope: str, restore_to: Path
+) -> tuple[str, Path]:
+    """Move `source` into a fresh trash entry; return (trash_id, entry path)."""
+    import shutil as _shutil
+
+    root = _trashRoot()
+    root.mkdir(parents=True, exist_ok=True)
+    stamp = _nowStamp()
+    trashId = stamp
+    dest = root / trashId
+    suffix = 1
+    while dest.exists():  # same-microsecond collision (tests, coarse clocks)
+        trashId = f'{stamp}-{suffix}'
+        dest = root / trashId
+        suffix += 1
+    dest.mkdir(parents=True)
+    (dest / 'manifest.json').write_text(
+        json.dumps({'name': name, 'scope': scope, 'restoreTo': str(restore_to)}),
+        'utf-8',
+    )
+    _shutil.move(str(source), str(dest / 'skill'))
+    _pruneTrash()
+    return trashId, dest
+
+
+def _pruneTrash() -> None:
+    """Drop trashed skills older than the retention window."""
+    import time as _time
+
+    root = _trashRoot()
+    if not root.is_dir():
+        return
+    for child in root.iterdir():
+        try:
+            if _time.time() - child.stat().st_mtime > _TRASH_RETENTION:
+                import shutil as _shutil
+
+                _shutil.rmtree(child, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def _allowedRestoreParent(parent: Path) -> bool:
+    """A trash entry may only write back to the agent root or a project root.
+
+    The manifest is data under `dataDir`, so a tampered file must not turn
+    restore into an arbitrary-directory write: the target has to be either
+    the agent skills root or a `<workspace>/.aug/skills` project root.
+    """
+    if parent.resolve() == _agentSkillsDir().resolve():
+        return True
+    return parent.name == 'skills' and parent.parent.name == '.aug'
+
+
+def restoreSkill(trashId: str) -> dict[str, object]:
+    """Undo a delete: move a trashed skill directory back where it came from."""
+    import shutil as _shutil
+
+    _validateTrashId(trashId)
+    entry = _trashRoot() / trashId
+    manifest_path = entry / 'manifest.json'
+    if not entry.is_dir() or not manifest_path.is_file():
+        raise SkillValidationError(f"Trash entry '{trashId}' not found (or already restored).")
+    try:
+        manifest = json.loads(manifest_path.read_text('utf-8'))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SkillValidationError(f"Trash entry '{trashId}' is unreadable.") from exc
+    if not isinstance(manifest, dict):
+        raise SkillValidationError(f"Trash entry '{trashId}' is unreadable.")
+    name = str(manifest.get('name') or '')
+    _validateName(name)
+    scope = 'project' if manifest.get('scope') == 'project' else 'agent'
+    restore_to = Path(str(manifest.get('restoreTo') or '')).expanduser()
+    if not _allowedRestoreParent(restore_to):
+        raise SkillValidationError('Trash entry has an invalid restore target.')
+    target = restore_to / name
+    if (target / 'SKILL.md').exists():
+        # A skill with this name came back while the trashed copy waited —
+        # refuse rather than overwrite live content.
+        raise SkillValidationError(
+            f"Skill '{name}' already exists; the trashed copy was kept at {entry}."
+        )
+    if scope == 'project' and not restore_to.parent.parent.is_dir():
+        raise SkillValidationError(
+            f"The project for '{name}' no longer exists; the trashed copy was kept at {entry}."
+        )
+    restore_to.mkdir(parents=True, exist_ok=True)
+    _shutil.move(str(entry / 'skill'), str(target))
+    _shutil.rmtree(entry, ignore_errors=True)  # the manifest shell
+    _bust_prompt_skills_cache()
+    return {'restored': name, 'scope': scope}
+
+
+def _validateTrashId(trashId: str) -> None:
+    """Trash ids are bare timestamps (`20261004T102533613844`, `-N` on collision)."""
+    if not trashId or not _TRASH_ID_PATTERN.match(trashId):
+        raise SkillValidationError('Invalid trash id.')
+
+
 def deleteSkill(name: str, workspace: str | Path | None = None) -> dict[str, object]:
     """Delete a skill. Refuses bundled skills.
 
@@ -1197,7 +1332,6 @@ def deleteSkill(name: str, workspace: str | Path | None = None) -> dict[str, obj
     no project entry but exists globally is refused (the UI should redirect
     to the global scope); bundled skills are never deletable.
     """
-    import shutil as _shutil
 
     _validateName(name)  # §9 F-1: traversal names ('..', separators) must not reach the project-root join
     wsStr = str(workspace or '').strip()
@@ -1209,9 +1343,16 @@ def deleteSkill(name: str, workspace: str | Path | None = None) -> dict[str, obj
     if project_root is not None:
         projDir = project_root / name
         if projDir.exists():
-            _shutil.rmtree(projDir)
+            # The manifest records the project root, so Undo restores the
+            # override back into this workspace — not into the global root.
+            trashId, _ = _trashDir(projDir, name, scope='project', restore_to=project_root)
             _bust_prompt_skills_cache()
-            return {'deleted': name, 'scope': 'project', 'override_removed': True}
+            return {
+                'deleted': name,
+                'scope': 'project',
+                'override_removed': True,
+                'trashId': trashId,
+            }
         # No project entry: if a global/agent copy exists, deleting here
         # would have to delete the GLOBAL skill — refuse; the caller should
         # delete it from the global scope explicitly.
@@ -1231,9 +1372,9 @@ def deleteSkill(name: str, workspace: str | Path | None = None) -> dict[str, obj
                 f"Refusing to delete bundled skill '{name}'."
             )
         raise SkillValidationError(f"Skill '{name}' not found.")
-    _shutil.rmtree(agent_dir)
+    trashId, _ = _trashDir(agent_dir, name, scope='agent', restore_to=_agentSkillsDir())
     _bust_prompt_skills_cache()
-    return {'deleted': name, 'scope': 'global'}
+    return {'deleted': name, 'scope': 'global', 'trashId': trashId}
 
 
 # ---------------------------------------------------------------------------

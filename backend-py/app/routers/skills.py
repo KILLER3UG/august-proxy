@@ -223,6 +223,15 @@ async def patchSkill(name: str, body: SkillPatch):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post('/restore/{trashId}')
+async def restoreSkill(trashId: str):
+    """Undo a delete: restore a trashed skill directory (24h window)."""
+    try:
+        return skill_service.restoreSkill(trashId)
+    except SkillValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.delete('/{name}')
 async def deleteSkill(name: str, workspace: str = Query('')):
     """Delete a skill. Refuses bundled skills.

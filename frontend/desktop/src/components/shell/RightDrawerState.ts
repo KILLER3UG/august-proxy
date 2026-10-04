@@ -31,6 +31,11 @@ export interface RightDrawerState {
   /** JetBrains-style terminal docked at the BOTTOM of the main column
    *  instead of living as a right-panel tab. */
   bottomTerminal?: boolean;
+  /** Parked sections (Hermes "Hide"): still mounted, so drafts / scroll /
+   *  live previews survive a tab switch, but off-screen and NOT polling.
+   *  × (Close) removes from `sections` and releases everything; the "–"
+   *  (Hide) moves here. */
+  hidden?: RightDrawerSectionId[];
 }
 
 const MAX_SECTIONS = 4;
@@ -48,6 +53,7 @@ const SECTION_ORDER: RightDrawerSectionId[] = [
 ];
 
 const initialState: RightDrawerState = {
+  hidden: [],
   open: false,
   sections: [],
 };
@@ -164,6 +170,29 @@ export function openRightDrawerChooser() {
 }
 
 /** Show/hide the chooser without touching open sections. */
+/** Hide (park) a section: stays mounted, stops polling, keeps its state. */
+export function hideRightDrawerSection(sectionId: RightDrawerSectionId): void {
+  useRightDrawerStore.setState((s) => ({
+    hidden: s.sections.includes(sectionId) && !s.hidden?.includes(sectionId)
+      ? [...(s.hidden ?? []), sectionId]
+      : s.hidden,
+    activeSection: s.activeSection === sectionId ? undefined : s.activeSection,
+  }));
+}
+
+/** Restore a parked section and focus it. */
+export function restoreRightDrawerSection(sectionId: RightDrawerSectionId): void {
+  useRightDrawerStore.setState((s) => ({
+    hidden: (s.hidden ?? []).filter((id) => id !== sectionId),
+    activeSection: sectionId,
+  }));
+}
+
+/** True when a section is parked — pollers gate their refetch on this. */
+export function useRightDrawerHidden(sectionId: RightDrawerSectionId): boolean {
+  return useRightDrawerStore((s) => (s.hidden ?? []).includes(sectionId));
+}
+
 export function setRightDrawerChooser(active: boolean) {
   useRightDrawerStore.setState({
     ...useRightDrawerStore.getState(),

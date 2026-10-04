@@ -89,6 +89,16 @@ export interface SettingsSection {
    *  "Show advanced" toggle. `hidden` items are not shown in the rail at
    *  all (deep links still resolve). */
   tier: SettingsTier;
+  /** Labels of the individual controls this section owns. Settings search
+   *  matches these too and shows the hit under the result, so "pricing"
+   *  finds the setting rather than only its page
+   *  (Hermes/DeepSeek parity — 2026-10-03). */
+  settingHints?: string[];
+  /** Search-only synonyms for a control whose familiar name differs from the
+   *  label (e.g. the brain-config key `memoryAutoInject` for "Auto-recall
+   *  memories each session"). Never rendered — display stays the human
+   *  label, matching stays what people actually type. */
+  settingAliases?: string[];
   keywords: string[];
   /** Old tab keys that should now open this section. */
   legacyAliases?: string[];
@@ -153,6 +163,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: SlidersHorizontal,
     category: 'basics',
     tier: 'basic',
+    settingHints: [
+      'Account',
+      'Profile',
+      'Notifications',
+      'Reduce motion',
+      'Text size',
+      'Language',
+    ],
     keywords: [
       'general',
       'profile',
@@ -179,6 +197,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Palette,
     category: 'basics',
     tier: 'basic',
+    settingHints: [
+      'Theme light dark system',
+      'Accent color',
+      'Text size',
+      'Chat font',
+      'UI Designer presets',
+    ],
     keywords: ['appearance', 'theme', 'dark mode', 'light mode', 'color scheme'],
     legacyAliases: ['theme'],
   },
@@ -189,6 +214,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Boxes,
     category: 'basics',
     tier: 'basic',
+    settingHints: [
+      'API key',
+      'Base URL',
+      'API format',
+      'Per-model context window',
+      'Max output tokens',
+      'Price in / price out',
+      'Free models',
+      'Tool surface full reduced bare',
+      'Max tools',
+      'Max tool result characters',
+      'Reasoning effort',
+      'Wire parameters per model family',
+    ],
     keywords: ['provider', 'api key', 'base url', 'api format', 'model discovery', 'model settings', 'cost', 'reasoning', 'effort', 'temperature'],
     legacyAliases: ['models', 'providers', 'model-settings'],
   },
@@ -199,6 +238,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Globe,
     category: 'basics',
     tier: 'basic',
+    settingHints: [
+      'Browser profile',
+      'Persistent browser session',
+      'Site permissions',
+    ],
     keywords: ['browser', 'browser use', 'web search', 'page read', 'web'],
     legacyAliases: ['browser', 'web-browser'],
   },
@@ -209,6 +253,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Monitor,
     category: 'basics',
     tier: 'basic',
+    settingHints: [
+      'Desktop app permissions',
+      'Approved apps',
+      'Screen capture',
+      'Computer control',
+    ],
     keywords: ['computer', 'use', 'desktop', 'som', 'overlay', 'screenshot', 'click', 'type'],
     legacyAliases: ['desktop-automation'],
   },
@@ -219,6 +269,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Activity,
     category: 'app',
     tier: 'hidden',
+    settingHints: [
+      'Gateway status',
+      'Port',
+      'Uptime',
+      'RAM',
+    ],
     keywords: ['health', 'provider status', 'uptime', 'endpoints', 'host', 'port', 'ram'],
     legacyAliases: ['health'],
   },
@@ -239,6 +295,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Database,
     category: 'app',
     tier: 'hidden',
+    settingHints: [
+      'Data export',
+      'Purge memory',
+      'Usage logs',
+      'Session history',
+    ],
     keywords: ['privacy', 'data', 'export', 'retention', 'purge', 'wipe', 'cleanup', 'clear data', 'erase'],
   },
   {
@@ -248,6 +310,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Info,
     category: 'app',
     tier: 'basic',
+    settingHints: [
+      'Check for updates',
+      'Download progress',
+      'Release notes',
+      'Restart to update',
+    ],
     keywords: ['about', 'update', 'release', 'version', 'download app', 'upgrade', 'changelog'],
     legacyAliases: ['updates', 'updater', 'version', 'about'],
   },
@@ -280,6 +348,23 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: BrainCircuit,
     category: 'capabilities',
     tier: 'basic',
+    settingHints: [
+      'Model can read memories on demand',
+      'Auto-recall memories each session',
+      'Model can write memories',
+      'Sensitive topics excluded from memory',
+      'Backups & restore',
+      'Restore a save point',
+      'Purge memory',
+    ],
+    settingAliases: [
+      'memory auto inject',
+      'auto-inject memories',
+      'memoryAutoInject',
+      'model memory read',
+      'model memory writes',
+      'sensitive topics',
+    ],
     keywords: [
       'memory',
       'memories',
@@ -312,6 +397,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Users,
     category: 'capabilities',
     tier: 'basic',
+    settingHints: [
+      'Max parallel subagents',
+      'Subagent tool access',
+      'Team orchestration',
+    ],
     keywords: ['subagent', 'subagents', 'delegation', 'agent hierarchy', 'parallel agents', 'multi-agent'],
     legacyAliases: ['subagent', 'sub-agents'],
   },
@@ -323,6 +413,19 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Timer,
     category: 'capabilities',
     tier: 'basic',
+    settingHints: [
+      'Tool round cap',
+      'Soft cost budget',
+      'Wall-clock budget',
+      'Runaway backstop',
+    ],
+    settingAliases: [
+      'maxWorkbenchToolLoops',
+      'tool loops',
+      'budget soft tokens',
+      'wall clock',
+      'runaway nudge rounds',
+    ],
     keywords: [
       'turn limits',
       'budget',
@@ -353,6 +456,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Plug,
     category: 'capabilities',
     tier: 'basic',
+    settingHints: [
+      'MCP server',
+      'Connection',
+      'API key',
+      'Integration directory',
+    ],
     keywords: [
       'mcp',
       'mcp servers',
@@ -378,6 +487,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: BookOpen,
     category: 'capabilities',
     tier: 'basic',
+    settingHints: [
+      'Enable / disable a skill',
+      'Skill scope project agent bundled',
+      'Skill versions and history',
+      'Learning proposals',
+      'Install skill packs',
+    ],
     keywords: [
       'skill',
       'skills',
@@ -572,6 +688,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Gauge,
     category: 'data',
     tier: 'basic',
+    settingHints: [
+      'Tokens',
+      'Cost',
+      'Requests per day',
+      'Peak usage',
+    ],
     keywords: ['usage stats', 'limits', 'spend', 'quotas', 'tokens', 'usage-limits', 'statistics', 'streak'],
     legacyAliases: ['usage-limits'],
   },

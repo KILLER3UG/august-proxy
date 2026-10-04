@@ -46,15 +46,9 @@ export function ModelVisibilityModal({ open, onClose, models, loading, hiddenMod
   const [search, setSearch] = useState('');
   const [internalLoading, setInternalLoading] = useState(false);
 
-  // Escape closes (Phase 4 — modal keyboard coverage).
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  // Escape is owned by the single BackdropEscape below (one layer, capture
+  // phase). It used to also have a window-bubble listener and a div-level
+  // onKeyDown — three mechanisms for one key (2026-10-04 review).
 
   useEffect(() => {
     if (open && models.length === 0) {
@@ -111,12 +105,6 @@ export function ModelVisibilityModal({ open, onClose, models, loading, hiddenMod
             role="dialog"
             aria-modal="true"
             aria-label="Edit Models"
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.stopPropagation();
-                onClose();
-              }
-            }}
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">

@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import { Backdrop } from '@/components/overlays/Backdrop';
+import { BackdropEscape } from '@/components/overlays/BackdropEscape';
 import { cn } from '@/lib/utils';
 
 export interface ConfirmDialogProps {
@@ -30,21 +31,12 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const confirmRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        // One Escape closes one layer: stop the Settings shell's own
-        // window-level handler from also firing (2026-10-03 audit A3 §8).
-        e.stopPropagation();
-        onCancel();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onCancel]);
-
+  // Escape closes exactly this layer. BackdropEscape listens on document
+  // CAPTURE and stops propagation, so the enclosing surface's own
+  // window-level handler (Settings, the right drawer) cannot also fire.
+  // A window-bubble listener with stopPropagation could not do that —
+  // same-target listeners still run, which is how one Escape used to close
+  // both the confirm and Settings (live-checked 2026-10-04).
   useEffect(() => {
     if (open) confirmRef.current?.focus();
   }, [open]);
@@ -57,6 +49,7 @@ export function ConfirmDialog({
 
   return (
     <Backdrop onClose={onCancel} className="z-[70]">
+      <BackdropEscape onEscape={onCancel} />
       <div
         className={cn(
           'w-[min(92vw,400px)] rounded-2xl border border-border bg-card shadow-2xl',

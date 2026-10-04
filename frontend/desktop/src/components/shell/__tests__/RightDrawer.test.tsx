@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RightDrawer } from '../RightDrawer';
 import { RightDrawerDropdown } from '../RightDrawerLauncher';
 import {
+  hideRightDrawerSection,
   isDrawerPanelVisible,
   toggleRightDrawerSection,
   $rightDrawer,
@@ -406,3 +407,68 @@ describe('RightDrawer overlay layout', () => {
   });
 });
 
+
+/* ── Hide vs Close (Hermes parity, 2026-10-03) ────────────────────────────
+ * Hide parks a pane: it leaves the tab strip, stays MOUNTED (drafts/scroll
+ * survive a tab switch) and stops polling. × (Close) releases it. The two
+ * are different verbs and this pins the difference. */
+describe('RightDrawer hide vs close', () => {
+  beforeEach(() => {
+    $rightDrawer.set({ open: false, sections: [], hidden: [] });
+  });
+
+  it('hide parks the pane and the restore rail brings it back', () => {
+    act(() => {
+      toggleRightDrawerSection('notes');
+      toggleRightDrawerSection('plan');
+    });
+    setupDrawer();
+
+    const hide = document.querySelector(
+      '[data-testid="drawer-tab-hide-notes"]',
+    ) as HTMLElement;
+    expect(hide).toBeTruthy();
+    fireEvent.click(hide);
+
+    // Parked: gone from the strip…
+    expect(document.querySelector('[data-testid="drawer-tab-notes"]')).toBeNull();
+    // …listed in the restore rail…
+    expect(document.querySelector('[data-testid="drawer-hidden-rail"]')).toBeTruthy();
+    const restore = document.querySelector(
+      '[data-testid="drawer-restore-notes"]',
+    ) as HTMLElement;
+    expect(restore).toBeTruthy();
+    fireEvent.click(restore);
+    expect(document.querySelector('[data-testid="drawer-tab-notes"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="drawer-hidden-rail"]')).toBeNull();
+  });
+
+  it('a parked pane stays mounted but inert while another tab is active', () => {
+    act(() => {
+      toggleRightDrawerSection('notes');
+      toggleRightDrawerSection('plan');
+      hideRightDrawerSection('notes');
+    });
+    setupDrawer();
+    const parked = document.querySelector(
+      '[data-testid="drawer-pane-notes"]',
+    ) as HTMLElement | null;
+    expect(parked, 'a hidden pane must stay mounted').toBeTruthy();
+    expect(parked!.getAttribute('data-parked')).toBe('true');
+    expect(parked!.className).toContain('invisible');
+    expect(parked!.hasAttribute('inert')).toBe(true);
+  });
+
+  it('close releases the pane entirely (no parked copy)', () => {
+    act(() => {
+      toggleRightDrawerSection('notes');
+      toggleRightDrawerSection('plan');
+    });
+    setupDrawer();
+    fireEvent.click(
+      document.querySelector('[data-testid="drawer-tab-close-notes"]') as HTMLElement,
+    );
+    expect(document.querySelector('[data-testid="drawer-pane-notes"]')).toBeNull();
+    expect(document.querySelector('[data-testid="drawer-hidden-rail"]')).toBeNull();
+  });
+});

@@ -321,8 +321,41 @@ export function SkillsSection() {
       const params = new URLSearchParams();
       if (wsScope) params.set('workspace', wsScope);
       const qs = params.toString();
-      await api.delete(`/api/skills/${encodeURIComponent(name)}${qs ? `?${qs}` : ''}`);
-      toast.success(`Skill '${name}' deleted${wsScope ? ' from this project' : ''}`);
+      const res = await api.delete<{ trashId?: string }>(
+        `/api/skills/${encodeURIComponent(name)}${qs ? `?${qs}` : ''}`,
+      );
+      const trashId = res?.trashId;
+      // The backend moves the directory to a 24h trash, so the toast can
+      // offer a real Undo instead of "are you sure?" with no way back.
+      // The Undo toast outlives the default ~4s: it is the only affordance
+      // for a destructive action (the server keeps the copy 24h either way).
+      toast.success(`Skill '${name}' deleted${wsScope ? ' from this project' : ''}`, {
+        duration: trashId ? 15_000 : undefined,
+        action: trashId
+          ? {
+              label: 'Undo',
+              onClick: () => {
+                void api
+                  .post(`/api/skills/restore/${encodeURIComponent(trashId)}`)
+                  .then(() => {
+                    toast.success(`Restored '${name}'`);
+                    // `refresh()` invalidates ['skills-list'] (plus detail and
+                    // workspaces). Invalidating ['skills'] matched no query —
+                    // the skill came back on disk but the list stayed stale
+                    // (live-found 2026-10-04).
+                    refresh();
+                    setSelectedName(null);
+                  })
+                  .catch((err: unknown) => {
+                    toast.error(
+                      `Restore failed: ${err instanceof Error ? err.message : String(err)}`,
+                    );
+                  });
+              },
+            }
+          : undefined,
+        description: trashId ? 'Recoverable for 24 hours.' : undefined,
+      });
       setConfirmDelete(null);
       if (selectedName === name) {
         setSelectedName(null);
@@ -331,6 +364,41 @@ export function SkillsSection() {
       refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Bulk selection for enable/disable (a dozen one-at-a-time switches is
+  // how nobody curates a catalogue).
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const allVisible = useMemo(() => Object.values(grouped).flat().map((s) => s.name), [grouped]);
+  const togglePicked = (name: string) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(name)) next.add(name);
+      return next;
+    });
+  const bulkSetDisabled = async (disabled: boolean) => {
+    const names = [...picked];
+    if (names.length === 0) return;
+    setSaving(true);
+    try {
+      await Promise.all(
+        names.map((name) =>
+          api.patch(`/api/skills/${encodeURIComponent(name)}`, {
+            disabled,
+            ...(wsScope ? { workspace: wsScope } : {}),
+          }),
+        ),
+      );
+      toast.success(
+        `${names.length} skill${names.length === 1 ? '' : 's'} ${disabled ? 'disabled' : 'enabled'}`,
+      );
+      setPicked(new Set());
+      refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Bulk update failed');
     } finally {
       setSaving(false);
     }
@@ -516,7 +584,47 @@ export function SkillsSection() {
             /* One hairline row per skill, grouped by the scope that decides
              * whether it shadows another — the card grid buried the only
              * distinction that matters when a catalogue grows. */
-            <div className="space-y-4" data-testid="skill-rows">
+            <div className="space-y-2" data-testid="skill-rows">
+              {/* Bulk actions — select-all plus the two state switches. */}
+              <div className="flex items-center gap-2 px-1 pb-1" data-testid="skills-bulk">
+                <label className="flex items-center gap-1.5 text-2xs text-muted-foreground/70">
+                  <input
+                    type="checkbox"
+                    checked={allVisible.length > 0 && picked.size === allVisible.length}
+                    onChange={(e) =>
+                      setPicked(e.target.checked ? new Set(allVisible) : new Set())
+                    }
+                    aria-label="Select all skills"
+                    data-testid="skills-select-all"
+                    className="size-3 accent-[var(--dt-primary)]"
+                  />
+                  {picked.size > 0
+                    ? `${picked.size} selected`
+                    : 'Select for bulk actions'}
+                </label>
+                {picked.size > 0 && (
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={saving}
+                      onClick={() => void bulkSetDisabled(false)}
+                      data-testid="skills-bulk-enable"
+                    >
+                      Enable
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={saving}
+                      onClick={() => void bulkSetDisabled(true)}
+                      data-testid="skills-bulk-disable"
+                    >
+                      Disable
+                    </Button>
+                  </div>
+                )}
+              </div>
               {SKILL_SCOPE_GROUPS.map(({ key, label, note }) => {
                 const group = grouped[key];
                 if (group.length === 0) return null;
@@ -531,7 +639,13 @@ export function SkillsSection() {
                     {note && <p className="pb-1 text-2xs text-muted-foreground/70">{note}</p>}
                     <div className="divide-y divide-white/[0.06]">
                       {group.map((s) => (
-                        <SkillRow key={s.name} skill={s} onOpen={() => openDetail(s.name)} />
+                        <SkillRow
+                          key={s.name}
+                          skill={s}
+                          selected={picked.has(s.name)}
+                          onToggleSelect={() => togglePicked(s.name)}
+                          onOpen={() => openDetail(s.name)}
+                        />
                       ))}
                     </div>
                   </section>
@@ -929,13 +1043,32 @@ function skillScopeKey(s: SkillSummary): SkillScopeKey {
 
 /* One line per skill: name, what it does, and the two facts that say whether it
  * is live and whether anyone uses it. The whole row opens the detail pane. */
-function SkillRow({ skill, onOpen }: { skill: SkillSummary; onOpen: () => void }) {
+function SkillRow({
+  skill,
+  onOpen,
+  selected = false,
+  onToggleSelect,
+}: {
+  skill: SkillSummary;
+  onOpen: () => void;
+  selected?: boolean;
+  onToggleSelect?: () => void;
+}) {
   return (
-    <button
+    <div className="flex w-full items-center gap-2 transition hover:bg-white/[0.03]">
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={onToggleSelect}
+        aria-label={`Select ${skill.name}`}
+        data-testid={`skill-select-${skill.name}`}
+        className="ml-1 size-3 shrink-0 accent-[var(--dt-primary)]"
+      />
+      <button
       type="button"
       onClick={onOpen}
       data-testid={`skill-row-${skill.name}`}
-      className="flex w-full items-center gap-3 py-2.5 text-left transition hover:bg-white/[0.03]"
+      className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
     >
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
@@ -964,7 +1097,8 @@ function SkillRow({ skill, onOpen }: { skill: SkillSummary; onOpen: () => void }
         </span>
       )}
       <UsageChip skill={skill} />
-    </button>
+      </button>
+    </div>
   );
 }
 

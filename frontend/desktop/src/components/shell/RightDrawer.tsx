@@ -16,6 +16,8 @@ import {
   Play,
   Plus,
   StickyNote,
+  EyeOff,
+  Minus,
   TerminalSquare,
   Users,
   X,
@@ -25,11 +27,14 @@ import { cn } from '@/lib/utils';
 import {
   addRightDrawerSection,
   closeRightDrawerSection,
+  hideRightDrawerSection,
+  restoreRightDrawerSection,
   openRightDrawerChooser,
   setActiveRightDrawerSection,
   setRightDrawerChooser,
   toggleBottomTerminal,
   useRightDrawerSections,
+  useRightDrawerStore,
   type RightDrawerSectionId,
 } from './RightDrawerState';
 import { RightDrawerDiffSection } from './RightDrawerDiffSection';
@@ -65,6 +70,10 @@ function drawerMax(): number {
   return Math.max(MIN_WIDTH, Math.floor(window.innerWidth * MAX_VIEWPORT_FRACTION));
 }
 
+/** Stable empty for the hidden-selector (a fresh [] each render would
+ *  re-render the drawer every state change). */
+const EMPTY_HIDDEN: RightDrawerSectionId[] = [];
+
 export function RightDrawer({
   open,
   sessionId,
@@ -86,6 +95,7 @@ export function RightDrawer({
 }) {
   const sections = useRightDrawerSections();
   const { file: filePreview, activeSection, chooserActive } = useRightDrawer();
+  const hidden = useRightDrawerStore((st) => st.hidden ?? EMPTY_HIDDEN);
   const showingFile = sections.length === 1 && sections[0] === 'file' && !!filePreview;
   const HeaderFileIcon = filePreview ? getFileIcon(filePreview.name).Icon : null;
   const ctx = { sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan };
@@ -197,10 +207,38 @@ export function RightDrawer({
                       ?.focus();
                   }}
                 >
-                  {sections.map((sectionId) => (
-                    <DrawerTab key={sectionId} sectionId={sectionId} active={sectionId === activeSection} />
-                  ))}
-                  <DrawerAddSectionButton />
+                  {sections
+                    .filter((sectionId) => !hidden.includes(sectionId))
+                    .map((sectionId) => (
+                      <DrawerTab
+                        key={sectionId}
+                        sectionId={sectionId}
+                        active={sectionId === activeSection}
+                      />
+                    ))}
+                  {/* Parked panes (Hermes' "hidden"): a restore rail, because a parked
+            tab is deliberately not in the strip — it must still be findable. */}
+        {hidden.length > 0 && (
+          <div
+            className="flex shrink-0 items-center gap-1.5 border-b border-border/40 px-2 py-1 text-2xs text-muted-foreground/70"
+            data-testid="drawer-hidden-rail"
+          >
+            <EyeOff className="size-3 shrink-0" aria-hidden />
+            <span>Hidden:</span>
+            {hidden.map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => restoreRightDrawerSection(id)}
+                className="rounded px-1.5 py-0.5 transition hover:bg-muted/60 hover:text-foreground"
+                data-testid={`drawer-restore-${id}`}
+              >
+                {TAB_META[id]?.label ?? id}
+              </button>
+            ))}
+          </div>
+        )}
+        <DrawerAddSectionButton />
                 </div>
               ) : (
                 <div className="flex min-w-0 items-center gap-2">
@@ -221,10 +259,31 @@ export function RightDrawer({
                 /* ZCode "Open tab": centered card grid replaces the body. */
                 <SectionChooser openSections={sections} />
               ) : activeSection && sections.includes(activeSection) ? (
-                /* Zed-style single view: the ACTIVE tab fills the whole
-                   panel — switching tabs swaps content, nothing stacks. */
-                <div className="flex h-full min-h-0 flex-col">
-                  {renderSection(activeSection, ctx)}
+                /* Zed-style single view: the ACTIVE tab fills the panel. A
+                   HIDDEN tab stays mounted underneath (drafts, scroll and
+                   live panes survive a tab switch) but is inert and stops
+                   polling; only × (Close) unmounts it. */
+                <div className="relative flex h-full min-h-0 flex-col">
+                  {sections.map((id) => {
+                    const isActive = id === activeSection;
+                    const parked = hidden.includes(id);
+                    if (!isActive && !parked) return null;
+                    return (
+                      <div
+                        key={id}
+                        className={cn(
+                          'flex h-full min-h-0 flex-col',
+                          !isActive &&
+                            'invisible pointer-events-none absolute inset-0 aria-hidden',
+                        )}
+                        {...(!isActive ? { inert: true } : {})}
+                        data-parked={parked && !isActive ? 'true' : undefined}
+                        data-testid={`drawer-pane-${id}`}
+                      >
+                        {renderSection(id, ctx)}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : null}
             </div>
@@ -296,6 +355,19 @@ function DrawerTab({ sectionId, active }: { sectionId: RightDrawerSectionId; act
     >
       <Icon className="size-3 shrink-0 opacity-80" />
       <span className="truncate text-xs font-medium">{label}</span>
+      <button
+        type="button"
+        aria-label={`Hide ${label} (keeps it running)`}
+        title="Hide — keeps the pane alive, stops its polling"
+        data-testid={`drawer-tab-hide-${sectionId}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          hideRightDrawerSection(sectionId);
+        }}
+        className="ml-0.5 rounded p-0.5 opacity-40 transition hover:bg-muted/60 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+      >
+        <Minus className="size-2.5" />
+      </button>
       <button
         type="button"
         aria-label={`Close ${label} section`}

@@ -14,6 +14,7 @@ import { UpdateRelaunchOverlay } from '@/components/overlays/UpdateRelaunchOverl
 import { useStartupProviderRefresh } from '@/hooks/useStartupProviderRefresh';
 import { useUiCustomizationSync } from '@/hooks/useUiCustomizationSync';
 import { registerStreamResync } from '@/sections/chat/stream/session-subscriber';
+import { resolveShortcut } from '@/lib/shortcuts';
 import { toggleCommandPalette } from '@/store/command-palette';
 import { toggleShortcutsModal } from '@/store/shortcuts-modal';
 import { createSession } from '@/store/sessions';
@@ -45,43 +46,46 @@ export default function App() {
     registerStreamResync(() => Promise.resolve(null));
   }, []);
 
-  // Global hotkeys: ⌘/Ctrl+K|P palette, ⌘/Ctrl+N new chat, `?` shortcuts
-  // reference, `,` settings.
-  // (Formerly lived in the never-mounted AppShell — mounted here so they work.)
+  // Global hotkeys come from lib/shortcuts.ts — the registry carries the
+  // combo AND the action, so the modal cannot document a key App.tsx never
+  // wires, and a binding cannot ship without an action.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const cmd = e.metaKey || e.ctrlKey;
-      if (cmd && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'p')) {
-        e.preventDefault();
-        toggleCommandPalette();
-        return;
-      }
-      if (cmd && !e.altKey && !e.shiftKey && (e.key === 'b' || e.key === 'j')) {
-        // Claude/Hermes pane toggles (spec §3.6): Ctrl+B sidebar, Ctrl+J
-        // right panel. ChatLayout owns both states, so it listens.
-        e.preventDefault();
-        window.dispatchEvent(
-          new CustomEvent(e.key === 'b' ? 'august:toggle-sidebar' : 'august:toggle-right-drawer'),
-        );
-        return;
-      }
-      if (cmd && !e.altKey && !e.shiftKey && e.key === 'n') {
-        // ZCode-parity Ctrl+N: new chat, same path as the sidebar button
-        // (creates a Tasks-home session and opens it). Skips typing targets
-        // so Ctrl+N inside a composer field is untouched.
-        e.preventDefault();
-        const session = createSession(null);
-        navigate(`/c/${session.id}`);
-        return;
-      }
-      if (cmd || e.altKey || e.metaKey) return;
-      if (isTypingTarget(e.target)) return;
-      if (e.key === '?') {
-        e.preventDefault();
-        toggleShortcutsModal();
-      } else if (e.key === ',') {
-        e.preventDefault();
-        void navigate('/settings');
+      const hit = resolveShortcut(e);
+      if (!hit?.action) return;
+      // Keys typed into a field belong to that field, unless the binding opts
+      // in (palette + pane toggles do; Ctrl+N and `?`/`,` do not).
+      if (!hit.allowWhileTyping && isTypingTarget(e.target)) return;
+      e.preventDefault();
+      switch (hit.action) {
+        case 'palette':
+          toggleCommandPalette();
+          break;
+        case 'new-chat': {
+          // ZCode-parity Ctrl+N: new chat, same path as the sidebar button
+          // (creates a Tasks-home session and opens it).
+          const session = createSession(null);
+          void navigate(`/c/${session.id}`);
+          break;
+        }
+        case 'toggle-sidebar':
+        case 'toggle-right-drawer':
+          // Claude/Hermes pane toggles (spec §3.6): Ctrl+B sidebar, Ctrl+J
+          // right panel. ChatLayout owns both states, so it listens.
+          window.dispatchEvent(
+            new CustomEvent(
+              hit.action === 'toggle-sidebar'
+                ? 'august:toggle-sidebar'
+                : 'august:toggle-right-drawer',
+            ),
+          );
+          break;
+        case 'settings':
+          void navigate('/settings');
+          break;
+        case 'shortcuts':
+          toggleShortcutsModal();
+          break;
       }
     };
     window.addEventListener('keydown', onKey);

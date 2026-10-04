@@ -62,8 +62,11 @@ describe('SavePointChip', () => {
     renderChip(<SavePointChip checkpoints={CPTS} sessionId="s1" />);
     fireEvent.click(screen.getByTestId('save-point-restore'));
     await waitFor(() => expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument());
-    // Escape is the cancel gesture (one Escape closes one layer).
-    fireEvent.keyDown(window, { key: 'Escape' });
+    // Escape is the cancel gesture (one Escape closes one layer). Dispatch
+    // on `document`, like a real key event: the dialog's Escape listener is
+    // a document-CAPTURE listener, which an event dispatched directly at
+    // `window` never reaches.
+    fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByTestId('confirm-dialog')).toBeNull());
     expect(restore).not.toHaveBeenCalled();
   });

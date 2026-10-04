@@ -1,51 +1,19 @@
 /**
- * Keyboard shortcuts reference modal. Opened with `?` (when not typing)
- * or from the command palette. Static list — keep in sync with the real
- * handlers (AppShell palette keys, composer Enter/Shift+Enter, etc.).
+ * Keyboard shortcuts reference modal. Opened with `?` (when not typing) or
+ * from the command palette. The list comes from lib/shortcuts.ts — the SAME
+ * array App.tsx binds from, so a binding can no longer ship undocumented
+ * (Ctrl+N lived a year+ missing from the hand-written list).
+ *
+ * Two search modes, ChatGPT-parity: type text to filter, or press a
+ * combination to find what it does.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { Backdrop } from './Backdrop';
 import { useShortcutsModalStore, closeShortcutsModal } from '@/store/shortcuts-modal';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
-
-const SHORTCUT_GROUPS: Array<{
-  heading: string;
-  items: Array<{ keys: string[]; label: string }>;
-}> = [
-  {
-    heading: 'Global',
-    items: [
-      { keys: ['Ctrl', 'K'], label: 'Command palette' },
-      { keys: ['Ctrl', 'P'], label: 'Command palette' },
-      { keys: ['Ctrl', 'N'], label: 'New chat' },
-      { keys: ['Ctrl', 'B'], label: 'Toggle sidebar' },
-      { keys: ['Ctrl', 'J'], label: 'Toggle right panel' },
-      { keys: [','], label: 'Settings' },
-      { keys: ['?'], label: 'Keyboard shortcuts' },
-    ],
-  },
-  {
-    heading: 'Composer',
-    items: [
-      { keys: ['Enter'], label: 'Send message' },
-      { keys: ['Shift', 'Enter'], label: 'New line' },
-      { keys: ['↑', '↓'], label: 'Navigate @mention / command list' },
-      { keys: ['Esc'], label: 'Close popovers' },
-    ],
-  },
-  {
-    heading: 'Approvals',
-    items: [
-      { keys: ['1', '2', '3'], label: 'Choose permission option' },
-    ],
-  },
-  {
-    heading: 'Git panel',
-    items: [{ keys: ['Ctrl', 'Enter'], label: 'Commit' }],
-  },
-];
+import { SHORTCUT_GROUPS, comboFor, findByCombo } from '@/lib/shortcuts';
 
 function KeyCap({ children }: { children: string }) {
   return (
@@ -58,6 +26,10 @@ function KeyCap({ children }: { children: string }) {
 export function ShortcutsModal() {
   const open = useShortcutsModalStore((s) => s.open);
   const trapRef = useFocusTrap<HTMLDivElement>();
+  // Two search modes (ChatGPT parity): type to filter, or press a combination
+  // to learn what it does.
+  const [query, setQuery] = useState('');
+  const [hitCombo, setHitCombo] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -65,11 +37,37 @@ export function ShortcutsModal() {
       if (e.key === 'Escape') {
         e.preventDefault();
         closeShortcutsModal();
+        return;
       }
+      if (e.key === 'Tab' || e.key === 'Shift') return;
+      const combo = comboFor(e);
+      if (!findByCombo(combo)) return;
+      // Only swallow the key when it IS a real binding, so the modal can
+      // still be dismissed with Escape and typing keeps working.
+      e.preventDefault();
+      e.stopPropagation();
+      setHitCombo(combo);
+      setQuery('');
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setQuery('');
+      setHitCombo(null);
+    }
+  }, [open]);
+
+  const hit = hitCombo ? findByCombo(hitCombo) : undefined;
+  const needle = query.trim().toLowerCase();
+  const groups = SHORTCUT_GROUPS.map((g) => ({
+    ...g,
+    items: g.items.filter(
+      (i) => !needle || i.label.toLowerCase().includes(needle) || i.keys.join('+').toLowerCase().includes(needle),
+    ),
+  })).filter((g) => g.items.length > 0);
 
   if (!open) return null;
 
@@ -93,8 +91,24 @@ export function ShortcutsModal() {
             <X className="size-3" />
           </button>
         </div>
+        <div className="border-b border-border px-4 py-2">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search, or press a combination…"
+            aria-label="Search shortcuts"
+            className="w-full rounded-md border border-border/70 bg-background/60 px-2.5 py-1.5 text-xs outline-none transition placeholder:text-muted-foreground/60 focus:border-primary/50"
+            data-testid="shortcuts-search"
+          />
+          {hit && (
+            <p className="mt-2 text-2xs text-muted-foreground" data-testid="shortcuts-hit">
+              <KeyCap>{hit.keys.join(' + ')}</KeyCap>{' '}
+              <span className="text-foreground/85">{hit.label}</span>
+            </p>
+          )}
+        </div>
         <div className="max-h-[60vh] overflow-y-auto p-4 space-y-4">
-          {SHORTCUT_GROUPS.map((group) => (
+          {groups.map((group) => (
             <div key={group.heading}>
               <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {group.heading}
@@ -121,6 +135,11 @@ export function ShortcutsModal() {
               </div>
             </div>
           ))}
+          {groups.length === 0 && (
+            <p className="py-6 text-center text-xs text-muted-foreground/70">
+              No shortcut matches “{query}”.
+            </p>
+          )}
           <p className="pt-1 text-center text-2xs text-muted-foreground/70">
             Ctrl = ⌘ on macOS
           </p>

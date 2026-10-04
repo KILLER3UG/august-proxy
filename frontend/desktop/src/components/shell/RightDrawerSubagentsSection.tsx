@@ -8,6 +8,7 @@
    No debug furniture: no harness config bar, no goal cards, no api-call /
    iteration counters, no raw event dumps, no "Persisted final response" labels. */
 
+import { useRightDrawerHidden } from './RightDrawerState';
 import { CheckCircle2, CircleAlert, Circle, ArrowRight, ListTodo, Loader2, Square, Search, ChevronDown } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -327,6 +328,7 @@ export function RightDrawerSubagentsSection({
   sessionId: string | null;
   workbenchSessionId: string | null;
 }) {
+  const hidden = useRightDrawerHidden('subagents');
   const focused = useFocusedSubagent();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [dismissArmedAt, setDismissArmedAt] = useState<number | null>(null);
@@ -354,8 +356,8 @@ export function RightDrawerSubagentsSection({
       );
       return (data.runs ?? []).map(normalizeRun);
     },
-    enabled: !!(workbenchSessionId ?? sessionId),
-    refetchInterval: 10_000,
+    enabled: !!(workbenchSessionId ?? sessionId) && !hidden,
+    refetchInterval: hidden ? false : 10_000,
   });
 
   const query = useQuery({
@@ -363,6 +365,9 @@ export function RightDrawerSubagentsSection({
     queryFn: () => listWorkbenchSessionAgents(workbenchSessionId!),
     enabled: !!workbenchSessionId,
     refetchInterval: (current) => {
+      // A parked section keeps its transcript but stops polling (Hermes'
+      // hidden panes are inert) — this is what made keep-mounted cheap.
+      if (hidden) return false;
       const agents = current.state.data?.agents ?? [];
       return agents.some((agent) => ACTIVE_STATUSES.has(agent.status)) ? 2_000 : 10_000;
     },

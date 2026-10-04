@@ -89,6 +89,10 @@ export function WorkspaceShell({
         // gives the search something useful to match.
         description: fromRegistry?.description ?? '',
         keywords: fromRegistry?.keywords ?? [],
+        // Control-level labels + search-only aliases for setting-level
+        // search (see the registry's `settingHints` / `settingAliases`).
+        settingHints: fromRegistry?.settingHints ?? [],
+        settingAliases: fromRegistry?.settingAliases ?? [],
       };
     });
   }, [sections]);
@@ -112,9 +116,21 @@ export function WorkspaceShell({
       const haystack = [s.label, s.description, ...s.keywords].join(' ').toLowerCase();
       return tokens.every((t) => haystack.includes(t));
     };
+    // Setting-level matching: the individual control labels each section
+    // owns (registry `settingHints`), plus search-only aliases for names
+    // people actually type (the brain-config key `memoryAutoInject` lives in
+    // `settingAliases`), so the query finds the SETTING, not just the page it
+    // lives on.
+    const hintMatch = (s: (typeof decorated)[number]): boolean => {
+      const terms = [...(s.settingHints ?? []), ...(s.settingAliases ?? [])].map((h) =>
+        h.toLowerCase(),
+      );
+      if (!terms.length) return false;
+      return tokens.every((t) => terms.some((h) => h.includes(t)));
+    };
     const ids = new Set<string>();
     for (const s of visibleForSearch) {
-      if (!match(s)) continue;
+      if (!match(s) && !hintMatch(s)) continue;
       ids.add(s.id);
     }
     const chosen = decorated.filter((s) => ids.has(s.id));
@@ -190,26 +206,44 @@ export function WorkspaceShell({
                       <span>{categoryLabel}</span>
                     </div>
                     <div className="flex flex-col gap-0.5 rounded-xl bg-sidebar-accent/40 py-1">
-                    {items.map((s) => (
-                      <WorkspaceNavLink
-                        key={s.id}
-                        icon={s.icon}
-                        label={s.label}
-                        active={railActive === s.id}
-                        badge={
-                          s.id === 'app-updates' && updateAvailable
-                            ? 'New'
-                            : s.id === 'harness-improve' && inbox.total > 0
-                              ? String(inbox.total)
-                              : null
-                        }
-                        onSelect={() => {
-                          if (s.id === railActive && s.id === active) return;
-                          setQuery('');
-                          void navigate(`/settings/${s.id}`);
-                        }}
-                      />
-                    ))}
+                    {items.map((s) => {
+                      // Show the matching CONTROL under a setting-level hit —
+                      // "auto inject" → Memory → "Auto-recall memories…".
+                      const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+                      const hitHint = (s.settingHints ?? []).find((h) => {
+                        const hl = h.toLowerCase();
+                        return tokens.every((t) => hl.includes(t));
+                      });
+                      return (
+                        <div key={s.id}>
+                          <WorkspaceNavLink
+                            icon={s.icon}
+                            label={s.label}
+                            active={railActive === s.id}
+                            badge={
+                              s.id === 'app-updates' && updateAvailable
+                                ? 'New'
+                                : s.id === 'harness-improve' && inbox.total > 0
+                                  ? String(inbox.total)
+                                  : null
+                            }
+                            onSelect={() => {
+                              if (s.id === railActive && s.id === active) return;
+                              setQuery('');
+                              void navigate(`/settings/${s.id}`);
+                            }}
+                          />
+                          {hitHint && (
+                            <p
+                              className="truncate px-9 pb-1 text-2xs text-muted-foreground/60"
+                              data-testid={`settings-hit-hint-${s.id}`}
+                            >
+                              {hitHint}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
                     </div>
                   </div>
                 );

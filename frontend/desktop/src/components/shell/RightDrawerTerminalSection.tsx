@@ -1,5 +1,6 @@
 /* ── RightDrawerTerminalSection ─ real shell (PTY) + open external ── */
 
+import { useRightDrawerHidden } from './RightDrawerState';
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ExternalLink, Loader2, Plus, RefreshCw, ShieldAlert, Trash2, X, Inbox, AlertCircle } from 'lucide-react';
@@ -23,6 +24,7 @@ import { useSessionsStore } from '@/store/sessions';
 import { useParams } from 'react-router-dom';
 
 export function RightDrawerTerminalSection() {
+  const hidden = useRightDrawerHidden('terminal');
   const qc = useQueryClient();
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const workspacePath = useSessionsStore((s) => {
@@ -45,7 +47,7 @@ export function RightDrawerTerminalSection() {
   const { data, isLoading } = useQuery({
     queryKey: ['terminal-sessions'],
     queryFn: getTerminalSessions,
-    refetchInterval: 3_000,
+    refetchInterval: hidden ? false : 3_000,
   });
 
   const sessions = data?.sessions ?? [];
