@@ -171,15 +171,23 @@ class TestF3FlagToJudgeChain:
 
 class TestF4CuratorRouterOffLoop:
     def test_run_curator_judges_inside_live_loop(self, brain, monkeypatch):
-        ep = {
-            'session_id': 's6',
-            'kind': 'failure_recovery',
-            'start_message_id': 1,
-            'end_message_id': 2,
-            'outcome': 'resolved',
-            'events': [{'type': 'tool_error', 'excerpt': 'pnpm install failed exit code:1'}],
-        }
-        eid = em.record_episode(ep)
+        # The episode must be backed by a real tool-error receipt: an episode
+        # invented by the retired prose detector is quarantined (052) and never
+        # reaches a judge, so a hand-written excerpt would test the plumbing
+        # against data the loop is now designed to ignore.
+        _seedRealShape(
+            's6',
+            [
+                ('user', 'install pnpm'),
+                ('tool', {'content': 'Error: pnpm install failed', 'tool_use_id': 't1', 'is_error': True}),
+                ('assistant', {'content': 'Installed with corepack, verified.'}),
+            ],
+        )
+        recorded = [
+            em.record_episode({**episode, 'session_id': 's6'}) for episode in em.extract_episodes('s6')
+        ]
+        assert recorded, 'a receipt-backed failure must produce an episode'
+        eid = recorded[0]
         em.flag_top_slice(flagRateCap=1.0, budgetPerDay=5)
 
         calls: list[int] = []

@@ -577,7 +577,7 @@ def unscored_episodes(limit: int = 200) -> list[dict[str, Any]]:
     rows = _conn().execute(
         """
         SELECT * FROM episodes
-        WHERE tier = 1 AND tier1_result IS NULL
+        WHERE tier = 1 AND tier1_result IS NULL AND quarantined = 0
         ORDER BY id DESC LIMIT ?
         """,
         (int(limit),),
@@ -587,7 +587,7 @@ def unscored_episodes(limit: int = 200) -> list[dict[str, Any]]:
 
 def flagged_episodes(limit: int = 50) -> list[dict[str, Any]]:
     rows = _conn().execute(
-        'SELECT * FROM episodes WHERE tier = 2 ORDER BY id DESC LIMIT ?',
+        'SELECT * FROM episodes WHERE tier = 2 AND quarantined = 0 ORDER BY id DESC LIMIT ?',
         (int(limit),),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -660,7 +660,7 @@ def score_episode(episode: dict[str, Any], fingerprintCount: int, sameCauseSessi
 
 def _sameCauseSessions(fp: str) -> int:
     row = _conn().execute(
-        'SELECT COUNT(DISTINCT session_id) AS n FROM episodes WHERE fingerprint_id = ?',
+        'SELECT COUNT(DISTINCT session_id) AS n FROM episodes WHERE fingerprint_id = ? AND quarantined = 0',
         (fp,),
     ).fetchone()
     return int(row['n']) if row else 0
@@ -724,8 +724,98 @@ def flag_top_slice(
 # ── scheduled pass + retention ───────────────────────────────────────────
 
 
+def _sessionReceipts(sessionId: str) -> list[str]:
+    """Every error receipt this session's transcript still carries."""
+    out: list[str] = []
+    for r in _conn().execute(
+        'SELECT blocks_json FROM messages WHERE session_id = ?', (sessionId,)
+    ).fetchall():
+        out.extend(_errorReceipts(r['blocks_json']))
+    return out
+
+
+def quarantine_unverified_tool_errors() -> dict[str, int]:
+    """Mark, never delete, episodes no receipt can stand behind (item 5).
+
+    Until `2c8f6ac7` a ``tool_error`` event came from prose matching, so a tool
+    result that merely *quoted* the error vocabulary mined as a failure. The dev
+    database measured 41 such episodes and zero messages carrying a receipt —
+    every one invented. Deleting them would destroy the only record of how the
+    loop escalated, so they stay and every consumer that ACTS on an episode
+    stops seeing them.
+
+    Runs at the head of every mining pass and is safe to re-run: an episode is
+    only marked when NO receipt in its session matches its excerpt, and a
+    post-receipt episode is backed by one by construction, so nothing newer is
+    ever caught. If any one of a window's failures is real the window is left
+    whole — quarantining a mixed episode would discard true evidence to tidy a
+    counter.
+    """
+    conn = _conn()
+    candidates = conn.execute(
+        "SELECT id, session_id, events, fingerprint_id FROM episodes "
+        "WHERE quarantined = 0 AND instr(COALESCE(events, ''), '\"tool_error\"') > 0"
+    ).fetchall()
+    marked = 0
+    touched: set[str] = set()
+    for row in candidates:
+        try:
+            events = json.loads(str(row['events'] or '[]'))
+        except Exception:
+            continue
+        excerpts = [
+            str(e.get('excerpt') or '')
+            for e in events
+            if isinstance(e, dict) and e.get('type') == 'tool_error'
+        ]
+        excerpts = [x for x in excerpts if x]
+        if not excerpts:
+            continue
+        receipts = _sessionReceipts(str(row['session_id'] or ''))
+        # The excerpt was capped when it was written, so a shared prefix is the
+        # honest comparison — equality would mark real episodes whose tool
+        # output merely grew a truncation marker afterwards.
+        if any(r.startswith(x[:60]) for x in excerpts for r in receipts):
+            continue
+        conn.execute('UPDATE episodes SET quarantined = 1 WHERE id = ?', (int(row['id']),))
+        marked += 1
+        if str(row['fingerprint_id'] or ''):
+            touched.add(str(row['fingerprint_id']))
+    # episode_count is the recurrence score that escalates a fingerprint to the
+    # distiller. Leaving it counting invented windows would keep proposing the
+    # same non-problem after the rows themselves stopped being visible.
+    for fp in touched:
+        keep = conn.execute(
+            'SELECT COUNT(*) AS n FROM episodes WHERE fingerprint_id = ? AND quarantined = 0',
+            (fp,),
+        ).fetchone()
+        n = int(keep['n'] if keep else 0)
+        if n == 0:
+            # Clearing the flag matters as much as the count: the distiller
+            # selects by ``flagged = 1``, so an invented fingerprint with no
+            # live episode behind it would keep being proposed forever.
+            conn.execute(
+                'UPDATE failure_fingerprints SET episode_count = 0, flagged = 0 WHERE fingerprint = ?',
+                (fp,),
+            )
+        else:
+            conn.execute(
+                'UPDATE failure_fingerprints SET episode_count = ? WHERE fingerprint = ?',
+                (n, fp),
+            )
+    brain_commit(conn)
+    total = conn.execute('SELECT COUNT(*) AS n FROM episodes WHERE quarantined = 1').fetchone()
+    return {
+        'candidates': len(candidates),
+        'quarantined': marked,
+        'quarantinedTotal': int(total['n'] if total else 0),
+        'fingerprintsRecounted': len(touched),
+    }
+
+
 def mine_sessions(sinceDays: int = 30) -> dict[str, int]:
     """Extract episodes from recent sessions."""
+    quarantine_unverified_tool_errors()
     since = (datetime.now(timezone.utc) - timedelta(days=sinceDays)).isoformat()
     # 2.17: created_at is stored space-separated (datetime('now'))
     # while `since` is ISO with a 'T'; a raw string compare sorts ' ' (0x20)
@@ -798,11 +888,23 @@ def learning_report() -> dict[str, Any]:
     """Counters for the Phase E skillLearningReport blob."""
     conn = _conn()
     counts = {
-        'episodes': int(conn.execute('SELECT COUNT(*) AS n FROM episodes').fetchone()['n']),
-        'tier2': int(conn.execute('SELECT COUNT(*) AS n FROM episodes WHERE tier = 2').fetchone()['n']),
+        # Quarantined windows are reported, never counted as evidence: they are
+        # the record of a detector that has since been fixed, not a lesson.
+        'episodes': int(
+            conn.execute('SELECT COUNT(*) AS n FROM episodes WHERE quarantined = 0').fetchone()['n']
+        ),
+        'quarantined': int(
+            conn.execute('SELECT COUNT(*) AS n FROM episodes WHERE quarantined = 1').fetchone()['n']
+        ),
+        'tier2': int(
+            conn.execute(
+                'SELECT COUNT(*) AS n FROM episodes WHERE tier = 2 AND quarantined = 0'
+            ).fetchone()['n']
+        ),
         'judged': int(
             conn.execute(
-                "SELECT COUNT(*) AS n FROM episodes WHERE tier = 2 AND judge_verdict IS NOT NULL"
+                "SELECT COUNT(*) AS n FROM episodes WHERE tier = 2 AND judge_verdict IS NOT NULL "
+                'AND quarantined = 0'
             ).fetchone()['n']
         ),
         'fingerprints': int(conn.execute('SELECT COUNT(*) AS n FROM failure_fingerprints').fetchone()['n']),

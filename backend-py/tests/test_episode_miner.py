@@ -299,6 +299,148 @@ class TestCorrectionDetectorOnRealShape:
         assert rows == 1, f'the rewrite duplicated the correction window: {rows} rows'
 
 
+class TestQuarantineKeepsTheRowAndDropsTheInfluence:
+    """Backlog item 5: the invented episodes are marked, not deleted, and stop
+    reaching anything that acts on them."""
+
+    def _seedEpisode(self, sid, excerpt, fp='tool-error:august-harness-loop', outcome='resolved'):
+        from app.services.memory_conn import conn
+
+        c = conn()
+        c.execute(
+            'INSERT INTO episodes (session_id, kind, start_message_id, end_message_id, events, '
+            "outcome, fingerprint_id, tier) VALUES (?, 'failure_recovery', 1, 3, ?, ?, ?, 1)",
+            (sid, json.dumps([{'type': 'tool_error', 'excerpt': excerpt}]), outcome, fp),
+        )
+        c.commit()
+        return int(c.execute('SELECT last_insert_rowid() AS i').fetchone()['i'])
+
+    def test_an_unbacked_episode_is_marked_and_the_row_survives(self, brain):
+        from app.services.memory_conn import conn
+
+        init_ep = self._seedEpisode('q1', 'read_file: [Validation Error] Tool X received')
+        before = conn().execute('SELECT COUNT(*) n FROM episodes').fetchone()['n']
+        out = em.quarantine_unverified_tool_errors()
+        assert out['quarantined'] == 1
+        assert out['candidates'] == 1
+        after = conn().execute('SELECT COUNT(*) n FROM episodes').fetchone()['n']
+        assert after == before, 'quarantine must never delete'
+        row = conn().execute('SELECT quarantined FROM episodes WHERE id = ?', (init_ep,)).fetchone()
+        assert row['quarantined'] == 1
+
+    def test_a_receipt_backed_episode_is_left_alone(self, brain):
+        from app.services.memory_conn import conn
+
+        _seedSession(
+            'q2',
+            [
+                (
+                    'tool',
+                    {
+                        'role': 'tool',
+                        'tool_use_id': 't1',
+                        'name': 'run_command',
+                        'content': 'Error: ngspice: command not found',
+                        'is_error': True,
+                    },
+                )
+            ],
+        )
+        excerpt = em._errorReceipts(
+            conn().execute('SELECT blocks_json b FROM messages WHERE session_id=?', ('q2',)).fetchone()['b']
+        )[0]
+        epId = self._seedEpisode('q2', excerpt)
+        assert em.quarantine_unverified_tool_errors()['quarantined'] == 0
+        assert (
+            conn().execute('SELECT quarantined q FROM episodes WHERE id = ?', (epId,)).fetchone()['q'] == 0
+        )
+
+    def test_quarantining_recounts_the_fingerprint_that_escalated_it(self, brain):
+        """`episode_count` is the recurrence score that promotes a fingerprint
+        to the distiller. Leaving it at the inflated value would keep proposing
+        a problem that was never real."""
+        from app.services.memory_conn import conn
+
+        c = conn()
+        c.execute(
+            "INSERT INTO failure_fingerprints (fingerprint, episode_count, status, flagged) "
+            "VALUES ('tool-error:august-harness-loop', 32, 'open', 1)"
+        )
+        for _ in range(3):
+            self._seedEpisode('q3', 'read_file: [Validation Error] Tool X')
+        c.commit()
+        em.quarantine_unverified_tool_errors()
+        row = c.execute(
+            "SELECT episode_count n, flagged f FROM failure_fingerprints "
+            "WHERE fingerprint='tool-error:august-harness-loop'"
+        ).fetchone()
+        assert row['n'] == 0, f'recurrence still counts invented windows: {row["n"]}'
+        # The distiller selects by flagged = 1. Clearing the count but leaving
+        # the flag would keep proposing a problem that was never real.
+        assert row['f'] == 0
+
+    def test_no_consumer_sees_a_quarantined_episode(self, brain):
+        from app.services.memory_conn import conn
+
+        epId = self._seedEpisode('q4', 'read_file: [Validation Error] Tool X')
+        em.quarantine_unverified_tool_errors()
+        assert [e['id'] for e in em.unscored_episodes()] == []
+        em.set_flagged(epId, True)
+        assert em.flagged_episodes() == []
+        assert em._sameCauseSessions('tool-error:august-harness-loop') == 0
+        report = em.learning_report()
+        assert report['episodes'] == 0
+        assert report['quarantined'] == 1, 'the count must stay visible as history'
+
+    def test_the_sweep_is_idempotent(self, brain):
+        self._seedEpisode('q5', 'read_file: [Validation Error] Tool X')
+        first = em.quarantine_unverified_tool_errors()
+        second = em.quarantine_unverified_tool_errors()
+        assert first['quarantined'] == 1
+        assert second['candidates'] == 0 and second['quarantined'] == 0
+        assert second['quarantinedTotal'] == 1
+
+    def test_a_mixed_window_is_not_quarantined(self, brain):
+        """One real failure in the window is enough to keep the whole episode —
+        discarding true evidence to tidy a counter is the wrong trade."""
+        from app.services.memory_conn import conn
+
+        _seedSession(
+            'q6',
+            [
+                (
+                    'tool',
+                    {
+                        'role': 'tool',
+                        'tool_use_id': 't9',
+                        'name': 'run_command',
+                        'content': 'Error: real failure',
+                        'is_error': True,
+                    },
+                )
+            ],
+        )
+        real = em._errorReceipts(
+            conn().execute('SELECT blocks_json b FROM messages WHERE session_id=?', ('q6',)).fetchone()['b']
+        )[0]
+        c = conn()
+        c.execute(
+            'INSERT INTO episodes (session_id, kind, start_message_id, end_message_id, events, '
+            "outcome, fingerprint_id, tier) VALUES (?, 'failure_recovery', 1, 3, ?, 'resolved', 'fp', 1)",
+            (
+                'q6',
+                json.dumps(
+                    [
+                        {'type': 'tool_error', 'excerpt': 'read_file: [Validation Error] invented'},
+                        {'type': 'tool_error', 'excerpt': real},
+                    ]
+                ),
+            ),
+        )
+        c.commit()
+        assert em.quarantine_unverified_tool_errors()['quarantined'] == 0
+
+
 class TestNoLiveTurnCoupling:
     def test_mine_sessions_reads_only_storage(self, brain):
         # The scheduled pass works against storage alone — a session with
