@@ -9,7 +9,7 @@ import { listBots } from '@/api/api-client';
 import { useNeedsHandoffStore } from './needs-handoff-store';
 import { PromptDialog } from '@/components/overlays/PromptDialog';
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import { ArrowDownToLine, ChevronUp, Search, X, AlertCircle , Settings } from "lucide-react";
+import { ArrowDownToLine, ChevronUp, Search, X, AlertCircle } from "lucide-react";
 import { openConversationSearch } from "@/store/conversation-search";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { openFolderViaTauri, folderNameFromPath } from "@/api/folder";
@@ -92,14 +92,6 @@ interface Props {
   onNew: () => void;
   onNewInFolder?: (folderId: string | null) => void;
   onNavigate: (path: string) => void;
-}
-
-/** Settings is the bottom-pinned seat; same non-reactive path read the nav
- *  uses (the shell re-renders the sidebar on navigation). */
-function isSettingsActive(): boolean {
-  if (typeof window === 'undefined') return false;
-  const p = window.location.pathname;
-  return p === '/settings' || p.startsWith('/settings/');
 }
 
 export function SessionList({
@@ -869,26 +861,6 @@ export function SessionList({
             />
           </div>
         ) : null}
-
-        {/* Bottom-pinned Settings seat (DeepSeek's sidebar spec pins Settings
-            at the foot; Claude routes it from the account button) — chat-first
-            chrome above, configuration at the bottom, nothing in between. */}
-        <div className="px-2 pb-1">
-          <button
-            type="button"
-            onClick={() => onNavigate('/settings')}
-            className={cn(
-              'w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[0.78125rem] transition-colors',
-              isSettingsActive()
-                ? 'bg-white/[0.08] text-sidebar-foreground font-medium'
-                : 'text-sidebar-foreground/70 hover:bg-white/[0.04] hover:text-sidebar-foreground',
-            )}
-            data-testid="sidebar-settings"
-          >
-            <Settings className="size-3 text-muted-foreground shrink-0" />
-            <span>Customize</span>
-          </button>
-        </div>
 
         {/* Bottom: user identity row — Claude-style username + avatar icon
             that opens the selection list (profile / settings / notifications /

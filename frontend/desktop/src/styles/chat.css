@@ -784,7 +784,8 @@
   min-width: 0;
   color: color-mix(in srgb, var(--dt-muted-foreground) 92%, transparent);
   font-size: 0.875rem;
-  line-height: 1.55;
+  line-height: 1.6;
+  padding-block: 3px 7px;
 }
 .process-thought-prose > .markdown-content {
   margin: 0;
@@ -1162,7 +1163,9 @@
    appears to pass *behind* each glyph rather than through it. */
 .rail-row {
   position: relative;
-  padding: 2px 0;
+  /* Breathing room between process rows: at 2px the rail read as one
+     dense slab (DeepSeek/Hermes give each step its own line of air). */
+  padding: 5px 0;
 }
 .rail-line {
   position: absolute;
@@ -1323,7 +1326,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  margin-top: 3px;
+  margin: 4px 0 8px;
   padding: 0;
   border: none;
   background: transparent;
@@ -1359,10 +1362,10 @@
 .thought-summary {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   max-width: 100%;
-  padding: 2px 0;
+  padding: 7px 0;
 }
 .thought-summary-text {
   flex: 1 1 auto;
@@ -1370,8 +1373,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.8rem;
-  line-height: 1.5;
+  font-size: 0.8125rem;
+  line-height: 1.6;
   color: color-mix(in srgb, var(--dt-muted-foreground) 82%, transparent);
   font-style: italic;
 }

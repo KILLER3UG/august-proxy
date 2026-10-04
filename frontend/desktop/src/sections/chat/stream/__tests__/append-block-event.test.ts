@@ -67,6 +67,36 @@ describe('appendBlockEvent thinking vs final', () => {
     expect(finals[0].content).toBe('Real final');
   });
 
+  it('a LATE reclassifyText (replay after the answer) keeps the answer final', () => {
+    // The reconnect bug: events replay from sinceSeq, so a reclassify marker
+    // emitted mid-turn arrives AFTER the answer already streamed. The old
+    // reducer demoted every finalOutput block and the answer vanished into
+    // the collapsed thinking pack ("sometimes the final output doesn't
+    // render").
+    let blocks = appendBlockEvent([], { type: 'text', content: 'Let me check' });
+    blocks = appendBlockEvent(blocks, {
+      type: 'toolCall',
+      id: 't1',
+      name: 'read_file',
+      context: '{}',
+      status: 'running',
+    });
+    blocks = appendBlockEvent(blocks, { type: 'text', content: 'Here is the answer.' });
+    blocks = appendBlockEvent(blocks, { type: 'reclassifyText' });
+
+    const finals = blocks.filter((b) => b.type === 'finalOutput');
+    expect(finals).toHaveLength(1);
+    expect(finals[0].content).toBe('Here is the answer.');
+    // …and the narration before the tool call still moved to thinking.
+    expect(blocks.some((b) => b.type === 'thinking' && b.content?.includes('Let me check'))).toBe(true);
+  });
+
+  it('a reclassifyText with NO tool marker yet demotes nothing (replay ordering)', () => {
+    let blocks = appendBlockEvent([], { type: 'text', content: 'The answer' });
+    blocks = appendBlockEvent(blocks, { type: 'reclassifyText' });
+    expect(blocks.filter((b) => b.type === 'finalOutput')).toHaveLength(1);
+  });
+
   it('system thinking (warnings/info/errors) does NOT demote the final answer', () => {
     let blocks = appendBlockEvent([], { type: 'thinking', content: 'plan…' });
     blocks = appendBlockEvent(blocks, { type: 'text', content: 'The real answer' });

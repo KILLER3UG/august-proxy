@@ -79,6 +79,7 @@
   "frontend/desktop/src/components/shell/RightDrawerArtifactsSection.tsx:<button",
   "frontend/desktop/src/components/shell/RightDrawerBrowserSection.tsx:style={{",
   "frontend/desktop/src/components/shell/RightDrawerCircuitSection.tsx:<button",
+  "frontend/desktop/src/components/shell/RightDrawerDiffSection.tsx:<button",
   "frontend/desktop/src/components/shell/RightDrawerFileSection.tsx:<button",
   "frontend/desktop/src/components/shell/RightDrawerFileSection.tsx:style={{",
   "frontend/desktop/src/components/shell/RightDrawerJobsSection.tsx:<button",

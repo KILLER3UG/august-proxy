@@ -16,7 +16,7 @@
 import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 
-export type DiffLineKind = 'context' | 'added' | 'removed';
+export type DiffLineKind = 'context' | 'added' | 'removed' | 'hunk';
 
 export interface DiffLine {
   kind: DiffLineKind;
@@ -94,11 +94,15 @@ export function parseUnifiedDiff(text: string): DiffLine[] {
     if (raw.startsWith('--- ') || raw.startsWith('+++ ')) continue;
     if (raw.startsWith('@@')) {
       // Hunk header: @@ -oldStart,oldCount +newStart,newCount @@ optional section
-      const m = raw.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      const m = raw.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/);
       if (m) {
         oldLine = parseInt(m[1], 10);
         newLine = parseInt(m[2], 10);
         inHunk = true;
+        // Keep the header: "@@ -12,7 +12,9 @@ parseTool" tells the reader
+        // WHICH function a hunk belongs to. Dropping it (the old behavior)
+        // is why a long file read as an undifferentiated wall of +/-.
+        out.push({ kind: 'hunk', text: raw.trimEnd() });
       }
       continue;
     }
@@ -154,6 +158,7 @@ export function countDiffLines(lines: DiffLine[]): { added: number; removed: num
   for (const l of lines) {
     if (l.kind === 'added') added++;
     else if (l.kind === 'removed') removed++;
+    // 'hunk' rows are section headers, not changes.
   }
   return { added, removed };
 }
@@ -211,8 +216,8 @@ export function DiffView({ diff, oldContent, newContent, maxLines = 40, classNam
   return (
     <div
       className={cn(
-        'rounded-md overflow-x-auto my-1.5 font-mono text-2xs leading-[1.55]',
-        'bg-black/30 border border-white/[0.04]',
+        'rounded-md overflow-x-auto my-1.5 font-mono text-2xs leading-[1.6]',
+        'border border-border/60 bg-code-surface-bg/40',
         className
       )}
       role="region"
@@ -256,16 +261,28 @@ function DiffLineRow({ line, anchors, idPrefix }: { line: DiffLine; anchors?: Di
   const lineNumber = line.kind === 'removed' ? line.oldLine : line.newLine;
   const prefix = line.kind === 'added' ? '+' : line.kind === 'removed' ? '-' : ' ';
 
+  if (line.kind === 'hunk') {
+    // Hunk headers span the full width — no number cell, no gutter.
+    return (
+      <div
+        className="flex bg-muted/40 px-2.5 py-1 font-mono text-2xs italic text-tier-2"
+        data-testid="diff-hunk-header"
+      >
+        {line.text}
+      </div>
+    );
+  }
+
   return (
     <div
-      className={cn('flex hover:bg-white/[0.025]', anchors?.length && 'bg-primary/[0.06]')}
+      className={cn('flex hover:bg-accent/25', anchors?.length && 'bg-primary/[0.06]')}
       id={anchors?.length && lineNumber ? `${idPrefix ?? 'diff-anchor'}-${lineNumber}` : undefined}
       {...(anchors?.length ? { 'data-diff-anchor': lineNumber } : {})}
     >
       <span
         className={cn(
-          'text-zinc-500 text-right min-w-[2.25rem] pr-2 select-none tabular-nums shrink-0',
-          'border-r border-white/[0.04]'
+          'text-tier-3 text-right min-w-[2.25rem] pr-2 select-none tabular-nums shrink-0',
+          'border-r border-border/60'
         )}
       >
         {lineNumber ?? ''}

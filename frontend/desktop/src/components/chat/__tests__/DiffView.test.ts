@@ -100,11 +100,14 @@ describe('parseUnifiedDiff — basic', () => {
       ' c',
     ].join('\n');
     const lines = parseUnifiedDiff(diff);
-    expect(lines).toHaveLength(4);
-    expect(lines[0]).toMatchObject({ kind: 'context', text: 'a', oldLine: 1, newLine: 1 });
-    expect(lines[1]).toMatchObject({ kind: 'removed', text: 'b', oldLine: 2 });
-    expect(lines[2]).toMatchObject({ kind: 'added', text: 'B', newLine: 2 });
-    expect(lines[3]).toMatchObject({ kind: 'context', text: 'c', oldLine: 3, newLine: 3 });
+    // The hunk header is RETAINED as its own row (2026-10-03): it names the
+    // function a hunk belongs to; the parser used to drop it.
+    expect(lines).toHaveLength(5);
+    expect(lines[0]).toMatchObject({ kind: 'hunk', text: '@@ -1,3 +1,3 @@' });
+    expect(lines[1]).toMatchObject({ kind: 'context', text: 'a', oldLine: 1, newLine: 1 });
+    expect(lines[2]).toMatchObject({ kind: 'removed', text: 'b', oldLine: 2 });
+    expect(lines[3]).toMatchObject({ kind: 'added', text: 'B', newLine: 2 });
+    expect(lines[4]).toMatchObject({ kind: 'context', text: 'c', oldLine: 3, newLine: 3 });
   });
 
   it('handles multiple hunks', () => {
@@ -137,9 +140,12 @@ describe('parseUnifiedDiff — basic', () => {
       '+B',
     ].join('\n');
     const lines = parseUnifiedDiff(diff);
-    expect(lines).toHaveLength(3);
-    expect(lines[1].kind).toBe('removed');
-    expect(lines[2].kind).toBe('added');
+    expect(lines).toHaveLength(4);
+    // The optional trailing text IS the section label — now kept.
+    expect(lines[0]).toMatchObject({ kind: 'hunk', text: '@@ -1,3 +1,3 @@ fn main()' });
+    expect(lines[1].kind).toBe('context');
+    expect(lines[2].kind).toBe('removed');
+    expect(lines[3].kind).toBe('added');
   });
 
   it('ignores diff content before the first hunk header', () => {
@@ -153,9 +159,10 @@ describe('parseUnifiedDiff — basic', () => {
       '+new',
     ].join('\n');
     const lines = parseUnifiedDiff(diff);
-    expect(lines).toHaveLength(2);
-    expect(lines[0].kind).toBe('removed');
-    expect(lines[1].kind).toBe('added');
+    expect(lines).toHaveLength(3);
+    expect(lines[0].kind).toBe('hunk');
+    expect(lines[1].kind).toBe('removed');
+    expect(lines[2].kind).toBe('added');
   });
 
   it('returns empty for non-diff text', () => {
@@ -172,7 +179,7 @@ describe('parseUnifiedDiff — basic', () => {
       '+added',
     ].join('\n');
     const lines = parseUnifiedDiff(diff);
-    expect(lines[0]).toMatchObject({ kind: 'context', text: 'context' });
+    expect(lines[1]).toMatchObject({ kind: 'context', text: 'context' });
   });
 });
 

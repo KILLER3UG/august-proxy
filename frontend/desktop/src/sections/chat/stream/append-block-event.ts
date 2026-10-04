@@ -77,12 +77,26 @@ export function appendBlockEvent(
       content: event.content || '',
     });
   } else if (event.type === 'reclassifyText') {
-    // Backend narrationReclassify marker: the round that streamed the text
-    // so far ALSO called tools, so every finalOutput block up to here was
-    // provisional narration, not the answer. Demote them all into the
-    // thinking pack — deterministic, unlike the heuristic below.
+    // Backend narrationReclassify marker: the round that streamed text ALSO
+    // called tools, so text up to the last tool call was provisional
+    // narration, not the answer.
+    //
+    // Boundary matters, and this reducer used to have none: demoting EVERY
+    // finalOutput block hid the real answer inside the collapsed thinking
+    // pack whenever the marker landed after the answer had streamed — which
+    // happens whenever events replay on a reconnect, because the replayed
+    // reclassify arrives after the later content. Same guard as the thinking
+    // branch below: only demote BEFORE the last tool/command marker; text
+    // after it is the candidate final answer. With no marker yet (replay
+    // ordering), demote nothing — showing narration is recoverable, hiding
+    // the answer is not.
     let demoted = false;
-    for (let i = 0; i < blocks.length; i++) {
+    const lastToolIdx = findLastIndex(
+      blocks,
+      (b) => b.type === 'toolCall' || b.type === 'command',
+    );
+    const limit = lastToolIdx < 0 ? 0 : lastToolIdx;
+    for (let i = 0; i < limit; i++) {
       if (blocks[i].type === 'finalOutput') {
         blocks[i] = { ...blocks[i], type: 'thinking' };
         demoted = true;

@@ -46,12 +46,24 @@ describe('appendBlockEvent — basic event merging', () => {
   it('coalesces demoted finalOutput into one thinking block', () => {
     let blocks = appendBlockEvent([], { type: 'thinking', content: 'think' });
     blocks = appendBlockEvent(blocks, { type: 'text', content: 'draft' });
-    // The narration round ended with a tool call — the reclassify marker
-    // demotes the draft and coalescing merges it back into the open thought.
+    // The narration round ended with a tool call — that toolCall block is what
+    // the reclassify marker uses as its boundary (2026-10-03), so it has to
+    // be present: a marker with no tool boundary demotes nothing on purpose,
+    // because showing narration is recoverable and hiding the answer is not.
+    blocks = appendBlockEvent(blocks, {
+      type: 'toolCall',
+      id: 't1',
+      name: 'read_file',
+      context: '{}',
+      status: 'running',
+    });
     blocks = appendBlockEvent(blocks, { type: 'reclassifyText' });
+    // The demoted draft coalesced into the open thought…
+    expect(blocks[0]).toMatchObject({ type: 'thinking', content: 'thinkdraft' });
+    // …and a later thought (after the tool boundary) stays its own block.
     blocks = appendBlockEvent(blocks, { type: 'thinking', content: ' more' });
-    expect(blocks.filter((b) => b.type === 'thinking')).toHaveLength(1);
-    expect(blocks[0].content).toBe('thinkdraft more');
+    expect(blocks.filter((b) => b.type === 'thinking')).toHaveLength(2);
+    expect(blocks[0].content).toBe('thinkdraft');
   });
 
   it('appends a new final_output block for text events', () => {

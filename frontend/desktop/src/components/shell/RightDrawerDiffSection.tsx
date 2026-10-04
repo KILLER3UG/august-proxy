@@ -1,8 +1,8 @@
 /* ── RightDrawerDiffSection ─ full diff view ──────────────────────── */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileText, RefreshCw, ArrowRight, Check, Undo2, Loader2, SearchCheck } from 'lucide-react';
+import { Check, ChevronRight, Copy, Loader2, RefreshCw, SearchCheck, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
@@ -26,10 +26,20 @@ function diffAnchorPrefix(path: string) {
   return `da-${path.replace(/[^a-zA-Z0-9]/g, '_')}`;
 }
 
+function toggleIn(set: Set<string>, key: string): Set<string> {
+  const next = new Set(set);
+  if (!next.delete(key)) next.add(key);
+  return next;
+}
+
 export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null }) {
   const qc = useQueryClient();
   const drawer = useRightDrawer();
   const storedDiff = drawer.diff;
+  // Files start collapsed past a couple of entries (a ten-file changeset used
+  // to render as one endless scroll); ≤2 open so the common small diff still
+  // reads at a glance.
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
 
   const query = useQuery({
     queryKey: ['git', 'diff', sessionId],
@@ -40,6 +50,13 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
 
   const diff = query.data || storedDiff || undefined;
   const files = diff?.files?.filter((file) => file.added > 0 || file.removed > 0 || file.status || file.diff?.trim()) ?? [];
+  // A two-file diff opens both; a bigger changeset opens the first two so the
+  // list reads as a list (Hermes' review pane collapses files by default).
+  const fileKeyList = files.map((f) => f.path).join('');
+  useEffect(() => {
+    setExpandedFiles(new Set(files.slice(0, 2).map((f) => f.path)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileKeyList]);
   const added = diff?.added ?? files.reduce((sum, file) => sum + file.added, 0);
   const removed = diff?.removed ?? files.reduce((sum, file) => sum + file.removed, 0);
 
@@ -100,6 +117,20 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          {files.length > 1 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setExpandedFiles((prev) =>
+                  prev.size === files.length ? new Set() : new Set(files.map((f) => f.path)),
+                )
+              }
+              data-testid="diff-expand-all"
+            >
+              {expandedFiles.size === files.length ? 'Collapse all' : 'Expand all'}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -198,36 +229,60 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
       <div className="space-y-3">
         {files.map((file) => {
           const selected = drawer.selectedDiffPath === file.path;
+          const open = expandedFiles.has(file.path);
           return (
             <div
               key={file.path}
               className={cn(
-                'overflow-hidden rounded-lg border bg-black/20',
-                selected ? 'border-primary/50' : 'border-white/[0.06]'
+                'overflow-hidden rounded-lg border bg-card/40',
+                selected ? 'border-primary/50' : 'border-border/60'
               )}
             >
+              {/* Hermes-parity file header: the row IS the disclosure, and
+                  the stats live on it so a collapsed changeset still reads
+                  as a list (previously every file rendered expanded). */}
               <div
                 className={cn(
-                  'flex items-center justify-between gap-2 border-b px-2.5 py-2',
-                  selected ? 'border-primary/30 bg-primary/10' : 'border-white/[0.05] bg-white/[0.025]'
+                  'flex items-center justify-between gap-2 border-b px-2.5 py-1.5',
+                  selected ? 'border-primary/30 bg-primary/10' : 'border-border/50 bg-muted/20'
                 )}
               >
-                <div className="flex min-w-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setExpandedFiles((prev) => toggleIn(prev, file.path))}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  aria-expanded={open}
+                  data-testid={`diff-file-toggle-${file.path}`}
+                >
+                  <ChevronRight
+                    className={cn('size-3 shrink-0 text-muted-foreground/60 transition-transform', open && 'rotate-90')}
+                    aria-hidden
+                  />
                   <FileIcon name={file.path} size={13} className="shrink-0" />
                   <span className="truncate font-mono text-xs text-foreground/85" title={file.path}>
                     {file.path}
                   </span>
-                </div>
+                </button>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {file.status && <Badge variant="secondary" className="text-2xs">{file.status}</Badge>}
                   <span className="font-mono text-xs text-success">+{file.added}</span>
                   <span className="font-mono text-xs text-danger">-{file.removed}</span>
-                  <ArrowRight className="size-3 text-muted-foreground/50" />
-                  <FileText className="size-3 text-muted-foreground/50" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(file.diff ?? '');
+                      toast.success('Patch copied');
+                    }}
+                    className="rounded p-0.5 text-muted-foreground/60 transition hover:bg-accent hover:text-foreground"
+                    aria-label={`Copy patch for ${file.path}`}
+                    title="Copy patch"
+                  >
+                    <Copy className="size-3" />
+                  </button>
                 </div>
               </div>
 
-              {file.diff?.trim() ? (
+              {open && (file.diff?.trim() ? (
                 <DiffView
                   diff={file.diff}
                   maxLines={240}
@@ -242,7 +297,7 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
                 />
               ) : (
                 <div className="p-3 text-center text-muted-foreground/60">No diff content available.</div>
-              )}
+              ))}
             </div>
           );
         })}

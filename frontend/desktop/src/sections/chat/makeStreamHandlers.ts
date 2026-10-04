@@ -160,6 +160,11 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
 
   // Per-turn closure state.
   let assistantContent = '';
+  // Length of assistantContent at the last tool call — the same boundary the
+  // block reducer uses. A narrationReclassify moves ONLY this head into
+  // thinkingContent; text streamed after the last tool call is the answer
+  // and must survive in `content` (it is what gets persisted).
+  let narrationBoundary = 0;
   let thinkingContent = '';
   let toolResults: NonNullable<ChatMessage['tools']> = [];
   const pendingConfirmations = new Map<string, { message?: string; detail?: string; confirmationToken?: string }>();
@@ -390,6 +395,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     },
     onToolUse: ({ id, name, input }) => {
       retryNotice = undefined;
+      narrationBoundary = assistantContent.length;
       const existingIdx = toolResults.findIndex(t => t.id === id);
       const toolEntry = {
         name,
@@ -697,9 +703,13 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // move in the plain-text accumulators so copy/TTS and the thinking
       // fallback see the same split as the blocks.
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'reclassifyText' });
-      if (assistantContent) {
-        thinkingContent += assistantContent;
-        assistantContent = '';
+      // Mirror the block reducer's boundary: only the pre-tool head is
+      // narration. Everything after the last tool call stays the answer —
+      // this string is what the message persists as `content`.
+      if (assistantContent.length > 0 && narrationBoundary > 0) {
+        const head = assistantContent.slice(0, narrationBoundary);
+        thinkingContent += head;
+        assistantContent = assistantContent.slice(narrationBoundary);
       }
       scheduleUpdate();
     },
