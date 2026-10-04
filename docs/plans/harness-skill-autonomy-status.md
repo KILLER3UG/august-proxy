@@ -231,6 +231,50 @@ genuinely missing.
   freshly created empty DB ("0 episodes"); the live DB was never touched, but the lesson is to
   print the data dir in any script that reports counts.
 
+## RUN RULES (effective 2026-10-05, user-set; read before doing anything)
+- **Report the suite result from pytest itself** — never from a wrapper `echo`, never from a
+  background-task completion notice. Capture the exit code immediately after pytest returns
+  (`set -o pipefail` if piping to tee), and ALSO read the final summary line from the log, and
+  **report both**. This rule exists because a completion notice said `exit code 0` over a run
+  whose log said `FULL_EXIT=1`, and because `pytest … | tail; echo $?` reports the last stage.
+- Run the full suite **only from a committed tip, with no edits to the tree while it runs**.
+  Do read-only work in the meantime.
+- Red test first, and show it failing, for every remaining item — most importantly the
+  migration/sweep ones, where a wrong implementation is hard to undo.
+- App checks against a **labeled seeded session in a test profile or a snapshot copy**, never
+  the live store. Say so in the report.
+
+## Decisions (supersede anything I reported as "your call")
+1. **Red tool cards:** red ONLY for genuine tool failures — `is_error` receipts and validation
+   errors. `[Blocked]` guardrail blocks and `[Tool result missing]` get a **muted, neutral**
+   treatment from the existing styling vocabulary, **no new UI**. One render test per status
+   class asserting the class or token, red first. Real-browser check via the repo's existing
+   probe approach (vite + headless); time-boxed to a handful of attempts. If it can't be done,
+   mark it "unverified in a real browser, covered by render tests" and move on.
+   Implementation note: this means the loop's `toolStatus` and the mined `is_error` verdict
+   must split — see "Order now" item 2.
+2. **Correction detector: stop.** 0 real corrections in 54 human messages, all scripted. Do not
+   add patterns for imagined phrasings. The signal is **unvalidated on real data** — say that,
+   do not imply it has been proven to work.
+3. **Autonomy stays OFF.** No auto-apply at any point.
+
+## Order now
+1. Commit everything, then run the full backend suite from that tip with no edits while it
+   runs; record the definitive result (exit code + summary line) here.
+2. Decision 1 — the red/muted split. `[Blocked]` and `[Tool result missing]` are currently
+   folded into the same prefix list that produces `is_error`, which is wrong: quarantining and
+   rendering need to stay receipt-driven, so the split belongs at the *presentation* layer
+   (block `status` stays `error` for mining; the card picks muted styling for the two harness
+   markers) rather than by narrowing `ERROR_RECEIPT_PREFIXES` and silently un-recording real
+   harness failures from mining. Verify that reasoning against the code before implementing.
+3. Provenance sweep: grep every place the backend writes a `source = NULL` message row that the
+   harness authored; for each, confirm the miner's human-speech filter excludes it or fix it,
+   red test per case. (`[interrupted]` is already done — the known remaining case.)
+4. Item 7 — measure "13 failures / 0 successes" from a read-only snapshot with the correct
+   lifecycle columns, reproduce with a real model call, report the cause. Fix only if clear and
+   small; otherwise stop and ask.
+5. Pass 2, items 8–11, as specified. Pass 3 (12–15) only if room remains.
+
 ## Live database (user decision 2026-10-05: leave it untouched)
 - Migration 052 and the sweep land through the app's own boot, NOT by hand.
 - Pre-boot backup already taken with SQLite's online backup API (the WAL is live):
