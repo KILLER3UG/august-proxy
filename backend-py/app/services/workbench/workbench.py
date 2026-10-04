@@ -73,6 +73,9 @@ from app.services.workbench.tool_protocol import (
     canonical_tool_calls as _canonicalToolCalls,
 )
 from app.services.workbench.tool_protocol import (
+    receipt_tone as _receiptTone,
+)
+from app.services.workbench.tool_protocol import (
     reconcile_tool_results as _reconcileToolResults,
 )
 from app.services.workbench.tool_protocol import (
@@ -5176,6 +5179,9 @@ async def _sendWorkbenchMessageStreamImpl(
                         'contentFullLength': len(result),
                         'summary': str(result)[:2000],
                         'status': toolStatus,
+                        # Loud or quiet, decided from the same receipt the
+                        # status came from — see tool_protocol.RECEIPT_TONE.
+                        'tone': _receiptTone(str(result)),
                         'durationMs': tool_duration_ms,
                         'startedAtMs': tool_started_at,
                         'providerSetup': providerSetup,

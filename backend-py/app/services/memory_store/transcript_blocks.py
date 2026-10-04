@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import json
 
+from app.services.workbench.tool_protocol import receipt_tone
+
 # UI-shaped structured fields carried on a chat message. Persisted verbatim
 # when the caller supplies them; derived from the model transcript when it
 # does not (see derive_blocks).
@@ -166,6 +168,9 @@ def derive_blocks(message: dict[str, object]) -> list[dict[str, object]]:
                             'id': tool_id,
                             'name': str(raw.get('name', '')),
                             'status': 'error' if raw.get('is_error') else 'done',
+                            # Presentation only — `status` stays 'error' so
+                            # mining keeps seeing the denial as a failure.
+                            'tone': receipt_tone(result) if raw.get('is_error') else 'none',
                             'result': result,
                         },
                     )
@@ -217,6 +222,7 @@ def derive_blocks(message: dict[str, object]) -> list[dict[str, object]]:
                     'id': tool_id or 'b_tool_result',
                     'name': name,
                     'status': status,
+                    'tone': receipt_tone(result) if status == 'error' else 'none',
                     'result': result,
                 },
             )
@@ -246,6 +252,11 @@ def structured_fields(message: dict[str, object]) -> dict[str, object]:
             'name': str(message.get('name') or ''),
             'result': _text(message.get('content')),
             'status': 'error' if message.get('is_error') else 'done',
+            'tone': (
+                receipt_tone(_text(message.get('content')))
+                if message.get('is_error')
+                else 'none'
+            ),
         }
     return fields
 
@@ -344,6 +355,7 @@ _TOOL_FIELDS = frozenset(
         'summary',
         'error',
         'status',
+        'tone',
         'duration',
         'startedAt',
         'searchHits',

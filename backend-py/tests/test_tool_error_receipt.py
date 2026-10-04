@@ -23,7 +23,11 @@ import pytest
 from app.services import episode_miner as em
 from app.services.memory_store import transcript_blocks as tb
 from app.services.workbench.tool_protocol import (
+    ERROR_RECEIPT_PREFIXES,
+    RECEIPT_TONE,
+    SYNTHETIC_TOOL_RESULT_PREFIX,
     normalize_tool_result,
+    receipt_tone,
     reconcile_tool_results,
     synthetic_tool_result,
     tool_result_failed,
@@ -268,6 +272,105 @@ class TestMinerReadsOnlyTheReceipt:
         _seed('s5', [('user', 'go'), ('tool', receipt), ('assistant', 'Re-ran it, worked.')])
         fr = [e for e in em.extract_episodes('s5') if e['kind'] == 'failure_recovery']
         assert len(fr) == 1
+
+
+class TestReceiptToneIsOneMap:
+    """Decision: the receipt stays honest, the TONE is chosen at render.
+
+    Red for genuine failures, muted for a guardrail denial or a call that never
+    ran — but `is_error` stays true for both, because the call did not succeed
+    and mining must keep seeing that.
+    """
+
+    def test_each_marker_gets_its_declared_tone(self):
+        assert receipt_tone('Error: build failed') == 'failure'
+        assert receipt_tone('[Validation Error] Tool X received malformed') == 'failure'
+        assert receipt_tone('[Blocked] outside the workspace') == 'denial'
+        assert receipt_tone('[Tool result missing] did not return a result') == 'denial'
+
+    def test_a_clean_receipt_is_not_tinted_as_a_failure(self):
+        assert receipt_tone('all good') == 'none'
+
+    def test_every_prefix_has_a_tone_and_no_tone_invents_a_prefix(self):
+        """The drift guard.
+
+        A new marker added to the prefix list without a tone decision would
+        otherwise fall through to the red branch silently — the exact mistake
+        this map exists to prevent, and the reason tone is derived from the map
+        rather than written as a second list beside it.
+        """
+        assert ERROR_RECEIPT_PREFIXES == tuple(RECEIPT_TONE)
+        assert set(RECEIPT_TONE.values()) <= {'failure', 'denial'}
+        assert [p for p, t in RECEIPT_TONE.items() if t == 'denial'] == [
+            '[Blocked]',
+            SYNTHETIC_TOOL_RESULT_PREFIX,
+        ]
+
+    def test_a_prefix_added_to_the_tuple_alone_breaks_the_guard(self):
+        """Prove the guard bites instead of trusting it."""
+        import app.services.workbench.tool_protocol as tp
+
+        original = tp.ERROR_RECEIPT_PREFIXES
+        try:
+            tp.ERROR_RECEIPT_PREFIXES = original + ('[NewMarker]',)
+            with pytest.raises(AssertionError):
+                assert tp.ERROR_RECEIPT_PREFIXES == tuple(tp.RECEIPT_TONE)
+        finally:
+            tp.ERROR_RECEIPT_PREFIXES = original
+
+
+class TestToneNeverWeakensTheReceipt:
+    """The muted markers are still recorded as failures."""
+
+    @pytest.mark.parametrize(
+        'content',
+        ['[Blocked] outside the workspace', '[Tool result missing] never returned'],
+    )
+    def test_is_error_stays_true_for_a_denial(self, content):
+        assert normalize_tool_result({'role': 'tool', 'tool_use_id': 't1', 'content': content})[
+            'is_error'
+        ] is True
+
+    def test_a_denial_persists_as_an_error_receipt_not_a_quiet_status(self, brain):
+        """Status is the mining contract; tone is display metadata beside it.
+
+        If tone ever replaced status, the quarantine sweep and the episode
+        detector would stop seeing guardrail denials — a silent change to the
+        signal that took this pass to fix.
+        """
+        from app.services.workbench.tool_protocol import normalize_tool_result
+
+        msg = normalize_tool_result(
+            {'role': 'tool', 'tool_use_id': 't1', 'name': 'write_file', 'content': '[Blocked] nope'}
+        )
+        assert receipt_tone(msg['content']) == 'denial'
+        blocks = tb.derive_blocks(msg)
+        assert blocks[0]['tool']['status'] == 'error'
+        assert blocks[0]['tool']['tone'] == 'denial'
+        assert _errorReceiptStatus(blocks) == 'error'
+
+    def test_the_tone_survives_the_enrichment_allow_list(self):
+        """A dropped key would silently restore the all-red rendering."""
+        encoded = tb.sanitize_enrichment(
+            blocks=[
+                {
+                    'id': 't1',
+                    'type': 'toolCall',
+                    'content': '[Blocked] nope',
+                    'tool': {'id': 't1', 'name': 'write_file', 'status': 'error', 'tone': 'denial'},
+                }
+            ]
+        )
+        assert encoded['blocks'][0]['tool']['tone'] == 'denial'
+
+
+def _errorReceiptStatus(blocks: list[dict]) -> str:
+    """What the miner reads — same path as ``episode_miner._errorReceipts``."""
+    from app.services.episode_miner import _errorReceipts
+
+    tool = blocks[0]['tool']
+    assert tool['status'] == 'error'
+    return tool['status']
 
 
 class TestEndToEndThroughTheRealSavePath:

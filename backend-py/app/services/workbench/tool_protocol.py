@@ -33,10 +33,13 @@ from app.json_narrowing import as_list, as_str
 
 __all__ = [
     'ERROR_RECEIPT_PREFIXES',
+    'RECEIPT_TONES',
+    'RECEIPT_TONE',
     'SYNTHETIC_TOOL_RESULT_PREFIX',
     'ToolResultReconciliation',
     'canonical_tool_calls',
     'normalize_tool_result',
+    'receipt_tone',
     'reconcile_tool_results',
     'synthetic_tool_result',
     'tool_result_failed',
@@ -47,18 +50,31 @@ __all__ = [
 # model recognising "this never ran" and issuing a fresh, smaller call.
 SYNTHETIC_TOOL_RESULT_PREFIX = '[Tool result missing]'
 
-# The receipt prefixes that mean "this call did not succeed". Each one is
-# written by the harness itself at a known site, and matched at the START of a
-# receipt — never searched inside it. The anchoring is the whole point: the
-# retired episode detector scanned arbitrary tool text for these words, so a
-# tool result that merely *quoted* the error vocabulary (skills/august-harness
-# documents it) mined as a failure — measured at 41/41 false positives.
-ERROR_RECEIPT_PREFIXES: tuple[str, ...] = (
-    'Error',  # the loop's documented tool return contract ("Error: …")
-    '[Validation Error]',  # validator.validationErrorText
-    '[Blocked]',  # sandbox / permission / sub-agent guards
-    SYNTHETIC_TOOL_RESULT_PREFIX,  # a call that never executed
-)
+# The receipt prefixes that mean "this call did not succeed", each mapped to
+# the tone the transcript should render. The MAP is the source and the prefix
+# tuple is derived from it, because two lists written side by side drift: the
+# day someone appends to the tuple alone, the new marker falls through to the
+# red branch silently and nobody decides how loud a denial should be.
+#
+# Matching is anchored at the START of a receipt — never searched inside it.
+# That anchoring is the whole point: the retired episode detector scanned
+# arbitrary tool text for these words, so a tool result that merely *quoted*
+# the error vocabulary (skills/august-harness documents it) mined as a failure —
+# measured at 41/41 false positives.
+#
+# 'failure' = the tool ran and lost. 'denial' = a guard refused it, or the call
+# never executed. Both are still recorded with is_error True, because the call
+# did not succeed and mining must keep seeing that: tone is presentation only.
+RECEIPT_TONE: dict[str, str] = {
+    'Error': 'failure',  # the loop's documented tool return contract ("Error: …")
+    '[Validation Error]': 'failure',  # validator.validationErrorText
+    '[Blocked]': 'denial',  # sandbox / permission / sub-agent guards
+    SYNTHETIC_TOOL_RESULT_PREFIX: 'denial',  # a call that never executed
+}
+
+ERROR_RECEIPT_PREFIXES: tuple[str, ...] = tuple(RECEIPT_TONE)
+
+RECEIPT_TONES: frozenset[str] = frozenset({'failure', 'denial'})
 
 
 def tool_result_failed(text: str) -> bool:
@@ -68,6 +84,21 @@ def tool_result_failed(text: str) -> bool:
     durable ``is_error`` the episode miner reads must never disagree.
     """
     return bool(text) and text.startswith(ERROR_RECEIPT_PREFIXES)
+
+
+def receipt_tone(text: str) -> str:
+    """How loud this receipt is: ``'failure'``, ``'denial'``, or ``'none'``.
+
+    Sits beside :data:`RECEIPT_TONE` for the same reason the map exists — a
+    renderer looking only at ``status: 'error'`` cannot tell a lost build from a
+    refused path, and a second marker list in the UI would drift from this one.
+    """
+    if not text:
+        return 'none'
+    for prefix, tone in RECEIPT_TONE.items():
+        if text.startswith(prefix):
+            return tone
+    return 'none'
 
 # Cap on a non-string payload dumped into history. A tool returning a huge
 # dict must not turn a missing-result receipt into a context bomb; the
