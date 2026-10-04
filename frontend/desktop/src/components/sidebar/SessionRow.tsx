@@ -1,6 +1,7 @@
 /* ── Session row — title, status pulse, pin, and kebab actions ─────── */
 
 import { useState, useEffect, useRef, memo, useId } from "react";
+import { useNeedsAttention } from './needs-handoff-store';
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -63,6 +64,8 @@ function SessionRowInner({
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(session.title);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const attention = useNeedsAttention(session.id);
+  const needsHandoff = attention?.needs ?? 0;
   const kebabRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
@@ -362,8 +365,20 @@ function SessionRowInner({
               className="w-full"
             />
           </div>
-          {/* Plan §5.2: relative date in the list, absolute on hover. */}
-          {session.startedAt && (
+          {/* DeepSeek parity: a pending human interaction REPLACES the
+              timestamp with its own warning label (R4 §3: "pending
+              interactions replace the timestamp with a warning dot +
+              label"). The date returns the moment nothing is pending. */}
+          {needsHandoff > 0 ? (
+            <span
+              className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-warning/15 px-1 text-2xs font-medium text-warning-fg"
+              title={`${needsHandoff} workstream${needsHandoff === 1 ? '' : 's'} need${needsHandoff === 1 ? 's' : ''} a handoff`}
+              data-testid="session-row-needs-handoff"
+            >
+              <span className="size-1.5 rounded-full bg-warning" aria-hidden />
+              Needs handoff
+            </span>
+          ) : session.startedAt ? (
             <span
               className="shrink-0 text-xs tabular-nums text-tier-2 transition-colors group-hover:text-tier-1"
               title={absoluteDate(session.startedAt)}
@@ -371,7 +386,7 @@ function SessionRowInner({
             >
               {timeAgo(session.startedAt)}
             </span>
-          )}
+          ) : null}
 
         </div>
         <AnimatePresence>

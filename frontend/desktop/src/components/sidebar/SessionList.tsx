@@ -4,6 +4,8 @@
 /* Bottom: Settings                                                        */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useQuery } from '@tanstack/react-query';
+import { listBots } from '@/api/api-client';
 import { useNeedsHandoffStore } from './needs-handoff-store';
 import { PromptDialog } from '@/components/overlays/PromptDialog';
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
@@ -110,6 +112,19 @@ export function SessionList({
   onNavigate,
 }: Props) {
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set(STORAGE));
+  // Hermes (R1 §3): "Bot Mode lives in the left sidebar as a TAB next to
+  // your conversations — a Sessions | Bots tab strip — rather than a second
+  // pane stacked below the session list." Persisted per install.
+  const [railTab, setRailTab] = useState<'sessions' | 'bots'>(() =>
+    localStorage.getItem('august-sidebar-tab') === 'bots' ? 'bots' : 'sessions',
+  );
+  // DeepSeek (R4 §3): "sort by Last updated (remembers choice)". August has
+  // no drag order yet, so the remembered choice is Updated | Name.
+  const [sortBy, setSortBy] = useState<'updated' | 'name'>(() =>
+    localStorage.getItem('august-sidebar-sort') === 'name' ? 'name' : 'updated',
+  );
+  const botsQuery = useQuery({ queryKey: ['bots'], queryFn: listBots });
+  const botCount = botsQuery.data?.bots?.length ?? 0;
   const [sidebarWidth, setSidebarWidth] = useState(256);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -363,7 +378,21 @@ export function SessionList({
   // Multi-repo sidebar groups by folderId — do not hide other folders' sessions
   // when the global current workspace changes (that made folders look empty).
   const pinned = useMemo(() => visible.filter((s) => pinnedIds.has(s.id)), [visible, pinnedIds]);
-  const others = useMemo(() => visible.filter((s) => !pinnedIds.has(s.id)), [visible, pinnedIds]);
+  // DeepSeek parity: rows are ordered by the remembered choice — Last
+  // updated (default) or Name. Applied to the unpinned pool; folders and
+  // Pinned keep their own deliberate order.
+  const others = useMemo(() => {
+    const list = visible.filter((s) => !pinnedIds.has(s.id));
+    const stamp = (x: (typeof list)[number]) => {
+      const t = Date.parse(x.startedAt || '');
+      return Number.isFinite(t) ? t : 0;
+    };
+    return list.sort((a, b) =>
+      sortBy === 'name'
+        ? (a.title || '').localeCompare(b.title || '')
+        : stamp(b) - stamp(a),
+    );
+  }, [visible, pinnedIds, sortBy]);
 
   const togglePin = useCallback((id: string) => {
     const next = new Set(latest.current.pinnedIds);
@@ -544,6 +573,67 @@ export function SessionList({
           })()}
         />
 
+        {/* Sessions | Bots tab strip (Hermes) — the roster gets its own
+            surface instead of stacking into the session list. */}
+        <div className="flex items-center gap-1 px-1.5 pt-1.5" role="tablist" aria-label="Sidebar">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={railTab === 'sessions'}
+            onClick={() => {
+              setRailTab('sessions');
+              localStorage.setItem('august-sidebar-tab', 'sessions');
+            }}
+            className={cn(
+              'rounded-md px-2 py-1 text-xs font-medium transition-colors',
+              railTab === 'sessions'
+                ? 'bg-white/[0.08] text-sidebar-foreground'
+                : 'text-sidebar-foreground/60 hover:bg-white/[0.04] hover:text-sidebar-foreground',
+            )}
+            data-testid="sidebar-tab-sessions"
+          >
+            Sessions
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={railTab === 'bots'}
+            onClick={() => {
+              setRailTab('bots');
+              localStorage.setItem('august-sidebar-tab', 'bots');
+            }}
+            className={cn(
+              'flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors',
+              railTab === 'bots'
+                ? 'bg-white/[0.08] text-sidebar-foreground'
+                : 'text-sidebar-foreground/60 hover:bg-white/[0.04] hover:text-sidebar-foreground',
+            )}
+            data-testid="sidebar-tab-bots"
+          >
+            Bots
+            {botCount > 0 ? (
+              <span className="rounded-sm bg-white/[0.08] px-1 text-2xs tabular-nums text-sidebar-foreground/70">
+                {botCount}
+              </span>
+            ) : null}
+          </button>
+          {railTab === 'sessions' ? (
+            <button
+              type="button"
+              onClick={() => {
+                const next = sortBy === 'updated' ? 'name' : 'updated';
+                setSortBy(next);
+                localStorage.setItem('august-sidebar-sort', next);
+              }}
+              className="ml-auto rounded-md px-1.5 py-1 text-2xs text-sidebar-foreground/50 transition-colors hover:bg-white/[0.04] hover:text-sidebar-foreground"
+              aria-label={`Sort sessions by ${sortBy === 'updated' ? 'name' : 'recent activity'}`}
+              data-testid="sidebar-sort-toggle"
+            >
+              {sortBy === 'updated' ? 'Recent' : 'Name'}
+            </button>
+          ) : null}
+        </div>
+
         {/* Session search — filters titles across Pinned / folders / task */}
         <div className="px-1.5 pt-1.5">
           <div className="relative">
@@ -572,6 +662,7 @@ export function SessionList({
         </div>
 
         {/* Scrollable sessions area — denser, drawer-only simplicity */}
+        {railTab === 'sessions' ? (
         <div className="flex-1 overflow-y-auto px-1.5 pb-2 space-y-2">
           {searching && searchMatchCount === 0 && (
             <p className="py-4 text-center text-xs text-tier-3 italic">
@@ -634,21 +725,6 @@ export function SessionList({
               </AnimatePresence>
             </LayoutGroup>
           </Section>
-          )}
-
-          {/* Bot Mode Phase A: Bots roster (vertical rail — identicon avatars,
-              presence dot, one canonical chat per Bot). */}
-          {!searching && (
-            <BotsRail
-              activeSessionId={
-                sessions.find((s) => s.id === activeId || s.workbenchSessionId === activeId)
-                  ?.workbenchSessionId
-              }
-              onOpenSession={(sid) => {
-                const ui = sessions.find((s) => s.workbenchSessionId === sid);
-                if (ui) onSelect(ui);
-              }}
-            />
           )}
 
           <Section
@@ -775,6 +851,24 @@ export function SessionList({
             </div>
           </Section>
         </div>
+        ) : null}
+
+        {/* Bots tab body — the roster owns the surface while its tab is
+            active (Hermes: a tab strip, not a pane stacked below the list). */}
+        {railTab === 'bots' ? (
+          <div className="flex-1 overflow-y-auto">
+            <BotsRail
+              activeSessionId={
+                sessions.find((s) => s.id === activeId || s.workbenchSessionId === activeId)
+                  ?.workbenchSessionId
+              }
+              onOpenSession={(sid) => {
+                const ui = sessions.find((s) => s.workbenchSessionId === sid);
+                if (ui) onSelect(ui);
+              }}
+            />
+          </div>
+        ) : null}
 
         {/* Bottom-pinned Settings seat (DeepSeek's sidebar spec pins Settings
             at the foot; Claude routes it from the account button) — chat-first
