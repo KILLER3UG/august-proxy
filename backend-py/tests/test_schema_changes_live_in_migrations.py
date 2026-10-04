@@ -107,7 +107,15 @@ class TestMigration051DeliversWhatItPromises:
             if m
         )
         assert versions == sorted(set(versions)), f'duplicate migration versions: {versions}'
-        assert versions[-1] == 51, f'051 is not the newest migration: {versions[-5:]}'
+        # This used to pin versions[-1] == 51 — "051 is the newest" — which was
+        # only a proxy for "051 was numbered after everything before it". It
+        # broke the moment 052 landed, and a guard that breaks on every normal
+        # addition gets deleted rather than read. What is actually worth
+        # asserting is that the ladder has no holes: a missing number means a
+        # migration was deleted or renumbered, and an installed database would
+        # never get that DDL at all.
+        assert 51 in versions
+        assert versions == list(range(1, max(versions) + 1)), 'gap in migration numbering'
 
     def test_each_column_lands_on_its_table(self):
         conn = sqlite3.connect(':memory:')
