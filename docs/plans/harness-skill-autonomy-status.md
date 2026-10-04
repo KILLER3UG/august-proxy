@@ -187,6 +187,49 @@ screenshots in `.probe-artifacts/`, including an injection-style proposal blocke
     written by the guard itself — not a regex — so it is accurate and **stays as telemetry**.
   So "0 downstream" was right, and the reason is stronger than expected: there is no wiring to
   remove. Item 5 must fix the stale counts this left behind.
+- 4 → `819c3b9f` → **found a real bug.** A recall sweep of seven realistic phrasings, seeded
+  through the real save path: `"Don’t rebuild, just restart the container."` mined nothing,
+  because `_CORRECTION_RE` wrote `don\'?t` and phones/Word emit U+2019. Same hole in
+  `_ABANDON_RE`'s `let's`. Both take one shared `_APOS` class now. My first fix broke
+  `"That's wrong"` (the substitution ate the literal `s`) — caught by the sweep re-running.
+  Also verified: a tail-patched user row still mines its own stripped sentence; a
+  `harness_nudge` row is not mistaken for the human; a correction window survives a rewrite.
+- 5 → `108ede9e` → migration **052** + `quarantine_unverified_tool_errors()`, run at the head of
+  `mine_sessions`. Measured on an online-backup snapshot: 41 candidates → 41 marked, 41 rows
+  still present, both `tool-error:*` fingerprints recounted 32→0 and 10→0 **and unflagged**
+  (the distiller selects by `flagged = 1`, so clearing the count alone would keep proposing it),
+  while `user-correction:harness-august-model` was left untouched at 1. Second sweep: 0
+  candidates. Consumers filtered: `unscored_episodes`, `flagged_episodes`, `_sameCauseSessions`,
+  `learning_report` (which now reports `quarantined` as history).
+  **NOT applied to the live DB** — it was being written when I checked (WAL mtime seconds ahead,
+  `schema_migrations` max 51, 41 episodes). Read back after my run: still 51 / 41 / no
+  `quarantined` column, i.e. untouched. 052 lands at the app's next boot; the sweep at its
+  first mining pass. If the user wants it now, they must close the app first.
+
+## Item 6 is already satisfied — verify, do not re-implement
+The three tests item 6 asks for all exist and pass:
+- skill docs' literal `[Validation Error]` produces no episodes →
+  `test_tool_error_receipt.py::TestMinerReadsOnlyTheReceipt::test_quoted_error_vocabulary_mines_nothing`
+  (and `test_a_pre_receipt_row_is_not_reinvented_from_text`, and the E2E
+  `test_a_quoted_error_document_reaches_storage_and_mines_nothing`)
+- re-mining is idempotent → `test_part16_review_fixes.py::...test_a_transcript_rewrite_does_not_duplicate_the_window`
+  and `test_episode_miner.py::TestQuarantine...::test_the_sweep_is_idempotent`
+- a real structured error does produce an episode →
+  `test_a_real_failure_mines_an_episode` / `test_a_failed_call_reaches_storage_and_mines_one_episode`
+So item 6 = read these three, confirm they name the contract asked for, and only add what is
+genuinely missing.
+
+## Process deviations to report
+- Item 5's sweep code was written before its tests (items 1-4 were red-first). The tests do
+  cover it, but the order was wrong and I should say so rather than imply otherwise.
+- Item 1 is **user-visible**: `[Blocked]` / `[Validation Error]` / `[Tool result missing]` tool
+  cards now render red (`ToolStepRow.tsx:130` already handled `status: 'error'`). Not yet
+  verified in the running app — deferred to the end-of-run real-app pass.
+- Deviation cost me two bogus results: I ran a dry-run without `AUGUST_DATA_DIR` and read a
+  freshly created empty DB ("0 episodes"); the live DB was never touched, but the lesson is to
+  print the data dir in any script that reports counts.
 
 ## Next
-Item 4 — verify the correction detector against a seeded transcript in the real storage shape.
+Item 7 — reproduce the distiller judge failure with a real call and report the cause.
+Still owed: the status file's "UNVERIFIED: distiller judge 13 failures / 0 successes" claim,
+which was inherited and never reproduced.
