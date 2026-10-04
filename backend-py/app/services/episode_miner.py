@@ -52,9 +52,15 @@ _STOPWORDS = frozenset(
 
 # ── typed event detection (deterministic regexes over stored text) ─────
 
+# A straight or typographic apostrophe. Phones, Word and most markdown
+# editors emit U+2019, so a pattern written with ASCII ' alone silently drops
+# the turns of the users most likely to be correcting the model. Found by the
+# item-4 recall sweep: "Don’t rebuild, just restart" mined nothing.
+_APOS = r"['\u2019]"
+
 _CORRECTION_RE = re.compile(
-    r"\b(?:actually|correction)\b|\bthat(?:'s| is) (?:wrong|incorrect|not right)\b"
-    r'|\bI meant\b|\bno,? (?:not|use|try|do)\b|\bdon\'?t\b|\bnever mind\b',
+    r"\b(?:actually|correction)\b|\bthat(?:%ss| is) (?:wrong|incorrect|not right)\b"
+    r"|\bI meant\b|\bno,? (?:not|use|try|do)\b|\bdon%s?t\b|\bnever mind\b" % (_APOS, _APOS),
     re.IGNORECASE,
 )
 _RESCUE_RE = re.compile(
@@ -63,9 +69,9 @@ _RESCUE_RE = re.compile(
     re.IGNORECASE,
 )
 _ABANDON_RE = re.compile(
-    r"\blet'?s (?:try|go) (?:a )?different\b|\bforget (?:that|this) approach\b"
+    r"\blet%s?s (?:try|go) (?:a )?different\b|\bforget (?:that|this) approach\b"
     r'|\bscrap that\b|\bdifferent approach\b|\bstart over\b|\bstep back\b'
-    r'|\bthat approach (?:isn.t|is not) working\b',
+    r"|\bthat approach (?:isn.t|is not) working\b" % (_APOS,),
     re.IGNORECASE,
 )
 # There is deliberately NO tool-error text matcher here. Mining failures from

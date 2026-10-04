@@ -180,6 +180,125 @@ class TestWindowExtraction:
         assert 'exit code:2' in episodes[0]['events'][0]['excerpt']
 
 
+class TestCorrectionDetectorOnRealShape:
+    """Backlog item 4: the correction lane has to fire on a transcript the app
+    actually wrote — through ``save_workbench_session_sot``, with the tail-patch
+    and provenance columns the storage path adds — not only on the hand-rolled
+    rows the earlier tests inserted."""
+
+    def _save(self, sid, msgs):
+        from app.services.memory_store import init
+        from app.services.memory_store.sessions import save_workbench_session_sot
+
+        init()
+        save_workbench_session_sot({'id': sid, 'title': 't'}, msgs)
+
+    def test_a_plain_user_correction_is_mined(self, brain):
+        self._save(
+            'c1',
+            [
+                {'role': 'user', 'content': 'deploy the api to staging'},
+                {'role': 'assistant', 'content': 'Deployed with docker compose.'},
+                {'role': 'user', 'content': 'Actually we deploy with helm, not compose.'},
+                {'role': 'assistant', 'content': 'Redeployed via the helm chart.'},
+            ],
+        )
+        ca = [e for e in em.extract_episodes('c1') if e['kind'] == 'correction_accepted']
+        assert len(ca) == 1, f'a real correction must mine exactly one window: {ca}'
+        assert ca[0]['outcome'] == 'resolved'
+        assert 'helm' in ca[0]['events'][0]['excerpt'].lower()
+
+    def test_a_tail_patched_user_correction_is_mined_from_its_own_text(self, brain):
+        """The per-turn <memory>/<relevant_skills> tail is stripped at the
+        recorded boundary; the user's sentence must survive the strip."""
+        tail = '\n\n<memory>\nsome injected facts\n</memory>'
+        self._save(
+            'c2',
+            [
+                {'role': 'user', 'content': 'set up the proxy'},
+                {'role': 'assistant', 'content': 'Pointed it at 8085.'},
+                {
+                    'role': 'user',
+                    'content': 'No, use 9090 instead' + tail,
+                    '_tailPatched': True,
+                    '_tailFrom': len('No, use 9090 instead'),
+                },
+                {'role': 'assistant', 'content': 'Switched to 9090.'},
+            ],
+        )
+        ca = [e for e in em.extract_episodes('c2') if e['kind'] == 'correction_accepted']
+        assert len(ca) == 1
+        assert '<memory>' not in ca[0]['events'][0]['excerpt']
+
+    def test_a_harness_nudge_is_not_mined_as_a_correction(self, brain):
+        """The loop's own plumbing speaks as role='user'. Provenance (049) is
+        what keeps '[Proxy Self-Heal]' from reading as the human disagreeing."""
+        self._save(
+            'c3',
+            [
+                {'role': 'user', 'content': 'keep going'},
+                {
+                    'role': 'user',
+                    'content': '[Proxy Self-Heal] do NOT stop; actually try a different tool.',
+                    'source': 'harness_nudge',
+                },
+                {'role': 'assistant', 'content': 'Used a different tool.'},
+            ],
+        )
+        assert [e for e in em.extract_episodes('c3') if e['kind'] == 'correction_accepted'] == []
+
+    @pytest.mark.parametrize(
+        'n, phrase',
+        [
+            # The wording that must be recognised as the human correcting course.
+            (1, 'Actually, we deploy with helm.'),
+            (2, 'No, not 9090 — use 8080.'),
+            (3, "That's wrong, the port is 8080."),
+            (4, 'I meant the staging cluster, not prod.'),
+            (5, 'Don’t rebuild, just restart the container.'),
+            (6, 'Correction: the binary is called ngspice, not spice.'),
+            (7, 'Never mind the compose file, use the chart.'),
+        ],
+    )
+    def test_recognised_phrasings_mine_a_correction(self, brain, n, phrase):
+        """Item 4's real question is recall, not "does one example work"."""
+        sid = f'recall_{n}'
+        self._save(
+            sid,
+            [
+                {'role': 'user', 'content': 'do the thing'},
+                {'role': 'assistant', 'content': 'Done, the way I guessed.'},
+                {'role': 'user', 'content': phrase},
+                {'role': 'assistant', 'content': 'Adjusted.'},
+            ],
+        )
+        ca = [e for e in em.extract_episodes(sid) if e['kind'] == 'correction_accepted']
+        assert len(ca) == 1, f'not detected: {phrase!r}'
+
+    def test_the_correction_survives_a_transcript_rewrite(self, brain):
+        """Item 2's identity, on the correction lane: a rewrite must not
+        duplicate the window the correction produced."""
+        transcript = [
+            {'role': 'user', 'content': 'deploy the api'},
+            {'role': 'assistant', 'content': 'Used compose.'},
+            {'role': 'user', 'content': 'Actually use helm.'},
+            {'role': 'assistant', 'content': 'Redeployed with helm.'},
+        ]
+        from app.services.memory_store import init
+        from app.services.memory_store.sessions import save_workbench_session_sot
+
+        init()
+        save_workbench_session_sot({'id': 'c4', 'title': 't'}, transcript)
+        first = em.extract_episodes('c4')
+        assert len(first) == 1
+        for _ in range(2):
+            save_workbench_session_sot({'id': 'c4', 'title': 't'}, transcript)
+            for episode in em.extract_episodes('c4'):
+                em.record_episode({**episode, 'session_id': 'c4'})
+        rows = em._conn().execute("SELECT COUNT(*) n FROM episodes WHERE session_id='c4'").fetchone()['n']
+        assert rows == 1, f'the rewrite duplicated the correction window: {rows} rows'
+
+
 class TestNoLiveTurnCoupling:
     def test_mine_sessions_reads_only_storage(self, brain):
         # The scheduled pass works against storage alone — a session with
