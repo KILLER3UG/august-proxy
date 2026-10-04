@@ -258,9 +258,28 @@ genuinely missing.
    do not imply it has been proven to work.
 3. **Autonomy stays OFF.** No auto-apply at any point.
 
-## Order now
-1. Commit everything, then run the full backend suite from that tip with no edits while it
-   runs; record the definitive result (exit code + summary line) here.
+## Definitive full suite (tip `61bbb06c`, no edits to the tree while it ran)
+**4743 passed, 9 skipped, 0 failed in 11:14** — `PYTEST_EXIT=0`. Both numbers read from
+`full4.log`: the exit code captured immediately after pytest with no pipe in front of it, and
+pytest's own final summary line. They agree, which is the point of the rule.
+
+## Decision — presentation split (user, 2026-10-05)
+1. **The receipt stays honest.** `[Blocked]` and `[Tool result missing]` remain in
+   `ERROR_RECEIPT_PREFIXES`, and durable `is_error` stays true for both — the call did not
+   succeed, so the record says so. Do not narrow the list; do not change what the miner sees.
+2. **Tone is chosen only where the status is rendered.** Map prefix → display tone in ONE small
+   function next to the prefix list so the two cannot drift: genuine failures (an `is_error`
+   receipt, a validation error) stay red; `[Blocked]` and `[Tool result missing]` render muted
+   and neutral from the existing styling vocabulary. No new UI, no new column.
+3. **Tests, red first:** one render test per status class asserting the class or token (never
+   pixels); a test that FAILS if a prefix is added to `ERROR_RECEIPT_PREFIXES` without a tone-map
+   entry, so a new marker cannot silently default to red; and a test that `is_error` is still
+   true and persisted for both muted markers, which guards the mining behavior.
+4. **Mining of denials is left unchanged, deliberately:** *guardrail denials are mined as
+   failures; revisit with real usage data.* With zero real sessions this cannot be tuned, so do
+   not tune it from guesses.
+5. Order after this: red/muted split → provenance sweep for harness-authored `source = NULL`
+   rows → item 7 → Pass 2 items 8–11.
 2. Decision 1 — the red/muted split. `[Blocked]` and `[Tool result missing]` are currently
    folded into the same prefix list that produces `is_error`, which is wrong: quarantining and
    rendering need to stay receipt-driven, so the split belongs at the *presentation* layer
