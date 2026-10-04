@@ -131,6 +131,51 @@ Dirty with **another session's** in-flight work (`app-update-install.ts`, `useAp
   result is buried. Full suite: `-n auto`, ~14 min on this box.)
 - Autonomous apply is **OFF** and stays off until the end-of-run review.
 
+## Ordered backlog (the user's list, verbatim intent — do not renumber)
+Pass 1, fix the signal
+1. Confirm read-only whether `is_error` survives into `blocks_json`; if not, persist the
+   receipt then point the miner at it. No new prose regex. `d73022be` B6 stays unimplemented.
+2. Fix the re-mining inflation: dedupe on a stable window/content key; test that mining the
+   same window twice does not increase `episode_count`.
+3. Drop tool-failure-count as a reviewer input; keep only as plain telemetry if useful, say which.
+4. Verify the correction detector with a seeded transcript containing a real user correction.
+5. Quarantine, do not delete, the existing bogus episodes. Record counts before and after.
+6. Tests: the skill docs' literal `[Validation Error]` yields no episodes; re-mining is
+   idempotent; a real structured error does yield an episode.
+7. Reproduce the distiller judge failure with a real call and report the cause.
+
+Pass 2, reviewer and proposal path
+8. `review_gate.py` with `resolve_independent_reviewer`; lazy-import the provider factory at
+   call time, with a test that fails if it is bound at module import.
+9. Reviewer default model: verify the exact ID resolves with a real call. Same model,
+   unresolved, timeout, error or malformed output all fail closed to the inbox.
+10. The reviewer never writes files; its only act is `decide_proposal`. `_APPROVERS` stays the
+    only proposal→change path.
+11. `skillLearning` moves from extract-only to a mode that files proposals into the inbox only.
+    Rewrite (don't delete) the contracts this changes — `test_skill_review_pass`, and
+    `consolidation.py` `skill_delete` becomes human-only — naming each in its commit.
+
+Pass 3, autonomy machinery (all behind the OFF switch)
+12. Frontmatter safety: merge the proposed body into existing frontmatter, never rewrite it
+    wholesale from reviewer output. Tests for trigger, disabled, status, supersedes, origin,
+    learned_from, version, keywords, and a disabled skill staying disabled.
+13. Undo: the version-restore route + one Undo button; probation auto-revert uses version
+    restore, not a revert proposal. Update the `SkillVersionsPanel` comment.
+14. Rails: hard-limit categories always to inbox, daily rate limit + one change per skill per
+    day, probation, kill switch in settings, readable history, burn-in counter (first 5 clean
+    verdicts still go to inbox, configurable, 0 turns it off).
+15. `SkillEvolvedChip` announces only applied changes, with Undo.
+
+END OF RUN: full suite/typecheck/lint/build vs baseline; self-diff review commit by commit
+(dead code, unused exports, uncalled new code, unnamed changed contracts); real-app
+verification of proposal → reviewer verdict → inbox → chip → undo → probation revert,
+screenshots in `.probe-artifacts/`, including an injection-style proposal blocked from auto-apply.
+
+## Item log (item → commit → result)
+- 1 → `2c8f6ac7` → receipt persisted end-to-end; prose regex deleted; 4722 passed / 9 skipped /
+  0 failed. 21 new tests, 10 pre-existing rewritten.
+- 2 → (this commit) → dedupe keyed on `(session, kind, events, outcome)`; the rewrite test went
+  red at 3 rows for 1 window and now holds at 1; `episode_count` no longer inflates.
+
 ## Next
-Item 2 — make episode dedupe idempotent across transcript rewrites (finding above).
-Then items 3-15 in the recorded order.
+Item 3 — drop tool-failure-count as a reviewer input.

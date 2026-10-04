@@ -267,6 +267,47 @@ class TestF6NoReMineInflation:
         assert count2 == count1, f're-mine inflated episode_count {count1} -> {count2}'
         assert second['episodes'] == 0, 're-mine must report zero NEW episodes'
 
+    def test_a_transcript_rewrite_does_not_duplicate_the_window(self, brain):
+        """The re-mine that actually happens in the app.
+
+        ``save_workbench_session_sot`` rewrites the transcript as DELETE-all +
+        re-INSERT, so ``messages.rowid`` — which the dedupe key used to be —
+        changes at every durability barrier. Re-mining then looked like a brand
+        new episode forever: 4 real windows became 41 rows and each pass
+        re-incremented ``failure_fingerprints.episode_count``, faking recurrence.
+        """
+        from app.services.memory_store.sessions import save_workbench_session_sot
+
+        transcript = [
+            {'role': 'user', 'content': 'build it'},
+            {
+                'role': 'tool',
+                'tool_use_id': 't1',
+                'name': 'run_command',
+                'content': 'Error: build failed exit code:1',
+                'is_error': True,
+            },
+            {'role': 'assistant', 'content': 'rebuilt with the fix, green.'},
+        ]
+        save_workbench_session_sot({'id': 's7r', 'title': 't'}, transcript)
+        first = em.extract_episodes('s7r')
+        assert len(first) == 1, 'the receipt must mine one window'
+
+        for _ in range(3):
+            save_workbench_session_sot({'id': 's7r', 'title': 't'}, transcript)
+            # What mine_sessions does: re-extract from the rewritten rows, whose
+            # ids just changed, then record whatever comes back.
+            for episode in em.extract_episodes('s7r'):
+                em.record_episode({**episode, 'session_id': 's7r'})
+        rows = em._conn().execute("SELECT COUNT(*) n FROM episodes WHERE session_id='s7r'").fetchone()['n']
+        assert rows == 1, f'transcript rewrites duplicated the episode: {rows} rows'
+        fpSum = em._conn().execute(
+            "SELECT COALESCE(SUM(episode_count),0) n FROM failure_fingerprints "
+            'WHERE fingerprint IN (SELECT fingerprint_id FROM episodes WHERE session_id=?)',
+            ('s7r',),
+        ).fetchone()['n']
+        assert fpSum == 1, f'rewrites inflated episode_count to {fpSum}'
+
     def test_resolved_fingerprint_stays_resolved_across_remines(self, brain):
         _seedRealShape(
             's8',

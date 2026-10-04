@@ -427,22 +427,52 @@ def paraphrase_dedupe(fp: str, text: str, existing: list[tuple[str, str]]) -> st
 # ── storage helpers ──────────────────────────────────────────────────────
 
 
+def _encodedEvents(episode: dict[str, Any]) -> str:
+    return json.dumps(episode.get('events') or [], ensure_ascii=False)
+
+
+def _existingEpisodeId(episode: dict[str, Any]) -> int | None:
+    """The stored row for this window, or None.
+
+    Identity is the window's CONTENT — (session, kind, events, outcome) — not
+    ``start_message_id``. The workbench save rewrites the whole transcript as
+    DELETE-all + re-INSERT (``memory_store/sessions.py``), so the rowid of a
+    window's first message changes at every durability barrier; keying dedupe
+    on it made every re-mine look like a new episode. Four real windows became
+    41 rows, and each pass re-incremented ``failure_fingerprints.episode_count``
+    — faking the recurrence that escalates a fingerprint to the distiller.
+
+    ``start_message_id`` is still stored (nothing reads it: it is provenance
+    for a human looking up where a lesson came from). The one behavior change
+    is honest and deliberate: two byte-identical failure windows in the SAME
+    session collapse into one episode. Cross-session recurrence — the signal
+    that actually matters — is counted by ``_sameCauseSessions``.
+    """
+    row = (
+        _conn()
+        .execute(
+            'SELECT id FROM episodes WHERE session_id = ? AND kind = ? AND outcome = ? AND events = ?',
+            (
+                str(episode.get('session_id', '')),
+                str(episode.get('kind', '')),
+                str(episode.get('outcome', 'unresolved')),
+                _encodedEvents(episode),
+            ),
+        )
+        .fetchone()
+    )
+    return int(row['id']) if row else None
+
+
 def save_episode(episode: dict[str, Any]) -> int:
-    """Persist one mined episode (deduped on session+window)."""
+    """Persist one mined episode (deduped on the window's content)."""
     # Surface tests that bypass the autouse isolatedData fixture.
     assertPytestDataDirIsolated('episode_miner.save_episode')
     conn = _conn()
-    row = conn.execute(
-        'SELECT id FROM episodes WHERE session_id = ? AND start_message_id = ? AND kind = ?',
-        (
-            str(episode.get('session_id', '')),
-            int(episode.get('start_message_id', 0)),
-            str(episode.get('kind', '')),
-        ),
-    ).fetchone()
+    existing = _existingEpisodeId(episode)
+    if existing is not None:
+        return existing
     now = datetime.now(timezone.utc).isoformat()
-    if row:
-        return int(row['id'])
     cur = conn.execute(
         """
         INSERT INTO episodes (session_id, kind, start_message_id, end_message_id,
@@ -452,9 +482,9 @@ def save_episode(episode: dict[str, Any]) -> int:
         (
             str(episode.get('session_id', '')),
             str(episode.get('kind', '')),
-            int(episode.get('start_message_id', 0)),
-            int(episode.get('end_message_id', 0)),
-            json.dumps(episode.get('events') or [], ensure_ascii=False),
+            int(as_int(episode.get('start_message_id', 0), 0)),
+            int(as_int(episode.get('end_message_id', 0), 0)),
+            _encodedEvents(episode),
             str(episode.get('outcome', 'unresolved')),
             str(episode.get('fingerprint_id', '')),
             str(episode.get('scope', '') or ''),
@@ -466,23 +496,11 @@ def save_episode(episode: dict[str, Any]) -> int:
 
 
 def _episodeExists(episode: dict[str, Any]) -> bool:
-    """True when the (session, window, kind) episode is already stored —
-    §12 F-6: re-mining the same window must not re-upsert its fingerprint
-    (every 24h pass was inflating episode_count and bumping last_seen,
-    faking recurrence and churning resolution state)."""
-    return (
-        _conn()
-        .execute(
-            'SELECT 1 FROM episodes WHERE session_id = ? AND start_message_id = ? AND kind = ?',
-            (
-                str(episode.get('session_id', '')),
-                int(episode.get('start_message_id', 0)),
-                str(episode.get('kind', '')),
-            ),
-        )
-        .fetchone()
-        is not None
-    )
+    """True when the window is already stored — §12 F-6: re-mining the same
+    window must not re-upsert its fingerprint (every 24h pass was inflating
+    episode_count and bumping last_seen, faking recurrence and churning
+    resolution state)."""
+    return _existingEpisodeId(episode) is not None
 
 
 def _existingFingerprintTexts(limit: int = 25) -> list[tuple[str, str]]:
