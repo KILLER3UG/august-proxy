@@ -299,6 +299,43 @@ class TestCorrectionDetectorOnRealShape:
         assert rows == 1, f'the rewrite duplicated the correction window: {rows} rows'
 
 
+    # Verbatim from workbench/sessions.py — the marker the harness appends when
+    # a turn never closed (crash/restart), so replay stays balanced.
+    INTERRUPTED_NOTICE = (
+        '[interrupted] The previous turn was interrupted before it completed '
+        '(session recovered mid-turn). Work may be partially done — verify state '
+        'before continuing.'
+    )
+
+    def test_the_harness_interrupted_notice_is_not_human_speech(self, brain):
+        """Found by running the detector over the real stored corpus (54 human
+        user messages) instead of inventing phrasings.
+
+        This row is written by the harness with ``source = NULL``, so the
+        provenance filter cannot see it and the legacy prefix list did not
+        either — it enters the human-speech lane. Its current wording happens
+        not to trip any pattern, so no episode is being invented by it today;
+        the defect is that harness instruction text is being *read as the user
+        talking*, which is the class that produced the 41 false episodes.
+        """
+        assert em._isMachineRow('', self.INTERRUPTED_NOTICE) is True
+        assert em._extractEvents('user', self.INTERRUPTED_NOTICE, '') == []
+
+    def test_a_humans_correction_still_fires_beside_that_notice(self, brain):
+        """The filter must not blind the detector to real speech in the same
+        session — the notice is dropped, the correction is not."""
+        self._save(
+            'c6',
+            [
+                {'role': 'user', 'content': self.INTERRUPTED_NOTICE},
+                {'role': 'user', 'content': 'Actually, the port is 9090.'},
+                {'role': 'assistant', 'content': 'Switched to 9090.'},
+            ],
+        )
+        ca = [e for e in em.extract_episodes('c6') if e['kind'] == 'correction_accepted']
+        assert len(ca) == 1
+
+
 class TestQuarantineKeepsTheRowAndDropsTheInfluence:
     """Backlog item 5: the invented episodes are marked, not deleted, and stop
     reaching anything that acts on them."""

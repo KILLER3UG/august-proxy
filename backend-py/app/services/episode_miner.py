@@ -139,6 +139,11 @@ _INJECTION_PREFIXES = (
     '[Proxy Self-Heal]',
     '[SYSTEM:',
     '[SYSTEM_INJECTION',
+    # Written by workbench/sessions.py when a turn never closed (crash/restart),
+    # so provider replay stays balanced. It arrives with source = NULL — the
+    # provenance column cannot see it — and it is an instruction to the model,
+    # not something the user said.
+    '[interrupted]',
     '<memory_nudge',
 )
 

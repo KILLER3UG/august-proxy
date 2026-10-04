@@ -68,6 +68,43 @@ def test_discover_migrations_finds_files():
     assert '001_baseline' in migrations[0][1]  # name
 
 
+def test_052_quarantine_column_survives_being_applied_twice(conn):
+    """The quarantine migration is idempotent, in the way that matters.
+
+    ``ALTER TABLE … ADD COLUMN`` raises "duplicate column name" on a second
+    attempt. The runner treats that as already-applied, but a migration is only
+    safe to ship if re-running it leaves the schema identical rather than
+    half-applied — this lands on a user's real memory database at their next
+    boot, and a boot can be interrupted.
+    """
+    assert run_migrations(conn) >= 1
+    first = conn.execute(
+        "SELECT COUNT(*) FROM pragma_table_info('episodes') WHERE name = 'quarantined'"
+    ).fetchone()[0]
+    assert first == 1, '052 must add the column exactly once'
+
+    assert run_migrations(conn) == 0, 'second run must apply nothing'
+    again = conn.execute(
+        "SELECT COUNT(*) FROM pragma_table_info('episodes') WHERE name = 'quarantined'"
+    ).fetchone()[0]
+    assert again == 1, 're-running 052 duplicated or dropped the column'
+
+    # Recorded exactly once, so the boot-time runner does not retry it forever.
+    recorded = conn.execute(
+        "SELECT COUNT(*) FROM schema_migrations WHERE version = 52"
+    ).fetchone()[0]
+    assert recorded == 1
+
+    # The default is what makes an untouched row readable: 0 = not quarantined.
+    conn.execute(
+        "INSERT INTO episodes (session_id, kind, start_message_id, end_message_id, events, "
+        "outcome, fingerprint_id) VALUES ('s', 'failure_recovery', 1, 2, '[]', 'resolved', 'fp')"
+    )
+    row = conn.execute('SELECT quarantined FROM episodes').fetchone()
+    assert row[0] == 0, 'a fresh episode must default to visible'
+    conn.commit()
+
+
 def test_migration_failure_does_not_halt(conn, tmp_path, monkeypatch):
     """A failing migration logs warning but doesn't raise."""
     from pathlib import Path

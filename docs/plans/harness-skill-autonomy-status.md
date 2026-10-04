@@ -34,6 +34,8 @@ Resumes Pass 1 of the four-pass plan. Read this before touching code.
 - Backup taken: `%LOCALAPPDATA%\Temp\august_brain.pre-signal-fix.<ts>.sqlite` (copy of
   `data/august_brain.sqlite`). **No data mutated yet** — the 41 bogus episodes are still in
   the dev DB for item 4 to quarantine.
+  ^ STALE — superseded by the item 5 entry in the Item log and by
+  `data/backups/MANUAL-pre-052-20261004T184540Z.sqlite` (see "Live database" below).
 
 ## Item 2 finding (measured, ready to implement)
 Dedupe identity is `episodes (session_id, start_message_id, kind)` (`_episodeExists:439`,
@@ -229,7 +231,60 @@ genuinely missing.
   freshly created empty DB ("0 episodes"); the live DB was never touched, but the lesson is to
   print the data dir in any script that reports counts.
 
-## Next
-Item 7 — reproduce the distiller judge failure with a real call and report the cause.
-Still owed: the status file's "UNVERIFIED: distiller judge 13 failures / 0 successes" claim,
-which was inherited and never reproduced.
+## Live database (user decision 2026-10-05: leave it untouched)
+- Migration 052 and the sweep land through the app's own boot, NOT by hand.
+- Pre-boot backup already taken with SQLite's online backup API (the WAL is live):
+  `C:\Dev\august-proxy\data\backups\MANUAL-pre-052-20261004T184540Z.sqlite`
+  — 63,913,984 bytes, `PRAGMA integrity_check` = ok, 323 messages, 41 episodes, schema v51.
+  Named `MANUAL-*` on purpose: `_prune` and `list_backups` glob `brain-*.sqlite`, so the
+  app's rolling set will neither delete nor offer this file.
+- **Restore (one line):** close the app completely, then copy that file over
+  `C:\Dev\august-proxy\data\august_brain.sqlite` (and delete the sibling
+  `august_brain.sqlite-wal` / `-shm` so SQLite does not replay onto a replaced main file).
+
+## Item log — session 2
+- 6 → **verified, nothing added.** The three contracts item 6 asks for already exist; all ran
+  green by explicit node id (8 passed): the verbatim `[Validation Error]` skill text yields no
+  episode (unit + pre-receipt row + end-to-end through the real save), re-mining is idempotent
+  (transcript rewrite + sweep), and a real structured error does yield an episode.
+- Migration 052 idempotency (user instruction 1): `test_migrations.py::
+  test_052_quarantine_column_survives_being_applied_twice` — column exists exactly once after
+  two runs, second run applies 0, version recorded once, fresh rows default to visible.
+- Correction detector against the REAL corpus (user instruction 5), read-only from the backup:
+  **56 user rows → 54 human, 2 machine, and 0 corrections / 0 rescues / 0 abandons detected.**
+  The corpus is a dev/test corpus — mostly `hello`, `what can you do?`, and scripted probe
+  prompts. So recall CANNOT be assessed from it, and that is the honest finding rather than a
+  pass. Only **one** message contains any non-ASCII character and it is the harness notice
+  below, so there is no non-English or mixed-language material to test either.
+- **Real gap found by that sweep:** `[interrupted] …` (written verbatim by
+  `workbench/sessions.py:223` when a turn never closed) arrives with `source = NULL` and was
+  not in `_INJECTION_PREFIXES`, so harness instruction text entered the human-speech lane.
+  Its current wording happens not to trip any pattern — no episode is being invented by it
+  today — but it is the same class as the 41 false positives. Fixed by adding the prefix;
+  red test asserts `_isMachineRow('', <verbatim notice>) is True`, plus a guard that a real
+  correction beside the notice still fires. My first version of that test used an embellished
+  notice text containing "start over"/"never mind" and produced a false episode — I replaced
+  it with the shipped literal rather than ship a result caused by my own wording.
+- Reported, deliberately NOT fixed (vocabulary, not the apostrophe class): `'i just want a
+  schematic for simulation'` is a scope correction the detector does not match; `'revert all
+  changes you made'` likewise. Changing `_CORRECTION_RE`'s wording is a redesign you asked me
+  not to do.
+- **Full-suite caveat:** `full3.log` is PROVISIONAL. I edited `episode_miner.py` and two test
+  files mid-run, so it does not describe one clean tree. A definitive full run is still owed
+  at the end-of-run review, from a committed tip.
+- Red-first discipline held this session: the `[interrupted]` test and the 052 test were both
+  run and shown failing (or newly asserting) before/with the change.
+
+## Open, in order
+1. **Item 2 of your follow-ups is NOT done: the real-app check of the red tool cards.** I
+   cannot launch the packaged desktop app from here and the in-app browser reports
+   `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`. So item 1's `[Blocked]` / `[Tool result missing]`
+   red rendering remains **UNVERIFIED**. If you can run it, that is the thing to look at: one
+   genuine tool error, one guardrail block, one missing-result card. Decide there whether
+   guardrail blocks deserve a quieter treatment than a real failure — my code currently makes
+   all four prefixes equally red.
+2. Item 7 — reproduce the distiller judge failure with a real call; measure "13 failures /
+   0 successes" from the snapshot using the correct lifecycle columns (still UNVERIFIED).
+3. Pass 2 (items 8-11), then Pass 3 (12-15) if room remains. Autonomy stays **OFF**.
+4. Tidy pass: the top "## Done" and "## Key discovery for item 1" sections now describe
+   pre-commit state and are marked stale — worth folding into the Item log when convenient.
