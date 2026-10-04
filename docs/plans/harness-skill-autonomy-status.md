@@ -174,8 +174,19 @@ screenshots in `.probe-artifacts/`, including an injection-style proposal blocke
 ## Item log (item → commit → result)
 - 1 → `2c8f6ac7` → receipt persisted end-to-end; prose regex deleted; 4722 passed / 9 skipped /
   0 failed. 21 new tests, 10 pre-existing rewritten.
-- 2 → (this commit) → dedupe keyed on `(session, kind, events, outcome)`; the rewrite test went
-  red at 3 rows for 1 window and now holds at 1; `episode_count` no longer inflates.
+- 2 → `023aa374` → dedupe keyed on `(session, kind, events, outcome)`; the rewrite test went red
+  at 3 rows for 1 window and now holds at 1; `episode_count` no longer inflates.
+- 3 → **no code change; the input does not exist.** Grepped every reviewer path:
+  - `episode_miner.score_episode:622-651` — the six rubric criteria contain no tool-error count.
+    `recurrence:639` counts *episodes per fingerprint*, which items 1+2 keep honest and item 5
+    must still recompute for the 41 rows already stored.
+  - `skill_distiller._episodeWindow:240-251` + `build_judge_prompt:254` — the judge receives
+    typed events, never a count.
+  - The only count that does reach a reviewer is `episode_miner.guardrail_block_hotspots`,
+    read by the refine pass (`refine_store.py:797,983`). Its source is `tool_guardrail_log`,
+    written by the guard itself — not a regex — so it is accurate and **stays as telemetry**.
+  So "0 downstream" was right, and the reason is stronger than expected: there is no wiring to
+  remove. Item 5 must fix the stale counts this left behind.
 
 ## Next
-Item 3 — drop tool-failure-count as a reviewer input.
+Item 4 — verify the correction detector against a seeded transcript in the real storage shape.
