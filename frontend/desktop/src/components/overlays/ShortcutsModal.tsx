@@ -19,6 +19,9 @@ const SHORTCUT_GROUPS: Array<{
     items: [
       { keys: ['Ctrl', 'K'], label: 'Command palette' },
       { keys: ['Ctrl', 'P'], label: 'Command palette' },
+      { keys: ['Ctrl', 'N'], label: 'New chat' },
+      { keys: ['Ctrl', 'B'], label: 'Toggle sidebar' },
+      { keys: ['Ctrl', 'J'], label: 'Toggle right panel' },
       { keys: [','], label: 'Settings' },
       { keys: ['?'], label: 'Keyboard shortcuts' },
     ],

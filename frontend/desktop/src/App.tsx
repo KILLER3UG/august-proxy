@@ -56,6 +56,15 @@ export default function App() {
         toggleCommandPalette();
         return;
       }
+      if (cmd && !e.altKey && !e.shiftKey && (e.key === 'b' || e.key === 'j')) {
+        // Claude/Hermes pane toggles (spec §3.6): Ctrl+B sidebar, Ctrl+J
+        // right panel. ChatLayout owns both states, so it listens.
+        e.preventDefault();
+        window.dispatchEvent(
+          new CustomEvent(e.key === 'b' ? 'august:toggle-sidebar' : 'august:toggle-right-drawer'),
+        );
+        return;
+      }
       if (cmd && !e.altKey && !e.shiftKey && e.key === 'n') {
         // ZCode-parity Ctrl+N: new chat, same path as the sidebar button
         // (creates a Tasks-home session and opens it). Skips typing targets

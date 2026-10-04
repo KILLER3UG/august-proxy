@@ -14,7 +14,7 @@ import { addWorkspace, useWorkspacesStore } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
-import { addRightDrawerSection, closeRightDrawer, closeRightDrawerSection, isDrawerPanelVisible, setActiveRightDrawerSection, toggleBottomTerminal, useRightDrawer } from "./RightDrawerState";
+import { addRightDrawerSection, closeRightDrawer, closeRightDrawerSection, isDrawerPanelVisible, setActiveRightDrawerSection, toggleBottomTerminal, useRightDrawer, useRightDrawerStore } from "./RightDrawerState";
 import { BottomTerminalDock } from "./BottomTerminalDock";
 import { getDigest, getNeedsAttention } from "@/api/subagents";
 import { setNeedsAttention } from "@/components/sidebar/needs-handoff-store";
@@ -560,6 +560,26 @@ export function ChatLayout() {
   useEffect(() => {
     localStorage.setItem(SESSIONS_COLLAPSED_KEY, collapsed ? "1" : "0");
   }, [collapsed]);
+
+  // Ctrl+B / Ctrl+J (App.tsx dispatches; this component owns both states).
+  useEffect(() => {
+    const onToggleSidebar = () => setCollapsed((c) => !c);
+    const onToggleDrawer = () => {
+      const st = useRightDrawerStore.getState();
+      if (st.open) {
+        closeRightDrawer();
+        return;
+      }
+      // Reopen on whatever was last open; fall back to Tasks.
+      addRightDrawerSection(st.sections[st.sections.length - 1] ?? 'tasks');
+    };
+    window.addEventListener('august:toggle-sidebar', onToggleSidebar);
+    window.addEventListener('august:toggle-right-drawer', onToggleDrawer);
+    return () => {
+      window.removeEventListener('august:toggle-sidebar', onToggleSidebar);
+      window.removeEventListener('august:toggle-right-drawer', onToggleDrawer);
+    };
+  }, []);
 
   // Settings is a FULL-SCREEN page (not a modal). When the path is
   // /settings/*, render the SettingsPage full-width with the chat
