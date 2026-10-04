@@ -47,6 +47,8 @@ vi.mock('@/hooks/useFocusTrap', () => ({
 }));
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: mocks.invalidateQueries }),
+  // The palette reads the review-inbox count for the Learning item badge.
+  useQuery: () => ({ data: undefined }),
 }));
 vi.mock('../Backdrop', () => ({
   Backdrop: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,

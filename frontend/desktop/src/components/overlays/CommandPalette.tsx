@@ -35,6 +35,7 @@ import {
 import { openShortcutsModal } from "@/store/shortcuts-modal";
 import { useSessionsStore } from "@/store/sessions";
 import { useResolvedThemeStore, toggleTheme } from "@/store/theme";
+import { useReviewInboxCount } from "@/lib/useReviewInboxCount";
 import { SECTION_NAV_ITEMS, SETTINGS_TABS } from '@/routes';
 import { Backdrop } from "./Backdrop";
 import { useQueryClient } from "@tanstack/react-query";
@@ -56,6 +57,7 @@ export function CommandPalette() {
   const theme = useResolvedThemeStore((s) => s.theme);
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const inboxTotal = useReviewInboxCount().total;
   const location = useLocation();
   const trapRef = useFocusTrap<HTMLDivElement>();
   const sessions = useSessionsStore((s) => s.sessions);
@@ -417,6 +419,11 @@ export function CommandPalette() {
                 className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
               >
                 <Icon className="size-3" /> {label}
+                {to === '/learning' && inboxTotal > 0 ? (
+                  <span className="ml-auto rounded-sm bg-warning/20 px-1 text-2xs font-medium leading-4 text-warning-fg tabular-nums">
+                    {inboxTotal}
+                  </span>
+                ) : null}
               </Command.Item>
             ))}
           </Command.Group>

@@ -7,17 +7,9 @@ import {
   Plus,
   Settings,
 } from "lucide-react";
-import { SECTION_NAV_ITEMS } from "@/routes";
 import { addRightDrawerSection } from "@/components/shell/RightDrawerState";
-import { useReviewInboxCount } from "@/lib/useReviewInboxCount";
 import { t } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-
-/** Routes whose dock button carries the pending-human-decision count. The
- *  Learning hub is the only route that is a human decision queue, and the
- *  Settings rail is modal — without this the count was invisible until the
- *  user opened Settings to go looking for it. */
-const REVIEW_INBOX_ROUTES = new Set(["/learning"]);
 
 export interface SessionListNavProps {
   onNew: () => void;
@@ -44,11 +36,6 @@ const plusIconMotion = {
   tap: { scale: 0.9, rotate: 90, transition: t.fast },
 };
 
-const DESTINATIONS = SECTION_NAV_ITEMS.filter((item) => item.to !== '/');
-/* The dock is derived from the route table, not restated here. It used to
- * hardcode four paths while routes.ts declared six nav destinations, which is
- * how /live ended up reachable only through the command palette. Chat (`/`) is
- * excluded because "New chat" above already performs that action. */
 
 /** Top of the session sidebar: collapse control + new chat + destination dock. */
 export function SessionListNav({
@@ -58,12 +45,7 @@ export function SessionListNav({
   activePath = '',
   workspaceName,
 }: SessionListNavProps) {
-  const isActive = (path: string) =>
-    activePath === path || activePath.startsWith(`${path}/`);
   const brandLabel = workspaceName?.trim() || 'August';
-  // One polled count (harness proposals + memory retirements) feeds both the
-  // settings rail and this dock — same query key, one request a minute.
-  const inbox = useReviewInboxCount();
 
   return (
     <div className="august-sidebar-nav flex flex-col shrink-0">
@@ -109,13 +91,18 @@ export function SessionListNav({
         </motion.button>
       </div>
 
-      {/* Core navigation — one labeled list, the pattern every reference
-          uses (ChatGPT/Claude/DeepSeek/Hermes): icon + visible label, never
-          a bare icon strip. DeepSeek's sidebar spec is explicit that the
-          label is "plain visible text, the accessible name, and the
-          collapsed tooltip"; icon-only is for the collapsed rail alone.
-          The old 6-icon dock (audit A1 §3) hid six whole destinations
-          behind 28px glyphs nobody could name. */}
+      {/* Chat-first sidebar. Deep dive against the four references: Hermes
+          keeps FOUR durable pages in chrome (Chat/Skills/Messaging/
+          Artifacts) and routes the rest through ⌘K; DeepSeek's sidebar
+          carries brand + New Session + workspaces + a BOTTOM-pinned
+          Settings seat; Claude keeps New Chat + history + an account
+          footer; only ChatGPT lists many rows, and those are consumer
+          content (Library/Sora/GPTs) rather than tool surfaces. So the
+          sidebar keeps exactly what belongs to a conversation — Artifacts
+          (mirrored by the composer + titlebar triggers). Automations,
+          Runs, Board, Live, History and Learning live in the ⌘K palette's
+          Tools group, exactly like Hermes' launcher-only pattern, and
+          Customize (Settings) is bottom-pinned above the account row. */}
       <div className="px-2 space-y-0.5 pb-1" role="navigation" aria-label="Workspace">
         <button
           type="button"
@@ -132,49 +119,6 @@ export function SessionListNav({
           <span>Artifacts</span>
         </button>
 
-        {DESTINATIONS.map(({ to: path, label, Icon }) => {
-          const pending = REVIEW_INBOX_ROUTES.has(path) ? inbox.total : 0;
-          return (
-            <button
-              key={path}
-              type="button"
-              onClick={() => onNavigate(path)}
-              className={cn(
-                'w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[0.78125rem] transition-colors',
-                isActive(path)
-                  ? 'bg-white/[0.08] text-sidebar-foreground font-medium'
-                  : 'text-sidebar-foreground/70 hover:bg-white/[0.04] hover:text-sidebar-foreground',
-              )}
-              aria-current={isActive(path) ? 'page' : undefined}
-              data-testid={`sidebar-nav-${path.replace(/^\//, '')}`}
-            >
-              <Icon className="size-3 text-muted-foreground shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{label}</span>
-              {pending > 0 ? (
-                <span
-                  data-testid={`sidebar-nav-badge-${path.replace(/^\//, '')}`}
-                  className="shrink-0 rounded-sm bg-warning/20 px-1 text-2xs font-medium leading-4 text-warning-fg tabular-nums"
-                >
-                  {pending}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
-
-        <button
-          type="button"
-          onClick={() => onNavigate('/settings')}
-          className={cn(
-            'w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[0.78125rem] transition-colors',
-            isActive('/settings')
-              ? 'bg-white/[0.08] text-sidebar-foreground font-medium'
-              : 'text-sidebar-foreground/70 hover:bg-white/[0.04] hover:text-sidebar-foreground',
-          )}
-        >
-          <Settings className="size-3 text-muted-foreground shrink-0" />
-          <span>Customize</span>
-        </button>
       </div>
     </div>
   );

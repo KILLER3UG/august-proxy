@@ -1,6 +1,6 @@
 import { render } from '@testing-library/react';
 import katex from 'katex';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Markdown } from '../ChatMarkdown';
 
 describe('ChatMarkdown Component', () => {

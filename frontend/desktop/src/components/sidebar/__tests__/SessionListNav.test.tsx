@@ -1,10 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { SECTION_NAV_ITEMS } from '@/routes';
 
-/* The Learning dock button reads the review-inbox count, so the nav now
- * needs the query client and the count endpoint. Mocked (not left to a real
- * fetch) so the badge assertions are deterministic. */
+/* The review-inbox count used to ride the sidebar's Learning row; it now
+ * rides the command palette's Tools item. The api module stays mocked so
+ * the rendering tests never touch the network. */
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
 }));
@@ -45,54 +46,38 @@ describe('SessionListNav', () => {
     expect(label.parentElement?.classList.contains('min-w-0')).toBe(true);
     expect(screen.getByRole('button', { name: 'Hide sidebar' }).classList.contains('shrink-0')).toBe(true);
   });
-  it('every nav-flagged route has a dock button, so none can be orphaned', async () => {
-    // The dock used to restate four routes by hand while routes.ts declared
-    // six — /live carried `nav: true` and had no button anywhere. The list is
-    // derived now, so a new nav route appears without touching this file.
-    const { SECTION_NAV_ITEMS } = await import('@/routes');
+
+  it('is chat-first: tool destinations live in the palette, not the sidebar', () => {
+    // Reference contract, verified in the Stage 1 research:
+    //   Hermes  — four durable pages in chrome (Chat/Skills/Messaging/
+    //             Artifacts); Settings, Command Center, Profiles and the
+    //             rest are overlay cards reachable from ⌘K.
+    //   DeepSeek— brand + New Session + workspaces seat + a BOTTOM-pinned
+    //             Settings seat; sections arrive as panel-list entries.
+    //   Claude  — New Chat + history + an account footer.
+    //   ChatGPT — many rows, but consumer content (Library/Sora/GPTs).
+    // August's six rows duplicated the ⌘K palette's Tools group 1:1 (same
+    // SECTION_NAV_ITEMS source), so the sidebar keeps conversation chrome:
+    // New chat + Artifacts (also in the composer and titlebar).
     renderNav();
-    const expected = SECTION_NAV_ITEMS.filter((item) => item.to !== '/');
-    expect(expected.length).toBeGreaterThanOrEqual(5);
-    for (const item of expected) {
-      const id = `sidebar-nav-${item.to.replace(/^\//, '')}`;
-      expect(screen.getByTestId(id), `${item.to} has no dock button`).toBeTruthy();
-      expect(screen.getByRole('button', { name: item.label })).toBeTruthy();
+    expect(SECTION_NAV_ITEMS.filter((i) => i.to !== '/').length).toBeGreaterThanOrEqual(5);
+    for (const item of SECTION_NAV_ITEMS) {
+      if (item.to === '/') continue;
+      expect(
+        screen.queryByTestId(`sidebar-nav-${item.to.replace(/^\//, '')}`),
+        `${item.to} should not be a sidebar row`,
+      ).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: item.label }),
+        `${item.label} should not be a sidebar row`,
+      ).toBeNull();
     }
-  });
-
-  it('clicking the Live destination navigates to /live', () => {
-    const onNavigate = vi.fn();
-    renderNav({ onNavigate });
-    fireEvent.click(screen.getByTestId('sidebar-nav-live'));
-    expect(onNavigate).toHaveBeenCalledWith('/live');
-  });
-
-  it('renders the real top-level destinations and marks the active route', () => {
-    const onNavigate = vi.fn();
-    renderNav({ activePath: '/runs', onNavigate });
-
-    const destinations = [
-      ['sidebar-nav-automations', '/automations'],
-      ['sidebar-nav-runs', '/runs'],
-      ['sidebar-nav-board', '/board'],
-      ['sidebar-nav-history', '/history'],
-    ] as const;
-
-    for (const [testId, path] of destinations) {
-      fireEvent.click(screen.getByTestId(testId));
-      expect(onNavigate).toHaveBeenCalledWith(path);
-    }
-    expect(screen.getByRole('button', { name: 'Runs' })).toHaveAttribute('aria-current', 'page');
-    for (const name of ['Automations', 'Board', 'History']) {
-      expect(screen.getByRole('button', { name })).not.toHaveAttribute('aria-current');
-    }
-    expect(screen.queryByTestId('sidebar-nav-skills')).toBeNull();
-  });
-  it('does not match sibling paths when marking the active route', () => {
-    renderNav({ activePath: '/history-extra' });
-    expect(screen.getByRole('button', { name: 'History' })).not.toHaveAttribute(
-      'aria-current',
-    );
+    // What stays is chat-adjacent.
+    expect(screen.getByRole('button', { name: 'Artifacts' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /New chat/ })).toBeTruthy();
+    // And no Customize row here either — Settings is bottom-pinned in
+    // SessionList's footer (DeepSeek's seat), below the session list.
+    expect(screen.queryByRole('button', { name: 'Customize' })).toBeNull();
   });
 
   it('the Artifacts row opens the artifacts section instead of a no-op event', () => {
@@ -111,35 +96,11 @@ describe('SessionListNav', () => {
   });
 
   it('has no row for a destination that does not exist', () => {
-    // There is no `/projects` route: the "Projects" row pointed at `/board`,
-    // whose page is titled "Board" and which the dock below already links, so
-    // the label could never be true.
+    // There is no `/projects` route: the old "Projects" row pointed at
+    // `/board`, whose page is titled "Board", so the label could never be
+    // true. ChatGPT's Projects is consumer content; August's workspaces
+    // live in the session folders.
     renderNav();
     expect(screen.queryByRole('button', { name: 'Projects' })).toBeNull();
-  });
-
-  it('badges the Learning dock button with the pending-decision count', async () => {
-    // The count used to live only behind the Settings modal, so a proposal
-    // waiting for approval was invisible from the main rail.
-    getMock.mockResolvedValue({ harness: 1, memory: 2, total: 3 });
-    renderNav();
-
-    await waitFor(() =>
-      expect(screen.getByTestId('sidebar-nav-badge-learning').textContent).toBe('3'),
-    );
-    // The badge rides the existing button — it must not become a second
-    // control, and the accessible name stays the destination label.
-    const dockButton = screen.getByTestId('sidebar-nav-learning');
-    expect(dockButton.textContent).toContain('3');
-    // Labeled row: the visible text IS the accessible name — no aria-label
-    // or native title (2026-10-04, icon dock -> labeled rows).
-    expect(dockButton).not.toHaveAttribute('aria-label');
-    expect(dockButton).not.toHaveAttribute('title');
-  });
-
-  it('shows no badge when nothing is waiting for a decision', async () => {
-    renderNav();
-    await waitFor(() => expect(getMock).toHaveBeenCalled());
-    expect(screen.queryByTestId('sidebar-nav-badge-learning')).toBeNull();
   });
 });
