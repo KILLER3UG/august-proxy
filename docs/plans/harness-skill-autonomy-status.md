@@ -391,3 +391,33 @@ ode_modules`, and the
     `it(..., () {` without the `=>`, and I asserted the command pill without passing the
     `isCommand` prop. Both fixed before implementing, so the one remaining failure was genuinely
     the unimplemented case.
+
+## Definitive full suite (tip `be62ba0c`, no edits to the tree during the run)
+**4756 passed, 9 skipped, 0 failed in 9:31** — `PYTEST_EXIT=0`, `grep -c '^FAILED'` = 0, both
+read from the log itself. Supersedes `full6.log` (1 failed / 4755 passed), whose failure was my
+own `MACHINE_SOURCES` closed-world guard, fixed in `be62ba0c`.
+
+## Item log — session 4
+- Provenance sweep → committed with this file → two harness-authored user rows had no
+  `source`: passive memory delivery (`automation_memory.py`) and the Live/BTW exchange
+  (`routers/live.py`). Both tagged; `MACHINE_SOURCES` gained `memory_delivery` and
+  `live_transcript`. A memory body routinely contains "actually" / "don't", i.e. the
+  correction detector's own vocabulary, so a memory delivery could previously manufacture a
+  correction episode about itself. The other `{'role':'user'}` writes build a throwaway prompt
+  for one model call and never persist to `messages`, so the miner cannot see them — checked
+  per file, not assumed.
+- **Real-browser card check: NOT done. `unverified in a real browser, covered by render tests`.**
+  It needs a live backend plus a labeled seeded session, which is the same setup the end-of-run
+  real-app pass requires; doing it there is cheaper and produces the screenshot evidence you
+  asked for. What IS verified: 25 render tests in `ToolStepRow.test.tsx` asserting the class,
+  not pixels — failure red, denial not red, absent tone red, settled row never tinted by tone.
+- Two of my own errors worth keeping in this file, because both would have hidden a bug:
+  my mixed-session provenance guard initially asserted nothing (the "human" sentence I wrote
+  never matched the detector, so the test passed while the feature was broken), and I launched
+  a full suite before committing the sweep, contradicting the no-edits rule; I stopped it,
+  committed, and re-ran.
+
+## Next
+Item 7 — measure the "13 failures / 0 successes" distiller-judge claim from a read-only
+snapshot using the correct lifecycle columns, then reproduce with a real model call and report
+the cause. Fix only if clear and small; otherwise stop and ask. Then Pass 2 items 8–11.
