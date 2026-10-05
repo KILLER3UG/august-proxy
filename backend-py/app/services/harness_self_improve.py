@@ -964,11 +964,11 @@ def review_proposal(
         # Only an AUTOMATIC apply spends the daily budget or starts probation.
         # A human approving in the inbox is not what the rails ration, so it is
         # deliberately not recorded here.
-        from app.services.harness_rails import record_auto_apply
+        from app.services.harness_rails import finding_key, record_auto_apply
 
         versionTs = str(as_dict(result.get('applyResult')).get('snapshotTs') or '')
         skillName = str(as_dict(row.get('payload')).get('name') or '')
-        record_auto_apply(pid, skillName, versionTs)
+        record_auto_apply(pid, skillName, versionTs, finding_key(row))
         # Item 15's chip. The event names the version to put back, so the
         # announcement can offer a real undo rather than only a sentence, and it
         # carries `queryKeys` so the realtime bridge's existing forward-compatible

@@ -25,6 +25,7 @@ Three properties this module keeps:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import time
@@ -67,6 +68,7 @@ RULES = frozenset(
         'hard-kind',
         'untrusted-evidence',
         'unsafe-content',
+        'probation-cooldown',
         'burn-in',
         'daily-limit',
         'same-skill-today',
@@ -122,6 +124,54 @@ def shadow_enabled() -> bool:
     return bool(cfg.get('skillAutonomy')) and bool(cfg.get('skillAutonomyShadow'))
 
 
+# How long a reverted finding stays barred. Longer than the measurement window
+# on purpose (default 14 days): the measurement that condemned it took that
+# long to arrive, and a cooldown shorter than the window would expire roughly
+# when the evidence was produced.
+PROBATION_COOLDOWN_DAYS = 30
+
+#: A finding's identity: the skill plus the failure it claims to fix. The
+#: distiller's fingerprint is the better key when it has one, because it is the
+#: same string across re-filings while the evidence prose shifts with the
+#: episode window.
+def finding_key(row: dict[str, Any] | None) -> str:
+    if not isinstance(row, dict):
+        return ''
+    payload = row.get('payload')
+    payload = payload if isinstance(payload, dict) else {}
+    skill = str(payload.get('name') or '').strip().lower()
+    marker = str(payload.get('fingerprint') or '').strip().lower()
+    if not marker:
+        marker = ' '.join(str(row.get('problem') or '').lower().split())
+    if not skill and not marker:
+        return ''
+    return hashlib.sha256(f'{skill}|{marker}'.encode('utf-8')).hexdigest()[:16]
+
+
+def _on_cooldown(key: str) -> bool:
+    """Has THIS finding already been measured harmful and reverted?
+
+    Without this, probation only puts the bytes back: the same distiller verdict
+    re-files, clears the daily rail the next morning, and re-applies the change
+    the ledger already proved was a regression.
+    """
+    if not key:
+        return False  # an empty key matches nothing — old rows must not bar all writes
+    cutoff = time.strftime(
+        '%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - PROBATION_COOLDOWN_DAYS * 86400)
+    )
+    from app.services.harness_self_improve import read_ledger
+
+    for r in read_ledger(limit=_LEDGER_TAIL):
+        if r.get('action') != 'probation_revert':
+            continue
+        if str(r.get('finding_key') or '') != key:
+            continue
+        if str(r.get('at') or '') >= cutoff:
+            return True
+    return False
+
+
 def _refuse(rule: str, reason: str) -> dict[str, Any]:
     return {'allowed': False, 'rule': rule, 'reason': reason}
 
@@ -167,6 +217,14 @@ def auto_apply_allowed(row: dict[str, Any] | None) -> dict[str, Any]:
     content = _content_check(payload)
     if content:
         return content
+
+    key = finding_key(row)
+    if _on_cooldown(key):
+        return _refuse(
+            'probation-cooldown',
+            f'this exact finding was already applied and reverted within '
+            f'{PROBATION_COOLDOWN_DAYS} days — it stays a human decision',
+        )
 
     # Burn-in first: it is the rule that watches the machinery on behalf of the
     # rate limits, so it must not be able to hide behind them.
@@ -258,7 +316,9 @@ def _content_check(payload: dict[str, Any]) -> dict[str, Any] | None:
 # ── The record ────────────────────────────────────────────────────────────
 
 
-def record_auto_apply(pid: str, skill: str, versionTs: str = '') -> None:
+def record_auto_apply(
+    pid: str, skill: str, versionTs: str = '', findingKey: str = ''
+) -> None:
     """Append the auto-apply to the proposal ledger — the one store for it.
 
     Written by the decide path after a successful automatic apply, and read back
@@ -279,6 +339,7 @@ def record_auto_apply(pid: str, skill: str, versionTs: str = '') -> None:
         'target_key': str(pid),
         'skill': str(skill or '')[:120],
         'version_ts': str(versionTs or '')[:32],
+        'finding_key': str(findingKey or '')[:32],
     })
 
 
@@ -347,6 +408,7 @@ def probation_revert(
         'target_key': pid,
         'skill': skill[:120],
         'version_ts': ts[:32],
+        'finding_key': str(row.get('finding_key') or '')[:32],
         'reason': 'measured as a regression while on probation',
     })
     return {'reverted': True, 'skill': skill, 'versionTs': ts}

@@ -110,7 +110,8 @@ def _applied_change(name: str, *, versionTs: str | None = 'auto') -> tuple[str, 
     )
     pid = str(row['id'])
     if ts is not None:
-        rails.record_auto_apply(pid, name, ts)
+        # The same four arguments review_proposal passes on a real auto-apply.
+        rails.record_auto_apply(pid, name, ts, rails.finding_key(row))
     return pid, ts or ''
 
 
@@ -376,4 +377,52 @@ def _patchReviewer(monkeypatch, reply: str) -> None:
     monkeypatch.setattr(
         'app.services.harness_self_improve.resolve_independent_reviewer',
         lambda producer, hint='': (_Client(), ''),
+    )
+
+
+class TestTheCooldownEndToEnd:
+    """The cooldown only works if the revert row carries the same key the next
+    filing computes. That is an end-to-end property, so it is tested through the
+    measurement job rather than by hand-writing a ledger row."""
+
+    def test_a_reverted_finding_cannot_re_apply_the_next_morning(self, brain, monkeypatch):
+        _arm()
+        name = 'prob-cooldown'
+        pid, _ts_ = _applied_change(name)
+        _book_regression(pid, name)
+        out = ho.measure_pending()
+        assert out['v_regressed'] == 1, out
+
+        reverts = [r for r in _ledger() if r['action'] == 'probation_revert']
+        assert len(reverts) == 1, reverts
+        assert reverts[0]['finding_key'], 'a revert with no key bars nothing'
+
+        # The same finding, re-filed after the daily rail would have reset. The
+        # identity is skill + problem text (this fixture has no fingerprint), so
+        # the re-filing says exactly what the reverted one said.
+        _mark_applied(pid)
+        again = hsi.save_proposal(
+            problem=f'probation: {name} needs the better flow',
+            evidence='the user corrected this twice, in their own words',
+            proposal='amend the body to restart only',
+            rollback='restore the previous version',
+            kind='skill_patch',
+            payload={
+                'name': name,
+                'description': 'container flow',
+                'body': '# Prob cooldown\n\nRestart instead of rebuilding.\n',
+                'trigger': 'container',
+                'episodeIds': [_trustedEpisodeId()],
+            },
+        )
+        verdict = rails.auto_apply_allowed(hsi.get_proposal(str(again['id'])))
+        assert verdict['allowed'] is False, verdict
+        assert verdict['rule'] == 'probation-cooldown', verdict
+
+
+def _mark_applied(pid: str) -> None:
+    row = hsi.get_proposal(pid)
+    row['status'] = 'applied'
+    (hsi._proposals_dir() / f"{row['id']}.json").write_text(
+        json.dumps(row, ensure_ascii=False), encoding='utf-8'
     )

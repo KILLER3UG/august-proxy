@@ -910,3 +910,24 @@ the on-state sentence against a live `autonomy: true` config.
 - Checks: 9 + 6 tests red-first (the shadow ones failed on the config door, which is the honest
   red), then 124 green across rails/reviewer/proposal-path/probation/brain-config/propose-mode;
   ruff clean.
+
+## (5) Cooldown after a probation revert
+A revert that only puts the bytes back leaves the same finding free to re-apply the next morning,
+so the rails now hold it. Keyed on the **finding**, not the skill: `finding_key(row)` is
+`sha256(skill + fingerprint)[:16]`, falling back to the normalized problem text when the distiller
+supplied no fingerprint. The fingerprint is preferred because it is stable across re-filings while
+the evidence prose shifts with the episode window — and the test asserts exactly that precedence.
+- `record_auto_apply` gained a `findingKey` argument (passed by `review_proposal`), and
+  `probation_revert` copies it onto the revert row, so the ban is written by the same path that
+  performed the undo.
+- New rule `probation-cooldown`, checked **after** the content rails and **before** burn-in and the
+  rate rails, so the reason a human reads is the real one.
+- `PROBATION_COOLDOWN_DAYS = 30`, deliberately longer than the 14-day measurement window: the
+  measurement that condemned the change took that long to arrive, and a shorter cooldown would
+  expire about when the evidence did.
+- An empty key matches nothing, on purpose: rows written before this field existed must not read as
+  "every finding is barred".
+- 7 tests: held after a revert, different finding on the same skill passes, same finding on another
+  skill passes, the window expires, an unkeyed row blocks nothing, the key is stable across reloads
+  and prefers the fingerprint, and one end-to-end through `measure_pending` (the revert row carries
+  a key, and the re-filed finding is held by `probation-cooldown`).

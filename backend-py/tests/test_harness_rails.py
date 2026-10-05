@@ -13,6 +13,8 @@ in test_reviewer_pass.py.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from app.services import episode_miner
 from app.services import harness_rails as rails
@@ -90,16 +92,20 @@ def _proposal(
     episodeKinds: tuple[str, ...] = ('user_correction',),
     episodeIds: list[int] | None = None,
     skill: str = '',
+    problem: str = '',
+    fingerprint: str = '',
 ) -> str:
     """Files one proposal. `skill` pins the skill name (the per-skill rail needs
     two rows naming the SAME skill); otherwise each row gets its own, because
-    the store refuses two open rows with the same kind + problem."""
+    the store refuses two open rows with the same kind + problem. `problem` and
+    `fingerprint` are pinned the same way when a test needs two rows to be the
+    same FINDING."""
     global _PROBLEM_COUNTER
     _PROBLEM_COUNTER += 1
     skillName = skill or _unique(name)
     ids = episodeIds if episodeIds is not None else [_episode(k) for k in episodeKinds]
     row = hsi.save_proposal(
-        problem=f'the skill tells the agent to rebuild every time [{_PROBLEM_COUNTER}]',
+        problem=problem or f'the skill tells the agent to rebuild every time [{_PROBLEM_COUNTER}]',
         evidence=evidence,
         proposal='amend the body to restart only',
         rollback='restore the previous version from .versions',
@@ -111,9 +117,21 @@ def _proposal(
             'trigger': 'container',
             'episodeIds': ids,
             'origin': 'distilled',
+            **({'fingerprint': fingerprint} if fingerprint else {}),
         },
     )
     return str(row['id'])
+
+
+def _mark_decided(pid: str, status: str = 'applied') -> None:
+    """Take a row out of the open set, so a re-filing of the same finding is not
+    refused by the store's duplicate guard. This is the real sequence: applied,
+    measured, reverted, re-filed."""
+    row = hsi.get_proposal(pid)
+    row['status'] = status
+    (hsi._proposals_dir() / f"{row['id']}.json").write_text(
+        json.dumps(row, ensure_ascii=False), encoding='utf-8'
+    )
 
 
 def _verdict(pid: str) -> dict:
@@ -469,3 +487,123 @@ class TestShadowMode:
         assert out['wouldApply'] is True, out
         assert out['rule'] == 'shadow-mode', out
         assert hsi.get_proposal(pid)['status'] == 'open'
+
+
+class TestProbationCooldown:
+    """Item 5's other half: a revert that only puts the bytes back lets the same
+    finding re-apply the moment the daily rail resets. The cooldown is keyed on
+    the FINDING (skill + fingerprint, or skill + problem when there is none), so
+    it blocks the thing that was measured harmful and not the whole skill."""
+
+    def _revert_row(self, key: str, *, days_ago: int = 0) -> None:
+        import time
+
+        from app.services.harness_self_improve import _append_ledger
+
+        at = time.strftime(
+            '%Y-%m-%dT%H:%M:%SZ',
+            time.gmtime(time.time() - days_ago * 86400),
+        )
+        _append_ledger({
+            'at': at,
+            'actor': 'reviewer',
+            'action': 'probation_revert',
+            'target_key': 'prop_old',
+            'skill': 'any',
+            'version_ts': '1700000000',
+            'finding_key': key,
+        })
+
+    def test_the_same_finding_is_held_after_a_revert(self, brain):
+        _armed(brain)
+        pid = _proposal(
+            skill='cool-skill',
+            problem='rebuilds the container when a restart was enough',
+            fingerprint='fp-rebuild',
+        )
+        key = rails.finding_key(hsi.get_proposal(pid))
+        assert key, 'a finding has to be nameable or the cooldown cannot work'
+        self._revert_row(key)
+        # The real sequence: the first row was applied (and has since been
+        # reverted), so the same finding can legitimately re-file tomorrow.
+        _mark_decided(pid)
+        again = _proposal(
+            skill='cool-skill',
+            problem='rebuilds the container when a restart was enough',
+            fingerprint='fp-rebuild',
+        )
+        out = _verdict(again)
+        assert out['allowed'] is False
+        assert out['rule'] == 'probation-cooldown', out
+        assert out['reason']
+
+    def test_the_fallback_key_is_the_problem_text(self, brain):
+        """A proposal with no fingerprint still names its finding, and the same
+        wording on the same skill is the same finding."""
+        _armed(brain)
+        a = _proposal(skill='no-fp', problem='keeps re-running the slow build')
+        # The store refuses two OPEN rows with the same kind + problem, which is
+        # the same-finding-duplicate guard doing its job; retire the first so the
+        # second can be filed the way a re-filing actually happens.
+        _mark_decided(a)
+        b = _proposal(skill='no-fp', problem='keeps re-running the slow build')
+        assert rails.finding_key(hsi.get_proposal(a)) == rails.finding_key(hsi.get_proposal(b))
+
+    def test_a_different_finding_on_the_same_skill_still_passes(self, brain):
+        _armed(brain)
+        pid = _proposal(
+            skill='busy-skill',
+            problem='rebuilds when a restart was enough',
+            fingerprint='fp-one',
+        )
+        self._revert_row(rails.finding_key(hsi.get_proposal(pid)))
+        _mark_decided(pid)
+        other = _proposal(
+            skill='busy-skill',
+            problem='forgets to collect the simulation output',
+            fingerprint='fp-two',
+            body='# Other\n\nCollect the run output before reporting.\n',
+        )
+        out = _verdict(other)
+        assert out['allowed'] is True, out
+
+    def test_the_same_finding_on_another_skill_still_passes(self, brain):
+        _armed(brain)
+        pid = _proposal(skill='source-skill')
+        key = rails.finding_key(hsi.get_proposal(pid))
+        self._revert_row(key)
+        out = _verdict(_proposal(skill='other-skill'))
+        assert out['allowed'] is True, out
+
+    def test_the_cooldown_expires(self, brain):
+        _armed(brain)
+        pid = _proposal(skill='fading-skill')
+        self._revert_row(
+            rails.finding_key(hsi.get_proposal(pid)),
+            days_ago=rails.PROBATION_COOLDOWN_DAYS + 1,
+        )
+        out = _verdict(_proposal(skill='fading-skill'))
+        assert out['allowed'] is True, out
+
+    def test_an_older_row_with_no_key_blocks_nothing(self, brain):
+        """Rows written before this field existed must not read as "everything is
+        on cooldown" — an empty key matches nothing, on purpose."""
+        _armed(brain)
+        self._revert_row('')
+        assert _verdict(_proposal())['allowed'] is True
+
+    def test_the_key_is_stable_across_reloads_and_names_the_finding(self, brain):
+        _armed(brain)
+        pid = _proposal(skill='stable-key')
+        row = hsi.get_proposal(pid)
+        first = rails.finding_key(row)
+        second = rails.finding_key(hsi.get_proposal(pid))
+        assert first == second, (first, second)
+        # A fingerprint is the finding's own identity when the distiller supplied one.
+        row['payload']['fingerprint'] = 'fp-123'
+        (hsi._proposals_dir() / f'{pid}.json').write_text(
+            json.dumps(row, ensure_ascii=False), encoding='utf-8'
+        )
+        assert rails.finding_key(hsi.get_proposal(pid)) != first, (
+            'the fingerprint is the better key and must win when present'
+        )
