@@ -10,6 +10,7 @@ Extracted from workbench.py for Phase 3 modularization.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import uuid
 from typing import Callable
@@ -24,6 +25,8 @@ from app.services.workbench.effort import (
     provider_accepts_reasoning_effort,
     resolve_completion_limits,
 )
+
+logger = logging.getLogger('workbench.providers')
 
 
 def background_task_model(task_key: str, chat_model: str) -> str:
@@ -93,12 +96,42 @@ def make_review_llm_client(
                 resp = await _client.chat_completions(body)
                 bodyJson = resp.body_json or {}
                 if resp.is_error or 'error' in bodyJson:
+                    # Four outcomes used to collapse into one empty string, so a
+                    # reviewer that never answered looked identical to one that
+                    # answered "no". Measured on a real install: the provider was
+                    # returning an upstream error (credit), and every background
+                    # review silently "returned nothing" forever.
+                    logger.warning(
+                        'review llm upstream error (model=%s status=%s): %s',
+                        _reviewModel,
+                        getattr(resp, 'status_code', None),
+                        str(bodyJson.get('error') or bodyJson)[:200],
+                    )
                     return ''
                 choices = as_list(bodyJson.get('choices', []), [])
                 if not choices:
+                    # An Anthropic-shaped reply (`content`, not `choices`) lands
+                    # here too — name it, because a wrong wire format is otherwise
+                    # indistinguishable from a model that has nothing to say.
+                    logger.warning(
+                        'review llm returned no choices (model=%s, keys=%s)',
+                        _reviewModel,
+                        sorted(bodyJson.keys()) if isinstance(bodyJson, dict) else type(bodyJson),
+                    )
                     return ''
-                return as_str(as_dict(as_dict(choices[0]).get('message', {})).get('content', ''))
-            except Exception:
+                content = as_str(as_dict(as_dict(choices[0]).get('message', {})).get('content', ''))
+                if not content.strip():
+                    logger.warning('review llm returned empty content (model=%s)', _reviewModel)
+                return content
+            except Exception as exc:
+                # This except had no logging at all: the call could not even be
+                # shown to have been attempted.
+                logger.warning(
+                    'review llm call failed (model=%s): %s: %s',
+                    _reviewModel,
+                    type(exc).__name__,
+                    str(exc)[:200],
+                )
                 return ''
 
         return reviewLlm
