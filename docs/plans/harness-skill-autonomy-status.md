@@ -445,3 +445,41 @@ success/failure column, the distinction lives in `event_type`. 37 rows total:
   and persists only the cooldown bookkeeping.
 - Still owed: reproduce with a real model call (needs a live provider call, not a snapshot).
   Likely first fix once the cause is known: persist the reason in `detail`.
+
+## Item 7 — CAUSE FOUND AND FIXED (`55698e0d`-family, see `git log` tip)
+Reproduced with a real call against an isolated profile built from
+`MANUAL-pre-052-*.sqlite` + a copy of `providers.json` + `config.json` (never the live store).
+
+Chain: stored `skillLearningJudgeModel` = `'judge-model-x'` → resolves to a provider with
+`id=None` and empty `baseUrl` → the HTTP layer returns an **empty body and raises nothing** →
+`_extractJson('')` throws `JSONDecodeError` → `call_judge` swallows it into a bare `None` →
+`_cooldown_batch` records only `{batchSize, cooldownUntil}` and arms 30 minutes.
+
+Fixed (the two small parts only):
+- reason channel: `no-judge-model` / `no-provider` / `no-client` / `timeout` /
+  `unparseable-response` / `request-failed`, persisted into the lifecycle detail with the
+  exception text and the first 120 chars of the body;
+- a config fault records `distiller_judge_unavailable` and does **not** arm a cooldown —
+  cooling down something that needs a human to change a setting is what turned one
+  misconfiguration into 13 indistinguishable "transient" rows;
+- timeouts named in both loop shapes, including the off-loop worker that outlives its grace
+  window while still holding a socket.
+
+Verified by read-back, not by the code looking right: `_run_batch` on this install now yields
+`('unparseable-response', "JSONDecodeError: Expecting value: line 1 column 1 (char 0) | body=''")`.
+One caveat about that probe: `take_judge_failure()` clears on read, so calling it to print the
+reason consumed it and the following lifecycle row showed `reason: unknown`. The single-consumer
+design is fine; my probe ordering was the mistake, and it is worth knowing before anyone adds a
+second reader.
+
+## NEEDS YOUR DECISION (user data + test isolation, both hard stops)
+1. Your **live** store holds `skillLearningJudgeModel = 'judge-model-x'`, and an `apiFormat`
+   field also holds that same string. Nothing real answers to that name, so the distiller judge
+   has never run on this install. Clearing/setting it is a mutation of your data — say the word
+   and which model you want (the planned reviewer default is `claude-sonnet-5`).
+2. Origin: `tests/test_distiller.py:342` writes it via `saveBrainConfig(...)`. A backend test
+   reached a **real** brain config — an isolation leak. Fixing it means putting the
+   `assertPytestDataDirIsolated` guard (already used by `episode_miner.save_episode`) on the
+   brain-config write path. Small, but it may expose other leaking writers, so I stopped.
+3. Whether to add a `distiller_judge_succeeded` event, so "0 successes" stops being
+   unfalsifiable. Item 7 proved the loop can only ever report failure today.
