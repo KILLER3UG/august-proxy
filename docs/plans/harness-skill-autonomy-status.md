@@ -616,3 +616,20 @@ said `extract-only` while the config default said `propose`.
   `test_review_proposal_path`, `test_proposal_expiry`, `test_skill_learning_propose_mode`,
   `test_skill_review_pass`, `test_gate_participation`). ruff and mypy clean on the changed files.
   **A full backend suite from this tip is still owed** (it was already owed from `3300f28d`).
+- **Reviewer line in the inbox** (handoff §5) → one muted `<p>` under the detail header's badge
+  row in `HarnessImprovementsSection.tsx`, plus `review?: {verdict, reason, model, advisory}` on
+  that file's `Proposal` type. No new section, no backend change — **verified**, not inherited:
+  `routers/harness_proposals.py:26` returns `list_proposals()` rows whole, and
+  `list_proposals:400` returns the parsed proposal file, so the `review` object already travels.
+  - `reviewerLine()` mirrors `review_summary()`'s wording. That is two formatters, which this
+    project normally refuses (the tone-split decision rejected a second marker list). Accepted
+    here because the backend already persists the structured fields, and each side is pinned by
+    its own test: `test_reviewer_pass.py` asserts `'Reviewer unavailable'` / `'Reviewer: discard'`
+    prefixes there, `HarnessImprovementsSection.reviewer.test.tsx` asserts the same strings here.
+    A rename on one side fails a test and names the other side in its comment.
+  - Rendered in the detail view because that is where the human decides. 152 tests green across
+    `src/sections/settings/__tests__/` (22 files); `tsc --noEmit` clean.
+  - My own harness bug, recorded because it looked like a feature failure at first: all three
+    tests reported an empty `<body />`, which was `openDetail()` querying before anything was
+    rendered — not a component crash. Debugged by dumping the DOM in a scratch test rather than
+    by guessing, then the scratch file was deleted.

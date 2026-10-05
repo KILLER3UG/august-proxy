@@ -48,6 +48,7 @@ interface Proposal {
   decisionNote?: string;
   applyResult?: { ok?: boolean; error?: string; action?: string; name?: string };
   queue: Queue;
+  review?: { verdict?: string; reason?: string; model?: string; advisory?: boolean };
 }
 
 interface ProposalsResponse {
@@ -75,6 +76,22 @@ const STATUS_META: Record<Proposal['status'], { label: string; className: string
 };
 
 const APPROVABLE = new Set(['brain_config', 'skill_create', 'skill_patch', 'skill_delete']);
+
+/** The reviewer's one line, or '' when no reviewer saw this proposal.
+ *
+ * The wording mirrors `review_summary()` in
+ * `backend-py/app/services/harness_self_improve.py`; that function is pinned by
+ * `tests/test_reviewer_pass.py`, so a rename on either side fails a test on the
+ * other rather than drifting silently. */
+function reviewerLine(p: Proposal): string {
+  const review = p.review;
+  if (!review) return '';
+  const verdict = (review.verdict ?? 'unavailable').trim();
+  const reason = (review.reason ?? '').trim();
+  const tail = reason ? ` — ${reason}` : '';
+  if (verdict.toLowerCase() === 'unavailable') return `Reviewer unavailable${tail}`;
+  return `Reviewer: ${verdict.toLowerCase()}${tail}`;
+}
 
 /** Map one memory-store retire-preference row into the shared card shape
  *  so both queues render with one component. The memory queue has no
@@ -155,6 +172,7 @@ export function HarnessImprovementsSection() {
   }, [harnessQ.data, memoryQ.data]);
 
   const selected = rows.find((r) => rowKey(r) === selectedId) ?? null;
+  const selectedReviewerLine = selected ? reviewerLine(selected) : '';
   const fetching = harnessQ.isFetching || memoryQ.isFetching;
 
   const postDecide = useCallback(async (row: Proposal, decision: 'approve' | 'reject' | 'dismiss' | 'reopen') => {
@@ -373,6 +391,11 @@ export function HarnessImprovementsSection() {
                     </Badge>
                   )}
                 </div>
+                {selectedReviewerLine && (
+                  <p data-testid="reviewer-line" className="mt-1.5 text-xs text-muted-foreground">
+                    {selectedReviewerLine}
+                  </p>
+                )}
                 <p className="mt-2 text-[0.8125rem] leading-relaxed text-foreground">{selected.problem}</p>
               </div>
               {selected.decidedAt && (
