@@ -587,7 +587,8 @@ said `extract-only` while the config default said `propose`.
 
 ## Item log — session 6
 - **The branch landed.** `harness-skill-autonomy` is now `master` (`3d0763ad`); the worktree is
-  the working copy for the rest of the backlog. The main checkout keeps the *other* session's
+  the working copy for the rest of the backlog. **Everything committed after that point in this
+  file — items 13, 14, 15 and the reviewer wiring — is on the branch only, not on `master`.** The main checkout keeps the *other* session's
   39 dirty files — no path overlap, verified again by diffing changed-path lists.
 - **`check:api` drift resolved (item 13's "investigate first")** — see the correction in the
   definitive-suites section above. No half-built route exists; the committed spec is simply one
