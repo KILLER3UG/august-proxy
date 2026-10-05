@@ -1,5 +1,10 @@
 # Harness skill autonomy — status
 
+> **Handing over? Read `docs/plans/HANDOFF-2026-10-05.md` first** — it carries the
+> worktree/command setup, what is done and NOT done, the two user decisions that
+> block progress, and the traps. This file remains the full item log and the
+> reasoning behind each call.
+
 Resumes Pass 1 of the four-pass plan. Read this before touching code.
 
 ## Done
