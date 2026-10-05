@@ -186,7 +186,7 @@ async def liveTurn(body: LiveTurnBody) -> dict[str, object]:
 
         from datetime import datetime, timezone
 
-        session.messages.append({'role': 'user', 'content': transcript})
+        session.messages.append({'role': 'user', 'content': transcript, 'source': 'live_transcript'})
         session.messages.append({'role': 'assistant', 'content': answer})
         session.messageCount = len(session.messages)
         session.updatedAt = datetime.now(timezone.utc).isoformat()

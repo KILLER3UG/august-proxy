@@ -29,9 +29,22 @@ SOURCE_TOOL = 'tool'
 SOURCE_HARNESS_NUDGE = 'harness_nudge'
 SOURCE_QUEUED_USER = 'queued_user'
 SOURCE_SUBAGENT_RESULTS = 'subagent_results'
+# Passive memory delivery is written INTO the transcript as role='user' with no
+# turn (automation_memory.py), and a Live/BTW exchange is appended the same way
+# (routers/live.py). Neither is the human talking, and a memory body can easily
+# contain 'actually' or "don't" — which the episode miner used to read as the user
+# correcting the model. Tagged at the write, so no prefix list has to chase it.
+SOURCE_MEMORY_DELIVERY = 'memory_delivery'
+SOURCE_LIVE_TRANSCRIPT = 'live_transcript'
 
 MACHINE_SOURCES: frozenset[str] = frozenset(
-    {SOURCE_HARNESS_NUDGE, SOURCE_QUEUED_USER, SOURCE_SUBAGENT_RESULTS}
+    {
+        SOURCE_HARNESS_NUDGE,
+        SOURCE_QUEUED_USER,
+        SOURCE_SUBAGENT_RESULTS,
+        SOURCE_MEMORY_DELIVERY,
+        SOURCE_LIVE_TRANSCRIPT,
+    }
 )
 
 # August-internal keys that ride on in-memory message dicts but must never

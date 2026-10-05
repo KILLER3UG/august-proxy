@@ -512,3 +512,67 @@ class TestStorage:
         assert rows[0]['episodeCount'] == 2
         allRows = json.loads(brain_query('failure-fingerprints', query=''))
         assert len(allRows) == 2
+
+
+class TestProvenanceSweep:
+    """Every harness-authored user-role row must be excluded from the
+    human-speech lane by provenance, not by hoping its wording is benign.
+
+    Found by grepping every write of ``{'role': 'user'}`` that reaches a
+    persisted transcript: passive memory delivery (automation_memory.py) and the
+    Live/BTW exchange (routers/live.py) both append harness text as the user and
+    neither tagged ``source``, so before 052-era provenance they were read as
+    something the human said.
+    """
+
+    @pytest.mark.parametrize(
+        'source, text',
+        [
+            ('memory_delivery', "Actually, the build uses pnpm — don't run npm install."),
+            ('live_transcript', "Correction: that's wrong, the port is 9090."),
+        ],
+    )
+    def test_the_harness_authored_row_is_not_human_speech(self, brain, source, text):
+        assert em._isMachineRow(source, text) is True
+
+    @pytest.mark.parametrize('source', ['memory_delivery', 'live_transcript'])
+    def test_such_a_row_mines_no_correction_episode(self, brain, source):
+        from app.services.memory_store import init
+        from app.services.memory_store.sessions import save_workbench_session_sot
+
+        init()
+        save_workbench_session_sot(
+            {'id': f'p_{source}', 'title': 't'},
+            [
+                {'role': 'user', 'content': 'set up the proxy'},
+                {
+                    'role': 'user',
+                    'content': "Actually, that's wrong — don't use 9090, use 8080.",
+                    'source': source,
+                },
+                {'role': 'assistant', 'content': 'Switched to 8080.'},
+            ],
+        )
+        assert em.extract_episodes(f'p_{source}') == []
+
+    def test_a_real_human_correction_in_the_same_session_still_counts(self, brain):
+        from app.services.memory_store import init
+        from app.services.memory_store.sessions import save_workbench_session_sot
+
+        init()
+        save_workbench_session_sot(
+            {'id': 'p_mixed', 'title': 't'},
+            [
+                {
+                    'role': 'user',
+                    'content': 'Actually, the deploy target is helm, not compose.',
+                    'source': 'memory_delivery',
+                },
+                # A phrasing the detector does match — the point of the test is
+                # that the injected row is dropped and this one is not.
+                {'role': 'user', 'content': "Don't use compose, use helm."},
+                {'role': 'assistant', 'content': 'Using helm.'},
+            ],
+        )
+        eps = [e for e in em.extract_episodes('p_mixed') if e['kind'] == 'correction_accepted']
+        assert len(eps) == 1, 'the filter must drop the injected row, not the human one'

@@ -451,7 +451,15 @@ def deliver_to_bot_chat(
             # Passive delivery: append as visible user-role history, no turn.
             session = sessions_mod.get_workbench_session(session_id)
             if session is not None:
-                session.messages.append({'role': 'user', 'content': body})
+                session.messages.append(
+                    {
+                        'role': 'user',
+                        'content': body,
+                        # Delivered by the harness, not typed by the user — provenance
+                        # is what keeps it out of episode mining's human-speech lane.
+                        'source': 'memory_delivery',
+                    }
+                )
                 session.messageCount += 1
                 session.updatedAt = _now()
                 sessions_mod.save_sessions()
