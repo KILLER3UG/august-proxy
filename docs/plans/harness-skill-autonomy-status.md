@@ -720,6 +720,45 @@ said `extract-only` while the config default said `propose`.
   `snapshot_before_write` to hand back the ts it wrote so the apply can name the version it took
   back) and the **readable history of auto-changes** (settings only; `auto_apply_history()` is
   already the only reader of those ledger rows).
+
+## Item 14 — probation and the history (the rest of it)
+- `snapshot_before_write` now RETURNS the id it wrote (`''` for a no-op or a swallowed failure).
+  Without an addressable id, "restore the previous version" is a guess the moment anyone else has
+  written the file. The applier carries it as `applyResult.snapshotTs`, and `record_auto_apply`
+  stores it on the ledger row (`version_ts`) — so the record of an auto-change names the exact
+  bytes it can put back.
+- **`harness_rails.probation_revert(...)`** is called by `harness_outcome._file_revert_proposal`
+  BEFORE it files, and returns `None` for everything that is not ours to undo, in which case the
+  old behavior is unchanged. It restores only when ALL of: the outcome's source is a proposal of a
+  skill kind; an `auto_apply` row exists for that proposal (a human's apply is a human's undo);
+  autonomy is still on; a `version_ts` is on file; and **our snapshot is still the newest version**
+  — if a human edited the skill afterwards, restoring would delete their work to undo our mistake,
+  so the regression is left to the human with its proposal. The revert goes through
+  `skill_service.restoreVersion`, item 13's single path, so it is itself recorded in the history.
+- `test_harness_revert_proposal.py` is untouched and still green: that file pins the PROPOSAL
+  APPLIER never undoing a learning write. Probation is the measurement job putting back bytes it
+  took, through a different door, and the distinction is written into both docstrings.
+- The kill switch stops this too, deliberately, even though refusing means a known regression
+  stays in place: "off" has to mean the machine is not writing to my files, in either direction.
+  The honest consequence is that the revert proposal is filed instead, so the human is handed the
+  regression rather than the machine quietly fixing or ignoring it. Pinned by
+  `test_the_kill_switch_hands_the_regression_to_the_human`.
+- **History**: `GET /api/harness/proposals/auto-history` (registered BEFORE `/{pid}`, or the
+  literal would be captured as a proposal id and 404) joins `auto_apply` rows to their
+  `probation_revert` and returns `{autonomy, changes[]}`. The switch rides every response: a list
+  of auto-changes without it reads as "this is what happens" when it is "what happened".
+  Frontend: one `<details>` disclosure in the Review Inbox, rows labelled by skill + relative time
+  (never the proposal id), `restored` on the reverted ones, and NOTHING rendered when the list is
+  empty — the switch state already says it.
+- Known limit, not fixed (inventing it would be a new feature): after a probation revert the same
+  distiller verdict can re-file and re-apply tomorrow, because a reverted skill is not
+  blacklisted. The per-day and per-skill rails bound the rate, not the repeat. Worth a decision
+  with the user rather than a guessed blocklist.
+- Checks: 8 new tests red-first (arity error on `record_auto_apply` was the honest red) then green,
+  **131 passed** across probation/rails/revert-proposal/reviewer/pass/versions/outcome-P5,
+  ruff clean on `app/` + the new tests, mypy clean on the four changed modules, 160 frontend tests
+  in `settings/__tests__` (23 files), `tsc --noEmit` clean, and `check:api` / `check:api-index`
+  green after regeneration (diffs additive: +39 spec, +60 client, 7 lines of index).
 - Item 14 rails-core checks: 25 new tests red-first then green, 96 across
   rails/reviewer/proposal-path/brain-config/propose-mode, and a broad
   `-k "brain or harness or skill or review or distill or consolid or config or autonomy or learning"`

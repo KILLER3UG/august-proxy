@@ -9702,6 +9702,45 @@
         "summary": "Listproposals"
       }
     },
+    "/api/harness/proposals/auto-history": {
+      "get": {
+        "description": "Every change the machine made by itself, newest first.\n\nRegistered BEFORE ``/{pid}`` on purpose: a literal path after the parameter\nroute would be swallowed as a proposal id and answer 404 for a queue that\nexists.\n\nThe history is the ledger (``action='auto_apply'`` joined to its\n``probation_revert``), and `autonomy` rides every response because a list of\nauto-changes with no state of the switch next to it reads as \"this is what\nhappens\" when it may be \"this is what happened\".",
+        "operationId": "autoHistory_api_harness_proposals_auto_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Autohistory"
+      }
+    },
     "/api/harness/proposals/inbox/count": {
       "get": {
         "description": "Open review counts across every review queue — the settings-rail\nbadge. Deliberately cheap: counts only (file-name scan + one SQL count),\nno payloads, safe to poll on an interval.\n\nThe badge exists because the queues were invisible: a proposal filed\nSep 4 sat unreviewed for a week while its only surfacing sat behind\nSettings (tier 'hidden').",

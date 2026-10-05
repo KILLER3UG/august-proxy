@@ -716,7 +716,7 @@ def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
         # P2#13: preserve the file this write replaces before it lands.
         from app.services.skill_versions import snapshot_before_write
 
-        snapshot_before_write(
+        snapshotTs = snapshot_before_write(
             skill_dir,
             content,
             actor='distiller',
@@ -747,6 +747,10 @@ def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
             'version': version,
             'status': status,
             'superseded': supersededResult,
+            # The snapshot this write took. Auto-apply records it so probation can
+            # name the exact bytes to put back; '' when there was nothing to
+            # snapshot (a create), which is probation's signal to ask a human.
+            'snapshotTs': snapshotTs,
         }
     except ValueError as exc:
         return {'ok': False, 'error': str(exc)}
@@ -949,7 +953,11 @@ def review_proposal(
         # deliberately not recorded here.
         from app.services.harness_rails import record_auto_apply
 
-        record_auto_apply(pid, str(as_dict(row.get('payload')).get('name') or ''))
+        record_auto_apply(
+            pid,
+            str(as_dict(row.get('payload')).get('name') or ''),
+            str(as_dict(result.get('applyResult')).get('snapshotTs') or ''),
+        )
 
     return {
         'ok': status in ('applied', 'rejected'),

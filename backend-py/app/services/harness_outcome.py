@@ -273,13 +273,15 @@ def _source_change(key: str) -> tuple[str, str]:
 
 
 def _file_revert_proposal(r: Any, before: dict[str, Any], after: dict[str, Any], days: int) -> None:
-    """File a human-reviewable revert proposal for a measured regression.
+    """Answer a measured regression: undo it if it is ours, else ask a human.
 
     A 'regressed' verdict is the ledger's one unambiguous negative signal: the
-    change it booked measurably hurt. Undoing a learning write is not a call
-    the machine may make on its own, so the ledger only *files* — carrying the
-    source's own rollback text and a payload link back to this outcome row so
-    the reviewer can check the numbers behind the verdict.
+    change it booked measurably hurt. Undoing a change a HUMAN approved is not a
+    call the machine may make on its own, so this only *files* — carrying the
+    source's own rollback text and a payload link back to this outcome row. The
+    one exception is probation: a change the rails applied themselves, still
+    addressable to the snapshot they took, is put back through item 13's restore
+    path and nothing is filed.
 
     Never raises (the caller's best_effort site is the backstop).
     """
@@ -298,6 +300,16 @@ def _file_revert_proposal(r: Any, before: dict[str, Any], after: dict[str, Any],
             'no longer on file'
         )
     subject = change or f'the {kind} change on {target}'
+    # Probation first. If this regression is a change the rails applied by
+    # themselves and the version is still addressable, putting it back is the
+    # whole answer — filing a "revert it?" proposal after the fact would ask the
+    # human to approve something already done. Anything else (a human's apply,
+    # autonomy off, a file someone edited since) returns None and the proposal
+    # path below stands exactly as it was.
+    from app.services.harness_rails import probation_revert
+
+    if probation_revert(source, key, kind, target) is not None:
+        return
     problem = f'Measured regression — revert {subject}?'
     evidence = json.dumps(
         {'verdict': 'regressed', 'windowDays': days, 'before': before, 'after': after},

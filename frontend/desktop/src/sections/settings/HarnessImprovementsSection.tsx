@@ -56,6 +56,21 @@ interface ProposalsResponse {
   openCount: number;
 }
 
+interface AutoChange {
+  at: string;
+  proposalId: string;
+  skill: string;
+  versionTs: string;
+  reverted: boolean;
+}
+
+interface AutoHistoryResponse {
+  /** Which way the switch is set right now — a list of auto-changes with no
+   *  state beside it reads as "this is what happens" when it is "what happened". */
+  autonomy: boolean;
+  changes: AutoChange[];
+}
+
 interface MemoryProposalRow {
   id: number;
   proposalType: string;
@@ -116,6 +131,55 @@ function memoryToProposal(r: MemoryProposalRow): Proposal {
 
 function rowKey(p: Proposal): string {
   return `${p.queue}:${p.id}`;
+}
+
+/** Item 14's readable history of what August changed by itself.
+ *
+ * One disclosure inside the inbox rather than a new section: "what happened to
+ * my agent while I wasn't looking" is the question this page already answers,
+ * and a second page would be a second place to look. Rows name the skill and
+ * when, never the proposal id — the id is a key, not a label.
+ *
+ * Renders nothing when the list is empty. "August has changed nothing by
+ * itself" is not information; the switch state in the header already says it.
+ */
+function AutoChangeHistory() {
+  const historyQ = useQuery({
+    queryKey: ['harness-auto-history'],
+    queryFn: () =>
+      api.get<AutoHistoryResponse>('/api/harness/proposals/auto-history'),
+    staleTime: 60_000,
+  });
+  const changes = historyQ.data?.changes ?? [];
+  if (!changes.length) return null;
+  const autonomy = historyQ.data?.autonomy ?? false;
+
+  return (
+    <details
+      data-testid="auto-change-history"
+      className="shrink-0 rounded-xl border border-border/50 bg-card/40 px-3 py-2"
+    >
+      <summary className="cursor-pointer text-2xs text-muted-foreground">
+        {changes.length} change{changes.length === 1 ? '' : 's'} applied by itself ·{' '}
+        {autonomy ? 'autonomy is on' : 'autonomy is off'}
+      </summary>
+      <ul className="mt-2 space-y-1">
+        {changes.map((c) => (
+          <li
+            key={c.proposalId}
+            data-testid="auto-change-row"
+            className="flex flex-wrap items-baseline gap-x-2 text-2xs"
+          >
+            <span className="text-foreground">{c.skill || 'a skill'}</span>
+            <span className="text-muted-foreground/70">{formatTimeAgo(c.at)}</span>
+            {/* Probation put this one back. Said plainly, because a change that
+                no longer exists still deserves its line in the record. */}
+            {c.reverted && <span className="text-muted-foreground">restored</span>}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
 }
 
 export function HarnessImprovementsSection() {
@@ -316,6 +380,8 @@ export function HarnessImprovementsSection() {
           </button>
         </div>
       </header>
+
+      <AutoChangeHistory />
 
       {error && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">

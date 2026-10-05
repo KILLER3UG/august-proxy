@@ -57,6 +57,27 @@ async def inboxCount():
     return {'harness': harness, 'memory': memory, 'total': harness + memory}
 
 
+@router.get('/auto-history')
+async def autoHistory(limit: int = 50):
+    """Every change the machine made by itself, newest first.
+
+    Registered BEFORE ``/{pid}`` on purpose: a literal path after the parameter
+    route would be swallowed as a proposal id and answer 404 for a queue that
+    exists.
+
+    The history is the ledger (``action='auto_apply'`` joined to its
+    ``probation_revert``), and `autonomy` rides every response because a list of
+    auto-changes with no state of the switch next to it reads as "this is what
+    happens" when it may be "this is what happened".
+    """
+    from app.services.harness_rails import auto_apply_history, autonomy_enabled
+
+    return {
+        'autonomy': autonomy_enabled(),
+        'changes': auto_apply_history(limit=limit),
+    }
+
+
 @router.get('/{pid}')
 async def getProposal(pid: str):
     row = harness_self_improve.get_proposal(pid)

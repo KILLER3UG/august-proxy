@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -245,13 +246,17 @@ def _content_check(payload: dict[str, Any]) -> dict[str, Any] | None:
 # ── The record ────────────────────────────────────────────────────────────
 
 
-def record_auto_apply(pid: str, skill: str) -> None:
+def record_auto_apply(pid: str, skill: str, versionTs: str = '') -> None:
     """Append the auto-apply to the proposal ledger — the one store for it.
 
     Written by the decide path after a successful automatic apply, and read back
-    by the rate, per-skill and burn-in rules. It is a ledger row and not a new
-    table because the ledger already answers "who did what, when", and a second
-    history is a second thing that can disagree with the first.
+    by the rate, per-skill and burn-in rules and by probation. It is a ledger row
+    and not a new table because the ledger already answers "who did what, when",
+    and a second history is a second thing that can disagree with the first.
+
+    ``versionTs`` is the snapshot the apply took. Without it a regression has
+    nothing addressable to put back, and probation would have to guess at "the
+    previous version" after somebody else has written one.
     """
     from app.services.harness_self_improve import _append_ledger
 
@@ -261,7 +266,78 @@ def record_auto_apply(pid: str, skill: str) -> None:
         'action': 'auto_apply',
         'target_key': str(pid),
         'skill': str(skill or '')[:120],
+        'version_ts': str(versionTs or '')[:32],
     })
+
+
+# ── Probation ─────────────────────────────────────────────────────────────
+
+
+def probation_revert(
+    source: str, key: str, kind: str, target: str
+) -> dict[str, Any] | None:
+    """Put back a change the rails themselves applied, if it can be named.
+
+    Called by the measurement job on a 'regressed' verdict, BEFORE it files the
+    human's revert proposal. Returning a receipt means the undo happened and no
+    proposal is filed; returning ``None`` means this is not ours to undo and the
+    caller's existing behavior stands, unchanged.
+
+    Not the proposal applier: `test_harness_revert_proposal.py` pins that
+    approving a `revert` proposal must never silently revert, and that still
+    holds — this is the job that measured the harm restoring bytes it took,
+    through item 13's single restore path.
+    """
+    if source != 'proposal' or kind not in AUTO_APPLIABLE_KINDS:
+        return None
+    pid = key.split(':', 1)[1] if ':' in key else ''
+    row = next(
+        (
+            r
+            for r in reversed(_auto_apply_rows())
+            if str(r.get('target_key') or '') == pid
+        ),
+        None,
+    )
+    if row is None:
+        return None  # a human applied it — the undo is a human's too
+    if not autonomy_enabled():
+        return None  # off means the machine writes nothing, even to put things back
+    skill = str(row.get('skill') or '') or str(target or '')
+    ts = str(row.get('version_ts') or '')
+    if not skill or not ts:
+        return None  # nothing addressable; the proposal carries the honest text
+
+    from app.services import skill_service, skill_versions
+
+    try:
+        resolved = skill_service.get(skill)
+        versions = skill_versions.list_versions(Path(str((resolved or {}).get('path') or '')).parent)
+    except (OSError, ValueError):
+        return None
+    if not versions or str(versions[0].get('ts') or '') != ts:
+        # Our snapshot is no longer the newest version: someone edited the skill
+        # since. Restoring would delete their work to undo our mistake.
+        return None
+
+    try:
+        skill_service.restoreVersion(skill, ts)
+    except Exception:  # noqa: BLE001 -- a refused restore falls back to the human, not a crash
+        logger.debug('probation restore refused', exc_info=True)
+        return None
+
+    from app.services.harness_self_improve import _append_ledger
+
+    _append_ledger({
+        'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        'actor': 'reviewer',
+        'action': 'probation_revert',
+        'target_key': pid,
+        'skill': skill[:120],
+        'version_ts': ts[:32],
+        'reason': 'measured as a regression while on probation',
+    })
+    return {'reverted': True, 'skill': skill, 'versionTs': ts}
 
 
 def _auto_apply_rows() -> list[dict[str, Any]]:
@@ -318,8 +394,32 @@ def _int(value: Any, default: int) -> int:
         return default
 
 
-# Kept for the history surface (item 14's readable auto-change list): the rows
-# are the record, and this is the only reader that filters them by intent.
+# The history surface (item 14's readable auto-change list). The ledger rows are
+# the record; this is the only reader that joins an apply to its revert and
+# shapes them for settings — newest first, one entry per change the machine made.
 def auto_apply_history(limit: int = 50) -> list[dict[str, Any]]:
-    rows = _auto_apply_rows()
-    return rows[-max(1, int(limit)):][::-1]
+    from app.services.harness_self_improve import read_ledger
+
+    rows = read_ledger(limit=_LEDGER_TAIL)
+    reverted = {
+        str(r.get('target_key') or '')
+        for r in rows
+        if r.get('action') == 'probation_revert'
+    }
+    out: list[dict[str, Any]] = []
+    for r in reversed(rows):
+        if r.get('action') != 'auto_apply':
+            continue
+        pid = str(r.get('target_key') or '')
+        out.append(
+            {
+                'at': str(r.get('at') or ''),
+                'proposalId': pid,
+                'skill': str(r.get('skill') or ''),
+                'versionTs': str(r.get('version_ts') or ''),
+                'reverted': pid in reverted,
+            }
+        )
+        if len(out) >= max(1, int(limit)):
+            break
+    return out

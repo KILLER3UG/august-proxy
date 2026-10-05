@@ -2829,6 +2829,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/harness/proposals/auto-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Autohistory
+         * @description Every change the machine made by itself, newest first.
+         *
+         *     Registered BEFORE ``/{pid}`` on purpose: a literal path after the parameter
+         *     route would be swallowed as a proposal id and answer 404 for a queue that
+         *     exists.
+         *
+         *     The history is the ledger (``action='auto_apply'`` joined to its
+         *     ``probation_revert``), and `autonomy` rides every response because a list of
+         *     auto-changes with no state of the switch next to it reads as "this is what
+         *     happens" when it may be "this is what happened".
+         */
+        get: operations["autoHistory_api_harness_proposals_auto_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/harness/proposals/inbox/count": {
         parameters: {
             query?: never;
@@ -14021,6 +14050,37 @@ export interface operations {
             query?: {
                 status?: string;
                 origin?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    autoHistory_api_harness_proposals_auto_history_get: {
+        parameters: {
+            query?: {
+                limit?: number;
             };
             header?: never;
             path?: never;
