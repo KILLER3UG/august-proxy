@@ -973,3 +973,19 @@ enable/disable path, never by deleting.
 - Backend tests pin the distinction end-to-end through the real reviewer path: a create's history
   row is `created: true` with an empty `versionTs` (there genuinely is nothing to restore), a patch
   is `created: false` with a version the applier's own snapshot took.
+
+## Real-app re-check of the two chip branches (2026-10-06, after item 4)
+Same method as before: the backend serving `web-dist` on :8092 against a labeled test profile
+(`C:\Dev\august-verify-profile2`, deleted afterwards — the live store again shows no
+`*-undo-demo` skill), headless chromium, real clicks, files inspected on disk afterwards.
+- **Create branch.** Chip read `August updated created-undo-demo by itself | Undo — disable the
+  skill`. After the click: the file **still exists**, its frontmatter gained `disabled: true`, the
+  body text is preserved, and the chip is gone. No 4xx/5xx. So the undo is the soft disable, not a
+  delete — the property the user asked for, measured rather than asserted.
+- **Patch branch (regression, because the mutation code was rewritten).** Chip read
+  `Undo — restore the earlier version`; the file went from the v2 body back to the v1 body, the
+  chip dismissed itself, no error responses.
+- `GET /api/harness/proposals/auto-history` returned `created: true` for the create row and
+  `created: false` with a real `versionTs` for the patch row, over HTTP — the field the UI branches
+  on is produced by the server, not inferred in the browser.
+- Screenshots: `.probe-artifacts/13…15`.
