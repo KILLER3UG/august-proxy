@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 vi.mock('@/api/client', () => ({
@@ -87,7 +87,9 @@ describe('SkillEvolvedChip', () => {
     renderChip();
     // The query has landed — the chip would render now if it were going to.
     await waitFor(() => expect(getMock).toHaveBeenCalled());
-    await new Promise((r) => setTimeout(r, 50));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
     expect(screen.queryByTestId('skill-evolved-chip')).toBeNull();
   });
 
@@ -134,7 +136,12 @@ describe('SkillEvolvedChip', () => {
     await waitFor(() => expect(screen.queryByTestId('skill-evolved-chip')).toBeNull());
 
     renderChip();
-    await new Promise((r) => setTimeout(r, 50));
+    // act()-wrapped settling: a bare sleep lets the query resolve outside the
+    // test's act scope, which React rightly complains about and which could
+    // also hide an update-after-unmount.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
     expect(screen.queryByTestId('skill-evolved-chip')).toBeNull();
   });
 
