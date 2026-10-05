@@ -232,7 +232,13 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # Part 16/17 skillLearning: off = no promotion judge; extract-only
     # (ship default) = mining + promote proposals; full = also draft skill
     # bodies. Governs harness_promote.run_promotion_pass.
-    ('skillLearning', 'skill_learning', 'extract-only', 'str'),
+    # 'propose' is the shipped default: the distiller's create/amend verdicts
+    # already end at save_proposal (they return 'proposal-filed' and never write
+    # a SKILL.md), so admitting this mode lets lessons reach the inbox without
+    # introducing any new apply path. 'full' remains the mode where a skill
+    # draft is treated as trustworthy enough to act on; 'off' still stops the
+    # pass before a verdict is applied.
+    ('skillLearning', 'skill_learning', 'propose', 'str'),
     # Dedicated judge model for the episode distiller
     # (empty = fall back to the background-review memory model, then the
     # titler resolver order — keyless gateways keep working).
@@ -428,8 +434,11 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 return (False, f'{key!r} must be a string (got {type(value).__name__})')
             if len(value) > 120:
                 return (False, f'{key!r} must be at most 120 chars (got {len(value)})')
-            if key == 'skillLearning' and value not in ('off', 'extract-only', 'full'):
-                return (False, f'{key!r} must be off | extract-only | full (got {value!r})')
+            if key == 'skillLearning' and value not in ('off', 'extract-only', 'propose', 'full'):
+                return (
+                    False,
+                    f'{key!r} must be off | extract-only | propose | full (got {value!r})',
+                )
         elif kind == 'float':
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 return (False, f'{key!r} must be a number (got {type(value).__name__})')

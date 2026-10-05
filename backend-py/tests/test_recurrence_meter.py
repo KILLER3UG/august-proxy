@@ -173,6 +173,9 @@ class TestCuratorReport:
         r = asyncio.run(call())
         assert r.status_code == 200
         data = r.json()
-        assert data['mode'] in ('off', 'extract-only', 'full')
+        # Item 11 added 'propose' (the shipped default: skill verdicts reach
+        # the inbox and stop). The point of this assertion is unchanged — the
+        # report may only echo a mode the config recognises.
+        assert data['mode'] in ('off', 'extract-only', 'propose', 'full')
         assert {'episodes', 'tier2', 'judged', 'fingerprints', 'flaggedFingerprints', 'resolvedFingerprints'} <= set(data['learning'])
         assert 'amendBodyEnabled' in data['precision']

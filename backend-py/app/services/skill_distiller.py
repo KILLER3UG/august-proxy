@@ -607,19 +607,24 @@ def _learnedSkillText(name: str) -> tuple[str, str] | None:
 
 
 def apply_verdict(
-    verdict: dict[str, Any], fingerprint: str, mode: str = 'extract-only', scope: str = ''
+    verdict: dict[str, Any], fingerprint: str, mode: str = 'propose', scope: str = ''
 ) -> str:
     """Apply one judge verdict. Returns a short result label.
 
-    ``mode``: extract-only (ship default) applies memory verdicts only —
-    skill drafting requires ``full``; ``off`` never reaches here.
+    ``mode``: ``propose`` (ship default) files skill verdicts into the inbox
+    and stops; ``full`` lets a drafted skill be acted on; ``extract-only``
+    refuses skill drafting entirely; ``off`` never reaches here.
     ``scope``: the M-2 scope of the source episode (Part 26 6.4) — a Bot's
     distilled lessons land in the Bot's own memory home instead of global.
     """
     action = str(verdict.get('action', 'none') or 'none').strip().lower()
     episodeId = verdict.get('episode')
 
-    if action in ('create_skill', 'amend_trigger', 'amend_body') and mode != 'full':
+    # extract-only is the mode that never lets a skill verdict become a draft.
+    # 'propose' files the verdict into the inbox and stops — those branches end
+    # at save_proposal and return 'proposal-filed', so nothing here applies a
+    # change; the human still decides through decide_proposal.
+    if action in ('create_skill', 'amend_trigger', 'amend_body') and mode == 'extract-only':
         return 'skipped-extract-only'
 
     if action == 'memory':
@@ -858,9 +863,9 @@ def run_distiller_pass(dryRun: bool = False) -> dict[str, Any]:
     try:
         from app.services.brain_config_service import getRuntimeConfig
 
-        mode = str(getRuntimeConfig().get('skillLearning', 'extract-only') or 'extract-only')
+        mode = str(getRuntimeConfig().get('skillLearning', 'propose') or 'propose')
     except Exception:
-        mode = 'extract-only'
+        mode = 'propose'
     if mode == 'off':
         return {'skipped': 'skillLearning=off'}
     if _in_cooldown():
