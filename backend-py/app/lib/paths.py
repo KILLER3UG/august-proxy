@@ -25,6 +25,16 @@ def dataDir() -> Path:
             'pytest run without AUGUST_DATA_DIR isolation — refusing to touch '
             'the live data dir (see tests/conftest.py isolatedData)'
         )
+    return _repoDataDir()
+
+
+def _repoDataDir() -> Path:
+    """The checkout's own ``data/`` — the user's live stores.
+
+    Named once so `dataDir()`'s fallback and the pytest guard below compare
+    against the same path. Duplicating it is how a guard ends up checking a
+    directory that does not exist and passes everything.
+    """
     return Path(__file__).resolve().parent.parent.parent.parent / 'data'
 
 
@@ -77,6 +87,16 @@ def assertPytestDataDirIsolated(label: str) -> None:
         # The hard guard in dataDir() will have raised; this is unreachable.
         return
     if not _isUnderPytestBasetemp(Path(data_dir)):
+        # Warning was the original behavior, and it is what let a leak through:
+        # a test that pointed AUGUST_DATA_DIR at the user's real stores wrote
+        # anyway and the only trace was a log line no one read. Refusing that
+        # specific path costs nothing — legitimate tests use tmp_path.
+        if Path(data_dir).resolve() == _repoDataDir().resolve():
+            raise RuntimeError(
+                f'pytest writer {label!r} resolved AUGUST_DATA_DIR to the live '
+                f'store {data_dir!r} — refusing to touch the user\'s data '
+                '(see tests/conftest.py isolatedData)'
+            )
         logger.warning(
             'Part 27 E2: writer %s invoked under pytest with AUGUST_DATA_DIR=%r '
             'that is not under the pytest basetemp — this risks writing to '
