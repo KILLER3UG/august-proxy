@@ -916,19 +916,14 @@ async def _review_refine_batch(
     """
     if not applied:
         return True, 'nothing applied'
-    if producer_model and review_model and producer_model == review_model:
-        return False, (
-            f'reviewer model {review_model!r} is the same as the producer — '
-            'same-model judging is inert (Part 10 rule); batch discarded'
-        )
-    try:
-        from app.services.workbench.providers import make_review_llm_client
+    # Independence and availability are one rule, owned by review_gate, because
+    # a second reviewer (skill proposals) must not drift from this one. It is
+    # fail-closed: no reviewer always comes with a reason.
+    from app.services.review_gate import resolve_independent_reviewer
 
-        reviewer = make_review_llm_client(None, review_model)
-    except Exception:
-        reviewer = None
+    reviewer, refusal = resolve_independent_reviewer(producer_model, review_model)
     if reviewer is None:
-        return False, 'no reviewer model available — discard-default'
+        return False, f'{refusal} — discard-default'
     summary = '\n'.join(
         f"- {a.get('op')} {a.get('kind')} {a.get('id')}: "
         f"rationale={as_str(a.get('rationale'))[:200]!r} expected={as_str(a.get('expectedOutcome'))[:200]!r}"
