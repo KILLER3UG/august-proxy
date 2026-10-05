@@ -307,11 +307,16 @@ words in description). See `skill_service` validation helpers.
 
 ### Curator retired a skill I need
 
-There is no `.archive/` directory and no restore endpoint — curation lifecycle is
+There is no `.archive/` directory and no archive-restore route — curation lifecycle is
 a **`SKILL.md` frontmatter flag** (draft / active / superseded / retired; `stale` and `archived` are
 rejected by `setStatus` — see `skill_service.SKILL_STATUSES`), and
 the old `POST /api/curator/restore/{name}` / `/pin/{name}` routes never survived
 the curator rewrite.
+
+Do not confuse this with `POST /api/skills/{name}/versions/{ts}/restore`, which
+does exist: it puts one retained `SKILL.md` snapshot back. That undoes a content
+change; it does not un-retire a skill, because retirement is a frontmatter flag
+and the snapshot it would restore carries that flag with it.
 
 To bring one back, fix the frontmatter. `PATCH /api/skills/{name}` flips
 `disabled` and rewrites `body` / `description` / `trigger` / `category`, but it
