@@ -487,3 +487,52 @@ second reader.
    brain-config write path. Small, but it may expose other leaking writers, so I stopped.
 3. Whether to add a `distiller_judge_succeeded` event, so "0 successes" stops being
    unfalsifiable. Item 7 proved the loop can only ever report failure today.
+
+## Item log — session 5 (Pass 2 + the small fixes)
+- 2 (isolation leak) → `e0ef6fb8` → the guard that protects the user's stores only
+  WARNINGED, and no JSON writer was guarded at all. Now: `assertPytestDataDirIsolated`
+  RAISES for the checkout data dir, and the refusal sits in `write_json_atomic` — the one
+  function every store write passes through (config/providers/automations/aliases/background
+  review) — judging the TARGET path, not the env var. `data_2`-style siblings are not blocked.
+  Self-inflicted trace recorded: my first guard consulted the env var, warned instead of
+  raising, and my own test wrote a 20-byte providers.json into the worktree data dir. Removed.
+- 3a (qualified hint) → `a74cae4e` → `provider/model` hints now split; a qualified provider
+  must be a REAL store entry (resolve() fabricates one when nothing matches, by design for bare
+  model names). Reached after three wrong guesses on my own test, each recorded.
+- 3b (judge success) → `7cf222a9` → one `distiller_judge_succeeded` row per judged batch (not
+  per verdict); `learning_report()['judge']` derives successes/failures/lastSuccess/
+  lastFailure/details from those rows — one backend consumer, no frontend reference, so no
+  visible UI. "0 successes" is now falsifiable.
+- 8 (review_gate) → `77b15938` → one independence rule, two callers; lazy import guarded twice
+  (source check + a by-path patch test). refine_store defers to it; its wording contracts hold.
+- 9 (reviewer verified) → `d4ec5f4d` → **gate verified; the real reviewer call is blocked by an
+  upstream funding error** (`{"error":{"type":"server_error","message":"Upstream request failed:
+  Insufficient account funds"}}`) on provider `opencode-zen-41527c`. Same-model / unresolved /
+  no-client all fail closed. `reviewLlm`'s four-into-one `''` swallow is fixed — each cause is
+  now named. PENDING the user's action (fund or switch provider) to re-run the real call; add
+  that to the end of the backlog.
+- 10 (reviewer decides, never edits) → `6cf6dbae` → `review_proposal` maps KEEP/DISCARD to
+  exactly one `decide_proposal` and nothing else; everything unusable fails closed to the inbox.
+  `decide_proposal` now takes an `actor` so a reviewer decision is not logged as a human's.
+- 11 (skillLearning 'propose') → `8df7c710` → new mode files skill verdicts into the inbox and
+  stops (the branches already ended at `save_proposal`). Default switched because the live config
+  does NOT set `skillLearning`. Auto-apply still off. Named contract rewritten:
+  `test_recurrence_meter.py::test_report_blob`.
+- 12 (frontmatter merge) → `75bf3587` → **no code changed; the merge was already correct.** The
+  deliverable is 10 tests pinning each carried field and that a disabled skill stays disabled
+  (proven to bite by breaking the carry and watching exactly those two fail).
+
+## Live-config correction the user must apply (not done by me — hard stop)
+The live store's brain config carries TWO test artifacts:
+  - `auxiliary.cognitive.orchestrator.skill_learning_judge_model = 'judge-model-x'` (snake_case)
+    → set to your reviewer model, or clear it so `resolve_judge_model` falls back.
+  - `_tier3_test_flag` (stray top-level key) → safe to remove.
+Set these in Settings, or tell me the model id and I'll put the exact edit in a report.
+
+## Remaining backlog
+- 13 (undo): the version-restore route + one Undo button; probation auto-revert uses version
+  restore, not a revert proposal; update the `SkillVersionsPanel` comment. Not started.
+- 14 (rails): hard-limit categories to inbox, daily rate limit + one change per skill per day,
+  probation, kill switch, readable history, burn-in counter. Not started.
+- 15 (SkillEvolvedChip announces only applied changes, with Undo). Not started.
+- Re-run the real reviewer call once the provider funding is fixed (item 9).
