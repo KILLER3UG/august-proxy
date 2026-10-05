@@ -32,9 +32,19 @@ async def listProposals(status: str = '', origin: str = ''):
             and str(p['payload'].get('origin', '')) == origin
         ]
     return {
-        'proposals': proposals,
+        'proposals': [_withReviewLine(p) for p in proposals],
         'openCount': len(harness_self_improve.list_proposals(status='open')),
     }
+
+
+def _withReviewLine(row: dict) -> dict:
+    """Add `reviewLine` — the reviewer's verdict as one sentence.
+
+    Formed here, from `review_summary()`, because the record and its wording
+    must not be two things that can drift. `''` when no reviewer saw it, which
+    is how the inbox knows to omit the line rather than render a blank one.
+    """
+    return {**row, 'reviewLine': harness_self_improve.review_summary(row)}
 
 
 @router.get('/inbox/count')
@@ -83,7 +93,7 @@ async def getProposal(pid: str):
     row = harness_self_improve.get_proposal(pid)
     if not row:
         raise HTTPException(status_code=404, detail=f'Proposal {pid!r} not found')
-    return row
+    return _withReviewLine(row)
 
 
 @router.post('/{pid}/decide')

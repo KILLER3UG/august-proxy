@@ -1,13 +1,15 @@
 /* ── Review inbox: the reviewer's one line (handoff §5) ──────────────────────
- * The reviewer pass records a verdict on every open skill proposal. The inbox
- * must show it, because a proposal the human cannot see reviewed is a
- * proposal they will re-read from scratch. One muted line, in the existing
- * detail header — no new section, no new colors.
+ * The reviewer pass records a verdict on every open skill proposal, and the
+ * inbox must show it: a proposal the human cannot see reviewed is a proposal
+ * they will re-read from scratch. One muted line in the existing detail header
+ * — no new section, no new colors.
  *
- * The SHAPE of the line is the backend's: `review_summary()` in
- * harness_self_improve.py is the source of these exact prefixes, and it is
- * pinned there by test_reviewer_pass.py. If either side changes the wording,
- * a test on that side fails and points at the other.
+ * The SENTENCE is formed by the backend (`review_summary()`, shipped as
+ * `reviewLine` on both proposal reads) and pinned there by
+ * `test_reviewer_pass.py::TestTheLineIsFormedOnce`. These tests pin that the
+ * inbox renders it, omits it when it is `''`, and does not invent its own
+ * wording — an earlier version of this file re-formatted the structured `review`
+ * object here, which put one record's phrasing in two places.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -35,31 +37,27 @@ const base = {
   rollback: 'r',
 };
 
+/** The backend's wording, arriving as one field. */
 const KEEP = {
   ...base,
   id: 'prop_keep',
   problem: 'a proposal the reviewer approved',
-  review: {
-    verdict: 'KEEP',
-    reason: 'the gap is real and durable',
-    model: 'claude-sonnet-5',
-    advisory: true,
-  },
+  reviewLine: 'Reviewer: keep — the gap is real and durable',
 };
 
 const UNAVAILABLE = {
   ...base,
   id: 'prop_unavailable',
   problem: 'a proposal no reviewer could judge',
-  review: {
-    verdict: 'unavailable',
-    reason: 'no reviewer model available',
-    model: '',
-    advisory: true,
-  },
+  reviewLine: 'Reviewer unavailable — no reviewer model available',
 };
 
-const UNREVIEWED = { ...base, id: 'prop_bare', problem: 'a proposal never reviewed' };
+const UNREVIEWED = {
+  ...base,
+  id: 'prop_bare',
+  problem: 'a proposal never reviewed',
+  reviewLine: '',
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -96,13 +94,13 @@ const openDetail = async (problem: string) => {
 };
 
 describe('the reviewer line in the inbox', () => {
-  it('shows a keep verdict as one muted line', async () => {
+  it('renders the line the backend formed, muted', async () => {
     const line = await openDetail('a proposal the reviewer approved');
     expect(line.textContent).toBe('Reviewer: keep — the gap is real and durable');
     expect(line.className).toContain('text-muted-foreground');
   });
 
-  it('names the cause when no reviewer was available', async () => {
+  it('renders the refusal cause the backend named', async () => {
     const line = await openDetail('a proposal no reviewer could judge');
     expect(line.textContent).toBe('Reviewer unavailable — no reviewer model available');
   });
@@ -116,4 +114,37 @@ describe('the reviewer line in the inbox', () => {
     // …and it carries no reviewer line.
     expect(screen.queryByTestId('reviewer-line')).toBeNull();
   });
+
+  it('does not re-word the verdict itself', async () => {
+    // A payload the backend would never send, phrased differently: if the
+    // inbox were composing its own sentence, this would come out looking
+    // plausible instead of verbatim.
+    getMock.mockImplementation((url: string) => {
+      if (url.startsWith('/api/harness/proposals')) {
+        return Promise.resolve({
+          ok: true,
+          openCount: 1,
+          proposals: [
+            {
+              ...base,
+              id: 'prop_verbatim',
+              problem: 'a row whose line must survive untouched',
+              reviewLine: 'Reviewer: keep — verbatim',
+            },
+          ],
+        });
+      }
+      return beforeEachDefault(url);
+    });
+    const line = await openDetail('a row whose line must survive untouched');
+    expect(line.textContent).toBe('Reviewer: keep — verbatim');
+  });
 });
+
+function beforeEachDefault(url: string): Promise<unknown> {
+  if (url.includes('inbox/count')) return Promise.resolve({ open: 1 });
+  if (url.startsWith('/api/august/memory/proposals')) {
+    return Promise.resolve({ ok: true, proposals: [] });
+  }
+  return Promise.resolve({});
+}

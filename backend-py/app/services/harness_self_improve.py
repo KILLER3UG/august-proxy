@@ -1020,6 +1020,81 @@ def _write_review(row: dict[str, Any], review: dict[str, Any]) -> None:
         logging.getLogger(__name__).debug('proposal review write failed', exc_info=True)
 
 
+def _ask_reviewer_blocking(
+    client: Any, row: dict[str, Any], producerModel: str
+) -> tuple[str, str]:
+    """One reviewer call, from either loop shape.
+
+    Mirrors ``skill_distiller._run_batch`` for the reason that file already
+    documents: a bare ``asyncio.run`` RAISES inside a running loop, and the only
+    outcome this call can report is a verdict or an 'unavailable' stamped on the
+    proposal. So an in-loop caller — a route that awaited the job body without
+    the scheduler's thread hop — would stamp EVERY open proposal 'Reviewer
+    unavailable' for a cause that has nothing to do with the reviewer, which is
+    the thirteen-invisible-judge-failures mistake all over again. Off-loop
+    callers get a worker thread owning a fresh loop.
+
+    The scheduled path is unaffected: ``learning_scheduler.run_job_async``
+    already runs the job body in a thread, where there is no running loop.
+    """
+    import asyncio
+
+    timeoutS = 60
+
+    async def go() -> tuple[str, str]:
+        return await asyncio.wait_for(_ask_reviewer(client, row, producerModel), timeout=timeoutS)
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        return _ask_reviewer_off_loop(go, timeoutS)
+
+    try:
+        return asyncio.run(go())
+    except asyncio.TimeoutError:
+        return 'unavailable', f'timeout: reviewer did not answer within {timeoutS}s'
+    except Exception as exc:
+        return 'unavailable', f'{type(exc).__name__}: {str(exc)[:150]}'
+
+
+def _ask_reviewer_off_loop(go: Any, timeoutS: int) -> tuple[str, str]:
+    """Run one reviewer call on a worker thread with a loop of its own."""
+    import asyncio
+    import threading
+
+    box: dict[str, Any] = {}
+
+    def worker() -> None:
+        try:
+            box['result'] = asyncio.run(go())
+        except asyncio.TimeoutError:
+            box['result'] = ('unavailable', f'timeout: reviewer did not answer within {timeoutS}s')
+        except Exception as exc:
+            box['result'] = ('unavailable', f'{type(exc).__name__}: {str(exc)[:150]}')
+
+    thread = threading.Thread(target=worker, daemon=True, name='august-reviewer-call')
+    thread.start()
+    thread.join(timeoutS + 15)
+    if thread.is_alive():
+        # Still holding a socket on its own loop. Naming that beats silence.
+        return 'unavailable', 'reviewer worker outlived its grace window'
+    result = box.get('result')
+    if isinstance(result, tuple) and len(result) == 2:
+        return str(result[0]), str(result[1])
+    return 'unavailable', 'reviewer call returned no verdict'
+
+
+# What may be trimmed off a verdict line: ASCII hyphen, EN dash and EM dash
+# spelled as escapes. A literal list containing only the en dash is what made
+# a model's `KEEP — reason` arrive as `— reason`, so the inbox line read
+# `Reviewer: keep — — reason`. Same class as the correction detector's
+# apostrophe bug (item 4): the punctuation a phone or a model emits is not the
+# punctuation a source file happens to contain.
+_VERDICT_PUNCT = ' -–—:.'
+
+
 async def _ask_reviewer(
     client: Any, row: dict[str, Any], producerModel: str
 ) -> tuple[str, str]:
@@ -1051,10 +1126,10 @@ async def _ask_reviewer(
     # and it must lead. "KEEP DISCARD" is a model that could not decide, and
     # reading it as KEEP is the one mistake this whole gate exists to prevent —
     # so ambiguity fails closed rather than resolving to the permissive reading.
-    words = {w for w in upper.split() if w.strip(' -–:.!') in ('KEEP', 'DISCARD')}
-    first = upper.split()[0].strip(' -–:.!') if upper.split() else ''
+    words = {w for w in upper.split() if w.strip(_VERDICT_PUNCT) in ('KEEP', 'DISCARD')}
+    first = upper.split()[0].strip(_VERDICT_PUNCT) if upper.split() else ''
     if len(words) == 1 and first in ('KEEP', 'DISCARD'):
-        reason = head[len(first) :].strip(' -–:') or text[len(head) :].strip()[:200]
+        reason = head[len(first) :].strip(_VERDICT_PUNCT) or text[len(head) :].strip()[:200]
         return first, reason[:200]
     return 'unavailable', f'answer was not an unambiguous KEEP or DISCARD: {head[:80]!r}'
 
@@ -1114,14 +1189,7 @@ def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
         if dryRun:
             reviewed += 1
             continue
-        try:
-            import asyncio
-
-            verdict, reason = asyncio.run(
-                asyncio.wait_for(_ask_reviewer(client, row, producerModel), timeout=60)
-            )
-        except Exception as exc:
-            verdict, reason = 'unavailable', f'{type(exc).__name__}: {str(exc)[:150]}'
+        verdict, reason = _ask_reviewer_blocking(client, row, producerModel)
         review = {
             'verdict': verdict,
             'reason': reason,

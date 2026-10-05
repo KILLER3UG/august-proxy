@@ -242,3 +242,53 @@ class TestPassMechanics:
         _gate(monkeypatch, None, 'no reviewer model available')
         hsi.run_reviewer_pass()
         assert hsi.review_summary(hsi.get_proposal(pid)).startswith('Reviewer unavailable')
+
+class TestTheLineIsFormedOnce:
+    """The inbox renders one muted line. If the frontend re-words the verdict,
+    there are two formatters for one record and they can disagree — so the
+    backend that STORES the verdict also says how it reads, and the UI renders
+    that field. `review_summary()` is the only wording, and this is the seam
+    that keeps it that way."""
+
+    async def _get(self, url: str):
+        from app.main import app
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as ac:
+            res = await ac.get(url)
+        assert res.status_code == 200, res.text
+        return res.json()
+
+    def _row(self, listing: dict, pid: str) -> dict:
+        return next(p for p in listing['proposals'] if p['id'] == pid)
+
+    @pytest.mark.asyncio
+    async def test_the_listing_carries_the_line_the_inbox_renders(self, brain, monkeypatch):
+        pid = _fileProposal(brain)
+        _gate(monkeypatch, _FakeClient('KEEP — the gap is real and durable'))
+        hsi.run_reviewer_pass()
+
+        listing = await self._get('/api/harness/proposals')
+        assert self._row(listing, pid)['reviewLine'] == (
+            'Reviewer: keep — the gap is real and durable'
+        )
+        single = await self._get(f'/api/harness/proposals/{pid}')
+        assert single['reviewLine'] == self._row(listing, pid)['reviewLine'], (
+            'the two reads must not word the same verdict twice'
+        )
+
+    @pytest.mark.asyncio
+    async def test_an_unreviewed_proposal_carries_an_empty_line(self, brain):
+        pid = _fileProposal(brain)
+        listing = await self._get('/api/harness/proposals')
+        assert self._row(listing, pid)['reviewLine'] == '', (
+            'the UI omits the row when there is nothing to say, so "" is the signal'
+        )
+
+    @pytest.mark.asyncio
+    async def test_an_unavailable_reviewer_is_named_by_the_same_field(self, brain, monkeypatch):
+        pid = _fileProposal(brain)
+        _gate(monkeypatch, None, 'no reviewer model available')
+        hsi.run_reviewer_pass()
+        listing = await self._get('/api/harness/proposals')
+        assert self._row(listing, pid)['reviewLine'].startswith('Reviewer unavailable')

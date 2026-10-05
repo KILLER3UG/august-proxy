@@ -810,3 +810,33 @@ pipe in front of it.
 - Checks: 2 backend tests (one red first) then 10 green in the probation file, 86 green across the
   harness cluster; 6 chip tests + 1 bridge test red-first then green; 169 across
   chat/settings/realtime (25 files); `tsc --noEmit` clean; ruff + mypy clean.
+
+## One reviewer-line formatter (found by the self-diff review)
+- The review asked "is any new code uncalled?" and the answer was yes: `review_summary()` had no
+  production caller, because item 15-era inbox re-implemented its wording in TypeScript. Two
+  formatters for one record is the pattern this project refuses (the tone-split decision rejected a
+  second marker list for exactly this reason), so `routers/harness_proposals.py` now adds
+  `reviewLine` from `review_summary()` on BOTH reads (list and single), and the inbox renders that
+  field. The local `reviewerLine()` and the UI's `review?: {verdict, reason, model, advisory}`
+  type are deleted, not left as an alternative surface.
+- Asserting the exact sentence then exposed **two real defects**, neither of which any previous
+  test could have caught because they only asserted substrings:
+  1. `run_reviewer_pass` called bare `asyncio.run(...)`, which RAISES inside a running loop. The
+     scheduled path is safe (`run_job_async` → `asyncio.to_thread`, no loop), but any in-loop
+     caller — a route that awaited the job body without the thread hop — would have stamped EVERY
+     open proposal `Reviewer unavailable: RuntimeError: asyncio.run() cannot be called from a
+     running event loop`, and the record would look like a reviewer problem. Now handles both loop
+     shapes the way `skill_distiller._run_batch` already does, including a named grace-window
+     timeout instead of silence.
+  2. The verdict parser stripped `' -–:.'` — an EN dash — while models answer `KEEP — reason` with
+     an EM dash, so the reason kept its leading dash and the inbox line read
+     `Reviewer: keep — — reason`. Fixed with `_VERDICT_PUNCT` spelling both as escapes. **This is
+     item 4's bug class a second time**: the punctuation a model or a phone emits is not the
+     punctuation a source file happens to contain, and a substring assertion cannot see it.
+- Timeout reason wording changed from "did not answer within 60s" to name `timeout`, because
+  `test_a_timeout_is_unavailable` pins that the reason contains 'time' — an existing contract the
+  refactor briefly broke, caught by running the file rather than by trusting the new code.
+- Checks: 3 backend tests red-first then green (79 across reviewer/rails/probability/proposal-path
+  after the loop fix), 161 frontend in `settings/__tests__` (23 files), `tsc --noEmit` clean, ruff
+  clean on `app/` + tests, `check:api` and `check:docs` green (the response shape is untyped in the
+  spec, so no regeneration churn for a derived key).
