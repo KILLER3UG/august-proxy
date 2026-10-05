@@ -421,3 +421,27 @@ own `MACHINE_SOURCES` closed-world guard, fixed in `be62ba0c`.
 Item 7 — measure the "13 failures / 0 successes" distiller-judge claim from a read-only
 snapshot using the correct lifecycle columns, then reproduce with a real model call and report
 the cause. Fix only if clear and small; otherwise stop and ask. Then Pass 2 items 8–11.
+
+## Item 7 — measured from the read-only backup (UNVERIFIED claim now resolved)
+`lifecycle` columns are `(id, session_id, event_type, detail, created_at)` — no
+success/failure column, the distinction lives in `event_type`. 37 rows total:
+
+    19  consolidation
+    13  distiller_judge_failed
+     4  lesson_promotion_skipped
+     1  automation_memory_sweep
+
+- **"13 failures" is REAL.** I had marked it UNVERIFIED because the column names did not match
+  how it was reported; measured directly, `distiller_judge_failed` = 13, spanning 2026-09-10 to
+  2026-10-04 — roughly one per curator pass, every one entering a 30-minute cooldown.
+- **"0 successes" is a measurement artifact, not evidence.** No `event_type` for a successful
+  judge exists anywhere in the table, so success was never countable. Whether the judge ever
+  succeeded is still unknown from storage. Before reporting "0 successes" again, check whether
+  `skill_distiller` writes a success row at all — if it does not, add one, because a loop that
+  logs only failure cannot show it is working.
+- **The cause is NOT recorded.** Every one of the 13 rows has detail shaped exactly
+  `{"batchSize": N, "cooldownUntil": ...}` — no exception text, no status, no model. That is why
+  this stayed "unexplained" for a month: the failure path swallows the reason into a log line
+  and persists only the cooldown bookkeeping.
+- Still owed: reproduce with a real model call (needs a live provider call, not a snapshot).
+  Likely first fix once the cause is known: persist the reason in `detail`.
