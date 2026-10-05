@@ -904,6 +904,24 @@ def review_proposal(
         }
 
     decision = 'approve' if text == 'KEEP' else 'reject'
+
+    if decision == 'approve':
+        # A KEEP is necessary, never sufficient: item 14's rails sit ON this
+        # path, so a reviewer cannot reach a write that a human would be
+        # refused. Reading the answer and ignoring it is not available to a
+        # caller — there is no other route from a verdict to decide_proposal.
+        from app.services.harness_rails import auto_apply_allowed
+
+        held = auto_apply_allowed(row)
+        if not held.get('allowed'):
+            return {
+                'ok': False,
+                'decision': None,
+                'leftInInbox': True,
+                'reason': f'reviewer said {text}, held by the rails: {held.get("reason")}',
+                'rule': str(held.get('rule') or ''),
+            }
+
     try:
         result = decide_proposal(
             pid,
@@ -918,14 +936,30 @@ def review_proposal(
             'leftInInbox': True,
             'reason': f'decision could not be recorded: {type(exc).__name__}: {exc}',
         }
+    # `decide_proposal` answers with the proposal row, which carries `status`
+    # and no `ok` — so "the decision landed" is read off the status. The field
+    # used to be `bool(result.get('ok'))`, which is False for every decision
+    # this function ever made; the contract is pinned now by
+    # test_review_proposal_path.test_a_keep_verdict_reports_that_the_write_landed.
+    status = str(result.get('status') or '')
+    applied = decision == 'approve' and status == 'applied'
+    if applied:
+        # Only an AUTOMATIC apply spends the daily budget or starts probation.
+        # A human approving in the inbox is not what the rails ration, so it is
+        # deliberately not recorded here.
+        from app.services.harness_rails import record_auto_apply
+
+        record_auto_apply(pid, str(as_dict(row.get('payload')).get('name') or ''))
+
     return {
-        'ok': bool(result.get('ok')),
+        'ok': status in ('applied', 'rejected'),
         'decision': decision,
         'leftInInbox': False,
         'reason': f'reviewer said {text}',
+        'applied': applied,
+        'status': status,
         'result': result,
     }
-
 
 REVIEW_SYSTEM = (
     'You review a proposed change to this agent\'s own skills. Reply on ONE line '
@@ -1006,13 +1040,15 @@ async def _ask_reviewer(
 
 
 def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
-    """Run the independent reviewer over open skill proposals — ADVISORY ONLY.
+    """Run the independent reviewer over open skill proposals.
 
-    While autonomous apply is off (the shipped state) this records a one-line
-    verdict on each proposal and leaves every one of them open for the human. It
-    never calls :func:`decide_proposal`. The deciding path
-    (:func:`review_proposal`) becomes reachable only when autonomy is on AND the
-    proposal clears the hard limits — item 14's job.
+    With autonomy off — the shipped state — this records a one-line verdict on
+    each proposal and never calls :func:`decide_proposal`; every proposal stays
+    open for the human. With `skillAutonomy` on, a usable verdict is handed to
+    :func:`review_proposal`, which is where item 14's rails stand, so a KEEP
+    becomes a write only for a proposal a human would also have been allowed to
+    auto-apply. `applied` counts those writes; `held` counts verdicts the rails
+    kept in the inbox.
 
     Every unusable reviewer is recorded as 'unavailable' with its cause, because
     a silent skip is how thirteen judge failures hid for a month. An
@@ -1022,6 +1058,11 @@ def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
     """
     reviewed = 0
     unavailable = 0
+    applied = 0
+    held = 0
+    from app.services.harness_rails import autonomy_enabled
+
+    autonomyOn = autonomy_enabled()
     for row in list_proposals(status='open'):
         if reviewed >= max(1, int(limit)):
             break
@@ -1061,17 +1102,36 @@ def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
             )
         except Exception as exc:
             verdict, reason = 'unavailable', f'{type(exc).__name__}: {str(exc)[:150]}'
-        _write_review(
-            row,
-            {
-                'verdict': verdict,
-                'reason': reason,
-                'model': _reviewModelHint(),
-                'advisory': True,
-            },
-        )
+        review = {
+            'verdict': verdict,
+            'reason': reason,
+            'model': _reviewModelHint(),
+            'advisory': True,
+        }
+        # The switch is read here, not left to the rails, so that autonomy OFF
+        # means the pass NEVER calls decide_proposal — its shipped advisory
+        # contract. With it ON, the verdict goes through review_proposal, which
+        # is where the rails stand for every other caller too.
+        if not dryRun and verdict in ('KEEP', 'DISCARD') and autonomyOn:
+            acted = review_proposal(
+                str(as_str(row.get('id'), '')),
+                verdict,
+                reviewer_client=client,
+                reviewer_model=as_str(review.get('model'), ''),
+                note=reason,
+            )
+            # decide_proposal rewrote this file; re-read it before adding the
+            # review line or the stale in-memory row would undo the decision.
+            row = get_proposal(str(as_str(row.get('id'), ''))) or row
+            review['advisory'] = not acted.get('applied')
+            if acted.get('applied'):
+                applied += 1
+            elif acted.get('leftInInbox'):
+                held += 1
+                review['heldBy'] = str(acted.get('rule') or '')
+        _write_review(row, review)
         reviewed += 1
-    return {'reviewed': reviewed, 'unavailable': unavailable}
+    return {'reviewed': reviewed, 'unavailable': unavailable, 'applied': applied, 'held': held}
 
 
 def _reviewModelHint() -> str:

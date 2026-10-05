@@ -68,6 +68,10 @@ _ALLCamelKeys = {
     'skillLearning',
     # Dedicated judge model + tier-2 cost gates.
     'skillLearningJudgeModel',
+    # Item 14: the autonomy switch and the two rails it is read with.
+    'skillAutonomy',
+    'autoApplyPerDay',
+    'autonomyBurnInCount',
     'escalationBudgetPerDay',
     'flagRateCap',
     # Per-project memory + workspace skills toggles.

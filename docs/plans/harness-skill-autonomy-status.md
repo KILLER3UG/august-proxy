@@ -671,3 +671,56 @@ said `extract-only` while the config default said `propose`.
   then green (13 in the file, 156 across `settings/__tests__/`), `-k skill` across the backend
   **242 passed / 2 skipped**, `test_gate_participation` 27 passed, ruff + mypy clean on the
   changed modules, `tsc --noEmit` clean.
+
+## Item 14 — what landed and what is still open
+- **Rails core landed** (`app/services/harness_rails.py`, 25 tests in `test_harness_rails.py`):
+  one entry point `auto_apply_allowed(row)` answering with `{allowed, rule, reason}`, and it sits
+  ON the path — `review_proposal` asks before it decides, so a caller cannot read the answer and
+  ignore it. Autonomy ships off, so every answer in the shipped config is `autonomy-off`.
+  - **Allow-list, not deny-list**: only `skill_create` / `skill_patch` may auto-apply; `HARD_KINDS`
+    is written out and a test proves it still equals `VALID_KINDS` minus those two, so a new kind
+    is held by default and the derivation cannot rot.
+  - Evidence must be the user's own words: cited episodes have to include a trusted kind
+    (`user_correction` / `user_rescue` / `abandoned_approach`), **quarantined rows excluded** —
+    item 5's 41 invented episodes still have ids, and one must not vouch for a write. A URL in
+    the evidence is fetched content and is refused on its own, so the fetched-evidence hold fires
+    even with a real citation behind it.
+  - Content rails on the skill body: shell fence or shell prose, any URL, any credential
+    vocabulary. Coarse on purpose — a false positive costs a human a glance, a false negative
+    costs an unreviewed write to the agent's own instructions.
+  - Rate rails read the proposal ledger (`action: 'auto_apply'`), which is the one existing
+    store for "who did what, when": daily cap (`autoApplyPerDay`, default 2), one change per
+    skill per day, and burn-in (`autonomyBurnInCount`, default 5, **0 disables**) holding the
+    first N clean verdicts in the inbox beside their verdict.
+  - `RULES` is a declared set and a test walks real refusals through it, because an unnamed rule
+    is how a guard starts defaulting to allowing.
+- **Three config keys, in every door the handoff warns about**: `boolKeys` / `numKeys`,
+  `fieldTable`, the validation branch, and `test_brain_config._ALLCamelKeys`. Plus one door the
+  handoff did NOT list: `saveBrainConfig` takes a **flat camelCase patch** — the nested
+  `auxiliary.cognitive.orchestrator` shape is what it WRITES, not what it reads. A test helper
+  that posts the nested shape "succeeds" and changes nothing; `_configure` now asserts `ok` and
+  the arm is exercised through the real API door in every armed test.
+- **Two contracts rewritten, not deleted** (`test_review_proposal_path.py`, item 10's file):
+  `test_a_keep_verdict_approves_through_the_normal_path` → `..._when_the_rails_allow` plus a new
+  `..._is_held_while_autonomy_is_off`; `test_approval_still_goes_through_the_deterministic_applier`
+  now arms the switch. DISCARD still rejects with the switch off, and that asymmetry is pinned by
+  its own test: the rails stop CHANGES, a refusal writes no file, and `reopen` is the undo.
+- **A latent bug found while wiring the receipt**: `review_proposal` returned
+  `ok=bool(result.get('ok'))` while `decide_proposal` answers with the proposal ROW, which has no
+  `ok` key — so `ok` was False for every decision the reviewer ever made and nothing asserted it.
+  Now derived from `status` (`applied` / `rejected`), with `applied` and `status` added to the
+  receipt and a test naming the old mistake.
+- **A test-isolation leak found by an in-suite failure that passed alone**: `getRuntimeConfig`
+  memoizes for 2s and records no data dir, so a test that wrote `skillAutonomy=True` handed it to
+  the next test's fresh directory — the kill switch read True in a test that never armed it, and
+  that test APPLIED a proposal. `bustRuntimeCache()` now runs in conftest's
+  `_reset_module_singletons` beside the model-cache bust, which is the same class of swap. This is
+  the `judge-model-x` failure mode again, one layer up.
+- Still open in item 14: **probation auto-revert** (uses item 13's `restoreVersion`, and needs
+  `snapshot_before_write` to hand back the ts it wrote so the apply can name the version it took
+  back) and the **readable history of auto-changes** (settings only; `auto_apply_history()` is
+  already the only reader of those ledger rows).
+- Item 14 rails-core checks: 25 new tests red-first then green, 96 across
+  rails/reviewer/proposal-path/brain-config/propose-mode, and a broad
+  `-k "brain or harness or skill or review or distill or consolid or config or autonomy or learning"`
+  slice **855 passed / 3 skipped / 0 failed** with `-n auto`. ruff + mypy clean.
