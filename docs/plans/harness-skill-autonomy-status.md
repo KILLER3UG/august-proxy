@@ -989,3 +989,19 @@ Same method as before: the backend serving `web-dist` on :8092 against a labeled
   `created: false` with a real `versionTs` for the patch row, over HTTP — the field the UI branches
   on is produced by the server, not inferred in the browser.
 - Screenshots: `.probe-artifacts/13…15`.
+
+## Definitive suites (tip `85e10438`, clean tree, nothing edited during the runs)
+- **backend: 4940 passed, 10 skipped, 0 failed in 9:53** — `PYTEST_EXIT=0`, `grep -c '^FAILED'`
+  = 0. Measured at `2df1d601`; `git diff 2df1d601..HEAD -- backend-py` is empty, so the number
+  still describes this tip. Up from 4907 before the review round (+33 tests).
+- **frontend: 1538 passed across 199 files** — `VITEST_EXIT=0`, re-run at `85e10438` after the
+  `act()` fix. Count unchanged because item 4 replaced one chip test with one.
+- **Every repo gate green**: `check:api`, `check:api-index`, `check:docs` (6 claims),
+  `check:doc-links` (123 files), `check:version`.
+- The only remaining stderr in the frontend run is `src/api/workbench/stream.test.ts`, a
+  pre-existing SSE-parser suite this workstream never touched. The chip tests are silent now.
+- **Live config**: the two test artifacts are gone from `C:\Dev\august-proxy\data\config.json`
+  (backup `config.json.pre-artifact-cleanup-20261005T201148Z`), verified by re-reading the file.
+  `skill_learning_judge_model` and top-level `_tier3_test_flag` removed; the `rollbackLog` entry
+  that merely *mentions* the flag was left alone — it is history, not a setting. The earlier claim
+  that an `apiFormat` field also held `judge-model-x` did not survive a scan: only the one field did.
