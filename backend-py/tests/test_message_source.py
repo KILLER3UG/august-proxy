@@ -142,7 +142,15 @@ def test_is_machine_row_prefers_column(brain):
     assert em._isMachineRow('', '[Proxy Self-Heal] something')
     # The full machine vocabulary, including the receipt kind no writer
     # emits standalone yet.
-    assert MACHINE_SOURCES == {SOURCE_HARNESS_NUDGE, SOURCE_QUEUED_USER, 'subagent_results'}
+    assert MACHINE_SOURCES == {
+        SOURCE_HARNESS_NUDGE,
+        SOURCE_QUEUED_USER,
+        'subagent_results',
+        # Adding a machine source is meant to make this test fail: the set is
+        # declared on purpose, and every member must have a writer that tags it.
+        'memory_delivery',
+        'live_transcript',
+    }
 
 
 def test_upstream_dumps_strip_august_message_keys():
