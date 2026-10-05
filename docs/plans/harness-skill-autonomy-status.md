@@ -446,7 +446,11 @@ success/failure column, the distinction lives in `event_type`. 37 rows total:
 - Still owed: reproduce with a real model call (needs a live provider call, not a snapshot).
   Likely first fix once the cause is known: persist the reason in `detail`.
 
-## Item 7 — CAUSE FOUND AND FIXED (`55698e0d`-family, see `git log` tip)
+## Definitive full suite (tip `7e53bfc2`, no edits during the run)
+**4759 passed, 9 skipped, 0 failed in 10:07** — `PYTEST_EXIT=0`, zero `FAILED` lines, read from
+the log itself. Includes item 7's judge-failure work and the frontend tone split.
+
+## Item 7 — CAUSE FOUND AND FIXED
 Reproduced with a real call against an isolated profile built from
 `MANUAL-pre-052-*.sqlite` + a copy of `providers.json` + `config.json` (never the live store).
 
