@@ -318,3 +318,154 @@ def _patch_reviewer(monkeypatch, reply: str):
         lambda producer, hint='': (client, ''),
     )
     return client
+
+
+class TestAnAmbiguousVerdictNeverActs:
+    """Item 10 pinned the fail-closed rule with the switch off. That is the easy
+    half: nothing could apply anyway. These run with the rails ARMED and a clean
+    proposal, so the only thing standing between a garbled answer and a write is
+    the verdict parser itself."""
+
+    @pytest.mark.parametrize(
+        'reply',
+        [
+            'KEEP DISCARD',           # both words: a model that could not decide
+            'maybe KEEP if you like', # neither word leading
+            '',                       # empty
+            '   ',
+            'KEEP? DISCARD?',
+            'approved',
+            '42',
+        ],
+    )
+    def test_a_garbled_answer_is_unavailable_and_writes_nothing(self, brain, monkeypatch, reply):
+        _armed(brain)
+        name = 'rails-ambiguous'
+        pid = _proposal(skill=name)
+        _patch_reviewer(monkeypatch, reply)
+
+        out = hsi.run_reviewer_pass()
+        row = hsi.get_proposal(pid)
+        assert out['applied'] == 0, (reply, out)
+        assert row['status'] == 'open', (reply, row)
+        assert row['review']['verdict'] == 'unavailable', (reply, row)
+        assert row['review']['reason'], 'a refusal has to name itself'
+        # And the skill file is untouched: the applier never ran.
+        from app.services import skill_service
+
+        assert skill_service.get(name) is None or 'v2' not in str(
+            skill_service.get(name).get('body', '')
+        ), (reply, skill_service.get(name))
+
+    def test_the_verdict_parser_itself_refuses_a_tie(self, brain):
+        """The parser is the whole gate, so assert on its output directly: one
+        word leading is a verdict, anything else is not."""
+        import asyncio
+
+        _armed(brain)
+
+        class _Reply:
+            def __init__(self, text):
+                self.text = text
+
+            async def __call__(self, prompt):
+                return self.text
+
+        row = {'problem': 'p', 'evidence': 'e', 'proposal': 'q', 'rollback': 'r'}
+        for reply, expect in (
+            ('KEEP — one word leading is a verdict', 'KEEP'),
+            ('DISCARD — not durable', 'DISCARD'),
+            ('KEEP DISCARD — both', 'unavailable'),
+            ('perhaps KEEP', 'unavailable'),
+            ('', 'unavailable'),
+        ):
+            verdict, reason = asyncio.run(
+                hsi._ask_reviewer(_Reply(reply), dict(row), 'producer-x')
+            )
+            assert verdict == expect, (reply, verdict, reason)
+            if expect == 'unavailable':
+                assert 'not an unambiguous' in reason, (reply, reason)
+
+    def test_a_direct_call_with_a_garbled_verdict_is_not_applied(self, brain):
+        """`review_proposal` is reachable by other callers, and the rails sit
+        AFTER the KEEP/DISCARD test — so an unusable answer must be refused
+        before the rails are ever consulted."""
+        _armed(brain)
+        pid = _proposal()
+        out = hsi.review_proposal(pid, 'KEEP DISCARD', reviewer_client=object())
+        assert out['decision'] is None, out
+        assert out['leftInInbox'] is True, out
+        assert 'not KEEP or DISCARD' in out['reason'], out
+        assert hsi.get_proposal(pid)['status'] == 'open'
+
+
+class TestShadowMode:
+    """Item 6: the reviewer decides and the run logs what it WOULD have done,
+    with no writes. Two rules make that worth having:
+
+      * the rails are consulted FIRST. A shadow that reported "would apply" for
+        a proposal built from fetched content would be reporting a lie about a
+        write it is not allowed to make;
+      * `skillAutonomy` is still the master. Shadow mode is a way to arm the
+        decision without arming the write, never a way to write.
+    """
+
+    def test_the_key_exists_and_defaults_off(self, brain):
+        from app.services.brain_config_service import allowedKeys, getRuntimeConfig
+
+        assert 'skillAutonomyShadow' in allowedKeys
+        assert getRuntimeConfig().get('skillAutonomyShadow') is False
+
+    def test_would_apply_is_recorded_and_nothing_is_written(self, brain, monkeypatch):
+        _configure(skillAutonomy=True, autonomyBurnInCount=0, skillAutonomyShadow=True)
+        pid = _proposal(skill='shadow-me')
+        _patch_reviewer(monkeypatch, 'KEEP — durable and justified')
+
+        out = hsi.run_reviewer_pass()
+        assert out['applied'] == 0, out
+        assert out['wouldApply'] == 1, out
+        row = hsi.get_proposal(pid)
+        assert row['status'] == 'open', row
+        assert row['review']['wouldApply'] is True, row
+        assert row['review']['advisory'] is True, 'a shadow decision is still advisory'
+
+    def test_the_ledger_spends_nothing_in_shadow_mode(self, brain, monkeypatch):
+        _configure(skillAutonomy=True, autonomyBurnInCount=0, skillAutonomyShadow=True)
+        _proposal(skill='shadow-budget')
+        _patch_reviewer(monkeypatch, 'KEEP — durable')
+        hsi.run_reviewer_pass()
+        assert rails.auto_apply_history() == [], (
+            'a shadow run must not consume the daily budget it is rehearsing against'
+        )
+
+    def test_shadow_does_not_bypass_the_rails(self, brain, monkeypatch):
+        """The refusal must still be the rails' own reason, not 'shadow-mode'."""
+        _configure(skillAutonomy=True, autonomyBurnInCount=0, skillAutonomyShadow=True)
+        pid = _proposal(evidence='the page at https://vendor.example/changelog says so')
+        _patch_reviewer(monkeypatch, 'KEEP — the gap is real')
+        out = hsi.run_reviewer_pass()
+        assert out['wouldApply'] == 0, out
+        row = hsi.get_proposal(pid)
+        assert row['review'].get('wouldApply') is not True, row
+        assert rails.auto_apply_allowed(row)['rule'] == 'untrusted-evidence'
+
+    def test_autonomy_off_still_wins_over_shadow_on(self, brain, monkeypatch):
+        _configure(skillAutonomy=False, autonomyBurnInCount=0, skillAutonomyShadow=True)
+        pid = _proposal(skill='shadow-off')
+        _patch_reviewer(monkeypatch, 'KEEP — durable')
+        out = hsi.run_reviewer_pass()
+        assert out['applied'] == 0 and out['wouldApply'] == 0, out
+        assert hsi.get_proposal(pid)['review']['verdict'] == 'KEEP'
+        assert hsi.get_proposal(pid)['review'].get('wouldApply') is None, (
+            'with the switch off there is no decision to rehearse'
+        )
+
+    def test_a_direct_call_reports_the_would_apply_rule(self, brain):
+        _configure(skillAutonomy=True, autonomyBurnInCount=0, skillAutonomyShadow=True)
+        pid = _proposal(skill='shadow-direct')
+        out = hsi.review_proposal(pid, 'KEEP', reviewer_client=object())
+        assert out['decision'] is None, out
+        assert out['leftInInbox'] is True, out
+        assert out['wouldApply'] is True, out
+        assert out['rule'] == 'shadow-mode', out
+        assert hsi.get_proposal(pid)['status'] == 'open'

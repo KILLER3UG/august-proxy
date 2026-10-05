@@ -886,3 +886,27 @@ on → "the rails apply qualifying skill changes on their own, and every one of 
 and undoable"; off → the original promise. Two tests red-first, and both wait for the switch read
 because the first paint is the off-state sentence. Verified in the running app: the header reads
 the on-state sentence against a live `autonomy: true` config.
+
+## User review round (2026-10-06, items 3–7 requested explicitly)
+- **(3) Ambiguous / unparseable verdicts.** No production change was needed and that is stated
+  rather than dressed up as a fix: the parser already fails closed. What was missing is a test that
+  proves it **with the rails armed** — every pre-existing fail-closed test ran with autonomy off, so
+  none of them could tell a refusal apart from a switch that was never going to write anyway. Nine
+  tests now: seven garbled replies through the real pass (`applied == 0`, status open, verdict
+  `unavailable`, reason named), the parser's own KEEP/DISCARD-vs-tie boundary asserted directly, and
+  a direct `review_proposal(pid, 'KEEP DISCARD')` call. The last one pins the ordering that matters:
+  an unusable answer is refused **before** the rails are consulted, so a garbled string can never
+  reach `decide_proposal` even if the proposal is otherwise clean.
+- **(6) Shadow mode.** `skillAutonomyShadow` (bool, default False) — the reviewer decides, the run
+  records `wouldApply`, nothing is written. Two ordering rules make it meaningful, both tested:
+  the rails are consulted FIRST (a shadow that reported "would apply" for a fetched-content
+  proposal would be lying about a write it is not allowed to make), and `skillAutonomy` remains the
+  master (shadow on + autonomy off rehearses nothing). A shadow run writes no ledger row, so it
+  cannot spend the daily budget it is rehearsing against. `rule: 'shadow-mode'` is in `RULES`, and
+  the pass counts `wouldApply` separately from `applied` and `held`.
+- Config door: `skillAutonomyShadow` added to `boolKeys`, `fieldTable` and
+  `test_brain_config._ALLCamelKeys` in the same commit, which is what makes the closed-world list
+  earn its keep.
+- Checks: 9 + 6 tests red-first (the shadow ones failed on the config door, which is the honest
+  red), then 124 green across rails/reviewer/proposal-path/probation/brain-config/propose-mode;
+  ruff clean.

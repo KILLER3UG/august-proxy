@@ -70,6 +70,7 @@ _ALLCamelKeys = {
     'skillLearningJudgeModel',
     # Item 14: the autonomy switch and the two rails it is read with.
     'skillAutonomy',
+    'skillAutonomyShadow',
     'autoApplyPerDay',
     'autonomyBurnInCount',
     'escalationBudgetPerDay',

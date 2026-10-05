@@ -57,6 +57,7 @@ boolKeys: tuple[str, ...] = (
     'consolidationModelSummarize',
     'preferenceRetireEnabled',
     'skillAutonomy',
+    'skillAutonomyShadow',
     'projectMemory',
     'projectSkills',
     'fileMemory',
@@ -257,6 +258,11 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # move, which is the budgetSoftUsd mistake (fieldTable entry, missing from
     # numKeys, every PUT naming it rejected).
     ('skillAutonomy', 'skill_autonomy', False, 'bool'),
+    # Shadow mode: the reviewer decides and the run records what it WOULD have
+    # written, with no write at all. It is a rehearsal of the decision, never a
+    # way to perform one — `skillAutonomy` remains the master, and the rails are
+    # consulted before the shadow answer is given.
+    ('skillAutonomyShadow', 'skill_autonomy_shadow', False, 'bool'),
     ('autoApplyPerDay', 'auto_apply_per_day', 2, 'num'),
     ('autonomyBurnInCount', 'autonomy_burn_in_count', 5, 'num'),
     # Part 16 cost gates: tier-2 escalations per day and the max fraction of

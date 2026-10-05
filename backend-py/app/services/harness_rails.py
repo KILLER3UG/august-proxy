@@ -63,6 +63,7 @@ RULES = frozenset(
     {
         'allowed',
         'autonomy-off',
+        'shadow-mode',
         'hard-kind',
         'untrusted-evidence',
         'unsafe-content',
@@ -108,6 +109,17 @@ def autonomy_enabled() -> bool:
     `consolidation.py:546` defect that made `propose` a mode nobody ran.
     """
     return bool(_read_config().get('skillAutonomy'))
+
+
+def shadow_enabled() -> bool:
+    """Rehearse the decision, perform none of it.
+
+    Read only AFTER the rails have allowed the write, so a shadow answer means
+    "this proposal cleared every rail and would have been written" — never
+    "somebody's browsing history was allowed to edit the agent".
+    """
+    cfg = _read_config()
+    return bool(cfg.get('skillAutonomy')) and bool(cfg.get('skillAutonomyShadow'))
 
 
 def _refuse(rule: str, reason: str) -> dict[str, Any]:

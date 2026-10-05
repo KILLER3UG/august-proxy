@@ -914,7 +914,7 @@ def review_proposal(
         # path, so a reviewer cannot reach a write that a human would be
         # refused. Reading the answer and ignoring it is not available to a
         # caller — there is no other route from a verdict to decide_proposal.
-        from app.services.harness_rails import auto_apply_allowed
+        from app.services.harness_rails import auto_apply_allowed, shadow_enabled
 
         held = auto_apply_allowed(row)
         if not held.get('allowed'):
@@ -924,6 +924,19 @@ def review_proposal(
                 'leftInInbox': True,
                 'reason': f'reviewer said {text}, held by the rails: {held.get("reason")}',
                 'rule': str(held.get('rule') or ''),
+            }
+        if shadow_enabled():
+            # Checked after the rails, so this means "every rail passed" rather
+            # than "a write happened". Nothing is decided, so nothing is spent:
+            # the daily budget and the probation record stay untouched.
+            return {
+                'ok': False,
+                'decision': None,
+                'leftInInbox': True,
+                'wouldApply': True,
+                'rule': 'shadow-mode',
+                'reason': f'reviewer said {text} and every rail allowed it; '
+                          'shadow mode is on, so nothing was written',
             }
 
     try:
@@ -1155,6 +1168,7 @@ def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
     unavailable = 0
     applied = 0
     held = 0
+    would_apply = 0
     from app.services.harness_rails import autonomy_enabled
 
     autonomyOn = autonomy_enabled()
@@ -1214,12 +1228,24 @@ def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
             review['advisory'] = not acted.get('applied')
             if acted.get('applied'):
                 applied += 1
+            elif acted.get('wouldApply'):
+                # Shadow mode: the decision is real, the write is not. Recorded
+                # so a human can read what autonomy would have done before
+                # arming it, rather than inferring it from an empty inbox.
+                would_apply += 1
+                review['wouldApply'] = True
             elif acted.get('leftInInbox'):
                 held += 1
                 review['heldBy'] = str(acted.get('rule') or '')
         _write_review(row, review)
         reviewed += 1
-    return {'reviewed': reviewed, 'unavailable': unavailable, 'applied': applied, 'held': held}
+    return {
+        'reviewed': reviewed,
+        'unavailable': unavailable,
+        'applied': applied,
+        'held': held,
+        'wouldApply': would_apply,
+    }
 
 
 def _reviewModelHint() -> str:
