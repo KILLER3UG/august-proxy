@@ -32,6 +32,11 @@ from typing import Any, Callable
 
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 
+# Module level on purpose: the reviewer pass must be replaceable by path in
+# tests, and a lazy import inside the function would make that patching silently
+# ineffective — the same class of green as item 8's guard.
+from app.services.review_gate import resolve_independent_reviewer
+
 # Kinds a deterministic applier may execute on approval.
 # `retire` (audit P2#13) is a LIFECYCLE label, not a delete: approving it
 # writes `status: retired` into the skill's frontmatter and leaves the file,
@@ -920,6 +925,157 @@ def review_proposal(
         'reason': f'reviewer said {text}',
         'result': result,
     }
+
+
+REVIEW_SYSTEM = (
+    'You review a proposed change to this agent\'s own skills. Reply on ONE line '
+    'starting with exactly KEEP or DISCARD, then a short reason. KEEP only if the '
+    'change is justified by the evidence given, durable rather than a one-off, '
+    'non-redundant, and likely to improve future turns. If you are unsure, DISCARD. '
+    'You cannot propose changes yourself.'
+)
+
+
+def review_summary(row: dict[str, Any]) -> str:
+    """The one line the inbox shows beside a proposal.
+
+    Empty when the proposal was never reviewed, so the UI can omit the row
+    entirely rather than render an empty line.
+    """
+    review = row.get('review')
+    if not isinstance(review, dict) or not review:
+        return ''
+    verdict = as_str(review.get('verdict'), 'unavailable')
+    reason = as_str(review.get('reason'), '').strip()
+    if verdict == 'unavailable':
+        return f'Reviewer unavailable — {reason}'.rstrip(' —')
+    return f'Reviewer: {verdict.lower()}' + (f' — {reason}' if reason else '')
+
+
+def _write_review(row: dict[str, Any], review: dict[str, Any]) -> None:
+    row['review'] = review
+    row['reviewedAt'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    path = _proposals_dir() / f"{as_str(row.get('id'), '')}.json"
+    try:
+        path.write_text(json.dumps(row, indent=2, ensure_ascii=False), encoding='utf-8')
+    except Exception:
+        # This module logs via logging.getLogger(__name__) at call sites; there is
+        # no module-level logger to reach for.
+        import logging
+
+        logging.getLogger(__name__).debug('proposal review write failed', exc_info=True)
+
+
+async def _ask_reviewer(
+    client: Any, row: dict[str, Any], producerModel: str
+) -> tuple[str, str]:
+    """One advisory verdict for one proposal. Returns (verdict, reason).
+
+    The reviewer is given the proposal and its evidence and nothing else — in
+    particular not the proposer's reasoning, so it cannot rubber-stamp an
+    argument it has already been handed.
+    """
+    prompt = [
+        {'role': 'system', 'content': REVIEW_SYSTEM},
+        {
+            'role': 'user',
+            'content': (
+                f'Problem:\n{as_str(row.get("problem"))[:1000]}\n\n'
+                f'Evidence:\n{as_str(row.get("evidence"))[:2000]}\n\n'
+                f'Proposed change:\n{as_str(row.get("proposal"))[:1000]}\n\n'
+                f'Rollback:\n{as_str(row.get("rollback"))[:400]}\n\n'
+                f'Produced by model: {producerModel or "unknown"}\n\n'
+                'Keep this change?'
+            ),
+        },
+    ]
+    raw = await client(prompt)
+    text = str(raw or '').strip()
+    head = text.splitlines()[0].strip() if text else ''
+    upper = head.upper()
+    # The verdict must be UNAMBIGUOUS: exactly one of the two words on the line,
+    # and it must lead. "KEEP DISCARD" is a model that could not decide, and
+    # reading it as KEEP is the one mistake this whole gate exists to prevent —
+    # so ambiguity fails closed rather than resolving to the permissive reading.
+    words = {w for w in upper.split() if w.strip(' -–:.!') in ('KEEP', 'DISCARD')}
+    first = upper.split()[0].strip(' -–:.!') if upper.split() else ''
+    if len(words) == 1 and first in ('KEEP', 'DISCARD'):
+        reason = head[len(first) :].strip(' -–:') or text[len(head) :].strip()[:200]
+        return first, reason[:200]
+    return 'unavailable', f'answer was not an unambiguous KEEP or DISCARD: {head[:80]!r}'
+
+
+def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
+    """Run the independent reviewer over open skill proposals — ADVISORY ONLY.
+
+    While autonomous apply is off (the shipped state) this records a one-line
+    verdict on each proposal and leaves every one of them open for the human. It
+    never calls :func:`decide_proposal`. The deciding path
+    (:func:`review_proposal`) becomes reachable only when autonomy is on AND the
+    proposal clears the hard limits — item 14's job.
+
+    Every unusable reviewer is recorded as 'unavailable' with its cause, because
+    a silent skip is how thirteen judge failures hid for a month.
+    """
+    reviewed = 0
+    unavailable = 0
+    for row in list_proposals(status='open'):
+        if reviewed >= max(1, int(limit)):
+            break
+        kind = as_str(row.get('kind'), '')
+        if kind not in ('skill_create', 'skill_patch'):
+            continue  # observations and reverts are human-only by design
+        if isinstance(row.get('review'), dict) and row['review']:
+            continue  # already reviewed — never burn a second call
+        producerModel = as_str(as_dict(row.get('payload')).get('producedBy'), '')
+        client, refusal = resolve_independent_reviewer(producerModel, _reviewModelHint())
+        if client is None:
+            _write_review(
+                row,
+                {
+                    'verdict': 'unavailable',
+                    'reason': refusal or 'no independent reviewer',
+                    'model': '',
+                    'advisory': True,
+                },
+            )
+            unavailable += 1
+            reviewed += 1
+            if dryRun:
+                continue
+            continue
+        if dryRun:
+            reviewed += 1
+            continue
+        try:
+            import asyncio
+
+            verdict, reason = asyncio.run(
+                asyncio.wait_for(_ask_reviewer(client, row, producerModel), timeout=60)
+            )
+        except Exception as exc:
+            verdict, reason = 'unavailable', f'{type(exc).__name__}: {str(exc)[:150]}'
+        _write_review(
+            row,
+            {
+                'verdict': verdict,
+                'reason': reason,
+                'model': _reviewModelHint(),
+                'advisory': True,
+            },
+        )
+        reviewed += 1
+    return {'reviewed': reviewed, 'unavailable': unavailable}
+
+
+def _reviewModelHint() -> str:
+    """The configured reviewer model, if any — the hint for the gate."""
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        return as_str(getRuntimeConfig().get('skillLearningJudgeModel', ''), '').strip()
+    except Exception:
+        return ''
 
 
 def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
