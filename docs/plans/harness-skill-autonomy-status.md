@@ -773,3 +773,40 @@ pipe in front of it.
 - **frontend: 1528 passed across 197 files** (vitest) — `VITEST_EXIT=0`. Up from 1517/195.
 - `git status --porcelain | wc -l` was 0 at the tip before the run and after it, so the numbers
   describe one tree.
+
+## Item 15 — SkillEvolvedChip
+- **Placement was the user's call and they chose live event + history read** (asked, because the
+  handoff specified the chip's content but never where it lives or how it learns).
+- The implementation turned out to need NO new frontend channel: `emit_realtime('skill-evolved',
+  …, queryKeys=['harness-auto-history'])` rides the bridge's already-existing forward-compatible
+  default case, which invalidates any `queryKeys` it is handed. So the chip and the settings
+  history read the SAME query key, and a live apply refreshes it. One store, one signal, no
+  second mechanism.
+- `src/realtime/bridge.test.ts` (new, the bridge had no test) pins exactly that hop — an event
+  nobody invalidates would be a chip that only appears after a reload, and "the chip shows up
+  live" would otherwise be a claim with nothing behind it.
+- Backend emits from `review_proposal`'s applied branch next to `record_auto_apply`, so the event
+  and the ledger row are written by the same success. A **human `decide_proposal` emits nothing and
+  records nothing** — pinned by `test_a_human_approval_is_not_an_auto_change`, which is also what
+  makes "a human-approved change does not get a chip" true by construction rather than by a
+  frontend filter.
+- Chip: one line above the composer (`ComposerDecisionStack`, beside `SubagentProposalBar`),
+  skill name + Undo + details + dismiss. Never rendered while `autonomy` is false even when a
+  change is on file — the required OFF test, seeded with a change. Rows name skills and relative
+  times; the proposal id is never a label.
+- **Narrowed the plan's "with Undo" in one case, deliberately:** an auto-CREATED skill has no
+  previous version — `snapshot_before_write` returns '' for a create — so there is nothing to
+  restore and the chip announces it WITHOUT an undo. Offering "delete it" would be a second write
+  path invented in the UI, the exact mistake item 13's comment rewrite was about. Pinned by
+  `test_announces_a_change_it_cannot_undo_without_pretending_it_can`. If the user wants a create
+  to be undoable, that is a new backend operation (retire-or-delete with its own route), not a
+  frontend choice.
+- Dismissal is a localStorage watermark on the newest `at` (anything older is quiet), with local
+  state as well so clicking dismiss actually hides the chip; storage failures fall back to showing
+  it rather than throwing.
+- Client: `getAutoApplyHistory()` + `AutoAppliedChange` moved into
+  `api-client/skills-versions.ts` because two surfaces read them — the settings disclosure now
+  uses the same function instead of a second inline copy of the shape.
+- Checks: 2 backend tests (one red first) then 10 green in the probation file, 86 green across the
+  harness cluster; 6 chip tests + 1 bridge test red-first then green; 169 across
+  chat/settings/realtime (25 files); `tsc --noEmit` clean; ruff + mypy clean.

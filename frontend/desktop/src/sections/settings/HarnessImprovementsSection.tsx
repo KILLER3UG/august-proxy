@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
+import { getAutoApplyHistory } from '@/api/api-client/skills-versions';
 import { Badge } from '@/components/ui/badge';
 import { qk } from '@/lib/query-keys';
 import { invalidateReviewInboxCount } from '@/lib/useReviewInboxCount';
@@ -54,21 +55,6 @@ interface Proposal {
 interface ProposalsResponse {
   proposals: Proposal[];
   openCount: number;
-}
-
-interface AutoChange {
-  at: string;
-  proposalId: string;
-  skill: string;
-  versionTs: string;
-  reverted: boolean;
-}
-
-interface AutoHistoryResponse {
-  /** Which way the switch is set right now — a list of auto-changes with no
-   *  state beside it reads as "this is what happens" when it is "what happened". */
-  autonomy: boolean;
-  changes: AutoChange[];
 }
 
 interface MemoryProposalRow {
@@ -146,8 +132,7 @@ function rowKey(p: Proposal): string {
 function AutoChangeHistory() {
   const historyQ = useQuery({
     queryKey: ['harness-auto-history'],
-    queryFn: () =>
-      api.get<AutoHistoryResponse>('/api/harness/proposals/auto-history'),
+    queryFn: () => getAutoApplyHistory(50),
     staleTime: 60_000,
   });
   const changes = historyQ.data?.changes ?? [];

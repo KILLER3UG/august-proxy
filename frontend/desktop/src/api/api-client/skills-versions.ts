@@ -109,6 +109,33 @@ export function restoreSkillVersion(
   );
 }
 
+/** One change August made to a skill by itself, as the rails record it. */
+export interface AutoAppliedChange {
+  at: string;
+  proposalId: string;
+  skill: string;
+  /** The snapshot the apply took. '' when there was nothing to snapshot — a
+   *  created skill has no previous version, so there is nothing to restore and
+   *  an undo would be a different write invented on the spot. */
+  versionTs: string;
+  /** Probation already put this one back. */
+  reverted: boolean;
+}
+
+export interface AutoApplyHistory {
+  /** Which way the switch is set right now, because a list of auto-changes with
+   *  no state beside it reads as "this is what happens" when it may be "what
+   *  happened". */
+  autonomy: boolean;
+  changes: AutoAppliedChange[];
+}
+
+/** The record of what the rails applied — read by the settings history and by
+ *  the chat chip, which is why it lives here and not in either caller. */
+export function getAutoApplyHistory(limit = 20): Promise<AutoApplyHistory> {
+  return api.get<AutoApplyHistory>(`/api/harness/proposals/auto-history?limit=${limit}`);
+}
+
 /** Human label for a version id: the snapshot's own unixts, as a date.
  *  Returns the raw id when it is not a number the Date constructor can use,
  *  so a malformed row still names itself instead of rendering "Invalid Date". */

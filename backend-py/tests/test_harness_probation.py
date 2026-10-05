@@ -281,3 +281,99 @@ class TestTheHistory:
         assert body['autonomy'] is True, body
         assert body['changes'][0]['skill'] == 'prob-api', body
         assert {'at', 'skill', 'versionTs', 'reverted'} <= set(body['changes'][0]), body
+
+
+class TestTheAnnouncement:
+    """Item 15's chip is fed by two things: the live event and the history read.
+    Both must say the same thing, and the event must carry the version id — a
+    chip that cannot name what to put back is an announcement without an undo."""
+
+    def test_an_auto_apply_announces_itself_with_the_version_to_put_back(
+        self, brain, monkeypatch
+    ):
+        _arm()
+        events: list = []
+        monkeypatch.setattr(
+            'app.services.realtime_bus.emit_realtime',
+            lambda t, **kw: events.append((t, kw)),
+        )
+        name = 'prob-announce'
+        _skill(name, 'v1 body — the good one')
+        row = hsi.save_proposal(
+            problem=f'the {name} skill rebuilds when it should restart',
+            evidence='the user corrected this twice, in their own words',
+            proposal='amend the body to restart only',
+            rollback='restore the previous version',
+            kind='skill_patch',
+            payload={
+                'name': name,
+                'description': 'container flow',
+                'body': '# Prob announce\n\nRestart the container instead of rebuilding.\n',
+                'trigger': 'container',
+                'episodeIds': [_trustedEpisodeId()],
+            },
+        )
+        pid = str(row['id'])
+        _patchReviewer(monkeypatch, 'KEEP — durable and justified')
+
+        out = hsi.run_reviewer_pass()
+        assert out['applied'] == 1, out
+        evolved = [kw for t, kw in events if t == 'skill-evolved']
+        assert len(evolved) == 1, events
+        assert evolved[0]['skill'] == name, evolved
+        assert evolved[0]['proposalId'] == pid, evolved
+        assert evolved[0]['versionTs'], 'the undo needs the id the snapshot took'
+        # The bridge's forward-compatible default case invalidates these keys,
+        # which is how a change made by the 6-hour job reaches an open window.
+        assert evolved[0]['queryKeys'] == ['harness-auto-history'], evolved
+
+    def test_a_human_approval_is_not_an_auto_change(self, brain, monkeypatch):
+        """No event and no history row: a change the human made is not news the
+        machine announces, and it must not consume the daily budget either."""
+        _arm()
+        events: list = []
+        monkeypatch.setattr(
+            'app.services.realtime_bus.emit_realtime',
+            lambda t, **kw: events.append((t, kw)),
+        )
+        name = 'prob-human-only'
+        _skill(name, 'v1 body — the good one')
+        row = hsi.save_proposal(
+            problem=f'the {name} skill needs a note',
+            evidence='the user asked for it directly',
+            proposal='amend the body',
+            rollback='restore the previous version',
+            kind='skill_patch',
+            payload={'name': name, 'body': 'anything'},
+        )
+        pid = str(row['id'])
+        hsi.decide_proposal(pid, 'approve', actor='human')
+        assert [t for t, _kw in events if t == 'skill-evolved'] == []
+        assert rails.auto_apply_history() == []
+
+
+def _trustedEpisodeId() -> int:
+    from app.services import episode_miner
+
+    return episode_miner.save_episode(
+        {
+            'session_id': 'ses_announce',
+            'kind': 'user_correction',
+            'start_message_id': 1,
+            'end_message_id': 3,
+            'events': [{'role': 'user', 'text': "Don't rebuild, just restart the container."}],
+            'outcome': 'resolved',
+            'fingerprint_id': 'fp-announce',
+        }
+    )
+
+
+def _patchReviewer(monkeypatch, reply: str) -> None:
+    class _Client:
+        async def __call__(self, prompt):
+            return reply
+
+    monkeypatch.setattr(
+        'app.services.harness_self_improve.resolve_independent_reviewer',
+        lambda producer, hint='': (_Client(), ''),
+    )
