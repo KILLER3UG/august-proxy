@@ -1188,6 +1188,53 @@ def patchSkill(
     return parsed or {'name': name, 'description': frontmatter.get('description', '')}
 
 
+def restoreVersion(name: str, ts: str, workspace: str | Path | None = None) -> dict[str, object]:
+    """Write one retained snapshot back as the live ``SKILL.md``, byte-exact.
+
+    The ONLY path from a version id to file content. The UI's Undo and
+    item 14's probation auto-revert both come through here, so "undo" cannot
+    mean two things. It is deliberately NOT :func:`patchSkill`: that function
+    canonicalizes the body and re-renders frontmatter, and an undo that
+    rewrites the bytes it is restoring is not an undo.
+
+    The content being replaced is snapshotted first, which makes the restore
+    itself undoable and keeps the history agreeing with the file.
+
+    Refuses a bundled root: the install tree is the payload an update replaces,
+    so a write there is invisible to the next patch and unfixable by it.
+    """
+    skill = get(name, workspace)
+    if not skill:
+        raise SkillValidationError(f"Skill '{name}' not found.")
+    raw = str(skill.get('path') or '')
+    md = Path(raw) if raw else None
+    if md is None or not md.is_file():
+        raise SkillValidationError(f"Skill '{name}' has no SKILL.md on disk.")
+    skill_dir = md.parent
+    try:
+        bundled = SKILLS_DIR.resolve()
+        underBundledRoot = skill_dir.resolve().is_relative_to(bundled)
+    except OSError:
+        underBundledRoot = False
+    if underBundledRoot:
+        raise SkillValidationError(
+            f"Skill '{name}' is bundled; patch it first so it has a writable copy."
+        )
+
+    from app.services.skill_versions import read_version, snapshot_before_write
+
+    content = read_version(skill_dir, ts)
+    if content is None:
+        raise SkillValidationError(f"Version '{ts}' is not retained for skill '{name}'.")
+    snapshot_before_write(
+        skill_dir, content, actor='user', rationale=f'restored {name} to version {ts}'
+    )
+    md.write_text(content, 'utf-8')
+    _bust_prompt_skills_cache()
+    parsed = _parseSkill(md)
+    return parsed or {'name': name}
+
+
 # ---------------------------------------------------------------------------
 # Delete trash — one-level undo for a skill delete (2026-10-03)
 #

@@ -5,7 +5,7 @@
 
 # API Index — every route
 
-412 routes across 339 paths,
+414 routes across 341 paths,
 grouped by family. **This file is generated.** For the prose that explains what
 these are for and when to reach for them, read
 [`API_REFERENCE.md`](./API_REFERENCE.md) — it covers the families that matter in
@@ -139,7 +139,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `DELETE` | `/api/brain/stores/{name}/{row_id}` | Delete one row from a brain store (per-entry Delete in the Memory UI). |
 | `GET` | `/api/brain/turn-outcomes` | M5 telemetry: per-model/provider error rates plus the per-turn verdict distribution (046) for the Observabili… |
 
-## Skills (10)
+## Skills (12)
 
 | Method | Path | Summary |
 | --- | --- | --- |
@@ -150,9 +150,11 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `DELETE` | `/api/skills/{name}` | Delete a skill. Refuses bundled skills. |
 | `GET` | `/api/skills/{name}/versions` | Version history for one skill: ``{versions: [{ts, actor, rationale, sha}]}``. |
 | `GET` | `/api/skills/{name}/versions/{ts}/diff` | Unified diff of one version against the CURRENT SKILL.md. |
+| `POST` | `/api/skills/{name}/versions/{ts}/restore` | Undo a skill change: write version ``ts`` back as the live SKILL.md. |
 | `GET` | `/api/skills/packs` | Packs List |
 | `POST` | `/api/skills/packs` | Packs Install |
 | `DELETE` | `/api/skills/packs/{name}` | Packs Uninstall |
+| `POST` | `/api/skills/restore/{trashId}` | Undo a delete: restore a trashed skill directory (24h window). |
 
 ## Curator & learning (11)
 
@@ -531,4 +533,4 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 
 ---
 
-Generated from `docs/api/openapi.json` (412 operations).
+Generated from `docs/api/openapi.json` (414 operations).

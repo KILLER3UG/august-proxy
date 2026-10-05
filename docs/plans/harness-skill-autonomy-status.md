@@ -97,8 +97,10 @@ Do NOT add a second prose matcher. `d73022be` item B6 stays stale and unimplemen
 - Proposals: `harness_self_improve.save_proposal:293` → `data/harness_proposals/*.json` +
   `ledger.jsonl` (`_append_ledger:359`). Apply: `decide_proposal:419` → `_apply_approved:840` over
   `_APPROVERS:830`, documented as the ONLY proposal→change path. Reviewer never writes files.
-- Undo: `skill_versions.read_version:117` returns exact previous bytes, `MAX_VERSIONS=20`, but
-  **no restore endpoint exists** — `SkillVersionsPanel.tsx:11-17` says so. That route is new work.
+- Undo: `skill_versions.read_version:117` returns exact previous bytes, `MAX_VERSIONS=20`. The
+  restore route landed in Pass 3 item 13: `POST /api/skills/{name}/versions/{ts}/restore` →
+  `skill_service.restoreVersion`, which is the only path from a version id to file content and is
+  what item 14's probation auto-revert must call (not a revert proposal).
 - Rate limit: reuse `harness_outcome` (`record_proposal_outcome:173`, `applied_at`+`target`);
   per-day precedent `escalationBudgetPerDay` (`brain_config_service.py:242`, default 2).
 - Probation: reuse `turn_outcomes.skill_lift:617` (absent key = no evidence, never 0.0) and
@@ -632,4 +634,40 @@ said `extract-only` while the config default said `propose`.
   - My own harness bug, recorded because it looked like a feature failure at first: all three
     tests reported an empty `<body />`, which was `openDetail()` querying before anything was
     rendered — not a component crash. Debugged by dumping the DOM in a scratch test rather than
-    by guessing, then the scratch file was deleted.
+    by guessing, then the scratch file was deleted. The same class bit once more in item 13's
+    panel tests: `findByTestId('skill-version-diff')` resolves the instant the wrapper renders,
+    while the diff query is still loading, so the assertions had to await the control itself.
+- **Item 13 — undo lands.** One write path, from both ends:
+  - `skill_service.restoreVersion(name, ts, workspace)` is the ONLY route from a version id to
+    file content. Verbatim bytes, NOT `patchSkill` — that canonicalizes the body and re-renders
+    frontmatter, and an undo that rewrites the bytes it restores is not an undo. It snapshots the
+    content it replaces first, so every restore is itself undoable (which is what item 14's
+    probation auto-revert needs) and the history keeps agreeing with the file.
+  - **Refuses a bundled root.** The install tree is the payload an update replaces, so a write
+    there is invisible to the next patch and unfixable by it. Pinned by a test that plants a
+    `.versions` directory in a fake install tree and checks the bytes are untouched.
+  - Route `POST /api/skills/{name}/versions/{ts}/restore` — 404 for an unknown skill or version
+    (the vocabulary its two sibling GET routes already use), 400 for a refusal. Chosen over
+    `/api/skills/{name}/restore` + body: no shape collision with the trash route at all, and the
+    version id stays in the path where the digit guard already applies.
+  - `test_harness_revert_proposal.py`'s rule is untouched: the applier still never undoes a
+    learning write; a revert is a *user* action through this route, and item 14's probation will
+    call the same service function directly rather than file a proposal.
+  - Frontend: `restoreSkillVersion()` in `api-client/skills-versions.ts` (same all-digits gate)
+    and ONE button in the diff pane, offered only when the diff is non-empty — restoring the
+    version already in force is a write with nothing to say. The button label is a sentence, not
+    the unixts it posts. On success both reads are invalidated, so the history shows the snapshot
+    the restore took and the diff goes empty, which IS the confirmation; no toast was added.
+  - Comments REWRITTEN, not appended, in three places that argued for read-only
+    (`SkillVersionsPanel.tsx` header, `api-client/skills-versions.ts` header, and the old §101
+    reuse-map line here): each now says why the write path exists and where it lives.
+- **Generated artifacts back in step.** `check:api` was red at session start for the reason in
+  the correction above; after item 13's route `npm run gen:openapi`, `gen:api-index` and `gen:api`
+  were run and all three checks pass (`check:api`, `check:api-index`, `check:docs` — 6 claims).
+  Spec diff: +95 lines, exactly the two missing paths, zero deletions. Client: +114, zero
+  deletions. **`openapi.ts` is regenerated too** so the three derived files move together — there
+  is no CI check on the typed client, so leaving it behind would have been silent drift.
+- Item 13 checks: 6 backend tests red-first then green (36 in the file), 4 panel tests red-first
+  then green (13 in the file, 156 across `settings/__tests__/`), `-k skill` across the backend
+  **242 passed / 2 skipped**, `test_gate_participation` 27 passed, ruff + mypy clean on the
+  changed modules, `tsc --noEmit` clean.

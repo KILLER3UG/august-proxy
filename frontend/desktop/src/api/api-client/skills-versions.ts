@@ -1,18 +1,20 @@
-/* ── Skill version history (read-only) ──────────────────────────────── */
-/* Wrappers for the two version endpoints in app/routers/skills.py:
- *   GET /api/skills/{name}/versions           → { versions: [{ts, …}] }
- *   GET /api/skills/{name}/versions/{ts}/diff → { diff }  (vs the LIVE file)
+/* ── Skill version history ──────────────────────────────────────────── */
+/* Wrappers for the version endpoints in app/routers/skills.py:
+ *   GET  /api/skills/{name}/versions                → { versions: [{ts, …}] }
+ *   GET  /api/skills/{name}/versions/{ts}/diff      → { diff }  (vs the LIVE file)
+ *   POST /api/skills/{name}/versions/{ts}/restore   → write that version back
  *
- * There is deliberately NO revert/restore wrapper. The backend has no such
- * endpoint, so a button that offered one would either be a lie or a second
- * write path invented in the UI. This is a reading surface: what a skill used
- * to say, and how it differs from what it says now.
+ * The restore wrapper exists because the backend route does, and in that
+ * order: a button that offered an undo with no single server-side path to
+ * take would be the second write path this file used to refuse. Reads are not
+ * the point any more — the write is why the reads are worth showing.
  *
  * The diff is ALWAYS against the current `SKILL.md`, never against the
  * next-newer snapshot — the question a reader has is "what did I lose when
  * this was replaced", and the live file is the only honest other end of it.
  * An EMPTY diff therefore means "this snapshot is what is live now", which is
- * how the UI answers the `sha` question without hashing anything client-side.
+ * how the UI answers the `sha` question without hashing anything client-side,
+ * and how it knows when there is nothing to undo.
  */
 
 import { api } from '../client';
@@ -66,11 +68,44 @@ export function getSkillVersionDiff(
   // unixts would traverse out of the versions directory if it ever reached
   // the filesystem. Refusing locally keeps a malformed row from becoming a
   // request at all, and turns a silent 404 into a named failure.
-  if (!/^\d+$/.test(ts)) {
+  if (!isVersionId(ts)) {
     return Promise.reject(new Error(`Refusing a non-numeric skill version id: ${ts}`));
   }
   return api.get<SkillVersionDiff>(
     `/api/skills/${encodeURIComponent(name)}/versions/${ts}/diff${scopeQuery(workspace)}`,
+  );
+}
+
+export interface SkillVersionRestore {
+  ok: boolean;
+  name: string;
+  /** The version id written back — echo of the request, not the server's guess. */
+  restored: string;
+  /** The parsed skill as the backend now reads it. */
+  skill: Record<string, unknown>;
+}
+
+function isVersionId(ts: string): boolean {
+  return /^\d+$/.test(ts);
+}
+
+/** Undo one skill change: write version `ts` back over the live SKILL.md.
+ *
+ * This is the ONLY client for that route, and `skill_service.restoreVersion`
+ * is the ONLY server path from a version id to file content — the panel's
+ * button and the probation auto-revert both come through it, so "undo" has one
+ * meaning. The write snapshots what it replaces, so every restore is itself in
+ * the history it extends. */
+export function restoreSkillVersion(
+  name: string,
+  ts: string,
+  workspace?: string,
+): Promise<SkillVersionRestore> {
+  if (!isVersionId(ts)) {
+    return Promise.reject(new Error(`Refusing a non-numeric skill version id: ${ts}`));
+  }
+  return api.post<SkillVersionRestore>(
+    `/api/skills/${encodeURIComponent(name)}/versions/${ts}/restore${scopeQuery(workspace)}`,
   );
 }
 

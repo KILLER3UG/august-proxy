@@ -13894,6 +13894,44 @@
         ]
       }
     },
+    "/api/skills/restore/{trashId}": {
+      "post": {
+        "description": "Undo a delete: restore a trashed skill directory (24h window).",
+        "operationId": "restoreSkill_api_skills_restore__trashId__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "trashId",
+            "required": true,
+            "schema": {
+              "title": "Trashid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restoreskill"
+      }
+    },
     "/api/skills/{name}": {
       "delete": {
         "description": "Delete a skill. Refuses bundled skills.\n\nPart 17 Phase B: with a workspace, only the project override is\ndeleted — the shadowed global skill stays intact.",
@@ -14137,6 +14175,63 @@
           }
         },
         "summary": "Diffskillversion"
+      }
+    },
+    "/api/skills/{name}/versions/{ts}/restore": {
+      "post": {
+        "description": "Undo a skill change: write version ``ts`` back as the live SKILL.md.\n\nThe single restore route. Everything that puts a skill back — the panel's\nUndo button, and item 14's probation auto-revert — goes through\n``skill_service.restoreVersion`` and therefore through the same snapshot\nfirst, so the restore is itself in the history it just extended.\n\n404 for an unknown skill or a version that is not retained (the same\nvocabulary the two GET version routes already use); 400 for a refusal the\nservice raises on a skill it will not overwrite, e.g. a bundled entry.",
+        "operationId": "restoreSkillVersion_api_skills__name__versions__ts__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ts",
+            "required": true,
+            "schema": {
+              "title": "Ts",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workspace",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restoreskillversion"
       }
     },
     "/api/stats": {
