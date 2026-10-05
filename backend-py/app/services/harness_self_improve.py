@@ -416,7 +416,13 @@ def get_proposal(pid: str) -> dict[str, Any] | None:
         return None
 
 
-def decide_proposal(pid: str, decision: str, note: str = '') -> dict[str, Any]:
+def decide_proposal(
+    pid: str,
+    decision: str,
+    note: str = '',
+    *,
+    actor: str = 'human',
+) -> dict[str, Any]:
     """Approve/reject/dismiss/reopen a proposal. Approval runs the deterministic applier.
 
     'reopen' is the batch-decision undo path and is deliberately restricted
@@ -445,7 +451,7 @@ def decide_proposal(pid: str, decision: str, note: str = '') -> dict[str, Any]:
         path.write_text(json.dumps(row, indent=2, ensure_ascii=False), encoding='utf-8')
         _append_ledger({
             'at': row['decidedAt'],
-            'actor': 'human',
+            'actor': actor,
             'action': 'reopen_proposal',
             'target_key': pid,
             'kind': row.get('kind', ''),
@@ -480,7 +486,7 @@ def decide_proposal(pid: str, decision: str, note: str = '') -> dict[str, Any]:
 
     _append_ledger({
         'at': row['decidedAt'],
-        'actor': 'human',
+        'actor': actor,
         'action': f'{decision}_proposal',
         'target_key': pid,
         'kind': row.get('kind', ''),
@@ -835,6 +841,85 @@ _APPROVERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     'retire': _apply_skill_retire,
     'promote': _apply_promote,
 }
+
+
+def review_proposal(
+    pid: str,
+    verdict: object,
+    *,
+    reviewer_client: object | None = None,
+    reviewer_model: str = '',
+    note: str = '',
+) -> dict[str, Any]:
+    """The independent reviewer's ONE action: decide, never edit.
+
+    ``verdict`` is what the model answered. Only two answers act — ``KEEP``
+    approves, ``DISCARD`` rejects — and both go through :func:`decide_proposal`,
+    which is the only path from a proposal to a live change (``_APPROVERS``
+    lives under it and is unreachable from here). The reviewer therefore cannot
+    do anything a human could not do from the inbox.
+
+    Everything else fails CLOSED and leaves the proposal sitting in the inbox:
+
+    * no independent reviewer (``reviewer_client`` is None — same model, no
+      provider, unreachable, timeout). A verdict that arrived without a reviewer
+      behind it is not evidence.
+    * an empty, unrecognised or non-string answer. "Maybe" is not a rejection;
+      guessing which side it leaned would let a broken model approve work.
+    * the reviewer failing or throwing while deciding.
+
+    Fail-closed here is the whole safety argument: an unusable reviewer can
+    slow autonomy down, never push it forward.
+    """
+    row = get_proposal(pid)
+    if row is None:
+        raise ValueError(f'proposal {pid} not found')
+
+    if reviewer_client is None:
+        return {
+            'ok': False,
+            'decision': None,
+            'leftInInbox': True,
+            'reason': (
+                'no independent reviewer — same-model judging is inert and an '
+                'unreachable reviewer is not evidence; left in the inbox'
+            ),
+        }
+
+    text = str(verdict or '').strip().upper()
+    if text not in ('KEEP', 'DISCARD'):
+        return {
+            'ok': False,
+            'decision': None,
+            'leftInInbox': True,
+            'reason': (
+                f'reviewer answer {str(verdict)[:80]!r} is not KEEP or DISCARD — '
+                'left in the inbox rather than guessed at'
+            ),
+        }
+
+    decision = 'approve' if text == 'KEEP' else 'reject'
+    try:
+        result = decide_proposal(
+            pid,
+            decision,
+            note.strip() or (f'reviewed by {reviewer_model}' if reviewer_model else 'reviewed'),
+            actor='reviewer',
+        )
+    except Exception as exc:
+        return {
+            'ok': False,
+            'decision': None,
+            'leftInInbox': True,
+            'reason': f'decision could not be recorded: {type(exc).__name__}: {exc}',
+        }
+    return {
+        'ok': bool(result.get('ok')),
+        'decision': decision,
+        'leftInInbox': False,
+        'reason': f'reviewer said {text}',
+        'result': result,
+    }
 
 
 def _apply_approved(row: dict[str, Any]) -> dict[str, Any]:
