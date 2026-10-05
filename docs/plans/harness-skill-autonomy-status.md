@@ -546,9 +546,12 @@ Set these in Settings, or tell me the model id and I'll put the exact edit in a 
 - **backend: 4829 passed, 10 skipped, 0 failed in 10:01** — `PYTEST_EXIT=0`, zero FAILED/ERROR
   lines, read from the log itself.
 - **frontend: 1517 passed across 195 files** (vitest).
-- `npm run check:docs` passes (all 6 pinned claims). `check:api` shows a pre-existing
-  `/api/skills/{name}/restore` spec drift in this worktree, unrelated to these changes and
-  left alone rather than adding unrelated regeneration churn.
+- `npm run check:docs` passes (all 6 pinned claims). `check:api` FAILS, and the cause is now
+  known: `c332b526` added `POST /api/skills/restore/{trashId}` (undo a *deleted* skill) and never
+  regenerated `docs/api/openapi.json`, so the committed spec lacks one path. It is NOT a
+  half-built version-restore route — item 13's route (`/api/skills/{name}/restore`) is a
+  different path and does not collide with it. Regenerate once item 13's route lands, so one
+  commit carries the route and its spec.
 
 ## Checks on the shipped work (2026-10-05, post-acceptance)
 
@@ -579,3 +582,37 @@ the scheduled distiller only for `extract-only`/`full`, so the new default
 (`propose`) silently stopped the scheduled pass entirely — a mode nobody ran.
 Fixed, pinned by a test. Also fixed `curator.py:23`, whose fallback default still
 said `extract-only` while the config default said `propose`.
+
+## Item log — session 6
+- **The branch landed.** `harness-skill-autonomy` is now `master` (`3d0763ad`); the worktree is
+  the working copy for the rest of the backlog. The main checkout keeps the *other* session's
+  39 dirty files — no path overlap, verified again by diffing changed-path lists.
+- **`check:api` drift resolved (item 13's "investigate first")** — see the correction in the
+  definitive-suites section above. No half-built route exists; the committed spec is simply one
+  path behind `c332b526`.
+- **Reviewer pass now has a caller** → `learning_scheduler._reviewer_job`, registered as job
+  `reviewer` with cadence key `reviewerIntervalHours` (default 6h, matching the introspection
+  cadence that files what it reviews). Wiring was the whole gap: the pass had 20 tests and zero
+  callers, which is the failure mode this file's own `test_learning_scheduler_wiring.py` exists
+  to catch — and did not, because it only asserted the *two original* jobs.
+  - New brain-config key done through all four doors the handoff warns about: `numKeys`,
+    `fieldTable`, the interval validation branch, and `test_brain_config.py::_ALLCamelKeys`
+    (a closed-world list, so the new key is a conscious addition, not a silent one).
+  - The job imports `run_reviewer_pass` at call time, so patching the module attribute is the
+    thing that runs — pinned, not assumed.
+  - Cost is nil while no reviewer model resolves: the gate refuses before any HTTP call, so the
+    pass writes a verdict line and returns.
+- **A refusal is no longer a verdict.** `run_reviewer_pass` used to skip any proposal carrying a
+  non-empty `review`, so the first scheduler tick on this install — where the configured reviewer
+  is `judge-model-x` and the provider is unfunded — would have stamped every open proposal
+  `unavailable` **permanently**, and fixing the config later would never re-review them. That is
+  item 7's cooldown-on-a-config-fault mistake in new clothing, and it would have poisoned item
+  14's rails, which read the verdict. Now an `unavailable` row is retried (free: no call was
+  made); a `KEEP`/`DISCARD` row stays terminal, which the pre-existing
+  `test_an_already_reviewed_proposal_is_not_reviewed_again` still pins.
+- Tests: 4 written red first and shown failing (job registered / cadence tunable / job calls the
+  pass / unavailable retried), then 51 green across the three files, plus 97 green across the
+  harness+review cluster (`test_harness_self_improve`, `test_harness_wiring`, `test_review_gate`,
+  `test_review_proposal_path`, `test_proposal_expiry`, `test_skill_learning_propose_mode`,
+  `test_skill_review_pass`, `test_gate_participation`). ruff and mypy clean on the changed files.
+  **A full backend suite from this tip is still owed** (it was already owed from `3300f28d`).

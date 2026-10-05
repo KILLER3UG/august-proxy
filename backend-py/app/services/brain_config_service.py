@@ -74,6 +74,7 @@ numKeys: tuple[str, ...] = (
     'consolidationIntervalHours',
     'introspectionIntervalHours',
     'refineIntervalHours',
+    'reviewerIntervalHours',
     'outcomeIntervalHours',
     'outcomeWindowDays',
     'escalationBudgetPerDay',
@@ -209,6 +210,9 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # consolidation, since the P5 batch); and the outcome-measurement job's
     # cadence + pre/post episode window.
     ('refineIntervalHours', 'refine_interval_hours', 24, 'num'),
+    # The reviewer job's own cadence (learning_scheduler._reviewer_job). Six
+    # hours because that is how often introspection files what it reviews.
+    ('reviewerIntervalHours', 'reviewer_interval_hours', 6, 'num'),
     ('outcomeIntervalHours', 'outcome_interval_hours', 72, 'num'),
     ('outcomeWindowDays', 'outcome_window_days', 14, 'num'),
     ('consolidationModelSummarize', 'consolidation_model_summarize', False, 'bool'),
@@ -454,7 +458,7 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 lo, hi = minSamplesRange
             elif key == 'consolidationIntervalHours' or key == 'introspectionIntervalHours':
                 lo, hi = consolidationIntervalRange
-            elif key in ('refineIntervalHours', 'outcomeIntervalHours'):
+            elif key in ('refineIntervalHours', 'outcomeIntervalHours', 'reviewerIntervalHours'):
                 lo, hi = consolidationIntervalRange
             elif key == 'outcomeWindowDays':
                 lo, hi = (3, 90)

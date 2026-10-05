@@ -54,6 +54,37 @@ class TestSchedulerIsTheOnlyStarter:
         assert {'consolidationIntervalHours', 'introspectionIntervalHours'} <= set(allowedKeys)
 
 
+class TestReviewerJobIsWired:
+    """The reviewer pass shipped with 20 tests and no caller.
+
+    A pass nothing runs is a feature that does not exist, and this file is
+    exactly the guard whose absence let it through: unit tests proved the pass
+    behaves at its own seam, not that the seam is wired to a cadence.
+    """
+
+    def test_the_reviewer_job_is_registered(self) -> None:
+        assert 'reviewer' in ls.JOBS, sorted(ls.JOBS)
+
+    def test_its_cadence_is_a_tunable_brain_config_key(self) -> None:
+        from app.services.brain_config_service import allowedKeys
+
+        assert 'reviewerIntervalHours' in allowedKeys
+
+    def test_the_job_calls_the_pass_at_run_time(self, monkeypatch) -> None:
+        seen: list[bool] = []
+
+        def fake(limit: int = 5, dryRun: bool = False) -> dict:
+            seen.append(dryRun)
+            return {'reviewed': 1, 'unavailable': 0}
+
+        monkeypatch.setattr('app.services.harness_self_improve.run_reviewer_pass', fake)
+        out = ls.run_job('reviewer')
+        assert out['ok'], out
+        assert seen == [False], 'the scheduled pass must not run as a dry run'
+        row = ls.last_run('reviewer')
+        assert row and 'reviewed' in (row['detail'] or ''), row
+
+
 class TestLedger:
     """conftest's autouse isolatedData fixture keeps the brain DB in tmp."""
 

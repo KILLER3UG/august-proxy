@@ -1015,7 +1015,10 @@ def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
     proposal clears the hard limits — item 14's job.
 
     Every unusable reviewer is recorded as 'unavailable' with its cause, because
-    a silent skip is how thirteen judge failures hid for a month.
+    a silent skip is how thirteen judge failures hid for a month. An
+    'unavailable' row is retried by the next pass — the gate refused before any
+    call was made, so the retry is free and a real verdict must be able to
+    replace it. A KEEP/DISCARD row is terminal.
     """
     reviewed = 0
     unavailable = 0
@@ -1026,7 +1029,10 @@ def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
         if kind not in ('skill_create', 'skill_patch'):
             continue  # observations and reverts are human-only by design
         if isinstance(row.get('review'), dict) and row['review']:
-            continue  # already reviewed — never burn a second call
+            if as_str(row['review'].get('verdict'), '') == 'unavailable':
+                pass  # a refusal is not a verdict — retry once a reviewer exists
+            else:
+                continue  # already reviewed — never burn a second call
         producerModel = as_str(as_dict(row.get('payload')).get('producedBy'), '')
         client, refusal = resolve_independent_reviewer(producerModel, _reviewModelHint())
         if client is None:

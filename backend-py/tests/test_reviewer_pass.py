@@ -206,6 +206,28 @@ class TestPassMechanics:
         hsi.run_reviewer_pass()
         assert not client.calls
 
+    def test_an_unavailable_review_is_retried_once_a_reviewer_exists(
+        self, brain, monkeypatch
+    ):
+        """A refusal is not a verdict.
+
+        Stamping 'unavailable' terminally would freeze the inbox on the state
+        of a broken config — item 7's mistake (one misconfiguration, thirteen
+        indistinguishable rows) in new clothing. The retry costs no model
+        call: the gate refused before one was made.
+        """
+        pid = _fileProposal(brain)
+        _gate(monkeypatch, None, 'no reviewer model available')
+        first = hsi.run_reviewer_pass()
+        assert first['unavailable'] == 1, first
+        assert hsi.get_proposal(pid)['review']['verdict'] == 'unavailable'
+        client = _FakeClient('KEEP — durable')
+        _gate(monkeypatch, client)
+        second = hsi.run_reviewer_pass()
+        assert second['reviewed'] == 1, second
+        assert client.calls, 'a proposal the reviewer never saw must be retried'
+        assert hsi.get_proposal(pid)['review']['verdict'] == 'KEEP'
+
     def test_the_review_line_is_shaped_for_the_inbox(self, brain, monkeypatch):
         pid = _fileProposal(brain)
         _gate(monkeypatch, _FakeClient('DISCARD — one-off'))

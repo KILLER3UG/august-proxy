@@ -53,6 +53,7 @@ _ALLCamelKeys = {
     # P2 unified scheduler + P5 outcome ledger cadences.
     'introspectionIntervalHours',
     'refineIntervalHours',
+    'reviewerIntervalHours',
     'outcomeIntervalHours',
     'outcomeWindowDays',
     'episodicRetentionDays',
