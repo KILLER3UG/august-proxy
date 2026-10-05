@@ -895,6 +895,7 @@ def run_distiller_pass(dryRun: bool = False) -> dict[str, Any]:
         # half was unusable). `apply_verdict` keeps its own denylist check as
         # the LAST gate before persistence; this layer only ever removes more.
         applicable, dropped = parse_verdicts(verdicts)
+        _record_judge_success(len(batch), verdicts)
         for d in dropped:
             results.append({'episode': d.get('episode'), 'label': 'dropped-invalid', 'why': d['why']})
         for v in applicable:
@@ -995,6 +996,35 @@ def _in_cooldown() -> bool:
         return datetime.fromisoformat(raw) > datetime.now(timezone.utc)
     except Exception:
         return False
+
+
+def _record_judge_success(batchSize: int, verdicts: Any) -> None:
+    """One row per judged BATCH — the pass logs no per-verdict write.
+
+    The mirror of ``_cooldown_batch``: without it the lifecycle table could show
+    only failures, so "0 successes" was unfalsifiable rather than a measurement.
+    Best-effort — a telemetry write must never fail a pass that judged fine.
+    """
+    from app.services.memory_store import record_lifecycle
+
+    try:
+        model = ''
+        try:
+            model = resolve_judge_model()
+        except Exception:
+            model = ''
+        items = verdicts.get('verdicts') if isinstance(verdicts, dict) else None
+        record_lifecycle(
+            '',
+            'distiller_judge_succeeded',
+            {
+                'batchSize': batchSize,
+                'model': model,
+                'verdicts': len(items) if isinstance(items, list) else 0,
+            },
+        )
+    except Exception:
+        logger.debug('distiller judge success bookkeeping failed', exc_info=True)
 
 
 def _cooldown_batch(batchSize: int) -> None:

@@ -889,6 +889,48 @@ def guardrail_block_hotspots(limit: int = 10) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def _judgeHealth() -> dict[str, Any]:
+    """Last success and last failure of the distiller judge, with its cause.
+
+    Read from the lifecycle rows rather than a counter column: the failure
+    detail already carries the named cause from the recorder, and a separate
+    counter would be a second thing that can drift from the log.
+    """
+    rows = _conn().execute(
+        "SELECT event_type, detail, created_at FROM lifecycle "
+        "WHERE event_type IN ('distiller_judge_succeeded', 'distiller_judge_failed', "
+        "'distiller_judge_unavailable') ORDER BY id"
+    ).fetchall()
+
+    def _last(eventType: str) -> tuple[str, dict[str, Any]] | tuple[None, None]:
+        for row in reversed(rows):
+            if str(row['event_type']) != eventType:
+                continue
+            try:
+                detail = json.loads(str(row['detail'] or '{}'))
+            except Exception:
+                detail = {}
+            return str(row['created_at'] or ''), (detail if isinstance(detail, dict) else {})
+        return None, None
+
+    successes = [r for r in rows if str(r['event_type']) == 'distiller_judge_succeeded']
+    failures = [r for r in rows if str(r['event_type']) == 'distiller_judge_failed']
+    lastSuccess, successDetail = _last('distiller_judge_succeeded')
+    lastFailure, failureDetail = _last('distiller_judge_failed')
+    unavailable, _ = _last('distiller_judge_unavailable')
+    return {
+        'successes': len(successes),
+        'failures': len(failures),
+        'lastSuccess': lastSuccess,
+        'lastSuccessDetail': successDetail or {},
+        'lastFailure': lastFailure,
+        'lastFailureDetail': failureDetail or {},
+        # A config fault never arms a cooldown, so without this the report
+        # could look healthy while the judge could not run at all.
+        'lastUnavailable': unavailable,
+    }
+
+
 def learning_report() -> dict[str, Any]:
     """Counters for the Phase E skillLearningReport blob."""
     conn = _conn()
@@ -916,6 +958,7 @@ def learning_report() -> dict[str, Any]:
         'flaggedFingerprints': int(
             conn.execute('SELECT COUNT(*) AS n FROM failure_fingerprints WHERE flagged = 1').fetchone()['n']
         ),
+        'judge': _judgeHealth(),
         'resolvedFingerprints': int(
             conn.execute(
                 "SELECT COUNT(*) AS n FROM failure_fingerprints WHERE status = 'resolved'"
