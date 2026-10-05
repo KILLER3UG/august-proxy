@@ -351,3 +351,82 @@ class TestModelResolution:
         saveBrainConfig({'skillLearningJudgeModel': '', 'titleModel': ''})
         monkeypatch.setattr(sd, '_resolveProvider', lambda m: {'name': m} if m else None)
         assert sd.resolve_judge_model() in ('', 'auto-memory-model-x')
+
+
+class TestJudgeFailureNamesItsCause:
+    """Measured on the real install: 13 `distiller_judge_failed` lifecycle rows,
+    every one with detail shaped exactly `{"batchSize": N, "cooldownUntil": …}`.
+    The reason was logged as a warning and dropped from the record, which is why
+    a month of failing passes stayed undiagnosable."""
+
+    def _rows(self):
+        from app.services.memory_conn import conn
+
+        return [
+            dict(r)
+            for r in conn().execute("SELECT event_type, detail FROM lifecycle WHERE event_type LIKE 'distiller_judge%'")
+        ]
+
+    def test_an_unparseable_response_records_the_reason(self, brain, monkeypatch):
+        import asyncio
+
+        # The real shape: the provider answers with an empty body, so the JSON
+        # parse raises and the call used to collapse into a bare None.
+        class EmptyClient:
+            config = {}
+
+            async def generate(self, prompt, system=None):
+                return ''
+
+            async def close(self):
+                pass
+
+        monkeypatch.setattr(sd, 'resolve_judge_model', lambda: 'some-model')
+        monkeypatch.setattr(sd, '_resolveProvider', lambda m: {'id': 'p'})
+        monkeypatch.setattr('app.providers.clients.getUnpooledClient', lambda p: EmptyClient())
+        assert asyncio.run(sd.call_judge('anything')) is None
+        assert sd.take_judge_failure()[0] == 'unparseable-response'
+
+    def test_the_cooldown_row_carries_the_reason(self, brain, monkeypatch):
+        from app.services.memory_store import init
+
+        init()
+        monkeypatch.setattr(sd, 'take_judge_failure', lambda: ('timeout', 'judge exceeded 90s'))
+        sd._cooldown_batch(5)
+        row = self._rows()[-1]
+        import json
+
+        detail = json.loads(str(row['detail']))
+        assert detail['reason'] == 'timeout'
+        assert 'judge exceeded 90s' in detail['error']
+        assert detail['batchSize'] == 5
+
+    def test_a_missing_judge_model_is_not_recorded_as_a_transient_failure(
+        self, brain, monkeypatch
+    ):
+        """A misconfiguration is permanent and needs a human. Cooling down for 30
+        minutes and labelling it "judge failed" hides it among real failures —
+        which is exactly how this install spent 13 passes on a fake model name
+        written into its config by a test."""
+        from app.services.memory_store import init
+
+        init()
+        monkeypatch.setattr(sd, 'resolve_judge_model', lambda: '')
+        import asyncio
+
+        assert asyncio.run(sd.call_judge('anything')) is None
+        assert sd.take_judge_failure()[0] == 'no-judge-model'
+        import asyncio
+
+        assert asyncio.run(sd.call_judge('anything')) is None
+        # The pass's failure handler is what decides between the two kinds.
+        sd._cooldown_batch(5)
+        rows = self._rows()
+        kinds = [r['event_type'] for r in rows]
+        assert 'distiller_judge_unavailable' in kinds, rows
+        assert 'distiller_judge_failed' not in kinds
+        # And no 30-minute cooldown was armed: a human has to fix the config,
+        # so retrying on a timer would just fail again quietly.
+        from app.services.memory_store import get_internal_state
+
+        assert not str(get_internal_state(sd._cooldownKey()) or '')

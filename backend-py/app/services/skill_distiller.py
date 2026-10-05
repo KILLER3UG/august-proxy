@@ -327,6 +327,31 @@ def parse_verdicts(
     return applicable, dropped
 
 
+# ── why the judge did not answer ────────────────────────────────────────────
+# The pass used to collapse every outcome into a bare `None`, log a warning, and
+# burn a 30-minute cooldown labelled `distiller_judge_failed`. Measured on a real
+# install: 13 such rows, each detail exactly {batchSize, cooldownUntil} — the
+# CAUSE was never persisted, so a month of failing passes stayed undiagnosable,
+# and a pure configuration fault hid among transient ones.
+JUDGE_CONFIG_FAILURES: frozenset[str] = frozenset(
+    {'no-judge-model', 'no-provider', 'no-client'}
+)
+_judgeFailure: tuple[str, str] | None = None
+
+
+def _note_judge_failure(reason: str, error: str = '') -> None:
+    global _judgeFailure
+    _judgeFailure = (reason, (error or '')[:300])
+
+
+def take_judge_failure() -> tuple[str, str]:
+    """Read and clear why the last judge call did not answer."""
+    global _judgeFailure
+    out = _judgeFailure or ('unknown', '')
+    _judgeFailure = None
+    return out
+
+
 async def call_judge(prompt: str) -> dict[str, Any] | None:
     """One judge model call. Returns parsed JSON or None (judge failed).
 
@@ -345,19 +370,35 @@ async def call_judge(prompt: str) -> dict[str, Any] | None:
     """
     model = resolve_judge_model()
     provider = _resolveProvider(model)
-    if not provider or not model:
+    if not model:
+        _note_judge_failure('no-judge-model', 'skillLearningJudgeModel resolves to nothing')
         logger.info('distiller judge skipped: no judge model resolves')
+        return None
+    if not provider:
+        _note_judge_failure('no-provider', 'no provider serves ' + repr(model))
+        logger.info('distiller judge skipped: no provider for %r', model)
         return None
     try:
         from app.providers.clients import getUnpooledClient
 
         client = getUnpooledClient(provider)
         if not client:
+            _note_judge_failure('no-client', 'provider has no client')
             return None
         try:
             client.config = {**dict(client.config or {}), 'model': model}
             raw = await client.generate(prompt, system=_JUDGE_SYSTEM)
-            data = _extractJson(str(raw))
+            try:
+                data = _extractJson(str(raw))
+            except Exception as exc:
+                # The shape measured on this install: the provider answered with
+                # an EMPTY body (no exception at all), so parsing raised and the
+                # whole thing was labelled "judge failed" with no cause kept.
+                _note_judge_failure(
+                    'unparseable-response',
+                    type(exc).__name__ + ': ' + str(exc) + ' | body=' + repr(str(raw)[:120]),
+                )
+                return None
             applicable, _dropped = parse_verdicts(data)
             if not applicable and data.get('verdicts'):
                 # Every verdict was unusable — the shape was wrong, not the
@@ -374,6 +415,7 @@ async def call_judge(prompt: str) -> dict[str, Any] | None:
             except Exception:
                 pass
     except Exception as exc:
+        _note_judge_failure('request-failed', type(exc).__name__ + ': ' + str(exc))
         logger.warning('distiller judge call failed: %s', exc)
         return None
 
@@ -895,9 +937,15 @@ def _run_batch(batch: list[dict[str, Any]]) -> dict[str, Any] | None:
         # block on the judge — but it must not silently skip either. Offload
         # to a worker thread that owns a fresh event loop.
         return _run_batch_off_loop(prompt)
+    take_judge_failure()  # clear any stale reason before this batch
     try:
         return asyncio.run(asyncio.wait_for(call_judge(prompt), timeout=_JUDGE_TIMEOUT_S))
+    except asyncio.TimeoutError:
+        _note_judge_failure('timeout', 'judge exceeded ' + str(_JUDGE_TIMEOUT_S) + 's')
+        logger.warning('distiller judge batch timed out after %ss', _JUDGE_TIMEOUT_S)
+        return None
     except Exception as exc:
+        _note_judge_failure('request-failed', type(exc).__name__ + ': ' + str(exc))
         logger.warning('distiller judge batch failed: %s', exc)
         return None
 
@@ -912,14 +960,24 @@ def _run_batch_off_loop(prompt: str) -> dict[str, Any] | None:
 
     def worker() -> None:
         try:
-            box['result'] = asyncio.run(asyncio.wait_for(call_judge(prompt), timeout=_JUDGE_TIMEOUT_S))
+            box['result'] = asyncio.run(
+                asyncio.wait_for(call_judge(prompt), timeout=_JUDGE_TIMEOUT_S)
+            )
+        except asyncio.TimeoutError:
+            _note_judge_failure('timeout', 'judge exceeded ' + str(_JUDGE_TIMEOUT_S) + 's')
+            box['result'] = None
         except Exception as exc:
+            _note_judge_failure('request-failed', type(exc).__name__ + ': ' + str(exc))
             logger.warning('distiller judge batch failed: %s', exc)
             box['result'] = None
 
     thread = threading.Thread(target=worker, daemon=True, name='august-distiller-judge')
     thread.start()
     thread.join(_JUDGE_TIMEOUT_S + 15)
+    if thread.is_alive():
+        # The worker outlived the grace window and is still holding a socket on
+        # its own loop. Naming that beats reporting nothing at all.
+        _note_judge_failure('timeout', 'judge worker exceeded ' + str(_JUDGE_TIMEOUT_S + 15) + 's')
     return box.get('result')
 
 
@@ -940,15 +998,36 @@ def _in_cooldown() -> bool:
 
 
 def _cooldown_batch(batchSize: int) -> None:
+    """Record WHY the judge did not answer, and only arm a cooldown for a fault
+    that a retry could plausibly cure.
+
+    A config failure (`no-judge-model` / `no-provider` / `no-client`) is
+    permanent until a human changes something. Cooling down for 30 minutes and
+    labelling it "judge failed" is how one install buried a fake model name
+    under 13 indistinguishable rows.
+    """
     from app.services.memory_store import record_lifecycle, set_internal_state
 
-    until = datetime.now(timezone.utc) + timedelta(minutes=_JUDGE_COOLDOWN_MIN)
+    reason, error = take_judge_failure()
     try:
+        if reason in JUDGE_CONFIG_FAILURES:
+            record_lifecycle(
+                '',
+                'distiller_judge_unavailable',
+                {'reason': reason, 'error': error, 'batchSize': batchSize},
+            )
+            return
+        until = datetime.now(timezone.utc) + timedelta(minutes=_JUDGE_COOLDOWN_MIN)
         set_internal_state(_cooldownKey(), until.isoformat())
         record_lifecycle(
             '',
             'distiller_judge_failed',
-            {'batchSize': batchSize, 'cooldownUntil': until.isoformat()},
+            {
+                'batchSize': batchSize,
+                'cooldownUntil': until.isoformat(),
+                'reason': reason,
+                'error': error,
+            },
         )
     except Exception:
         logger.debug('distiller cooldown bookkeeping failed', exc_info=True)
