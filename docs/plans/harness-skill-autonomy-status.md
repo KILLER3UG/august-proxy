@@ -931,3 +931,28 @@ the evidence prose shifts with the episode window — and the test asserts exact
   skill passes, the window expires, an unkeyed row blocks nothing, the key is stable across reloads
   and prefers the fingerprint, and one end-to-end through `measure_pending` (the revert row carries
   a key, and the re-filed finding is held by `probation-cooldown`).
+
+## (7) What an auto-applied change can actually touch
+- **The two allow-listed kinds are `skill_create` and `skill_patch`.** Every other kind in
+  `VALID_KINDS` — `brain_config`, `skill_delete`, `retire`, `promote`, `revert`, `observation`,
+  `tool_bucket`, `tool_description`, `flow_map` — is refused with `rule: 'hard-kind'`, and a test
+  sweeps the vocabulary rather than a hand-written list, so a new kind cannot enter silently.
+- **Measured, not asserted.** `tests/test_harness_rails_containment.py` fingerprints every
+  `.py`/`.json`/`.md` under `app/` (size + sha256), performs a real auto-apply through the reviewer
+  path, and requires the diff to be empty. Backend source, the rails module, `brain_config_service`
+  (the allow-list and every setting), `skill_service`, `tool_registry` and the whole `sandbox/`
+  policy tree are named explicitly so a refactor cannot move them out of the glob and leave the
+  test measuring nothing.
+- **The instrument is proved to bite** (`TestTheInstrumentItself`): it writes one file under `app/`
+  and asserts the scan reports exactly that path. A green tree-scan that cannot see a write is the
+  failure mode this whole file keeps hitting.
+- **A payload cannot smuggle a config change.** A `skill_create` carrying `patch`, `brain_config`
+  and a nested `auxiliary` block applies only its SKILL.md; `maxAgentDepth` and `enabled` are
+  unchanged afterwards. The applier dispatches on kind, never on payload keys.
+- **Names cannot escape**: `../evil`, `a/b`, `..\evil`, `/etc/passwd`, `.hidden`, empty and
+  over-length all raise `SkillValidationError`.
+- **One real side effect found and gated.** `_apply_skill_write` honours `payload.supersedes` by
+  calling `setEnabled(other, False)` — disabling a SECOND skill inside the same write. Both writes
+  are inside the skills root, so the tree scan would not have flagged it; it is now its own rule,
+  `supersedes-another-skill`, because a change that quietly retires another skill is not one the
+  machine should make unwatched. `''` (the applier's "nothing superseded") still passes.

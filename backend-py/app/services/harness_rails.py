@@ -68,6 +68,7 @@ RULES = frozenset(
         'hard-kind',
         'untrusted-evidence',
         'unsafe-content',
+        'supersedes-another-skill',
         'probation-cooldown',
         'burn-in',
         'daily-limit',
@@ -217,6 +218,17 @@ def auto_apply_allowed(row: dict[str, Any] | None) -> dict[str, Any]:
     content = _content_check(payload)
     if content:
         return content
+
+    # `supersedes` makes the applier DISABLE a second skill in the same write.
+    # That is a real side effect on a file the proposal does not name, so it is
+    # held even though both writes are inside the skills root.
+    supersedes = str(payload.get('supersedes') or '').strip()
+    if supersedes:
+        return _refuse(
+            'supersedes-another-skill',
+            f'the change also retires {supersedes!r}, a second skill the proposal '
+            'does not name — a human decides that one',
+        )
 
     key = finding_key(row)
     if _on_cooldown(key):
