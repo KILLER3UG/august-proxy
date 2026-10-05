@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 vi.mock('@/api/client', () => ({
@@ -124,3 +124,45 @@ function beforeEachDefault(url: string): Promise<unknown> {
   }
   return Promise.resolve({});
 }
+
+/* The page's own promise has to track the switch. Before item 14 the header
+ * could say "Nothing applies until you approve it" unconditionally; now that is
+ * only true while autonomy is off, and a settings page that misdescribes when
+ * its own machinery writes is worse than one that says nothing. */
+describe('the header states what the switch means', () => {
+  /** The header's first paint is the off-state sentence, so "it says the right
+   *  thing" only means something after the switch read has landed. */
+  const waitForHistoryRead = async () => {
+    await waitFor(() =>
+      expect(
+        getMock.mock.calls.some((c) => String(c[0]).includes('auto-history')),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(screen.getByTestId('inbox-header-note')).toBeInTheDocument());
+  };
+
+  it('promises human approval while autonomy is off', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes('auto-history')) return Promise.resolve({ autonomy: false, changes: [] });
+      return beforeEachDefault(url);
+    });
+    renderSection();
+    await waitForHistoryRead();
+    const header = screen.getByTestId('inbox-header-note');
+    expect(header.textContent).toMatch(/nothing applies until you approve/i);
+    expect(header.textContent).not.toMatch(/on their own/i);
+  });
+
+  it('says the machine applies changes while autonomy is on', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes('auto-history')) return Promise.resolve(HISTORY);
+      return beforeEachDefault(url);
+    });
+    renderSection();
+    const header = await screen.findByTestId('inbox-header-note');
+    await waitFor(() =>
+      expect(header.textContent).toMatch(/apply qualifying skill changes on their own/i),
+    );
+    expect(header.textContent).not.toMatch(/nothing applies until you approve/i);
+  });
+});

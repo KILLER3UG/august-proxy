@@ -208,6 +208,14 @@ export function HarnessImprovementsSection() {
   }, [harnessQ.data, memoryQ.data]);
 
   const selected = rows.find((r) => rowKey(r) === selectedId) ?? null;
+  // Same key the disclosure and the chat chip use, so this is one request, not
+  // three — react-query dedupes by key.
+  const autoQ = useQuery({
+    queryKey: ['harness-auto-history'],
+    queryFn: () => getAutoApplyHistory(1),
+    staleTime: 60_000,
+  });
+  const autonomyOn = Boolean(autoQ.data?.autonomy);
   const selectedReviewerLine = selected?.reviewLine ?? '';
   const fetching = harnessQ.isFetching || memoryQ.isFetching;
 
@@ -308,11 +316,16 @@ export function HarnessImprovementsSection() {
             <HeartPulse className="size-6 text-primary" />
             Review Inbox
           </h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+          <p data-testid="inbox-header-note" className="mt-1 max-w-xl text-sm text-muted-foreground">
             Everything August wants a human to decide: harness improvement proposals
             (self-improvement, distiller drafts, cross-project promotions) and memory
-            retirements. Nothing applies until you approve it — approvable kinds run a
-            deterministic applier, the rest are recorded for manual implementation.
+            retirements.{' '}
+            {/* The page's own promise has to track the switch. Saying "nothing
+                applies until you approve it" while autonomous apply is on
+                misdescribes when this machinery writes to your skills. */}
+            {autonomyOn
+              ? 'Autonomous apply is on: the rails apply qualifying skill changes on their own, and every one of them is listed below and undoable.'
+              : 'Nothing applies until you approve it — approvable kinds run a deterministic applier, the rest are recorded for manual implementation.'}
           </p>
         </div>
         <div className="flex items-center gap-2">

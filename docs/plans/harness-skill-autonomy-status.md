@@ -840,3 +840,48 @@ pipe in front of it.
   after the loop fix), 161 frontend in `settings/__tests__` (23 files), `tsc --noEmit` clean, ruff
   clean on `app/` + tests, `check:api` and `check:docs` green (the response shape is untyped in the
   spec, so no regeneration churn for a derived key).
+
+## Real-app verification (end-of-run item, done 2026-10-06)
+Run against **a labeled test profile** — `C:\Dev\august-verify-profile`, created for this and
+deleted afterwards — with the real backend (`uvicorn app.main:app`, port 8091, real migrations
+including 052) serving the real `web-dist` bundle, driven by headless chromium (playwright).
+**Your live store was never the target**: `C:\Dev\august-proxy\data` has no `verify-restore` skill
+and no `prop_verify*` file, and your own app on :8085 was not touched.
+- `POST /api/skills` → `PATCH` → `GET /versions` → `POST /versions/{ts}/restore` over HTTP: the
+  restore is **byte-exact** (`sha256[:12]` `b6d2996cdc1b` round-tripped), the restore itself lands
+  in the history (`restored verify-restore to version …`), and an unknown version is a real 404.
+- `GET /api/harness/proposals` and `/api/harness/proposals/{pid}` both carry `reviewLine`, formed
+  server-side, and agree with each other. The rendered inbox line reads
+  `Reviewer: keep — the gap is real and durable` with **exactly one** em dash — the doubled-dash
+  bug was measured in the running app, not only in a unit test.
+- `PUT /api/brain/config` accepts `skillAutonomy` / `autoApplyPerDay` / `autonomyBurnInCount` and
+  they read back — the closed-world key door is open for all three.
+- `POST /api/curator/scheduler/run/reviewer` with autonomy ON and no reviewer model: ledger row
+  written, detail `{reviewed: 1, unavailable: 1, applied: 0, held: 0}`, the proposal stamped with
+  the real cause `no reviewer model available` (NOT the asyncio RuntimeError the old code produced),
+  and nothing applied.
+- **Chip in the running app**: renders `August updated verify-restore by itself · Undo · details`
+  (skill name as the label, no id). Clicking Undo posted the restore and **changed the file on
+  disk**, then the chip dismissed itself.
+- **Version panel in the running app**: the undo is offered only on a snapshot that differs from
+  what is live (`Undo — restore this version`), clicking it changed the file, and afterwards the
+  control disappeared and the `No differences — this snapshot is exactly what the current file
+  says` message appeared. The withheld-when-live rule works against a real file.
+- Screenshots: `.probe-artifacts/01…12` (untracked scratch evidence, not committed).
+- **Two environment findings worth keeping**:
+  1. The first-run **setup modal covers the composer**, so the chip is not clickable until it is
+     dismissed. A fresh install with autonomy armed will show the chip behind that modal.
+  2. `AUGUST_CORS_ORIGINS` is **comma**-separated (`_cors_extra_origins` splits on `,`), and a
+     browser POST from an origin the guard does not trust is a 403 `untrusted origin` — including
+     same-origin `http://127.0.0.1:8091` for a backend started without it. My first browser run
+     "failed to undo" for exactly this reason; the chip correctly surfaced the named error rather
+     than pretending, which is the behavior the error path was built for.
+
+## A UI promise my own work made false (found by looking at the screenshot)
+The inbox header said "Nothing applies until you approve it" unconditionally. With item 14 that is
+only true while the switch is off, so the page misdescribed when its own machinery writes. The
+sentence now tracks `autonomy` (read through the same deduped `harness-auto-history` query):
+on → "the rails apply qualifying skill changes on their own, and every one of them is listed below
+and undoable"; off → the original promise. Two tests red-first, and both wait for the switch read
+because the first paint is the off-state sentence. Verified in the running app: the header reads
+the on-state sentence against a live `autonomy: true` config.
