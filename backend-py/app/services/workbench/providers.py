@@ -54,8 +54,48 @@ def make_review_llm_client(
 
         provider = None
         review_model = review_model_hint
+        # A hint may be qualified as `provider/model`. resolve() matches
+        # providers by id/name/alias only, so the whole string fell through as a
+        # provider name, survived as the MODEL, and reached apiFormat
+        # normalization ("unknown apiFormat 'zen/claude-sonnet-5'"). Measured:
+        # a qualified reviewer hint resolved to nothing at all. Split here, so
+        # the right-hand side is the model and the left-hand side is looked up
+        # as a provider — and an unknown provider fails closed below instead of
+        # silently reviewing with somebody else's default.
+        qualified_provider_name = ''
+        if '/' in review_model:
+            head, _, tail = review_model.partition('/')
+            head, tail = head.strip(), tail.strip()
+            if head and tail:
+                qualified_provider_name, review_model = head, tail
+            else:
+                review_model = review_model_hint
         if review_model:
-            provider = providerResolver.resolve(review_model)
+            if qualified_provider_name:
+                provider = providerResolver.resolve(qualified_provider_name)
+                # resolve() deliberately fabricates a placeholder provider when
+                # nothing matches (so a bare model name can carry its own
+                # provider info). For a QUALIFIED hint that leniency is wrong: a
+                # typo would silently review through a provider that does not
+                # exist. Require a real configured entry.
+                # resolve() echoes the input back as the provider id when
+                # nothing matched (its deliberate leniency for bare model names).
+                # That is wrong for a QUALIFIED hint, and the check must use the
+                # raw store entries: list_available() filters by enabled+key and
+                # returns [] here, so it cannot tell "configured" from "absent".
+                want = qualified_provider_name.strip().lower()
+                if provider is None or as_str(provider.get('id')).strip().lower() == want:
+                    if not any(
+                        want
+                        in {
+                            as_str(e.get('id')).strip().lower(),
+                            as_str(e.get('name')).strip().lower(),
+                        }
+                        for e in providerResolver._iter_store_entries()
+                    ):
+                        return None
+            else:
+                provider = providerResolver.resolve(review_model)
         if not provider:
             provider = main_provider
         if not provider:
