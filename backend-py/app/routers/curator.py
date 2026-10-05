@@ -20,9 +20,9 @@ def _mode() -> str:
     try:
         from app.services.brain_config_service import getRuntimeConfig
 
-        return str(getRuntimeConfig().get('skillLearning', 'extract-only') or 'extract-only')
+        return str(getRuntimeConfig().get('skillLearning', 'propose') or 'propose')
     except Exception:
-        return 'extract-only'
+        return 'propose'
 
 
 @router.post('/run')

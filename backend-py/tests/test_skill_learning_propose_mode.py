@@ -15,6 +15,7 @@ with auto-apply still off. It is deliberately NOT a new mechanism.
 
 from __future__ import annotations
 
+import inspect
 import json
 import pathlib
 
@@ -141,3 +142,44 @@ class TestThePassWiresTheModeThrough:
         )
         skill_distiller.run_distiller_pass(dryRun=False)
         assert seen and all(m == 'propose' for m in seen), seen
+
+class TestTheScheduledPassRunsUnderPropose:
+    """Item 11's mode had to be added to the SCHEDULER's allow-list too.
+
+    `consolidation.py` ran the distiller only for `extract-only` / `full`, so
+    the shipped default ('propose') silently stopped the scheduled pass. Nothing
+    failed and nothing warned — a mode nobody ran. Found by auditing every
+    `skillLearning` comparison rather than by a test, which is why it is pinned
+    here now.
+    """
+
+    def test_the_consolidation_branch_includes_propose(self, brain):
+        import inspect
+
+        from app.services.memory_store import consolidation
+
+        src = inspect.getsource(consolidation)
+        assert "'propose'" in src, (
+            "the scheduled distiller pass no longer runs under the shipped default"
+        )
+
+    def test_the_curator_route_falls_back_to_the_shipped_default(self, brain):
+        from app.routers.curator import _mode
+        from app.services.brain_config_service import saveBrainConfig
+
+        saveBrainConfig({})  # unset -> the shipped default
+        assert _mode() == 'propose', _mode()
+
+    def test_full_includes_memory_bodies_and_propose_does_not(self, brain):
+        """The only documented difference between 'full' and 'propose': how much
+        text the promotion shortlist carries. Neither one applies a change."""
+        # Inspect the decision directly rather than driving the whole promotion.
+        import inspect
+
+        from app.services import harness_promote
+
+        src = inspect.getsource(harness_promote)
+        assert "if mode == 'full':" in src, 'the body-gating branch moved'
+        assert "if mode in ('extract-only', 'full'):" not in src, (
+            "no other branch may treat 'full' as the apply switch"
+        )

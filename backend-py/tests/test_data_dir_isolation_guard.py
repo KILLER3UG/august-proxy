@@ -13,6 +13,7 @@ any write, and the last test asserts the real file's bytes are unchanged.
 from __future__ import annotations
 
 import hashlib
+import json
 import pathlib
 
 import pytest
@@ -115,3 +116,48 @@ class TestConfigWriterIsGuarded:
         ok, err, merged = bcs.saveBrainConfig({'skillLearningJudgeModel': 'a-real-model'})
         assert ok, err
         assert merged.get('skillLearningJudgeModel') == 'a-real-model'
+
+
+class TestTheGuardIsInertOutsidePytest:
+    """The direction that would actually break August.
+
+    The refusal lives in `write_json_atomic`, which August calls on every save,
+    and it refuses paths inside the checkout's `data/` — the directory a normal
+    launch resolves to when AUGUST_DATA_DIR is unset. If that ever fired outside
+    pytest the app could not save its own data, so the test-runner gate is
+    pinned here rather than left to the docstring.
+
+    Verified by hand against a real launch: with `PYTEST_CURRENT_TEST` unset and
+    `AUGUST_DATA_DIR` unset, `dataDir()` resolves to the checkout data dir,
+    `_refuse_live_store_write` does not raise, and both `saveConfig` and
+    `write_json_atomic` write normally.
+    """
+
+    def test_a_normal_run_may_write_into_a_data_dir(self, tmp_path, monkeypatch):
+        """No pytest marker, no env var — this is what a launch looks like."""
+        monkeypatch.delenv('PYTEST_CURRENT_TEST', raising=False)
+        from app.atomic_write import write_json_atomic
+
+        target = tmp_path / 'config.json'
+        write_json_atomic(target, {'saved': True})
+        assert json.loads(target.read_text(encoding='utf-8'))['saved'] is True
+
+    def test_the_refusal_helper_is_silent_without_the_test_marker(self, monkeypatch, tmp_path):
+        monkeypatch.delenv('PYTEST_CURRENT_TEST', raising=False)
+        from app.atomic_write import _refuse_live_store_write
+
+        # Even aimed at the live dir it must be a no-op outside pytest.
+        _refuse_live_store_write(str(_live_data_dir() / 'config.json'))
+
+    def test_the_writer_guard_only_exists_while_a_test_runs(self, monkeypatch):
+        """One test, both directions: with the marker it raises, without it the
+        same call passes — so nobody can 'fix' a future failure by loosening
+        the pytest check alone."""
+        from app.atomic_write import _refuse_live_store_write
+
+        target = str(_live_data_dir() / 'config.json')
+        monkeypatch.setenv('PYTEST_CURRENT_TEST', 'tests/x::y (call)')
+        with pytest.raises(RuntimeError):
+            _refuse_live_store_write(target)
+        monkeypatch.delenv('PYTEST_CURRENT_TEST')
+        _refuse_live_store_write(target)

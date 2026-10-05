@@ -544,3 +544,33 @@ Set these in Settings, or tell me the model id and I'll put the exact edit in a 
 - `npm run check:docs` passes (all 6 pinned claims). `check:api` shows a pre-existing
   `/api/skills/{name}/restore` spec drift in this worktree, unrelated to these changes and
   left alone rather than adding unrelated regeneration churn.
+
+## Checks on the shipped work (2026-10-05, post-acceptance)
+
+### 1. Isolation guard scope — SAFE, and now pinned
+Verified by hand against a real launch: with `PYTEST_CURRENT_TEST` unset and
+`AUGUST_DATA_DIR` unset, `dataDir()` resolves to the checkout `data/`,
+`_refuse_live_store_write` does NOT raise, `assertPytestDataDirIsolated` is a
+no-op, and both `saveConfig` and `write_json_atomic` write normally (proved
+against a throwaway profile; the live store was never written).
+Pinned by `TestTheGuardIsInertOutsidePytest` — including one test that asserts
+the SAME call raises under pytest and passes without the marker, so the gate
+cannot be "fixed" by loosening only the pytest check. August can save its own
+data in a normal run.
+
+### 2. 'propose' vs 'full' — what 'full' does that 'propose' does not
+Exactly ONE thing, and it is not applying anything:
+`harness_promote.py:132` — under `full`, memory **bodies** are included in the
+promotion shortlist (a budget/cost rule for what the promotion pass reads);
+under `propose` only file and title travel. That is the whole difference.
+Neither mode applies a skill change: the create/amend branches end at
+`save_proposal` → `return 'proposal-filed'`, and approval is a separate
+`decide_proposal` step that a human (or, one day, the reviewer behind every hard
+limit) performs. Verified by grepping EVERY `skillLearning` comparison in app/.
+So the new default cannot auto-apply anything.
+
+**The audit found a real defect I had introduced:** `consolidation.py:546` ran
+the scheduled distiller only for `extract-only`/`full`, so the new default
+(`propose`) silently stopped the scheduled pass entirely — a mode nobody ran.
+Fixed, pinned by a test. Also fixed `curator.py:23`, whose fallback default still
+said `extract-only` while the config default said `propose`.

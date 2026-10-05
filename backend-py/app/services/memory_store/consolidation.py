@@ -543,7 +543,10 @@ def _skill_learning_pass() -> dict[str, object]:
         from app.services.episode_miner import run_resolution_check
 
         out['resolution'] = run_resolution_check()
-        if mode in ('extract-only', 'full'):
+        # 'propose' (the shipped default) must be in this list or the scheduled
+        # distiller pass silently stops running. Item 11 added the mode here and
+        # forgot this branch — caught by the check-2 audit, not by a test.
+        if mode in ('extract-only', 'propose', 'full'):
             from app.services.skill_distiller import run_distiller_pass
 
             dist = run_distiller_pass()
