@@ -536,3 +536,11 @@ Set these in Settings, or tell me the model id and I'll put the exact edit in a 
   probation, kill switch, readable history, burn-in counter. Not started.
 - 15 (SkillEvolvedChip announces only applied changes, with Undo). Not started.
 - Re-run the real reviewer call once the provider funding is fixed (item 9).
+
+## Definitive suites (tip `ecd56fa5`, no edits to the tree during either run)
+- **backend: 4829 passed, 10 skipped, 0 failed in 10:01** — `PYTEST_EXIT=0`, zero FAILED/ERROR
+  lines, read from the log itself.
+- **frontend: 1517 passed across 195 files** (vitest).
+- `npm run check:docs` passes (all 6 pinned claims). `check:api` shows a pre-existing
+  `/api/skills/{name}/restore` spec drift in this worktree, unrelated to these changes and
+  left alone rather than adding unrelated regeneration churn.
