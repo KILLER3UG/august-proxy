@@ -763,3 +763,13 @@ said `extract-only` while the config default said `propose`.
   rails/reviewer/proposal-path/brain-config/propose-mode, and a broad
   `-k "brain or harness or skill or review or distill or consolid or config or autonomy or learning"`
   slice **855 passed / 3 skipped / 0 failed** with `-n auto`. ruff + mypy clean.
+
+## Definitive suites (tip `29758a69`, clean tree, no edits during either run)
+The run the handoff owed since `3300f28d`. Both numbers are read from the logs themselves — the
+runner's summary line AND the exit code captured immediately after the runner returned, with no
+pipe in front of it.
+- **backend: 4902 passed, 10 skipped, 0 failed in 13:06** — `PYTEST_EXIT=0`, `grep -c '^FAILED'`
+  = 0. Up from 4829 at `ecd56fa5`: session 6 added 73 tests.
+- **frontend: 1528 passed across 197 files** (vitest) — `VITEST_EXIT=0`. Up from 1517/195.
+- `git status --porcelain | wc -l` was 0 at the tip before the run and after it, so the numbers
+  describe one tree.
