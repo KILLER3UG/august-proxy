@@ -10,10 +10,10 @@
  * Three things this deliberately does not do:
  *   * appear while autonomy is off. The settings history keeps the record; a
  *     chip in the chat column is a claim about what the machine is doing now.
- *   * offer an undo it cannot perform. A created skill has no previous version
- *     to put back, so the chip says what happened and stops there — inventing a
- *     "delete it" write to fill the button is exactly the second-write-path
- *     mistake the version history was built to avoid.
+ *   * offer an undo that is not the right one. A patch restores the version it
+ *     took; a create has no earlier version, so its undo is the soft disable
+ *     through the same PATCH the Skills page toggle uses. Neither deletes —
+ *     taking the user's file with it is not what "undo my announcement" means.
  *   * announce a human's approval. The backend only records reviewer-applied
  *     changes, so there is nothing here about work a person decided.
  */
@@ -22,6 +22,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sparkles, X } from 'lucide-react';
 import {
+  disableSkill,
   getAutoApplyHistory,
   restoreSkillVersion,
   type AutoAppliedChange,
@@ -72,13 +73,20 @@ export function SkillEvolvedChip() {
   };
 
   const undo = useMutation({
+    // A patch has a version to put back; a create does not, so its undo is the
+    // reversible flip the Skills page already offers. Neither branch deletes,
+    // and neither invents a write path — both call a client that already
+    // existed for humans.
     mutationFn: () =>
-      restoreSkillVersion(newest?.skill ?? '', newest?.versionTs ?? ''),
+      newest?.created
+        ? disableSkill(newest.skill ?? '')
+        : restoreSkillVersion(newest?.skill ?? '', newest?.versionTs ?? ''),
     onSuccess: () => {
       // The announce was for this change; once it is undone it has been said.
       hide(newest?.at ?? '');
       void queryClient.invalidateQueries({ queryKey: ['harness-auto-history'] });
       void queryClient.invalidateQueries({ queryKey: ['skill-versions'] });
+      void queryClient.invalidateQueries({ queryKey: ['skills'] });
     },
   });
 
@@ -94,19 +102,21 @@ export function SkillEvolvedChip() {
         August updated <span className="font-medium">{newest.skill}</span> by itself
       </span>
 
-      {newest.versionTs ? (
-        <button
-          type="button"
-          data-testid="skill-evolved-undo"
-          disabled={undo.isPending}
-          onClick={() => undo.mutate()}
-          className="rounded-md border border-border/60 px-1.5 py-0.5 text-2xs text-foreground transition hover:bg-accent disabled:opacity-50"
-        >
-          {undo.isPending ? 'Restoring…' : 'Undo'}
-        </button>
-      ) : (
-        <span>it created the skill, so there is no earlier version to put back</span>
-      )}
+      <button
+        type="button"
+        data-testid="skill-evolved-undo"
+        disabled={undo.isPending}
+        onClick={() => undo.mutate()}
+        className="rounded-md border border-border/60 px-1.5 py-0.5 text-2xs text-foreground transition hover:bg-accent disabled:opacity-50"
+      >
+        {undo.isPending
+          ? newest.created
+            ? 'Disabling…'
+            : 'Restoring…'
+          : newest.created
+            ? 'Undo — disable the skill'
+            : 'Undo — restore the earlier version'}
+      </button>
 
       {undo.isError && (
         <span data-testid="skill-evolved-undo-error" className="text-danger-fg">
@@ -144,7 +154,7 @@ export function SkillEvolvedChip() {
               <span className="text-foreground">{c.skill}</span>
               <span>{formatTimeAgo(c.at)}</span>
               {c.reverted && <span>restored</span>}
-              {!c.versionTs && !c.reverted && <span>created — no earlier version</span>}
+              {c.created && !c.reverted && <span>created here — undo disables it</span>}
             </li>
           ))}
         </ul>

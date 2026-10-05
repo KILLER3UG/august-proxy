@@ -956,3 +956,20 @@ the evidence prose shifts with the episode window — and the test asserts exact
   are inside the skills root, so the tree scan would not have flagged it; it is now its own rule,
   `supersedes-another-skill`, because a change that quietly retires another skill is not one the
   machine should make unwatched. `''` (the applier's "nothing superseded") still passes.
+
+## (4) An auto-created skill now has an undo: the soft disable
+The earlier decision — announce a create with no button, because there is no version to restore —
+is superseded by the user's instruction: undo a create by **disabling** it through the existing
+enable/disable path, never by deleting.
+- `record_auto_apply` gained `apply_action` (`'created'` / `'patched'`, straight from the applier's
+  own receipt), and `auto_apply_history()` exposes it as `created`. The history has to say which
+  kind of change it was or the UI cannot offer the right undo.
+- `disableSkill(name)` in `api-client/skills-versions.ts` is `PATCH /api/skills/{name}
+  {disabled: true}` — the identical call the Skills page toggle makes. No new write path is
+  invented; the existing one is named. A delete would have taken the user's file with it.
+- The chip branches: a patch restores its version, a create disables the skill, and the button says
+  which ("Undo — restore the earlier version" / "Undo — disable the skill"). Tests assert the
+  negative too — `restoreSkillVersion` and `api.delete` are both *not* called for a create.
+- Backend tests pin the distinction end-to-end through the real reviewer path: a create's history
+  row is `created: true` with an empty `versionTs` (there genuinely is nothing to restore), a patch
+  is `created: false` with a version the applier's own snapshot took.

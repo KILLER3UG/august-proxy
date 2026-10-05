@@ -426,3 +426,82 @@ def _mark_applied(pid: str) -> None:
     (hsi._proposals_dir() / f"{row['id']}.json").write_text(
         json.dumps(row, ensure_ascii=False), encoding='utf-8'
     )
+
+
+class TestACreateIsAnnouncedWithItsOwnUndo:
+    """Item 4: a created skill has no earlier version to restore, so its undo is
+    a soft disable through the same enable/disable path the Skills page uses —
+    never a delete, which would take the user's file with it."""
+
+    def test_the_history_names_a_create_as_a_create(self, brain, monkeypatch):
+        _arm()
+        name = 'created-undo'
+        row = hsi.save_proposal(
+            problem=f'the {name} flow deserves a skill',
+            evidence='the user corrected this twice, in their own words',
+            proposal='create the skill',
+            rollback='disable it again',
+            kind='skill_create',
+            payload={
+                'name': name,
+                'description': 'container flow',
+                'body': f'# {name}\n\nRestart instead of rebuilding.\n',
+                'trigger': 'container',
+                'episodeIds': [_trustedEpisodeId()],
+            },
+        )
+        pid = str(row['id'])
+
+        class _Client:
+            async def __call__(self, prompt):
+                return 'KEEP — durable and justified'
+
+        monkeypatch.setattr(
+            'app.services.harness_self_improve.resolve_independent_reviewer',
+            lambda producer, hint='': (_Client(), ''),
+        )
+        out = hsi.run_reviewer_pass()
+        assert out['applied'] == 1, out
+        history = rails.auto_apply_history()
+        mine = [h for h in history if h['proposalId'] == pid]
+        assert len(mine) == 1, history
+        assert mine[0]['created'] is True, mine[0]
+        # A create takes no snapshot, so there is genuinely nothing to restore.
+        assert mine[0]['versionTs'] == '', mine[0]
+
+    def test_a_patch_is_named_as_a_patch(self, brain, monkeypatch):
+        _arm()
+        name = 'patched-undo'
+        # The live file exists, so the applier's own snapshot gives this change a
+        # version to put back — which is exactly what distinguishes it from a
+        # create in the history.
+        _skill(name, 'v1 body — the good one')
+        row = hsi.save_proposal(
+            problem=f'the {name} skill rebuilds too often',
+            evidence='the user corrected this twice, in their own words',
+            proposal='amend the body',
+            rollback='restore the previous version',
+            kind='skill_patch',
+            payload={
+                'name': name,
+                'description': 'container flow',
+                'body': f'# {name}\n\nRestart instead of rebuilding.\n',
+                'trigger': 'container',
+                'episodeIds': [_trustedEpisodeId()],
+            },
+        )
+        pid = str(row['id'])
+
+        class _Client:
+            async def __call__(self, prompt):
+                return 'KEEP — durable and justified'
+
+        monkeypatch.setattr(
+            'app.services.harness_self_improve.resolve_independent_reviewer',
+            lambda producer, hint='': (_Client(), ''),
+        )
+        out = hsi.run_reviewer_pass()
+        assert out['applied'] == 1, out
+        mine = [h for h in rails.auto_apply_history() if h['proposalId'] == pid]
+        assert mine[0]['created'] is False, mine[0]
+        assert mine[0]['versionTs'], 'a patch has a version to put back'

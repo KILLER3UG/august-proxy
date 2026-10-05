@@ -20,19 +20,21 @@ vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
 }));
 
-// Only `restoreSkillVersion` is faked. `getAutoApplyHistory` stays real so the
+// Only the two write helpers are faked. `getAutoApplyHistory` stays real so the
 // chip still exercises the client it actually uses, against the mocked `api`.
 vi.mock('@/api/api-client/skills-versions', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/api-client/skills-versions')>();
-  return { ...actual, restoreSkillVersion: vi.fn() };
+  return { ...actual, restoreSkillVersion: vi.fn(), disableSkill: vi.fn() };
 });
 
 import { api } from '@/api/client';
 import { SkillEvolvedChip } from '../SkillEvolvedChip';
-import { restoreSkillVersion } from '@/api/api-client/skills-versions';
+import { disableSkill, restoreSkillVersion } from '@/api/api-client/skills-versions';
 
 const getMock = vi.mocked(api.get);
+const deleteMock = vi.mocked(api.delete);
 const restoreMock = vi.mocked(restoreSkillVersion);
+const disableMock = vi.mocked(disableSkill);
 
 const CHANGE = {
   at: '2026-10-04T09:12:00Z',
@@ -101,22 +103,28 @@ describe('SkillEvolvedChip', () => {
     await waitFor(() => expect(screen.queryByTestId('skill-evolved-chip')).toBeNull());
   });
 
-  it('announces a change it cannot undo, without pretending it can', async () => {
-    // A created skill has no previous version to put back — the honest chip
-    // says what happened and offers no undo rather than inventing a write.
+  it('undoes a create by disabling the skill, never by deleting it', async () => {
+    // A created skill has no earlier version to restore, so its undo is the
+    // soft one through the existing enable/disable path. A delete would take
+    // the user's file with it, which is not what "undo my announcement" means.
     getMock.mockImplementation((url: string) => {
       if (url.includes('auto-history')) {
         return Promise.resolve({
           autonomy: true,
-          changes: [{ ...CHANGE, versionTs: '' }],
+          changes: [{ ...CHANGE, versionTs: '', created: true }],
         });
       }
       return Promise.resolve({});
     });
     renderChip();
     const chip = await screen.findByTestId('skill-evolved-chip');
-    expect(chip.textContent).toContain('ngspice-flow');
-    expect(within(chip).queryByTestId('skill-evolved-undo')).toBeNull();
+    const button = within(chip).getByTestId('skill-evolved-undo');
+    expect(button.textContent).toMatch(/disable/i);
+    fireEvent.click(button);
+    await waitFor(() => expect(disableMock).toHaveBeenCalledWith('ngspice-flow'));
+    expect(restoreMock).not.toHaveBeenCalled();
+    expect(deleteMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByTestId('skill-evolved-chip')).toBeNull());
   });
 
   it('stays away once dismissed', async () => {

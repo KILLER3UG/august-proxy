@@ -329,7 +329,7 @@ def _content_check(payload: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def record_auto_apply(
-    pid: str, skill: str, versionTs: str = '', findingKey: str = ''
+    pid: str, skill: str, versionTs: str = '', findingKey: str = '', applyAction: str = ''
 ) -> None:
     """Append the auto-apply to the proposal ledger — the one store for it.
 
@@ -352,6 +352,10 @@ def record_auto_apply(
         'skill': str(skill or '')[:120],
         'version_ts': str(versionTs or '')[:32],
         'finding_key': str(findingKey or '')[:32],
+        # 'created' has no version to restore, so its undo is a different
+        # operation (a soft disable). The history has to say which one it is or
+        # the UI cannot offer the right one.
+        'apply_action': str(applyAction or '')[:16],
     })
 
 
@@ -503,6 +507,7 @@ def auto_apply_history(limit: int = 50) -> list[dict[str, Any]]:
                 'proposalId': pid,
                 'skill': str(r.get('skill') or ''),
                 'versionTs': str(r.get('version_ts') or ''),
+                'created': str(r.get('apply_action') or '') == 'created',
                 'reverted': pid in reverted,
             }
         )

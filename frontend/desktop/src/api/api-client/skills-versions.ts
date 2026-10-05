@@ -114,10 +114,12 @@ export interface AutoAppliedChange {
   at: string;
   proposalId: string;
   skill: string;
-  /** The snapshot the apply took. '' when there was nothing to snapshot — a
-   *  created skill has no previous version, so there is nothing to restore and
-   *  an undo would be a different write invented on the spot. */
+  /** The snapshot the apply took. '' when there was none — a created skill has
+   *  no previous version, so its undo is the soft disable below. */
   versionTs: string;
+  /** True when the machine CREATED the skill rather than editing one. Decides
+   *  which undo the chip can honestly offer. */
+  created: boolean;
   /** Probation already put this one back. */
   reverted: boolean;
 }
@@ -134,6 +136,20 @@ export interface AutoApplyHistory {
  *  the chat chip, which is why it lives here and not in either caller. */
 export function getAutoApplyHistory(limit = 20): Promise<AutoApplyHistory> {
   return api.get<AutoApplyHistory>(`/api/harness/proposals/auto-history?limit=${limit}`);
+}
+
+/** Probation's answer for an auto-CREATED skill: flip it off through the same
+ *  `PATCH /api/skills/{name}` the Skills page toggle uses.
+ *
+ *  A create takes no snapshot, so there is no version to restore, and deleting
+ *  the file would take the user's work with it. Disabling is the reversible
+ *  half of the lifecycle that already exists — no new write path is invented
+ *  here, only the existing one is named. */
+export function disableSkill(name: string, workspace?: string): Promise<unknown> {
+  return api.patch(`/api/skills/${encodeURIComponent(name)}`, {
+    disabled: true,
+    ...(workspace ? { workspace } : {}),
+  });
 }
 
 /** Human label for a version id: the snapshot's own unixts, as a date.

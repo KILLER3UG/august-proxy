@@ -968,7 +968,13 @@ def review_proposal(
 
         versionTs = str(as_dict(result.get('applyResult')).get('snapshotTs') or '')
         skillName = str(as_dict(row.get('payload')).get('name') or '')
-        record_auto_apply(pid, skillName, versionTs, finding_key(row))
+        record_auto_apply(
+            pid,
+            skillName,
+            versionTs,
+            finding_key(row),
+            str(as_dict(result.get('applyResult')).get('action') or ''),
+        )
         # Item 15's chip. The event names the version to put back, so the
         # announcement can offer a real undo rather than only a sentence, and it
         # carries `queryKeys` so the realtime bridge's existing forward-compatible
