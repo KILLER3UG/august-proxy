@@ -1,5 +1,7 @@
 # Audit & Harness Upgrade Pass — 2026-08-07 (0.12.55)
 
+> **Dated snapshot, not live guidance (2026-08 audit).** Added 2026-10-07 because this file carried no provenance banner while `docs/GAPS_AND_BUGS.md` claimed every dated doc had one. Read the current tree for anything load-bearing; verify before acting on an item here.
+
 Full-codebase audit (backend logic, frontend UX, external-harness research —
 Hermes Agent, Oh My Pi, Prime Agent, Codex CLI, Claude Code, OpenHands, Aider,
 SWE-agent, smolagents, gptme, Letta) followed by one integrated fix/upgrade pass.
