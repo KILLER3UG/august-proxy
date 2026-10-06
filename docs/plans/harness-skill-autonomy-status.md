@@ -5,9 +5,21 @@
 > block progress, and the traps. This file remains the full item log and the
 > reasoning behind each call.
 
-Resumes Pass 1 of the four-pass plan. Read this before touching code.
+**State: the four-pass plan is FINISHED.** Pass 1 (items 1-7), Pass 2 (8-11), Pass 3 (12-15) and
+both review rounds are merged into `master`. What is open is listed in `## Open, in order` below
+and nowhere else.
 
-## Done
+**How to read this file.** Everything from `## Item log` down is append-only history: each entry
+records what was true at the commit it names, including the errors the session made and the numbers
+it first reported wrong. Do not correct history — add the correction. The sections ABOVE the item
+log were written as planning text before the work landed; they are labelled as such now, and only
+their current-state claims are maintained.
+
+## Done — Pass 1 item 1, as planned for it
+
+Written before that commit landed. The mechanism below is what shipped; the USER-VISIBLE bullet is
+the claim `## Open, in order` still owes a real-browser check on.
+
 - **Item 1 — the structured tool-error receipt.** Mined failures now come from what the
   harness recorded, never from prose.
   - `tool_protocol.tool_result_failed()` is the ONE classifier: prefix-anchored on the
@@ -36,13 +48,19 @@ Resumes Pass 1 of the four-pass plan. Read this before touching code.
     `save_workbench_session_sot`); 6 pre-existing tests rewritten to the receipt contract
     (`test_episode_miner.py` ×5, `test_tool_protocol_hardening.py` ×1) + 4 seeds in
     `test_part16_review_fixes.py`, each keeping its original purpose.
-- Backup taken: `%LOCALAPPDATA%\Temp\august_brain.pre-signal-fix.<ts>.sqlite` (copy of
-  `data/august_brain.sqlite`). **No data mutated yet** — the 41 bogus episodes are still in
-  the dev DB for item 4 to quarantine.
-  ^ STALE — superseded by the item 5 entry in the Item log and by
-  `data/backups/MANUAL-pre-052-20261004T184540Z.sqlite` (see "Live database" below).
+- Backups taken: `data/backups/MANUAL-pre-052-20261004T184540Z.sqlite` (the one that matters —
+  integrity ok, schema v51, 323 messages, 41 episodes) and
+  `%LOCALAPPDATA%\Temp\august_brain.pre-quarantine-20261005-023651.sqlite`. The
+  `pre-signal-fix.<ts>` copy first named here is gone; the quarantine run replaced it.
+  **Still true, and still the user's boot to make false:** the 41 invented episodes remain in
+  `data/august_brain.sqlite`, because migration 052 has not run on that store yet. It marks them
+  `quarantined`, it does not delete them — 052's own header says the rows are the audit trail for
+  how the loop escalated, and only the doors that ACT on an episode go blind to them.
 
-## Item 2 finding (measured, ready to implement)
+## Item 2 finding (measured, ready to implement) — LANDED as predicted
+The content-derived dedupe key this section asked for is what shipped:
+`episode_miner.py:449-456` keys a window on its own content, and `start_message_id` is still
+stored but read by nothing — provenance only, exactly the reasoning below.
 Dedupe identity is `episodes (session_id, start_message_id, kind)` (`_episodeExists:439`,
 `save_episode:406`) and `start_message_id` is a **`messages.rowid`** — while
 `save_workbench_session_sot` rewrites the transcript as DELETE-all + re-INSERT
@@ -69,6 +87,11 @@ a content-derived key over `(session_id, kind, first excerpt)` is stable across 
   not named as reported. Re-derive in Pass 1 item 7 with a real call.
 
 ## Key discovery for item 1 — CONFIRMED, `is_error` does NOT survive
+Half of this conclusion was right and half was wrong, and the wrong half is worth keeping:
+the diagnosis (no persisted error state to read) is what shipped against, but the predicted
+"**plus a migration**" was not needed — `blocks_json` is a JSON blob and
+`types/chat.ts` already declared `tool.status = 'error'`, so item 1 was a write-path change
+only. The migration that did land in this window, 052, is the episode quarantine, not this.
 `messages` has **no `is_error` column** (`memory_schema.py:82-98`). Read over the real dev DB:
 268 messages yielded only two block kinds, `finalOutput` (49) and `toolCall` (252). A `toolCall`
 block is exactly `{id, type, tool, content}` with `tool = {id, name, args, status}`, and `status`
@@ -94,19 +117,26 @@ Do NOT add a second prose matcher. `d73022be` item B6 stays stale and unimplemen
   auto-apply; counter configurable, `0` disables burn-in.
 
 ## Reuse map (extend, do not add)
-- Proposals: `harness_self_improve.save_proposal:293` → `data/harness_proposals/*.json` +
-  `ledger.jsonl` (`_append_ledger:359`). Apply: `decide_proposal:419` → `_apply_approved:840` over
-  `_APPROVERS:830`, documented as the ONLY proposal→change path. Reviewer never writes files.
-- Undo: `skill_versions.read_version:117` returns exact previous bytes, `MAX_VERSIONS=20`. The
+Anchors here are **symbols, not line numbers**. I re-measured all eleven numbered ones against the
+merged tree: **nine had drifted**, two had not (`read_version:117`, `boolKeys:47`). The worst was
+`_apply_approved:840`, which now lives at `:1280` — a pointer that looked like proof and pointed at
+nothing is worse than no pointer. Grep the name.
+
+- Proposals: `harness_self_improve.save_proposal` → `data/harness_proposals/*.json` +
+  `ledger.jsonl` (`_append_ledger`). Apply: `decide_proposal` → `_apply_approved` over
+  `_APPROVERS`, documented as the ONLY proposal→change path. Reviewer never writes files.
+- Undo: `skill_versions.read_version` returns exact previous bytes, `MAX_VERSIONS=20`. The
   restore route landed in Pass 3 item 13: `POST /api/skills/{name}/versions/{ts}/restore` →
   `skill_service.restoreVersion`, which is the only path from a version id to file content and is
-  what item 14's probation auto-revert must call (not a revert proposal).
-- Rate limit: reuse `harness_outcome` (`record_proposal_outcome:173`, `applied_at`+`target`);
-  per-day precedent `escalationBudgetPerDay` (`brain_config_service.py:242`, default 2).
-- Probation: reuse `turn_outcomes.skill_lift:617` (absent key = no evidence, never 0.0) and
-  `harness_outcome.measure_pending:208`. Provenance: `messages.source` + `MACHINE_SOURCES`.
-- Kill switch: add to `brain_config_service.fieldTable:139` **and** `boolKeys:47`/`numKeys:69`,
-  else `allowedKeys:101` rejects the PUT silently.
+  what item 14's probation auto-revert calls (not a revert proposal).
+- Rate limit: reuse `harness_outcome.record_proposal_outcome` (`applied_at`+`target`);
+  per-day precedent `escalationBudgetPerDay` (default 2).
+- Probation: reuse `turn_outcomes.skill_lift` (absent key = no evidence, never 0.0) and
+  `harness_outcome.measure_pending`. Provenance: `messages.source` + `MACHINE_SOURCES`.
+- Kill switch: add the key to `brain_config_service.fieldTable` **and** the typed door it needs
+  (`boolKeys` / `numKeys` / `strKeys`), else `allowedKeys` rejects the PUT silently. All six
+  autonomy keys went through all four doors, and `test_brain_config._ALLCamelKeys` is what fails
+  if one is missed again.
 - Shared helper: `review_gate.resolve_independent_reviewer(producer_model, hint) -> (client|None, reason)`;
   `refine_store._review_refine_batch:905` must call it. **Import `make_review_llm_client` lazily at
   call time** — `test_refine_store_t15.py:551` monkeypatches it by path, and a module-level import
@@ -352,18 +382,27 @@ pytest's own final summary line. They agree, which is the point of the rule.
   run and shown failing (or newly asserting) before/with the change.
 
 ## Open, in order
-1. **Item 2 of your follow-ups is NOT done: the real-app check of the red tool cards.** I
-   cannot launch the packaged desktop app from here and the in-app browser reports
-   `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`. So item 1's `[Blocked]` / `[Tool result missing]`
-   red rendering remains **UNVERIFIED**. If you can run it, that is the thing to look at: one
-   genuine tool error, one guardrail block, one missing-result card. Decide there whether
-   guardrail blocks deserve a quieter treatment than a real failure — my code currently makes
-   all four prefixes equally red.
-2. Item 7 — reproduce the distiller judge failure with a real call; measure "13 failures /
-   0 successes" from the snapshot using the correct lifecycle columns (still UNVERIFIED).
-3. Pass 2 (items 8-11), then Pass 3 (12-15) if room remains. Autonomy stays **OFF**.
-4. Tidy pass: the top "## Done" and "## Key discovery for item 1" sections now describe
-   pre-commit state and are marked stale — worth folding into the Item log when convenient.
+1. **The real-browser check of red vs muted tool cards.** Everything else in this plan has a
+   measurement behind it; this has 25 render tests that assert class names and no pixels. The
+   design QUESTION this line used to leave open — "decide whether guardrail blocks deserve a
+   quieter treatment" — is already answered in code: `types/chat.ts` carries
+   `tone?: 'failure' | 'denial'`, `ToolStepRow` mutes a denial and reddens a failure, and a
+   MISSING tone stays red on purpose. What is owed is the look, not the decision.
+2. **A real reviewer call has never run.** Provider `opencode-zen-41527c` answers
+   `Insufficient account funds`; `claude-sonnet-5` resolves and the gate hands back a client.
+   Blocked on the user. The action after funding is
+   `POST /api/curator/scheduler/run/reviewer`.
+3. **Migration 052 has not run on the live store.** It lands at the app's next boot, and the
+   quarantine sweep at its first mining pass. Pre-boot backup:
+   `data/backups/MANUAL-pre-052-20261004T184540Z.sqlite`.
+4. **Two test artifacts sit in the live `config.json`**
+   (`auxiliary.cognitive.orchestrator.skill_learning_judge_model = 'judge-model-x'` and a stray
+   top-level `_tier3_test_flag`). The exact unified diff was reported; applying it is the user's.
+
+Items 2-4 of the previous version of this list — item 7's judge measurement, Pass 2, Pass 3, and
+the tidy pass — are all closed, and this file's own Item log is where they were closed. The list had
+simply not been re-read since. Autonomy still defaults **OFF**, and `autonomyKinds` still arms
+`skill_patch` only.
 
 ## Item log — session 3
 - **Correction to `da7cf07f`'s message:** it says 145 passed; the run reported **165 passed**
@@ -536,13 +575,12 @@ The live store's brain config carries TWO test artifacts:
   - `_tier3_test_flag` (stray top-level key) → safe to remove.
 Set these in Settings, or tell me the model id and I'll put the exact edit in a report.
 
-## Remaining backlog
-- 13 (undo): the version-restore route + one Undo button; probation auto-revert uses version
-  restore, not a revert proposal; update the `SkillVersionsPanel` comment. Not started.
-- 14 (rails): hard-limit categories to inbox, daily rate limit + one change per skill per day,
-  probation, kill switch, readable history, burn-in counter. Not started.
-- 15 (SkillEvolvedChip announces only applied changes, with Undo). Not started.
-- Re-run the real reviewer call once the provider funding is fixed (item 9).
+## Remaining backlog — closed, superseded
+This is where items 13, 14 and 15 were marked "Not started" long after they shipped. They landed as
+`eef0b3fd` (undo + restore route), `1553d369`/`29758a69` (the rails, then the rails round) and
+`732e295e` (the chip). The one line here that was still true — re-run the reviewer once the provider
+is funded — now lives as `## Open, in order` item 2. The heading stays so anyone reaching this
+section from the handoff or from a search finds the answer instead of a hole.
 
 ## Definitive suites (tip `ecd56fa5`, no edits to the tree during either run)
 - **backend: 4829 passed, 10 skipped, 0 failed in 10:01** — `PYTEST_EXIT=0`, zero FAILED/ERROR
@@ -1067,3 +1105,52 @@ that never existed — stays on review until the user asks for it.
 - Dead-code pass over this round's symbols: `rail_trace`, `record_shadow_decision`,
   `shadow_decisions`, `_append_shadow`, `armed_kinds`, `disableSkill`, `ShadowDecision`,
   `kind-not-armed` — every one has a caller outside its own definition and its own tests.
+
+## Session 8 — the merge, and what "all five gates" did not cover
+- **Merged.** `harness-skill-autonomy` → `master` with `--no-ff` in a clean worktree (the main
+  checkout carries another session's ~39 uncommitted files), pushed as a fast-forward to
+  `origin/master` at `9a686bec`. The three generated artifacts (`docs/api/openapi.json`,
+  `docs/API_INDEX.md`, `src/api/gen/openapi.ts`) were **regenerated from the merged tree**, not
+  hand-merged, and proved to have zero content drift. `.gitignore` was the only hand-resolved
+  conflict, keeping both sides' rules.
+- **The CRLF class, separately committed** (`0980f3f1`, `.gitattributes` `eol=lf` for those three
+  generated files): `check:api-index` fails in a fresh Windows worktree while passing on Linux,
+  because `core.autocrlf=true` rewrites the generated LF files at checkout. Same blob hash
+  (`f1b11faa`), zero diff after stripping CR — so it was never a content problem. Verified green in
+  a second fresh worktree after the rule.
+- **Item 15 left a collision, now fixed** (`7231a756`): `sections/chat/SkillEvolvedChip.tsx` and a
+  pre-existing `components/chat/SkillEvolvedChip.tsx` shared a component name AND
+  `data-testid="skill-evolved-chip"`. With autonomy on, both are in the document at once — proven
+  red first (`getAllByTestId` returned 2). They are different news: the transcript chip reports a
+  SKILL.md THIS turn wrote (no backend event exists for a tool-path write), the composer chip
+  reports what the six-hour job did on its own with no turn to point at. The first is now
+  `SkillReceiptChip`.
+- **The gate this workstream did not run.** Every session here reported "all five gates" —
+  `check:api`, `check:api-index`, `check:docs`, `check:doc-links`, `check:version`. `check:design`
+  is a **sixth** gate and CI runs it (`.github/workflows/type-check.yml:172`). Item 15's chip added
+  three raw `<button>`s, which the ratchet counts as new drift, so `check:design` has been red on
+  master since `732e295e` landed and no report in this file said so. The buttons are on the `Button`
+  primitive now and the gate is green. Lesson: a gate list copied between sessions needs to be
+  re-derived from the workflow file, not inherited.
+- **`Type check` is red on `master` and it is not the harness.** Last green run was 2026-10-01;
+  the merge commit failed in ~2 minutes because both jobs fail before their test steps:
+  - Backend — mypy on Ubuntu reports `Module has no attribute 'WinDLL'` at
+    `app/services/computer_use_policy.py:151-152`. `ctypes.WinDLL` is behind a `sys.platform`
+    guard in typeshed, so it typechecks on this Windows machine and not on the runner. **pytest
+    never runs at all** on that job.
+  - Frontend — 4 `@typescript-eslint/no-unnecessary-type-assertion` **errors** (the warning budget
+    of 600 is not what fails it): `src/components/shell/__tests__/RightDrawer.test.tsx:453`,
+    `src/hooks/useResizablePane.ts:141`,
+    `src/sections/settings/__tests__/TurnLimitsSection.test.tsx:36` and `:42`.
+  Neither set is harness code. AGENTS.md says to confirm `Type check` is green before pushing a
+  tag, so this blocks the next release until it is fixed — and it is a third party to the
+  autonomy work, not a consequence of it.
+- Frontend suite from tip `7231a756`, clean tree, nothing edited during the run: **1542 passed
+  across 199 files** (`VITEST_EXIT=0`), +1 over the previous tip for the collision test.
+  `check:design` green, `tsc -b` green, eslint clean on all five touched files.
+- One flake worth recording rather than repeating: `ChatMarkdown.perf.test.tsx` asserted a 2x
+  wall-clock ratio and measured **1.99** in one full-suite run, then passed twice on the same tree.
+  Its own duration in those runs was 6.8s and 13.8s. A perf assertion with a threshold that close
+  to the measured value is load-sensitive by construction — the same class as the `-n auto`
+  failures in this project's history. Not touched here; it needs the mechanism fixed, not the
+  number lowered.
