@@ -39,9 +39,15 @@ logger = logging.getLogger(__name__)
 _DEFAULT_WINDOW_DAYS = 14
 # Below this many episodes on either side, the comparison says
 # 'insufficient' rather than pretending to measure.
-_MIN_EPISODES = 3
-# Verdict hysteresis: small swings are noise on tiny samples.
-_IMPROVE_EPS = 0.05
+# Floor for BOTH sides of the comparison, and for the targeted rule too. Three
+# was low enough to classify noise: a resolved rate over 3 episodes moves in
+# 1/3 steps, so any single event crossed the old 0.05 hysteresis and could
+# trigger an automated revert.
+_MIN_EPISODES = 8
+# Verdict hysteresis: a resolved-rate or recurrence-proportion move smaller than
+# this is `flat`. 0.15 is roughly two events on the 8-episode floor, which is
+# about as fine a distinction as this sample can honestly support.
+_IMPROVE_EPS = 0.15
 
 # SQLite-compatible format (space form; julianday parses it unambiguously).
 _TS = '%Y-%m-%d %H:%M:%S'
@@ -273,13 +279,15 @@ def _source_change(key: str) -> tuple[str, str]:
 
 
 def _file_revert_proposal(r: Any, before: dict[str, Any], after: dict[str, Any], days: int) -> None:
-    """File a human-reviewable revert proposal for a measured regression.
+    """Answer a measured regression: undo it if it is ours, else ask a human.
 
     A 'regressed' verdict is the ledger's one unambiguous negative signal: the
-    change it booked measurably hurt. Undoing a learning write is not a call
-    the machine may make on its own, so the ledger only *files* — carrying the
-    source's own rollback text and a payload link back to this outcome row so
-    the reviewer can check the numbers behind the verdict.
+    change it booked measurably hurt. Undoing a change a HUMAN approved is not a
+    call the machine may make on its own, so this only *files* — carrying the
+    source's own rollback text and a payload link back to this outcome row. The
+    one exception is probation: a change the rails applied themselves, still
+    addressable to the snapshot they took, is put back through item 13's restore
+    path and nothing is filed.
 
     Never raises (the caller's best_effort site is the backstop).
     """
@@ -298,6 +306,16 @@ def _file_revert_proposal(r: Any, before: dict[str, Any], after: dict[str, Any],
             'no longer on file'
         )
     subject = change or f'the {kind} change on {target}'
+    # Probation first. If this regression is a change the rails applied by
+    # themselves and the version is still addressable, putting it back is the
+    # whole answer — filing a "revert it?" proposal after the fact would ask the
+    # human to approve something already done. Anything else (a human's apply,
+    # autonomy off, a file someone edited since) returns None and the proposal
+    # path below stands exactly as it was.
+    from app.services.harness_rails import probation_revert
+
+    if probation_revert(source, key, kind, target) is not None:
+        return
     problem = f'Measured regression — revert {subject}?'
     evidence = json.dumps(
         {'verdict': 'regressed', 'windowDays': days, 'before': before, 'after': after},
@@ -330,20 +348,30 @@ def _file_revert_proposal(r: Any, before: dict[str, Any], after: dict[str, Any],
 
 
 def _classify(before: dict[str, Any], after: dict[str, Any], targeted: bool = False) -> str:
+    """Verdict for one measured change. Both rules read a RATE over a sample.
+
+    `_MIN_EPISODES` floors both sides and `_IMPROVE_EPS` is the hysteresis: a
+    move smaller than it is `flat`. The floor exists because a rate estimated
+    from a handful of episodes swings on one event, and the cost of a false
+    'regressed' here is not a wrong label — it is an automated revert.
+    """
     bEps = as_int(before.get('episodes'), 0)
     aEps = as_int(after.get('episodes'), 0)
-    if targeted and 'fingerprintRecurrence' in before and 'fingerprintRecurrence' in after:
-        # A targeted change (skill for a specific fingerprint) reads on the
-        # recurrence directly — meaningful on any sample size: zero recurrence
-        # after a non-zero before window is improvement, any recurrence in the
-        # after window is regression (the skill's whole job is to stop it).
-        if after['fingerprintRecurrence'] == 0 and before['fingerprintRecurrence'] > 0:
-            return 'improved'
-        if after['fingerprintRecurrence'] > 0:
-            return 'regressed'
-        return 'flat'
     if bEps < _MIN_EPISODES or aEps < _MIN_EPISODES:
         return 'insufficient'
+
+    if targeted and 'fingerprintRecurrence' in before and 'fingerprintRecurrence' in after:
+        # Recurrence is counted from the same episode rows as `episodes`, so it
+        # is a proportion of the window, never a raw count: a busier window can
+        # carry the same number of the targeted failure and be improving.
+        bRec = as_int(before.get('fingerprintRecurrence'), 0) / bEps
+        aRec = as_int(after.get('fingerprintRecurrence'), 0) / aEps
+        if aRec <= bRec - _IMPROVE_EPS:
+            return 'improved'
+        if aRec >= bRec + _IMPROVE_EPS:
+            return 'regressed'
+        return 'flat'
+
     bRate = before.get('resolvedRate')
     aRate = after.get('resolvedRate')
     if bRate is None or aRate is None:

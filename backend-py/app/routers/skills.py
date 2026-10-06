@@ -185,6 +185,29 @@ async def diffSkillVersion(name: str, ts: str, workspace: str = Query('')):
     return {'diff': ''.join(diff)}
 
 
+@router.post('/{name}/versions/{ts}/restore')
+async def restoreSkillVersion(name: str, ts: str, workspace: str = Query('')):
+    """Undo a skill change: write version ``ts`` back as the live SKILL.md.
+
+    The single restore route. Everything that puts a skill back — the panel's
+    Undo button, and item 14's probation auto-revert — goes through
+    ``skill_service.restoreVersion`` and therefore through the same snapshot
+    first, so the restore is itself in the history it just extended.
+
+    404 for an unknown skill or a version that is not retained (the same
+    vocabulary the two GET version routes already use); 400 for a refusal the
+    service raises on a skill it will not overwrite, e.g. a bundled entry.
+    """
+    skill_dir = _skill_dir_or_404(name, workspace)
+    if skill_versions.read_version(skill_dir, ts) is None:
+        raise HTTPException(status_code=404, detail=f"Version '{ts}' not found for skill '{name}'")
+    try:
+        result = skill_service.restoreVersion(name, ts, workspace or None)
+    except skill_service.SkillValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {'ok': True, 'name': name, 'restored': ts, 'skill': result}
+
+
 @router.post('')
 async def createSkill(body: SkillCreate):
     """Create a new agent-authored skill (project root when workspace set)."""

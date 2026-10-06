@@ -716,7 +716,7 @@ def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
         # P2#13: preserve the file this write replaces before it lands.
         from app.services.skill_versions import snapshot_before_write
 
-        snapshot_before_write(
+        snapshotTs = snapshot_before_write(
             skill_dir,
             content,
             actor='distiller',
@@ -747,6 +747,10 @@ def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
             'version': version,
             'status': status,
             'superseded': supersededResult,
+            # The snapshot this write took. Auto-apply records it so probation can
+            # name the exact bytes to put back; '' when there was nothing to
+            # snapshot (a create), which is probation's signal to ask a human.
+            'snapshotTs': snapshotTs,
         }
     except ValueError as exc:
         return {'ok': False, 'error': str(exc)}
@@ -904,6 +908,50 @@ def review_proposal(
         }
 
     decision = 'approve' if text == 'KEEP' else 'reject'
+
+    if decision == 'approve':
+        # A KEEP is necessary, never sufficient: item 14's rails sit ON this
+        # path, so a reviewer cannot reach a write that a human would be
+        # refused. Reading the answer and ignoring it is not available to a
+        # caller — there is no other route from a verdict to decide_proposal.
+        from app.services.harness_rails import (
+            rail_trace,
+            record_shadow_decision,
+            shadow_enabled,
+        )
+
+        # The trace is computed once and used for both the log and the decision,
+        # so a shadow record can never describe a different ordering than the
+        # one that decided the real answer.
+        trace = rail_trace(row)
+        held = next(
+            (t for t in trace if not t['passed']),
+            None,
+        )
+        if shadow_enabled():
+            record_shadow_decision(row, text, trace)
+        if held is not None:
+            return {
+                'ok': False,
+                'decision': None,
+                'leftInInbox': True,
+                'reason': f'reviewer said {text}, held by the rails: {held.get("reason")}',
+                'rule': str(held.get('rule') or ''),
+            }
+        if shadow_enabled():
+            # Checked after the rails, so this means "every rail allowed it"
+            # rather than "a write happened". Nothing is decided, so nothing is
+            # spent: the daily budget and the probation record stay untouched.
+            return {
+                'ok': False,
+                'decision': None,
+                'leftInInbox': True,
+                'wouldApply': True,
+                'rule': 'shadow-mode',
+                'reason': f'reviewer said {text} and every rail allowed it; '
+                          'shadow mode is on, so nothing was written',
+            }
+
     try:
         result = decide_proposal(
             pid,
@@ -918,14 +966,52 @@ def review_proposal(
             'leftInInbox': True,
             'reason': f'decision could not be recorded: {type(exc).__name__}: {exc}',
         }
+    # `decide_proposal` answers with the proposal row, which carries `status`
+    # and no `ok` — so "the decision landed" is read off the status. The field
+    # used to be `bool(result.get('ok'))`, which is False for every decision
+    # this function ever made; the contract is pinned now by
+    # test_review_proposal_path.test_a_keep_verdict_reports_that_the_write_landed.
+    status = str(result.get('status') or '')
+    applied = decision == 'approve' and status == 'applied'
+    if applied:
+        # Only an AUTOMATIC apply spends the daily budget or starts probation.
+        # A human approving in the inbox is not what the rails ration, so it is
+        # deliberately not recorded here.
+        from app.services.harness_rails import finding_key, record_auto_apply
+
+        versionTs = str(as_dict(result.get('applyResult')).get('snapshotTs') or '')
+        skillName = str(as_dict(row.get('payload')).get('name') or '')
+        record_auto_apply(
+            pid,
+            skillName,
+            versionTs,
+            finding_key(row),
+            str(as_dict(result.get('applyResult')).get('action') or ''),
+        )
+        # Item 15's chip. The event names the version to put back, so the
+        # announcement can offer a real undo rather than only a sentence, and it
+        # carries `queryKeys` so the realtime bridge's existing forward-compatible
+        # default case refreshes the history read — a change made by the 6-hour
+        # job then reaches a window that was already open.
+        from app.services.realtime_bus import emit_realtime
+
+        emit_realtime(
+            'skill-evolved',
+            skill=skillName,
+            proposalId=pid,
+            versionTs=versionTs,
+            queryKeys=['harness-auto-history'],
+        )
+
     return {
-        'ok': bool(result.get('ok')),
+        'ok': status in ('applied', 'rejected'),
         'decision': decision,
         'leftInInbox': False,
         'reason': f'reviewer said {text}',
+        'applied': applied,
+        'status': status,
         'result': result,
     }
-
 
 REVIEW_SYSTEM = (
     'You review a proposed change to this agent\'s own skills. Reply on ONE line '
@@ -966,6 +1052,81 @@ def _write_review(row: dict[str, Any], review: dict[str, Any]) -> None:
         logging.getLogger(__name__).debug('proposal review write failed', exc_info=True)
 
 
+def _ask_reviewer_blocking(
+    client: Any, row: dict[str, Any], producerModel: str
+) -> tuple[str, str]:
+    """One reviewer call, from either loop shape.
+
+    Mirrors ``skill_distiller._run_batch`` for the reason that file already
+    documents: a bare ``asyncio.run`` RAISES inside a running loop, and the only
+    outcome this call can report is a verdict or an 'unavailable' stamped on the
+    proposal. So an in-loop caller — a route that awaited the job body without
+    the scheduler's thread hop — would stamp EVERY open proposal 'Reviewer
+    unavailable' for a cause that has nothing to do with the reviewer, which is
+    the thirteen-invisible-judge-failures mistake all over again. Off-loop
+    callers get a worker thread owning a fresh loop.
+
+    The scheduled path is unaffected: ``learning_scheduler.run_job_async``
+    already runs the job body in a thread, where there is no running loop.
+    """
+    import asyncio
+
+    timeoutS = 60
+
+    async def go() -> tuple[str, str]:
+        return await asyncio.wait_for(_ask_reviewer(client, row, producerModel), timeout=timeoutS)
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        return _ask_reviewer_off_loop(go, timeoutS)
+
+    try:
+        return asyncio.run(go())
+    except asyncio.TimeoutError:
+        return 'unavailable', f'timeout: reviewer did not answer within {timeoutS}s'
+    except Exception as exc:
+        return 'unavailable', f'{type(exc).__name__}: {str(exc)[:150]}'
+
+
+def _ask_reviewer_off_loop(go: Any, timeoutS: int) -> tuple[str, str]:
+    """Run one reviewer call on a worker thread with a loop of its own."""
+    import asyncio
+    import threading
+
+    box: dict[str, Any] = {}
+
+    def worker() -> None:
+        try:
+            box['result'] = asyncio.run(go())
+        except asyncio.TimeoutError:
+            box['result'] = ('unavailable', f'timeout: reviewer did not answer within {timeoutS}s')
+        except Exception as exc:
+            box['result'] = ('unavailable', f'{type(exc).__name__}: {str(exc)[:150]}')
+
+    thread = threading.Thread(target=worker, daemon=True, name='august-reviewer-call')
+    thread.start()
+    thread.join(timeoutS + 15)
+    if thread.is_alive():
+        # Still holding a socket on its own loop. Naming that beats silence.
+        return 'unavailable', 'reviewer worker outlived its grace window'
+    result = box.get('result')
+    if isinstance(result, tuple) and len(result) == 2:
+        return str(result[0]), str(result[1])
+    return 'unavailable', 'reviewer call returned no verdict'
+
+
+# What may be trimmed off a verdict line: ASCII hyphen, EN dash and EM dash
+# spelled as escapes. A literal list containing only the en dash is what made
+# a model's `KEEP — reason` arrive as `— reason`, so the inbox line read
+# `Reviewer: keep — — reason`. Same class as the correction detector's
+# apostrophe bug (item 4): the punctuation a phone or a model emits is not the
+# punctuation a source file happens to contain.
+_VERDICT_PUNCT = ' -–—:.'
+
+
 async def _ask_reviewer(
     client: Any, row: dict[str, Any], producerModel: str
 ) -> tuple[str, str]:
@@ -997,28 +1158,39 @@ async def _ask_reviewer(
     # and it must lead. "KEEP DISCARD" is a model that could not decide, and
     # reading it as KEEP is the one mistake this whole gate exists to prevent —
     # so ambiguity fails closed rather than resolving to the permissive reading.
-    words = {w for w in upper.split() if w.strip(' -–:.!') in ('KEEP', 'DISCARD')}
-    first = upper.split()[0].strip(' -–:.!') if upper.split() else ''
+    words = {w for w in upper.split() if w.strip(_VERDICT_PUNCT) in ('KEEP', 'DISCARD')}
+    first = upper.split()[0].strip(_VERDICT_PUNCT) if upper.split() else ''
     if len(words) == 1 and first in ('KEEP', 'DISCARD'):
-        reason = head[len(first) :].strip(' -–:') or text[len(head) :].strip()[:200]
+        reason = head[len(first) :].strip(_VERDICT_PUNCT) or text[len(head) :].strip()[:200]
         return first, reason[:200]
     return 'unavailable', f'answer was not an unambiguous KEEP or DISCARD: {head[:80]!r}'
 
 
 def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
-    """Run the independent reviewer over open skill proposals — ADVISORY ONLY.
+    """Run the independent reviewer over open skill proposals.
 
-    While autonomous apply is off (the shipped state) this records a one-line
-    verdict on each proposal and leaves every one of them open for the human. It
-    never calls :func:`decide_proposal`. The deciding path
-    (:func:`review_proposal`) becomes reachable only when autonomy is on AND the
-    proposal clears the hard limits — item 14's job.
+    With autonomy off — the shipped state — this records a one-line verdict on
+    each proposal and never calls :func:`decide_proposal`; every proposal stays
+    open for the human. With `skillAutonomy` on, a usable verdict is handed to
+    :func:`review_proposal`, which is where item 14's rails stand, so a KEEP
+    becomes a write only for a proposal a human would also have been allowed to
+    auto-apply. `applied` counts those writes; `held` counts verdicts the rails
+    kept in the inbox.
 
     Every unusable reviewer is recorded as 'unavailable' with its cause, because
-    a silent skip is how thirteen judge failures hid for a month.
+    a silent skip is how thirteen judge failures hid for a month. An
+    'unavailable' row is retried by the next pass — the gate refused before any
+    call was made, so the retry is free and a real verdict must be able to
+    replace it. A KEEP/DISCARD row is terminal.
     """
     reviewed = 0
     unavailable = 0
+    applied = 0
+    held = 0
+    would_apply = 0
+    from app.services.harness_rails import autonomy_enabled
+
+    autonomyOn = autonomy_enabled()
     for row in list_proposals(status='open'):
         if reviewed >= max(1, int(limit)):
             break
@@ -1026,7 +1198,10 @@ def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
         if kind not in ('skill_create', 'skill_patch'):
             continue  # observations and reverts are human-only by design
         if isinstance(row.get('review'), dict) and row['review']:
-            continue  # already reviewed — never burn a second call
+            if as_str(row['review'].get('verdict'), '') == 'unavailable':
+                pass  # a refusal is not a verdict — retry once a reviewer exists
+            else:
+                continue  # already reviewed — never burn a second call
         producerModel = as_str(as_dict(row.get('payload')).get('producedBy'), '')
         client, refusal = resolve_independent_reviewer(producerModel, _reviewModelHint())
         if client is None:
@@ -1047,25 +1222,49 @@ def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
         if dryRun:
             reviewed += 1
             continue
-        try:
-            import asyncio
-
-            verdict, reason = asyncio.run(
-                asyncio.wait_for(_ask_reviewer(client, row, producerModel), timeout=60)
+        verdict, reason = _ask_reviewer_blocking(client, row, producerModel)
+        review = {
+            'verdict': verdict,
+            'reason': reason,
+            'model': _reviewModelHint(),
+            'advisory': True,
+        }
+        # The switch is read here, not left to the rails, so that autonomy OFF
+        # means the pass NEVER calls decide_proposal — its shipped advisory
+        # contract. With it ON, the verdict goes through review_proposal, which
+        # is where the rails stand for every other caller too.
+        if not dryRun and verdict in ('KEEP', 'DISCARD') and autonomyOn:
+            acted = review_proposal(
+                str(as_str(row.get('id'), '')),
+                verdict,
+                reviewer_client=client,
+                reviewer_model=as_str(review.get('model'), ''),
+                note=reason,
             )
-        except Exception as exc:
-            verdict, reason = 'unavailable', f'{type(exc).__name__}: {str(exc)[:150]}'
-        _write_review(
-            row,
-            {
-                'verdict': verdict,
-                'reason': reason,
-                'model': _reviewModelHint(),
-                'advisory': True,
-            },
-        )
+            # decide_proposal rewrote this file; re-read it before adding the
+            # review line or the stale in-memory row would undo the decision.
+            row = get_proposal(str(as_str(row.get('id'), ''))) or row
+            review['advisory'] = not acted.get('applied')
+            if acted.get('applied'):
+                applied += 1
+            elif acted.get('wouldApply'):
+                # Shadow mode: the decision is real, the write is not. Recorded
+                # so a human can read what autonomy would have done before
+                # arming it, rather than inferring it from an empty inbox.
+                would_apply += 1
+                review['wouldApply'] = True
+            elif acted.get('leftInInbox'):
+                held += 1
+                review['heldBy'] = str(acted.get('rule') or '')
+        _write_review(row, review)
         reviewed += 1
-    return {'reviewed': reviewed, 'unavailable': unavailable}
+    return {
+        'reviewed': reviewed,
+        'unavailable': unavailable,
+        'applied': applied,
+        'held': held,
+        'wouldApply': would_apply,
+    }
 
 
 def _reviewModelHint() -> str:

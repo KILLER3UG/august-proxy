@@ -1,0 +1,802 @@
+"""Item 14 — the rails on automatic skill evolution.
+
+One question, answered for one proposal before the reviewer's KEEP is allowed to
+become a write. Autonomy ships OFF, so the interesting failure mode is not "the
+rails are too strict" — it is a rule that silently defaults to allowing, or a
+refusal that names nothing. Two cases are the ones the plan demanded by name: a
+proposal whose evidence came from fetched content must be held even when the
+reviewer said KEEP, and the kill switch must really be what stops the write.
+
+Nothing here reaches a provider: the reviewer is faked at the gate, exactly as
+in test_reviewer_pass.py.
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+from app.services import episode_miner
+from app.services import harness_rails as rails
+from app.services import harness_self_improve as hsi
+
+
+@pytest.fixture
+def brain(isolatedData):
+    from app.services import memory_store
+
+    memory_store.init()
+    return isolatedData
+
+
+def _configure(**overrides) -> None:
+    """Write brain-config through the real door, so the key allow-list is tested.
+
+    `saveBrainConfig` takes a FLAT camelCase patch — the nested
+    auxiliary.cognitive.orchestrator shape is what it writes, not what it reads.
+    """
+    from app.services.brain_config_service import saveBrainConfig
+
+    ok, err, _merged = saveBrainConfig(dict(overrides))
+    assert ok, f'the rails config keys must be settable through the API door: {err}'
+
+
+def _armed(brain, **extra) -> None:
+    """Autonomy on with burn-in out of the way: only the rule under test can fire."""
+    _configure(skillAutonomy=True, autonomyBurnInCount=0, **extra)
+
+
+def _episode(kind: str, *, quarantined: bool = False) -> int:
+    eid = episode_miner.save_episode(
+        {
+            'session_id': 'ses_rails',
+            'kind': kind,
+            'start_message_id': 1,
+            'end_message_id': 3,
+            'events': [{'role': 'user', 'text': "Don't rebuild, just restart the container."}],
+            'outcome': 'resolved',
+            'fingerprint_id': f'fp-{kind}-{eid_suffix()}',
+        }
+    )
+    if quarantined:
+        conn = episode_miner._conn()
+        conn.execute('UPDATE episodes SET quarantined = 1 WHERE id = ?', (eid,))
+        conn.commit()
+    return eid
+
+
+def eid_suffix() -> int:
+    """A fresh suffix per call so same-kind episodes are not deduped away."""
+    global _EID_COUNTER
+    _EID_COUNTER += 1
+    return _EID_COUNTER
+
+
+_EID_COUNTER = 0
+_PROBLEM_COUNTER = 0
+
+
+def _unique(tag: str) -> str:
+    """A fresh suffix per call, so same-kind episodes and same-kind proposals
+    are not deduped away by the store's own guards."""
+    global _EID_COUNTER
+    _EID_COUNTER += 1
+    return f'{tag}-{_EID_COUNTER}'
+
+
+def _proposal(
+    kind: str = 'skill_patch',
+    name: str = 'rails-skill',
+    body: str = '# Rails Skill\n\nRestart the container instead of rebuilding it.\n',
+    evidence: str = 'the user corrected this twice, in their own words',
+    episodeKinds: tuple[str, ...] = ('user_correction',),
+    episodeIds: list[int] | None = None,
+    skill: str = '',
+    problem: str = '',
+    fingerprint: str = '',
+) -> str:
+    """Files one proposal. `skill` pins the skill name (the per-skill rail needs
+    two rows naming the SAME skill); otherwise each row gets its own, because
+    the store refuses two open rows with the same kind + problem. `problem` and
+    `fingerprint` are pinned the same way when a test needs two rows to be the
+    same FINDING."""
+    global _PROBLEM_COUNTER
+    _PROBLEM_COUNTER += 1
+    skillName = skill or _unique(name)
+    ids = episodeIds if episodeIds is not None else [_episode(k) for k in episodeKinds]
+    row = hsi.save_proposal(
+        problem=problem or f'the skill tells the agent to rebuild every time [{_PROBLEM_COUNTER}]',
+        evidence=evidence,
+        proposal='amend the body to restart only',
+        rollback='restore the previous version from .versions',
+        kind=kind,
+        payload={
+            'name': skillName,
+            'description': 'container flow',
+            'body': body,
+            'trigger': 'container',
+            'episodeIds': ids,
+            'origin': 'distilled',
+            **({'fingerprint': fingerprint} if fingerprint else {}),
+        },
+    )
+    return str(row['id'])
+
+
+def _mark_decided(pid: str, status: str = 'applied') -> None:
+    """Take a row out of the open set, so a re-filing of the same finding is not
+    refused by the store's duplicate guard. This is the real sequence: applied,
+    measured, reverted, re-filed."""
+    row = hsi.get_proposal(pid)
+    row['status'] = status
+    (hsi._proposals_dir() / f"{row['id']}.json").write_text(
+        json.dumps(row, ensure_ascii=False), encoding='utf-8'
+    )
+
+
+def _verdict(pid: str) -> dict:
+    return rails.auto_apply_allowed(hsi.get_proposal(pid))
+
+
+class TestTheSwitch:
+    def test_autonomy_off_holds_everything(self, brain):
+        pid = _proposal()
+        out = _verdict(pid)
+        assert out['allowed'] is False
+        assert out['rule'] == 'autonomy-off', out
+        assert out['reason'], 'a refusal must name itself to the human'
+
+    def test_the_default_is_off_and_the_keys_are_real_config(self, brain):
+        from app.services.brain_config_service import allowedKeys, getRuntimeConfig
+
+        assert {'skillAutonomy', 'autoApplyPerDay', 'autonomyBurnInCount'} <= set(allowedKeys)
+        assert getRuntimeConfig().get('skillAutonomy') is False
+
+    def test_clean_and_armed_is_allowed(self, brain):
+        _armed(brain)
+        out = _verdict(_proposal())
+        assert out['allowed'] is True, out
+
+
+class TestHardLimitCategories:
+    """Only skill prose may auto-apply, and that is an allow-list, not a deny
+    list: a kind added tomorrow is held by default."""
+
+    @pytest.mark.parametrize(
+        'kind',
+        ['skill_delete', 'brain_config', 'retire', 'promote', 'revert', 'observation'],
+    )
+    def test_a_hard_kind_is_held(self, brain, kind):
+        _armed(brain)
+        pid = _proposal(kind=kind, episodeKinds=('user_correction',))
+        out = _verdict(pid)
+        assert out['allowed'] is False
+        assert out['rule'] == 'hard-kind', out
+
+    def test_the_allow_list_is_the_two_skill_writes(self, brain):
+        assert rails.AUTO_APPLIABLE_KINDS == frozenset({'skill_create', 'skill_patch'})
+        assert set(hsi.VALID_KINDS) - rails.AUTO_APPLIABLE_KINDS == rails.HARD_KINDS
+
+
+class TestEvidenceProvenance:
+    def test_tool_output_is_not_trusted_evidence(self, brain):
+        _armed(brain)
+        out = _verdict(_proposal(episodeKinds=('tool_error',)))
+        assert out['allowed'] is False
+        assert out['rule'] == 'untrusted-evidence', out
+
+    def test_a_proposal_citing_no_episode_is_not_trusted(self, brain):
+        _armed(brain)
+        out = _verdict(_proposal(episodeKinds=()))
+        assert out['allowed'] is False
+        assert out['rule'] == 'untrusted-evidence', out
+
+    def test_a_quarantined_episode_is_not_evidence(self, brain):
+        """Item 5's 41 invented episodes are still rows. A proposal citing one
+        must not reach an auto-apply on the strength of a mined nothing."""
+        _armed(brain)
+        eid = _episode('user_correction', quarantined=True)
+        out = _verdict(_proposal(episodeIds=[eid]))
+        assert out['allowed'] is False
+        assert out['rule'] == 'untrusted-evidence', out
+
+    def test_a_url_in_the_evidence_is_fetched_content(self, brain):
+        _armed(brain)
+        out = _verdict(_proposal(evidence='see https://example.com/docs, it says to rebuild'))
+        assert out['allowed'] is False
+        assert out['rule'] == 'untrusted-evidence', out
+
+
+class TestContentHardLimits:
+    @pytest.mark.parametrize(
+        'body',
+        [
+            '# S\n\n```bash\nrm -rf ./build\n```\n',
+            '# S\n\nFetch https://api.example.com/skills before running.\n',
+            '# S\n\nSend the api key in the Authorization header.\n',
+        ],
+    )
+    def test_a_skill_that_can_act_is_held(self, brain, body):
+        _armed(brain)
+        out = _verdict(_proposal(body=body))
+        assert out['allowed'] is False
+        assert out['rule'] == 'unsafe-content', out
+
+
+class TestRateAndBurnIn:
+    def test_the_daily_budget_is_enforced(self, brain):
+        _armed(brain, autoApplyPerDay=2)
+        for i in range(2):
+            pid = _proposal(name=f'budgeted-{i}')
+            assert _verdict(pid)['allowed'] is True
+            rails.record_auto_apply(pid, f'budgeted-{i}')
+        out = _verdict(_proposal(name='budgeted-late'))
+        assert out['allowed'] is False
+        assert out['rule'] == 'daily-limit', out
+
+    def test_one_change_per_skill_per_day(self, brain):
+        _armed(brain, autoApplyPerDay=10)
+        pid = _proposal(skill='same-skill')
+        assert _verdict(pid)['allowed'] is True
+        rails.record_auto_apply(pid, 'same-skill')
+        out = _verdict(_proposal(skill='same-skill'))
+        assert out['allowed'] is False
+        assert out['rule'] == 'same-skill-today', out
+        # …and a different skill is not held by it.
+        assert _verdict(_proposal(skill='other-skill'))['allowed'] is True
+
+    def test_burn_in_holds_the_first_clean_ones(self, brain):
+        # The daily cap is lifted well above the burn-in window here: burn-in is
+        # what this test is about, and the two rails would otherwise both fire.
+        _configure(skillAutonomy=True, autonomyBurnInCount=2, autoApplyPerDay=10)
+        first = _verdict(_proposal(name='burn-1'))
+        assert first['allowed'] is False
+        assert first['rule'] == 'burn-in', first
+        rails.record_auto_apply('prop_seeded_1', 'burn-1')
+        rails.record_auto_apply('prop_seeded_2', 'burn-2')
+        out = _verdict(_proposal(name='burn-3'))
+        assert out['allowed'] is True, out
+
+    def test_burn_in_at_zero_disables_the_hold(self, brain):
+        _armed(brain)
+        assert _verdict(_proposal())['allowed'] is True
+
+
+class TestTheReviewerPathIsGated:
+    """The rails are not advice a caller can read and ignore: they sit on the one
+    path from a KEEP to a write."""
+
+    def test_fetched_evidence_is_held_even_when_the_reviewer_says_keep(self, brain, monkeypatch):
+        _armed(brain)
+        pid = _proposal(evidence='the page at https://vendor.example/changelog says so')
+        _patch_reviewer(monkeypatch, 'KEEP — the gap is real')
+        out = hsi.run_reviewer_pass()
+        assert out['reviewed'] >= 1, out
+        assert out['applied'] == 0, out
+        assert hsi.get_proposal(pid)['status'] == 'open', 'the required hold'
+
+    def test_the_kill_switch_is_the_only_thing_holding_it(self, brain, monkeypatch):
+        """Item 3 moved one variable into this test: the default arms
+        `skill_patch` only, so a create would be held for a reason that is not
+        the switch. Both kinds are armed here and the switch is again the single
+        difference between the two phases — which is what the test is for."""
+        armed = 'skill_patch,skill_create'
+        _configure(skillAutonomy=False, autonomyBurnInCount=0, autonomyKinds=armed)
+        pid = _proposal(kind='skill_create', name='switched-off')
+        _patch_reviewer(monkeypatch, 'KEEP — durable and justified')
+        out = hsi.run_reviewer_pass()
+        assert out['applied'] == 0, out
+        assert hsi.get_proposal(pid)['status'] == 'open', 'autonomy off must not write'
+
+        _configure(skillAutonomy=True, autonomyBurnInCount=0, autonomyKinds=armed)
+        pid2 = _proposal(kind='skill_create', name='switched-on')
+        _patch_reviewer(monkeypatch, 'KEEP — durable and justified')
+        out2 = hsi.run_reviewer_pass()
+        assert out2['applied'] == 1, out2
+        assert hsi.get_proposal(pid2)['status'] == 'applied', hsi.get_proposal(pid2)
+
+
+class TestTheRuleNamesAreClosed:
+    def test_every_refusal_names_a_declared_rule(self, brain):
+        """A refusal naming an unknown rule means a branch was added without a
+        name for it — which is how a guard starts defaulting to allowing."""
+        _armed(brain)
+        cases = [
+            _proposal(kind='skill_delete'),
+            _proposal(episodeKinds=('tool_error',)),
+            _proposal(body='# S\n\n```bash\nrm -rf x\n```\n'),
+            _proposal(evidence='https://a.example/x'),
+            _proposal(episodeKinds=()),
+            _proposal(),
+        ]
+        for pid in cases:
+            out = _verdict(pid)
+            if out['allowed']:
+                continue
+            assert out['rule'] in rails.RULES, f'{out!r} names no declared rule'
+
+    def test_an_absent_rule_is_a_bug_not_a_pass(self, brain):
+        """`allowed` is only ever set together with rule 'allowed'; anything
+        else must carry a reason, so the inbox line can never be empty."""
+        _armed(brain)
+        for pid in [_proposal(), _proposal(kind='revert')]:
+            out = _verdict(pid)
+            assert out['rule'], out
+            assert (out['allowed'] or out['reason']), out
+
+
+def _patch_reviewer(monkeypatch, reply: str):
+    """Force the gate to hand back a fake reviewer that says `reply`."""
+
+    class _Client:
+        def __init__(self):
+            self.calls: list = []
+
+        async def __call__(self, prompt):
+            self.calls.append(prompt)
+            return reply
+
+    client = _Client()
+    monkeypatch.setattr(
+        'app.services.harness_self_improve.resolve_independent_reviewer',
+        lambda producer, hint='': (client, ''),
+    )
+    return client
+
+
+class TestAnAmbiguousVerdictNeverActs:
+    """Item 10 pinned the fail-closed rule with the switch off. That is the easy
+    half: nothing could apply anyway. These run with the rails ARMED and a clean
+    proposal, so the only thing standing between a garbled answer and a write is
+    the verdict parser itself."""
+
+    @pytest.mark.parametrize(
+        'reply',
+        [
+            'KEEP DISCARD',           # both words: a model that could not decide
+            'maybe KEEP if you like', # neither word leading
+            '',                       # empty
+            '   ',
+            'KEEP? DISCARD?',
+            'approved',
+            '42',
+        ],
+    )
+    def test_a_garbled_answer_is_unavailable_and_writes_nothing(self, brain, monkeypatch, reply):
+        _armed(brain)
+        name = 'rails-ambiguous'
+        pid = _proposal(skill=name)
+        _patch_reviewer(monkeypatch, reply)
+
+        out = hsi.run_reviewer_pass()
+        row = hsi.get_proposal(pid)
+        assert out['applied'] == 0, (reply, out)
+        assert row['status'] == 'open', (reply, row)
+        assert row['review']['verdict'] == 'unavailable', (reply, row)
+        assert row['review']['reason'], 'a refusal has to name itself'
+        # And the skill file is untouched: the applier never ran.
+        from app.services import skill_service
+
+        assert skill_service.get(name) is None or 'v2' not in str(
+            skill_service.get(name).get('body', '')
+        ), (reply, skill_service.get(name))
+
+    def test_the_verdict_parser_itself_refuses_a_tie(self, brain):
+        """The parser is the whole gate, so assert on its output directly: one
+        word leading is a verdict, anything else is not."""
+        import asyncio
+
+        _armed(brain)
+
+        class _Reply:
+            def __init__(self, text):
+                self.text = text
+
+            async def __call__(self, prompt):
+                return self.text
+
+        row = {'problem': 'p', 'evidence': 'e', 'proposal': 'q', 'rollback': 'r'}
+        for reply, expect in (
+            ('KEEP — one word leading is a verdict', 'KEEP'),
+            ('DISCARD — not durable', 'DISCARD'),
+            ('KEEP DISCARD — both', 'unavailable'),
+            ('perhaps KEEP', 'unavailable'),
+            ('', 'unavailable'),
+        ):
+            verdict, reason = asyncio.run(
+                hsi._ask_reviewer(_Reply(reply), dict(row), 'producer-x')
+            )
+            assert verdict == expect, (reply, verdict, reason)
+            if expect == 'unavailable':
+                assert 'not an unambiguous' in reason, (reply, reason)
+
+    def test_a_direct_call_with_a_garbled_verdict_is_not_applied(self, brain):
+        """`review_proposal` is reachable by other callers, and the rails sit
+        AFTER the KEEP/DISCARD test — so an unusable answer must be refused
+        before the rails are ever consulted."""
+        _armed(brain)
+        pid = _proposal()
+        out = hsi.review_proposal(pid, 'KEEP DISCARD', reviewer_client=object())
+        assert out['decision'] is None, out
+        assert out['leftInInbox'] is True, out
+        assert 'not KEEP or DISCARD' in out['reason'], out
+        assert hsi.get_proposal(pid)['status'] == 'open'
+
+
+class TestShadowMode:
+    """Item 6: the reviewer decides and the run logs what it WOULD have done,
+    with no writes. Two rules make that worth having:
+
+      * the rails are consulted FIRST. A shadow that reported "would apply" for
+        a proposal built from fetched content would be reporting a lie about a
+        write it is not allowed to make;
+      * `skillAutonomy` is still the master. Shadow mode is a way to arm the
+        decision without arming the write, never a way to write.
+    """
+
+    def test_the_key_exists_and_defaults_off(self, brain):
+        from app.services.brain_config_service import allowedKeys, getRuntimeConfig
+
+        assert 'skillAutonomyShadow' in allowedKeys
+        assert getRuntimeConfig().get('skillAutonomyShadow') is False
+
+    def test_would_apply_is_recorded_and_nothing_is_written(self, brain, monkeypatch):
+        _configure(skillAutonomy=True, autonomyBurnInCount=0, skillAutonomyShadow=True)
+        pid = _proposal(skill='shadow-me')
+        _patch_reviewer(monkeypatch, 'KEEP — durable and justified')
+
+        out = hsi.run_reviewer_pass()
+        assert out['applied'] == 0, out
+        assert out['wouldApply'] == 1, out
+        row = hsi.get_proposal(pid)
+        assert row['status'] == 'open', row
+        assert row['review']['wouldApply'] is True, row
+        assert row['review']['advisory'] is True, 'a shadow decision is still advisory'
+
+    def test_the_ledger_spends_nothing_in_shadow_mode(self, brain, monkeypatch):
+        _configure(skillAutonomy=True, autonomyBurnInCount=0, skillAutonomyShadow=True)
+        _proposal(skill='shadow-budget')
+        _patch_reviewer(monkeypatch, 'KEEP — durable')
+        hsi.run_reviewer_pass()
+        assert rails.auto_apply_history() == [], (
+            'a shadow run must not consume the daily budget it is rehearsing against'
+        )
+
+    def test_shadow_does_not_bypass_the_rails(self, brain, monkeypatch):
+        """The refusal must still be the rails' own reason, not 'shadow-mode'."""
+        _configure(skillAutonomy=True, autonomyBurnInCount=0, skillAutonomyShadow=True)
+        pid = _proposal(evidence='the page at https://vendor.example/changelog says so')
+        _patch_reviewer(monkeypatch, 'KEEP — the gap is real')
+        out = hsi.run_reviewer_pass()
+        assert out['wouldApply'] == 0, out
+        row = hsi.get_proposal(pid)
+        assert row['review'].get('wouldApply') is not True, row
+        assert rails.auto_apply_allowed(row)['rule'] == 'untrusted-evidence'
+
+    def test_autonomy_off_still_wins_over_shadow_on(self, brain, monkeypatch):
+        _configure(skillAutonomy=False, autonomyBurnInCount=0, skillAutonomyShadow=True)
+        pid = _proposal(skill='shadow-off')
+        _patch_reviewer(monkeypatch, 'KEEP — durable')
+        out = hsi.run_reviewer_pass()
+        assert out['applied'] == 0 and out['wouldApply'] == 0, out
+        assert hsi.get_proposal(pid)['review']['verdict'] == 'KEEP'
+        assert hsi.get_proposal(pid)['review'].get('wouldApply') is None, (
+            'with the switch off there is no decision to rehearse'
+        )
+
+    def test_a_direct_call_reports_the_would_apply_rule(self, brain):
+        _configure(skillAutonomy=True, autonomyBurnInCount=0, skillAutonomyShadow=True)
+        pid = _proposal(skill='shadow-direct')
+        out = hsi.review_proposal(pid, 'KEEP', reviewer_client=object())
+        assert out['decision'] is None, out
+        assert out['leftInInbox'] is True, out
+        assert out['wouldApply'] is True, out
+        assert out['rule'] == 'shadow-mode', out
+        assert hsi.get_proposal(pid)['status'] == 'open'
+
+
+class TestProbationCooldown:
+    """Item 5's other half: a revert that only puts the bytes back lets the same
+    finding re-apply the moment the daily rail resets. The cooldown is keyed on
+    the FINDING (skill + fingerprint, or skill + problem when there is none), so
+    it blocks the thing that was measured harmful and not the whole skill."""
+
+    def _revert_row(self, key: str, *, days_ago: int = 0) -> None:
+        import time
+
+        from app.services.harness_self_improve import _append_ledger
+
+        at = time.strftime(
+            '%Y-%m-%dT%H:%M:%SZ',
+            time.gmtime(time.time() - days_ago * 86400),
+        )
+        _append_ledger({
+            'at': at,
+            'actor': 'reviewer',
+            'action': 'probation_revert',
+            'target_key': 'prop_old',
+            'skill': 'any',
+            'version_ts': '1700000000',
+            'finding_key': key,
+        })
+
+    def test_the_same_finding_is_held_after_a_revert(self, brain):
+        _armed(brain)
+        pid = _proposal(
+            skill='cool-skill',
+            problem='rebuilds the container when a restart was enough',
+            fingerprint='fp-rebuild',
+        )
+        key = rails.finding_key(hsi.get_proposal(pid))
+        assert key, 'a finding has to be nameable or the cooldown cannot work'
+        self._revert_row(key)
+        # The real sequence: the first row was applied (and has since been
+        # reverted), so the same finding can legitimately re-file tomorrow.
+        _mark_decided(pid)
+        again = _proposal(
+            skill='cool-skill',
+            problem='rebuilds the container when a restart was enough',
+            fingerprint='fp-rebuild',
+        )
+        out = _verdict(again)
+        assert out['allowed'] is False
+        assert out['rule'] == 'probation-cooldown', out
+        assert out['reason']
+
+    def test_the_fallback_key_is_the_problem_text(self, brain):
+        """A proposal with no fingerprint still names its finding, and the same
+        wording on the same skill is the same finding."""
+        _armed(brain)
+        a = _proposal(skill='no-fp', problem='keeps re-running the slow build')
+        # The store refuses two OPEN rows with the same kind + problem, which is
+        # the same-finding-duplicate guard doing its job; retire the first so the
+        # second can be filed the way a re-filing actually happens.
+        _mark_decided(a)
+        b = _proposal(skill='no-fp', problem='keeps re-running the slow build')
+        assert rails.finding_key(hsi.get_proposal(a)) == rails.finding_key(hsi.get_proposal(b))
+
+    def test_a_different_finding_on_the_same_skill_still_passes(self, brain):
+        _armed(brain)
+        pid = _proposal(
+            skill='busy-skill',
+            problem='rebuilds when a restart was enough',
+            fingerprint='fp-one',
+        )
+        self._revert_row(rails.finding_key(hsi.get_proposal(pid)))
+        _mark_decided(pid)
+        other = _proposal(
+            skill='busy-skill',
+            problem='forgets to collect the simulation output',
+            fingerprint='fp-two',
+            body='# Other\n\nCollect the run output before reporting.\n',
+        )
+        out = _verdict(other)
+        assert out['allowed'] is True, out
+
+    def test_the_same_finding_on_another_skill_still_passes(self, brain):
+        _armed(brain)
+        pid = _proposal(skill='source-skill')
+        key = rails.finding_key(hsi.get_proposal(pid))
+        self._revert_row(key)
+        out = _verdict(_proposal(skill='other-skill'))
+        assert out['allowed'] is True, out
+
+    def test_the_cooldown_expires(self, brain):
+        _armed(brain)
+        pid = _proposal(skill='fading-skill')
+        self._revert_row(
+            rails.finding_key(hsi.get_proposal(pid)),
+            days_ago=rails.PROBATION_COOLDOWN_DAYS + 1,
+        )
+        out = _verdict(_proposal(skill='fading-skill'))
+        assert out['allowed'] is True, out
+
+    def test_an_older_row_with_no_key_blocks_nothing(self, brain):
+        """Rows written before this field existed must not read as "everything is
+        on cooldown" — an empty key matches nothing, on purpose."""
+        _armed(brain)
+        self._revert_row('')
+        assert _verdict(_proposal())['allowed'] is True
+
+    def test_the_key_is_stable_across_reloads_and_names_the_finding(self, brain):
+        _armed(brain)
+        pid = _proposal(skill='stable-key')
+        row = hsi.get_proposal(pid)
+        first = rails.finding_key(row)
+        second = rails.finding_key(hsi.get_proposal(pid))
+        assert first == second, (first, second)
+        # A fingerprint is the finding's own identity when the distiller supplied one.
+        row['payload']['fingerprint'] = 'fp-123'
+        (hsi._proposals_dir() / f'{pid}.json').write_text(
+            json.dumps(row, ensure_ascii=False), encoding='utf-8'
+        )
+        assert rails.finding_key(hsi.get_proposal(pid)) != first, (
+            'the fingerprint is the better key and must win when present'
+        )
+
+
+class TestAutonomyIsArmedPerKind:
+    """Item 3: one switch for the whole feature was too coarse. The kinds that
+    may be automated at all are a ceiling in code (`AUTO_APPLIABLE_KINDS`);
+    `autonomyKinds` selects within it, and ships as `skill_patch` only — a
+    create is a new instruction that never existed, so it stays on review."""
+
+    def test_the_default_arms_only_skill_patch(self, brain):
+        from app.services.brain_config_service import allowedKeys, getRuntimeConfig
+
+        assert 'autonomyKinds' in allowedKeys
+        assert getRuntimeConfig().get('autonomyKinds') == 'skill_patch'
+        assert rails.armed_kinds() == frozenset({'skill_patch'})
+
+    def test_a_create_is_held_while_only_patches_are_armed(self, brain):
+        _armed(brain)
+        pid = _proposal(kind='skill_create', skill='not-armed-create')
+        out = _verdict(pid)
+        assert out['allowed'] is False, out
+        assert out['rule'] == 'kind-not-armed', out
+        assert 'skill_create' in out['reason']
+
+    def test_a_patch_passes_under_the_default(self, brain):
+        _armed(brain)
+        assert _verdict(_proposal(kind='skill_patch'))['allowed'] is True
+
+    def test_arming_the_create_kind_is_an_explicit_choice(self, brain):
+        _configure(skillAutonomy=True, autonomyBurnInCount=0, autonomyKinds='skill_patch,skill_create')
+        assert rails.armed_kinds() == frozenset({'skill_patch', 'skill_create'})
+        assert _verdict(_proposal(kind='skill_create'))['allowed'] is True
+
+    def test_the_config_cannot_widen_the_ceiling(self, brain):
+        """`skill_delete` is a hard-limit category. A config value naming it must
+        not make it auto-appliable — the allow-list is code, not a preference."""
+        from app.services.brain_config_service import saveBrainConfig
+
+        ok, err, _merged = saveBrainConfig({'autonomyKinds': 'skill_patch,skill_delete'})
+        assert ok is False, (ok, err)
+        assert 'skill_delete' in err, err
+        assert rails.armed_kinds() == frozenset({'skill_patch'})
+
+    def test_an_unknown_kind_is_refused_rather_than_silently_dropped(self, brain):
+        """A typo would otherwise arm nothing and read as "autonomy is broken"."""
+        from app.services.brain_config_service import saveBrainConfig
+
+        ok, err, _ = saveBrainConfig({'autonomyKinds': 'skill_patch,skill_pach'})
+        assert ok is False, (ok, err)
+        assert 'skill_pach' in err, err
+
+    def test_an_empty_value_arms_nothing_and_is_valid(self, brain):
+        """The way to automate nothing while leaving the master switch on."""
+        from app.services.brain_config_service import saveBrainConfig
+
+        _armed(brain)
+        ok, err, _ = saveBrainConfig({'autonomyKinds': ''})
+        assert ok, err
+        assert rails.armed_kinds() == frozenset()
+        assert _verdict(_proposal(kind='skill_patch'))['rule'] == 'kind-not-armed'
+
+    def test_the_announcement_only_fires_for_an_armed_kind(self, brain, monkeypatch):
+        """A held create must not emit the chip event or spend the budget."""
+        _armed(brain)
+        events: list = []
+        monkeypatch.setattr(
+            'app.services.realtime_bus.emit_realtime',
+            lambda t, **kw: events.append((t, kw)),
+        )
+        _proposal(kind='skill_create', skill='held-create')
+        _patch_reviewer(monkeypatch, 'KEEP — durable')
+        out = hsi.run_reviewer_pass()
+        assert out['applied'] == 0, out
+        assert [t for t, _kw in events if t == 'skill-evolved'] == []
+        assert rails.auto_apply_history() == []
+
+
+class TestTheShadowLog:
+    """Item 1: a shadow decision is evidence about the rails, so it is recorded —
+    in its own file. Writing them into the proposal ledger would make a rehearsal
+    indistinguishable from a real apply, and the burn-in, daily and per-skill
+    rules all read that ledger."""
+
+    def _shadow(self, **over):
+        cfg = {'skillAutonomy': True, 'autonomyBurnInCount': 0, 'skillAutonomyShadow': True}
+        cfg.update(over)
+        _configure(**cfg)
+
+    def test_a_would_apply_decision_is_logged_with_its_trace(self, brain, monkeypatch):
+        self._shadow()
+        pid = _proposal(skill='shadow-logged')
+        _patch_reviewer(monkeypatch, 'KEEP — durable and justified')
+        hsi.run_reviewer_pass()
+
+        rows = rails.shadow_decisions()
+        assert len(rows) == 1, rows
+        row = rows[0]
+        assert row['proposalId'] == pid, row
+        assert row['skill'] == 'shadow-logged', row
+        assert row['verdict'] == 'KEEP', row
+        assert row['wouldApply'] is True, row
+        assert isinstance(row['rails'], list) and row['rails'], row
+        assert all({'rule', 'passed'} <= set(r) for r in row['rails']), row['rails']
+        assert row['heldBy'] == '', row
+        # The rehearsal is NOT an apply: the budget ledger stays empty.
+        assert rails.auto_apply_history() == [], (
+            'a shadow decision must never look like a change that happened'
+        )
+
+    def test_a_held_shadow_decision_names_the_rail_that_held_it(self, brain, monkeypatch):
+        self._shadow()
+        _proposal(
+            skill='shadow-held', evidence='the page at https://vendor.example/x says so'
+        )
+        _patch_reviewer(monkeypatch, 'KEEP — the gap is real')
+        hsi.run_reviewer_pass()
+        rows = rails.shadow_decisions()
+        assert len(rows) == 1, rows
+        assert rows[0]['wouldApply'] is False, rows[0]
+        assert rows[0]['heldBy'] == 'untrusted-evidence', rows[0]
+        failed = [r['rule'] for r in rows[0]['rails'] if not r['passed']]
+        assert failed == ['untrusted-evidence'], rows[0]['rails']
+
+    def test_the_trace_covers_every_rail_even_after_one_fails(self, brain):
+        """The point of the trace is to show what the other rails would have
+        said, so a refusal cannot short-circuit it — and a new rail must appear
+        here without anyone remembering to add it."""
+        _armed(brain)
+        pid = _proposal(kind='skill_delete', skill='trace-all')
+        trace = rails.rail_trace(hsi.get_proposal(pid))
+        rules = [t['rule'] for t in trace]
+        assert rules[0] == 'autonomy-off' or 'hard-kind' in rules, rules
+        assert len(rules) == len(set(rules)), f'a rail is listed twice: {rules}'
+        for declared in rails.RULES - {'allowed', 'shadow-mode', 'unreadable-proposal'}:
+            assert declared in rules, f'{declared} is declared but never evaluated'
+        held = [t for t in trace if not t['passed']]
+        assert held and held[0]['rule'] == rails.auto_apply_allowed(
+            hsi.get_proposal(pid)
+        )['rule'], (held, trace)
+
+    def test_the_decision_and_the_trace_cannot_disagree(self, brain):
+        """`auto_apply_allowed` is derived from the trace, so the shadow log and
+        the real decision are the same computation rather than two orderings."""
+        _armed(brain)
+        for pid in [
+            _proposal(skill='agree-a'),
+            _proposal(kind='skill_delete', skill='agree-b'),
+            _proposal(evidence='https://x.example/y', skill='agree-c'),
+            _proposal(body='# S\n\n```bash\nrm -rf x\n```\n', skill='agree-d'),
+        ]:
+            row = hsi.get_proposal(pid)
+            decision = rails.auto_apply_allowed(row)
+            trace = rails.rail_trace(row)
+            first_fail = next((t['rule'] for t in trace if not t['passed']), 'allowed')
+            assert (decision['rule'] if not decision['allowed'] else 'allowed') == first_fail, (
+                pid,
+                decision,
+                trace,
+            )
+
+    def test_the_log_is_capped_and_newest_first(self, brain):
+        self._shadow()
+        for i in range(rails._SHADOW_KEEP + 5):
+            rails._append_shadow({'at': f'2026-01-01T00:00:{i:02d}Z', 'proposalId': f'p{i}'})
+        # The FILE is bounded, not just the read — a rehearsal log nobody prunes
+        # grows without limit on a 6-hour cadence.
+        path = rails._shadow_path()
+        assert len(path.read_text(encoding='utf-8').strip().splitlines()) == rails._SHADOW_KEEP
+        rows = rails.shadow_decisions(limit=rails._SHADOW_KEEP)
+        assert len(rows) == rails._SHADOW_KEEP, len(rows)
+        assert rows[0]['proposalId'] == f'p{rails._SHADOW_KEEP + 4}', rows[0]
+        assert rows[-1]['proposalId'] == 'p5', rows[-1]
+
+    def test_a_discard_verdict_is_not_logged(self, brain, monkeypatch):
+        """Nothing was rehearsed: a DISCARD would have written no file either
+        way, so logging it would fill the shadow file with non-decisions."""
+        self._shadow()
+        _proposal(skill='shadow-discard')
+        _patch_reviewer(monkeypatch, 'DISCARD — one-off')
+        hsi.run_reviewer_pass()
+        assert rails.shadow_decisions() == []
+
+    def test_nothing_is_logged_while_shadow_is_off(self, brain, monkeypatch):
+        _armed(brain)
+        _proposal(skill='not-shadow')
+        _patch_reviewer(monkeypatch, 'KEEP — durable')
+        hsi.run_reviewer_pass()
+        assert rails.shadow_decisions() == []

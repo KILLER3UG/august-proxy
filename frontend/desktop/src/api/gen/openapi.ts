@@ -2829,6 +2829,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/harness/proposals/auto-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Autohistory
+         * @description Every change the machine made by itself, newest first.
+         *
+         *     Registered BEFORE ``/{pid}`` on purpose: a literal path after the parameter
+         *     route would be swallowed as a proposal id and answer 404 for a queue that
+         *     exists.
+         *
+         *     The history is the ledger (``action='auto_apply'`` joined to its
+         *     ``probation_revert``), and `autonomy` rides every response because a list of
+         *     auto-changes with no state of the switch next to it reads as "this is what
+         *     happens" when it may be "this is what happened".
+         */
+        get: operations["autoHistory_api_harness_proposals_auto_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/harness/proposals/inbox/count": {
         parameters: {
             query?: never;
@@ -4912,6 +4941,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/restore/{trashId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restoreskill
+         * @description Undo a delete: restore a trashed skill directory (24h window).
+         */
+        post: operations["restoreSkill_api_skills_restore__trashId__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills/{name}": {
         parameters: {
             query?: never;
@@ -4993,6 +5042,35 @@ export interface paths {
         get: operations["diffSkillVersion_api_skills__name__versions__ts__diff_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/{name}/versions/{ts}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restoreskillversion
+         * @description Undo a skill change: write version ``ts`` back as the live SKILL.md.
+         *
+         *     The single restore route. Everything that puts a skill back — the panel's
+         *     Undo button, and item 14's probation auto-revert — goes through
+         *     ``skill_service.restoreVersion`` and therefore through the same snapshot
+         *     first, so the restore is itself in the history it just extended.
+         *
+         *     404 for an unknown skill or a version that is not retained (the same
+         *     vocabulary the two GET version routes already use); 400 for a refusal the
+         *     service raises on a skill it will not overwrite, e.g. a bundled entry.
+         */
+        post: operations["restoreSkillVersion_api_skills__name__versions__ts__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13999,6 +14077,37 @@ export interface operations {
             };
         };
     };
+    autoHistory_api_harness_proposals_auto_history_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     inboxCount_api_harness_proposals_inbox_count_get: {
         parameters: {
             query?: never;
@@ -17467,6 +17576,37 @@ export interface operations {
             };
         };
     };
+    restoreSkill_api_skills_restore__trashId__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trashId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     getSkill_api_skills__name__get: {
         parameters: {
             query?: {
@@ -17602,6 +17742,40 @@ export interface operations {
         };
     };
     diffSkillVersion_api_skills__name__versions__ts__diff_get: {
+        parameters: {
+            query?: {
+                workspace?: string;
+            };
+            header?: never;
+            path: {
+                name: string;
+                ts: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restoreSkillVersion_api_skills__name__versions__ts__restore_post: {
         parameters: {
             query?: {
                 workspace?: string;

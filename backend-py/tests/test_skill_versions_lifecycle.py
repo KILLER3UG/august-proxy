@@ -443,3 +443,91 @@ def test_retire_applier_refuses_a_skill_it_cannot_edit(skills):
     assert out['ok'] is False
     assert 'not found' in out['error']
     assert hsi._apply_approved({'kind': 'retire', 'payload': {}})['ok'] is False
+
+
+# ── restore (item 13: undo) ──────────────────────────────────────────────
+# The history could always be READ and diffed; nothing could put a version
+# back. Item 13's rails need that: a probation auto-revert is a version
+# restore, never a revert proposal, because `test_harness_revert_proposal.py`
+# pins that the proposal applier must not undo a learning write.
+
+
+def _patched(name: str) -> tuple:
+    """A skill with exactly one retained version: (dir, original bytes, ts)."""
+    _writeAgentSkill(name, body='v1 body')
+    d = skill_service._agentSkillDir(name)
+    original = (d / 'SKILL.md').read_text('utf-8')
+    skill_service.patchSkill(name, body='v2 body')
+    versions = skill_versions.list_versions(d)
+    assert len(versions) == 1, versions
+    return d, original, versions[0]['ts']
+
+
+def test_restore_writes_the_previous_bytes_back_verbatim(skills):
+    d, original, ts = _patched('ver-undo')
+    assert (d / 'SKILL.md').read_text('utf-8') != original
+    out = skill_service.restoreVersion('ver-undo', ts)
+    # Byte-exact, not "equivalent after a re-render": patchSkill canonicalizes
+    # the body and re-renders frontmatter, which is exactly what an undo must
+    # not do to a file the user had already approved.
+    assert (d / 'SKILL.md').read_text('utf-8') == original
+    assert out['name'] == 'ver-undo'
+
+
+def test_restore_records_what_it_replaced(skills):
+    d, original, ts = _patched('ver-undo-log')
+    replaced = (d / 'SKILL.md').read_text('utf-8')
+    skill_service.restoreVersion('ver-undo-log', ts)
+    versions = skill_versions.list_versions(d)
+    assert len(versions) == 2, versions
+    assert 'restored' in versions[0]['rationale'], versions[0]
+    assert skill_versions.read_version(d, versions[0]['ts']) == replaced
+    # …so the undo is itself undoable, which is what makes it safe to automate.
+    skill_service.restoreVersion('ver-undo-log', versions[0]['ts'])
+    assert (d / 'SKILL.md').read_text('utf-8') == replaced
+
+
+def test_restore_refuses_a_version_that_is_not_retained(skills):
+    d, original, _ts = _patched('ver-gone')
+    with pytest.raises(skill_service.SkillValidationError):
+        skill_service.restoreVersion('ver-gone', '1970010100')
+    assert (d / 'SKILL.md').read_text('utf-8') != original  # nothing written
+
+
+def test_restore_refuses_an_unknown_skill(skills):
+    with pytest.raises(skill_service.SkillValidationError):
+        skill_service.restoreVersion('ver-never-existed', '1970010100')
+
+
+def test_restore_never_writes_into_the_install_tree(skills, monkeypatch, tmp_path):
+    """The bundled root is the shipped payload; a restore there would be a
+    write to the install tree, which is the one place an update cannot fix."""
+    bundled = tmp_path / 'install-tree'
+    d = bundled / 'ver-bundled'
+    (d / '.versions').mkdir(parents=True)
+    md = d / 'SKILL.md'
+    md.write_text('---\nname: ver-bundled\n---\n\nlive install body\n', 'utf-8')
+    (d / '.versions' / '1700000000.md').write_text('old install body\n', 'utf-8')
+    (d / '.versions' / 'meta.json').write_text(
+        '[{"ts": "1700000000", "actor": "user", "rationale": "planted", "prevSha256": "x"}]',
+        'utf-8',
+    )
+    monkeypatch.setattr(skill_service, 'SKILLS_DIR', bundled)
+    skill_service._bust_prompt_skills_cache()
+    before = md.read_text('utf-8')
+    with pytest.raises(skill_service.SkillValidationError):
+        skill_service.restoreVersion('ver-bundled', '1700000000')
+    assert md.read_text('utf-8') == before
+
+
+async def test_restore_endpoint_answers_with_the_version_it_wrote(skills):
+    d, original, ts = _patched('ver-api-undo')
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as ac:
+        res = await ac.post(f'/api/skills/ver-api-undo/versions/{ts}/restore')
+    assert res.status_code == 200, res.text
+    assert (d / 'SKILL.md').read_text('utf-8') == original
+    assert res.json()['restored'] == ts
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as ac:
+        bad = await ac.post('/api/skills/ver-api-undo/versions/1970010100/restore')
+    assert bad.status_code == 404, bad.text

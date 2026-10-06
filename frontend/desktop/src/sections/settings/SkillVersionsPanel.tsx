@@ -1,31 +1,37 @@
-/* ── SkillVersionsPanel — a skill's version history, read-only (audit #13) */
+/* ── SkillVersionsPanel — a skill's version history, with one undo (audit #13) */
 /* Lists the snapshots `skill_versions.snapshot_before_write` preserved beside
- * the file, and shows one of them as a unified diff against the CURRENT
- * SKILL.md.
+ * the file, shows one of them as a unified diff against the CURRENT
+ * SKILL.md, and offers exactly one write.
  *
  * Why the diff hangs off the live file and not off the next-newer snapshot:
  * the question a reader actually has is "what did I lose when this was
  * replaced", and the file on disk now is the only honest other end of that
  * comparison. One consequence the UI leans on: an EMPTY diff means the
  * selected snapshot is byte-identical to what is live, which answers the
- * "is this the version in force?" question without hashing anything here.
+ * "is this the version in force?" question without hashing anything here —
+ * and is when the undo is withheld, because restoring what is already live is
+ * a write with nothing to say.
  *
- * There is no revert / restore here, and that is a decision rather than a
- * gap. The backend exposes no such endpoint, so any button offering one would
- * be a second write path invented in the UI — inventing write paths is
- * exactly how a history stops agreeing with the file it versions. This
- * surface only reads.
+ * The write is the reason this surface stopped reading only. It goes through
+ * `POST /api/skills/{name}/versions/{ts}/restore`, and on the server through
+ * `skill_service.restoreVersion`, which is the ONLY path from a version id to
+ * file content: the button here and item 14's probation auto-revert both call
+ * it, so "undo" cannot come to mean two things, and the old objection — that
+ * a UI button would invent a second write path and let the history disagree
+ * with the file — is answered by the route existing first. That function also
+ * snapshots the content it replaces, so every restore is itself undoable.
  *
  * The list is fetched per skill and cached by React Query, so re-opening a
  * detail pane costs nothing and switching skills is instant.                  */
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { History, Loader2 } from 'lucide-react';
 import {
   formatVersionStamp,
   getSkillVersionDiff,
   listSkillVersions,
+  restoreSkillVersion,
   type SkillVersionEntry,
 } from '@/api/api-client/skills-versions';
 import { DiffView } from '@/components/chat/DiffView';
@@ -101,7 +107,14 @@ export function SkillVersionsPanel({ name, workspace }: SkillVersionsPanelProps)
               </li>
             ))}
           </ul>
-          {selected && <VersionDiff version={selected} diffQ={diffQ} />}
+          {selected && (
+            <VersionDiff
+              name={name}
+              workspace={workspace}
+              version={selected}
+              diffQ={diffQ}
+            />
+          )}
         </div>
       )}
     </section>
@@ -163,11 +176,15 @@ function VersionRow({
   );
 }
 
-/** The selected version's diff against the live file. */
+/** The selected version's diff against the live file, and the undo. */
 function VersionDiff({
+  name,
+  workspace,
   version,
   diffQ,
 }: {
+  name: string;
+  workspace?: string;
   version: SkillVersionEntry;
   diffQ: {
     data?: { diff: string };
@@ -179,6 +196,22 @@ function VersionDiff({
   };
 }) {
   const diff = diffQ.data?.diff;
+  const queryClient = useQueryClient();
+
+  // Both reads are stale by definition once the file is rewritten: the history
+  // gained the snapshot this write took, and the diff of the version just
+  // restored is now empty. Re-reading them is what shows the undo worked.
+  const restore = useMutation({
+    mutationFn: () => restoreSkillVersion(name, version.ts, workspace),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['skill-versions', name, workspace ?? ''],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['skill-version-diff', name, workspace ?? '', version.ts],
+      });
+    },
+  });
 
   return (
     <div data-testid="skill-version-diff">
@@ -210,7 +243,36 @@ function VersionDiff({
           No differences — this snapshot is exactly what the current file says.
         </p>
       ) : (
-        <DiffView diff={diff} maxLines={60} />
+        <div className="space-y-1.5">
+          <DiffView diff={diff} maxLines={60} />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="skill-version-restore"
+              disabled={restore.isPending}
+              onClick={() => restore.mutate()}
+            >
+              {restore.isPending ? (
+                <Loader2 className="size-3 animate-spin" aria-hidden />
+              ) : (
+                <History className="size-3" aria-hidden />
+              )}
+              Undo — restore this version
+            </Button>
+            <span className="text-2xs text-muted-foreground/70">
+              The current file is snapshotted first, so this is undoable too.
+            </span>
+          </div>
+          {restore.isError && (
+            <p
+              data-testid="skill-version-restore-error"
+              className="text-2xs leading-relaxed text-danger-fg"
+            >
+              {String((restore.error as Error | null)?.message ?? restore.error)}
+            </p>
+          )}
+        </div>
       )}
     </div>
   );

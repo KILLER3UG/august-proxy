@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
+import { getAutoApplyHistory } from '@/api/api-client/skills-versions';
 import { Badge } from '@/components/ui/badge';
 import { qk } from '@/lib/query-keys';
 import { invalidateReviewInboxCount } from '@/lib/useReviewInboxCount';
@@ -48,6 +49,10 @@ interface Proposal {
   decisionNote?: string;
   applyResult?: { ok?: boolean; error?: string; action?: string; name?: string };
   queue: Queue;
+  /** The reviewer's verdict as one sentence, formed by the backend's
+   *  `review_summary()`. `''` when no reviewer saw this proposal, which is how
+   *  the row is omitted rather than rendered blank. */
+  reviewLine?: string;
 }
 
 interface ProposalsResponse {
@@ -99,6 +104,94 @@ function memoryToProposal(r: MemoryProposalRow): Proposal {
 
 function rowKey(p: Proposal): string {
   return `${p.queue}:${p.id}`;
+}
+
+/** Item 14's readable history of what August changed by itself.
+ *
+ * One disclosure inside the inbox rather than a new section: "what happened to
+ * my agent while I wasn't looking" is the question this page already answers,
+ * and a second page would be a second place to look. Rows name the skill and
+ * when, never the proposal id — the id is a key, not a label.
+ *
+ * Renders nothing when the list is empty. "August has changed nothing by
+ * itself" is not information; the switch state in the header already says it.
+ */
+function AutoChangeHistory() {
+  const historyQ = useQuery({
+    queryKey: ['harness-auto-history'],
+    queryFn: () => getAutoApplyHistory(50),
+    staleTime: 60_000,
+  });
+  const changes = historyQ.data?.changes ?? [];
+  const shadow = historyQ.data?.shadow ?? [];
+  // Nothing to report either way — no decorative empty block.
+  if (!changes.length && !shadow.length) return null;
+  const autonomy = historyQ.data?.autonomy ?? false;
+
+  return (
+    <details
+      data-testid="auto-change-history"
+      className="shrink-0 rounded-xl border border-border/50 bg-card/40 px-3 py-2"
+    >
+      <summary className="cursor-pointer text-2xs text-muted-foreground">
+        {changes.length > 0 && (
+          <>
+            {changes.length} change{changes.length === 1 ? '' : 's'} applied by itself ·{' '}
+          </>
+        )}
+        {shadow.length > 0 && (
+          <>
+            {shadow.length} shadow decision{shadow.length === 1 ? '' : 's'} ·{' '}
+          </>
+        )}
+        {autonomy ? 'autonomy is on' : 'autonomy is off'}
+      </summary>
+      {changes.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {changes.map((c) => (
+            <li
+              key={c.proposalId}
+              data-testid="auto-change-row"
+              className="flex flex-wrap items-baseline gap-x-2 text-2xs"
+            >
+              <span className="text-foreground">{c.skill || 'a skill'}</span>
+              <span className="text-muted-foreground/70">{formatTimeAgo(c.at)}</span>
+              {/* Probation put this one back. Said plainly, because a change that
+                  no longer exists still deserves its line in the record. */}
+              {c.reverted && <span className="text-muted-foreground">restored</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {shadow.length > 0 && (
+        <>
+          <p className="mt-2 text-2xs leading-relaxed text-muted-foreground/70">
+            Shadow mode — what the rails decided they would have done. Nothing
+            here was written to a skill.
+          </p>
+          <ul className="mt-1 space-y-1">
+            {shadow.map((d) => (
+              <li
+                key={d.proposalId}
+                data-testid="shadow-decision-row"
+                className="flex flex-wrap items-baseline gap-x-2 text-2xs"
+              >
+                <span className="text-foreground">{d.skill || d.kind}</span>
+                <span className="text-muted-foreground/70">{formatTimeAgo(d.at)}</span>
+                {d.wouldApply ? (
+                  <span className="text-muted-foreground">would have applied</span>
+                ) : (
+                  /* The rail's own name rather than a paraphrase: which rail
+                     held it is the entire reason to read this list. */
+                  <span className="text-muted-foreground">held by {d.heldBy}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </details>
+  );
 }
 
 export function HarnessImprovementsSection() {
@@ -155,6 +248,15 @@ export function HarnessImprovementsSection() {
   }, [harnessQ.data, memoryQ.data]);
 
   const selected = rows.find((r) => rowKey(r) === selectedId) ?? null;
+  // Same key the disclosure and the chat chip use, so this is one request, not
+  // three — react-query dedupes by key.
+  const autoQ = useQuery({
+    queryKey: ['harness-auto-history'],
+    queryFn: () => getAutoApplyHistory(1),
+    staleTime: 60_000,
+  });
+  const autonomyOn = Boolean(autoQ.data?.autonomy);
+  const selectedReviewerLine = selected?.reviewLine ?? '';
   const fetching = harnessQ.isFetching || memoryQ.isFetching;
 
   const postDecide = useCallback(async (row: Proposal, decision: 'approve' | 'reject' | 'dismiss' | 'reopen') => {
@@ -254,11 +356,16 @@ export function HarnessImprovementsSection() {
             <HeartPulse className="size-6 text-primary" />
             Review Inbox
           </h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+          <p data-testid="inbox-header-note" className="mt-1 max-w-xl text-sm text-muted-foreground">
             Everything August wants a human to decide: harness improvement proposals
             (self-improvement, distiller drafts, cross-project promotions) and memory
-            retirements. Nothing applies until you approve it — approvable kinds run a
-            deterministic applier, the rest are recorded for manual implementation.
+            retirements.{' '}
+            {/* The page's own promise has to track the switch. Saying "nothing
+                applies until you approve it" while autonomous apply is on
+                misdescribes when this machinery writes to your skills. */}
+            {autonomyOn
+              ? 'Autonomous apply is on: the rails apply qualifying skill changes on their own, and every one of them is listed below and undoable.'
+              : 'Nothing applies until you approve it — approvable kinds run a deterministic applier, the rest are recorded for manual implementation.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -298,6 +405,8 @@ export function HarnessImprovementsSection() {
           </button>
         </div>
       </header>
+
+      <AutoChangeHistory />
 
       {error && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -373,6 +482,11 @@ export function HarnessImprovementsSection() {
                     </Badge>
                   )}
                 </div>
+                {selectedReviewerLine && (
+                  <p data-testid="reviewer-line" className="mt-1.5 text-xs text-muted-foreground">
+                    {selectedReviewerLine}
+                  </p>
+                )}
                 <p className="mt-2 text-[0.8125rem] leading-relaxed text-foreground">{selected.problem}</p>
               </div>
               {selected.decidedAt && (

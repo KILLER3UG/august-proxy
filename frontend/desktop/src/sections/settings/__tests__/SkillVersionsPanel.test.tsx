@@ -31,6 +31,9 @@ vi.mock('@/api/api-client/skills-versions', async (importOriginal) => {
     ...actual,
     listSkillVersions: vi.fn(() => Promise.resolve(versionsPayload)),
     getSkillVersionDiff: vi.fn(() => Promise.resolve({ diff: '' })),
+    restoreSkillVersion: vi.fn(() =>
+      Promise.resolve({ ok: true, name: 'quartus-flow', restored: '1780000000', skill: {} }),
+    ),
   };
 });
 
@@ -38,11 +41,13 @@ import { SkillVersionsPanel } from '../SkillVersionsPanel';
 import {
   listSkillVersions,
   getSkillVersionDiff,
+  restoreSkillVersion,
   type SkillVersionList,
 } from '@/api/api-client/skills-versions';
 
 const listMock = vi.mocked(listSkillVersions);
 const diffMock = vi.mocked(getSkillVersionDiff);
+const restoreMock = vi.mocked(restoreSkillVersion);
 
 function renderPanel(node: ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -144,5 +149,66 @@ describe('SkillVersionsPanel — the diff', () => {
     await screen.findByTestId('skill-version-diff');
     fireEvent.click(within(list).getByTestId('skill-version-1780000000'));
     await waitFor(() => expect(screen.queryByTestId('skill-version-diff')).toBeNull());
+  });
+});
+
+/* ── restore (item 13) ─────────────────────────────────────────────────────
+ * The panel used to read only, because there was nothing to write through.
+ * `POST /api/skills/{name}/versions/{ts}/restore` is now that one route, so
+ * the Undo lives here and nowhere else — and it is offered only when the
+ * snapshot differs from what is live, because restoring the version already
+ * in force is a write with nothing to say.
+ */
+describe('SkillVersionsPanel — restore', () => {
+  const openDiff = async () => {
+    diffMock.mockResolvedValue({
+      diff: '--- quartus-flow@1780000000\n+++ quartus-flow (current)\n@@ -1 +1 @@\n-old\n+new\n',
+    });
+    renderPanel(<SkillVersionsPanel name="quartus-flow" />);
+    const list = await screen.findByTestId('skill-version-list');
+    fireEvent.click(within(list).getByTestId('skill-version-1780000000'));
+    return screen.findByTestId('skill-version-diff');
+  };
+
+  it('offers one restore action for the selected version', async () => {
+    const pane = await openDiff();
+    const button = await within(pane).findByTestId('skill-version-restore');
+    expect(button.textContent).toMatch(/undo/i);
+    // The label is a sentence, not the unixts id it posts — the id belongs in
+    // the request, the header above already names the version as a date.
+    expect(button.textContent).not.toContain('1780000000');
+  });
+
+  it('posts to the restore route for this version and refreshes the history', async () => {
+    const pane = await openDiff();
+    const button = await within(pane).findByTestId('skill-version-restore');
+    const callsBefore = listMock.mock.calls.length;
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(restoreMock).toHaveBeenCalledWith('quartus-flow', '1780000000', undefined),
+    );
+    // The live file changed, so both reads are stale by definition.
+    await waitFor(() => expect(listMock.mock.calls.length).toBeGreaterThan(callsBefore));
+  });
+
+  it('does not offer restore for the version that is already live', async () => {
+    diffMock.mockResolvedValue({ diff: '' });
+    renderPanel(<SkillVersionsPanel name="quartus-flow" />);
+    const list = await screen.findByTestId('skill-version-list');
+    fireEvent.click(within(list).getByTestId('skill-version-1780000000'));
+    const pane = await screen.findByTestId('skill-version-diff');
+    expect(await within(pane).findByTestId('skill-version-identical')).toBeInTheDocument();
+    expect(within(pane).queryByTestId('skill-version-restore')).toBeNull();
+  });
+
+  it('names a refused restore instead of pretending the file changed', async () => {
+    restoreMock.mockRejectedValue(new Error('restore: 400 Skill is bundled; patch it first'));
+    const pane = await openDiff();
+    const button = await within(pane).findByTestId('skill-version-restore');
+    fireEvent.click(button);
+    const error = await within(pane).findByTestId('skill-version-restore-error');
+    expect(error.textContent).toContain('bundled');
+    // …and the history was NOT re-read: nothing was written.
+    expect(listMock).toHaveBeenCalledTimes(1);
   });
 });

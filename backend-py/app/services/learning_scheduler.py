@@ -260,9 +260,25 @@ def _refine_job() -> dict[str, Any]:
     return detail
 
 
+def _reviewer_job() -> dict[str, Any]:
+    """The independent reviewer over open skill proposals.
+
+    Advisory while autonomy is off: it records a verdict beside each proposal
+    and decides nothing (see ``harness_self_improve.run_reviewer_pass``). A
+    first-class job rather than a tail on introspection for the same reason
+    ``_refine_job`` is one — its own due-ness, its own ledger row, its own
+    run-now button. The pass is imported at call time, so patching the module
+    attribute is the thing that runs.
+    """
+    from app.services.harness_self_improve import run_reviewer_pass
+
+    return run_reviewer_pass()
+
+
 _register(Job('introspection', _introspection_job, _config_interval('introspectionIntervalHours', 6.0)))
 _register(Job('consolidation', _consolidation_job, _config_interval('consolidationIntervalHours', 24.0)))
 _register(Job('refine', _refine_job, _config_interval('refineIntervalHours', 24.0)))
+_register(Job('reviewer', _reviewer_job, _config_interval('reviewerIntervalHours', 6.0)))
 _register(Job('outcome', _outcome_job, _config_interval('outcomeIntervalHours', 72.0)))
 
 

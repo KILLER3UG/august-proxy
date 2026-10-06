@@ -53,6 +53,7 @@ _ALLCamelKeys = {
     # P2 unified scheduler + P5 outcome ledger cadences.
     'introspectionIntervalHours',
     'refineIntervalHours',
+    'reviewerIntervalHours',
     'outcomeIntervalHours',
     'outcomeWindowDays',
     'episodicRetentionDays',
@@ -67,6 +68,12 @@ _ALLCamelKeys = {
     'skillLearning',
     # Dedicated judge model + tier-2 cost gates.
     'skillLearningJudgeModel',
+    # Item 14: the autonomy switch and the two rails it is read with.
+    'skillAutonomy',
+    'skillAutonomyShadow',
+    'autonomyKinds',
+    'autoApplyPerDay',
+    'autonomyBurnInCount',
     'escalationBudgetPerDay',
     'flagRateCap',
     # Per-project memory + workspace skills toggles.
