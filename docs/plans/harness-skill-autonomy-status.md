@@ -1028,3 +1028,42 @@ that never existed — stays on review until the user asks for it.
 - 8 new tests: default arms only patch, create held with `kind-not-armed`, patch passes, explicit
   arming works, ceiling cannot be widened, unknown kind refused, empty value valid, and a held
   create emits no `skill-evolved` event and spends no budget.
+
+## (1) Shadow decisions get their own log, and a readout
+- **A separate store, not the proposal ledger.** Burn-in, the daily cap and the per-skill rule all
+  read `ledger.jsonl`; a rehearsal recorded there would be counted as a change that happened and
+  would spend the budget it was rehearsing against. So: `<proposals>/shadow_decisions.jsonl`,
+  capped at 200 entries on write (a 6-hour cadence with no prune is an unbounded file).
+- Each entry: `at, proposalId, kind, skill, verdict, wouldApply, heldBy, reason, rails[]` where
+  `rails[]` is `{rule, passed}` for **every** rail.
+- **`rail_trace(row)` is now the single implementation** and `auto_apply_allowed` is derived from it
+  (first failing rail). That was the design point, not a convenience: two orderings — the one that
+  decides and the one that logs — is exactly the drift this project keeps having to fix. The trace
+  evaluates every rail even after one fails, because a trace that stops at the first refusal
+  answers the question the decision already answered. All rails are reads.
+  - Pinned by `test_the_decision_and_the_trace_cannot_disagree` (four shapes, decision vs trace) and
+    `test_the_trace_covers_every_rail` (every name in `RULES` except the two non-rails is
+    evaluated, so a new rail cannot be declared and never run).
+- Written from `review_proposal`'s approve branch, once per KEEP, **before** the shadow answer —
+  so a shadow run that the rails held is logged too, with `heldBy` naming the rail. A DISCARD is
+  not logged: nothing was rehearsed, and recording it would fill the file with non-decisions.
+- **Readout**: the auto-history endpoint gained `shadow: [...]`, kept as a separate array from
+  `changes` precisely so a would-have-applied cannot be read as an apply. The panel's disclosure now
+  counts them apart ("1 change applied by itself · 2 shadow decisions · autonomy is on") and each
+  row says `would have applied` or `held by <rail-name>` — the rail's own name, not a paraphrase,
+  because which rail held it is the whole reason to read the list. Renders nothing when both lists
+  are empty.
+- 10 new tests (7 rails + 1 endpoint + 3 panel), 170 green across the harness cluster, 173 across
+  chat/settings/realtime, ruff + mypy clean, `check:api` and `check:docs` green (the response is an
+  untyped dict, so no spec churn).
+
+## Definitive suites (tip `656df7be`, clean tree, nothing edited during the runs)
+- **backend: 4958 passed, 10 skipped, 0 failed in 10:38** — `PYTEST_EXIT=0`, `grep -c '^FAILED'`
+  = 0. Up from 4940 before this round (+18 tests).
+- **frontend: 1541 passed across 199 files** — `VITEST_EXIT=0`. Up from 1538 (+3 panel tests).
+- **`npm run build:web` green** (`BUILD_EXIT=0`).
+- **All five gates green**: `check:api`, `check:api-index`, `check:docs`, `check:doc-links`,
+  `check:version`.
+- Dead-code pass over this round's symbols: `rail_trace`, `record_shadow_decision`,
+  `shadow_decisions`, `_append_shadow`, `armed_kinds`, `disableSkill`, `ShadowDecision`,
+  `kind-not-armed` — every one has a caller outside its own definition and its own tests.
