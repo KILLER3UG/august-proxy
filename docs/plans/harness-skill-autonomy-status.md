@@ -1209,3 +1209,21 @@ Pinned now by `EditRailRow.test.tsx` on all four cases, including that an absent
 Also verified in passing, on a store that had never seen it: **migration 052 applies cleanly**
 (`Applied migration 052: 052_episode_quarantine.sql`, startup complete, promotion pass ran) — which
 is evidence for the live boot, not a substitute for it.
+
+## Definitive suites (tip `9d032441`, clean tree, nothing edited during the run)
+- **frontend: 1546 passed across 200 files** — `VITEST_EXIT=0`. Up from 1542/199 before this
+  session (+4 for `EditRailRow.test.tsx`, +1 file). The `ChatMarkdown.perf` flake did not recur.
+- **backend: unchanged at 4958 passed / 10 skipped** — `git diff --stat 656df7be..HEAD --
+  backend-py` is **empty**, so re-running ten minutes of byte-identical code would prove nothing
+  about these four commits, which are frontend and docs only.
+- `tsc -b` green, eslint clean on every touched file, `build:web` green.
+- **All six gates green from this tip**: `check:api`, `check:api-index`, `check:docs`,
+  `check:doc-links`, `check:version`, `check:design`. None of the four commits touches a route, a
+  schema or a version file, so the first three are not expected to move — but they were run rather
+  than assumed. Note this worktree predates `0980f3f1`, so `check:api-index` passing here is not
+  evidence the CRLF fix is unnecessary; it is evidence this checkout happens to already match.
+- Commits this session: `7231a756` (chip collision), `ab6ee8c8` (status-doc self-contradiction),
+  `836c8d4d` (EditRailRow tone), `9d032441` (browser-check record). All on
+  `harness-skill-autonomy`; **none pushed**, because `master` moved to `9a686bec` after these
+  branch commits were merged, so this branch is now ahead of `master` by four and needs its own
+  merge decision.
