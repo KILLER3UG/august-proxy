@@ -1233,3 +1233,28 @@ is evidence for the live boot, not a substitute for it.
   `harness-skill-autonomy`; **none pushed**, because `master` moved to `9a686bec` after these
   branch commits were merged, so this branch is now ahead of `master` by four and needs its own
   merge decision.
+
+## CI-shaped verification (tip `69c1db85`) — corrects the backend line above
+The bullet above said the backend suite was byte-identical so it need not be re-run. **That stopped
+being true after this session**: `837b2c87` edits `app/services/computer_use_policy.py`, so the
+number was re-earned rather than inherited. Commands were taken from
+`.github/workflows/type-check.yml` itself, not from habit — which is the whole lesson of this
+section, since three of them had been run wrong for five days:
+
+| CI step | Command as CI runs it | Result |
+|---|---|---|
+| ruff | `ruff check .` | exit 0, all checks passed |
+| mypy | `python -m mypy app/` **on Linux** | `Success: 337 files` — reproduced the old failure with `mypy --platform linux`, which is the only way to see it from a Windows box |
+| pytest | `pytest -q --tb=short -n auto --cov` (addopts carries `--cov-fail-under=55`) | **4958 passed, 10 skipped, 0 failed**, exit 0, coverage **71.04%** vs the 55% floor |
+| frontend lint | `eslint . --max-warnings=600` | **0 errors**, 325 warnings — the budget was never the cause of the red |
+| frontend types/tests | `tsc -b`, `vitest run` | green; **1546 passed / 200 files** |
+
+Two things this exposes about the history, not just the present:
+- **`--cov-fail-under=55` had never been verified in CI** since 2026-10-01, because the mypy step
+  exited before pytest ran. It passes (71.04%), but "the backend suite is green" had been a local
+  `--no-cov` claim repeated as a CI claim.
+- A local run with `--no-cov` is NOT the CI command. Any project whose addopts carries a gate needs
+  the gate exercised with the real flags, on the runner's platform.
+
+Still branch-local: `master` (`9a686bec`) keeps failing `Type check` until these merge. Commits
+`837b2c87`, `127cbde7`, `4f750030`, `69c1db85` are the CI fixes and this record.
