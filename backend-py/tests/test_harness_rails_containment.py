@@ -104,21 +104,25 @@ def _forceKind(pid: str, kind: str) -> None:
     )
 
 
-class TestTheInstrumentItself:
-    def test_the_scan_notices_a_write_it_is_meant_to_catch(self, brain, tmp_path):
-        """A green tree-scan means nothing if it cannot see a change. Deliberately
-        write one file and assert the diff reports exactly that file, so the
-        containment test above cannot pass by measuring nothing."""
-        probe = _BACKEND / 'app' / '_containment_probe.py'
-        try:
-            before = _fingerprint(_BACKEND / 'app')
-            probe.write_text('# probe\n', encoding='utf-8')
-            after = _fingerprint(_BACKEND / 'app')
-            changed = [k for k in set(before) | set(after) if before.get(k) != after.get(k)]
-            assert changed == [str(probe)], changed
-        finally:
-            probe.unlink(missing_ok=True)
-        assert str(probe) not in _fingerprint(_BACKEND / 'app')
+def _prove_the_scan_bites() -> None:
+    """Write one file under `app/` and require the scan to report exactly it.
+
+    A green tree-scan means nothing if it cannot see a change. Deliberately
+    called from inside the containment test rather than as its own test: a
+    separate test that writes into `app/` races the one asserting `app/` is
+    quiet whenever xdist runs them in parallel workers — which is how this file
+    failed on the second run. One test, one worker, no interleaving.
+    """
+    probe = _BACKEND / 'app' / '_containment_probe.py'
+    try:
+        before = _fingerprint(_BACKEND / 'app')
+        probe.write_text('# probe\n', encoding='utf-8')
+        after = _fingerprint(_BACKEND / 'app')
+        changed = [k for k in set(before) | set(after) if before.get(k) != after.get(k)]
+        assert changed == [str(probe)], changed
+    finally:
+        probe.unlink(missing_ok=True)
+    assert str(probe) not in _fingerprint(_BACKEND / 'app')
 
 
 class TestTheAllowListIsTwoKinds:
@@ -139,6 +143,7 @@ class TestTheAllowListIsTwoKinds:
 
 class TestNothingOutsideTheSkillIsTouched:
     def test_an_auto_apply_writes_only_the_skill_file(self, brain, monkeypatch):
+        _prove_the_scan_bites()
         _arm()
         before_app = _fingerprint(_BACKEND / 'app')
         _cleanProposal(name='only-this-file')
