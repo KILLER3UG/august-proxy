@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import contextvars
 import logging
+import sys
 from dataclasses import dataclass
 
 from app.json_narrowing import as_dict, as_str
@@ -144,6 +145,12 @@ def _windows_process_for_hwnd(hwnd: int) -> str:
     failure: this is introspection, and an unreadable process must not become a
     permission decision by itself.
     """
+    # Named here rather than caught below: `ctypes.WinDLL` and `wintypes` exist
+    # only on Windows, and typeshed hides them off-platform, so a Linux build
+    # (the CI runner) fails to typecheck the body. The `except Exception` below
+    # was the only thing standing in for this check at runtime.
+    if sys.platform != 'win32':
+        return ''
     try:
         import ctypes
         from ctypes import wintypes
@@ -170,7 +177,7 @@ def _windows_process_for_hwnd(hwnd: int) -> str:
             full = buf.value or ''
         finally:
             kernel32.CloseHandle(handle)
-    except Exception:  # noqa: BLE001 -- non-Windows or an unavailable API
+    except Exception:  # noqa: BLE001 -- an unavailable API or a refused call
         return ''
     base = full.replace('\\', '/').rsplit('/', 1)[-1].strip().lower()
     return base[:-4] if base.endswith('.exe') else base
