@@ -400,12 +400,14 @@ a `[Blocked]` edit measured red in the running app. Fixed in `836c8d4d`.
 2. **Migration 052 has not run on the live store.** It lands at the app's next boot, and the
    quarantine sweep at its first mining pass. Pre-boot backup:
    `data/backups/MANUAL-pre-052-20261004T184540Z.sqlite`.
-3. **Two test artifacts sit in the live `config.json`**
-   (`auxiliary.cognitive.orchestrator.skill_learning_judge_model = 'judge-model-x'` and a stray
-   top-level `_tier3_test_flag`). The exact unified diff was reported; applying it is the user's.
-4. **`Type check` is fixed on THIS branch and still red on `master`.** The four CI fixes are
-   `837b2c87`, `127cbde7`, `4f750030` — they cannot take effect until the branch merges, so until
-   then every push to master keeps failing before its tests run. What they were:
+3. **RESOLVED 2026-10-07 — the two live `config.json` artifacts are gone.** Re-read read-only: no
+   `judge-model-x` anywhere in the file, the orchestrator block holds only `memory_sensitive_topics`,
+   and no top-level `_tier3_test_flag`. That name survives only in `rollbackLog` at `:95` as a
+   `status: "undone"` entry from 2026-07-22 — a record of the undo, not a setting. `skillLearning`
+   remains unset, so the `'propose'` default does reach the model.
+4. **`Type check` was red on `master`; these three fixes reach it with the merge.**
+   `837b2c87`, `127cbde7`, `4f750030` — until they landed, every push to master failed before its
+   tests ran. What they were:
    - Backend: mypy on Linux rejected `ctypes.WinDLL` (a typeshed surface that exists only on
      Windows), so the job exited **before pytest ran at all**. Reproduced with
      `mypy --platform linux`, which is the only way this machine shows what the runner sees.
