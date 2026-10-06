@@ -1,0 +1,17 @@
+# Generated API artifacts: always LF, in the repo and on disk.
+#
+# These three are written by scripts (`gen:openapi` → docs/api/openapi.json,
+# `gen:api-index` → docs/API_INDEX.md, `gen:api` → the typed client) and then
+# compared back by gates. The generators write LF; with `core.autocrlf=true` a
+# Windows checkout writes CRLF, so `check:api-index` fails on a *pristine*
+# worktree — the committed file and the freshly generated one differ on every
+# line by one byte, and the diff of the content is empty.
+#
+# Observed exactly this way: same blob hash in two worktrees (`f1b11faa`), zero
+# difference after stripping CR, and the gate red in the newer checkout only.
+#
+# `eol=lf` fixes the checkout direction. The blobs already hold no CR bytes, so
+# this renormalizes nothing and rewrites no history.
+docs/api/openapi.json text eol=lf
+docs/API_INDEX.md text eol=lf
+frontend/desktop/src/api/gen/openapi.ts text eol=lf
