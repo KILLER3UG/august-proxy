@@ -403,11 +403,17 @@ a `[Blocked]` edit measured red in the running app. Fixed in `836c8d4d`.
 3. **Two test artifacts sit in the live `config.json`**
    (`auxiliary.cognitive.orchestrator.skill_learning_judge_model = 'judge-model-x'` and a stray
    top-level `_tier3_test_flag`). The exact unified diff was reported; applying it is the user's.
-4. **`Type check` is red on `master`** for two reasons that are not this workstream and are not
-   this plan's files — mypy's `ctypes.WinDLL` on the Linux runner, and four
-   `no-unnecessary-type-assertion` eslint errors in `RightDrawer.test.tsx`, `useResizablePane.ts`
-   and `TurnLimitsSection.test.tsx`. Two of those three files are in the other session's
-   uncommitted work, so fixing them there would collide; that is the user's call, not a silent fix.
+4. **`Type check` is fixed on THIS branch and still red on `master`.** The four CI fixes are
+   `837b2c87`, `127cbde7`, `4f750030` — they cannot take effect until the branch merges, so until
+   then every push to master keeps failing before its tests run. What they were:
+   - Backend: mypy on Linux rejected `ctypes.WinDLL` (a typeshed surface that exists only on
+     Windows), so the job exited **before pytest ran at all**. Reproduced with
+     `mypy --platform linux`, which is the only way this machine shows what the runner sees.
+   - Frontend: 4 `no-unnecessary-type-assertion` errors — eslint fails on *errors*, not on the
+     600-warning budget. Now 0 errors / 325 warnings.
+   - `ChatMarkdown.perf.test.tsx`: asserted a ratio this file had already documented as
+     load-independent, and it is not (contention slows the React side more than the parse side).
+     Estimator fixed to min-of-3, threshold unchanged.
 
 Items 2-4 of the previous version of this list — item 7's judge measurement, Pass 2, Pass 3, and
 the tidy pass — are all closed, and this file's own Item log is where they were closed. The list had
