@@ -17,8 +17,8 @@ their current-state claims are maintained.
 
 ## Done — Pass 1 item 1, as planned for it
 
-Written before that commit landed. The mechanism below is what shipped; the USER-VISIBLE bullet is
-the claim `## Open, in order` still owes a real-browser check on.
+Written before that commit landed. The mechanism below is what shipped; the USER-VISIBLE bullet
+under it was an over-claim and is corrected where it stands, against a real browser measurement.
 
 - **Item 1 — the structured tool-error receipt.** Mined failures now come from what the
   harness recorded, never from prose.
@@ -40,6 +40,11 @@ the claim `## Open, in order` still owes a real-browser check on.
   - **USER-VISIBLE:** `[Blocked]` / `[Validation Error]` / `[Tool result missing]` tool cards
     now render red instead of neutral. Adjacent to `d73022be` B6 but NOT it — B6's four prose
     patterns stay unimplemented.
+    **Corrected 2026-10-06: this is wrong as written, and the tone split that shipped days later
+    is why.** Only `Error` and `[Validation Error]` are `failure` (red). `[Blocked]` and
+    `[Tool result missing]` are `denial` (`tool_protocol.RECEIPT_TONE`) and render MUTED on
+    purpose — a guardrail that said "no" is not a tool that broke. Verified in a real browser
+    below, not from the table.
   - **Verified no provider leak:** every `role == 'tool'` translator rebuilds the message from
     scratch, so `is_error` never reaches an upstream body
     (`openai.py:511,704,826`; `anthropic.py:275,1268`). Checked, not assumed — AGENTS.md's
@@ -382,22 +387,27 @@ pytest's own final summary line. They agree, which is the point of the rule.
   run and shown failing (or newly asserting) before/with the change.
 
 ## Open, in order
-1. **The real-browser check of red vs muted tool cards.** Everything else in this plan has a
-   measurement behind it; this has 25 render tests that assert class names and no pixels. The
-   design QUESTION this line used to leave open — "decide whether guardrail blocks deserve a
-   quieter treatment" — is already answered in code: `types/chat.ts` carries
-   `tone?: 'failure' | 'denial'`, `ToolStepRow` mutes a denial and reddens a failure, and a
-   MISSING tone stays red on purpose. What is owed is the look, not the decision.
-2. **A real reviewer call has never run.** Provider `opencode-zen-41527c` answers
+
+**DONE, and it found a bug: the real-browser check of red vs muted tool cards.** See the session-8
+entry below for the measurements. It confirmed the tone rule renders correctly on `ToolStepRow` and
+found that `EditRailRow` — where edit-class receipts actually render — never read `tone` at all, so
+a `[Blocked]` edit measured red in the running app. Fixed in `836c8d4d`.
+
+1. **A real reviewer call has never run.** Provider `opencode-zen-41527c` answers
    `Insufficient account funds`; `claude-sonnet-5` resolves and the gate hands back a client.
    Blocked on the user. The action after funding is
    `POST /api/curator/scheduler/run/reviewer`.
-3. **Migration 052 has not run on the live store.** It lands at the app's next boot, and the
+2. **Migration 052 has not run on the live store.** It lands at the app's next boot, and the
    quarantine sweep at its first mining pass. Pre-boot backup:
    `data/backups/MANUAL-pre-052-20261004T184540Z.sqlite`.
-4. **Two test artifacts sit in the live `config.json`**
+3. **Two test artifacts sit in the live `config.json`**
    (`auxiliary.cognitive.orchestrator.skill_learning_judge_model = 'judge-model-x'` and a stray
    top-level `_tier3_test_flag`). The exact unified diff was reported; applying it is the user's.
+4. **`Type check` is red on `master`** for two reasons that are not this workstream and are not
+   this plan's files — mypy's `ctypes.WinDLL` on the Linux runner, and four
+   `no-unnecessary-type-assertion` eslint errors in `RightDrawer.test.tsx`, `useResizablePane.ts`
+   and `TurnLimitsSection.test.tsx`. Two of those three files are in the other session's
+   uncommitted work, so fixing them there would collide; that is the user's call, not a silent fix.
 
 Items 2-4 of the previous version of this list — item 7's judge measurement, Pass 2, Pass 3, and
 the tidy pass — are all closed, and this file's own Item log is where they were closed. The list had
@@ -1154,3 +1164,48 @@ that never existed — stays on review until the user asks for it.
   to the measured value is load-sensitive by construction — the same class as the `-n auto`
   failures in this project's history. Not touched here; it needs the mechanism fixed, not the
   number lowered.
+
+## Session 8 — the real-browser check, run properly, found a bug
+The deferred item was never possible with `take_screenshot` (the in-app browser reports
+`NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`). It is possible headless: serve `web-dist` from the backend
+itself so everything is same-origin, seed the transcript through the real routes, and read
+`getComputedStyle` rather than trusting a look.
+
+**Recipe, because four dead ends went into finding it:**
+- Start the backend with `AUGUST_DATA_DIR` pointed at a scratch dir **and**
+  `AUGUST_CORS_ORIGINS=http://127.0.0.1:<port>`. Without the origin, a browser `POST` to
+  `/api/sessions/.../messages` is a **403**; `urllib` from a script succeeds, so the seed looks
+  like it worked and the page shows nothing.
+- The sidebar roster is **localStorage** (`august-sessions-list-v1`, `august_last_session`), not
+  `/api/sessions`. A session created only server-side never appears, and clicking around the
+  titlebar (`session-bar-title`) silently mints a new one. The working sequence is: let the app
+  create a session, seed rows into a server session, then write the roster entry (copied from one
+  the app itself wrote) and reload. A new browser context drops localStorage, so seed, reload and
+  measure must happen in one script run.
+- Settled receipts are **folded** behind `.activity-summary-header[aria-expanded]`. Nothing renders
+  until that is clicked, which is what makes a count of `[data-slot="tool-step-row"]` look like a
+  broken feature when it is just collapsed.
+- Edit-class receipts do **not** render in `ToolStepRow` at all. `AssistantBlockTimeline` routes
+  them to `EditRailRow`, so a check that only measures step rows cannot see them — which is exactly
+  how the bug below hid.
+
+**Measured, with the migration-052 scratch store, 6 receipts, one per tone family:**
+
+| Receipt | Renders in | Glyph colour | Expected |
+|---|---|---|---|
+| `Error: …` (failure) | ToolStepRow | `rgb(240,118,106)` | red |
+| `[Validation Error] …` (failure) | **EditRailRow** | `rgb(240,118,106)` | red |
+| `[Blocked] …` (denial) | ToolStepRow | grey, alpha 0.75 | muted |
+| `[Blocked] …` (denial) | **EditRailRow** | grey, alpha 0.85 — **was red before the fix** | muted |
+| no tone at all + `status: error` | ToolStepRow | `rgb(240,118,106)` | red (fail-visible) |
+| `status: done` | ToolStepRow | blue file glyph | untinted |
+
+`EditRailRow` read `tool.status` and never `tool.tone` (`836c8d4d`), so every guardrail block on an
+edit — `[Blocked]`, the most common denial there is — rendered as a failure. The 25 `ToolStepRow`
+render tests could not catch this because they only cover the component the edits do not use, which
+is the standing lesson: **a tone rule applied at one render path is not applied to the turn.**
+Pinned now by `EditRailRow.test.tsx` on all four cases, including that an absent tone stays red.
+
+Also verified in passing, on a store that had never seen it: **migration 052 applies cleanly**
+(`Applied migration 052: 052_episode_quarantine.sql`, startup complete, promotion pass ran) — which
+is evidence for the live boot, not a substitute for it.
