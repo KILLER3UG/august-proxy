@@ -2,6 +2,11 @@
 /* Item 15. One line above the composer naming the skill it changed, with the
  * undo attached, and a disclosure for the rest.
  *
+ * Not to be confused with `components/chat/SkillReceiptChip`, which sits in the
+ * transcript and reports a SKILL.md that THIS turn wrote. That one has no
+ * backend event to read because a tool-path write emits nothing; this one has
+ * no turn to point at, because the six-hour job did the work.
+ *
  * It reads the same query the settings history reads (`harness-auto-history`),
  * and the rails invalidate that key when they apply — so a change made by the
  * six-hour job reaches a window that is already open, and a change made while
@@ -21,6 +26,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sparkles, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import {
   disableSkill,
   getAutoApplyHistory,
@@ -102,12 +108,14 @@ export function SkillEvolvedChip() {
         August updated <span className="font-medium">{newest.skill}</span> by itself
       </span>
 
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
         data-testid="skill-evolved-undo"
         disabled={undo.isPending}
         onClick={() => undo.mutate()}
-        className="rounded-md border border-border/60 px-1.5 py-0.5 text-2xs text-foreground transition hover:bg-accent disabled:opacity-50"
+        className="border-border/60 bg-transparent px-1.5 py-0.5 text-2xs text-foreground"
       >
         {undo.isPending
           ? newest.created
@@ -116,7 +124,7 @@ export function SkillEvolvedChip() {
           : newest.created
             ? 'Undo — disable the skill'
             : 'Undo — restore the earlier version'}
-      </button>
+      </Button>
 
       {undo.isError && (
         <span data-testid="skill-evolved-undo-error" className="text-danger-fg">
@@ -124,25 +132,29 @@ export function SkillEvolvedChip() {
         </span>
       )}
 
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="sm"
         data-testid="skill-evolved-expand"
         onClick={() => setOpen((cur) => !cur)}
         aria-expanded={open}
-        className="underline decoration-dotted underline-offset-2 transition hover:text-foreground"
+        className="px-1 py-0.5 text-2xs underline decoration-dotted underline-offset-2 hover:bg-transparent hover:text-foreground"
       >
         {open ? 'hide' : 'details'}
-      </button>
+      </Button>
 
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-sm"
         data-testid="skill-evolved-dismiss"
         aria-label="Dismiss this notice"
         onClick={() => hide(newest.at)}
-        className="ml-auto rounded p-0.5 transition hover:text-foreground"
+        className="ml-auto size-5 hover:bg-transparent hover:text-foreground"
       >
         <X className="size-3" aria-hidden />
-      </button>
+      </Button>
 
       {open && (
         <ul
