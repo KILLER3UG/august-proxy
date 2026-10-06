@@ -39,9 +39,15 @@ logger = logging.getLogger(__name__)
 _DEFAULT_WINDOW_DAYS = 14
 # Below this many episodes on either side, the comparison says
 # 'insufficient' rather than pretending to measure.
-_MIN_EPISODES = 3
-# Verdict hysteresis: small swings are noise on tiny samples.
-_IMPROVE_EPS = 0.05
+# Floor for BOTH sides of the comparison, and for the targeted rule too. Three
+# was low enough to classify noise: a resolved rate over 3 episodes moves in
+# 1/3 steps, so any single event crossed the old 0.05 hysteresis and could
+# trigger an automated revert.
+_MIN_EPISODES = 8
+# Verdict hysteresis: a resolved-rate or recurrence-proportion move smaller than
+# this is `flat`. 0.15 is roughly two events on the 8-episode floor, which is
+# about as fine a distinction as this sample can honestly support.
+_IMPROVE_EPS = 0.15
 
 # SQLite-compatible format (space form; julianday parses it unambiguously).
 _TS = '%Y-%m-%d %H:%M:%S'
@@ -342,20 +348,30 @@ def _file_revert_proposal(r: Any, before: dict[str, Any], after: dict[str, Any],
 
 
 def _classify(before: dict[str, Any], after: dict[str, Any], targeted: bool = False) -> str:
+    """Verdict for one measured change. Both rules read a RATE over a sample.
+
+    `_MIN_EPISODES` floors both sides and `_IMPROVE_EPS` is the hysteresis: a
+    move smaller than it is `flat`. The floor exists because a rate estimated
+    from a handful of episodes swings on one event, and the cost of a false
+    'regressed' here is not a wrong label — it is an automated revert.
+    """
     bEps = as_int(before.get('episodes'), 0)
     aEps = as_int(after.get('episodes'), 0)
-    if targeted and 'fingerprintRecurrence' in before and 'fingerprintRecurrence' in after:
-        # A targeted change (skill for a specific fingerprint) reads on the
-        # recurrence directly — meaningful on any sample size: zero recurrence
-        # after a non-zero before window is improvement, any recurrence in the
-        # after window is regression (the skill's whole job is to stop it).
-        if after['fingerprintRecurrence'] == 0 and before['fingerprintRecurrence'] > 0:
-            return 'improved'
-        if after['fingerprintRecurrence'] > 0:
-            return 'regressed'
-        return 'flat'
     if bEps < _MIN_EPISODES or aEps < _MIN_EPISODES:
         return 'insufficient'
+
+    if targeted and 'fingerprintRecurrence' in before and 'fingerprintRecurrence' in after:
+        # Recurrence is counted from the same episode rows as `episodes`, so it
+        # is a proportion of the window, never a raw count: a busier window can
+        # carry the same number of the targeted failure and be improving.
+        bRec = as_int(before.get('fingerprintRecurrence'), 0) / bEps
+        aRec = as_int(after.get('fingerprintRecurrence'), 0) / aEps
+        if aRec <= bRec - _IMPROVE_EPS:
+            return 'improved'
+        if aRec >= bRec + _IMPROVE_EPS:
+            return 'regressed'
+        return 'flat'
+
     bRate = before.get('resolvedRate')
     aRate = after.get('resolvedRate')
     if bRate is None or aRate is None:
