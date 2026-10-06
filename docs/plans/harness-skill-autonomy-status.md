@@ -405,17 +405,38 @@ a `[Blocked]` edit measured red in the running app. Fixed in `836c8d4d`.
    and no top-level `_tier3_test_flag`. That name survives only in `rollbackLog` at `:95` as a
    `status: "undone"` entry from 2026-07-22 — a record of the undo, not a setting. `skillLearning`
    remains unset, so the `'propose'` default does reach the model.
-4. **`Type check` was red on `master`; these three fixes reach it with the merge.**
-   `837b2c87`, `127cbde7`, `4f750030` — until they landed, every push to master failed before its
-   tests ran. What they were:
+4. **`Type check` ran on the pushed merge (`7b20a966`) and is STILL RED — the three fixes cleared,
+   and two more gates were behind them.** Backend failed in 44s, frontend in 1m33s. What had been
+   broken, now proven fixed:
    - Backend: mypy on Linux rejected `ctypes.WinDLL` (a typeshed surface that exists only on
-     Windows), so the job exited **before pytest ran at all**. Reproduced with
-     `mypy --platform linux`, which is the only way this machine shows what the runner sees.
-   - Frontend: 4 `no-unnecessary-type-assertion` errors — eslint fails on *errors*, not on the
-     600-warning budget. Now 0 errors / 325 warnings.
+     Windows). Reproduced with `mypy --platform linux`, the only way this machine shows what the
+     runner sees. **Cleared** — the job now gets past mypy.
+   - Frontend: 4 `no-unnecessary-type-assertion` errors. **Cleared** — 0 errors, and the job now
+     gets past eslint and the design guardrail.
    - `ChatMarkdown.perf.test.tsx`: asserted a ratio this file had already documented as
      load-independent, and it is not (contention slows the React side more than the parse side).
      Estimator fixed to min-of-3, threshold unchanged.
+5. **THE TWO GATES THAT ARE NOW BLOCKING CI — both this workstream's, both reproducible locally.**
+   - `node scripts/check-naming.mjs` → **10 new camelCase params in service signatures**:
+     `episode_miner.py` `blocksJson`/`errorReceipts`/`eventType`, `harness_rails.py`
+     `applyAction`/`findingKey`/`versionTs`, `harness_self_improve.py`
+     `dryRun`/`producerModel`/`timeoutS`, `skill_service.py` `trashId`. Fix by renaming to
+     snake_case, **not** by `--update` — that re-baselines the ratchet instead of correcting code.
+     `skill_service.trashId` is a FastAPI **path parameter**, so its rename changes the OpenAPI spec,
+     `API_INDEX.md` and the typed client: regenerate with `gen:openapi` + `gen:api-index` + `gen:api`,
+     never hand-edit. `dryRun` is reached from a router query param, so every keyword caller and test
+     has to move with it.
+   - `node scripts/lint-ratchet.mjs` → **325 warnings against a budget of 308**. eslint's
+     `--max-warnings=600` is not the binding constraint; this is a separate tighter ratchet. 17
+     warnings to fix or individually justify.
+   - **Why this matters beyond red ink: pytest has STILL never executed in CI.** The naming gate is
+     step 6 of the backend job (`type-check.yml:41`) and pytest is step 14 (`:99`); on the frontend,
+     `lint:ratchet` (`:177`) sits ahead of vitest. So every suite number in this file is a local
+     result — run with CI's flags, but not a CI verdict.
+   - **The standing lesson, now three gates deep:** `check:design` was missed for five days, then
+     `check:naming` and `lint:ratchet` were missed the same way, all because the "five gates" list was
+     inherited between sessions instead of re-derived. Read the step names out of the workflow file:
+     `grep -n "^\s*- name:" .github/workflows/type-check.yml`.
 
 Items 2-4 of the previous version of this list — item 7's judge measurement, Pass 2, Pass 3, and
 the tidy pass — are all closed, and this file's own Item log is where they were closed. The list had
@@ -1260,3 +1281,7 @@ Two things this exposes about the history, not just the present:
 
 Still branch-local: `master` (`9a686bec`) keeps failing `Type check` until these merge. Commits
 `837b2c87`, `127cbde7`, `4f750030`, `69c1db85` are the CI fixes and this record.
+
+**This table is not the whole job, and treating it as such is exactly the error that produced the
+next red.** It covers five steps; `type-check.yml` has fourteen on the backend. `check:naming` and
+`lint:ratchet` were never run here, both are CI-enforced, both fail — see `## Open, in order` item 5.
