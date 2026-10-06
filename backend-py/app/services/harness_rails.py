@@ -26,6 +26,7 @@ Three properties this module keeps:
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import re
 import time
@@ -204,90 +205,173 @@ def _read_config() -> dict[str, Any]:
 # ── The one entry point ───────────────────────────────────────────────────
 
 
-def auto_apply_allowed(row: dict[str, Any] | None) -> dict[str, Any]:
-    """May this proposal be written without a human? Never raises."""
+def rail_trace(row: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Every rail, in order, with pass/fail and the reason it would give.
+
+    This is the single implementation: :func:`auto_apply_allowed` is derived
+    from it, so the shadow log and the real decision cannot grow two orderings
+    that drift apart. Every check runs even after one fails, because the point
+    of a trace is what the remaining rails would have said — one that stops at
+    the first refusal answers the question the decision already answered and
+    none of the others. All of them are reads; nothing here writes.
+    """
     if not isinstance(row, dict) or not row:
-        return _refuse('unreadable-proposal', 'the proposal record could not be read')
+        return [{'rule': 'unreadable-proposal', 'passed': False,
+                 'reason': 'the proposal record could not be read'}]
 
     cfg = _read_config()
-    if not cfg.get('skillAutonomy'):
-        return _refuse(
-            'autonomy-off',
-            'autonomous apply is off in settings, so this stays a human decision',
-        )
-
     kind = str(row.get('kind') or '').strip().lower()
-    if kind not in AUTO_APPLIABLE_KINDS:
-        return _refuse(
-            'hard-kind',
-            f'{kind or "unnamed"} is a hard-limit category — always decided by a human',
-        )
-    if kind not in armed_kinds():
-        return _refuse(
-            'kind-not-armed',
-            f'autonomy is not armed for {kind!r} — it stays in the inbox for review',
-        )
-
     rawPayload = row.get('payload')
     payload: dict[str, Any] = rawPayload if isinstance(rawPayload, dict) else {}
-
-    provenance = _evidence_check(row, payload)
-    if provenance:
-        return provenance
-
-    content = _content_check(payload)
-    if content:
-        return content
-
-    # `supersedes` makes the applier DISABLE a second skill in the same write.
-    # That is a real side effect on a file the proposal does not name, so it is
-    # held even though both writes are inside the skills root.
-    supersedes = str(payload.get('supersedes') or '').strip()
-    if supersedes:
-        return _refuse(
-            'supersedes-another-skill',
-            f'the change also retires {supersedes!r}, a second skill the proposal '
-            'does not name — a human decides that one',
-        )
-
+    # One ledger read shared by the three rules that need it.
+    applied = _auto_apply_rows()
+    today = [r for r in applied if str(r.get('at') or '').startswith(_today())]
     key = finding_key(row)
-    if _on_cooldown(key):
-        return _refuse(
+    skill = str(payload.get('name') or '').strip()
+    perDay = _int(cfg.get('autoApplyPerDay'), 2)
+    burnIn = _int(cfg.get('autonomyBurnInCount'), 5)
+    supersedes = str(payload.get('supersedes') or '').strip()
+
+    checks: list[tuple[str, Any]] = [
+        ('autonomy-off', lambda: None if cfg.get('skillAutonomy') else _refuse(
+            'autonomy-off',
+            'autonomous apply is off in settings, so this stays a human decision',
+        )),
+        ('hard-kind', lambda: None if kind in AUTO_APPLIABLE_KINDS else _refuse(
+            'hard-kind',
+            f'{kind or "unnamed"} is a hard-limit category — always decided by a human',
+        )),
+        ('kind-not-armed', lambda: None if kind in armed_kinds() else _refuse(
+            'kind-not-armed',
+            f'autonomy is not armed for {kind!r} — it stays in the inbox for review',
+        )),
+        ('untrusted-evidence', lambda: _evidence_check(row, payload)),
+        ('unsafe-content', lambda: _content_check(payload)),
+        ('supersedes-another-skill', lambda: None if not supersedes else _refuse(
+            'supersedes-another-skill',
+            f'the change also retires {supersedes!r}, a second skill the proposal does '
+            'not name — a human decides that one',
+        )),
+        ('probation-cooldown', lambda: None if not _on_cooldown(key) else _refuse(
             'probation-cooldown',
             f'this exact finding was already applied and reverted within '
             f'{PROBATION_COOLDOWN_DAYS} days — it stays a human decision',
-        )
-
-    # Burn-in first: it is the rule that watches the machinery on behalf of the
-    # rate limits, so it must not be able to hide behind them.
-    applied = _auto_apply_rows()
-    burnIn = _int(cfg.get('autonomyBurnInCount'), 5)
-    if burnIn > 0 and len(applied) < burnIn:
-        return _refuse(
+        )),
+        # Burn-in before the rate rails: it watches the machinery on their
+        # behalf, so it must not be able to hide behind a limit.
+        ('burn-in', lambda: None if burnIn <= 0 or len(applied) >= burnIn else _refuse(
             'burn-in',
             f'burn-in is watching the first {burnIn} clean changes '
             f'({len(applied)} recorded) — this one waits in the inbox',
-        )
-
-    perDay = _int(cfg.get('autoApplyPerDay'), 2)
-    today = [r for r in applied if str(r.get('at') or '').startswith(_today())]
-    if len(today) >= max(0, perDay):
-        return _refuse(
-            'daily-limit',
-            f'{len(today)} of {perDay} auto-applies already used today',
-        )
-
-    skill = str(payload.get('name') or '').strip()
-    if skill and any(
-        str(r.get('at') or '').startswith(_today()) and str(r.get('skill') or '') == skill
-        for r in applied
-    ):
-        return _refuse(
+        )),
+        ('daily-limit', lambda: None if len(today) < max(0, perDay) else _refuse(
+            'daily-limit', f'{len(today)} of {perDay} auto-applies already used today',
+        )),
+        ('same-skill-today', lambda: None if not (skill and any(
+            str(r.get('skill') or '') == skill for r in today
+        )) else _refuse(
             'same-skill-today',
             f'skill {skill!r} already took one auto-change today — one per skill per day',
-        )
+        )),
+    ]
 
+    trace: list[dict[str, Any]] = []
+    for rule, check in checks:
+        refused = check()
+        trace.append({
+            'rule': rule,
+            'passed': refused is None,
+            'reason': str((refused or {}).get('reason') or ''),
+        })
+    return trace
+
+
+def auto_apply_allowed(row: dict[str, Any] | None) -> dict[str, Any]:
+    """May this proposal be written without a human? Never raises.
+
+    The answer is the first failing rail of :func:`rail_trace`, so the decision
+    and the logged trace are one computation rather than two that can disagree.
+    """
+    for entry in rail_trace(row):
+        if not entry['passed']:
+            return _refuse(str(entry['rule']), str(entry['reason']))
     return {'allowed': True, 'rule': 'allowed', 'reason': ''}
+
+
+# ── The shadow log ────────────────────────────────────────────────────────
+# Its own file, deliberately NOT the proposal ledger: burn-in, the daily cap and
+# the per-skill rule all read that ledger, and a rehearsal recorded there would
+# be counted as a change that actually happened.
+
+_SHADOW_FILENAME = 'shadow_decisions.jsonl'
+_SHADOW_KEEP = 200
+
+
+def _shadow_path() -> Path:
+    from app.services.harness_self_improve import _proposals_dir
+
+    return _proposals_dir() / _SHADOW_FILENAME
+
+
+def _append_shadow(row: dict[str, Any]) -> None:
+    """Append one decision, keeping the file bounded at the recent tail."""
+    path = _shadow_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('a', encoding='utf-8') as f:
+            f.write(json.dumps(row, ensure_ascii=False) + chr(10))
+        lines = path.read_text(encoding='utf-8').splitlines()
+        if len(lines) > _SHADOW_KEEP:
+            path.write_text(
+                chr(10).join(lines[-_SHADOW_KEEP:]) + chr(10), encoding='utf-8'
+            )
+    except Exception:  # noqa: BLE001 -- a shadow log must never break a decision
+        logger.debug('shadow decision write failed', exc_info=True)
+
+
+def record_shadow_decision(
+    row: dict[str, Any], verdict: str, trace: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Persist what a shadow run decided it would have done."""
+    rawPayload = row.get('payload')
+    payload: dict[str, Any] = rawPayload if isinstance(rawPayload, dict) else {}
+    held = next((t for t in trace if not t['passed']), None)
+    entry = {
+        'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        'proposalId': str(row.get('id') or ''),
+        'kind': str(row.get('kind') or ''),
+        'skill': str(payload.get('name') or '')[:120],
+        'verdict': str(verdict or '')[:16],
+        'wouldApply': held is None,
+        'heldBy': '' if held is None else str(held.get('rule') or ''),
+        'reason': '' if held is None else str(held.get('reason') or '')[:300],
+        'rails': [
+            {'rule': str(t.get('rule') or ''), 'passed': bool(t.get('passed'))}
+            for t in trace
+        ],
+    }
+    _append_shadow(entry)
+    return entry
+
+
+def shadow_decisions(limit: int = 50) -> list[dict[str, Any]]:
+    """Shadow decisions, newest first."""
+    path = _shadow_path()
+    try:
+        if not path.exists():
+            return []
+        lines = path.read_text(encoding='utf-8').strip().splitlines()
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[dict[str, Any]] = []
+    for line in reversed(lines[-max(1, int(limit)):]):
+        try:
+            entry = json.loads(line)
+        except Exception:  # noqa: BLE001 -- one unreadable line is not the reader's problem
+            continue
+        if isinstance(entry, dict):
+            out.append(entry)
+    return out
 
 
 # ── The rules, one function each ─────────────────────────────────────────

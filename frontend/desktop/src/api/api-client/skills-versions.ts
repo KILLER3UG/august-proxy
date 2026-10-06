@@ -124,12 +124,30 @@ export interface AutoAppliedChange {
   reverted: boolean;
 }
 
+/** One shadow-mode rehearsal: the reviewer's verdict, what every rail said, and
+ *  whether the whole thing would have been allowed. Never a change. */
+export interface ShadowDecision {
+  at: string;
+  proposalId: string;
+  kind: string;
+  skill: string;
+  verdict: string;
+  wouldApply: boolean;
+  /** The first rail that held it, '' when none did. */
+  heldBy: string;
+  reason: string;
+  rails: { rule: string; passed: boolean }[];
+}
+
 export interface AutoApplyHistory {
   /** Which way the switch is set right now, because a list of auto-changes with
    *  no state beside it reads as "this is what happens" when it may be "what
    *  happened". */
   autonomy: boolean;
   changes: AutoAppliedChange[];
+  /** Rehearsals from their own store, kept separate from `changes` so a
+   *  would-have-applied can never be read as an apply. */
+  shadow: ShadowDecision[];
 }
 
 /** The record of what the rails applied — read by the settings history and by

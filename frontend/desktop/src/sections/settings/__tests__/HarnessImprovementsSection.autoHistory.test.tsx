@@ -166,3 +166,91 @@ describe('the header states what the switch means', () => {
     expect(header.textContent).not.toMatch(/nothing applies until you approve/i);
   });
 });
+
+/* ── The shadow readout (review item 1) ─────────────────────────────────────
+ * A rehearsal is not a change. The panel has to say which is which, because the
+ * whole point of shadow mode is reading what the rails would have done — and a
+ * list that mixes "applied" with "would have applied" is how a dry run comes to
+ * look like it wrote something.
+ */
+const SHADOW = [
+  {
+    at: '2026-10-05T10:00:00Z',
+    proposalId: 'prop_shadow_a',
+    kind: 'skill_patch',
+    skill: 'would-have-applied',
+    verdict: 'KEEP',
+    wouldApply: true,
+    heldBy: '',
+    reason: '',
+    rails: [{ rule: 'autonomy-off', passed: true }],
+  },
+  {
+    at: '2026-10-05T09:00:00Z',
+    proposalId: 'prop_shadow_b',
+    kind: 'skill_create',
+    skill: 'was-held',
+    verdict: 'KEEP',
+    wouldApply: false,
+    heldBy: 'untrusted-evidence',
+    reason: 'the evidence quotes a fetchable URL',
+    rails: [
+      { rule: 'untrusted-evidence', passed: false },
+      { rule: 'unsafe-content', passed: true },
+    ],
+  },
+];
+
+describe('the shadow readout', () => {
+  it('says which rehearsals would have applied and which rail held the rest', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes('auto-history')) return Promise.resolve({ autonomy: true, changes: [], shadow: SHADOW });
+      return beforeEachDefault(url);
+    });
+    renderSection();
+    const block = await screen.findByTestId('auto-change-history');
+    const rows = screen.getAllByTestId('shadow-decision-row');
+    expect(rows).toHaveLength(2);
+    const applied = rows.find((r) => r.textContent?.includes('would-have-applied'));
+    const held = rows.find((r) => r.textContent?.includes('was-held'));
+    expect(applied?.textContent).toMatch(/would have applied/i);
+    expect(held?.textContent).toMatch(/untrusted-evidence/);
+    expect(held?.textContent).not.toMatch(/would have applied/i);
+  });
+
+  it('shows the readout even when nothing was ever applied', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.includes('auto-history')) return Promise.resolve({ autonomy: true, changes: [], shadow: SHADOW });
+      return beforeEachDefault(url);
+    });
+    renderSection();
+    const block = await screen.findByTestId('auto-change-history');
+    // The changes count is absent rather than zero-with-decoration...
+    expect(block.textContent).not.toMatch(/applied by itself/);
+    // ...while the rehearsals are listed.
+    expect(block.textContent).toMatch(/shadow/i);
+  });
+
+  it('keeps a rehearsal out of the applied count', async () => {
+    const applied = {
+      at: '2026-10-04T09:12:00Z',
+      proposalId: 'prop_real_change',
+      skill: 'ngspice-flow',
+      versionTs: '1791234567',
+      created: false,
+      reverted: false,
+    };
+    getMock.mockImplementation((url: string) => {
+      if (url.includes('auto-history')) {
+        return Promise.resolve({ autonomy: true, changes: [applied], shadow: SHADOW });
+      }
+      return beforeEachDefault(url);
+    });
+    renderSection();
+    const block = await screen.findByTestId('auto-change-history');
+    expect(block.textContent).toMatch(/1 change applied by itself/);
+    // 1 real + 2 rehearsals must never read as three changes.
+    expect(block.textContent).not.toMatch(/3 changes applied by itself/);
+    expect(block.textContent).toMatch(/2 shadow decisions/);
+  });
+});

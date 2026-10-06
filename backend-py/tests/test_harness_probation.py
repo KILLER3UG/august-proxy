@@ -510,3 +510,41 @@ class TestACreateIsAnnouncedWithItsOwnUndo:
         mine = [h for h in rails.auto_apply_history() if h['proposalId'] == pid]
         assert mine[0]['created'] is False, mine[0]
         assert mine[0]['versionTs'], 'a patch has a version to put back'
+
+
+class TestTheShadowReadout:
+    """The log is only useful if a person can see it, so the same endpoint that
+    feeds the history panel answers both questions: what the machine DID by
+    itself, and what it decided it WOULD have done."""
+
+    def test_the_endpoint_carries_shadow_decisions(self, brain):
+        import asyncio
+
+        from app.main import app
+        from httpx import ASGITransport, AsyncClient
+
+        _arm(autonomy=False)
+        rails._append_shadow({
+            'at': '2026-10-05T10:00:00Z', 'proposalId': 'prop_shadow_x', 'kind': 'skill_patch',
+            'skill': 'shadow-skill', 'verdict': 'KEEP', 'wouldApply': False,
+            'heldBy': 'untrusted-evidence', 'reason': 'the evidence quotes a URL',
+            'rails': [{'rule': 'autonomy-off', 'passed': True},
+                      {'rule': 'untrusted-evidence', 'passed': False}],
+        })
+
+        async def call():
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url='http://test'
+            ) as ac:
+                return await ac.get('/api/harness/proposals/auto-history')
+
+        body = asyncio.run(call()).json()
+        assert body['changes'] == [], 'a rehearsal is not a change'
+        entry = body['shadow'][0]
+        assert entry['skill'] == 'shadow-skill', entry
+        assert entry['wouldApply'] is False, entry
+        assert entry['heldBy'] == 'untrusted-evidence', entry
+        assert [r['rule'] for r in entry['rails']] == [
+            'autonomy-off',
+            'untrusted-evidence',
+        ], entry

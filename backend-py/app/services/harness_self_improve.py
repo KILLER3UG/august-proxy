@@ -914,10 +914,23 @@ def review_proposal(
         # path, so a reviewer cannot reach a write that a human would be
         # refused. Reading the answer and ignoring it is not available to a
         # caller — there is no other route from a verdict to decide_proposal.
-        from app.services.harness_rails import auto_apply_allowed, shadow_enabled
+        from app.services.harness_rails import (
+            rail_trace,
+            record_shadow_decision,
+            shadow_enabled,
+        )
 
-        held = auto_apply_allowed(row)
-        if not held.get('allowed'):
+        # The trace is computed once and used for both the log and the decision,
+        # so a shadow record can never describe a different ordering than the
+        # one that decided the real answer.
+        trace = rail_trace(row)
+        held = next(
+            (t for t in trace if not t['passed']),
+            None,
+        )
+        if shadow_enabled():
+            record_shadow_decision(row, text, trace)
+        if held is not None:
             return {
                 'ok': False,
                 'decision': None,
@@ -926,9 +939,9 @@ def review_proposal(
                 'rule': str(held.get('rule') or ''),
             }
         if shadow_enabled():
-            # Checked after the rails, so this means "every rail passed" rather
-            # than "a write happened". Nothing is decided, so nothing is spent:
-            # the daily budget and the probation record stay untouched.
+            # Checked after the rails, so this means "every rail allowed it"
+            # rather than "a write happened". Nothing is decided, so nothing is
+            # spent: the daily budget and the probation record stay untouched.
             return {
                 'ok': False,
                 'decision': None,

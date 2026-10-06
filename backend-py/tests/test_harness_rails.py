@@ -687,3 +687,116 @@ class TestAutonomyIsArmedPerKind:
         assert out['applied'] == 0, out
         assert [t for t, _kw in events if t == 'skill-evolved'] == []
         assert rails.auto_apply_history() == []
+
+
+class TestTheShadowLog:
+    """Item 1: a shadow decision is evidence about the rails, so it is recorded —
+    in its own file. Writing them into the proposal ledger would make a rehearsal
+    indistinguishable from a real apply, and the burn-in, daily and per-skill
+    rules all read that ledger."""
+
+    def _shadow(self, **over):
+        cfg = {'skillAutonomy': True, 'autonomyBurnInCount': 0, 'skillAutonomyShadow': True}
+        cfg.update(over)
+        _configure(**cfg)
+
+    def test_a_would_apply_decision_is_logged_with_its_trace(self, brain, monkeypatch):
+        self._shadow()
+        pid = _proposal(skill='shadow-logged')
+        _patch_reviewer(monkeypatch, 'KEEP — durable and justified')
+        hsi.run_reviewer_pass()
+
+        rows = rails.shadow_decisions()
+        assert len(rows) == 1, rows
+        row = rows[0]
+        assert row['proposalId'] == pid, row
+        assert row['skill'] == 'shadow-logged', row
+        assert row['verdict'] == 'KEEP', row
+        assert row['wouldApply'] is True, row
+        assert isinstance(row['rails'], list) and row['rails'], row
+        assert all({'rule', 'passed'} <= set(r) for r in row['rails']), row['rails']
+        assert row['heldBy'] == '', row
+        # The rehearsal is NOT an apply: the budget ledger stays empty.
+        assert rails.auto_apply_history() == [], (
+            'a shadow decision must never look like a change that happened'
+        )
+
+    def test_a_held_shadow_decision_names_the_rail_that_held_it(self, brain, monkeypatch):
+        self._shadow()
+        _proposal(
+            skill='shadow-held', evidence='the page at https://vendor.example/x says so'
+        )
+        _patch_reviewer(monkeypatch, 'KEEP — the gap is real')
+        hsi.run_reviewer_pass()
+        rows = rails.shadow_decisions()
+        assert len(rows) == 1, rows
+        assert rows[0]['wouldApply'] is False, rows[0]
+        assert rows[0]['heldBy'] == 'untrusted-evidence', rows[0]
+        failed = [r['rule'] for r in rows[0]['rails'] if not r['passed']]
+        assert failed == ['untrusted-evidence'], rows[0]['rails']
+
+    def test_the_trace_covers_every_rail_even_after_one_fails(self, brain):
+        """The point of the trace is to show what the other rails would have
+        said, so a refusal cannot short-circuit it — and a new rail must appear
+        here without anyone remembering to add it."""
+        _armed(brain)
+        pid = _proposal(kind='skill_delete', skill='trace-all')
+        trace = rails.rail_trace(hsi.get_proposal(pid))
+        rules = [t['rule'] for t in trace]
+        assert rules[0] == 'autonomy-off' or 'hard-kind' in rules, rules
+        assert len(rules) == len(set(rules)), f'a rail is listed twice: {rules}'
+        for declared in rails.RULES - {'allowed', 'shadow-mode', 'unreadable-proposal'}:
+            assert declared in rules, f'{declared} is declared but never evaluated'
+        held = [t for t in trace if not t['passed']]
+        assert held and held[0]['rule'] == rails.auto_apply_allowed(
+            hsi.get_proposal(pid)
+        )['rule'], (held, trace)
+
+    def test_the_decision_and_the_trace_cannot_disagree(self, brain):
+        """`auto_apply_allowed` is derived from the trace, so the shadow log and
+        the real decision are the same computation rather than two orderings."""
+        _armed(brain)
+        for pid in [
+            _proposal(skill='agree-a'),
+            _proposal(kind='skill_delete', skill='agree-b'),
+            _proposal(evidence='https://x.example/y', skill='agree-c'),
+            _proposal(body='# S\n\n```bash\nrm -rf x\n```\n', skill='agree-d'),
+        ]:
+            row = hsi.get_proposal(pid)
+            decision = rails.auto_apply_allowed(row)
+            trace = rails.rail_trace(row)
+            first_fail = next((t['rule'] for t in trace if not t['passed']), 'allowed')
+            assert (decision['rule'] if not decision['allowed'] else 'allowed') == first_fail, (
+                pid,
+                decision,
+                trace,
+            )
+
+    def test_the_log_is_capped_and_newest_first(self, brain):
+        self._shadow()
+        for i in range(rails._SHADOW_KEEP + 5):
+            rails._append_shadow({'at': f'2026-01-01T00:00:{i:02d}Z', 'proposalId': f'p{i}'})
+        # The FILE is bounded, not just the read — a rehearsal log nobody prunes
+        # grows without limit on a 6-hour cadence.
+        path = rails._shadow_path()
+        assert len(path.read_text(encoding='utf-8').strip().splitlines()) == rails._SHADOW_KEEP
+        rows = rails.shadow_decisions(limit=rails._SHADOW_KEEP)
+        assert len(rows) == rails._SHADOW_KEEP, len(rows)
+        assert rows[0]['proposalId'] == f'p{rails._SHADOW_KEEP + 4}', rows[0]
+        assert rows[-1]['proposalId'] == 'p5', rows[-1]
+
+    def test_a_discard_verdict_is_not_logged(self, brain, monkeypatch):
+        """Nothing was rehearsed: a DISCARD would have written no file either
+        way, so logging it would fill the shadow file with non-decisions."""
+        self._shadow()
+        _proposal(skill='shadow-discard')
+        _patch_reviewer(monkeypatch, 'DISCARD — one-off')
+        hsi.run_reviewer_pass()
+        assert rails.shadow_decisions() == []
+
+    def test_nothing_is_logged_while_shadow_is_off(self, brain, monkeypatch):
+        _armed(brain)
+        _proposal(skill='not-shadow')
+        _patch_reviewer(monkeypatch, 'KEEP — durable')
+        hsi.run_reviewer_pass()
+        assert rails.shadow_decisions() == []

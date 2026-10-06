@@ -123,7 +123,9 @@ function AutoChangeHistory() {
     staleTime: 60_000,
   });
   const changes = historyQ.data?.changes ?? [];
-  if (!changes.length) return null;
+  const shadow = historyQ.data?.shadow ?? [];
+  // Nothing to report either way — no decorative empty block.
+  if (!changes.length && !shadow.length) return null;
   const autonomy = historyQ.data?.autonomy ?? false;
 
   return (
@@ -132,24 +134,62 @@ function AutoChangeHistory() {
       className="shrink-0 rounded-xl border border-border/50 bg-card/40 px-3 py-2"
     >
       <summary className="cursor-pointer text-2xs text-muted-foreground">
-        {changes.length} change{changes.length === 1 ? '' : 's'} applied by itself ·{' '}
+        {changes.length > 0 && (
+          <>
+            {changes.length} change{changes.length === 1 ? '' : 's'} applied by itself ·{' '}
+          </>
+        )}
+        {shadow.length > 0 && (
+          <>
+            {shadow.length} shadow decision{shadow.length === 1 ? '' : 's'} ·{' '}
+          </>
+        )}
         {autonomy ? 'autonomy is on' : 'autonomy is off'}
       </summary>
-      <ul className="mt-2 space-y-1">
-        {changes.map((c) => (
-          <li
-            key={c.proposalId}
-            data-testid="auto-change-row"
-            className="flex flex-wrap items-baseline gap-x-2 text-2xs"
-          >
-            <span className="text-foreground">{c.skill || 'a skill'}</span>
-            <span className="text-muted-foreground/70">{formatTimeAgo(c.at)}</span>
-            {/* Probation put this one back. Said plainly, because a change that
-                no longer exists still deserves its line in the record. */}
-            {c.reverted && <span className="text-muted-foreground">restored</span>}
-          </li>
-        ))}
-      </ul>
+      {changes.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {changes.map((c) => (
+            <li
+              key={c.proposalId}
+              data-testid="auto-change-row"
+              className="flex flex-wrap items-baseline gap-x-2 text-2xs"
+            >
+              <span className="text-foreground">{c.skill || 'a skill'}</span>
+              <span className="text-muted-foreground/70">{formatTimeAgo(c.at)}</span>
+              {/* Probation put this one back. Said plainly, because a change that
+                  no longer exists still deserves its line in the record. */}
+              {c.reverted && <span className="text-muted-foreground">restored</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {shadow.length > 0 && (
+        <>
+          <p className="mt-2 text-2xs leading-relaxed text-muted-foreground/70">
+            Shadow mode — what the rails decided they would have done. Nothing
+            here was written to a skill.
+          </p>
+          <ul className="mt-1 space-y-1">
+            {shadow.map((d) => (
+              <li
+                key={d.proposalId}
+                data-testid="shadow-decision-row"
+                className="flex flex-wrap items-baseline gap-x-2 text-2xs"
+              >
+                <span className="text-foreground">{d.skill || d.kind}</span>
+                <span className="text-muted-foreground/70">{formatTimeAgo(d.at)}</span>
+                {d.wouldApply ? (
+                  <span className="text-muted-foreground">would have applied</span>
+                ) : (
+                  /* The rail's own name rather than a paraphrase: which rail
+                     held it is the entire reason to read this list. */
+                  <span className="text-muted-foreground">held by {d.heldBy}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </details>
   );
 }

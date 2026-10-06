@@ -80,11 +80,19 @@ async def autoHistory(limit: int = 50):
     auto-changes with no state of the switch next to it reads as "this is what
     happens" when it may be "this is what happened".
     """
-    from app.services.harness_rails import auto_apply_history, autonomy_enabled
+    from app.services.harness_rails import (
+        auto_apply_history,
+        autonomy_enabled,
+        shadow_decisions,
+    )
 
     return {
         'autonomy': autonomy_enabled(),
         'changes': auto_apply_history(limit=limit),
+        # Rehearsals, from their own store: `changes` is what the machine DID,
+        # this is what it decided it WOULD have done. Merging the two would make
+        # a shadow entry indistinguishable from a real apply.
+        'shadow': shadow_decisions(limit=limit),
     }
 
 
