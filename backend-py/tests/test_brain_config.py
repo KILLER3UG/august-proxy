@@ -71,6 +71,7 @@ _ALLCamelKeys = {
     # Item 14: the autonomy switch and the two rails it is read with.
     'skillAutonomy',
     'skillAutonomyShadow',
+    'autonomyKinds',
     'autoApplyPerDay',
     'autonomyBurnInCount',
     'escalationBudgetPerDay',

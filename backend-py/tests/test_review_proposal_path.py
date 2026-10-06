@@ -86,9 +86,15 @@ def _armAutonomy() -> None:
     the config door, not by patching the check out."""
     from app.services.brain_config_service import bustRuntimeCache, saveBrainConfig
 
-    ok, err, _merged = saveBrainConfig(
-        {'skillAutonomy': True, 'autonomyBurnInCount': 0, 'autoApplyPerDay': 10}
-    )
+    # Both ceiling kinds: this file is about what the reviewer may do, and its
+    # clean proposal is a skill_create. The per-kind gate is owned by
+    # test_harness_rails.TestAutonomyIsArmedPerKind.
+    ok, err, _merged = saveBrainConfig({
+        'skillAutonomy': True,
+        'autonomyBurnInCount': 0,
+        'autoApplyPerDay': 10,
+        'autonomyKinds': 'skill_patch,skill_create',
+    })
     assert ok, f'armable through the API door: {err}'
     bustRuntimeCache()
 

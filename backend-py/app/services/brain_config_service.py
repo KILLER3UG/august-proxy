@@ -102,7 +102,12 @@ numKeys: tuple[str, ...] = (
     'runawayStopRounds',
 )
 floatKeys: tuple[str, ...] = ('flagRateCap',)
-strKeys: tuple[str, ...] = ('titleModel', 'skillLearning', 'skillLearningJudgeModel')
+strKeys: tuple[str, ...] = (
+    'titleModel',
+    'skillLearning',
+    'skillLearningJudgeModel',
+    'autonomyKinds',
+)
 allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys + floatKeys + strKeys)
 maxAgentDepthRange = (1, 5)
 maxWorkbenchLoopsRange = (1, 500)
@@ -263,6 +268,11 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # way to perform one — `skillAutonomy` remains the master, and the rails are
     # consulted before the shadow answer is given.
     ('skillAutonomyShadow', 'skill_autonomy_shadow', False, 'bool'),
+    # Which kinds the switch actually automates, selected WITHIN the code's
+# allow-list. Defaults to skill_patch alone: editing a skill the user already
+# accepted is a smaller step than inventing a new instruction that never
+# existed, so a create stays on review until it is asked for.
+    ('autonomyKinds', 'autonomy_kinds', 'skill_patch', 'str'),
     ('autoApplyPerDay', 'auto_apply_per_day', 2, 'num'),
     ('autonomyBurnInCount', 'autonomy_burn_in_count', 5, 'num'),
     # Part 16 cost gates: tier-2 escalations per day and the max fraction of
@@ -475,6 +485,20 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                     False,
                     f'{key!r} must be off | extract-only | propose | full (got {value!r})',
                 )
+            if key == 'autonomyKinds':
+                # Validated against the code's ceiling, and unknown names are
+                # REFUSED rather than dropped: a typo that silently armed nothing
+                # would read as "autonomy is broken", and a value that could name
+                # skill_delete would turn a preference into an escalation.
+                from app.services.harness_rails import AUTO_APPLIABLE_KINDS
+
+                wanted = [k.strip().lower() for k in value.split(',') if k.strip()]
+                bad = [k for k in wanted if k not in AUTO_APPLIABLE_KINDS]
+                if bad:
+                    return (
+                        False,
+                        f'{key!r} accepts only {sorted(AUTO_APPLIABLE_KINDS)} (got {bad})',
+                    )
         elif kind == 'float':
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 return (False, f'{key!r} must be a number (got {type(value).__name__})')

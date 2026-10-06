@@ -80,9 +80,14 @@ def _ledger() -> list[dict]:
 def _arm(*, autonomy: bool = True) -> None:
     from app.services.brain_config_service import bustRuntimeCache, saveBrainConfig
 
-    ok, err, _ = saveBrainConfig(
-        {'skillAutonomy': autonomy, 'autonomyBurnInCount': 0, 'autoApplyPerDay': 10}
-    )
+    # Both ceiling kinds: these tests are about probation and the history, not
+    # the per-kind gate, and one of them applies a skill_create.
+    ok, err, _ = saveBrainConfig({
+        'skillAutonomy': autonomy,
+        'autonomyBurnInCount': 0,
+        'autoApplyPerDay': 10,
+        'autonomyKinds': 'skill_patch,skill_create',
+    })
     assert ok, err
     bustRuntimeCache()
 

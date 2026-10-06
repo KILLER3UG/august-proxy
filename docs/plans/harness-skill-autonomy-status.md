@@ -1005,3 +1005,26 @@ Same method as before: the backend serving `web-dist` on :8092 against a labeled
   `skill_learning_judge_model` and top-level `_tier3_test_flag` removed; the `rollbackLog` entry
   that merely *mentions* the flag was left alone — it is history, not a setting. The earlier claim
   that an `apiFormat` field also held `judge-model-x` did not survive a scan: only the one field did.
+
+## (3) Autonomy is now armed per kind
+`autonomyKinds` (str, default `'skill_patch'`) selects which kinds the switch automates, **inside**
+the code's ceiling. `AUTO_APPLIABLE_KINDS` stays the maximum: `armed_kinds()` intersects the config
+value with it, so no setting can widen what may be automated. A create — inventing an instruction
+that never existed — stays on review until the user asks for it.
+- New rule `kind-not-armed`, checked right after `hard-kind` (the cheaper, more fundamental reason
+  first).
+- **The config door validates rather than filters.** A value naming `skill_delete` is refused at
+  `PUT` (an escalation attempt), and so is a typo like `skill_pach` — silently intersecting away an
+  unknown name would arm nothing and read as "autonomy is broken" rather than "your value was
+  wrong". `''` is valid and arms nothing, which is the way to keep the switch on and automate
+  nothing.
+- Contracts rewritten, not deleted, because the default changed what "armed" means:
+  `test_the_kill_switch_is_the_only_thing_holding_it` now arms both ceiling kinds so the switch is
+  again the single variable it claims to test; and the `_arm()`/`_armAutonomy()` helpers in
+  `test_harness_rails_containment.py`, `test_harness_probation.py` and
+  `test_review_proposal_path.py` arm both explicitly — those files test what a change can touch,
+  not which kinds are automatable, and eight of their tests were failing for the unrelated reason.
+  Each says so in a comment.
+- 8 new tests: default arms only patch, create held with `kind-not-armed`, patch passes, explicit
+  arming works, ceiling cannot be widened, unknown kind refused, empty value valid, and a held
+  create emits no `skill-evolved` event and spends no budget.

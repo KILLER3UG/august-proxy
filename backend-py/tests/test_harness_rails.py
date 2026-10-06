@@ -276,13 +276,19 @@ class TestTheReviewerPathIsGated:
         assert hsi.get_proposal(pid)['status'] == 'open', 'the required hold'
 
     def test_the_kill_switch_is_the_only_thing_holding_it(self, brain, monkeypatch):
+        """Item 3 moved one variable into this test: the default arms
+        `skill_patch` only, so a create would be held for a reason that is not
+        the switch. Both kinds are armed here and the switch is again the single
+        difference between the two phases — which is what the test is for."""
+        armed = 'skill_patch,skill_create'
+        _configure(skillAutonomy=False, autonomyBurnInCount=0, autonomyKinds=armed)
         pid = _proposal(kind='skill_create', name='switched-off')
         _patch_reviewer(monkeypatch, 'KEEP — durable and justified')
         out = hsi.run_reviewer_pass()
         assert out['applied'] == 0, out
         assert hsi.get_proposal(pid)['status'] == 'open', 'autonomy off must not write'
 
-        _armed(brain)
+        _configure(skillAutonomy=True, autonomyBurnInCount=0, autonomyKinds=armed)
         pid2 = _proposal(kind='skill_create', name='switched-on')
         _patch_reviewer(monkeypatch, 'KEEP — durable and justified')
         out2 = hsi.run_reviewer_pass()
@@ -607,3 +613,77 @@ class TestProbationCooldown:
         assert rails.finding_key(hsi.get_proposal(pid)) != first, (
             'the fingerprint is the better key and must win when present'
         )
+
+
+class TestAutonomyIsArmedPerKind:
+    """Item 3: one switch for the whole feature was too coarse. The kinds that
+    may be automated at all are a ceiling in code (`AUTO_APPLIABLE_KINDS`);
+    `autonomyKinds` selects within it, and ships as `skill_patch` only — a
+    create is a new instruction that never existed, so it stays on review."""
+
+    def test_the_default_arms_only_skill_patch(self, brain):
+        from app.services.brain_config_service import allowedKeys, getRuntimeConfig
+
+        assert 'autonomyKinds' in allowedKeys
+        assert getRuntimeConfig().get('autonomyKinds') == 'skill_patch'
+        assert rails.armed_kinds() == frozenset({'skill_patch'})
+
+    def test_a_create_is_held_while_only_patches_are_armed(self, brain):
+        _armed(brain)
+        pid = _proposal(kind='skill_create', skill='not-armed-create')
+        out = _verdict(pid)
+        assert out['allowed'] is False, out
+        assert out['rule'] == 'kind-not-armed', out
+        assert 'skill_create' in out['reason']
+
+    def test_a_patch_passes_under_the_default(self, brain):
+        _armed(brain)
+        assert _verdict(_proposal(kind='skill_patch'))['allowed'] is True
+
+    def test_arming_the_create_kind_is_an_explicit_choice(self, brain):
+        _configure(skillAutonomy=True, autonomyBurnInCount=0, autonomyKinds='skill_patch,skill_create')
+        assert rails.armed_kinds() == frozenset({'skill_patch', 'skill_create'})
+        assert _verdict(_proposal(kind='skill_create'))['allowed'] is True
+
+    def test_the_config_cannot_widen_the_ceiling(self, brain):
+        """`skill_delete` is a hard-limit category. A config value naming it must
+        not make it auto-appliable — the allow-list is code, not a preference."""
+        from app.services.brain_config_service import saveBrainConfig
+
+        ok, err, _merged = saveBrainConfig({'autonomyKinds': 'skill_patch,skill_delete'})
+        assert ok is False, (ok, err)
+        assert 'skill_delete' in err, err
+        assert rails.armed_kinds() == frozenset({'skill_patch'})
+
+    def test_an_unknown_kind_is_refused_rather_than_silently_dropped(self, brain):
+        """A typo would otherwise arm nothing and read as "autonomy is broken"."""
+        from app.services.brain_config_service import saveBrainConfig
+
+        ok, err, _ = saveBrainConfig({'autonomyKinds': 'skill_patch,skill_pach'})
+        assert ok is False, (ok, err)
+        assert 'skill_pach' in err, err
+
+    def test_an_empty_value_arms_nothing_and_is_valid(self, brain):
+        """The way to automate nothing while leaving the master switch on."""
+        from app.services.brain_config_service import saveBrainConfig
+
+        _armed(brain)
+        ok, err, _ = saveBrainConfig({'autonomyKinds': ''})
+        assert ok, err
+        assert rails.armed_kinds() == frozenset()
+        assert _verdict(_proposal(kind='skill_patch'))['rule'] == 'kind-not-armed'
+
+    def test_the_announcement_only_fires_for_an_armed_kind(self, brain, monkeypatch):
+        """A held create must not emit the chip event or spend the budget."""
+        _armed(brain)
+        events: list = []
+        monkeypatch.setattr(
+            'app.services.realtime_bus.emit_realtime',
+            lambda t, **kw: events.append((t, kw)),
+        )
+        _proposal(kind='skill_create', skill='held-create')
+        _patch_reviewer(monkeypatch, 'KEEP — durable')
+        out = hsi.run_reviewer_pass()
+        assert out['applied'] == 0, out
+        assert [t for t, _kw in events if t == 'skill-evolved'] == []
+        assert rails.auto_apply_history() == []

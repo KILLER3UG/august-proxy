@@ -66,6 +66,7 @@ RULES = frozenset(
         'autonomy-off',
         'shadow-mode',
         'hard-kind',
+        'kind-not-armed',
         'untrusted-evidence',
         'unsafe-content',
         'supersedes-another-skill',
@@ -112,6 +113,20 @@ def autonomy_enabled() -> bool:
     `consolidation.py:546` defect that made `propose` a mode nobody ran.
     """
     return bool(_read_config().get('skillAutonomy'))
+
+
+def armed_kinds() -> frozenset[str]:
+    """Which kinds the switch automates today, selected inside the ceiling.
+
+    Intersected with :data:`AUTO_APPLIABLE_KINDS` rather than trusted, so no
+    config value can widen what may be automated — the allow-list is code, not
+    a preference. The shipped default is `skill_patch` alone: editing a skill
+    the user already accepted is a smaller step than inventing an instruction
+    that never existed.
+    """
+    raw = str(_read_config().get('autonomyKinds') or '')
+    wanted = {k.strip().lower() for k in raw.split(',') if k.strip()}
+    return frozenset(wanted & AUTO_APPLIABLE_KINDS)
 
 
 def shadow_enabled() -> bool:
@@ -206,6 +221,11 @@ def auto_apply_allowed(row: dict[str, Any] | None) -> dict[str, Any]:
         return _refuse(
             'hard-kind',
             f'{kind or "unnamed"} is a hard-limit category — always decided by a human',
+        )
+    if kind not in armed_kinds():
+        return _refuse(
+            'kind-not-armed',
+            f'autonomy is not armed for {kind!r} — it stays in the inbox for review',
         )
 
     rawPayload = row.get('payload')

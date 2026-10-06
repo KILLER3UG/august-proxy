@@ -53,9 +53,16 @@ def _fingerprint(root: Path) -> dict[str, str]:
 def _arm() -> None:
     from app.services.brain_config_service import bustRuntimeCache, saveBrainConfig
 
-    ok, err, _ = saveBrainConfig(
-        {'skillAutonomy': True, 'autonomyBurnInCount': 0, 'autoApplyPerDay': 10}
-    )
+    # Both ceiling kinds are armed deliberately: every test in this file is
+    # about what a change can TOUCH, not about which kinds the switch automates
+    # (test_harness_rails.TestAutonomyIsArmedPerKind owns that), and the default
+    # arms skill_patch only, which would hold these creates for an unrelated reason.
+    ok, err, _ = saveBrainConfig({
+        'skillAutonomy': True,
+        'autonomyBurnInCount': 0,
+        'autoApplyPerDay': 10,
+        'autonomyKinds': 'skill_patch,skill_create',
+    })
     assert ok, err
     bustRuntimeCache()
 
