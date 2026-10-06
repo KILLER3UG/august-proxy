@@ -143,5 +143,14 @@ tmp_rename_camel.py
 # file — 54 MB here). Backups belong outside the repository, not in history.
 *.bundle
 
+# Real-app verification captures (headless chromium screenshots taken by a
+# review pass). Same policy the sibling session wrote for .ui-review/: the
+# prose that cites them is committed (docs/plans/harness-skill-autonomy-status.md
+# names what each run measured); the images are regenerable by re-running the
+# probe against a test profile, and PNGs in history buy nothing.
+# Inserted above the trailing block on purpose: two appends at EOF would
+# collide with the .ui-review/ rule another session is staging right now.
+.probe-artifacts/
+
 # Third-party tool marker (holds a generated project id)
 .freebuff/
