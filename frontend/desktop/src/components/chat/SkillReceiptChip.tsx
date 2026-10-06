@@ -4,16 +4,22 @@ import { SettingsTooltip } from '@/components/settings/SettingsTooltip';
 import type { ChatMessage } from '@/types/chat';
 
 /**
- * SkillEvolvedChip — "a skill changed as a result of this turn."
+ * SkillReceiptChip — "this turn wrote a SKILL.md."
  *
- * There is no backend event for skill evolution (checked: the skills router
- * emits nothing, and the turn telemetry frame only lists skills INJECTED
- * into the prompt). The honest client-side signal is the turn's own tool
- * record: a write/edit-class call whose resolved path is a skill file
- * (`skills/<name>/SKILL.md`, project `.aug/skills/…`, or the bundled dir).
- * Silence by default — a turn that touched no skill file renders nothing.
+ * A turn receipt, like SavePointChip beside it: it reports what the transcript
+ * itself did. It is NOT the autonomy notice. That one is `SkillEvolvedChip`
+ * above the composer, driven by the backend's `skill-evolved` event and the
+ * auto-apply ledger, and it announces a change the machine made on its own,
+ * with no turn to point at.
+ *
+ * This component cannot read that event, because the write it reports never
+ * emits one: a model editing a skill through `write_file` goes through the tool
+ * path, and the skills router emits nothing at all. The honest signal is the
+ * turn's own tool record — a write/edit-class call whose resolved path is a
+ * skill file (`skills/<name>/SKILL.md`, project `.aug/skills/…`, or the bundled
+ * dir). Silence by default: a turn that touched no skill file renders nothing.
  */
-export function SkillEvolvedChip({ tools }: { tools?: ChatMessage['tools'] }) {
+export function SkillReceiptChip({ tools }: { tools?: ChatMessage['tools'] }) {
   const evolved = useMemo(() => {
     const names = new Set<string>();
     for (const tool of tools ?? []) {
@@ -53,7 +59,7 @@ export function SkillEvolvedChip({ tools }: { tools?: ChatMessage['tools'] }) {
   return (
     <span
       className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-2xs text-foreground/90"
-      data-testid="skill-evolved-chip"
+      data-testid="skill-receipt-chip"
     >
       <Sparkles className="size-2.5 shrink-0 text-primary" aria-hidden />
       <SettingsTooltip

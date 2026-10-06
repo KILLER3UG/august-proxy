@@ -29,6 +29,7 @@ vi.mock('@/api/api-client/skills-versions', async (importOriginal) => {
 
 import { api } from '@/api/client';
 import { SkillEvolvedChip } from '../SkillEvolvedChip';
+import { SkillReceiptChip } from '@/components/chat/SkillReceiptChip';
 import { disableSkill, restoreSkillVersion } from '@/api/api-client/skills-versions';
 
 const getMock = vi.mocked(api.get);
@@ -162,5 +163,45 @@ describe('SkillEvolvedChip', () => {
     // The newest change is the one being announced; the list is its context.
     expect(details.textContent).toContain('quartus-build');
     expect(details.textContent).toMatch(/restored/i);
+  });
+});
+
+describe('the two skill notices are not the same notice', () => {
+  /* A turn that wrote a SKILL.md itself renders a chip in the transcript, and
+   * an autonomous apply renders the chip above the composer. Both are in the
+   * document at once the moment autonomy is on — and they used to carry the
+   * same name and the same data-testid, which made each unqueryable by a test
+   * and indistinguishable to a reader. */
+  it('each renders once when both are on screen', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <SkillEvolvedChip />
+        <SkillReceiptChip
+          tools={[
+            {
+              id: 'w1',
+              name: 'write_file',
+              status: 'done',
+              context: JSON.stringify({ filePath: '/home/u/.august/skills/tutor/SKILL.md' }),
+            },
+          ]}
+        />
+      </QueryClientProvider>,
+    );
+
+    // Await a control only the composer chip renders, so the assertion below
+    // runs after its query has landed. findByTestId on the shared id would
+    // resolve against the transcript chip alone while the composer is still
+    // loading — which is a passing test that proves nothing.
+    const undo = await screen.findByTestId('skill-evolved-undo');
+    const announced = undo.closest('[data-testid="skill-evolved-chip"]');
+    expect(announced?.textContent).toContain('by itself');
+
+    expect(screen.getAllByTestId('skill-evolved-chip')).toHaveLength(1);
+
+    const receipt = screen.getByTestId('skill-receipt-chip');
+    expect(receipt.textContent).toContain('Skill updated: tutor');
+    expect(receipt).not.toBe(announced);
   });
 });

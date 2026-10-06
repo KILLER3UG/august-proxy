@@ -65,6 +65,9 @@ export function EditRailRow({
   const panelId = `edit-rail-panel-${tool.id || reactId}`;
   const running = tool.status === 'running';
   const errored = tool.status === 'error';
+  // Same rule as ToolStepRow: the backend already decided how loud this receipt
+  // is, and a denial is quiet. Absence of a tone is NOT absence of an error.
+  const denied = errored && tool.tone === 'denial';
 
   const fullPath = extractFilename(tool.context);
   const { base, dir } = splitPath(fullPath);
@@ -84,7 +87,7 @@ export function EditRailRow({
   const glyph = running ? (
     <Loader2 className="rail-glyph animate-spin" aria-hidden />
   ) : errored ? (
-    <AlertCircle className="rail-glyph text-danger" aria-hidden />
+    <AlertCircle className={cn('rail-glyph', !denied && 'text-danger')} aria-hidden />
   ) : (
     <Pencil className="rail-glyph" aria-hidden />
   );

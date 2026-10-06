@@ -450,9 +450,7 @@ describe('RightDrawer hide vs close', () => {
       hideRightDrawerSection('notes');
     });
     setupDrawer();
-    const parked = document.querySelector(
-      '[data-testid="drawer-pane-notes"]',
-    ) as HTMLElement | null;
+    const parked = document.querySelector('[data-testid="drawer-pane-notes"]');
     expect(parked, 'a hidden pane must stay mounted').toBeTruthy();
     expect(parked!.getAttribute('data-parked')).toBe('true');
     expect(parked!.className).toContain('invisible');
