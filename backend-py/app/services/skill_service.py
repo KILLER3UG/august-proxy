@@ -1325,21 +1325,21 @@ def _allowedRestoreParent(parent: Path) -> bool:
     return parent.name == 'skills' and parent.parent.name == '.aug'
 
 
-def restoreSkill(trashId: str) -> dict[str, object]:
+def restoreSkill(trash_id: str) -> dict[str, object]:
     """Undo a delete: move a trashed skill directory back where it came from."""
     import shutil as _shutil
 
-    _validateTrashId(trashId)
-    entry = _trashRoot() / trashId
+    _validateTrashId(trash_id)
+    entry = _trashRoot() / trash_id
     manifest_path = entry / 'manifest.json'
     if not entry.is_dir() or not manifest_path.is_file():
-        raise SkillValidationError(f"Trash entry '{trashId}' not found (or already restored).")
+        raise SkillValidationError(f"Trash entry '{trash_id}' not found (or already restored).")
     try:
         manifest = json.loads(manifest_path.read_text('utf-8'))
     except (OSError, json.JSONDecodeError) as exc:
-        raise SkillValidationError(f"Trash entry '{trashId}' is unreadable.") from exc
+        raise SkillValidationError(f"Trash entry '{trash_id}' is unreadable.") from exc
     if not isinstance(manifest, dict):
-        raise SkillValidationError(f"Trash entry '{trashId}' is unreadable.")
+        raise SkillValidationError(f"Trash entry '{trash_id}' is unreadable.")
     name = str(manifest.get('name') or '')
     _validateName(name)
     scope = 'project' if manifest.get('scope') == 'project' else 'agent'
@@ -1364,9 +1364,9 @@ def restoreSkill(trashId: str) -> dict[str, object]:
     return {'restored': name, 'scope': scope}
 
 
-def _validateTrashId(trashId: str) -> None:
+def _validateTrashId(trash_id: str) -> None:
     """Trash ids are bare timestamps (`20261004T102533613844`, `-N` on collision)."""
-    if not trashId or not _TRASH_ID_PATTERN.match(trashId):
+    if not trash_id or not _TRASH_ID_PATTERN.match(trash_id):
         raise SkillValidationError('Invalid trash id.')
 
 

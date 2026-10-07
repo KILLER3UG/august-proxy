@@ -1053,7 +1053,7 @@ def _write_review(row: dict[str, Any], review: dict[str, Any]) -> None:
 
 
 def _ask_reviewer_blocking(
-    client: Any, row: dict[str, Any], producerModel: str
+    client: Any, row: dict[str, Any], producer_model: str
 ) -> tuple[str, str]:
     """One reviewer call, from either loop shape.
 
@@ -1071,27 +1071,29 @@ def _ask_reviewer_blocking(
     """
     import asyncio
 
-    timeoutS = 60
+    timeout_s = 60
 
     async def go() -> tuple[str, str]:
-        return await asyncio.wait_for(_ask_reviewer(client, row, producerModel), timeout=timeoutS)
+        return await asyncio.wait_for(
+            _ask_reviewer(client, row, producer_model), timeout=timeout_s
+        )
 
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         pass
     else:
-        return _ask_reviewer_off_loop(go, timeoutS)
+        return _ask_reviewer_off_loop(go, timeout_s)
 
     try:
         return asyncio.run(go())
     except asyncio.TimeoutError:
-        return 'unavailable', f'timeout: reviewer did not answer within {timeoutS}s'
+        return 'unavailable', f'timeout: reviewer did not answer within {timeout_s}s'
     except Exception as exc:
         return 'unavailable', f'{type(exc).__name__}: {str(exc)[:150]}'
 
 
-def _ask_reviewer_off_loop(go: Any, timeoutS: int) -> tuple[str, str]:
+def _ask_reviewer_off_loop(go: Any, timeout_s: int) -> tuple[str, str]:
     """Run one reviewer call on a worker thread with a loop of its own."""
     import asyncio
     import threading
@@ -1102,13 +1104,13 @@ def _ask_reviewer_off_loop(go: Any, timeoutS: int) -> tuple[str, str]:
         try:
             box['result'] = asyncio.run(go())
         except asyncio.TimeoutError:
-            box['result'] = ('unavailable', f'timeout: reviewer did not answer within {timeoutS}s')
+            box['result'] = ('unavailable', f'timeout: reviewer did not answer within {timeout_s}s')
         except Exception as exc:
             box['result'] = ('unavailable', f'{type(exc).__name__}: {str(exc)[:150]}')
 
     thread = threading.Thread(target=worker, daemon=True, name='august-reviewer-call')
     thread.start()
-    thread.join(timeoutS + 15)
+    thread.join(timeout_s + 15)
     if thread.is_alive():
         # Still holding a socket on its own loop. Naming that beats silence.
         return 'unavailable', 'reviewer worker outlived its grace window'
@@ -1128,7 +1130,7 @@ _VERDICT_PUNCT = ' -–—:.'
 
 
 async def _ask_reviewer(
-    client: Any, row: dict[str, Any], producerModel: str
+    client: Any, row: dict[str, Any], producer_model: str
 ) -> tuple[str, str]:
     """One advisory verdict for one proposal. Returns (verdict, reason).
 
@@ -1145,7 +1147,7 @@ async def _ask_reviewer(
                 f'Evidence:\n{as_str(row.get("evidence"))[:2000]}\n\n'
                 f'Proposed change:\n{as_str(row.get("proposal"))[:1000]}\n\n'
                 f'Rollback:\n{as_str(row.get("rollback"))[:400]}\n\n'
-                f'Produced by model: {producerModel or "unknown"}\n\n'
+                f'Produced by model: {producer_model or "unknown"}\n\n'
                 'Keep this change?'
             ),
         },
@@ -1166,7 +1168,7 @@ async def _ask_reviewer(
     return 'unavailable', f'answer was not an unambiguous KEEP or DISCARD: {head[:80]!r}'
 
 
-def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
+def run_reviewer_pass(limit: int = 5, dry_run: bool = False) -> dict[str, Any]:
     """Run the independent reviewer over open skill proposals.
 
     With autonomy off — the shipped state — this records a one-line verdict on
@@ -1202,8 +1204,8 @@ def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
                 pass  # a refusal is not a verdict — retry once a reviewer exists
             else:
                 continue  # already reviewed — never burn a second call
-        producerModel = as_str(as_dict(row.get('payload')).get('producedBy'), '')
-        client, refusal = resolve_independent_reviewer(producerModel, _reviewModelHint())
+        producer_model = as_str(as_dict(row.get('payload')).get('producedBy'), '')
+        client, refusal = resolve_independent_reviewer(producer_model, _reviewModelHint())
         if client is None:
             _write_review(
                 row,
@@ -1216,13 +1218,13 @@ def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
             )
             unavailable += 1
             reviewed += 1
-            if dryRun:
+            if dry_run:
                 continue
             continue
-        if dryRun:
+        if dry_run:
             reviewed += 1
             continue
-        verdict, reason = _ask_reviewer_blocking(client, row, producerModel)
+        verdict, reason = _ask_reviewer_blocking(client, row, producer_model)
         review = {
             'verdict': verdict,
             'reason': reason,
@@ -1233,7 +1235,7 @@ def run_reviewer_pass(limit: int = 5, dryRun: bool = False) -> dict[str, Any]:
         # means the pass NEVER calls decide_proposal — its shipped advisory
         # contract. With it ON, the verdict goes through review_proposal, which
         # is where the rails stand for every other caller too.
-        if not dryRun and verdict in ('KEEP', 'DISCARD') and autonomyOn:
+        if not dry_run and verdict in ('KEEP', 'DISCARD') and autonomyOn:
             acted = review_proposal(
                 str(as_str(row.get('id'), '')),
                 verdict,

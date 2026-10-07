@@ -433,7 +433,7 @@ def _content_check(payload: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def record_auto_apply(
-    pid: str, skill: str, versionTs: str = '', findingKey: str = '', applyAction: str = ''
+    pid: str, skill: str, version_ts: str = '', finding_key: str = '', apply_action: str = ''
 ) -> None:
     """Append the auto-apply to the proposal ledger — the one store for it.
 
@@ -442,7 +442,7 @@ def record_auto_apply(
     and not a new table because the ledger already answers "who did what, when",
     and a second history is a second thing that can disagree with the first.
 
-    ``versionTs`` is the snapshot the apply took. Without it a regression has
+    ``version_ts`` is the snapshot the apply took. Without it a regression has
     nothing addressable to put back, and probation would have to guess at "the
     previous version" after somebody else has written one.
     """
@@ -454,12 +454,12 @@ def record_auto_apply(
         'action': 'auto_apply',
         'target_key': str(pid),
         'skill': str(skill or '')[:120],
-        'version_ts': str(versionTs or '')[:32],
-        'finding_key': str(findingKey or '')[:32],
+        'version_ts': str(version_ts or '')[:32],
+        'finding_key': str(finding_key or '')[:32],
         # 'created' has no version to restore, so its undo is a different
         # operation (a soft disable). The history has to say which one it is or
         # the UI cannot offer the right one.
-        'apply_action': str(applyAction or '')[:16],
+        'apply_action': str(apply_action or '')[:16],
     })
 
 
