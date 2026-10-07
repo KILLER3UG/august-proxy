@@ -30,6 +30,7 @@ import { Badge } from '@/components/ui/badge';
 import { qk } from '@/lib/query-keys';
 import { invalidateReviewInboxCount } from '@/lib/useReviewInboxCount';
 import { cn, formatTimeAgo } from '@/lib/utils';
+import { parseEvidence } from './harnessEvidence';
 
 type Queue = 'harness' | 'memory';
 
@@ -332,16 +333,20 @@ export function HarnessImprovementsSection() {
       toast(rejected > 1 ? `${rejected} proposals rejected` : 'Proposal rejected', {
         action: {
           label: 'Undo',
-          onClick: async () => {
-            for (const row of targets) {
-              if (row.queue === 'memory') continue; // memory has no reopen
-              try {
-                await postDecide(row, 'reopen');
-              } catch {
-                /* one undo failure must not swallow the rest */
+          onClick: () => {
+            // void-ignored: a toast action wants a synchronous callback, and
+            // nothing upstream can await this promise.
+            void (async () => {
+              for (const row of targets) {
+                if (row.queue === 'memory') continue; // memory has no reopen
+                try {
+                  await postDecide(row, 'reopen');
+                } catch {
+                  /* one undo failure must not swallow the rest */
+                }
               }
-            }
-            refresh();
+              refresh();
+            })();
           },
         },
       });
@@ -708,49 +713,10 @@ function InfoRow({ label, body, mono }: { label: string; body: string; mono: boo
 }
 
 /* ── Evidence chips ─────────────────────────────────────────────────────── */
-/* The scheduled passes build evidence as "Section header:" lines followed by
- * "- item" bullets (refine_store.build_scheduled_evidence,
- * harness_self_improve._run_scheduled_pass). As raw text it is a wall the
- * reviewer skims past; as chips each datum is a scannable unit. Text that
- * does not parse into that shape (prose from the memory queue, hand-written
- * observations) falls back to the old block — the parser must never eat or
- * reorder evidence a human is deciding on. Exported for direct tests. */
-export interface EvidenceSection {
-  title: string;
-  items: string[];
-}
-export interface EvidenceParse {
-  sections: EvidenceSection[];
-  structured: boolean;
-}
+/* ── Evidence chips ─────────────────────────────────────────────────────── */
+/* The parser itself lives in ./harnessEvidence.ts: a component module may not
+ * export plain functions without costing fast refresh. */
 
-export function parseEvidence(body: string): EvidenceParse {
-  const lines = (body || '').split(/\r?\n/);
-  const sections: EvidenceSection[] = [];
-  let current: EvidenceSection = { title: '', items: [] };
-  let sawBullet = false;
-  let bulletChars = 0;
-  let prose = 0;
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (line.startsWith('- ')) {
-      sawBullet = true;
-      bulletChars += line.length;
-      current.items.push(line.slice(2).trim());
-    } else if (line.endsWith(':') && line.length <= 120) {
-      if (current.items.length) sections.push(current);
-      current = { title: line.slice(0, -1).trim(), items: [] };
-    } else {
-      prose += line.length;
-      current.items.push(line);
-    }
-  }
-  if (current.items.length) sections.push(current);
-  // Structured = bullets exist and the text isn't mostly non-bullet prose.
-  const structured = sawBullet && bulletChars >= prose;
-  return { sections, structured };
-}
 
 function EvidenceRow({ label, body }: { label: string; body: string }) {
   if (!body?.trim()) return null;

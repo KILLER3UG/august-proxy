@@ -208,7 +208,8 @@ describe('the shadow readout', () => {
       return beforeEachDefault(url);
     });
     renderSection();
-    const block = await screen.findByTestId('auto-change-history');
+    // Await the panel itself so the rows below are certainly mounted.
+    await screen.findByTestId('auto-change-history');
     const rows = screen.getAllByTestId('shadow-decision-row');
     expect(rows).toHaveLength(2);
     const applied = rows.find((r) => r.textContent?.includes('would-have-applied'));

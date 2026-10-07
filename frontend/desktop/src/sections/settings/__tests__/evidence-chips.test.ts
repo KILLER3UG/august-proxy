@@ -12,7 +12,7 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), message: vi.fn() },
 }));
 
-import { parseEvidence } from '../HarnessImprovementsSection';
+import { parseEvidence } from '../harnessEvidence';
 
 const SCHEDULED = [
   'Recurring failure fingerprints (seen >=2x, last 90d):',
