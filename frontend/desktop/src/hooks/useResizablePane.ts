@@ -138,7 +138,7 @@ export function useResizablePane(
   const handleProps = {
     role: 'separator' as const,
     tabIndex: 0,
-    'aria-orientation': (axis === 'x' ? 'vertical' : 'horizontal') as 'vertical' | 'horizontal',
+    'aria-orientation': axis === 'x' ? ('vertical' as const) : ('horizontal' as const),
     'aria-valuenow': Math.round(size),
     'aria-valuemin': min,
     'aria-valuemax': Math.round(maxOf()),

@@ -21,6 +21,7 @@ export interface ShellWidth<T extends HTMLElement = HTMLDivElement> {
 }
 
 const DRAWER_OVERLAY_MAX = 1100;
+// Desktop's minWidth 960 keeps this tier for the mobile WebView only.
 const SIDEBAR_OVERLAY_MAX = 760;
 
 export function useShellWidth<T extends HTMLElement = HTMLDivElement>(): ShellWidth<T> {

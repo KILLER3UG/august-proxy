@@ -74,6 +74,37 @@ const settingsRowMotion = {
   tap: { scale: 0.98, transition: t.fast },
 };
 
+/** Rows rendered per group before the rest is held back. Each row is a
+ *  framer-motion node with its own handlers, and the pool is unbounded — sessions
+ *  accumulate in localStorage and nothing prunes them, so a long history used to
+ *  mount all of it on first paint. Newest-first, so this hides the oldest, and
+ *  ShownOfTotal names how many. */
+const GROUP_RENDER_CAP = 60;
+const capped = (list: Session[]): Session[] => list.slice(0, GROUP_RENDER_CAP);
+
+/** Shown/total caption for a group header (Hermes "SESSIONS 150/884").
+ *  Renders ONLY when the visible rows are a subset of the group — the search
+ *  filter, or `GROUP_RENDER_CAP`. An unfiltered, uncapped group keeps its bare
+ *  total instead of a redundant "40/40". */
+function ShownOfTotal({ shown, total }: { shown: number; total: number }) {
+  if (shown >= total) return null;
+  return (
+    <p
+      className="px-2 pb-0.5 text-2xs tabular-nums text-sidebar-foreground/35"
+      data-testid="group-shown-of-total"
+    >
+      {shown}/{total}
+    </p>
+  );
+}
+
+/** Pin affordances that actually exist in <SessionRow>: `onContextMenu` toggles
+ *  the pin, and the three-dots menu has Pin/Unpin Chat. There is NO shift-click
+ *  handler and no drag order in this sidebar, so the empty state must not
+ *  promise either (the reference app's "Shift-click · drag to reorder" line was
+ *  copied as a SHAPE, not as its text). */
+const PIN_HINT = "Right-click a chat to pin it · or use its three-dots menu";
+
 /** Stable shape of the callbacks passed into every <SessionRow>. */
 interface SessionRowHandlers {
   onClick: () => void;
@@ -122,8 +153,11 @@ export function SessionList({
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [switchAccountOpen, setSwitchAccountOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  // Expanded by default: collapsed used to render an empty group, so a fresh
+  // profile saw "Tasks 40" and zero rows — history looked deleted. An explicit
+  // "1" from the header chevron still collapses it.
   const [uncategorizedCollapsed, setUncategorizedCollapsed] = useState(
-    () => localStorage.getItem("august-uncategorized-collapsed") !== "0",
+    () => localStorage.getItem("august-uncategorized-collapsed") === "1",
   );
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -527,7 +561,7 @@ export function SessionList({
   // Single pass to bucket `others` by folderId (and unfiled) for the JSX
   // below — the previous code called `others.filter(...)` per folder in the
   // render body, which was O(n×folders) on every render.
-  const { othersByFolder, unfiledSessions } = useMemo(() => {
+  const { othersByFolder, unfiledSessions, shownOthers } = useMemo(() => {
     const byFolder = new Map<string, Session[]>();
     const unfiled: Session[] = [];
     for (const s of others) {
@@ -540,8 +574,25 @@ export function SessionList({
         unfiled.push(s);
       }
     }
-    return { othersByFolder: byFolder, unfiledSessions: unfiled };
+    let shown = capped(unfiled).length;
+    for (const list of byFolder.values()) shown += capped(list).length;
+    return { othersByFolder: byFolder, unfiledSessions: unfiled, shownOthers: shown };
   }, [others, searching, matchesSearch]);
+
+  // Pool sizes WITHOUT the search filter, for the shown/total caption. Only
+  // walked while a filter can actually hide something, so the common
+  // (unfiltered) render stays a single pass.
+  const poolTotals = useMemo(() => {
+    const byFolder = new Map<string, number>();
+    let unfiled = 0;
+    if (searching) {
+      for (const s of others) {
+        if (s.folderId) byFolder.set(s.folderId, (byFolder.get(s.folderId) ?? 0) + 1);
+        else unfiled += 1;
+      }
+    }
+    return { byFolder, unfiled };
+  }, [searching, others]);
 
   return (
     <div ref={rootRef} className="august-session-list flex h-full text-sm relative select-none bg-sidebar">
@@ -657,9 +708,17 @@ export function SessionList({
         {railTab === 'sessions' ? (
         <div className="flex-1 overflow-y-auto px-1.5 pb-2 space-y-2">
           {searching && searchMatchCount === 0 && (
-            <p className="py-4 text-center text-xs text-tier-3 italic">
-              No sessions match “{searchQuery.trim()}”
-            </p>
+            <div className="py-4 text-center">
+              <p className="text-xs text-tier-1">
+                No sessions match “{searchQuery.trim()}”
+              </p>
+              {/* Teaches the two things this search really does: it matches ids
+                  as well as titles, and Escape empties it (the input's own
+                  onKeyDown). Nothing else is promised. */}
+              <p className="mt-1 text-2xs text-tier-3" data-testid="search-empty-hint">
+                Search matches titles and session ids · press Esc to clear
+              </p>
+            </div>
           )}
           {attentionSessions.length > 0 && (
             <div
@@ -695,12 +754,20 @@ export function SessionList({
               ))}
             </div>
           )}
-          {visiblePinned.length > 0 && (
+          {/* Rendered even when nothing is pinned: <Section> only shows its
+              `empty` line for this title, and the old length>0 guard meant the
+              pinned empty state was ABSENT — so the one place that could teach
+              the pin gesture taught nothing. */}
           <Section
             title="Pinned"
             count={visiblePinned.length}
-            empty="Shift-click a chat to pin"
+            empty={
+              searching && pinned.length > 0
+                ? "No pinned chat matches this search"
+                : PIN_HINT
+            }
           >
+            <ShownOfTotal shown={visiblePinned.length} total={pinned.length} />
             <LayoutGroup id="pinned-sessions">
               <AnimatePresence initial={false} mode="popLayout">
                 {visiblePinned.map((s) => (
@@ -717,18 +784,19 @@ export function SessionList({
               </AnimatePresence>
             </LayoutGroup>
           </Section>
-          )}
 
           <Section
             title="Chats and tasks"
-            count={searching ? searchMatchCount - visiblePinned.length : others.length}
+            count={searching ? shownOthers : others.length}
             onNewFolder={handleCreateFolder}
             onUploadFolder={(e) => { void handleFolderUploadClick(e); }}
           >
             <div className="space-y-1.5">
+              <ShownOfTotal shown={shownOthers} total={others.length} />
               {/* Collapsible folders and their sessions */}
               {folders.map((folder) => {
                 const folderSessions = othersByFolder.get(folder.id) ?? [];
+                const renderable = capped(folderSessions);
                 // While searching, hide folders without matches and force-expand the rest.
                 if (searching && folderSessions.length === 0) return null;
                 const isCollapsed = folder.isCollapsed ?? false;
@@ -751,8 +819,12 @@ export function SessionList({
 
                     {(!isCollapsed || searching) && (
                       <div className="august-project-sessions pl-1 ml-4 space-y-px">
+                        <ShownOfTotal
+                          shown={renderable.length}
+                          total={poolTotals.byFolder.get(folder.id) ?? folderSessions.length}
+                        />
                         <AnimatePresence initial={false} mode="popLayout">
-                          {folderSessions.map((s) => (
+                          {renderable.map((s) => (
                             <SessionRow
                               key={s.id}
                               session={s}
@@ -765,8 +837,11 @@ export function SessionList({
                           ))}
                         </AnimatePresence>
                         {folderSessions.length === 0 && !searching && (
-                          <p className="py-1 text-xs text-muted-foreground/30 italic pl-1.5">
-                            Empty folder
+                          // Teaches the affordance that is actually on this
+                          // header (FolderHeader's `+` → onNewInFolder(folder.id))
+                          // instead of just announcing the emptiness.
+                          <p className="py-1 text-2xs italic text-muted-foreground/40 pl-1.5" data-testid="empty-folder-hint">
+                            Empty · press + on this folder’s row to start a chat here
                           </p>
                         )}
                       </div>
@@ -778,6 +853,7 @@ export function SessionList({
               {/* Sessions with no folder assignment */}
               {(() => {
                 if (searching && unfiledSessions.length === 0) return null;
+                const renderableUnfiled = capped(unfiledSessions);
 
                 return (
                   <div className="space-y-0.5">
@@ -792,13 +868,15 @@ export function SessionList({
 
                     {(!uncategorizedCollapsed || searching) && (
                       <div className="pl-1 ml-4 space-y-px">
+                        <ShownOfTotal
+                          shown={renderableUnfiled.length}
+                          // poolTotals is only walked while a filter is active, so
+                          // off-search the group's own size is the total — and a
+                          // total of 0 would hide the cap caption every time.
+                          total={searching ? poolTotals.unfiled : unfiledSessions.length}
+                        />
                         <AnimatePresence initial={false} mode="popLayout">
-                          {(searching
-                            ? unfiledSessions
-                            : uncategorizedCollapsed
-                              ? unfiledSessions.slice(0, 5)
-                              : unfiledSessions
-                          ).map((s) => (
+                          {renderableUnfiled.map((s) => (
                             <SessionRow
                               key={s.id}
                               session={s}
@@ -810,18 +888,12 @@ export function SessionList({
                             />
                           ))}
                         </AnimatePresence>
-                        {!searching && unfiledSessions.length > 5 && (
-                          <button
-                            type="button"
-                            onClick={() => setUncategorizedCollapsed((v) => !v)}
-                            className="pl-1.5 py-1 text-2xs text-muted-foreground/60 hover:text-foreground"
-                          >
-                            {uncategorizedCollapsed ? `Show ${unfiledSessions.length - 5} more` : 'Show less'}
-                          </button>
-                        )}
                         {unfiledSessions.length === 0 && !searching && (
-                          <p className="py-1 text-xs text-muted-foreground/30 italic pl-1.5">
-                            No tasks yet
+                          // Same rule as the folder line above: name the gesture
+                          // that exists (UncategorizedHeader's `+` starts an
+                          // unfiled chat; the row's right-click pins it).
+                          <p className="py-1 text-2xs italic text-muted-foreground/40 pl-1.5" data-testid="empty-tasks-hint">
+                            No tasks yet · press + above to start one, or + at the top for a new chat
                           </p>
                         )}
                       </div>

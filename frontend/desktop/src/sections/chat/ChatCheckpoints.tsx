@@ -5,14 +5,43 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import type { ChatMessage } from '@/types/chat';
 
+/** Below this transcript width the rail's 40px strip starts competing with
+ *  the message column for room, so it retires (DeepSeek hides at 900 too). */
+const NARROW_PX = 900;
+
+/** Flatten the markdown-ish payload to one readable line for the preview. */
+function excerpt(text: string): string {
+  return (text || '').replace(/```[\s\S]*?```/g, ' ').replace(/[#*_`>]/g, '').replace(/\s+/g, ' ').trim();
+}
+
 export function ChatCheckpoints({ messages, scrollRef }: {
   messages: ChatMessage[];
   scrollRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hovered, setHovered] = useState(false);
+  const [narrow, setNarrow] = useState(false);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const [positions, setPositions] = useState<Record<string, { top: number; visible: boolean }>>({});
   const userMessages = useMemo(() => messages.filter(m => m.role === 'user'), [messages]);
+
+  // Each prompt previews against the reply it produced — the rail is a
+  // navigation surface, and a tick mark that says nothing is not one.
+  const previews = useMemo(() => {
+    const map: Record<string, { prompt: string; reply: string }> = {};
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i];
+      if (m.role !== 'user') continue;
+      let reply = '';
+      for (let j = i + 1; j < messages.length; j++) {
+        const n = messages[j];
+        if (n.role === 'user') break;
+        if (n.role === 'assistant' && (n.content || '').trim()) { reply = n.content; break; }
+      }
+      map[m.id] = { prompt: excerpt(m.content), reply: excerpt(reply) };
+    }
+    return map;
+  }, [messages]);
 
   // Calculate pill positions based on message element offsets relative to middle 50% zone
   const updatePositions = useCallback(() => {
@@ -21,6 +50,7 @@ export function ChatCheckpoints({ messages, scrollRef }: {
     const newPositions: Record<string, { top: number; visible: boolean }> = {};
     const containerRect = container.getBoundingClientRect();
     const containerHeight = containerRect.height;
+    setNarrow(containerRect.width <= NARROW_PX);
     
     const zoneMin = containerHeight * 0.25;
     const zoneMax = containerHeight * 0.75;
@@ -98,7 +128,10 @@ export function ChatCheckpoints({ messages, scrollRef }: {
     setTimeout(() => el.classList.remove('ring-2', 'ring-primary/30', 'rounded-lg'), 1200);
   };
 
-  if (userMessages.length === 0) return null;
+  if (userMessages.length === 0 || narrow) return null;
+
+  const previewPos = previewId ? positions[previewId] : null;
+  const previewData = previewId ? previews[previewId] : null;
 
   return (
     <div
@@ -111,13 +144,21 @@ export function ChatCheckpoints({ messages, scrollRef }: {
           const isActive = activeId === `msg-${msg.id}`;
           const pos = positions[msg.id];
           if (!pos) return null;
+          const prompt = previews[msg.id]?.prompt;
 
           return (
             <button
               key={msg.id}
               onClick={() => scrollTo(msg.id)}
-              aria-label={`Go to message ${msg.id}`}
-              style={{ 
+              onMouseEnter={() => setPreviewId(msg.id)}
+              // The card is only cleared on blur, and a mouse-only user never
+              // blurs anything — without this the preview hangs over the
+              // transcript after the pointer has moved away.
+              onMouseLeave={() => setPreviewId(null)}
+              onFocus={() => setPreviewId(msg.id)}
+              onBlur={() => setPreviewId(null)}
+              aria-label={prompt ? `Jump to your message: ${prompt.slice(0, 60)}` : 'Jump to an earlier message'}
+              style={{
                 top: `${pos.top}px`,
                 opacity: pos.visible ? (hovered ? 1 : 0.4) : 0,
                 pointerEvents: pos.visible ? 'auto' : 'none'
@@ -129,6 +170,19 @@ export function ChatCheckpoints({ messages, scrollRef }: {
             />
           );
         })}
+
+        {previewId && previewPos?.visible && previewData?.prompt ? (
+          <div
+            role="presentation"
+            className="pointer-events-none absolute right-[calc(100%+10px)] z-30 w-[min(280px,45vw)] -translate-y-1/2 rounded-lg bg-popover px-2.5 py-2 text-2xs shadow-elev-overlay"
+            style={{ top: `${previewPos.top}px` }}
+          >
+            <p className="line-clamp-1 font-medium text-popover-foreground">{previewData.prompt}</p>
+            {previewData.reply ? (
+              <p className="mt-1 line-clamp-3 leading-relaxed text-muted-foreground">{previewData.reply}</p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

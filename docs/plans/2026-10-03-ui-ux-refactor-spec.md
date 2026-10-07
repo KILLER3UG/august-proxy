@@ -1,19 +1,42 @@
 # August Deep UI/UX Refactor — Design Spec (Stage 1)
 
-**Status: v2 — APPROVED and IMPLEMENTED 2026-10-04** (18 commits on master; all 12 phases
-shipped; gates green: tsc, 1493/1493 vitest, mobile parity 25, check-design, check:docs,
-check:version). Post-approval additions: the sidebar destination dock was rebuilt as labeled
-rows (the 6-icon strip matched none of the four references), and the SavePointChip /
-SkillEvolvedChip landed with the sidebar trio.
+**Status: v2 — APPROVED, MOSTLY IMPLEMENTED 2026-10-04, corrected by review the same day**
+(27 commits on master; gates re-run and green: tsc, **1516/1516** vitest (not 1493),
+check-design, check:docs, check:version). Post-approval additions: the sidebar destination dock
+was rebuilt as labeled rows (the 6-icon strip matched none of the four references), and the
+SavePointChip / SkillEvolvedChip landed with the sidebar trio.
 
-**Still deferred, with reasons:** per-control settings search index (needs a per-section
-control-label manifest); keystroke-search shortcuts page (needs the hotkey handlers
-centralized); skills bulk enable/disable + undo-delete (undo needs a backend snapshot
-contract); Hide-vs-Close drawer semantics — mounting every open section to preserve state
-would keep each hidden section's polling queries alive (2s for subagents) and no
-section-level suspend primitive exists; the one section whose draft mattered (Notes)
-already autosaves to localStorage, so the state loss it protected against is already
-covered.
+**The four items previously listed here as "still deferred, with reasons" were SHIPPED** by
+`c332b526`, and the stated blockers do not exist: `lib/shortcuts.ts` `APP_SHORTCUTS` *is* the
+centralized dispatcher table App.tsx runs, and `ShortcutsModal.tsx` does keystroke search;
+`settings-registry.ts` `settingHints` + `WorkspaceShell.tsx` `hintMatch` *are* the per-control
+manifest; `skills.py` `/restore/{trashId}` *is* the undo contract; `RightDrawer.tsx` mounts
+inactive sections with `inert` and `RightDrawerState.ts` gates their pollers on it, which *is*
+Hide-vs-Close with the suspend primitive.
+
+**Actually still not shipped (verified against source 2026-10-04):** `/settings?tab=X&field=Y`
+deep-link field highlight · `react-icons/si` deep imports (`lib/file-icon.ts`, `lib/tool-icon.ts`
+still barrel-import) · the 60/120/200/300/450 motion ladder (`lib/motion.ts` is still
+120/180/240, though springs are now centralized there) · one thinking-disclosure primitive with
+`variant="rail"|"plain"` (all three machines remain) · folding `ToolStepRow` into a
+`ToolCallItem` variant · subagent tab-strip pruning, arrow-key roving, and the roster `x/y` todo
+badge · the first-frame token pin, its test, and a *static* (non-pulsing) skeleton at last-known
+sidebar width · `measureElement` debounce · "Copy error details" on the failed-update dialog and
+the interruption warning in About · mobile `NSAppTransportSecurity` and the global
+`user-select: none` strip · `aria` background-inert behind the settings dialog.
+
+**Fixed in review (2026-10-04):** the Tasks group defaulted to collapsed *and* rendered no rows
+while collapsed, so a fresh profile saw "Tasks 40" with an empty list and the `slice(0, 5)` /
+"Show N more" branch was unreachable — now expanded by default with the dead branch deleted.
+Scrollbar thumbs were hardcoded `rgba(255,255,255,.1)` in three rules and a *solid*
+`--dt-muted-foreground` in the global one (the `opacity` on `::-webkit-scrollbar-thumb` is
+ignored by Chromium), so the bar read white on charcoal and washed out on paper — now the
+`--dt-scrollbar` / `--dt-scrollbar-hover` token pair, dim grey in both themes.
+
+**Correction to §3.5 as written:** the <760 sidebar tier is unreachable in the packaged desktop
+window (`minWidth: 960`) but is *not* dead code — the mobile companion is a WebView that loads
+this same SPA at phone width (`frontend/mobile/App.tsx:150`), where it fires. Deleting it as
+drift would break mobile. The 760-1100 drawer overlay is reachable on desktop and works.
 
 **v2 supersession note:** an earlier same-day draft existed at this path (docs-level reference
 research, lighter audit). v2 replaces it: all four references are now verified from local

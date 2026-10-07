@@ -8,6 +8,10 @@ let installState: { installing: boolean; progress: Record<string, unknown> } = {
   installing: false,
   progress: { phase: 'idle' },
 };
+let laterVersion: string | null = null;
+const setLaterMock = vi.fn((v: string | null) => {
+  laterVersion = v;
+});
 const updateState = {
   available: null as null | { version: string; date?: string },
   formatBytes: (n: number) => `${n} B`,
@@ -17,6 +21,9 @@ const updateState = {
 
 vi.mock('@/store/app-update-install', () => ({
   useAppUpdateInstallStore: (sel: (s: typeof installState) => unknown) => sel(installState),
+  getUpdateLaterVersion: () => laterVersion,
+  setUpdateLaterVersion: (v: string | null) => setLaterMock(v),
+  UPDATE_FAILURE_COPY: { network: 'network', signature: 'signature', unknown: 'unknown' },
 }));
 vi.mock('@/hooks/useAppUpdate', () => ({
   useAppUpdate: () => updateState,
@@ -29,6 +36,8 @@ describe('UpdateRelaunchOverlay — conversation chrome', () => {
   beforeEach(() => {
     installState = { installing: false, progress: { phase: 'idle' } };
     updateState.available = null;
+    laterVersion = null;
+    setLaterMock.mockClear();
   });
 
   it('renders nothing when not installing', () => {
@@ -55,5 +64,34 @@ describe('UpdateRelaunchOverlay — conversation chrome', () => {
     render(<UpdateRelaunchOverlay />);
     expect(screen.getByTestId('update-restart')).toBeTruthy();
     expect(screen.getByText('ready')).toBeTruthy();
+  });
+
+  it('stays hidden when the user already chose Later for this version', () => {
+    updateState.available = { version: '0.19.0' };
+    installState = { installing: true, progress: { phase: 'ready', percent: 100 } };
+    laterVersion = '0.19.0';
+    const { container } = render(<UpdateRelaunchOverlay />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('clicking Later persists the version (durable dismissal)', () => {
+    updateState.available = { version: '0.19.0' };
+    installState = { installing: true, progress: { phase: 'ready', percent: 100 } };
+    render(<UpdateRelaunchOverlay />);
+    screen.getByTestId('update-later').click();
+    expect(setLaterMock).toHaveBeenCalledWith('0.19.0');
+  });
+
+  it('a remount after Later does not resurrect the dialog', () => {
+    updateState.available = { version: '0.19.0' };
+    installState = { installing: true, progress: { phase: 'ready', percent: 100 } };
+    // Was a byte-identical copy of the test above with `laterVersion`
+    // pre-set, so it proved nothing about durability. The contract is the round
+    // trip: click Later, unmount, mount again, stay hidden.
+    const { unmount } = render(<UpdateRelaunchOverlay />);
+    screen.getByTestId('update-later').click();
+    unmount();
+    const again = render(<UpdateRelaunchOverlay />);
+    expect(again.container.firstChild).toBeNull();
   });
 });

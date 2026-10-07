@@ -70,6 +70,30 @@ export const UPDATE_FAILURE_COPY: Record<AppUpdateFailureKind, string> = {
   unknown: 'The update failed.',
 };
 
+/* "Later" is durable (spec §6.1): the choice must survive the overlay
+ * remounting, the notifications panel, and a settings visit — a local
+ * useState forgot it on the next render. It is per version, and a fresh
+ * launch that rediscovers the already-downloaded installer clears it so the
+ * prompt returns (that rediscovery is the safety net, not a nag). */
+const LATER_KEY = 'august.update.laterVersion';
+
+export function getUpdateLaterVersion(): string | null {
+  try {
+    return window.localStorage.getItem(LATER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setUpdateLaterVersion(version: string | null): void {
+  try {
+    if (version) window.localStorage.setItem(LATER_KEY, version);
+    else window.localStorage.removeItem(LATER_KEY);
+  } catch {
+    /* storage unavailable — the in-memory dismissal still applies */
+  }
+}
+
 interface AppUpdateInstallState {
   installing: boolean;
   progress: AppUpdateProgress;

@@ -3,42 +3,21 @@
  * Lists working/streaming sessions when any are active.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { LogOut } from 'lucide-react';
 import { Backdrop } from '@/components/overlays/Backdrop';
 import { isTauri } from '@/lib/tauri-detect';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
-import { useSessionsStore } from '@/store/sessions';
-import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
-import type { SessionStatus } from '@/store/sessions/types';
+import { useActiveSessions } from '@/hooks/useActiveSessions';
 import { cn } from '@/lib/utils';
-
-function isActiveStatus(status: SessionStatus | undefined): boolean {
-  return status === 'working' || status === 'streaming';
-}
 
 export function QuitConfirmModal() {
   const [open, setOpen] = useState(false);
   const [quitting, setQuitting] = useState(false);
   const trapRef = useFocusTrap<HTMLDivElement>(open);
-  const sessions = useSessionsStore((s) => s.sessions);
-  const sessionStates = useSessionsStore((s) => s.sessionStates);
-  const activeChatSessions = useActiveChatStreamsStore((s) => s.active);
-
-  const activeSessions = useMemo(() => {
-    const merged: Record<string, SessionStatus> = { ...sessionStates };
-    for (const [id, status] of Object.entries(activeChatSessions)) {
-      if (!merged[id]) merged[id] = status;
-    }
-    // Status maps are keyed by WORKBENCH id (realtime bridge writes
-    // wb_*); look up both id forms so background work on a session is
-    // never missed (audit finding).
-    return sessions.filter(
-      (s) => isActiveStatus(merged[s.id]) || (s.workbenchSessionId ? isActiveStatus(merged[s.workbenchSessionId]) : false),
-    );
-  }, [sessions, sessionStates, activeChatSessions]);
+  const activeSessions = useActiveSessions();
 
   const hasActive = activeSessions.length > 0;
 

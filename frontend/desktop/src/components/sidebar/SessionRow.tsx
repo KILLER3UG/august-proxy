@@ -42,6 +42,37 @@ export interface SessionRowProps {
   onDelete: () => void;
 }
 
+/* ── Hover / focus preview (DeepSeek R4: title + relative time + one status
+ *  word beside the row) ───────────────────────────────────────────────────
+ *  The card reads ONLY what the row already receives as props — no fetch, no
+ *  extra store subscription. Geometry lives here so the flip/clamp math and the
+ *  card width cannot drift apart. */
+const PREVIEW_W = 268;
+const PREVIEW_H = 132;
+/** Long enough to skip the cards that flash past while the pointer travels the
+ *  list, short enough to feel instant once it stops. */
+const PREVIEW_DELAY_MS = 220;
+
+const STATUS_WORD: Record<SessionStatus, string> = {
+  idle: "Idle",
+  working: "Working",
+  streaming: "Streaming",
+  done: "Done",
+  awaiting: "Waiting for you",
+  error: "Error",
+};
+
+/** Same token families as the row's own status dot, so the card and the row
+ *  can never disagree about what a session is doing. */
+const STATUS_DOT: Record<SessionStatus, string> = {
+  idle: "bg-sidebar-foreground/35",
+  working: "bg-warning",
+  streaming: "bg-warning animate-pulse",
+  done: "bg-success",
+  awaiting: "bg-info",
+  error: "bg-danger",
+};
+
 /** One chat in the sidebar list: status, title, pin control, and actions menu. */
 function SessionRowInner({
   session,
@@ -68,7 +99,67 @@ function SessionRowInner({
   const needsHandoff = attention?.needs ?? 0;
   const kebabRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLButtonElement>(null);
   const menuId = useId();
+
+  /* ── Preview card state ─────────────────────────────────────────────── */
+  const [previewPos, setPreviewPos] = useState<{ top: number; left: number } | null>(null);
+  const previewTimer = useRef<number | null>(null);
+  const previewId = `${menuId}-preview`;
+
+  const hidePreview = () => {
+    if (previewTimer.current) {
+      window.clearTimeout(previewTimer.current);
+      previewTimer.current = null;
+    }
+    setPreviewPos(null);
+  };
+
+  const schedulePreview = () => {
+    if (previewTimer.current) window.clearTimeout(previewTimer.current);
+    previewTimer.current = window.setTimeout(() => {
+      previewTimer.current = null;
+      const el = rowRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      // Beside the row, never over it: the row's own kebab (z-40) and its
+      // portal menu (z-100) stay uncovered, and the card is pointer-events-none
+      // so it cannot swallow a click even where it overlaps.
+      let left = r.right + 10;
+      let top = r.top;
+      if (left + PREVIEW_W > window.innerWidth - 8) {
+        // No room outside the sidebar (docked right, narrow window): drop BELOW
+        // the row rather than covering its action menu.
+        left = Math.max(8, Math.min(r.left, window.innerWidth - PREVIEW_W - 8));
+        top = r.bottom + 6;
+      }
+      setPreviewPos({
+        top: Math.max(8, Math.min(top, window.innerHeight - PREVIEW_H - 8)),
+        left,
+      });
+    }, PREVIEW_DELAY_MS);
+  };
+
+  // The pending timer must not fire into an unmounted row.
+  useEffect(
+    () => () => {
+      if (previewTimer.current) window.clearTimeout(previewTimer.current);
+    },
+    [],
+  );
+
+  /* A fixed card does not scroll with the list — dismiss it rather than leave
+   * it floating over a row that has moved away. */
+  useEffect(() => {
+    if (!previewPos) return;
+    const onMove = () => hidePreview();
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [previewPos]);
 
   const closeMenu = () => {
     setShowMenu(false);
@@ -179,6 +270,65 @@ function SessionRowInner({
   }
 
   const hasStatus = status && status !== "idle";
+
+  /* ── Preview payload: everything below is already on `session` / props ── */
+  const previewStatusWord =
+    needsHandoff > 0 ? "Needs handoff" : STATUS_WORD[status ?? "idle"];
+  const previewDotClass =
+    needsHandoff > 0 ? "bg-warning" : STATUS_DOT[status ?? "idle"];
+  const previewFolder = session.folderId
+    ? folders.find((f) => f.id === session.folderId)?.name
+    : undefined;
+  const previewTime = timeAgo(session.startedAt);
+  // Rows restored from an older localStorage shape can lack the counter (the
+  // schema field is optional), and "0 messages" would then state a fact that
+  // was never measured — absence renders as no count at all.
+  const previewMessages = Number.isFinite(session.messageCount) ? session.messageCount : null;
+
+  const preview =
+    previewPos && !showMenu
+      ? createPortal(
+          <div
+            id={previewId}
+            role="tooltip"
+            className="pointer-events-none fixed z-[95] w-[268px] animate-in fade-in zoom-in-95 duration-100 rounded-lg border border-border/60 bg-popover px-3 py-2 shadow-2xl"
+            style={{ top: previewPos.top, left: previewPos.left }}
+            data-testid="session-row-preview"
+          >
+            <p className="line-clamp-2 text-xs font-medium leading-snug text-popover-foreground">
+              {session.title || "Untitled"}
+            </p>
+            <p className="mt-1 flex items-center gap-1.5 text-2xs tabular-nums text-muted-foreground">
+              <span className={cn("size-1.5 shrink-0 rounded-full", previewDotClass)} aria-hidden />
+              <span>{previewStatusWord}</span>
+              {previewTime ? (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>{previewTime}</span>
+                </>
+              ) : null}
+            </p>
+            {(previewMessages !== null || previewFolder) && (
+              <p className="mt-0.5 text-2xs tabular-nums text-muted-foreground/70">
+                {previewMessages === null
+                  ? null
+                  : previewMessages === 1
+                    ? '1 message'
+                    : `${previewMessages} messages`}
+                {previewFolder
+                  ? `${previewMessages === null ? '' : ' · '}${previewFolder}`
+                  : null}
+              </p>
+            )}
+            {session.lastMessage ? (
+              <p className="mt-1 line-clamp-2 text-2xs leading-snug text-muted-foreground/80">
+                {session.lastMessage}
+              </p>
+            ) : null}
+          </div>,
+          document.body,
+        )
+      : null;
 
   const menu =
     showMenu &&
@@ -319,17 +469,31 @@ function SessionRowInner({
         active ? "august-session-row-active bg-white/[0.05]" : "hover:bg-white/[0.03]",
       )}
     >
+      {/* Preview triggers: hover AND keyboard focus, Escape to dismiss. Deliberately
+          no native `title=` on this row — a browser tooltip cannot be styled,
+          themed, timed or read on demand, and it would fight the card. The pin
+          gesture its old `title` advertised is now taught by the Pinned empty
+          state in SessionList. */}
       <button
+        ref={rowRef}
         onClick={() => {
           if (status === "done") clearSessionStatus(session.id);
+          hidePreview();
           onClick();
         }}
         onContextMenu={(e) => {
           e.preventDefault();
           onTogglePin();
         }}
+        onMouseEnter={schedulePreview}
+        onMouseLeave={hidePreview}
+        onFocus={schedulePreview}
+        onBlur={hidePreview}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") hidePreview();
+        }}
+        aria-describedby={previewPos ? previewId : undefined}
         className="relative w-full text-left px-2.5 py-1.5 flex flex-col gap-0.5 pr-8 min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
-        title="Right click or use three-dots menu to pin"
       >
         <div className="flex items-center gap-2 min-w-0">
           {hasStatus ? (
@@ -462,11 +626,14 @@ function SessionRowInner({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
+            // The action menu wins: never let the preview sit under it.
+            hidePreview();
             setShowMenu((v) => !v);
           }}
           onKeyDown={(e) => {
             if (e.key === "ArrowDown") {
               e.preventDefault();
+              hidePreview();
               setShowMenu(true);
             }
           }}
@@ -483,6 +650,7 @@ function SessionRowInner({
       </div>
 
       {menu}
+      {preview}
     </motion.div>
   );
 }

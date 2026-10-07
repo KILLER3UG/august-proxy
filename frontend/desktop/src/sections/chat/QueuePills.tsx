@@ -12,6 +12,7 @@ import {
   updateQueuedMessageLocal,
   type QueuedUserMessage,
 } from './queue-store';
+import { describeSubagentReceipt, parseSubagentReceipt } from './subagent-receipt';
 
 type Props = {
   /** Sidebar / UI session id (local store key). */
@@ -131,7 +132,11 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
           </button>
         )}
       </div>
-      {items.map((q, i) => (
+      {items.map((q, i) => {
+        // A subagent receipt addressed to the model is neither a warning nor
+        // something the user should edit — render it as what it is.
+        const receipt = parseSubagentReceipt(q.text);
+        return (
         <div
           key={q.id}
           draggable={editingId !== q.id}
@@ -149,7 +154,9 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
             'flex items-center gap-2 px-2 py-1.5 rounded-xl border text-2xs transition',
             q.kind === 'steer'
               ? 'border-primary/35 bg-primary/10'
-              : 'border-warning/30 bg-warning/5',
+              : receipt
+                ? 'border-border/60 bg-muted/25'
+                : 'border-warning/30 bg-warning/5',
             dragOverId === q.id && dragId !== q.id && 'ring-1 ring-primary/50',
             dragId === q.id && 'opacity-60',
           )}
@@ -164,10 +171,10 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
           <span
             className={cn(
               'font-semibold uppercase tracking-wider shrink-0',
-              q.kind === 'steer' ? 'text-primary' : 'text-warning',
+              q.kind === 'steer' ? 'text-primary' : receipt ? 'text-muted-foreground' : 'text-warning',
             )}
           >
-            {q.kind === 'steer' ? 'Direction' : 'Queued'}
+            {q.kind === 'steer' ? 'Direction' : receipt ? 'Receipt' : 'Queued'}
             {items.length > 1 ? ` (${i + 1}/${items.length})` : ''}
           </span>
           {editingId === q.id ? (
@@ -204,10 +211,19 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
             </div>
           ) : (
             <>
-              <span className="truncate text-muted-foreground flex-1 min-w-0" title={q.text}>
-                {q.text.length > 120 ? q.text.slice(0, 120).trim() + '…' : q.text}
+              <span
+                className="truncate text-muted-foreground flex-1 min-w-0"
+                // The receipt line is the status and the goal; the reason (for a
+                // failure) or the result lives in `body`, which nothing else
+                // reads — without this a failed subagent reports "failed" and the
+                // cause is unrecoverable in the UI.
+                title={receipt ? receipt.body || undefined : q.text}
+              >
+                {receipt
+                  ? [describeSubagentReceipt(receipt), receipt.goal && `— ${receipt.goal}`].filter(Boolean).join(' ')
+                  : q.text.length > 120 ? q.text.slice(0, 120).trim() + '…' : q.text}
               </span>
-              {q.kind !== 'steer' ? (
+              {!receipt && q.kind !== 'steer' ? (
                 <button
                   type="button"
                   onClick={() => promoteToSteer(q)}
@@ -218,6 +234,7 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
                   <Zap className="size-3" />
                 </button>
               ) : null}
+              {!receipt ? (
               <button
                 type="button"
                 onClick={() => startEdit(q)}
@@ -227,6 +244,7 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
               >
                 <Pencil className="size-3" />
               </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => cancelOne(q.id)}
@@ -239,7 +257,8 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
             </>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

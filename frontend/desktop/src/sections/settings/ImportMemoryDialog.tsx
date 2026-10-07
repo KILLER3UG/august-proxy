@@ -21,7 +21,7 @@ import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
 import { useModels } from '@/hooks/useModels';
-import { loadLastModel } from '@/sections/chat/model-display';
+import { findModelByKey, loadLastModel, modelKey } from '@/sections/chat/model-display';
 
 interface ParsedEntry {
   /** Stable id used by the React list (file basename + line index). */
@@ -633,9 +633,12 @@ export function ImportMemoryDialog({
               <span className="text-2xs text-muted-foreground">Arranging model</span>
               <div className="relative">
                 <select
-                  value={model?.id ?? ''}
+                  value={model ? modelKey(model) : ''}
                   onChange={(e) => {
-                    const m = models.find((x) => x.id === e.target.value) ?? null;
+                    // Keyed by gateway too: `stepfun/step-3.7-flash` is listed by
+                    // OpenRouter and KiloCode alike, so an id-only value picked the
+                    // first match and two identical ids collided as React keys.
+                    const m = findModelByKey(models, e.target.value) ?? null;
                     setModel(m ? { id: m.id, name: m.name || m.id, provider: m.provider } : null);
                     if (m && rawText.trim()) void runAiArrange(rawText);
                   }}
@@ -644,7 +647,7 @@ export function ImportMemoryDialog({
                 >
                   {!model && <option value="">Select a model…</option>}
                   {models.map((m) => (
-                    <option key={m.id} value={m.id}>
+                    <option key={modelKey(m)} value={modelKey(m)}>
                       {m.name || m.id} · {m.provider}
                     </option>
                   ))}

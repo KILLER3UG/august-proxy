@@ -61,6 +61,12 @@
     --dt-paper: #fdfdfb;
     /* A barely-there glow/wash used behind boot and empty states. */
     --dt-wash: rgb(0 0 0 / 0.03);
+    /* Scrollbar thumb. Three rules used to paint it rgba(255,255,255,.1) and
+     * the global one used a SOLID --dt-muted-foreground (the `opacity` on a
+     * ::-webkit-scrollbar-thumb is ignored by Chromium), so the bar read as
+     * white on charcoal and washed out on paper. Neutral grey, dimmed. */
+    --dt-scrollbar: rgb(92 92 98 / 0.30);
+    --dt-scrollbar-hover: rgb(92 92 98 / 0.48);
 
     /* Brand — desaturated, reserved for action/focus */
     --dt-primary: #2f6df6;
@@ -183,6 +189,9 @@
     --dt-hairline-strong: #3d3d3d;
     --dt-paper: #161618;
     --dt-wash: rgb(255 255 255 / 0.04);
+    /* Dim grey on charcoal — reads as a groove, not a white bar. */
+    --dt-scrollbar: rgb(150 150 158 / 0.22);
+    --dt-scrollbar-hover: rgb(168 168 176 / 0.36);
 
     /* Brand — bright enough for AAA on charcoal, still restrained */
     --dt-primary: #6f9bff;

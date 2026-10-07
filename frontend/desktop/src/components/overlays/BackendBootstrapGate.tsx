@@ -218,6 +218,14 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
           <p className="mx-auto mt-2 max-w-md whitespace-pre-wrap break-words text-sm text-muted-foreground">
             {detail}
           </p>
+          {/* Hermes-parity reassurance: a failed backend looks like a lost
+              install, and the one thing a user needs to know before retrying
+              is that nothing they own is at stake. True by construction —
+              onRetry only calls restart_proxy + sync_backend_deps, and the
+              user-owned {appData}/data tree is never re-staged (AGENTS.md). */}
+          <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground/70">
+            Nothing here is deleted — your memory, providers and settings stay untouched.
+          </p>
           {lastError && lastError !== detail ? (
             /* The install/bootstrap log auto-expands on failure (Hermes
                parity): the first thing a broken backend needs is the log,
@@ -247,13 +255,19 @@ export function BackendBootstrapGate({ children }: { children: ReactNode }) {
               </ul>
             </div>
           )}
-          <div className="mt-5 flex justify-center gap-2">
+          <div className="mt-5 flex flex-col items-center gap-2">
             <Button disabled={retrying} onClick={() => { void onRetry(); }}>
               {retrying ? (
                 <RefreshCw className="mr-1.5 size-3 animate-spin" />
               ) : null}
               {retrying ? 'Retrying…' : 'Retry setup'}
             </Button>
+            {/* What the button costs, before it is pressed — Hermes names the
+                slow path on its recovery actions for the same reason. */}
+            <p className="text-2xs text-muted-foreground/60">
+              Restarts the backend and re-checks its runtime files. Right after an install the
+              first attempt can take a minute or two.
+            </p>
           </div>
         </motion.div>
       ) : (

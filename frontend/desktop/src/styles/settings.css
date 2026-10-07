@@ -45,4 +45,15 @@
 .august-menu-panel[data-state='open'] .august-menu-item {
   animation: august-menu-item-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+/* Field deep link (/settings?tab=X&field=Y) — the one-shot wash that names
+ * the control the link targeted. Applied and removed by useSettingsFieldLink.
+ * Deliberately static, not a keyframe: motion.css clamps every animation to
+ * 0.01ms under the reduce-motion preference, which would erase an animated
+ * highlight for exactly the users who asked for less motion. */
+.settings-field-flash {
+  background-color: color-mix(in srgb, var(--dt-primary) 14%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--dt-primary) 55%, transparent);
+  border-radius: 10px;
+}
 

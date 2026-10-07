@@ -131,11 +131,19 @@ export function SettingsPage() {
   // Also rewrite legacy ?tab=<id> query links used by older sidebar nav.
   useEffect(() => {
     const tabQuery = searchParams.get('tab');
-    const sectionQuery = searchParams.get('section');
+    // `?section` (scope) and `?field` (control deep link) both survive the
+    // query → path rewrite: dropping either would land the user on the right
+    // tab with half of what they asked for already gone from the URL.
+    const carry = new URLSearchParams();
+    for (const key of ['section', 'field'] as const) {
+      const value = searchParams.get(key);
+      if (value) carry.set(key, value);
+    }
+    const carried = carry.toString();
+    const qs = carried ? `?${carried}` : '';
 
     if (!rawSection && tabQuery) {
       const id = resolveLegacyTab(tabQuery);
-      const qs = sectionQuery ? `?section=${encodeURIComponent(sectionQuery)}` : '';
       void navigate(`/settings/${id}${qs}`, { replace: true });
       return;
     }
@@ -148,7 +156,6 @@ export function SettingsPage() {
     // Hub ids resolve to their first section — rewrite so the rail tree and
     // URL always point at a real section.
     if (rawSection !== activeId) {
-      const qs = sectionQuery ? `?section=${encodeURIComponent(sectionQuery)}` : '';
       void navigate(`/settings/${activeId}${qs}`, { replace: true });
     }
   }, [rawSection, activeId, navigate, searchParams, landingSectionId]);

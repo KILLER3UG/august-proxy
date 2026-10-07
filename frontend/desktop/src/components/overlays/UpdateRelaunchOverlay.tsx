@@ -12,7 +12,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { t } from '@/lib/motion';
 import { UpdateProgressBar } from '@/components/ui/UpdateProgressBar';
 import { useAppUpdate, useAppUpdateVersion } from '@/hooks/useAppUpdate';
-import { useAppUpdateInstallStore, UPDATE_FAILURE_COPY } from '@/store/app-update-install';
+import { useActiveSessions } from '@/hooks/useActiveSessions';
+import {
+  getUpdateLaterVersion,
+  setUpdateLaterVersion,
+  useAppUpdateInstallStore,
+  UPDATE_FAILURE_COPY,
+} from '@/store/app-update-install';
 import { cn } from '@/lib/utils';
 
 export function UpdateRelaunchOverlay() {
@@ -20,7 +26,13 @@ export function UpdateRelaunchOverlay() {
   const progress = useAppUpdateInstallStore((s) => s.progress);
   const { available, formatBytes, install, cancelDownload } = useAppUpdate();
   const cachedVersion = useAppUpdateVersion();
-  const [readyDismissed, setReadyDismissed] = useState(false);
+  // Honour a durable "Later" before the first paint, so a remount does not
+  // flash the dialog for a version the user already deferred (the effect
+  // below covers a version that arrives after mount).
+  const [readyDismissed, setReadyDismissed] = useState(
+    () => cachedVersion != null && getUpdateLaterVersion() === cachedVersion,
+  );
+  const activeSessions = useActiveSessions();
 
   const downloading = progress.phase === 'downloading';
   const ready = progress.phase === 'ready';
@@ -32,8 +44,16 @@ export function UpdateRelaunchOverlay() {
   const vLabel = targetVersion ? `v${targetVersion}` : 'the update';
 
   useEffect(() => {
-    if (!ready) setReadyDismissed(false);
-  }, [ready]);
+    if (!ready) {
+      setReadyDismissed(false);
+      return;
+    }
+    // "Later" is durable per version (spec §6.1): a remount, the settings
+    // visit, or the notifications panel must not resurrect a dialog the user
+    // already deferred. A fresh launch that rediscovers the staged installer
+    // clears the stored choice, so the prompt comes back there.
+    setReadyDismissed(targetVersion != null && getUpdateLaterVersion() === targetVersion);
+  }, [ready, targetVersion]);
 
   const showDialog = visible && (!ready || !readyDismissed);
 
@@ -162,6 +182,17 @@ export function UpdateRelaunchOverlay() {
               </div>
             </div>
 
+            {ready && activeSessions.length > 0 && (
+              <p
+                className="px-4 pb-1 text-[0.75rem] text-warning-fg"
+                data-testid="update-active-warning"
+              >
+                {activeSessions.length} session{activeSessions.length === 1 ? '' : 's'} still
+                working — restarting will interrupt {activeSessions.length === 1 ? 'it' : 'them'}
+                when the installer opens.
+              </p>
+            )}
+
             {/* Composer-style action row */}
             <div className="flex items-center gap-2 px-3 pb-3">
               <div className="flex-1 truncate rounded-xl border border-border bg-card/50 px-3 py-2 text-[0.78125rem] text-muted-foreground/70">
@@ -212,10 +243,12 @@ export function UpdateRelaunchOverlay() {
                 <>
                   <button
                     type="button"
-                    onClick={() => setReadyDismissed(true)}
+                    onClick={() => {
+                      setReadyDismissed(true);
+                      if (targetVersion) setUpdateLaterVersion(targetVersion);
+                    }}
                     className="shrink-0 rounded-lg px-2.5 py-2 text-[0.75rem] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
                     aria-label="Later"
-                    title="Later"
                     data-testid="update-later"
                   >
                     <X className="size-4" />

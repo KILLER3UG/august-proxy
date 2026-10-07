@@ -651,8 +651,11 @@ export function ChatLayout() {
                 {/* Full-width chat column — scroll container spans the full
                     chat-area width so the thumb sits at the chat-area edge.
                     Internal content max-width is applied inside ChatThread
-                    for message readability. */}
-                <div className="flex-1 flex min-w-0 h-full">
+                    for message readability. The class is the hook for
+                    --august-drawer-w (see chat.css): the drawer stays an
+                    overlay per Part 15.4, but at dock widths the column
+                    reserves its space so nothing renders underneath it. */}
+                <div className="august-chat-column flex-1 flex min-w-0 h-full">
                   <AnimatePresence mode="wait" initial={false}>
                     <motion.div
                       key={location.pathname}

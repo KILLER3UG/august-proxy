@@ -35,8 +35,12 @@ export function SettingsCard({
   return (
     <Card
       className={cn(
-        'group relative overflow-hidden border-border/80 bg-card/95 shadow-sm transition',
-        !inert && 'hover:border-primary/20 hover:shadow-md',
+        // Hairline seam, no drop shadow: the card already owns an edge, and
+        // the hover state shifts the border colour rather than lifting the
+        // whole panel (design principle 6; the elevation ladder lives in
+        // ui/card.tsx).
+        'group relative overflow-hidden border-border/80 bg-card/95 transition',
+        !inert && 'hover:border-primary/20',
         className,
       )}
     >

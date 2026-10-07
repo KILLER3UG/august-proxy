@@ -114,6 +114,17 @@ export function RightDrawer({
     'aria-label': 'Resize workbench sidebar',
   });
 
+  /* Part 15.4 keeps this panel an overlay rather than an inline flex sibling,
+     but at dock widths the centered column must not render underneath it —
+     assistant prose was being cut mid-word and the composer's Send button was
+     unreachable. Published as a CSS variable so dragging the handle costs the
+     shell no re-render; chat.css applies it only above the overlay tier. */
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--august-drawer-w', open ? `${Math.round(width)}px` : '0px');
+    return () => { root.style.removeProperty('--august-drawer-w'); };
+  }, [open, width]);
+
   // ZCode-style chooser: Escape backs out without changing open sections.
   useEffect(() => {
     if (!chooserActive) return;

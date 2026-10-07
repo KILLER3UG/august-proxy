@@ -16,6 +16,7 @@ import {
   Asterisk,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { UpdateProgressBar } from '@/components/ui/UpdateProgressBar';
 import { useBackendStatus } from '@/hooks/useBackendStatus';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
@@ -121,10 +122,11 @@ export function UpdateSection() {
               </p>
             )}
             {available?.body && (
-              <div className="mt-2 max-h-32 overflow-y-auto rounded-lg bg-black/20 p-3">
-                <pre className="whitespace-pre-wrap font-sans text-xs text-muted-foreground">
-                  {available.body}
-                </pre>
+              /* Markdown, not a <pre> (spec §6.2): release notes are
+               * headings + bullets, and the shared renderer is the one owner
+               * for that (it also sanitizes raw HTML/links). */
+              <div className="mt-2 max-h-32 overflow-y-auto rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
+                <Markdown content={available.body} />
               </div>
             )}
 

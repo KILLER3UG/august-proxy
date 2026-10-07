@@ -4,8 +4,9 @@
 /* the Settings overlay route. The previous `/workspace/*` routes were     */
 /* retired when Settings absorbed the panel.                                   */
 
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
+import { useSettingsFieldLink } from '@/hooks/useSettingsFieldLink';
 import {
   ArrowUpCircle,
   BrainCircuit,
@@ -64,6 +65,14 @@ export function WorkspaceShell({
   const [query, setQuery] = useState('');
   const { available: updateAvailable } = useAppUpdate();
   const inbox = useReviewInboxCount();
+
+  // Field deep link — /settings?tab=X&field=Y (or the path form with ?field=)
+  // names a control inside the section. Defaulted because the shell reads the
+  // location directly, and `?section`/`?field` are optional by contract.
+  const { search = '' } = location;
+  const fieldParam = new URLSearchParams(search).get('field') ?? '';
+  const contentRef = useRef<HTMLDivElement>(null);
+  useSettingsFieldLink(contentRef, fieldParam, active);
 
   const railActive = railCanonicalId(active);
 
@@ -228,9 +237,21 @@ export function WorkspaceShell({
                                   : null
                             }
                             onSelect={() => {
-                              if (s.id === railActive && s.id === active) return;
+                              // Already-open tab with no control to name is a
+                              // no-op; a control hit still has work to do even
+                              // when its tab is the one on screen.
+                              if (s.id === railActive && s.id === active && !hitHint) return;
                               setQuery('');
-                              void navigate(`/settings/${s.id}`);
+                              // Carry the control the search matched as ?field=
+                              // so the two halves of the deep link connect: the
+                              // tab opens AND its control is scrolled to and
+                              // flashed. A keyword-only hit has no control to
+                              // name, so it navigates bare.
+                              void navigate(
+                                `/settings/${s.id}${
+                                  hitHint ? `?field=${encodeURIComponent(hitHint)}` : ''
+                                }`,
+                              );
                             }}
                           />
                           {hitHint && (
@@ -316,8 +337,10 @@ export function WorkspaceShell({
 
       {/* Main content — each section renders its own h1 inside.
           overflow-x-hidden: wide children (tables, pre) must not give the
-          whole settings pane a horizontal scrollbar. */}
-        <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">{children}</div>
+          whole settings pane a horizontal scrollbar.
+          contentRef scopes the ?field= deep link to the section body, so a
+          control search never resolves against the rail that listed it. */}
+        <div ref={contentRef} className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">{children}</div>
 
         {/* Claude puts the dismiss control at the top-right of the content pane,
             not in the nav rail — the rail is for moving around inside. */}

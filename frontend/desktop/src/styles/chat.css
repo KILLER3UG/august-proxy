@@ -8,7 +8,7 @@
 /* ── v4 §16.3: Chat transcript scrollbar — faint gray, easy to miss ── */
 .chat-scroll {
   scrollbar-width: thin;
-  scrollbar-color: rgba(128, 128, 136, 0.22) transparent;
+  scrollbar-color: var(--dt-scrollbar, rgba(128, 128, 136, 0.3)) transparent;
   overscroll-behavior-y: contain;
 }
 
@@ -61,23 +61,23 @@
   background: transparent !important;
 }
 .chat-scroll::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 136, 0.22) !important;
+  background: var(--dt-scrollbar, rgba(128, 128, 136, 0.3)) !important;
   border-radius: 9999px !important;
   border: 1px solid transparent !important;
   background-clip: padding-box !important;
   min-height: 40px;
 }
 .chat-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 136, 0.38) !important;
+  background: var(--dt-scrollbar-hover, rgba(128, 128, 136, 0.48)) !important;
   background-clip: padding-box !important;
 }
 
 /* ── v4 §16.2: Thin scrollbar for thinking/reasoning blocks ── */
-.thinking-scroll { scrollbar-width: thin; scrollbar-color: var(--dt-muted-foreground, rgba(128,128,128,0.2)) transparent; }
+.thinking-scroll { scrollbar-width: thin; scrollbar-color: var(--dt-scrollbar, rgba(128,128,136,0.3)) transparent; }
 .thinking-scroll::-webkit-scrollbar { width: 4px; }
 .thinking-scroll::-webkit-scrollbar-track { background: transparent; }
 .thinking-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.07);
+  background: var(--dt-scrollbar, rgba(128,128,136,0.3));
   border-radius: 4px;
 }
 
@@ -119,12 +119,12 @@
 }
 
 .model-dropdown-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1) !important;
+  background: var(--dt-scrollbar, rgba(128, 128, 136, 0.3)) !important;
   border-radius: 9999px !important;
 }
 
 .model-dropdown-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18) !important;
+  background: var(--dt-scrollbar-hover, rgba(128, 128, 136, 0.48)) !important;
 }
 
 .model-dropdown-list::-webkit-scrollbar-button,
@@ -414,6 +414,30 @@
   letter-spacing: -0.035em;
 }
 
+/* Empty-state hero title — the display step above the composer.
+ *
+ * This has to be a class rule, not utilities on the element: the
+ * `.august-empty-state h1` selector directly above is a descendant selector,
+ * so it outranks any single utility class and would silently win the
+ * font-size/weight/tracking argument. Two selectors here beat it.
+ *
+ * The values are existing tokens, not new ones: -0.04em is Tailwind's
+ * `tracking-tightest` (tailwind.config.cjs letterSpacing), and 650 sits inside
+ * the bundled Inter Variable 100–900 axis, so no webfont is requested.
+ *
+ * The middle term is `rem + vw`, not vw alone: `data-text-size` scales the ROOT
+ * font-size (tokens.css:245-248), so a pure-vw preferred value would sit inside
+ * the clamp band (roughly 1154–1462px here — an ordinary maximized window) and
+ * ignore the preference entirely. The rem term keeps the hero on the same scale
+ * as every other size in the app while the vw term keeps it responsive.
+ */
+.august-empty-state .august-empty-title {
+  font-size: clamp(1.875rem, 1.5rem + 1vw, 2.375rem);
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
 .august-message-footer {
   padding-top: 0.4rem;
   padding-bottom: 0.55rem;
@@ -491,12 +515,26 @@
 }
 
 @container august-shell (max-width: 760px) {
+  /* Unreachable in the packaged desktop window (minWidth 960) but live in the
+     mobile companion, whose WebView loads this same SPA at phone width. */
   .august-session-sidebar {
     position: absolute;
     inset-block: 0;
     left: 0;
     z-index: 40;
     box-shadow: 16px 0 40px rgb(0 0 0 / 0.28);
+  }
+}
+
+/* The drawer remains an overlay panel (Part 15.4), but at dock widths it must
+   not sit ON TOP of the conversation: the transcript and composer are centered
+   `max-w-3xl` columns, so ~224px of them used to render under the panel —
+   cutting prose mid-word and hiding the composer's Send button entirely.
+   Below 1100px the scrim overlay is the intended mode, so nothing is reserved
+   there and the panel floats as designed. */
+@container august-shell (min-width: 1100px) {
+  .august-chat-column {
+    padding-right: var(--august-drawer-w, 0px);
   }
 }
 
@@ -1101,15 +1139,18 @@
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
-  scrollbar-color: rgba(128, 128, 136, 0.35) transparent;
+  scrollbar-color: var(--dt-scrollbar, rgba(128, 128, 136, 0.3)) transparent;
 }
 .tool-result-scroll::-webkit-scrollbar {
   width: 6px !important;
   height: 6px !important;
 }
 .tool-result-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12) !important;
+  background: var(--dt-scrollbar, rgba(128, 128, 136, 0.3)) !important;
   border-radius: 9999px !important;
+}
+.tool-result-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--dt-scrollbar-hover, rgba(128, 128, 136, 0.48)) !important;
 }
 
 /* ── Checkpoint Pills ────────────────────────────────────────────── */
@@ -1121,6 +1162,14 @@
   cursor: pointer;
   pointer-events: auto;
   transition: transform 0.2s ease, background-color 0.2s ease, width 0.2s ease, height 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* The mark is 8×4; the target should not be. Without this the rail is a
+   miss-magnet on a 40px strip. */
+.checkpoint-pill::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
 }
 
 .checkpoint-pill.active {

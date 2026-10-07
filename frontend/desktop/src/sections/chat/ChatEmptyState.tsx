@@ -1,10 +1,11 @@
 /* ── Empty chat state ──────────────────────────────────────────────────── */
 
 import { motion } from 'framer-motion';
-import { GitBranch, Send } from 'lucide-react';
+import { Asterisk, GitBranch, Send } from 'lucide-react';
 import { workspaceBaseName } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import { normalizeHarnessMode } from '@/components/chat/HarnessModeChip';
+import { t } from '@/lib/motion';
 
 const ORCH_EXAMPLES = [
   {
@@ -41,7 +42,7 @@ export function ChatEmptyState({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, y: 20 }}
-      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+      transition={t.smooth}
       className="august-empty-state flex-1 flex flex-col items-center justify-center px-6 relative overflow-hidden"
     >
       {/* DeepSeek-inspired soft glow: one blurred ellipse centered behind the hero, not a card */}
@@ -112,10 +113,32 @@ export function ChatEmptyState({
             </button>
           </>
         ) : (
-          <div className="flex flex-col items-center gap-2 text-center">
-            <h1 className="text-[1.875rem] font-[620] tracking-[-0.03em] leading-tight text-foreground">
+          <div className="flex flex-col items-center gap-3 text-center">
+            {/* Brand lockup. The empty chat is the one screen that says who is
+                answering, so it leads with the mark instead of a bare prompt.
+                The glyph is decorative — the wordmark beside it carries the
+                name, so the mark is hidden from AT rather than announced
+                twice. */}
+            <div className="flex items-center gap-2.5">
+              <span
+                aria-hidden
+                className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary"
+              >
+                <Asterisk className="size-5" />
+              </span>
+              <span className="text-2xs font-semibold uppercase tracking-caps text-muted-foreground">
+                August
+              </span>
+            </div>
+            <h1 className="august-empty-title text-foreground">
               What should we work on?
             </h1>
+            {/* Voice line — concrete claims only: reading and editing the
+                workspace, running it, and the brain's durable memory. Each one
+                maps to a tool the harness actually has. */}
+            <p className="hero-subtitle max-w-xl text-muted-foreground/75">
+              paste an error, a goal, or a whole repo. i’ll read the code, run it, and remember what mattered for next time.
+            </p>
             <p className="text-[0.8125rem] text-muted-foreground/60">
               in <span className="font-mono text-foreground/55">{project}</span>
             </p>

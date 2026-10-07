@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import type { Update } from '@tauri-apps/plugin-updater';
 import {
   IDLE_UPDATE_PROGRESS,
+  setUpdateLaterVersion,
   useAppUpdateInstallStore,
   type AppUpdateProgress,
 } from '@/store/app-update-install';
@@ -36,6 +37,50 @@ function formatBytes(n: number): string {
   if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
   if (n >= 1024) return `${Math.round(n / 1024)} KB`;
   return `${n} B`;
+}
+
+/**
+ * Windows taskbar progress during download (spec §6.1). Best-effort: the
+ * dialog is the source of truth, and a failed call must never break the
+ * download. No-op off Windows/desktop.
+ */
+async function setTaskbarProgress(
+  status: 'normal' | 'indeterminate' | 'none',
+  progress?: number,
+): Promise<void> {
+  if (!isTauri || !isWindowsDesktop()) return;
+  try {
+    const { getCurrentWindow, ProgressBarStatus } = await import('@tauri-apps/api/window');
+    const byName = {
+      normal: ProgressBarStatus.Normal,
+      indeterminate: ProgressBarStatus.Indeterminate,
+      none: ProgressBarStatus.None,
+    } as const;
+    await getCurrentWindow().setProgressBar({ status: byName[status], progress });
+  } catch {
+    /* taskbar is a nicety, not a contract */
+  }
+}
+
+/** Every write runs on ONE chain. Each was its own floating promise before, so
+ *  an in-flight `normal` could land after the terminal `none` and leave the bar
+ *  under way once the installer was already staged. */
+let taskbarChain: Promise<void> = Promise.resolve();
+/** Progress events fire per chunk — thousands across a ~200 MB installer. The
+ *  bar reads whole percent, so coalescing 200 ms of them is invisible; `none`
+ *  always passes to clear the bar. */
+let taskbarWrittenAt = 0;
+const TASKBAR_WRITE_MS = 200;
+
+function reportTaskbarProgress(status: 'normal' | 'indeterminate' | 'none', progress?: number): void {
+  const now = Date.now();
+  if (status !== 'none') {
+    if (now - taskbarWrittenAt < TASKBAR_WRITE_MS) return;
+    taskbarWrittenAt = now;
+  } else {
+    taskbarWrittenAt = 0;
+  }
+  taskbarChain = taskbarChain.then(() => setTaskbarProgress(status, progress));
 }
 
 async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
@@ -111,6 +156,9 @@ export function useAppUpdate() {
       .then((path) => {
         if (cancelled || !path) return;
         pendingInstallerPath = path;
+        // A fresh launch that finds the staged installer re-surfaces the
+        // prompt: clear a previous "Later" for this version (spec §6.1).
+        setUpdateLaterVersion(null);
         setInstalling(true);
         setProgress({ percent: 100, downloadedBytes: 0, totalBytes: null, phase: 'ready' });
       })
@@ -187,18 +235,25 @@ export function useAppUpdate() {
           ({ payload }) => {
             downloaded = payload.downloadedBytes;
             total = payload.totalBytes;
+            const percent =
+              total && total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : null;
             setProgress({
-              percent: total && total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : null,
+              percent,
               downloadedBytes: downloaded,
               totalBytes: total,
               phase: 'downloading',
             });
+            reportTaskbarProgress(
+              percent != null ? 'normal' : 'indeterminate',
+              percent ?? undefined,
+            );
           },
         );
         const installerPath = await invoke<string>('download_release_installer', {
           version,
         });
         if (cancelRequested) {
+          reportTaskbarProgress('none');
           resetInstall();
           return;
         }
@@ -209,8 +264,10 @@ export function useAppUpdate() {
           totalBytes: total ?? downloaded,
           phase: 'ready',
         });
+        reportTaskbarProgress('none');
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        reportTaskbarProgress('none');
         if (cancelRequested) {
           markCancelled();
         } else {
@@ -277,6 +334,7 @@ export function useAppUpdate() {
     void pendingNativeUpdate?.close().catch(() => undefined);
     pendingNativeUpdate = null;
     pendingInstallerPath = null;
+    reportTaskbarProgress('none');
     markCancelled();
   }, [markCancelled]);
 

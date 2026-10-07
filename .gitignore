@@ -145,3 +145,16 @@ tmp_rename_camel.py
 
 # Third-party tool marker (holds a generated project id)
 .freebuff/
+
+# Agent scratch UI-review output: .ui-review/ is the ad-hoc capture script
+# (.ui-review/capture.mjs) plus its PNG set, written by a review pass. It is a
+# working artifact, not source — and docs/ tracks no PNGs, so these never
+# belonged in history either. The curated benchmark shots under
+# docs/ui-refactor/ are the durable record and their prose IS committed.
+.ui-review/
+
+# Benchmark/audit screenshots captured off a running app. The .md analysis that
+# cites them is committed (docs/plans/ui-refactor/**, docs/ui-refactor/**.md);
+# the image sets are regenerable by re-running the capture, and 3.8 MB of PNGs
+# in history buys nothing that the measured tables do not already carry.
+docs/ui-refactor/**/*.png

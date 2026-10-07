@@ -6,7 +6,12 @@ export const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
     return (
       <div
         ref={ref}
-        className={cn('rounded-lg border border-border bg-card text-card-foreground shadow-sm', className)}
+        /* Flat by default: a bordered card owns its edge with the hairline,
+         * not a drop shadow on top of it (design principle 6 — shadow is
+         * elevation, and an elevated surface goes borderless + shadow-elev-*).
+         * Callers that want lift opt into <Surface elev="raised"> or the
+         * shadow-elev-* utilities. */
+        className={cn('rounded-lg border border-border bg-card text-card-foreground', className)}
         {...props}
       />
     );

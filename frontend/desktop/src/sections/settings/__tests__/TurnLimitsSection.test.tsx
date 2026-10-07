@@ -33,13 +33,13 @@ let putSpy: MockInstance;
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  getSpy = vi.spyOn(api, 'get').mockImplementation((async (path: string) => {
+  getSpy = vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
     if (path === '/api/brain/config') {
       return { source: 'fallback', config: offConfig(), defaults: offConfig() };
     }
     throw new Error(`unexpected GET ${path}`);
-  }) as never);
-  putSpy = vi.spyOn(api, 'put').mockImplementation((async () => ({ ok: true })) as never);
+  });
+  putSpy = vi.spyOn(api, 'put').mockImplementation(async () => ({ ok: true }));
 });
 
 function renderPanel() {

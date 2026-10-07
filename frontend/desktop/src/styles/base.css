@@ -253,19 +253,17 @@
   background: transparent !important;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--dt-muted-foreground, rgba(128, 128, 128, 0.2)) !important;
+  background: var(--dt-scrollbar, rgba(128, 128, 136, 0.3)) !important;
   border-radius: 9999px !important;
-  opacity: 0.35;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--dt-muted-foreground, rgba(128, 128, 128, 0.2)) !important;
-  opacity: 0.6;
+  background: var(--dt-scrollbar-hover, rgba(128, 128, 136, 0.48)) !important;
 }
 
 .model-dropdown-list {
   overflow-x: hidden !important;
   scrollbar-width: thin !important;
-  scrollbar-color: var(--dt-muted-foreground, rgba(128, 128, 128, 0.2)) transparent !important;
+  scrollbar-color: var(--dt-scrollbar, rgba(128, 128, 136, 0.3)) transparent !important;
 }
 
 /* 2. Fix the search bar input so that it is not white */
