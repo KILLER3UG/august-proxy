@@ -16,8 +16,9 @@ import { StatusDot } from '@/components/workspace/StatusPill';
 import type { VoiceCommandCardProps } from '@/api/voice/registry';
 import { useNavigate } from 'react-router-dom';
 import { flattenGroups, groupModelsByProvider } from '@/components/model/modelList';
+import { getModelDisplayName } from './model-display';
 
-export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
+export function ModelPickerCard({ onDismiss, context }: VoiceCommandCardProps) {
   const { models, isLoading, error } = useModels();
   const { providers: providerAvailability, refetch: refetchAvailability } = useProviderAvailability();
   const navigate = useNavigate();
@@ -69,9 +70,19 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
     onDismiss();
   }, [onDismiss]);
 
-  // Flatten the grouped items so focusedIndex maps to a linear list, in the
-  // same order the groups are painted.
-  const flatItems = useMemo(() => flattenGroups(grouped), [grouped]);
+  // The cursor indexes what is actually painted. `grouped` still holds the
+  // unavailable providers — those render as plain text inside a collapsed
+  // disclosure, not as buttons — so flattening it let ArrowDown walk the cursor
+  // off the end of the visible list and Enter select a model from a provider
+  // already confirmed down, which the user never saw offered.
+  const navigable = useMemo(() => flattenGroups(availableGroups), [availableGroups]);
+
+  // The caller has passed the model in use all along; nothing read it. Announcing
+  // it is the point of a card titled "Switch Model", and on a listbox
+  // aria-selected means "this is the chosen one" — so it cannot double as the
+  // keyboard cursor, which is a different fact about a different row.
+  const currentModelId =
+    typeof context?.currentModelId === 'string' ? context.currentModelId : '';
 
   // Keyboard navigation.
   useEffect(() => {
@@ -80,13 +91,13 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
         onDismiss();
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setFocusedIndex(i => Math.min(i + 1, flatItems.length - 1));
+        setFocusedIndex(i => Math.min(i + 1, Math.max(navigable.length - 1, 0)));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setFocusedIndex(i => Math.max(i - 1, 0));
-      } else if (e.key === 'Enter' && flatItems[focusedIndex]) {
+      } else if (e.key === 'Enter' && navigable[focusedIndex]) {
         e.preventDefault();
-        const model = flatItems[focusedIndex];
+        const model = navigable[focusedIndex];
         // Not a no-op: ChatThread owns the august:model-selected listener and
         // runs the full switch there (stop + handoff when streaming,
         // server-computed handoff notice, auto-continue the interrupted prompt),
@@ -96,7 +107,7 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [focusedIndex, flatItems, onDismiss, handleSelect]);
+  }, [focusedIndex, navigable, onDismiss, handleSelect]);
 
   useEffect(() => {
     setFocusedIndex(0);
@@ -196,11 +207,12 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
         ref={listRef}
         role="listbox"
         aria-label="Available models"
+        aria-activedescendant={navigable[focusedIndex] ? `model-option-${focusedIndex}` : undefined}
         className="max-h-80 overflow-y-auto"
       >
         {availableGroups.map(group => {
           if (group.items.length === 0) return null;
-          const groupStart = flatItems.indexOf(group.items[0]);
+          const groupStart = navigable.indexOf(group.items[0]);
           return (
             <div key={group.provider} role="presentation">
               <div className="px-4 py-1.5 text-2xs uppercase tracking-wide text-muted-foreground font-semibold bg-muted/10">
@@ -209,13 +221,20 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
               {group.items.map((model, idx) => {
                 const globalIdx = groupStart + idx;
                 const isFocused = globalIdx === focusedIndex;
+                const isCurrent = model.id === currentModelId;
                 return (
                   <button
                     key={model.id}
+                    id={`model-option-${globalIdx}`}
                     data-model-item
                     role="option"
-                    aria-selected={isFocused}
+                    // aria-selected is the model in use. The keyboard cursor is a
+                    // separate fact and gets its own background plus a marker,
+                    // so neither signal relies on colour alone.
+                    aria-selected={isCurrent}
+                    aria-current={isCurrent ? 'true' : undefined}
                     onClick={() => handleSelect(model.id, model.provider)}
+                    onMouseEnter={() => setFocusedIndex(globalIdx)}
                     className={cn(
                       'w-full px-4 py-3 flex items-start gap-3 text-left transition-colors',
                       isFocused && 'bg-muted',
@@ -241,7 +260,17 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
                                 : 'Provider status not checked yet'
                           }
                         />
-                        <span className="text-sm font-medium">{model.name}</span>
+                        {/* A model with no `name` from the provider rendered as an
+                         *  empty row — the same gap that made the old search
+                         *  unable to find it. Derived display name as the floor. */}
+                        <span className="text-sm font-medium">
+                          {model.name || getModelDisplayName(model.id)}
+                        </span>
+                        {isCurrent && (
+                          <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-px text-2xs font-medium text-primary">
+                            In use
+                          </span>
+                        )}
                         {model.isFree && (
                           <span className="text-xs px-1.5 py-0.5 rounded bg-success/10 text-success-fg text-success-fg">
                             Free
@@ -286,13 +315,15 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
             <div className="px-4 pb-2">
               {unavailableGroups.map(group => (
                 <p key={group.provider} className="text-xs text-muted-foreground/70 py-0.5">
-                  {group.provider} — {group.items.map(m => m.name).join(', ')}
+                  {group.provider} — {group.items
+                    .map((m) => m.name || getModelDisplayName(m.id))
+                    .join(', ')}
                 </p>
               ))}
             </div>
           </details>
         )}
-        {flatItems.length === 0 && (
+        {navigable.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             No models matching &ldquo;{searchQuery}&rdquo;
           </div>
