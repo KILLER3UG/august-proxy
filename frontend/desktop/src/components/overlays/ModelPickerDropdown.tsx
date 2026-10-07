@@ -14,8 +14,19 @@ import { ChevronDown, ChevronUp, Search, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { modelDisplayParts, getModelDisplayName, formatContextWindow } from '@/sections/chat/ChatThread';
-import { compareModelsRanked } from '@/sections/chat/model-display';
+// Straight from the display module rather than via ChatThread: a popover has no
+// business importing the whole chat tree to format a label.
+import {
+  formatContextWindow,
+  getModelDisplayName,
+  modelDisplayParts,
+} from '@/sections/chat/model-display';
+import {
+  flattenGroups,
+  groupModelsByProvider,
+  groupOffsets,
+  type ModelGroup,
+} from '@/components/model/modelList';
 import type { AggregatedModel } from '@/api/api-client';
 
 /** One source for the panel geometry. These were four loose numbers (400/440
@@ -124,44 +135,34 @@ export function ModelPickerDropdown({ models, value, onChange, disabled }: Model
     if (open) searchRef.current?.focus();
   }, [open]);
 
-  const filtered = searchQuery.trim()
-    ? models.filter(m =>
-        m.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        getModelDisplayName(m.id).toLowerCase().includes(searchQuery.toLowerCase()) ||
-        m.provider.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : models;
+  // Filtering, provider grouping and the within-group ranking all come from the
+  // shared list module, so a model that is pinned lands in the same place here
+  // as it does in the inline picker and the composer.
+  const ranked = groupModelsByProvider(models, searchQuery);
+  const isSearching = searchQuery.trim().length > 0;
 
-  const grouped = Object.entries(
-    filtered.reduce((acc, m) => {
-      if (!acc[m.provider]) acc[m.provider] = [];
-      acc[m.provider].push(m);
-      return acc;
-    }, {} as Record<string, AggregatedModel[]>)
-  ).map(([provider, list]) => {
-    // The shared ranking — pinned, then free, then name. Sorting by isFree and
-    // name here instead meant `pinned` was read by nothing in this component, so
-    // pinning a model changed nothing in the settings lists while it did in the
-    // composer, which is the one job compareModelsRanked exists to do.
-    const sorted = [...list].sort(compareModelsRanked);
-    const isSearching = searchQuery.trim().length > 0;
-    const isExpanded = expandedProviders.has(provider);
-    const visible = isSearching || isExpanded ? sorted : sorted.slice(0, GROUP_PREVIEW);
-    const showCollapse = sorted.length > GROUP_PREVIEW && !isSearching;
-    return { provider, models: sorted, visible, isExpanded, total: sorted.length, showCollapse };
-  });
+  // The preview cap is this surface's own concern — a popover has to stay
+  // scannable — so it is applied after the shared ordering, never inside it.
+  const shown: ModelGroup[] = ranked.map((g) => ({
+    provider: g.provider,
+    items:
+      isSearching || expandedProviders.has(g.provider)
+        ? g.items
+        : g.items.slice(0, GROUP_PREVIEW),
+  }));
 
-  // The rows in the order they are painted. Keyboard navigation has to follow
-  // the same flattened sequence the eye follows, so it is derived from `grouped`
-  // rather than re-walking the tree in a key handler.
-  const rows = grouped.flatMap((g) => g.visible.map((m) => ({ ...m, provider: g.provider })));
+  // Paint order for the keyboard cursor, and where each group starts within it.
+  const rows = flattenGroups(shown);
+  const offsets = groupOffsets(shown);
 
-  // Where each group starts in that flattened order, for row ids and the cursor.
-  const groupOffsets: number[] = [];
-  grouped.reduce((acc, g) => {
-    groupOffsets.push(acc);
-    return acc + g.visible.length;
-  }, 0);
+  const grouped = shown.map((g, gi) => ({
+    provider: g.provider,
+    visible: g.items,
+    isExpanded: expandedProviders.has(g.provider),
+    total: ranked[gi].items.length,
+    showCollapse: ranked[gi].items.length > GROUP_PREVIEW && !isSearching,
+    offset: offsets[gi] ?? 0,
+  }));
 
   useEffect(() => {
     if (!open) return;
@@ -278,12 +279,11 @@ export function ModelPickerDropdown({ models, value, onChange, disabled }: Model
                   {searchQuery.trim() ? `No models match “${searchQuery.trim()}”` : 'No models configured yet'}
                 </div>
               ) : (
-                grouped.map((g, gi) => {
-                  const { provider, visible, isExpanded, total, showCollapse } = g;
+                grouped.map((g) => {
+                  const { provider, visible, isExpanded, total, showCollapse, offset } = g;
                   // Absolute position within the flattened keyboard order, so a
                   // group header between rows cannot desync the cursor from what
                   // is highlighted.
-                  const offset = groupOffsets[gi] ?? 0;
                   return (
                   <div key={provider}>
                     <div className="px-2 py-1 text-2xs uppercase tracking-widest text-muted-foreground/70 font-semibold sticky top-0 z-20 flex justify-between items-center bg-popover">

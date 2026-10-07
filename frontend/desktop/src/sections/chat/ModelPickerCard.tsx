@@ -15,6 +15,7 @@ import { useProviderAvailability } from '@/hooks/useProviderAvailability';
 import { StatusDot } from '@/components/workspace/StatusPill';
 import type { VoiceCommandCardProps } from '@/api/voice/registry';
 import { useNavigate } from 'react-router-dom';
+import { flattenGroups, groupModelsByProvider } from '@/components/model/modelList';
 
 export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
   const { models, isLoading, error } = useModels();
@@ -40,23 +41,13 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
     return map;
   }, [providerAvailability]);
 
-  // Group by provider.
-  const grouped = useMemo(() => {
-    const map = new Map<string, typeof models>();
-    for (const m of models) {
-      const key = m.provider || 'Unknown';
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(m);
-    }
-    return Array.from(map.entries()).map(([provider, items]) => ({
-      provider,
-      items: items.filter(
-        m =>
-          (m.name ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-          m.provider.toLowerCase().includes(searchQuery.toLowerCase()),
-      ),
-    }));
-  }, [models, searchQuery]);
+  // Group by provider and rank inside each group. Shared with the settings
+  // picker: this card sorted by nothing, so a pinned model sat wherever the API
+  // happened to return it while the composer moved it to the top.
+  const grouped = useMemo(
+    () => groupModelsByProvider(models, searchQuery),
+    [models, searchQuery],
+  );
 
   // F2: providers confirmed unavailable sink to a collapsed group with a
   // "check again" action instead of masquerading as first-class options.
@@ -78,11 +69,9 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
     onDismiss();
   }, [onDismiss]);
 
-  // Flatten the grouped items so focusedIndex maps to a linear list.
-  const flatItems = useMemo(
-    () => grouped.flatMap(g => g.items),
-    [grouped],
-  );
+  // Flatten the grouped items so focusedIndex maps to a linear list, in the
+  // same order the groups are painted.
+  const flatItems = useMemo(() => flattenGroups(grouped), [grouped]);
 
   // Keyboard navigation.
   useEffect(() => {
@@ -98,8 +87,10 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
       } else if (e.key === 'Enter' && flatItems[focusedIndex]) {
         e.preventDefault();
         const model = flatItems[focusedIndex];
-        // Select model via a custom event or direct store mutation.
-        // For now, emit a toast and dismiss the card.
+        // Not a no-op: ChatThread owns the august:model-selected listener and
+        // runs the full switch there (stop + handoff when streaming,
+        // server-computed handoff notice, auto-continue the interrupted prompt),
+        // the same path the composer menu uses.
         handleSelect(model.id, model.provider);
       }
     };
