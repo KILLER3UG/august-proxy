@@ -509,7 +509,7 @@ export function ChatLayout() {
         );
         return;
       }
-      handleNewSessionRef.current();
+      void handleNewSessionRef.current();
     };
     window.addEventListener('august:new-session', onNew);
     return () => window.removeEventListener('august:new-session', onNew);

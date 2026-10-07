@@ -802,7 +802,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           });
           persistMessages(ui.id, messages.slice(0, index + 1));
           toast.success('Forked chat — opening the copy…');
-          navigate(`/c/${ui.id}`);
+          void navigate(`/c/${ui.id}`);
         })
         .catch((err: unknown) => {
           toast.error(
@@ -1288,7 +1288,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       }
       if (sessionId) updateSessionModel(sessionId, model.id, model.provider);
       window.setTimeout(() => {
-        handleRegenerateRef.current?.(index);
+        void handleRegenerateRef.current?.(index);
       }, 0);
     },
     [streaming, sessionId, setSelectedModel, userSelectedRef],
@@ -1714,7 +1714,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           hiddenModels={hiddenModels}
           onToggleModel={toggleModelVisibility}
           onNavigate={(p) => {
-            navigate(p);
+            void navigate(p);
           }}
           onRefreshModels={() => {
             void handleRefreshModels();

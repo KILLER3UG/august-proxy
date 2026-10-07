@@ -70,7 +70,7 @@ export function PromptTemplatesSection() {
   }, [refresh]);
 
   const handleCopy = useCallback((content: string) => {
-    navigator.clipboard.writeText(content);
+    void navigator.clipboard.writeText(content);
     toast.success('Template copied to clipboard');
   }, []);
 

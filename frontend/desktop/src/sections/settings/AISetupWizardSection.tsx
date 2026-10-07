@@ -161,7 +161,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
     onboarding.markDone();
     toast.success('Setup complete');
     void qc.invalidateQueries({ queryKey: ['providers'] });
-    navigate('/');
+    void navigate('/');
   };
 
   if (onboarding.isLoading) {
@@ -476,7 +476,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
         ) : null}
         <button
           type="button"
-          onClick={() => { onboarding.skip(); navigate('/'); }}
+          onClick={() => { onboarding.skip(); void navigate('/'); }}
           className="text-2xs text-muted-foreground/60 hover:text-muted-foreground"
           data-testid="wizard-skip"
         >

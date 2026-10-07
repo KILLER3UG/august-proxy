@@ -251,7 +251,7 @@ export function ArenaView() {
       /* evidence is best-effort */
     }
     clearArenaRun();
-    navigate(`/c/${lane.uiSessionId}`);
+    void navigate(`/c/${lane.uiSessionId}`);
   };
 
   const stopLane = (lane: ArenaRunLane) => {

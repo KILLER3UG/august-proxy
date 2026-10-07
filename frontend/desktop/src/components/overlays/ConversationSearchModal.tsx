@@ -61,7 +61,7 @@ export function ConversationSearchModal() {
 
   const go = (hit: SearchHit) => {
     closeConversationSearch();
-    navigate(`/c/${hit.sessionId}`);
+    void navigate(`/c/${hit.sessionId}`);
   };
 
   return (

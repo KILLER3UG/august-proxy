@@ -35,10 +35,10 @@ describe('ConversationStage', () => {
     const { container } = renderStage(false);
     expect(screen.queryByTestId('conv-user')).toBeNull();
 
-    act(() => vi.advanceTimersByTime(300)); // first beat
+    void act(() => vi.advanceTimersByTime(300)); // first beat
     expect(screen.getByTestId('conv-user')).toBeTruthy();
 
-    act(() => vi.advanceTimersByTime(600)); // second (live) beat
+    void act(() => vi.advanceTimersByTime(600)); // second (live) beat
     expect(screen.getByTestId('conv-assistant')).toBeTruthy();
     expect(container.textContent).toContain('booting now');
 
@@ -48,11 +48,11 @@ describe('ConversationStage', () => {
 
   it('reveals every beat and calls onDone when ready from the start', () => {
     const { container, onDone } = renderStage(true);
-    act(() => vi.advanceTimersByTime(400)); // first beat
-    act(() => vi.advanceTimersByTime(400)); // live beat
-    act(() => vi.advanceTimersByTime(400)); // gated closing beat (fast, ready)
+    void act(() => vi.advanceTimersByTime(400)); // first beat
+    void act(() => vi.advanceTimersByTime(400)); // live beat
+    void act(() => vi.advanceTimersByTime(400)); // gated closing beat (fast, ready)
     expect(container.textContent).toContain('all ready');
-    act(() => vi.advanceTimersByTime(900)); // hold, then finish
+    void act(() => vi.advanceTimersByTime(900)); // hold, then finish
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 
@@ -76,9 +76,9 @@ describe('ConversationStage', () => {
       />,
     );
     // A warm start (ready at mount) snaps to the full thread, then reveals.
-    act(() => vi.advanceTimersByTime(120));
+    void act(() => vi.advanceTimersByTime(120));
     expect(container.textContent).toContain('all ready');
-    act(() => vi.advanceTimersByTime(600));
+    void act(() => vi.advanceTimersByTime(600));
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 });

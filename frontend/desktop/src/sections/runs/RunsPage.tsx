@@ -207,7 +207,7 @@ export function RunsPage() {
   /** Abort the run's active stream (if any). */
   const cancelRun = (run: WorkbenchRun) => {
     const uiId = resolveUiSessionId(run.id);
-    stopChatStream(uiId);
+    void stopChatStream(uiId);
     toast.success('Run stopped');
   };
 

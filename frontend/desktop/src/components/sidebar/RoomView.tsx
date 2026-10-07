@@ -164,8 +164,8 @@ export function RoomView() {
   const botsLite = useMemo(() => bots.map((b) => ({ id: b.id, name: b.name })), [bots]);
 
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['bot-rooms'] });
-    if (selected != null) qc.invalidateQueries({ queryKey: ['bot-room', selected] });
+    void qc.invalidateQueries({ queryKey: ['bot-rooms'] });
+    if (selected != null) void qc.invalidateQueries({ queryKey: ['bot-room', selected] });
   };
 
   const createMut = useMutation({

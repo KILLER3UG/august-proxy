@@ -164,7 +164,7 @@ export function OnboardingTour() {
               type="button"
               onClick={() => {
                 if ('action' in stepData && stepData.action) {
-                  navigate(stepData.action.to);
+                  void navigate(stepData.action.to);
                 }
                 if (last) {
                   finish();

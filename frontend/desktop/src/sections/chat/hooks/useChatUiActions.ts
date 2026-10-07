@@ -183,7 +183,7 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
             });
             persistMessages(ui.id, messages);
             toast.success('Branched chat — opening copy…');
-            navigate(`/c/${ui.id}`);
+            void navigate(`/c/${ui.id}`);
           })
           .catch((err: unknown) => {
             toast.error(
