@@ -15,6 +15,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { modelDisplayParts, getModelDisplayName, formatContextWindow } from '@/sections/chat/ChatThread';
+import { compareModelsRanked } from '@/sections/chat/model-display';
 import type { AggregatedModel } from '@/api/api-client';
 
 interface ModelPickerDropdownProps {
@@ -151,11 +152,11 @@ export function ModelPickerDropdown({ models, value, onChange, disabled }: Model
       return acc;
     }, {} as Record<string, AggregatedModel[]>)
   ).map(([provider, list]) => {
-    const sorted = [...list].sort((a, b) => {
-      if (a.isFree && !b.isFree) return -1;
-      if (!a.isFree && b.isFree) return 1;
-      return getModelDisplayName(a.id).localeCompare(getModelDisplayName(b.id));
-    });
+    // The shared ranking — pinned, then free, then name. Sorting by isFree and
+    // name here instead meant `pinned` was read by nothing in this component, so
+    // pinning a model changed nothing in the settings lists while it did in the
+    // composer, which is the one job compareModelsRanked exists to do.
+    const sorted = [...list].sort(compareModelsRanked);
     const isSearching = searchQuery.trim().length > 0;
     const isExpanded = expandedProviders.has(provider);
     const visible = isSearching || isExpanded ? sorted : sorted.slice(0, 5);
@@ -229,6 +230,13 @@ export function ModelPickerDropdown({ models, value, onChange, disabled }: Model
                     </div>
                     {visible.map(m => {
                       const { name, tag } = modelDisplayParts(m.id);
+                      // The provider is already the sticky group header, so the
+                      // id-derived tag repeats it: rows read
+                      // "Sonnet 5anthropic—" — three runs of text with no
+                      // separator and a dash standing in for an unknown context
+                      // size. Show the tag only when it says something the
+                      // header does not (a variant like "openai:latest").
+                      const tagAddsInfo = Boolean(tag) && tag !== provider && !tag.startsWith(`${provider}:`);
                       return (
                         <button
                           key={m.id}
@@ -245,13 +253,15 @@ export function ModelPickerDropdown({ models, value, onChange, disabled }: Model
                         >
                           <span className="truncate flex-1 font-sans">
                             {name}
-                            {tag && (
+                            {tagAddsInfo && (
                               <span className="ml-1.5 text-2xs text-muted-foreground/50 font-normal">{tag}</span>
                             )}
                           </span>
-                          <span className="text-2xs text-muted-foreground/60 shrink-0 tabular-nums">
-                            {formatContextWindow(m.contextWindow)}
-                          </span>
+                          {m.contextWindow ? (
+                            <span className="text-2xs text-muted-foreground/60 shrink-0 tabular-nums">
+                              {formatContextWindow(m.contextWindow)}
+                            </span>
+                          ) : null}
                         </button>
                       );
                     })}
