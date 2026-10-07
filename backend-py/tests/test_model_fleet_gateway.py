@@ -19,6 +19,7 @@ import pytest
 from app.services import memory_store
 from app.services.model_fleet_service import (
     ROLES,
+    chatRoleForTurn,
     getFleet,
     getFleetProviders,
     getModelForRole,
@@ -34,7 +35,21 @@ FLEET_TAB = (
 @pytest.fixture(autouse=True)
 def _init():
     memory_store.init()
+    # updateFleet merges per role, so a role set by one test would leak into the
+    # next and make a precedence assertion mean nothing.
+    from app.services.cognitive_config import update_cognitive
+
+    update_cognitive(
+        {
+            'fleet': dict.fromkeys(ROLES, ''),
+            'fleetProviders': dict.fromkeys(ROLES, ''),
+        }
+    )
     yield
+
+
+def setFleet(models: dict[str, str], providers: dict[str, str] | None = None) -> None:
+    updateFleet({'models': models, 'providers': providers or {}})
 
 
 def _copyRoles() -> set[str]:
@@ -89,3 +104,58 @@ def test_an_unknown_role_is_rejected_in_either_map():
 def test_an_unknown_role_no_longer_answers_with_the_cortex_model():
     updateFleet({'models': {'cortex': 'the-cortex-model'}})
     assert getModelForRole('not_a_role') == ''
+
+
+class TestChatRoleRouting:
+    """surpass #2, finally wired: the chat roles used to save into a config that
+    no reader consulted, so the fields were decoration."""
+
+    def test_an_install_that_configured_nothing_routes_nothing(self):
+        assert chatRoleForTurn(has_image=True, plan_mode=True, max_effort=True) == ('', '', '')
+        assert chatRoleForTurn() == ('', '', '')
+
+    def test_a_capability_role_claims_the_turn_even_when_a_model_was_picked(self):
+        setFleet({'chat_vision': 'vision-m'}, {'chat_vision': 'KiloCode'})
+        assert chatRoleForTurn(has_image=True, explicit_model='picked') == (
+            'chat_vision',
+            'vision-m',
+            'KiloCode',
+        )
+
+    def test_the_default_and_cortex_roles_never_override_a_pick(self):
+        setFleet({'chat_default': 'default-m'})
+        assert chatRoleForTurn(explicit_model='picked') == ('', '', '')
+        assert chatRoleForTurn(explicit_model='') == ('chat_default', 'default-m', '')
+        setFleet({'chat_default': ''}, {})
+        setFleet({'cortex': 'cortex-m'})
+        assert chatRoleForTurn() == ('cortex', 'cortex-m', '')
+
+    def test_vision_beats_plan_beats_slow_and_an_unset_role_falls_through(self):
+        setFleet({'chat_plan': 'plan-m', 'chat_slow': 'slow-m'})
+        got = chatRoleForTurn(has_image=True, plan_mode=True, max_effort=True, explicit_model='x')
+        assert got[0] == 'chat_plan'  # chat_vision is unset, so the next match claims it
+        setFleet({'chat_vision': 'vision-m'})
+        assert chatRoleForTurn(has_image=True, max_effort=True, explicit_model='x')[0] == 'chat_vision'
+        assert chatRoleForTurn(max_effort=True, explicit_model='x')[0] == 'chat_slow'
+        # No condition matches, and an explicit pick blocks default/cortex.
+        assert chatRoleForTurn(explicit_model='x') == ('', '', '')
+
+    def test_a_role_without_a_gateway_still_routes_the_model(self):
+        setFleet({'chat_slow': 'slow-m'})
+        assert chatRoleForTurn(max_effort=True, explicit_model='x') == ('chat_slow', 'slow-m', '')
+
+
+class TestVisionSignal:
+    """`chat_vision` must key off the same fact the wire inliner uses, or the
+    routing picks a vision model for a turn that carries no image (and vice
+    versa)."""
+
+    def test_only_a_stored_image_attachment_counts(self):
+        from app.services.workbench.image_parts import messageHasImage
+
+        receipt = 'look at this [Attached file — stored at .aug/attachments/s1/shot.png. Open it with'
+        assert messageHasImage(receipt) is True
+        assert messageHasImage(receipt.replace('shot.png', 'spec.pdf')) is False
+        assert messageHasImage('no attachment here') is False
+        assert messageHasImage('') is False
+

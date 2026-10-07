@@ -64,8 +64,9 @@ export function ModelPickerDropdown({
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   const selected = value ? findCatalogModel(models, value, modelProvider) ?? null : null;
-  // Without a gateway to go on, every row sharing the id highlights — which is
-  // what an id-only caller (fleet, reflection) genuinely stores.
+  // Without a gateway to go on, every row sharing the id highlights. That is the
+  // documented fallback for a caller that stores only an id — all four current
+  // callers (aliases, fallback, fleet, background review) store a gateway too.
   const isSelected = (m: AggregatedModel) =>
     m.id === value && (!modelProvider || m.provider === modelProvider);
 

@@ -999,9 +999,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     setSelectedModel((prev) => {
       const targetId = userSelectedRef.current || prev?.id || null;
       if (!targetId) return models[0];
-      const matched = models.find(
-        (m) => m.id === targetId || m.id.toLowerCase() === targetId.toLowerCase(),
-      );
+      // Matched on gateway as well as id: the catalog repeats ids across
+      // providers, and a refresh that lands mid-edit would otherwise re-point
+      // the composer at whichever provider lists the id first.
+      const matched = findCatalogModel(models, targetId, prev?.provider);
       if (matched) return matched;
       // Saved selection is not in the freshly-loaded catalog (provider
       // refresh in flight, runtime/environment switch): keep the previous

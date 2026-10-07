@@ -361,8 +361,8 @@ staged only through `POST /api/brain/backups/restore`
 | Concern | Source of truth | Notes |
 |---------|-----------------|--------|
 | Chat sessions | SQLite workbench blob + messages | JSON backup optional |
-| Model fleet | `model_fleet_service` → `auxiliary.cognitive.fleet` | Settings without restart |
-| Cognitive config | `auxiliary.cognitive.{boot,features,fleet,orchestrator}` | Shared tree |
+| Model fleet | `model_fleet_service` → `auxiliary.cognitive.fleet` + `.fleetProviders` | Settings without restart. Read a role only through `resolveRoleModel()` / `chatRoleForTurn()` — a model id does not identify a gateway |
+| Cognitive config | `auxiliary.cognitive.{boot,features,fleet,fleetProviders,orchestrator}` | Shared tree |
 | Recall ranking | BM25 / FTS over the brain SQLite | **No vector store and no embedding model** — `fact_retrieval.py`, `tools/retrieval.py` and `text_similarity.py` each state this. Do not add one without deleting the contrary comments |
 | Consolidation | Cognitive scheduler mutex | Last run in memory kv (`consolidation:last_run`) |
 | Proxy managed tools | `tool_registry` via `proxy_tools` | Real dispatch only |

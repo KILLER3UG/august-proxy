@@ -19,12 +19,16 @@ const FLEET = {
     cerebellum: 'claude-3-haiku-20240307',
     hippocampus: 'gpt-4o-mini',
     prefrontal: 'claude-3-5-sonnet-20240620',
+    chat_chain: 'a,b',
+    chat_context_promotion: 'gpt-4o-mini',
   },
   providers: {
     cortex: '',
     cerebellum: 'anthropic',
     hippocampus: 'openai',
     prefrontal: 'anthropic',
+    chat_chain: '',
+    chat_context_promotion: 'openai',
   },
 };
 
@@ -81,8 +85,12 @@ describe('v4.1 — ModelFleetTab', () => {
       expect(screen.getByTestId('fleet-hippocampus-field')).toBeTruthy();
       expect(screen.getByTestId('fleet-prefrontal-field')).toBeTruthy();
     });
-    // A role list hardcoded in the component is how five unsavable fields were
-    // born; the server owns it now.
+    // A role the workbench resolves as a (model, gateway) pair cannot be a
+    // free-text box — the gateway half would be unsavable. Only the chain, which
+    // is a list of ids meant to cross gateways, stays text.
+    expect(document.querySelector('[data-testid="fleet-chat_chain-input"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="fleet-chat_context_promotion-input"]')).toBeNull();
+    // A role the server did not return renders nothing at all.
     expect(screen.queryByTestId('fleet-chat_smol-field')).toBeNull();
     expect(screen.queryByTestId('fleet-chat_vision-field')).toBeNull();
   });
@@ -124,7 +132,7 @@ describe('v4.1 — ModelFleetTab', () => {
     });
     fireEvent.click(screen.getByTestId('fleet-save'));
     const body = await putBody(fetchMock);
-    expect(Object.values(body.models)).toEqual(['', '', '', '']);
-    expect(Object.values(body.providers)).toEqual(['', '', '', '']);
+    expect(Object.values(body.models)).toEqual(['', '', '', '', '', '']);
+    expect(Object.values(body.providers)).toEqual(['', '', '', '', '', '']);
   });
 });

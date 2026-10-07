@@ -2435,7 +2435,28 @@ async def _sendWorkbenchMessageStreamImpl(
     effectiveEffort = resolveEffectiveEffort(effort or as_str(session.metadata.get('effort', '')), session)
     # Persist so later turns / BTW inherit the composer effort selection.
     session.metadata['effort'] = effectiveEffort
-    # The model the user picked always wins — no fleet/role override.
+    # The model the user picked always wins — unless a chat role they configured
+    # claims the turn on a condition they also chose (an image attached, plan
+    # mode, max effort). With no chat role configured this is a no-op, so the
+    # default path is unchanged; `chat_default`/`cortex` only fill a turn that
+    # arrived with no pick at all. See model_fleet_service.chatRoleForTurn.
+    from app.services.model_fleet_service import chatRoleForTurn as _fleetChatRole
+    from app.services.workbench.image_parts import messageHasImage as _messageHasImage
+
+    role, roleModel, roleProvider = _fleetChatRole(
+        has_image=_messageHasImage(message),
+        plan_mode=as_str(getattr(session, 'agent_mode', '') or '') in ('orchestrator', 'planner'),
+        max_effort=effectiveEffort == 'max',
+        explicit_model=model or '',
+    )
+    if role and roleModel:
+        logger.info(
+            'chat role routing: %s owns this turn (model=%s provider=%s)',
+            role,
+            roleModel,
+            roleProvider or 'unconfigured',
+        )
+        model, modelProvider = roleModel, roleProvider
     resolvedProvider, resolvedModel = _resolveChatLlm(
         model=model or '',
         model_provider=modelProvider or '',

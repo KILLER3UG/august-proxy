@@ -25,7 +25,7 @@ import {
 const ROLE_COPY: Partial<Record<ModelFleetRole, { label: string; hint: string }>> = {
   cortex: {
     label: 'Cortex model',
-    hint: 'Main reasoning model for the conscious chat loop. Empty = use the session model.',
+    hint: 'Main reasoning model for the conscious chat loop. Claims a turn that has no model picked; empty = the session model.',
   },
   cerebellum: {
     label: 'Cerebellum model',
@@ -41,7 +41,7 @@ const ROLE_COPY: Partial<Record<ModelFleetRole, { label: string; hint: string }>
   },
   chat_default: {
     label: 'Chat — default role',
-    hint: 'Used for ordinary turns when routing is on. Empty = your selected model.',
+    hint: 'Chat turns that arrive with no model picked. It never overrides the composer selection — use the three roles below for that.',
   },
   chat_smol: {
     label: 'Chat — smol (subagents)',
@@ -49,19 +49,19 @@ const ROLE_COPY: Partial<Record<ModelFleetRole, { label: string; hint: string }>
   },
   chat_slow: {
     label: 'Chat — slow (deep reasoning)',
-    hint: 'Used when effort is set to max. Empty = selected model.',
+    hint: 'Claims a turn whose effort is max, in place of the selected model.',
   },
   chat_plan: {
     label: 'Chat — plan mode',
-    hint: 'Used for plan-mode turns. Empty = selected model.',
+    hint: 'Claims a plan/orchestrator turn, in place of the selected model.',
   },
   chat_vision: {
     label: 'Chat — vision',
-    hint: 'Used when the turn has image attachments. Empty = selected model.',
+    hint: 'Claims a turn with an image attached — a text-only model cannot read it. Highest priority.',
   },
   chat_chain: {
     label: 'Chat — fallback chain',
-    hint: 'Comma-separated model ids tried after the primary fails (429/5xx), in order.',
+    hint: 'Comma-separated model ids tried after the primary fails (429/5xx), in order. Each resolves by id alone, so an id two gateways share lands on the first.',
   },
   chat_context_promotion: {
     label: 'Chat — context promotion',
@@ -143,7 +143,9 @@ export function ModelFleetTab() {
             <span className="font-mono">stepfun/step-3.7-flash</span> is listed by
             OpenRouter and KiloCode both — so the gateway is part of the choice,
             not a detail. Leaving a field empty falls back to the chat session's
-            model.
+            model. Chat routing is opt-in by configuration: until one of the
+            chat_* roles below is filled, every turn runs on the model you
+            picked in the composer.
           </p>
         </div>
 
@@ -151,10 +153,11 @@ export function ModelFleetTab() {
           {roles.map((role) => {
             const copy = ROLE_COPY[role];
             const value = active.models[role] ?? '';
-            // The chain and the promotion sibling stay free-text: a chain is a
-            // list of ids that may cross gateways on purpose, and both can name
-            // a model the catalog has not loaded yet.
-            const freeText = role === 'chat_chain' || role === 'chat_context_promotion';
+            // Only the chain stays free-text: it is a comma-separated LIST of ids
+            // that is meant to cross gateways, so no single gateway pairs with it.
+            // `chat_context_promotion` names one model and the workbench reads that
+            // model WITH its gateway, so it has to be a picker.
+            const freeText = role === 'chat_chain';
             return (
               <div key={role} data-testid={`fleet-${role}-field`}>
                 <WorkspaceField

@@ -160,17 +160,29 @@ def main() -> int:
             {k: type(v).__name__ for k, v in tree.items()},
         )
 
-        # Fleet cache bust: PUT path equivalent
+        # Fleet cache bust: PUT path equivalent. Written and restored as a PAIR:
+        # a flat patch leaves the stored gateway behind, so the next reader would
+        # pair the smoke model with the user's real provider.
         model_fleet_service.invalidate_cache()
         before = model_fleet_service.getModelForRole('cerebellum')
-        ok_f, err_f, fleet = model_fleet_service.updateFleet({'cerebellum': 'smoke-fleet-model-xyz'})
+        beforeProvider = model_fleet_service.getFleetProviders().get('cerebellum', '')
+        ok_f, err_f, fleet = model_fleet_service.updateFleet(
+            {'models': {'cerebellum': 'smoke-fleet-model-xyz'}, 'providers': {'cerebellum': ''}}
+        )
         after = model_fleet_service.getModelForRole('cerebellum')
         check('fleet.put_visible', ok_f and after == 'smoke-fleet-model-xyz', {'before': before, 'after': after, 'err': err_f})
         # restore previous if we had one
         if before and before != 'smoke-fleet-model-xyz':
-            model_fleet_service.updateFleet({'cerebellum': before})
+            model_fleet_service.updateFleet(
+                {'models': {'cerebellum': before}, 'providers': {'cerebellum': beforeProvider}}
+            )
         else:
-            model_fleet_service.updateFleet({'cerebellum': model_fleet_service.DEFAULTS['cerebellum']})
+            model_fleet_service.updateFleet(
+                {
+                    'models': {'cerebellum': model_fleet_service.DEFAULTS['cerebellum']},
+                    'providers': {'cerebellum': ''},
+                }
+            )
 
         # Proxy tools: no Stub: success
         import asyncio

@@ -49,6 +49,23 @@ _cache: dict[str, tuple[float, int, dict[str, object]]] = {}
 _CACHE_MAX = 64
 
 
+def messageHasImage(message: str) -> bool:
+    """True when a turn references a stored attachment whose extension is an image.
+
+    Built from the same two facts this module already owns — the receipt regex
+    and `_IMAGE_EXTS` — so the fleet's `chat_vision` role and the wire inliner can
+    never disagree about what a vision turn is. Deliberately does not touch the
+    filesystem: model selection must not depend on whether the bytes are still
+    there, only on what the user attached.
+    """
+    if not message:
+        return False
+    return any(
+        Path(match.strip()).suffix.lower() in _IMAGE_EXTS
+        for match in _STORED_AT_RE.findall(message)
+    )
+
+
 def _loadImageBlock(path: str) -> tuple[dict[str, object], int] | None:
     """One image as an Anthropic-style base64 block, plus its raw byte size.
 

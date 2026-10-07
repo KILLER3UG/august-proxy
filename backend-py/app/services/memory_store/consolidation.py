@@ -69,9 +69,15 @@ def _model_complete(system: str, user: str) -> str:
     loop), so it owns a short-lived event loop here rather than assuming one.
     """
     try:
+        from app.services.model_fleet_service import resolveRoleModel
         from app.services.workbench.providers import make_review_llm_client
 
-        reviewLlm = make_review_llm_client(None, '')
+        # The hippocampus fleet role is what Settings → Model Fleet promises for
+        # memory consolidation, and until now nothing read it: this passed an
+        # empty hint, so the call landed on whatever the review client guessed.
+        # Unset, the pair is ('', '') and the behavior is exactly the old one.
+        model, provider = resolveRoleModel('hippocampus')
+        reviewLlm = make_review_llm_client(None, model, provider)
         if reviewLlm is None:
             return ''
         prompt = [

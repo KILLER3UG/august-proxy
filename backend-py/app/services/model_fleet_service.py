@@ -60,6 +60,65 @@ def resolveRoleModel(role: str) -> tuple[str, str]:
     return getModelForRole(role), getFleetProviders().get(role, '')
 
 
+#: The roles that choose the model for a CHAT turn, in precedence order.
+#: Vision first because it is a capability constraint (a text-only model cannot
+#: read the attachment at all), then the mode preference, then the effort
+#: preference. ``cortex`` sits under ``chat_default`` because both are documented
+#: as "the conscious chat loop" model, and the latter is the newer name.
+CHAT_ROUTING_ROLES: tuple[str, ...] = (
+    'chat_vision',
+    'chat_plan',
+    'chat_slow',
+    'chat_default',
+    'cortex',
+)
+
+#: Roles that override a model the user picked for this message, because the
+#: condition — an image, plan mode, max effort — is something they asked for
+#: explicitly. ``chat_default`` and ``cortex`` are NOT in this set: they fill a
+#: turn that arrived with no pick, so setting them never makes the composer's
+#: model selector lie.
+_CAPABILITY_ROLES = frozenset({'chat_vision', 'chat_plan', 'chat_slow'})
+
+
+def chatRoleForTurn(
+    *,
+    has_image: bool = False,
+    plan_mode: bool = False,
+    max_effort: bool = False,
+    explicit_model: str = '',
+) -> tuple[str, str, str]:
+    """surpass #2 — the chat role that owns this turn.
+
+    Returns ``(role, model, provider)`` with an empty ``role`` when routing does
+    not apply. It never applies on an install that configured none of these
+    roles: an absent key means OFF, so the default turn path is byte-identical to
+    before this existed. When several conditions hold, the first *configured*
+    role wins — leaving ``chat_plan`` empty is the documented way to make max
+    effort beat plan mode.
+    """
+    fleet = getFleet()
+    if not any((fleet.get(role) or '').strip() for role in CHAT_ROUTING_ROLES):
+        return '', '', ''
+    wanted = [
+        role
+        for role, active in (
+            ('chat_vision', has_image),
+            ('chat_plan', plan_mode),
+            ('chat_slow', max_effort),
+        )
+        if active
+    ]
+    if not explicit_model:
+        wanted += ['chat_default', 'cortex']
+    providers = getFleetProviders()
+    for role in wanted:
+        model = (fleet.get(role) or '').strip()
+        if model:
+            return role, model, (providers.get(role) or '').strip()
+    return '', '', ''
+
+
 def invalidate_cache() -> None:
     """No-op retained for API compatibility (always re-reads config)."""
     return None

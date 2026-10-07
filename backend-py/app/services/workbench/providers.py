@@ -29,16 +29,6 @@ from app.services.workbench.effort import (
 logger = logging.getLogger('workbench.providers')
 
 
-def background_task_model(task_key: str, chat_model: str) -> str:
-    """Resolve the model to use for a background task.
-
-    Uses the per-task model from the background-review config when background
-    tasks are enabled and a model is configured; otherwise falls back to the
-    chat session's model.
-    """
-    return chat_model
-
-
 def make_review_llm_client(
     main_provider: dict[str, object] | None,
     review_model_hint: str = '',
@@ -1362,7 +1352,6 @@ async def call_responses_workbench(
 
 
 # Private camelCase aliases for back-compat (tests / workbench / subagent)
-_backgroundTaskModel = background_task_model
 _makeReviewLlmClient = make_review_llm_client
 _resolveWorkbenchProvider = resolve_workbench_provider
 _resolveModel = resolve_model

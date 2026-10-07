@@ -74,7 +74,10 @@ def test_fallback_applies_when_no_alias_hint(monkeypatch):
         fs, 'getFallback', lambda: {'enabled': True, 'mode': 'smart', 'provider': 'Fallback', 'model': 'fb-model'}
     )
     monkeypatch.setattr(rr, 'resolve_for_model', lambda m, p='': {'name': p or 'Fallback', 'apiMode': 'anthropicMessages'})
-    monkeypatch.setattr(mfs, 'getModelForRole', lambda role, workspace='': '')
+    # The smol role is read as a PAIR now; stubbing only the model half would let
+    # a missing gateway go unnoticed in exactly the test that pins the fallback.
+    monkeypatch.setattr(mfs, 'resolveRoleModel', lambda role: ('', ''))
+    monkeypatch.setattr(mfs, 'getModelForRole', lambda role: '')
     used_models: list[str] = []
     collected: list[dict] = []
 

@@ -123,6 +123,7 @@ export function FallbackTab() {
             <ModelPickerDropdown
               models={availableModels}
               value={activeFallback.model}
+              modelProvider={activeFallback.provider}
               onChange={(modelId, provider) => {
                 const next = { ...activeFallback, model: modelId, provider };
                 setFallbackEdits(next);

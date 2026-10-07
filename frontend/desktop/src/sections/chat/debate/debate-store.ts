@@ -91,7 +91,12 @@ export function isDebateSession(sessionId: string): boolean {
 
 export function debateRoundMessage(run: DebateRun, round: number): string {
   const debater = nextDebater(run);
-  const other = run.models.find((m) => m.modelId !== debater.modelId);
+  // Two lanes may share a model id on different gateways (the launch modal
+  // allows exactly that comparison), so the opponent is the lane that differs
+  // in id OR gateway — an id-only match silently named no one.
+  const other = run.models.find(
+    (m) => m.modelId !== debater.modelId || m.provider !== debater.provider,
+  );
   const r = round + 1; // 1-based display
   if (r === 1) {
     return run.prompt;

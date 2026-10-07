@@ -102,6 +102,13 @@ export function modelDisplayParts(id: string | null | undefined): { name: string
   // where every other catalog uses a hyphen (`…-free`). The hyphen form was the only
   // one VARIANT_TAGS knew, so the colon form fell through to titleCase and rendered
   // as "Laguna S 2.1:Free" — the tier glued to the name with a capital F.
+  //
+  // The peel only sees a colon suffix that survives `stripProviderPrefix`, which
+  // cuts at the FIRST `[/:]` — so a bare `laguna-s-2.1:free` (no vendor prefix)
+  // still parses as vendor `laguna-s-2.1` + model `free`. Every entry in the live
+  // catalog is vendor-prefixed, so that case is documented rather than handled:
+  // changing `stripProviderPrefix` would move `getModelDisplayName`, which sorts
+  // the pickers and labels sessions.
   const tier = /:([\w.-]+)$/.exec(base);
   const suffix = tier ? titleCase(tier[1]) : '';
   let cleaned = tier ? base.slice(0, tier.index) : base;

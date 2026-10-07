@@ -202,6 +202,16 @@ role set is `model_fleet_service.ROLES`, and the settings tab renders whatever t
 server returns — a role the UI offers that the service does not know rejects the
 whole patch with 400, which is how five fleet fields used to discard the other
 six along with themselves.
+
+**Chat role routing** (`chatRoleForTurn`) is opt-in by configuration: until one of
+`chat_vision`, `chat_plan`, `chat_slow`, `chat_default` or `cortex` is filled, a
+turn runs on exactly the model the composer picked. Once one is set, a turn is
+claimed in that order — vision (an image is attached), plan (agent mode is
+orchestrator/planner), then slow (effort is `max`) — and the first *configured*
+role wins, so leaving `chat_plan` empty is how you make max effort beat plan
+mode. Those three override the selected model because the condition was chosen
+explicitly; `chat_default` and `cortex` only fill a turn that arrived with no
+model at all. The routing decision is logged at info level with the role name.
 `maxWorkbenchToolLoops` here overrides the workbench tool-round cap (default `0 = uncapped`).
 
 **Turn budget ladder** — three soft per-turn ceilings, each **off by default**
