@@ -7,13 +7,15 @@ configured or disabled, they fall back to the chat session's model (the
 default). Restored in 0.17.0 — the config router and the Models → Background &
 Reflection settings tab both depend on it.
 
-Three independent model selectors are supported:
-  • reviewModel      — reviewing and summarising conversations
-  • reflectionModel  — agent self-evaluation / learning loop
-  • autoMemoryModel  — extracting facts and storing them in memory
+Three independent model selectors are supported, each with the gateway that
+serves it — a model id does not identify a provider:
+  • reviewModel      + reviewModelProvider      — reviewing and summarising
+  • reflectionModel  + reflectionModelProvider — self-evaluation / learning loop
+  • autoMemoryModel  + autoMemoryModelProvider — extracting and storing facts
 
-Each field is a model alias/id that resolves to a real provider+model.
-When empty, the chat session's model is used for that task.
+When a selector is empty the chat session's model is used for that task. An
+empty provider means "resolve by id", which is the legacy behaviour and picks
+whichever configured provider lists that id first.
 """
 
 from __future__ import annotations
@@ -28,8 +30,11 @@ from app.services.memory_store import record_config_audit
 _DEFAULTConfig: dict[str, object] = {
     'enabled': True,
     'reviewModel': '',
+    'reviewModelProvider': '',
     'reflectionModel': '',
+    'reflectionModelProvider': '',
     'autoMemoryModel': '',
+    'autoMemoryModelProvider': '',
 }
 
 
@@ -60,6 +65,9 @@ def saveConfig(
     review_model: str | None = None,
     reflection_model: str | None = None,
     auto_memory_model: str | None = None,
+    review_model_provider: str | None = None,
+    reflection_model_provider: str | None = None,
+    auto_memory_model_provider: str | None = None,
     actor: str = 'system',
 ) -> dict[str, object]:
     """Update background review config fields (partial merge).
@@ -82,7 +90,33 @@ def saveConfig(
         current['reflectionModel'] = reflection_model
     if auto_memory_model is not None:
         current['autoMemoryModel'] = auto_memory_model
+    if review_model_provider is not None:
+        current['reviewModelProvider'] = review_model_provider
+    if reflection_model_provider is not None:
+        current['reflectionModelProvider'] = reflection_model_provider
+    if auto_memory_model_provider is not None:
+        current['autoMemoryModelProvider'] = auto_memory_model_provider
     result = {k: current.get(k, _DEFAULTConfig.get(k)) for k in _DEFAULTConfig}
     _writeConfig(result)
     record_config_audit('background_review', 'update', actor, before=before, after=dict(result))
     return dict(result)
+
+
+#: The three background selectors, each as ``(modelKey, providerKey)``. They are
+#: read together by ``resolveSelector`` and never apart — a model id does not
+#: identify a gateway, and resolving by id alone ran the task on whichever
+#: configured provider happened to list that model first.
+SELECTORS: dict[str, tuple[str, str]] = {
+    'review': ('reviewModel', 'reviewModelProvider'),
+    'reflection': ('reflectionModel', 'reflectionModelProvider'),
+    'autoMemory': ('autoMemoryModel', 'autoMemoryModelProvider'),
+}
+
+
+def resolveSelector(task: str) -> tuple[str, str]:
+    """``(model, provider)`` for 'review' | 'reflection' | 'autoMemory'."""
+    keys = SELECTORS.get(task)
+    if not keys:
+        return '', ''
+    cfg = getConfig()
+    return str(cfg.get(keys[0]) or ''), str(cfg.get(keys[1]) or '')

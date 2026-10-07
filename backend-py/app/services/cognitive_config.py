@@ -71,6 +71,7 @@ def get_cognitive() -> dict[str, object]:
     nested_boot = as_dict(cognitive.get('boot'), {})
     nested_features = as_dict(cognitive.get('features'), {})
     nested_fleet = as_dict(cognitive.get('fleet'), {})
+    nested_providers = as_dict(cognitive.get('fleetProviders'), {})
     nested_orch = as_dict(cognitive.get('orchestrator'), {})
 
     boot = _merge_bool_map(DEFAULT_BOOT, nested_boot)
@@ -82,6 +83,12 @@ def get_cognitive() -> dict[str, object]:
     for role in FLEET_ROLES:
         if role in nested_fleet and isinstance(nested_fleet[role], str):
             fleet[role] = str(nested_fleet[role])
+    # The gateway per role. Both maps carry exactly FLEET_ROLES as keys, so a
+    # reader can never confuse "not configured" with "not a role".
+    providers = dict.fromkeys(FLEET_ROLES, '')
+    for role in FLEET_ROLES:
+        if role in nested_providers and isinstance(nested_providers[role], str):
+            providers[role] = str(nested_providers[role])
 
     master = os.environ.get('AUGUST_COGNITIVE_BOOT', '1').strip().lower()
     if master in ('0', 'false', 'no', 'off'):
@@ -115,6 +122,7 @@ def get_cognitive() -> dict[str, object]:
         'boot': boot,
         'features': features,
         'fleet': fleet,
+        'fleetProviders': providers,
         'orchestrator': {**DEFAULT_ORCHESTRATOR, **nested_orch},
         'consolidation_interval_s': interval,
     }
@@ -242,7 +250,7 @@ def update_cognitive(patch: dict[str, object]) -> dict[str, object]:
         cognitive = {}
         aux['cognitive'] = cognitive
 
-    for section in ('boot', 'features', 'fleet', 'orchestrator'):
+    for section in ('boot', 'features', 'fleet', 'fleetProviders', 'orchestrator'):
         if section in patch and isinstance(patch[section], dict):
             current = cognitive.get(section)
             if not isinstance(current, dict):

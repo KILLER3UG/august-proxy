@@ -1756,17 +1756,19 @@ export interface paths {
         };
         /**
          * Getmodelfleet
-         * @description v4.1: Return the merged fleet (defaults + user overrides) — see §10.
+         * @description v4.1: Return the merged fleet — models and gateways, one key per role.
          */
         get: operations["getModelFleet_api_config_model_fleet_get"];
         /**
          * Putmodelfleet
          * @description v4.1: Update model fleet config (partial).
          *
-         *     Body is a JSON object of any subset of {cortex, cerebellum, hippocampus,
-         *     prefrontal}. Each role must be a string (empty allowed for `cortex`,
-         *     which means "use the session's primary model"). Unknown roles are
-         *     rejected with 400.
+         *     Body is either the wrapped form ``{models: {role: id}, providers: {role:
+         *     name}}`` or the legacy flat ``{role: id}``. Every key must name a role the
+         *     service knows (see ``model_fleet_service.ROLES``) and hold a string; an
+         *     empty string means "unset — fall back to the session model". Unknown roles
+         *     are rejected with 400, which is what keeps a role the UI offers from being
+         *     silently unsavable.
          *
          *     We accept `dict` rather than a strict pydantic model so the service
          *     layer can return a single 400 with the offending role name (pydantic
@@ -4912,6 +4914,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/restore/{trashId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restoreskill
+         * @description Undo a delete: restore a trashed skill directory (24h window).
+         */
+        post: operations["restoreSkill_api_skills_restore__trashId__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills/{name}": {
         parameters: {
             query?: never;
@@ -7738,12 +7760,18 @@ export interface components {
         BackgroundReviewUpdate: {
             /** Automemorymodel */
             autoMemoryModel?: string | null;
+            /** Automemorymodelprovider */
+            autoMemoryModelProvider?: string | null;
             /** Enabled */
             enabled?: boolean | null;
             /** Reflectionmodel */
             reflectionModel?: string | null;
+            /** Reflectionmodelprovider */
+            reflectionModelProvider?: string | null;
             /** Reviewmodel */
             reviewModel?: string | null;
+            /** Reviewmodelprovider */
+            reviewModelProvider?: string | null;
         };
         /**
          * BackupCreate
@@ -17454,6 +17482,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restoreSkill_api_skills_restore__trashId__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trashId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

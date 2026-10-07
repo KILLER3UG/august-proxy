@@ -447,7 +447,8 @@ class TestJudgeIndependence:
             return '{"verdicts": []}'
 
         monkeypatch.setattr(
-            'app.services.code_review._resolve_judge_model_hint', lambda explicit='': 'model-x'
+            'app.services.code_review._resolve_judge_model_hint',
+            lambda explicit='': ('model-x', ''),
         )
         monkeypatch.setattr(
             'app.services.code_review._resolve_model_id', lambda hint: 'model-x'
@@ -468,7 +469,8 @@ class TestJudgeIndependence:
     @pytest.mark.asyncio
     async def testIndependentJudgeRuns(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr(
-            'app.services.code_review._resolve_judge_model_hint', lambda explicit='': 'judge-model'
+            'app.services.code_review._resolve_judge_model_hint',
+            lambda explicit='': ('judge-model', ''),
         )
         monkeypatch.setattr(
             'app.services.code_review._resolve_model_id',
@@ -491,7 +493,8 @@ class TestJudgeIndependence:
     @pytest.mark.asyncio
     async def testNoJudgeConfiguredKeepsFindings(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr(
-            'app.services.code_review._resolve_judge_model_hint', lambda explicit='': ''
+            'app.services.code_review._resolve_judge_model_hint',
+            lambda explicit='': ('', ''),
         )
         result = await run_code_review_async(
             workspace=str(tmp_path),

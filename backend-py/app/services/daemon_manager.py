@@ -499,15 +499,19 @@ class DaemonManager:
         result = DaemonResult()
         try:
             modelRole = 'cerebellum'
+            cerebellumModel = ''
+            cerebellumProvider = ''
             try:
-                from app.services.workbench.model_fleet import getModelForRole
+                from app.services.workbench.model_fleet import resolveRoleModel
 
-                cerebellumModel = getModelForRole(modelRole)
+                cerebellumModel, cerebellumProvider = resolveRoleModel(modelRole)
             except Exception:
-                cerebellumModel = None
+                pass
             if cerebellumModel:
 
-                output = await self._callCerebellum(cerebellumModel, as_str(info.get('prompt'), ''))
+                output = await self._callCerebellum(
+                    cerebellumModel, as_str(info.get('prompt'), ''), cerebellumProvider
+                )
                 result.output = output
                 result.status = 'completed'
             else:
@@ -518,7 +522,7 @@ class DaemonManager:
             result.error = str(exc)
         return result
 
-    async def _callCerebellum(self, model: str, prompt: str) -> str:
+    async def _callCerebellum(self, model: str, prompt: str, provider_hint: str = '') -> str:
         """Call the cerebellum fleet model with a real provider generate path.
 
         Uses ``model_fleet`` / provider resolver + client ``generate``.
@@ -531,7 +535,10 @@ class DaemonManager:
             from app.providers import resolver as providerResolver
             from app.providers.clients import getClient
 
-            provider = providerResolver.resolve(model)
+            # Prefer the gateway the role was configured with: asked for a bare
+            # model id, ``resolve()`` returns the FIRST provider that lists it and
+            # holds a key, so a model served by two gateways runs on the wrong one.
+            provider = providerResolver.resolve(provider_hint or model)
             if not provider:
                 return f'[daemon: no provider resolved for model {model!r}]'
             client = getClient(provider)

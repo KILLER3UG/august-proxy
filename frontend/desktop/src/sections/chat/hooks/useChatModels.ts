@@ -10,6 +10,7 @@ import {
 } from '@/components/overlays/ModelVisibilityModal';
 import {
   type ModelItem,
+  findCatalogModel,
   modelFromSession,
   loadLastModel,
   isLikelyReasoningModel,
@@ -115,9 +116,7 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
     if (!sessionId || !activeSession?.model) return;
     userSelectedRef.current = activeSession.model;
     const modelId = activeSession.model;
-    const fromCatalog = models.find(
-      (m) => m.id === modelId || m.id.toLowerCase() === modelId.toLowerCase(),
-    );
+    const fromCatalog = findCatalogModel(models, modelId, activeSession.provider);
     setSelectedModel((prev) => {
       if (fromCatalog) return fromCatalog;
       if (prev?.id === modelId && prev.provider === activeSession.provider) {
@@ -141,11 +140,10 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
   // When the catalog hydrates/refreshes, upgrade a stale selected model
   // (localStorage / session stub often carried a fake 128k window).
   const selectedId = selectedModel?.id;
+  const selectedProvider = selectedModel?.provider;
   useEffect(() => {
     if (!selectedId || models.length === 0) return;
-    const fromCatalog = models.find(
-      (m) => m.id === selectedId || m.id.toLowerCase() === selectedId.toLowerCase(),
-    );
+    const fromCatalog = findCatalogModel(models, selectedId, selectedProvider);
     if (!fromCatalog) return;
     setSelectedModel((prev) => {
       if (!prev || (prev.id !== fromCatalog.id && prev.id.toLowerCase() !== fromCatalog.id.toLowerCase())) {
@@ -167,7 +165,7 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
       }
       return fromCatalog;
     });
-  }, [models, selectedId]);
+  }, [models, selectedId, selectedProvider]);
 
   return {
     models,

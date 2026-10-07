@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ModelEffortMenu, chipModelLabel } from '../ModelEffortMenu';
 import { providersApi } from '@/api/providers';
@@ -36,15 +36,15 @@ const MODELS: ModelItem[] = [
   },
 ];
 
-function setup(selected: ModelItem | null = MODELS[2]) {
+function setup(selected: ModelItem | null = MODELS[2], list: ModelItem[] = MODELS) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={qc}>
       <ModelEffortMenu
-        models={MODELS}
-        visibleModels={MODELS}
+        models={list}
+        visibleModels={list}
         loading={false}
         selected={selected}
         onSelect={() => {}}
@@ -58,6 +58,20 @@ function setup(selected: ModelItem | null = MODELS[2]) {
   );
 }
 
+/** The flyout is remounted on every provider hover, so re-query it each time. */
+function flyout(): HTMLElement {
+  const el = document.querySelector('[data-testid="provider-models-flyout"]');
+  if (!el) throw new Error('model flyout is not open');
+  return el as HTMLElement;
+}
+
+/** Rows are located by the `provider/id` tooltip the label deliberately hides. */
+function modelRow(provider: string, id: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(
+    `[data-testid="model-option"][title="${provider}/${id}"]`,
+  );
+}
+
 function openModelsPane() {
   fireEvent.click(document.querySelector('[data-testid="model-chip"]')!);
 }
@@ -67,9 +81,20 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     window.localStorage.clear();
   });
 
-  it('chip label is Provider/model like the reference composer', () => {
-    expect(chipModelLabel(MODELS[2])).toBe('KiloCode/ox-alpha');
+  it('chip label is Provider · friendly name, never a truncated id', () => {
+    // Was `KiloCode/ox-alpha`, documented as "matching the reference composer".
+    // An identifier truncated at 34 characters is not a label: the chip read
+    // "KiloCode/ox-alpha-free" → "KiloCode/ox-alp…" while the list under it said
+    // "Ox Alpha Free". The exact id lives in the tooltip now.
+    expect(chipModelLabel(MODELS[2])).toBe('KiloCode · Ox Alpha');
+    expect(chipModelLabel(MODELS[3])).toBe('KiloCode · Ox Alpha Free');
     expect(chipModelLabel(null)).toBe('Model');
+    // The 34-character ceiling still binds, it just no longer cuts an id in
+    // half on the way — a long catalog name is truncated instead.
+    const long = chipModelLabel({ ...MODELS[0], name: 'DeepSeek V4 Flash Instruct Reasoner Plus' });
+    expect(long).toBe('OpenCode Zen · DeepSeek V4 Flash…');
+    expect(long.length).toBe(33);
+    expect(long.endsWith('…')).toBe(true);
   });
 
   it('opens to a provider list; hovering a provider reveals its models in a flyout', () => {
@@ -79,12 +104,17 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     expect(document.querySelector('[data-testid="provider-row-OpenCode Zen"]')).toBeTruthy();
     expect(document.querySelector('[data-testid="provider-row-KiloCode"]')).toBeTruthy();
     // …and the default flyout shows the SELECTED provider's models (KiloCode).
-    expect(screen.getByText('ox-alpha-free')).toBeTruthy();
-    expect(screen.queryByText('kimi-k3')).toBeNull();
+    // Rows carry the catalog's friendly name (variant folded into it, since the
+    // provider supplied the whole label). These asserted the raw ids
+    // (`ox-alpha-free`, `kimi-k3`) until 2026-10-07, which pinned the defect of
+    // listing identifiers right under a header that said "Ox Alpha".
+    expect(within(flyout()).getByText('Ox Alpha')).toBeTruthy();
+    expect(within(flyout()).getByText('Ox Alpha Free')).toBeTruthy();
+    expect(within(flyout()).queryByText('Kimi K3')).toBeNull();
     // Hover another provider → its models swap in.
     fireEvent.mouseEnter(document.querySelector('[data-testid="provider-row-OpenCode Zen"]')!);
-    expect(screen.getByText('kimi-k3')).toBeTruthy();
-    expect(screen.queryByText('ox-alpha-free')).toBeNull();
+    expect(within(flyout()).getByText('Kimi K3')).toBeTruthy();
+    expect(within(flyout()).queryByText(/Ox Alpha/)).toBeNull();
   });
 
   it('Manage models sits at the bottom of the provider pane', () => {
@@ -131,11 +161,109 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     refreshSpy.mockRestore();
   });
 
-  it('no free-only toggle and no search field — the calm reference layout', () => {
+  // Contract changed 2026-10-04: this asserted "no search field — the calm
+  // reference layout". With 466 models across 5 providers the two-level
+  // provider→flyout layout cannot reach a model by name, so search was asked
+  // for. The free-only toggle stays banned; search is now required.
+  it('no free-only toggle, but a working model search field', () => {
     setup();
     openModelsPane();
     expect(document.querySelector('[data-testid="free-only-toggle"]')).toBeNull();
-    expect(screen.queryByPlaceholderText('Search models')).toBeNull();
+
+    const search = screen.getByPlaceholderText('Search models');
+    expect(search).toBeTruthy();
+
+    // A miss says so in words instead of silently showing an empty list.
+    fireEvent.change(search, { target: { value: 'no-such-model-xyz' } });
+    expect(document.body.textContent).toContain('No model matches');
+
+    // Clearing restores the provider list.
+    fireEvent.change(search, { target: { value: '' } });
+    expect(document.body.textContent).not.toContain('No model matches');
+    expect(document.querySelectorAll('[data-testid^="provider-row-"]').length).toBeGreaterThan(0);
+  });
+
+  it('also matches the prettified id, so a space-typed query reaches a catalog with no names', () => {
+    const list: ModelItem[] = [
+      ...MODELS,
+      // What `useChatModels` produces for a catalog that sends no display name:
+      // name falls back to the id, so only the prettified name + variant tag
+      // can match "ox beta preview" — the hyphenated id cannot.
+      {
+        id: 'ox-beta-preview',
+        name: 'ox-beta-preview',
+        provider: 'KiloCode',
+        contextWindow: 200000,
+      },
+      // A family prefix: prettifyBase drops "claude" from the NAME, so this only
+      // matches "claude sonnet" because the id itself is in the haystack.
+      {
+        id: 'anthropic/claude-sonnet-4-5',
+        name: 'anthropic/claude-sonnet-4-5',
+        provider: 'Anthropic',
+        contextWindow: 200000,
+      },
+    ];
+    setup(list[0], list);
+    openModelsPane();
+    const search = screen.getByPlaceholderText('Search models');
+
+    fireEvent.change(search, { target: { value: 'ox beta preview' } });
+    const previewRow = modelRow('KiloCode', 'ox-beta-preview');
+    expect(previewRow).toBeTruthy();
+    expect(within(previewRow as HTMLElement).getByText('Ox Beta')).toBeTruthy();
+    expect(within(previewRow as HTMLElement).getByText('Preview')).toBeTruthy();
+    expect(previewRow!.textContent).not.toContain('ox-beta-preview');
+
+    fireEvent.change(search, { target: { value: 'claude sonnet' } });
+    const sonnetRow = modelRow('Anthropic', 'anthropic/claude-sonnet-4-5');
+    expect(sonnetRow).toBeTruthy();
+    // The provider is the row's own badge in search mode — repeating it as the
+    // id-prefix tag put "Anthropic" under "Anthropic". So exactly ONE element in
+    // this row says the provider, not two.
+    expect(sonnetRow!.textContent).toContain('Sonnet 4 5');
+    expect(within(sonnetRow as HTMLElement).getAllByText(/^anthropic$/i)).toHaveLength(1);
+  });
+
+  it('renders a colon-tier id as a name plus a tier, never "Laguna S 2.1:Free"', () => {
+    // KiloCode/OpenRouter ship ids like `poolside/laguna-s-2.1:free`, and the
+    // catalog sends no display name — so this is the common case, not an edge.
+    const list: ModelItem[] = [
+      {
+        id: 'poolside/laguna-s-2.1:free',
+        name: 'poolside/laguna-s-2.1:free',
+        provider: 'KiloCode',
+        contextWindow: 128000,
+        isFree: true,
+      },
+    ];
+    setup(list[0], list);
+    openModelsPane();
+    const row = modelRow('KiloCode', 'poolside/laguna-s-2.1:free');
+    expect(row).toBeTruthy();
+    expect(within(row as HTMLElement).getByText('Laguna S 2.1')).toBeTruthy();
+    expect(within(row as HTMLElement).getByText('poolside:Free')).toBeTruthy();
+    expect(row!.textContent).not.toContain('Laguna S 2.1:Free');
+    // The chip keeps the tier and drops the vendor slug, which the panel header
+    // already says.
+    expect(chipModelLabel(list[0])).toBe('KiloCode · Laguna S 2.1 (Free)');
+  });
+
+  it('says what the search result cap dropped instead of silently cutting the list', () => {
+    const bulk: ModelItem[] = Array.from({ length: 90 }, (_, i) => ({
+      id: `bulk-model-${i}`,
+      name: `bulk-model-${i}`,
+      provider: 'Bulk',
+      contextWindow: 128000,
+    }));
+    setup(bulk[0], bulk);
+    openModelsPane();
+    fireEvent.change(screen.getByPlaceholderText('Search models'), { target: { value: 'bulk' } });
+    // Scoped to the list: the flyout the search replaced is still mid-exit
+    // animation in jsdom, so its rows are on the body but not in this panel.
+    const list = document.querySelector<HTMLElement>('[data-testid="models-panel-list"]')!;
+    expect(list.querySelectorAll('[data-testid="model-option"]')).toHaveLength(80);
+    expect(list.textContent).toContain('10 more match');
   });
 
   it('pins stay available on model rows', () => {
@@ -226,9 +354,12 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     );
     fireEvent.click(document.querySelector('[data-testid="model-chip"]')!);
     // Default flyout shows selected provider's models (KiloCode).
-    const row = screen.getByText('ox-alpha-free').closest('[data-testid="model-option"]') as HTMLElement;
+    const row = modelRow('KiloCode', 'ox-alpha-free');
     expect(row).toBeTruthy();
-    fireEvent.click(row);
+    // Rows carry the friendly name; the raw id survives only in the tooltip.
+    expect(row!.textContent).toContain('Ox Alpha');
+    expect(row!.textContent).not.toContain('ox-alpha-free');
+    fireEvent.click(row!);
     expect(onSelect).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'ox-alpha-free', provider: 'KiloCode' }),
     );
@@ -318,6 +449,36 @@ describe('ModelEffortMenu — keyboard navigation', () => {
   it('focuses the panel when it opens, so arrow keys have a target', () => {
     const panel = openModels();
     expect(document.activeElement).toBe(panel);
+  });
+
+  it('clears the query on the first Escape and closes on the second', () => {
+    // "One layer per press" is the input's own stopPropagation. If it ever
+    // stops holding, a single Escape both empties the field and shuts the pane.
+    // Asserted on the trigger's aria-expanded because an exiting portal keeps
+    // its DOM nodes while framer-motion finishes, which jsdom never resolves.
+    openModels();
+    const chip = document.querySelector('[data-testid="model-chip"]')!;
+    const search = document.querySelector<HTMLInputElement>('[data-testid="model-search"]')!;
+    fireEvent.change(search, { target: { value: 'kimi' } });
+    fireEvent.keyDown(search, { key: 'Escape' });
+    expect(search.value).toBe('');
+    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.keyDown(search, { key: 'Escape' });
+    expect(chip.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('does not steal the caret while the search field has focus', () => {
+    // The input sits inside the panel that owns ArrowUp/Down/Home/End. Without
+    // a guard on that handler, one arrow press preventDefault()ed the caret move
+    // and threw focus at the panel's first control — so a keyboard user could
+    // not edit the query they were typing.
+    openModels();
+    const search = document.querySelector<HTMLInputElement>('[data-testid="model-search"]')!;
+    search.focus();
+    for (const key of ['ArrowDown', 'ArrowUp', 'Home', 'End']) {
+      fireEvent.keyDown(search, { key });
+      expect(document.activeElement).toBe(search);
+    }
   });
 
   it('mounting does not yank focus out of the composer', () => {

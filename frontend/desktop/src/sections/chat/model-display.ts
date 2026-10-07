@@ -95,22 +95,37 @@ export function modelDisplayParts(id: string | null | undefined): { name: string
   // here blackens the whole app (no boundary below the root).
   if (!id) return { name: '', tag: '' };
   const sepIdx = id.search(/[/:]/);
+  const prefix = sepIdx >= 0 ? id.slice(0, sepIdx) : '';
   const base = stripProviderPrefix(id);
-  let cleaned = base;
+
+  // OpenRouter and Kilo carry the tier as a COLON suffix (`poolside/laguna-s-2.1:free`)
+  // where every other catalog uses a hyphen (`…-free`). The hyphen form was the only
+  // one VARIANT_TAGS knew, so the colon form fell through to titleCase and rendered
+  // as "Laguna S 2.1:Free" — the tier glued to the name with a capital F.
+  const tier = /:([\w.-]+)$/.exec(base);
+  const suffix = tier ? titleCase(tier[1]) : '';
+  let cleaned = tier ? base.slice(0, tier.index) : base;
+
+  // `Preview` from `…-preview`, plus whatever the colon suffix carried.
+  const joinTag = (variant: string) => {
+    const text = [variant, suffix].filter(Boolean).join(' ');
+    if (!prefix) return text;
+    return text ? `${prefix}:${text}` : prefix;
+  };
 
   for (const [pattern, label] of VARIANT_TAGS) {
     if (pattern.test(cleaned)) {
       cleaned = cleaned.replace(pattern, '');
       return {
         name: prettifyBase(cleaned) || id,
-        tag: sepIdx >= 0 ? `${id.slice(0, sepIdx)}:${label}` : label,
+        tag: joinTag(label),
       };
     }
   }
 
   return {
     name: prettifyBase(cleaned) || id,
-    tag: sepIdx >= 0 ? id.slice(0, sepIdx) : '',
+    tag: joinTag(''),
   };
 }
 
@@ -132,8 +147,63 @@ export function compareModelsRanked(
   return getModelDisplayName(a.id).localeCompare(getModelDisplayName(b.id));
 }
 
+/** Model ids are NOT unique across gateways. The live catalog lists
+ *  `stepfun/step-3.7-flash` under both OpenRouter and KiloCode (and
+ *  `openrouter/auto` under both too), with OpenRouter first in the aggregate. An
+ *  id-only lookup therefore re-points a session at a gateway the user never
+ *  chose — and one persisted id can tick two rows. Prefer the entry that matches
+ *  the provider as well; fall back to id alone when none does, because a provider
+ *  can be renamed or removed and the model is still the model. */
+export function findCatalogModel<T extends { id: string; provider: string }>(
+  list: T[],
+  id: string,
+  provider?: string | null,
+): T | undefined {
+  const lower = id.toLowerCase();
+  const sameId = (m: T) => m.id.toLowerCase() === lower;
+  if (provider) {
+    const exact = list.find((m) => sameId(m) && m.provider === provider);
+    if (exact) return exact;
+  }
+  return list.find(sameId);
+}
+
+/** A `<option value>` that names the GATEWAY as well as the id. Ids repeat
+ *  across providers, so an id-only value resolves to whichever match comes first
+ *  and two identical ids collide as React keys. encodeURIComponent escapes any
+ *  `/` inside either half, so the first unescaped one is the separator. */
+export function modelKey(m: { provider: string; id: string }): string {
+  return `${encodeURIComponent(m.provider)}/${encodeURIComponent(m.id)}`;
+}
+
+/** The pair a `modelKey` encodes. Anything that is not a key — a bare id stored
+ *  before this existed — comes back with an empty provider, so the caller's
+ *  lookup falls back to matching on id alone. */
+export function parseModelKey(key: string): { id: string; provider: string } {
+  const sep = key.indexOf('/');
+  if (sep <= 0) return { id: key, provider: '' };
+  return {
+    provider: decodeURIComponent(key.slice(0, sep)),
+    id: decodeURIComponent(key.slice(sep + 1)),
+  };
+}
+
+/** Resolve a `modelKey`, or a legacy bare id, against the catalog. */
+export function findModelByKey<T extends { id: string; provider: string }>(
+  list: T[],
+  key: string,
+): T | undefined {
+  if (!key) return undefined;
+  const { id, provider } = parseModelKey(key);
+  return (
+    findCatalogModel(list, id, provider) ??
+    // A preset stored before the key carried a gateway holds a bare id, which can
+    // itself contain a `/` (`poolside/laguna-s-2.1:free`).
+    (provider ? findCatalogModel(list, key) : undefined)
+  );
+}
+
 /** Best-effort context window from the model id when catalog/profile is missing.
- *
  * This is a UI PLACEHOLDER only — used by `modelFromSession` before the
  * `/api/models` catalog hydrates. Once the catalog loads, `useChatModels`
  * overrides `contextWindow` with the server-resolved value (which honors the

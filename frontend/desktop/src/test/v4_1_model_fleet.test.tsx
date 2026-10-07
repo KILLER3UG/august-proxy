@@ -1,4 +1,5 @@
-/* v4.1 — Model Fleet subtab: 4 role dropdowns + save PUTs to /api/config/model-fleet */
+/* v4.1 — Model Fleet subtab: one field per role the SERVER lists, and a PUT that
+   carries each role's gateway alongside its model. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -9,11 +10,22 @@ function withQuery(ui: React.ReactNode) {
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
 
+// Deliberately only FOUR roles: the tab used to render a hardcoded list of eleven,
+// five of which the backend rejected — and a rejected role 400ed the whole patch,
+// so none of the other six saved either.
 const FLEET = {
-  cortex: '',
-  cerebellum: 'claude-3-haiku-20240307',
-  hippocampus: 'gpt-4o-mini',
-  prefrontal: 'claude-3-5-sonnet-20240620',
+  models: {
+    cortex: '',
+    cerebellum: 'claude-3-haiku-20240307',
+    hippocampus: 'gpt-4o-mini',
+    prefrontal: 'claude-3-5-sonnet-20240620',
+  },
+  providers: {
+    cortex: '',
+    cerebellum: 'anthropic',
+    hippocampus: 'openai',
+    prefrontal: 'anthropic',
+  },
 };
 
 const MODELS = {
@@ -40,12 +52,27 @@ function mockFetchStandard() {
   });
 }
 
+const putBody = async (fetchMock: ReturnType<typeof mockFetchStandard>) => {
+  // The save is fire-and-forget from the click's perspective, so poll for the
+  // PUT instead of assuming the mock has seen it yet.
+  let body: Record<string, Record<string, string>> = {};
+  await waitFor(() => {
+    const call = fetchMock.mock.calls.find(([u, init]) => {
+      const url = u as string;
+      return url.includes('/api/config/model-fleet') && (init as RequestInit | undefined)?.method === 'PUT';
+    });
+    if (!call) throw new Error('no PUT to /api/config/model-fleet');
+    body = JSON.parse((call[1] as RequestInit).body as string);
+  });
+  return body;
+};
+
 describe('v4.1 — ModelFleetTab', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('renders one field per cognitive role with its data-testid', async () => {
+  it('renders one field per role the server returns, and no others', async () => {
     global.fetch = mockFetchStandard();
     withQuery(<ModelFleetTab />);
     await waitFor(() => {
@@ -54,22 +81,21 @@ describe('v4.1 — ModelFleetTab', () => {
       expect(screen.getByTestId('fleet-hippocampus-field')).toBeTruthy();
       expect(screen.getByTestId('fleet-prefrontal-field')).toBeTruthy();
     });
+    // A role list hardcoded in the component is how five unsavable fields were
+    // born; the server owns it now.
+    expect(screen.queryByTestId('fleet-chat_smol-field')).toBeNull();
+    expect(screen.queryByTestId('fleet-chat_vision-field')).toBeNull();
   });
 
-  it('Save button is enabled after editing a role, then PUTs the patch', async () => {
+  it('clearing a role clears its gateway too, and the PUT carries both maps', async () => {
     const fetchMock = mockFetchStandard();
     global.fetch = fetchMock;
     withQuery(<ModelFleetTab />);
     await waitFor(() => screen.getByTestId('fleet-save'));
 
-    // The Save button should start disabled (no dirty state).
     const saveBtn = screen.getByTestId<HTMLButtonElement>('fleet-save');
     expect(saveBtn.disabled).toBe(true);
 
-    // Click Clear on hippocampus to set it to '' (use session model).
-    // This requires the test to actually be able to mutate state via the
-    // Clear button. We can't easily open the ModelPickerDropdown in jsdom,
-    // but the Clear button is a plain button that mutates editFleet.
     const clearHippocampus = screen.getByTestId<HTMLButtonElement>('fleet-hippocampus-clear');
     expect(clearHippocampus.disabled).toBe(false); // hippocampus starts non-empty
     fireEvent.click(clearHippocampus);
@@ -77,35 +103,28 @@ describe('v4.1 — ModelFleetTab', () => {
     await waitFor(() => {
       expect(screen.getByTestId<HTMLButtonElement>('fleet-save').disabled).toBe(false);
     });
-
     fireEvent.click(screen.getByTestId('fleet-save'));
 
-    await waitFor(() => {
-      const putCall = fetchMock.mock.calls.find(
-        (call) => {
-          const [url, init] = call as unknown as [string, RequestInit | undefined];
-          return typeof url === 'string' && url.includes('/api/config/model-fleet') && init?.method === 'PUT';
-        },
-      );
-      expect(putCall).toBeDefined();
-      // Verify the PUT URL and that the body mutates hippocampus to ''.
-      // (The frontend sends the entire edit state; the backend merges via
-      // dict.update so any roles not in the body keep their values.)
-      const [putUrl, putInit] = putCall as unknown as [string, RequestInit];
-      expect(putUrl).toContain('/api/config/model-fleet');
-      const body = JSON.parse(putInit.body as string);
-      expect(body.hippocampus).toBe('');
-    });
+    const body = await putBody(fetchMock);
+    expect(body.models.hippocampus).toBe('');
+    // The stale half of the pair is the bug: an empty model with a provider left
+    // behind reads as "no gateway configured for the session model".
+    expect(body.providers.hippocampus).toBe('');
+    expect(body.providers.cerebellum).toBe('anthropic');
   });
 
-  it('Reset to defaults button populates the fleet with empty + the four known defaults', async () => {
-    global.fetch = mockFetchStandard();
+  it('Reset to defaults empties both maps for every rendered role', async () => {
+    const fetchMock = mockFetchStandard();
+    global.fetch = fetchMock;
     withQuery(<ModelFleetTab />);
     await waitFor(() => screen.getByTestId('fleet-reset'));
     fireEvent.click(screen.getByTestId('fleet-reset'));
-    // After Reset, the Save button should become enabled (the form is dirty)
     await waitFor(() => {
       expect(screen.getByTestId<HTMLButtonElement>('fleet-save').disabled).toBe(false);
     });
+    fireEvent.click(screen.getByTestId('fleet-save'));
+    const body = await putBody(fetchMock);
+    expect(Object.values(body.models)).toEqual(['', '', '', '']);
+    expect(Object.values(body.providers)).toEqual(['', '', '', '']);
   });
 });

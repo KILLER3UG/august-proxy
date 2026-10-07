@@ -178,41 +178,54 @@ VERDICT_MODELS: dict[str, type[_VerdictBase]] = {
 # ── model resolution ────────
 
 
-def resolve_judge_model() -> str:
-    """Dedicated ``skillLearningJudgeModel`` → first reader of the dead
-    ``auxiliary.background_review.autoMemoryModel`` selector → the titler's
-    ``titleModel``. Empty when nothing resolves (judge skips the pass)."""
+def resolve_judge() -> tuple[str, str]:
+    """``(model, gateway)`` for the distiller judge: the dedicated
+    ``skillLearningJudgeModel``, then the ``autoMemoryModel`` background
+    selector, then the titler's ``titleModel``. An empty model means nothing
+    resolves and the judge skips the pass.
+
+    Only the background selector carries a configured gateway; the brain-config
+    ones are resolved by model id, as they always were.
+    """
     try:
         from app.services.brain_config_service import getRuntimeConfig
 
         explicit = str(getRuntimeConfig().get('skillLearningJudgeModel', '') or '').strip()
         if explicit:
-            return explicit
+            return explicit, ''
     except Exception:
         pass
     try:
-        from app.services.background_review_service import getConfig
+        from app.services.background_review_service import resolveSelector
 
-        bg = str((getConfig() or {}).get('autoMemoryModel', '') or '').strip()
-        if bg:
-            return bg
+        model, provider = resolveSelector('autoMemory')
+        if model.strip():
+            return model.strip(), provider.strip()
     except Exception:
         pass
     try:
         from app.services.brain_config_service import getRuntimeConfig
 
-        return str(getRuntimeConfig().get('titleModel', '') or '').strip()
+        return str(getRuntimeConfig().get('titleModel', '') or '').strip(), ''
     except Exception:
-        return ''
+        return '', ''
 
 
-def _resolveProvider(model: str) -> dict[str, object] | None:
+def resolve_judge_model() -> str:
+    """The model-only view of :func:`resolve_judge`."""
+    return resolve_judge()[0]
+
+
+def _resolveProvider(model: str, provider_hint: str = '') -> dict[str, object] | None:
     if not model:
         return None
     try:
         from app.providers import resolver as providerResolver
 
-        return providerResolver.resolve(model)
+        # A configured gateway first: asked for a bare id, ``resolve()`` answers
+        # with the first provider that lists it, which is a different provider
+        # for a model served by two gateways.
+        return providerResolver.resolve(provider_hint or model)
     except Exception:
         logger.debug('judge provider resolve failed for %r', model, exc_info=True)
         return None
@@ -368,8 +381,8 @@ async def call_judge(prompt: str) -> dict[str, Any] | None:
     cosmetic improvement. A second failure returns the payload as-is and lets
     ``parse_verdicts`` drop whatever is still malformed.
     """
-    model = resolve_judge_model()
-    provider = _resolveProvider(model)
+    model, judge_provider = resolve_judge()
+    provider = _resolveProvider(model, judge_provider)
     if not model:
         _note_judge_failure('no-judge-model', 'skillLearningJudgeModel resolves to nothing')
         logger.info('distiller judge skipped: no judge model resolves')

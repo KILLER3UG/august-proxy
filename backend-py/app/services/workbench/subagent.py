@@ -586,11 +586,15 @@ async def executeSubAgent(
     # model when configured and the agent has no explicit model alias.
     if not aliasHint:
         try:
-            from app.services.model_fleet_service import getModelForRole
+            from app.services.model_fleet_service import resolveRoleModel
 
-            smol = getModelForRole('chat_smol').strip()
+            smol, smolRoleProvider = resolveRoleModel('chat_smol')
+            smol = smol.strip()
             if smol:
-                smolProvider = resolve_for_model(smol, '')
+                # The gateway the role was configured against, when it named one:
+                # `resolve_for_model(id, '')` answers with the first provider that
+                # lists the id, and OpenRouter is listed before KiloCode.
+                smolProvider = resolve_for_model(smol, smolRoleProvider)
                 if smolProvider:
                     provider = smolProvider
                     model = smol

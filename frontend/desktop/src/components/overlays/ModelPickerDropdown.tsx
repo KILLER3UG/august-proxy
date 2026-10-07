@@ -3,10 +3,13 @@
 /* Portal-based positioning to escape overflow clipping.                  */
 /*                                                                        */
 /* Props:                                                                 */
-/*   models    – AggregatedModel[] from getAggregatedModels()             */
-/*   value     – currently selected model id (empty string = none)        */
-/*   onChange  – (modelId, provider) when user picks a model              */
-/*   disabled  – disables the trigger button                              */
+/*   models       – AggregatedModel[] from getAggregatedModels()             */
+/*   value        – currently selected model id (empty string = none)        */
+/*   modelProvider – the gateway `value` belongs to, when the caller knows  */
+/*                   one. Ids repeat across gateways, so without it the     */
+/*                   trigger can badge the wrong provider and two rows tick. */
+/*   onChange     – (modelId, provider) when user picks a model              */
+/*   disabled     – disables the trigger button                              */
 /* ──────────────────────────────────────────────────────────────────────── */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -15,16 +18,24 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { modelDisplayParts, getModelDisplayName, formatContextWindow } from '@/sections/chat/ChatThread';
+import { findCatalogModel } from '@/sections/chat/model-display';
 import type { AggregatedModel } from '@/api/api-client';
 
 interface ModelPickerDropdownProps {
   models: AggregatedModel[];
   value: string;
+  modelProvider?: string;
   onChange: (modelId: string, provider: string) => void;
   disabled?: boolean;
 }
 
-export function ModelPickerDropdown({ models, value, onChange, disabled }: ModelPickerDropdownProps) {
+export function ModelPickerDropdown({
+  models,
+  value,
+  modelProvider,
+  onChange,
+  disabled,
+}: ModelPickerDropdownProps) {
   const [open, setOpen] = useState(false);
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -35,7 +46,11 @@ export function ModelPickerDropdown({ models, value, onChange, disabled }: Model
   const [scrollEnd, setScrollEnd] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
-  const selected = value ? models.find((m) => m.id === value) ?? null : null;
+  const selected = value ? findCatalogModel(models, value, modelProvider) ?? null : null;
+  // Without a gateway to go on, every row sharing the id highlights — which is
+  // what an id-only caller (fleet, reflection) genuinely stores.
+  const isSelected = (m: AggregatedModel) =>
+    m.id === value && (!modelProvider || m.provider === modelProvider);
 
   const updatePosition = useCallback(() => {
     const el = triggerRef.current;
@@ -238,7 +253,7 @@ export function ModelPickerDropdown({ models, value, onChange, disabled }: Model
                           }}
                           className={cn(
                             'w-full text-left px-2.5 py-1.5 text-sm transition-all duration-150 flex items-center gap-2 rounded-md mx-1',
-                            value === m.id
+                            isSelected(m)
                               ? 'text-primary bg-primary/10 font-semibold'
                               : 'text-foreground/80 hover:bg-white/5 hover:text-foreground'
                           )}

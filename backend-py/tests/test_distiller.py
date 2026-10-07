@@ -381,8 +381,8 @@ class TestJudgeFailureNamesItsCause:
             async def close(self):
                 pass
 
-        monkeypatch.setattr(sd, 'resolve_judge_model', lambda: 'some-model')
-        monkeypatch.setattr(sd, '_resolveProvider', lambda m: {'id': 'p'})
+        monkeypatch.setattr(sd, 'resolve_judge', lambda: ('some-model', ''))
+        monkeypatch.setattr(sd, '_resolveProvider', lambda m, hint='': {'id': 'p'})
         monkeypatch.setattr('app.providers.clients.getUnpooledClient', lambda p: EmptyClient())
         assert asyncio.run(sd.call_judge('anything')) is None
         assert sd.take_judge_failure()[0] == 'unparseable-response'
@@ -411,7 +411,7 @@ class TestJudgeFailureNamesItsCause:
         from app.services.memory_store import init
 
         init()
-        monkeypatch.setattr(sd, 'resolve_judge_model', lambda: '')
+        monkeypatch.setattr(sd, 'resolve_judge', lambda: ('', ''))
         import asyncio
 
         assert asyncio.run(sd.call_judge('anything')) is None

@@ -63,14 +63,23 @@ class TestConfigWriterIsGuarded:
     def test_any_json_write_aimed_inside_the_live_store_is_refused(self, monkeypatch):
         """The guard lives at write_json_atomic, so every store writer is
         covered by one change — config.json, providers.json, automations.json,
-        aliases, background review. A file that does not exist is still refused:
-        the point is the target path, not the file."""
+        aliases, background review. The target path is what is refused, whether
+        or not a file is already there: on a machine with a real install,
+        `data/providers.json` exists, and the guard must refuse AND leave the
+        user's bytes untouched. Asserting only "does not exist" passed solely
+        where the file happened to be absent.
+        """
         from app.atomic_write import write_json_atomic
 
+        target = _live_data_dir() / 'providers.json'
+        before = target.read_bytes() if target.exists() else None
         monkeypatch.setenv('PYTEST_CURRENT_TEST', 'tests/test_data_dir_isolation_guard.py::p (call)')
         with pytest.raises(RuntimeError, match='live'):
-            write_json_atomic(_live_data_dir() / 'providers.json', {'nope': True})
-        assert not (_live_data_dir() / 'providers.json').exists()
+            write_json_atomic(target, {'nope': True})
+        if before is None:
+            assert not target.exists()
+        else:
+            assert target.read_bytes() == before
 
     def test_a_sibling_prefix_directory_is_not_mistaken_for_the_live_store(self, monkeypatch):
         """`data_2` is not `data`; over-blocking here would break real tests."""

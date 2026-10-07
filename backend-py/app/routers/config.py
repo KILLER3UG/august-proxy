@@ -263,8 +263,11 @@ class BackgroundReviewUpdate(CamelModel):
 
     enabled: bool | None = None
     review_model: str | None = None
+    review_model_provider: str | None = None
     reflection_model: str | None = None
+    reflection_model_provider: str | None = None
     auto_memory_model: str | None = None
+    auto_memory_model_provider: str | None = None
 
 
 @router.get('/background-review')
@@ -283,28 +286,33 @@ async def putBackgroundReview(body: BackgroundReviewUpdate):
     return background_review_service.saveConfig(
         enabled=body.enabled,
         review_model=body.review_model,
+        review_model_provider=body.review_model_provider,
         reflection_model=body.reflection_model,
+        reflection_model_provider=body.reflection_model_provider,
         auto_memory_model=body.auto_memory_model,
+        auto_memory_model_provider=body.auto_memory_model_provider,
         actor='ui',
     )
 
 
 @router.get('/model-fleet')
 async def getModelFleet():
-    """v4.1: Return the merged fleet (defaults + user overrides) — see §10."""
+    """v4.1: Return the merged fleet — models and gateways, one key per role."""
     from app.services import model_fleet_service
 
-    return model_fleet_service.getFleet()
+    return model_fleet_service.fleetState()
 
 
 @router.put('/model-fleet')
 async def putModelFleet(body: dict[str, object]):
     """v4.1: Update model fleet config (partial).
 
-    Body is a JSON object of any subset of {cortex, cerebellum, hippocampus,
-    prefrontal}. Each role must be a string (empty allowed for `cortex`,
-    which means "use the session's primary model"). Unknown roles are
-    rejected with 400.
+    Body is either the wrapped form ``{models: {role: id}, providers: {role:
+    name}}`` or the legacy flat ``{role: id}``. Every key must name a role the
+    service knows (see ``model_fleet_service.ROLES``) and hold a string; an
+    empty string means "unset — fall back to the session model". Unknown roles
+    are rejected with 400, which is what keeps a role the UI offers from being
+    silently unsavable.
 
     We accept `dict` rather than a strict pydantic model so the service
     layer can return a single 400 with the offending role name (pydantic
@@ -314,10 +322,10 @@ async def putModelFleet(body: dict[str, object]):
 
     from app.services import model_fleet_service
 
-    ok, err, fleet = model_fleet_service.updateFleet(body)
+    ok, err, state = model_fleet_service.updateFleet(body)
     if not ok:
         raise HTTPException(status_code=400, detail={'code': 'validation', 'message': err})
-    return fleet
+    return state
 
 
 @router.get('/model-params')

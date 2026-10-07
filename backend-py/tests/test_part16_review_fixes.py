@@ -449,8 +449,8 @@ class TestF7UnpooledJudgeClient:
             made.append(c)
             return c
 
-        monkeypatch.setattr(sd, 'resolve_judge_model', lambda: 'some-model')
-        monkeypatch.setattr(sd, '_resolveProvider', lambda m: {'id': 'p', 'baseUrl': 'http://x'})
+        monkeypatch.setattr(sd, 'resolve_judge', lambda: ('some-model', ''))
+        monkeypatch.setattr(sd, '_resolveProvider', lambda m, hint='': {'id': 'p', 'baseUrl': 'http://x'})
         import app.providers.clients as clients_mod
 
         monkeypatch.setattr(clients_mod, 'getUnpooledClient', fake_factory)

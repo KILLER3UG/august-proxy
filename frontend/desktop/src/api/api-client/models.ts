@@ -143,12 +143,17 @@ export function updateSubAgentFallback(
 }
 
 /* Background Review / Reflection model config. Three independent model
- * selectors (review, reflection, auto-memory). Empty field → chat session model. */
+ * selectors (review, reflection, auto-memory), each with the gateway it was
+ * configured against. Empty model → chat session model; an empty provider means
+ * "resolve by id", which picks whichever provider lists that id first. */
 export interface ReviewBackgroundConfig {
   enabled: boolean;
   reviewModel: string;
+  reviewModelProvider: string;
   reflectionModel: string;
+  reflectionModelProvider: string;
   autoMemoryModel: string;
+  autoMemoryModelProvider: string;
 }
 
 export function getReviewBackgroundConfig(): Promise<ReviewBackgroundConfig> {
@@ -178,10 +183,24 @@ export interface ModelFleetConfig {
   chat_context_promotion: string;
 }
 
-export function getModelFleet(): Promise<ModelFleetConfig> {
-  return api.get<ModelFleetConfig>('/api/config/model-fleet');
+export type ModelFleetRole = keyof ModelFleetConfig;
+
+/** What the server returns: a model per role, and the gateway that model was
+ *  configured against. Both maps carry every role — a model id does not identify
+ *  a provider (`stepfun/step-3.7-flash` is listed by OpenRouter and KiloCode
+ *  both), so a role without its gateway runs on whichever provider is first. */
+export interface ModelFleetState {
+  models: Partial<ModelFleetConfig>;
+  providers: Partial<Record<ModelFleetRole, string>>;
 }
 
-export function updateModelFleet(patch: Partial<ModelFleetConfig>): Promise<ModelFleetConfig> {
-  return api.put<ModelFleetConfig>('/api/config/model-fleet', patch);
+export function getModelFleet(): Promise<ModelFleetState> {
+  return api.get<ModelFleetState>('/api/config/model-fleet');
+}
+
+export function updateModelFleet(patch: {
+  models?: Partial<ModelFleetConfig>;
+  providers?: Partial<Record<ModelFleetRole, string>>;
+}): Promise<ModelFleetState> {
+  return api.put<ModelFleetState>('/api/config/model-fleet', patch);
 }

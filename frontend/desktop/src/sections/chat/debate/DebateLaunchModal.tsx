@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Bookmark, Gavel, Minus, Plus, X } from 'lucide-react';
-import type { ModelItem } from '../model-display';
+import { findModelByKey, modelKey, type ModelItem } from '../model-display';
 import type { DebateLane } from './debate-store';
 
 const LAST_CONFIG_KEY = 'august_debate_last_config';
@@ -34,9 +34,9 @@ export function DebateLaunchModal({
   onLaunch: (debaterA: DebateLane, debaterB: DebateLane, judge: DebateLane | null, rounds: number, prompt: string) => void;
   onClose: () => void;
 }) {
-  const [aId, setAId] = useState<string>(models[0]?.id ?? '');
-  const [bId, setBId] = useState<string>(models[1]?.id ?? '');
-  const [judgeId, setJudgeId] = useState<string>('');
+  const [aKey, setAKey] = useState<string>(models[0] ? modelKey(models[0]) : '');
+  const [bKey, setBKey] = useState<string>(models[1] ? modelKey(models[1]) : '');
+  const [judgeKey, setJudgeKey] = useState<string>('');
   const [rounds, setRounds] = useState(3);
   const [prompt, setPrompt] = useState(initialPrompt);
   // Last-config preset (D13): restore the previous debaters/rounds.
@@ -46,22 +46,31 @@ export function DebateLaunchModal({
     try {
       localStorage.setItem(
         LAST_CONFIG_KEY,
-        JSON.stringify({ a: aId, b: bId, judge: judgeId, rounds } satisfies LastDebateConfig),
+        JSON.stringify({ a: aKey, b: bKey, judge: judgeKey, rounds } satisfies LastDebateConfig),
       );
     } catch {
       /* storage unavailable */
     }
   };
 
-  const laneFor = (id: string): DebateLane | null => {
-    const m = models.find((x) => x.id === id);
+  const laneFor = (key: string): DebateLane | null => {
+    const m = findModelByKey(models, key);
     return m ? { modelId: m.id, modelName: m.name || m.id, provider: m.provider } : null;
   };
 
-  const a = laneFor(aId);
-  const b = laneFor(bId);
-  const judge = judgeId ? laneFor(judgeId) : null;
-  const canLaunch = !!a && !!b && a.modelId !== b.modelId && prompt.trim().length > 0;
+  /** Maps a legacy bare-id preset onto a current key, so the select matches. */
+  const keyFor = (value: string): string => {
+    const lane = laneFor(value);
+    return lane ? modelKey({ provider: lane.provider, id: lane.modelId }) : value;
+  };
+
+  const a = laneFor(aKey);
+  const b = laneFor(bKey);
+  const judge = judgeKey ? laneFor(judgeKey) : null;
+  // Same id on two gateways IS a different debater — that is the cross-provider
+  // comparison the modal exists for.
+  const canLaunch =
+    !!a && !!b && (a.modelId !== b.modelId || a.provider !== b.provider) && prompt.trim().length > 0;
 
   const select = (
     label: string,
@@ -79,9 +88,9 @@ export function DebateLaunchModal({
       >
         <option value="">—</option>
         {models
-          .filter((m) => !exclude.includes(m.id))
+          .filter((m) => !exclude.includes(modelKey(m)))
           .map((m) => (
-            <option key={m.id} value={m.id}>
+            <option key={modelKey(m)} value={modelKey(m)}>
               {m.name || m.id} ({m.provider})
             </option>
           ))}
@@ -118,13 +127,13 @@ export function DebateLaunchModal({
         </div>
 
         {/* Last-config preset (D13) */}
-        {last && models.some((m) => m.id === last.a) && models.some((m) => m.id === last.b) ? (
+        {last && laneFor(last.a) && laneFor(last.b) ? (
           <button
             type="button"
             onClick={() => {
-              setAId(last.a);
-              setBId(last.b);
-              setJudgeId(last.judge);
+              setAKey(keyFor(last.a));
+              setBKey(keyFor(last.b));
+              setJudgeKey(keyFor(last.judge));
               setRounds(last.rounds);
             }}
             className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-2xs hover:text-primary"
@@ -146,9 +155,9 @@ export function DebateLaunchModal({
         />
 
         <div className="space-y-1.5">
-          {select('Debater A', aId, setAId, [bId])}
-          {select('Debater B', bId, setBId, [aId])}
-          {select('Judge (optional)', judgeId, setJudgeId, [aId, bId])}
+          {select('Debater A', aKey, setAKey, [bKey])}
+          {select('Debater B', bKey, setBKey, [aKey])}
+          {select('Judge (optional)', judgeKey, setJudgeKey, [aKey, bKey])}
         </div>
 
         <div className="flex items-center gap-2 text-xs">

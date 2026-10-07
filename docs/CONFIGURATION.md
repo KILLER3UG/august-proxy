@@ -170,12 +170,23 @@ Defaults toward the session main provider when unset.
   "auxiliary": {
     "background_review": {
       "enabled": true,
-      "provider": "openrouter",
-      "model": "anthropic/claude-3.5-sonnet"
+      "reviewModel": "anthropic/claude-3.5-sonnet",
+      "reviewModelProvider": "OpenRouter",
+      "reflectionModel": "",
+      "reflectionModelProvider": "",
+      "autoMemoryModel": "",
+      "autoMemoryModelProvider": ""
     }
   }
 }
 ```
+
+Three independent selectors, each a model id plus the gateway it was configured
+against. An empty model means "use the chat session's model"; an empty provider
+means "resolve by id", which answers with whichever provider lists that id
+first — so a model served by two gateways needs the provider to be chosen
+explicitly. The legacy single `provider` / `model` pair is **removed on save**
+(`model` is promoted to `reviewModel` once), so writing it by hand does nothing.
 
 `GET/PUT /api/config/background-review`.
 
@@ -184,6 +195,13 @@ Defaults toward the session main provider when unset.
 Cognitive architecture tree (boot, features, fleet, orchestrator). Edited via
 Settings → Memory / Reliability / model fleet and `GET/PUT /api/config/cognitive`,
 `GET/PUT /api/config/model-fleet`, and `/api/brain/config*`.
+`fleet` maps each role to a model id and `fleetProviders` maps the same roles to
+the gateway that model was chosen on; `GET/PUT /api/config/model-fleet` reads and
+writes both, as `{models, providers}` (a flat `{role: id}` body still saves). The
+role set is `model_fleet_service.ROLES`, and the settings tab renders whatever the
+server returns — a role the UI offers that the service does not know rejects the
+whole patch with 400, which is how five fleet fields used to discard the other
+six along with themselves.
 `maxWorkbenchToolLoops` here overrides the workbench tool-round cap (default `0 = uncapped`).
 
 **Turn budget ladder** — three soft per-turn ceilings, each **off by default**

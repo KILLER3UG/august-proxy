@@ -569,14 +569,17 @@ def _chatFallbackChain() -> list[str]:
         return []
 
 
-def _chatContextPromotionModel() -> str:
-    """Configured larger-context sibling (fleet ``chat_context_promotion``)."""
+def _chatContextPromotion() -> tuple[str, str]:
+    """Configured larger-context sibling (fleet ``chat_context_promotion``) and
+    the gateway it was configured against. Without the gateway a promotion to
+    ``stepfun/step-3.7-flash`` lands on whichever provider lists that id first."""
     try:
-        from app.services.model_fleet_service import getModelForRole
+        from app.services.model_fleet_service import resolveRoleModel
 
-        return getModelForRole('chat_context_promotion').strip()
+        model, provider = resolveRoleModel('chat_context_promotion')
+        return model.strip(), provider.strip()
     except Exception:
-        return ''
+        return '', ''
 
 
 def _managedToolLoopCap() -> int:
@@ -3230,7 +3233,7 @@ async def _sendWorkbenchMessageStreamImpl(
     # turn (it previously reset every round).
     retryPolicy = _modelRetryPolicy()
     chainModels = _chatFallbackChain()
-    promotionModel = _chatContextPromotionModel()
+    promotionModel, promotionProvider = _chatContextPromotion()
     promotionUsed = False
     # Audit D1 (migration 050): the turn's credit-assignment accumulators.
     # Families ride the per-round steering scan (the union of each round's
@@ -3957,7 +3960,9 @@ async def _sendWorkbenchMessageStreamImpl(
                 and _isContextOverflowError(response)
                 and _promotionVeto is None
             ):
-                pProvider, pModel = _resolveChatLlm(model=promotionModel)
+                pProvider, pModel = _resolveChatLlm(
+                    model=promotionModel, model_provider=promotionProvider
+                )
                 if pProvider and pModel:
                     # Consume the one-shot promotion only on a
                     # successful resolve — a failed resolve must not burn it

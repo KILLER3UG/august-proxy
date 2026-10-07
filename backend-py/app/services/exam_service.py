@@ -35,7 +35,12 @@ async def _callPrefrontal(prompt: str, model: str = '', provider: str = '') -> s
                         provider = target_provider
                     break
         if not model:
-            model = model_fleet.getModelForRole('prefrontal')
+            model, role_provider = model_fleet.resolveRoleModel('prefrontal')
+            # The role's gateway travels with its model: `stepfun/step-3.7-flash`
+            # is listed by OpenRouter and KiloCode both, and resolving by id alone
+            # answers with whichever provider happens to be configured first.
+            if role_provider and not provider:
+                provider = role_provider
         if not model:
             logger.warning('_call_prefrontal: no prefrontal model configured. Set one in Settings > Model Fleet.')
             return ''

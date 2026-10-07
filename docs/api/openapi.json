@@ -721,6 +721,17 @@
             ],
             "title": "Automemorymodel"
           },
+          "autoMemoryModelProvider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Automemorymodelprovider"
+          },
           "enabled": {
             "anyOf": [
               {
@@ -743,6 +754,17 @@
             ],
             "title": "Reflectionmodel"
           },
+          "reflectionModelProvider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reflectionmodelprovider"
+          },
           "reviewModel": {
             "anyOf": [
               {
@@ -753,6 +775,17 @@
               }
             ],
             "title": "Reviewmodel"
+          },
+          "reviewModelProvider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewmodelprovider"
           }
         },
         "title": "BackgroundReviewUpdate",
@@ -7748,7 +7781,7 @@
     },
     "/api/config/model-fleet": {
       "get": {
-        "description": "v4.1: Return the merged fleet (defaults + user overrides) — see §10.",
+        "description": "v4.1: Return the merged fleet — models and gateways, one key per role.",
         "operationId": "getModelFleet_api_config_model_fleet_get",
         "responses": {
           "200": {
@@ -7763,7 +7796,7 @@
         "summary": "Getmodelfleet"
       },
       "put": {
-        "description": "v4.1: Update model fleet config (partial).\n\nBody is a JSON object of any subset of {cortex, cerebellum, hippocampus,\nprefrontal}. Each role must be a string (empty allowed for `cortex`,\nwhich means \"use the session's primary model\"). Unknown roles are\nrejected with 400.\n\nWe accept `dict` rather than a strict pydantic model so the service\nlayer can return a single 400 with the offending role name (pydantic\nwould 422 with a generic shape error).",
+        "description": "v4.1: Update model fleet config (partial).\n\nBody is either the wrapped form ``{models: {role: id}, providers: {role:\nname}}`` or the legacy flat ``{role: id}``. Every key must name a role the\nservice knows (see ``model_fleet_service.ROLES``) and hold a string; an\nempty string means \"unset — fall back to the session model\". Unknown roles\nare rejected with 400, which is what keeps a role the UI offers from being\nsilently unsavable.\n\nWe accept `dict` rather than a strict pydantic model so the service\nlayer can return a single 400 with the offending role name (pydantic\nwould 422 with a generic shape error).",
         "operationId": "putModelFleet_api_config_model_fleet_put",
         "requestBody": {
           "content": {
@@ -13892,6 +13925,44 @@
         "tags": [
           "skill-packs"
         ]
+      }
+    },
+    "/api/skills/restore/{trashId}": {
+      "post": {
+        "description": "Undo a delete: restore a trashed skill directory (24h window).",
+        "operationId": "restoreSkill_api_skills_restore__trashId__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "trashId",
+            "required": true,
+            "schema": {
+              "title": "Trashid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restoreskill"
       }
     },
     "/api/skills/{name}": {

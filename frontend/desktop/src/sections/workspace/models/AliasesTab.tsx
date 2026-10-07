@@ -191,6 +191,7 @@ export function AliasesTab() {
                     <ModelPickerDropdown
                       models={availableModels}
                       value={a.targetModel}
+                      modelProvider={a.targetProvider}
                       onChange={(modelId, provider) => commitAliasChange(i, { targetModel: modelId, targetProvider: provider })}
                       disabled={!editing}
                     />

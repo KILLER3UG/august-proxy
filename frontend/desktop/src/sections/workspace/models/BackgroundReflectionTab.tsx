@@ -19,11 +19,43 @@ import { ModelPickerDropdown } from '@/components/overlays/ModelPickerDropdown';
 import { PageLoader } from '@/components/PageLoader';
 import { uniqueAggregatedModels } from './modelSettingsShared';
 
+/** The three selectors, each as the model key AND its gateway key. Declared as
+ *  pairs so a slot cannot be rendered with a model and no provider — which is
+ *  how a review silently ran on whichever provider listed the id first. */
+const SELECTORS = [
+  {
+    model: 'reviewModel',
+    provider: 'reviewModelProvider',
+    label: 'Review model',
+    hint: 'Used for reviewing and summarising conversations.',
+  },
+  {
+    model: 'reflectionModel',
+    provider: 'reflectionModelProvider',
+    label: 'Reflection model',
+    hint: "Used for the agent's self‑evaluation and learning loop.",
+  },
+  {
+    model: 'autoMemoryModel',
+    provider: 'autoMemoryModelProvider',
+    label: 'Auto‑memory extraction model',
+    hint: 'Used for extracting facts and storing them in memory.',
+  },
+] as const satisfies ReadonlyArray<{
+  model: keyof ReviewBackgroundConfig;
+  provider: keyof ReviewBackgroundConfig;
+  label: string;
+  hint: string;
+}>;
+
 const DEFAULT_BG_CONFIG: ReviewBackgroundConfig = {
   enabled: true,
   reviewModel: '',
+  reviewModelProvider: '',
   reflectionModel: '',
+  reflectionModelProvider: '',
   autoMemoryModel: '',
+  autoMemoryModelProvider: '',
 };
 
 export function BackgroundReflectionTab() {
@@ -99,41 +131,27 @@ export function BackgroundReflectionTab() {
           </div>
         ) : (
           <div className="space-y-4">
-            <WorkspaceField
-              label="Review model"
-              hint="Used for reviewing and summarising conversations."
-            >
-              <ModelPickerDropdown
-                models={availableModels}
-                value={activeConfig.reviewModel}
-                onChange={(modelId) => setEditConfig({ ...activeConfig, reviewModel: modelId })}
-                disabled={!activeConfig.enabled}
-              />
-            </WorkspaceField>
-
-            <WorkspaceField
-              label="Reflection model"
-              hint="Used for the agent's self‑evaluation and learning loop."
-            >
-              <ModelPickerDropdown
-                models={availableModels}
-                value={activeConfig.reflectionModel}
-                onChange={(modelId) => setEditConfig({ ...activeConfig, reflectionModel: modelId })}
-                disabled={!activeConfig.enabled}
-              />
-            </WorkspaceField>
-
-            <WorkspaceField
-              label="Auto‑memory extraction model"
-              hint="Used for extracting facts and storing them in memory."
-            >
-              <ModelPickerDropdown
-                models={availableModels}
-                value={activeConfig.autoMemoryModel}
-                onChange={(modelId) => setEditConfig({ ...activeConfig, autoMemoryModel: modelId })}
-                disabled={!activeConfig.enabled}
-              />
-            </WorkspaceField>
+            {SELECTORS.map((selector) => (
+              <WorkspaceField
+                key={selector.model}
+                label={selector.label}
+                hint={selector.hint}
+              >
+                <ModelPickerDropdown
+                  models={availableModels}
+                  value={activeConfig[selector.model]}
+                  modelProvider={activeConfig[selector.provider]}
+                  onChange={(modelId, provider) =>
+                    setEditConfig({
+                      ...activeConfig,
+                      [selector.model]: modelId,
+                      [selector.provider]: modelId ? provider : '',
+                    })
+                  }
+                  disabled={!activeConfig.enabled}
+                />
+              </WorkspaceField>
+            ))}
           </div>
         )}
 

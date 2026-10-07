@@ -406,29 +406,30 @@ def ground_findings(
 # ── the advisory review runner ───────────────────────────────────────────────
 
 
-def _resolve_review_model_hint(explicit: str = '') -> str:
-    hint = (explicit or '').strip()
-    if hint:
-        return hint
+def _resolve_review_model_hint(explicit: str = '') -> tuple[str, str]:
+    """``(model, gateway)`` for the reviewer selector. An explicit argument wins
+    and carries no gateway of its own — the caller then falls back to resolving
+    by id, as it always did."""
     try:
-        from app.services.background_review_service import getConfig
+        from app.services.background_review_service import resolveSelector
 
-        return str(getConfig().get('reviewModel') or '')
+        model, provider = resolveSelector('review')
     except Exception:
-        return ''
+        return '', ''
+    hint = (explicit or '').strip()
+    return (hint, '') if hint else (model, provider)
 
 
-def _resolve_judge_model_hint(explicit: str = '') -> str:
+def _resolve_judge_model_hint(explicit: str = '') -> tuple[str, str]:
     """R-B: the judge lens defaults to the reflection model selector."""
-    hint = (explicit or '').strip()
-    if hint:
-        return hint
     try:
-        from app.services.background_review_service import getConfig
+        from app.services.background_review_service import resolveSelector
 
-        return str(getConfig().get('reflectionModel') or '')
+        model, provider = resolveSelector('reflection')
     except Exception:
-        return ''
+        return '', ''
+    hint = (explicit or '').strip()
+    return (hint, '') if hint else (model, provider)
 
 
 def _resolve_model_id(hint: str) -> str:
@@ -688,12 +689,12 @@ async def run_code_review_async(
         }
 
     client = review_client
-    model = _resolve_review_model_hint(model_hint)
+    model, model_provider = _resolve_review_model_hint(model_hint)
     if client is None:
         try:
             from app.services.workbench.providers import make_review_llm_client
 
-            client = make_review_llm_client(None, model)
+            client = make_review_llm_client(None, model, model_provider)
         except Exception as exc:
             logger.warning('code review: client resolution failed: %s', exc)
             client = None
@@ -732,7 +733,7 @@ async def run_code_review_async(
         # Layer 2 — independent-model judge (R-B), discard-default.
         judge_report: dict[str, Any] = {'ran': False, 'reason': 'no findings to judge'}
         if survivors:
-            judge_hint = _resolve_judge_model_hint(judge_model_hint)
+            judge_hint, judge_provider = _resolve_judge_model_hint(judge_model_hint)
             independence_reason = _judge_independence_reason(model, judge_hint)
             if independence_reason:
                 judge_report = {'ran': False, 'reason': independence_reason}
@@ -744,7 +745,7 @@ async def run_code_review_async(
                             make_review_llm_client,
                         )
 
-                        active_judge = make_review_llm_client(None, judge_hint)
+                        active_judge = make_review_llm_client(None, judge_hint, judge_provider)
                     except Exception:
                         active_judge = None
                 if active_judge is None:

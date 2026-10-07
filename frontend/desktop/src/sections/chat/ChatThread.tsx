@@ -118,6 +118,7 @@ export type {
 } from '@/types/chat';
 import {
   type ModelItem,
+  findCatalogModel,
   modelFromSession,
   modelDisplayParts,
   getModelDisplayName,
@@ -1033,7 +1034,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       const detail = (e as CustomEvent<{ modelId?: string; provider?: string; skipSwitch?: boolean; interrupted?: boolean }>).detail ?? {};
       const { modelId, provider } = detail;
       if (!modelId || !provider) return;
-      const model = models.find((m) => m.id === modelId);
+      // The event names the gateway as well as the id: matching on id alone
+      // re-points the session at whichever gateway lists that id first, and
+      // OpenRouter and KiloCode both serve `stepfun/step-3.7-flash`.
+      const model = findCatalogModel(models, modelId, provider);
       if (!model) return;
       const sid = sessionId;
       const msgs = chatMessagesRef.current;

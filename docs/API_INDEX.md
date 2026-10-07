@@ -5,7 +5,7 @@
 
 # API Index — every route
 
-412 routes across 339 paths,
+413 routes across 340 paths,
 grouped by family. **This file is generated.** For the prose that explains what
 these are for and when to reach for them, read
 [`API_REFERENCE.md`](./API_REFERENCE.md) — it covers the families that matter in
@@ -139,7 +139,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `DELETE` | `/api/brain/stores/{name}/{row_id}` | Delete one row from a brain store (per-entry Delete in the Memory UI). |
 | `GET` | `/api/brain/turn-outcomes` | M5 telemetry: per-model/provider error rates plus the per-turn verdict distribution (046) for the Observabili… |
 
-## Skills (10)
+## Skills (11)
 
 | Method | Path | Summary |
 | --- | --- | --- |
@@ -153,6 +153,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/skills/packs` | Packs List |
 | `POST` | `/api/skills/packs` | Packs Install |
 | `DELETE` | `/api/skills/packs/{name}` | Packs Uninstall |
+| `POST` | `/api/skills/restore/{trashId}` | Undo a delete: restore a trashed skill directory (24h window). |
 
 ## Curator & learning (11)
 
@@ -291,7 +292,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `PUT` | `/api/config/live` | v4.2: Update Live config (partial). Response includes readiness flags. |
 | `GET` | `/api/config/model-aliases` | Return all model-alias entries for the UI's Aliases tab. |
 | `PUT` | `/api/config/model-aliases` | Replace the entire alias list (validated). |
-| `GET` | `/api/config/model-fleet` | v4.1: Return the merged fleet (defaults + user overrides) — see §10. |
+| `GET` | `/api/config/model-fleet` | v4.1: Return the merged fleet — models and gateways, one key per role. |
 | `PUT` | `/api/config/model-fleet` | v4.1: Update model fleet config (partial). |
 | `GET` | `/api/config/model-params` | Per-model wire capability families — operator-declared and built-in. |
 | `PUT` | `/api/config/model-params` | Replace config.json:modelParams.families, validated entry by entry. |
@@ -531,4 +532,4 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 
 ---
 
-Generated from `docs/api/openapi.json` (412 operations).
+Generated from `docs/api/openapi.json` (413 operations).

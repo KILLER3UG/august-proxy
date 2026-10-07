@@ -59,8 +59,13 @@ export function fmtContextWindow(n?: number) {
 }
 
 /**
- * Deduplicates aggregated catalog models by id for pickers (aliases, fallback,
- * background review). Normalizes isFree so the dropdown never sees undefined.
+ * De-duplicates the aggregated catalog for pickers (aliases, fallback,
+ * background review) and normalizes isFree so the dropdown never sees undefined.
+ *
+ * Keyed by (provider, id), NOT id: the aggregator repeats an id across
+ * gateways — `stepfun/step-3.7-flash` is served by OpenRouter and KiloCode
+ * both — and every one of these pickers stores or resolves a gateway too.
+ * De-duping by id made the second gateway's copy unselectable.
  */
 export function uniqueAggregatedModels(
   models: AggregatedModel[] | undefined | null,
@@ -71,8 +76,9 @@ export function uniqueAggregatedModels(
   }));
   const seen = new Set<string>();
   return list.filter((m) => {
-    if (seen.has(m.id)) return false;
-    seen.add(m.id);
+    const key = `${m.provider}\u0000${m.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }

@@ -5,12 +5,14 @@
 /* a provider slides a SEPARATE flyout card beside the panel with that     */
 /* provider's models — plain rows, pin on hover, check on selected.        */
 /* The effort chip opens a small pane with a vertical effort list (✓ on   */
-/* the active row) + thinking toggle. No search, no filters — the calm    */
-/* three-part layout.                                                     */
+/* the active row) + thinking toggle. The models panel carries a search    */
+/* field: typing a model name replaces the provider list with a flat,     */
+/* cross-provider result set, which is the one thing the two-level layout  */
+/* cannot do on its own.                                                  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight, Gauge, Pin, RefreshCw } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Gauge, Pin, RefreshCw, Search, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -19,7 +21,7 @@ import { chipTrigger, menuPanel, menuItem } from '@/lib/motion';
 import { providersApi } from '@/api/providers';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import type { ModelItem } from '../model-display';
-import { compareModelsRanked, getModelDisplayName } from '../model-display';
+import { compareModelsRanked, modelDisplayParts } from '../model-display';
 import type { EffortLevel } from '../hooks/useChatSend';
 
 const EFFORT_OPTIONS: {
@@ -33,12 +35,58 @@ const EFFORT_OPTIONS: {
   { value: 'max', label: 'Max', triggerLabel: 'Max' },
 ];
 
-/** Chip label: `Provider/model-id`, matching the reference composer. */
+/** Chip label: `Provider · Model`. It used to print `Provider/model-id`, which
+ *  truncated an identifier mid-id ("KiloCode/ox-alpha-free" → "KiloCode/ox-alp…")
+ *  while every list in the very popover it opens said "Ox Alpha Free". The exact
+ *  id stays available on hover, and in each row's tooltip. */
+/** The tier word a chip has room for: `poolside:Free` → `Free`; a tag that is
+ *  only a vendor slug (`poolside`) → nothing; a bare `Free` from an id that
+ *  carries no prefix → `Free`. */
+function chipVariant(model: ModelItem, tag: string): string {
+  if (!tag) return '';
+  const colon = tag.indexOf(':');
+  if (colon >= 0) return tag.slice(colon + 1);
+  return /[/:]/.test(model.id) ? '' : tag;
+}
+
 export function chipModelLabel(model: ModelItem | null): string {
   if (!model) return 'Model';
-  const raw = `${model.provider}/${model.id || model.name || ''}`;
+  const { name, tag } = modelRowLabel(model);
+  // The chip has room for the tier, not the vendor slug — that is what the panel
+  // header and each row's own badge are for, and
+  // "KiloCode · Step 3.7 Flash stepfun:Free" overflowed it.
+  const variant = chipVariant(model, tag);
+  const label = variant ? `${name} (${variant})` : name;
+  const raw = model.provider ? `${model.provider} · ${label}` : label;
   return raw.length > 34 ? `${raw.slice(0, 32)}…` : raw;
 }
+
+/** Row label: the catalog's friendly name when it carries one, else the
+ *  prettified id with its variant split into a tag (the rule the model lists
+ *  and the idle dropdown already use). `m.name` alone is not enough —
+ *  `useChatModels` sets `name = name || id`, so it can still be an identifier. */
+function modelRowLabel(model: ModelItem): { name: string; tag: string } {
+  if (model.name && model.name !== model.id) return { name: model.name, tag: '' };
+  const parts = modelDisplayParts(model.id || model.name);
+  // `modelDisplayParts` puts the id's provider prefix in `tag`. In this panel the
+  // provider is the group header — or the right-hand column of a search hit — so
+  // "Sonnet 4 5 / anthropic" under "Anthropic" says the same thing twice.
+  const tag = parts.tag.toLowerCase() === model.provider.toLowerCase() ? '' : parts.tag;
+  return { name: parts.name, tag };
+}
+
+/** Search is separator-agnostic: ids use `-`, `_`, `/` and `:` where a person
+ *  types a space, so "claude sonnet" has to reach `anthropic/claude-sonnet-4-5`
+ *  and "kimi k3" has to reach `kimi-k3`. Both sides collapse the same way. */
+const searchNormalize = (text: string): string =>
+  text.toLowerCase().replace(/[-_/:]/g, ' ').replace(/\s+/g, ' ').trim();
+
+const searchHaystack = (model: ModelItem): string => {
+  const parts = modelRowLabel(model);
+  return searchNormalize(
+    `${model.id} ${model.name ?? ''} ${model.provider} ${parts.name} ${parts.tag}`,
+  );
+};
 
 type PaneKind = 'models' | 'effort';
 
@@ -63,6 +111,9 @@ const PANEL_GAP = 8;
 const VIEWPORT_MARGIN = 8;
 /** Never shrink below this — the list scrolls internally instead. */
 const MIN_PANEL_H = 96;
+/** Ceiling on rendered search hits, so a one-letter query cannot mount
+ *  hundreds of rows; `search.hidden` tells the user what the cap dropped. */
+const SEARCH_RESULT_CAP = 80;
 
 function clampLeft(left: number, w: number): number {
   return Math.max(8, Math.min(left, window.innerWidth - w - 8));
@@ -161,6 +212,11 @@ export function ModelEffortMenu({
   const [modelsPos, setModelsPos] = useState<PanelPos | null>(null);
   const [flyoutPos, setFlyoutPos] = useState<AnchorPos | null>(null);
   const [effortPos, setEffortPos] = useState<PanelPos | null>(null);
+  // Model-name search. Non-empty query swaps the provider list for a flat
+  // cross-provider result set — the two-level layout can't reach a model
+  // without the user knowing which provider filed it under.
+  const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
   const modelChipRef = useRef<HTMLButtonElement>(null);
   const effortChipRef = useRef<HTMLButtonElement>(null);
   const modelsPanelRef = useRef<HTMLDivElement>(null);
@@ -207,6 +263,10 @@ export function ModelEffortMenu({
   };
 
   const onPanelKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // The search field is INSIDE the panel, and its arrows belong to text
+    // editing (Home/End to the caret). Without this the roving focus swallowed
+    // the key and moved out of the field the user was typing in.
+    if ((e.target as HTMLElement).tagName === 'INPUT') return;
     const inFlyout = e.currentTarget === flyoutRef.current;
     switch (e.key) {
       case 'ArrowDown':
@@ -350,6 +410,21 @@ export function ModelEffortMenu({
     null;
   const activeGroup = groups.find((g) => g.provider === effectiveProvider) ?? null;
 
+  const searching = query.trim().length > 0;
+  // `hidden` is what the cap dropped: a long list cut off without a word looks
+  // like "no other model matches".
+  const search = useMemo(() => {
+    const q = searchNormalize(query);
+    if (!q) return { results: [] as ModelItem[], hidden: 0 };
+    const matched = visibleModels
+      .filter((m) => searchHaystack(m).includes(q))
+      .sort(compareModelsRanked);
+    return {
+      results: matched.slice(0, SEARCH_RESULT_CAP),
+      hidden: Math.max(0, matched.length - SEARCH_RESULT_CAP),
+    };
+  }, [query, visibleModels]);
+
   // Position the panels once on open (above the chips, like the reference);
   // reset the flyout whenever the pane closes.
   useEffect(() => {
@@ -358,6 +433,7 @@ export function ModelEffortMenu({
       setEffortPos(null);
       setFlyoutPos(null);
       setActiveProvider(null);
+      setQuery('');
       return;
     }
     if (pane === 'models') {
@@ -443,8 +519,9 @@ export function ModelEffortMenu({
     [updateFlyoutPos],
   );
 
-  const modelRow = (m: ModelItem) => {
+  const modelRow = (m: ModelItem, showProvider = false) => {
     const isSel = selected?.id === m.id && selected?.provider === m.provider;
+    const { name, tag } = modelRowLabel(m);
     return (
       <div
         key={`${m.provider}/${m.id}`}
@@ -452,6 +529,7 @@ export function ModelEffortMenu({
         role="button"
         tabIndex={0}
         data-testid="model-option"
+        title={`${m.provider}/${m.id}`}
         className="group flex w-full cursor-pointer items-center gap-1.5 py-[8px] pl-3 pr-2 text-left text-[0.875rem] hover:bg-muted/50"
         onClick={() => {
           onSelect(m);
@@ -466,8 +544,16 @@ export function ModelEffortMenu({
         }}
       >
         <span className="min-w-0 flex-1 truncate text-foreground">
-          {m.id || m.name}
+          {name}
+          {tag && (
+            <span className="ml-1.5 text-2xs text-muted-foreground/60">{tag}</span>
+          )}
         </span>
+        {showProvider && (
+          <span className="max-w-[38%] shrink-0 truncate text-2xs text-muted-foreground">
+            {m.provider}
+          </span>
+        )}
         <button
           type="button"
           title={m.pinned ? 'Unpin' : 'Pin'}
@@ -496,7 +582,7 @@ export function ModelEffortMenu({
 
   return (
     <>
-      {/* Model chip — Provider/model, like the reference composer. */}
+      {/* Model chip — Provider · model name; the exact id is the tooltip. */}
       <motion.button
         ref={modelChipRef}
         type="button"
@@ -576,7 +662,7 @@ export function ModelEffortMenu({
                       {selected?.provider || 'Provider'}
                     </div>
                     <div className="truncate text-[0.8125rem] leading-5 text-foreground/80">
-                      {selected ? getModelDisplayName(selected.id) : 'No model selected'}
+                      {selected ? modelRowLabel(selected).name : 'No model selected'}
                     </div>
                   </div>
                   <button
@@ -598,10 +684,66 @@ export function ModelEffortMenu({
                     />
                   </button>
                 </div>
+                <div className="shrink-0 px-2 pb-1 pt-1">
+                  <div className="flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 transition-colors focus-within:border-primary/40">
+                    <Search className="size-3 shrink-0 text-muted-foreground" />
+                    <input
+                      ref={searchRef}
+                      type="text"
+                      value={query}
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                        setFlyoutPos(null);
+                      }}
+                      onKeyDown={(e) => {
+                        // Escape clears the search first — one layer per press.
+                        if (e.key === 'Escape' && query) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setQuery('');
+                        }
+                      }}
+                      placeholder="Search models"
+                      aria-label="Search models by name, ID or provider"
+                      data-testid="model-search"
+                      className="min-w-0 flex-1 bg-transparent text-[0.8125rem] text-foreground outline-none placeholder:text-muted-foreground"
+                    />
+                    {query ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuery('');
+                          searchRef.current?.focus();
+                        }}
+                        aria-label="Clear model search"
+                        className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
                 <div
                   data-testid="models-panel-list"
                   className="py-1 overflow-y-auto min-h-0 flex-1 chat-scroll"
                 >
+                  {searching ? (
+                    search.results.length > 0 ? (
+                      <>
+                        {search.results.map((m) => modelRow(m, true))}
+                        {search.hidden > 0 && (
+                          <div className="px-3 py-2 text-2xs text-muted-foreground">
+                            {search.hidden} more match “{query.trim()}” — keep typing to narrow.
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="px-3 py-2 text-[0.8125rem] text-muted-foreground">
+                        No model matches “{query.trim()}”.
+                      </div>
+                    )
+                  ) : (
+                    <>
                   {groups.length === 0 && (
                     <div className="px-3 py-2 text-[0.8125rem] text-muted-foreground">
                       {loading ? 'Loading…' : 'No providers.'}
@@ -639,6 +781,8 @@ export function ModelEffortMenu({
                       </button>
                     );
                   })}
+                    </>
+                  )}
                 </div>
                 {onEditModels && (
                   <>
@@ -658,7 +802,7 @@ export function ModelEffortMenu({
                 )}
               </motion.div>
             )}
-            {modelsOpen && flyoutPos && activeGroup && (
+            {modelsOpen && flyoutPos && activeGroup && !searching && (
               <motion.div
                 key="models-flyout"
                 ref={flyoutRef}

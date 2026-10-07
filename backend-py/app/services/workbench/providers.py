@@ -40,7 +40,9 @@ def background_task_model(task_key: str, chat_model: str) -> str:
 
 
 def make_review_llm_client(
-    main_provider: dict[str, object] | None, review_model_hint: str = ''
+    main_provider: dict[str, object] | None,
+    review_model_hint: str = '',
+    review_provider_hint: str = '',
 ) -> Callable | None:
     """Create an LLM client for background review calls.
 
@@ -62,8 +64,8 @@ def make_review_llm_client(
         # the right-hand side is the model and the left-hand side is looked up
         # as a provider — and an unknown provider fails closed below instead of
         # silently reviewing with somebody else's default.
-        qualified_provider_name = ''
-        if '/' in review_model:
+        qualified_provider_name = (review_provider_hint or '').strip()
+        if not qualified_provider_name and '/' in review_model:
             head, _, tail = review_model.partition('/')
             head, tail = head.strip(), tail.strip()
             if head and tail:

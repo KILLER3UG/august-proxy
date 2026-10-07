@@ -34,12 +34,20 @@ async def _aux_summarize(text: str, *, max_out: int, timeout_s: float = 45.0) ->
             from app.providers.clients import getClient
             from app.services.workbench import model_fleet
 
-            model = model_fleet.getModelForRole('cerebellum') or model_fleet.getModelForRole(
-                'hippocampus'
-            )
+            model, role_provider = '', ''
+            for role in ('cerebellum', 'hippocampus'):
+                model, role_provider = model_fleet.resolveRoleModel(role)
+                if model:
+                    break
             if not model:
                 return ''
-            provider = provider_resolver.resolve(model)
+            # The gateway the role was configured with, when it named one. Passing
+            # the MODEL to a provider resolver — which is what this used to do —
+            # can only match by scanning every provider that lists the id and
+            # taking the first with a key, so a KiloCode model ran on OpenRouter.
+            provider = (
+                provider_resolver.resolve(role_provider) if role_provider else provider_resolver.resolve(model)
+            )
             if not provider:
                 available = [p for p in provider_resolver.list_available() if p.get('api_key')]
                 provider = available[0] if available else None
