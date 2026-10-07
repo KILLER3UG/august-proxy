@@ -74,6 +74,31 @@ class TestAnthropicClient:
         client = AnthropicClient({'name': 'Anthropic', 'baseUrl': 'https://api.anthropic.com/v1'})
         assert client.resolveBaseUrl() == 'https://api.anthropic.com'
 
+    def testGenerateOutputCapComesFromConfig(self):
+        """`generate` hard-coded 2048, which truncates a reply asked to carry
+        whole skill bodies (the distiller judge) — and a truncated JSON verdict
+        costs the batch plus a cooldown. The default must stay for every other
+        caller, so the cap is only readable through client config."""
+        import asyncio
+
+        seen: list[dict] = []
+
+        async def fakeMessages(body, apiKey=None):
+            seen.append(body)
+            return ProviderResponse(status=200, body={'content': [{'text': 'ok'}]})
+
+        client = AnthropicClient({'name': 'Anthropic', 'model': 'claude-x'})
+        client.messages = fakeMessages  # type: ignore[method-assign]
+        assert asyncio.run(client.generate('p')) == 'ok'
+        assert seen[0]['max_tokens'] == 2048
+        client.config = {**client.config, 'max_tokens': 4096}
+        asyncio.run(client.generate('p'))
+        assert seen[1]['max_tokens'] == 4096
+        # A non-numeric config value falls back rather than raising upstream.
+        client.config = {**client.config, 'max_tokens': 'later'}
+        asyncio.run(client.generate('p'))
+        assert seen[2]['max_tokens'] == 2048
+
     def testResolveApiKeyNoKey(self):
         client = AnthropicClient({'name': 'Anthropic'})
         key = client.resolveApiKey()

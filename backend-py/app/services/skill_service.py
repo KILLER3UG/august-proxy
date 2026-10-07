@@ -737,6 +737,32 @@ def _parse_body_sections(body: str) -> list[tuple[str, str]]:
     return [(s, c) for s, c in out if c]
 
 
+def _titleFromName(name: str) -> str:
+    """`receipt-gate` → `Receipt gate`. Used when an author wrote no H1."""
+    words = [w for w in re.split(r'[-_.]+', (name or '').strip()) if w]
+    if not words:
+        return 'Skill'
+    head = words[0].capitalize()
+    tail = ' '.join(words[1:])
+    return f'{head} {tail}'.strip()
+
+
+def _splitLeadingH1(text: str) -> tuple[str, str]:
+    """Split a leading `# Title` line from the prose under it.
+
+    Every authoring standard (and the shape the distiller now renders) puts the
+    skill's name in an H1. The normalizer used to fold that H1 into the body of
+    its own literal `# What this skill is` heading, so a well-formed skill
+    shipped with two H1s and its real title buried one level down.
+    """
+    lines = (text or '').strip().split('\n')
+    if lines:
+        m = _BODY_HEADING_RE.match(lines[0])
+        if m and m.group(1) == '#':
+            return m.group(2).strip(), '\n'.join(lines[1:]).strip()
+    return '', (text or '').strip()
+
+
 def _ensure_canonical_body(
     body: str,
     name: str,
@@ -759,14 +785,15 @@ def _ensure_canonical_body(
             present[sec] = present[sec].rstrip() + '\n\n' + content.strip()
         else:
             present[sec] = content.strip()
-    # Pull the first non-empty prose block into Title when the author didn't
-    # include a "What this skill is" section. Use the frontmatter description
-    # as the fallback prose so even a no-body lesson ships a clear headline.
-    title_text = present.get('Title', '').strip()
-    if not title_text:
-        title_text = description.strip() or f'What `{name}` does.'
+    # Pull the first non-empty prose block into the title section when the
+    # author didn't label it. The skill's own H1 wins; otherwise the H1 is the
+    # humanised name and the frontmatter description becomes the intro sentence,
+    # so even a no-body lesson ships a readable headline.
+    own_title, prose = _splitLeadingH1(present.get('Title', '').strip())
+    display = own_title or _titleFromName(name)
+    intro = prose or description.strip() or f'What `{name}` does.'
     out: list[str] = []
-    out.append(f'# What this skill is\n\n{title_text}')
+    out.append(f'# {display}\n\n{intro}')
     for sec in _BODYSectionOrder[1:]:
         if sec not in _REQUIRED_BODY_SECTIONS and sec not in present:
             continue
@@ -806,6 +833,169 @@ def _placeholder_for(section: str, name: str, description: str) -> str:
             '- Re-run a single dry call if the user asks for proof.'
         )
     return '_No content yet._'
+
+
+# ── structured drafting (distiller) — render + substance ─────────────────
+#
+# The judge used to be handed one free-text `body_markdown` field and asked to
+# fill it. Free text with no shape produced what users saw: a one-sentence rule
+# wearing a skill's headings. These two functions are the two halves of the fix
+# — `renderSkillBody` makes the SHAPE a property of the code (the model supplies
+# content per section; it cannot get the order or the heading set wrong), and
+# `bodySubstance` makes the BAR a property of the code (a draft that is only a
+# rule is refused as a skill rather than padded into one).
+
+
+def _draftList(value: object) -> list[str]:
+    """One authoring field as clean lines: a list, one string, or a list of dicts.
+
+    Never raises. This is a model's answer about shape, not about correctness —
+    a field we did not predict must cost one line, not the whole draft, because
+    the alternative is that a good skill disappears over a formatting variance.
+    """
+    if value is None or value == '':
+        return []
+    if isinstance(value, str):
+        parts: list[object] = re.split(r'\n+', value)
+    elif isinstance(value, (list, tuple, set)):
+        parts = list(value)
+    elif isinstance(value, dict):
+        parts = list(value.values())
+    else:
+        parts = [value]
+    out: list[str] = []
+    for part in parts:
+        if isinstance(part, dict):
+            text = ' — '.join(str(v).strip() for v in part.values() if str(v).strip())
+        else:
+            text = str(part).strip()
+        text = re.sub(r'^([-*]|\d+[.)])\s+', '', text).strip()
+        if text:
+            out.append(text)
+    return out
+
+
+def _draftPairs(value: object, keys: tuple[str, str]) -> list[tuple[str, str]]:
+    """[{first, second}] → [(first, second)]; a bare string keeps `second` empty."""
+    if value is None:
+        return []
+    items = value if isinstance(value, (list, tuple, set)) else [value]
+    out: list[tuple[str, str]] = []
+    for item in items:
+        if isinstance(item, dict):
+            first = str(item.get(keys[0]) or item.get('problem') or '').strip()
+            second = str(item.get(keys[1]) or item.get('fix') or '').strip()
+            if not first and not second:
+                first = ' '.join(str(v).strip() for v in item.values() if str(v).strip())
+        else:
+            first, second = str(item or '').strip(), ''
+        first = re.sub(r'^([-*]|\d+[.)])\s+', '', first).strip()
+        if first:
+            out.append((first, second))
+    return out
+
+
+def renderSkillBody(name: str, description: str, draft: dict[str, object]) -> str:
+    """Render a structured skill draft into the canonical section order.
+
+    Sections with no content are OMITTED rather than filled: `_placeholder_for`
+    exists so a human starting from the UI gets a template, and it is exactly the
+    wrong thing for a learned skill, because boilerplate in `## Pitfalls` reads
+    like evidence. The substance bar is what decides whether a draft is a skill;
+    this function never props one up.
+    """
+    def field(key: str) -> object:
+        return draft.get(key)
+
+    title = str(field('title') or '').strip() or _titleFromName(name)
+    introLines = _draftList(field('intro'))
+    intro = ' '.join(introLines) if introLines else (description or '').strip()
+    head = f'# {title}'
+    blocks: list[str] = [f'{head}\n\n{intro}' if intro else head]
+
+    use = _draftList(field('when_to_use'))
+    notUse = _draftList(field('when_not_to_use'))
+    if use or notUse:
+        lines = [f'- {item}' for item in use]
+        if notUse:
+            # A blank line before the second list: without it markdown treats
+            # the bullets as a lazy continuation of the sentence above.
+            lines.extend(['', 'Do not use it when:', '', *(f'- {item}' for item in notUse)])
+        blocks.append('## When to Use\n\n' + '\n'.join(lines))
+
+    prereq = _draftList(field('prerequisites'))
+    if prereq:
+        blocks.append('## Prerequisites\n\n' + '\n'.join(f'- {p}' for p in prereq))
+
+    # True of every skill in this harness, and the one thing a reader of the body
+    # cannot infer: the steps are not run by the model that wrote them.
+    blocks.append(
+        '## How to Run\n\n'
+        f'1. August matches this skill on its trigger and keywords — read the full '
+        f'body with `load_skill("{name}")` before acting on it.\n'
+        '2. Follow the Procedure below in order, batching independent calls.\n'
+        '3. Run the Verification step before reporting success.'
+    )
+
+    steps = _draftPairs(field('steps'), ('do', 'command'))
+    if steps:
+        lines = []
+        for index, (do, command) in enumerate(steps, start=1):
+            line = f'{index}. {do}'
+            if command:
+                line += f'\n   `{command}`'
+            lines.append(line)
+        blocks.append('## Procedure\n\n' + '\n'.join(lines))
+
+    pits = _draftPairs(field('pitfalls'), ('seen', 'instead'))
+    if pits:
+        lines = []
+        for seen, instead in pits:
+            line = f'- {seen}'
+            if instead:
+                line += f'\n  Instead: {instead}'
+            lines.append(line)
+        blocks.append('## Pitfalls\n\n' + '\n'.join(lines))
+
+    verify = _draftList(field('verification'))
+    if verify:
+        blocks.append('## Verification\n\n' + '\n'.join(f'- {v}' for v in verify))
+
+    return '\n\n'.join(blocks) + '\n'
+
+
+_MIN_SKILL_STEPS = 2
+_BULLET_RE = re.compile(r'(?m)^\s*(?:[-*]|\d+[.)])\s+\S')
+
+
+def bodySubstance(name: str, description: str, body: str) -> str:
+    """'' when `body` is a skill; otherwise why it is only a rule.
+
+    Placeholders are compared against `_placeholder_for` for the same name and
+    description, so a section the author never wrote counts as missing instead
+    of counting as content. That is the whole point: the old shape could not
+    tell a drafted pitfall from a template one, so every thin lesson passed.
+    """
+    sections = dict(_parse_body_sections(body))
+
+    def authored(key: str) -> str:
+        text = (sections.get(key) or '').strip()
+        if not text:
+            return ''
+        if text == _placeholder_for(key, name, description).strip():
+            return ''
+        return text
+
+    if len(_BULLET_RE.findall(authored('When to Use'))) < 1:
+        return 'no situation to use it in'
+    steps = authored('Procedure')
+    if len(_BULLET_RE.findall(steps)) < _MIN_SKILL_STEPS:
+        return f'procedure has fewer than {_MIN_SKILL_STEPS} steps'
+    if not authored('Pitfalls'):
+        return 'no pitfall observed in the episode'
+    if not authored('Verification'):
+        return 'no way to tell it worked'
+    return ''
 
 
 # ── Authoring (create / patch / delete) — restored 0.17.0 ─────────────────

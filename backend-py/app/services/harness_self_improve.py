@@ -679,7 +679,12 @@ def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
         try:
             from app.services.skill_service import parse_keywords
 
-            keywords = parse_keywords(prior.get('keywords', ''))
+            # The drafter's own tags first: a create has no prior file to read,
+            # and re-asking a model for keywords the judge already supplied is a
+            # second call for a worse answer. Then the file this write replaces.
+            keywords = parse_keywords(payload.get('keywords', '')) or parse_keywords(
+                prior.get('keywords', '')
+            )
         except Exception:
             keywords = []
         if not keywords:

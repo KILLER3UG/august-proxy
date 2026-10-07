@@ -32,6 +32,7 @@ import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -41,28 +42,81 @@ from app.services.memory_conn import conn as _conn
 logger = logging.getLogger(__name__)
 
 _BATCH_SIZE = 5
-_JUDGE_TIMEOUT_S = 60
+# A drafted skill body is the longest single reply the judge is asked for, on a
+# background model chosen for cost rather than speed. 60s measured as enough for
+# the old one-line-rule contract and not enough for a real body.
+_JUDGE_TIMEOUT_S = 120
 _JUDGE_COOLDOWN_MIN = 30
 _PRECISION_SHIP_BAR = 0.8
 _PRECISION_MIN_LABELED = 30
-_EXCERPT_CAP = 240
-_DRAFT_CAP = 1200
+# 240 chars was chosen when the judge only had to NAME a lesson. It now has to
+# write a procedure, and a truncated command is worse than no command: the judge
+# fills the gap by inventing the flag it expects to see.
+_EXCERPT_CAP = 600
+_TIMELINE_LINE_CAP = 220
+_TIMELINE_MAX_LINES = 12
+# Output budget for the batch reply. A truncated JSON verdict is worse than a
+# short one: the batch is dropped and the fingerprint cools down for
+# `_JUDGE_COOLDOWN_MIN`. Only the native Anthropic client reads this — the
+# OpenAI-compatible path sends no cap at all.
+_JUDGE_MAX_TOKENS = 4096
 
 _JUDGE_SYSTEM = (
-    'You are the distiller judge for August\'s self-improvement loop. You '
-    'receive a batch of flagged episode windows (failure/recovery, '
-    'correction, abandoned-approach) and the titles/descriptions of the '
-    'user\'s existing skills. Decide per episode whether anything durable '
-    'should be learned. Reply with STRICT JSON only — no prose, no code '
-    'fences:\n'
+    "You are the distiller judge for August's self-improvement loop. You receive"
+    ' a batch of flagged episode windows. Each window carries the typed events'
+    ' (tool errors, user corrections, abandoned approaches) AND the window\'s'
+    ' tool calls in order, with their arguments and outcomes, including the calls'
+    ' that SUCCEEDED — that sequence is the recovery path, and it is the only'
+    ' thing a procedure can be written from.\n'
+    '\n'
+    'Decide per episode whether anything durable should be learned. Reply with'
+    ' STRICT JSON only — no prose, no code fences:\n'
     '{"verdicts": [{"episode": <id>, "action": "none|memory|create_skill|'
     'amend_trigger|amend_body", "reason": "<short>",'
     ' "summary": "<one-line fact>", "category": "project|reference|feedback|general",'
     ' "title": "<short title>", "expires_days": <int>,'
-    ' "name": "<skill-name>", "description": "<when to use>",'
-    ' "trigger": "<trigger phrase>", "body_markdown": "<skill body>",'
+    ' "name": "<skill-name>", "description": "<one sentence, max 60 chars>",'
+    ' "trigger": "<trigger phrase>", "keywords": ["<word>"],'
+    ' "intro": "<2-3 sentences>", "when_to_use": ["<situation>"],'
+    ' "when_not_to_use": ["<situation>"], "prerequisites": ["<tool/file/state>"],'
+    ' "steps": [{"do": "<what to do>", "command": "<the exact call, or empty>"}],'
+    ' "pitfalls": [{"seen": "<failure that happened here>", "instead": "<what worked>"}],'
+    ' "verification": ["<what proves it worked>"],'
+    ' "body_markdown": "<whole body, only if you must override the structure>",'
     ' "skill": "<existing skill name>", "patch_markdown": "<amended section>"}]}'
-    ' Omit fields irrelevant to the chosen action. Prefer "none" for one-offs.'
+    '\n'
+    ' Omit fields irrelevant to the chosen action. Prefer "none" for one-offs.\n'
+    '\n'
+    'A SKILL IS A PROCEDURE, NOT A RULE. `memory` is where a one-line fact'
+    ' belongs. `create_skill` is only for something a future agent has to DO, in'
+    ' steps. Before choosing it, check that you can fill `steps` with at least'
+    ' two ordered actions AND `pitfalls` with one failure this episode actually'
+    ' showed. If you cannot, the episode taught a rule — file `action: memory`.'
+    ' Never pad: a skill whose steps you invented will be followed, and a wrong'
+    ' step is worse than no step.\n'
+    '\n'
+    'AUTHORING STANDARDS for create_skill:\n'
+    '- name: lowercase letters, digits and hyphens, max 64 chars.\n'
+    '- title: a short human title for the body\'s first line — `name` is the id,'
+    ' the title is what a reader sees.\n'
+    '- description: ONE sentence, max 60 characters, ending with a period. Name'
+    ' the capability, not the implementation. Do not restate the name. No'
+    ' marketing words (powerful, seamless, robust, advanced, intuitive).\n'
+    '- intro: 2-3 sentences — what the skill does, what it does NOT do, and'
+    ' whether anything has to be installed or configured first.\n'
+    '- when_to_use / when_not_to_use: concrete situations, close to what the user'
+    ' actually said. Naming when NOT to use it is what stops a skill firing on'
+    ' everything.\n'
+    '- steps: in execution order. `command` must be copied verbatim from the tool'
+    ' calls in the evidence — a flag, path or argument you cannot see there must'
+    ' not appear. Leave `command` empty when the step is a judgement rather than'
+    ' a call.\n'
+    '- pitfalls: each one is a failure that happened in THIS episode plus the'
+    ' change that fixed it. "Be careful" is not a pitfall.\n'
+    '- verification: what to look at to know the skill worked.\n'
+    '- keywords: 3-8 words a future request would contain.\n'
+    '- Never write health, identity or financial details into a skill; the'
+    ' denylist refuses them either way.\n'
 )
 
 # ── per-action verdict schemas (audit P2#16) ──────────────────────────
@@ -137,9 +191,14 @@ class _CreateSkillVerdict(_VerdictBase):
     Only `name` is required. `description` is NOT: the applier falls back to
     `description or name`, and a judge that omits it today gets a perfectly
     good draft. Requiring it here would silently stop producing those.
-    `body_markdown` falls back to the description the same way. Requiring
-    what the applier already defaults is the one way this layer could make
-    the distiller produce LESS than it does now.
+
+    The body-shape fields are typed `Any` and default to None ON PURPOSE. This
+    layer exists to drop a verdict whose ACTION cannot be honoured; a missing or
+    oddly-shaped section means a THIN skill, which `apply_verdict` decides about
+    explicitly (downgrade to memory) rather than discarding. A strict `list[str]`
+    here would reject a judge that sent one plain string for `when_to_use` —
+    losing a real draft over a shape the renderer can handle. The renderer
+    coerces; the gate judges substance.
     """
 
     action: Literal['create_skill']
@@ -147,6 +206,15 @@ class _CreateSkillVerdict(_VerdictBase):
     description: str = ''
     trigger: str = ''
     body_markdown: str = ''
+    title: str = ''
+    intro: Any = None
+    when_to_use: Any = None
+    when_not_to_use: Any = None
+    prerequisites: Any = None
+    steps: Any = None
+    pitfalls: Any = None
+    verification: Any = None
+    keywords: Any = None
 
 
 class _AmendTriggerVerdict(_VerdictBase):
@@ -173,6 +241,119 @@ VERDICT_MODELS: dict[str, type[_VerdictBase]] = {
     'amend_trigger': _AmendTriggerVerdict,
     'amend_body': _AmendBodyVerdict,
 }
+
+
+# ── drafting helpers ─────────────────────────────────────────────────────
+
+# The section fields `renderSkillBody` reads, in body order. Kept as one list
+# because the denylist scan and the renderer must see the same set — a drafted
+# pitfall that never reaches the denylist is how a health detail gets into a
+# skill file.
+_DRAFT_FIELDS = (
+    'title',
+    'intro',
+    'when_to_use',
+    'when_not_to_use',
+    'prerequisites',
+    'steps',
+    'pitfalls',
+    'verification',
+    'keywords',
+)
+
+def _draftText(value: object) -> str:
+    """Every string inside a drafted field, flattened — for the denylist scan."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return ' '.join(_draftText(v) for v in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return ' '.join(_draftText(v) for v in value)
+    return '' if value is None else str(value)
+
+
+def _fitDescription(raw: str) -> tuple[str, str]:
+    """``(usable description, problem)`` — problem is '' when there is none.
+
+    ``_apply_skill_write`` re-validates the description at APPROVAL time, so a
+    drafted one over the 60-char authoring cap filed a proposal that was
+    unapprovable by construction: the human clicked Approve and got an error.
+    Length is a drafting accident and is repairable at a clause boundary. A
+    banned marketing word is a CLAIM, not a typo, so it is reported rather than
+    quietly rewritten out of the operator's text.
+    """
+    from app.services.skill_service import (
+        SkillValidationError,
+        _DESCRIPTIONMax,
+        _validateDescription,
+    )
+
+    text = (raw or '').strip()
+    try:
+        _validateDescription(text)
+        return text, ''
+    except SkillValidationError as exc:
+        problem = str(exc)
+    if 'exceeds' not in problem:
+        return '', problem
+    cut = text[: _DESCRIPTIONMax - 1]
+    for sep in ('. ', '; ', ', ', ' '):
+        idx = cut.rfind(sep)
+        if idx >= 24:
+            cut = cut[:idx]
+            break
+    # One period, whatever the cut landed on: the separator may itself have been
+    # a sentence end, and `Something..` is not a description.
+    fitted = cut.strip().rstrip(' ,;.') + '.'
+    try:
+        _validateDescription(fitted)
+    except SkillValidationError as exc:
+        return '', str(exc)
+    return fitted, ''
+
+
+def _draftKeywords(value: object) -> str:
+    """The judge's keyword field as the scalar `parse_keywords` reads.
+
+    `_draftText` flattens for the denylist scan; keywords are a LIST, and a
+    space-joined flatten parses as one long keyword that matches nothing.
+    """
+    items = (
+        list(value)
+        if isinstance(value, (list, tuple, set))
+        else re.split(r'[,\n]', str(value or ''))
+    )
+    return ', '.join(str(item).strip() for item in items if str(item).strip())
+
+
+def _asLessonVerdict(verdict: dict[str, Any], name: str, description: str) -> dict[str, Any]:
+    """A refused skill draft, re-aimed at the memory store instead of dropped.
+
+    The episode still taught something; it just was not a procedure. Before the
+    substance bar existed the same verdict shipped as a padded one-sentence
+    "skill", and dropping it entirely would have thrown the lesson away — so the
+    downgrade keeps what the draft actually said (the description plus the first
+    step, which is the actionable half) and files it where a rule belongs.
+    """
+    summary = str(verdict.get('summary') or '').strip()
+    if not summary:
+        first = ''
+        steps = verdict.get('steps')
+        if isinstance(steps, list) and steps:
+            head = steps[0]
+            if isinstance(head, dict):
+                do = str(head.get('do') or head.get('step') or '').strip()
+                cmd = str(head.get('command') or '').strip()
+                first = f'{do}: {cmd}' if do and cmd else (do or cmd)
+            else:
+                first = str(head or '').strip()
+        summary = '; '.join(x for x in ((description or name).strip(), first) if x)
+    return {
+        **verdict,
+        'action': 'memory',
+        'summary': summary[:500],
+        'title': str(verdict.get('title') or name).strip(),
+    }
 
 
 # ── model resolution ────────
@@ -250,6 +431,72 @@ def _skillIndex() -> list[dict[str, str]]:
         return []
 
 
+def _actionTimeline(ep: dict[str, Any]) -> str:
+    """The window's tool calls IN ORDER — including the ones that worked.
+
+    ``events`` carries only failures, on purpose: it is the fingerprint
+    substrate in episode_miner (``_episodeText`` joins every excerpt into the
+    dedupe token set), and a fingerprint that included successful calls would
+    merge unrelated work. The cost was that the judge could never see the
+    RECOVERY — the call that actually solved it, with its arguments — so a
+    draft could only restate the error and the user's correction. That is the
+    mechanical reason learned skills read like one-line rules: the procedure
+    was never in the evidence.
+
+    Read at judge time from the same ``blocks_json`` the UI timeline renders,
+    so mining, scoring and fingerprints stay exactly as they are.
+    """
+    sessionId = str(ep.get('session_id') or '')
+    start = ep.get('start_message_id')
+    end = ep.get('end_message_id')
+    if not sessionId or start is None or end is None:
+        return ''
+    try:
+        rows = _conn().execute(
+            'SELECT blocks_json FROM messages'
+            ' WHERE session_id = ? AND id >= ? AND id <= ? ORDER BY id',
+            (sessionId, int(start), int(end)),
+        ).fetchall()
+    except Exception:
+        logger.debug('distiller timeline read failed for %s', ep.get('id'), exc_info=True)
+        return ''
+    from app.services.memory_store.transcript_blocks import decode_blocks
+
+    lines: list[str] = []
+    for row in rows:
+        try:
+            blocks = decode_blocks(row['blocks_json']).get('blocks')
+        except Exception:
+            continue
+        if not isinstance(blocks, list):
+            continue
+        for block in blocks:
+            if not isinstance(block, dict) or block.get('type') != 'toolCall':
+                continue
+            tool = block.get('tool')
+            if not isinstance(tool, dict):
+                continue
+            name = str(tool.get('name') or '').strip()
+            if not name:
+                continue
+            args = str(tool.get('args') or '').strip().replace('\n', ' ')
+            status = str(tool.get('status') or 'running')
+            if len(args) > _TIMELINE_LINE_CAP:
+                args = args[:_TIMELINE_LINE_CAP] + '…'
+            lines.append(f'  - {name}({args}) -> {status}')
+    if not lines:
+        return ''
+    if len(lines) > _TIMELINE_MAX_LINES:
+        # Keep the head AND the tail: in a failure→recovery window the fix is
+        # the last call, and a head-only cut would drop exactly the step the
+        # skill needs to record.
+        head = lines[: _TIMELINE_MAX_LINES // 2]
+        tail = lines[-(_TIMELINE_MAX_LINES - len(head)) :]
+        hidden = len(lines) - len(head) - len(tail)
+        lines = head + [f'  … {hidden} further call(s) not shown …'] + tail
+    return '\n'.join(lines)
+
+
 def _episodeWindow(ep: dict[str, Any]) -> str:
     events = ep.get('events')
     if isinstance(events, str):
@@ -261,6 +508,10 @@ def _episodeWindow(ep: dict[str, Any]) -> str:
     for e in events or []:
         excerpt = str(e.get('excerpt', ''))[:_EXCERPT_CAP]
         lines.append(f"  - {e.get('type')}: {excerpt}")
+    timeline = _actionTimeline(ep)
+    if timeline:
+        lines.append('  tool calls in order (this is what the procedure must be built from):')
+        lines.append(timeline)
     return '\n'.join(lines)
 
 
@@ -399,7 +650,15 @@ async def call_judge(prompt: str) -> dict[str, Any] | None:
             _note_judge_failure('no-client', 'provider has no client')
             return None
         try:
-            client.config = {**dict(client.config or {}), 'model': model}
+            client.config = {
+                **dict(client.config or {}),
+                'model': model,
+                # One reply carries up to five verdicts, and a create_skill
+                # verdict is now a whole drafted body. The native Anthropic
+                # client's default output cap truncates that mid-JSON, which
+                # fails the batch and burns the cooldown.
+                'max_tokens': _JUDGE_MAX_TOKENS,
+            }
             raw = await client.generate(prompt, system=_JUDGE_SYSTEM)
             try:
                 data = _extractJson(str(raw))
@@ -592,15 +851,15 @@ def _isBundledSkill(name: str) -> bool:
         return False
 
 
-def _learnedSkillText(name: str) -> tuple[str, str] | None:
-    """(description, current body) of a LEARNED skill — the amend_body
-    target. None when the skill doesn't exist (bundled skills are handled
-    by the caller before this)."""
-    try:
-        from app.services.skill_service import _agentSkillsDir
+def _readSkillMd(path: Path) -> tuple[str, str] | None:
+    """(description, body) of one SKILL.md, or None when there is no file.
 
-        md = _agentSkillsDir() / name / 'SKILL.md'
-        if not md.exists():
+    Both roots are read the same way: an amendment needs the CURRENT text of the
+    skill it targets, whichever tree it lives in.
+    """
+    try:
+        md = path / 'SKILL.md'
+        if not md.is_file():
             return None
         text = md.read_text('utf-8')
     except Exception:
@@ -617,6 +876,52 @@ def _learnedSkillText(name: str) -> tuple[str, str] | None:
         except ValueError:
             body = text
     return description, body
+
+
+def _learnedSkillText(name: str) -> tuple[str, str] | None:
+    """(description, current body) of a LEARNED skill — the amend_body
+    target. None when the skill doesn't exist (bundled skills are handled
+    by the caller before this)."""
+    try:
+        from app.services.skill_service import _agentSkillsDir
+
+        return _readSkillMd(_agentSkillsDir() / name)
+    except Exception:
+        return None
+
+
+def _bundledSkillText(name: str) -> tuple[str, str] | None:
+    """(description, current body) of a BUNDLED skill — the `-revised` draft's
+    starting text. Bundled skills are never amended in place, so a revision that
+    could not read the original would be inventing it."""
+    try:
+        from app.services.skill_service import SKILLS_DIR
+
+        return _readSkillMd(SKILLS_DIR / name)
+    except Exception:
+        return None
+
+
+def _evidenceWindow(verdict: dict[str, Any], episode_id: Any) -> str:
+    """The episode as the judge saw it, attached to the proposal for the human.
+
+    The evidence line used to be built from `verdict['events']` — a key the
+    judge never sends — so it came out empty for every real draft. A reviewer
+    approving a skill body had no sight of the failure that produced it.
+    """
+    row = None
+    if episode_id is not None:
+        try:
+            row = _conn().execute(
+                'SELECT * FROM episodes WHERE id = ?', (episode_id,)
+            ).fetchone()
+        except Exception:
+            logger.debug('distiller evidence read failed for %r', episode_id, exc_info=True)
+    if row is not None:
+        return _episodeWindow(dict(row))[:4000]
+    return _episodeWindow(
+        {'id': episode_id, 'kind': '', 'outcome': '', 'events': verdict.get('events') or []}
+    )[:4000]
 
 
 def apply_verdict(
@@ -680,18 +985,32 @@ def apply_verdict(
             str(verdict.get(k, '') or '')
             for k in ('description', 'body_markdown', 'trigger', 'patch_markdown')
         )
+        # The structured section fields are drafted text too. A judge that puts
+        # the health detail in `pitfalls` instead of `body_markdown` used to walk
+        # straight past this gate, since only the flat keys were scanned.
+        _sensitive_blob += ' ' + ' '.join(
+            _draftText(verdict.get(key)) for key in _DRAFT_FIELDS
+        )
         if isSensitiveMemory(_sensitive_blob):
             return 'rejected-denylist'
 
     if action in ('create_skill', 'amend_trigger'):
         # Bundled skills are never amended in place — an amend against one
-        # becomes a FRESH draft referencing it (supersedes lineage).
+        # becomes a FRESH draft referencing it (supersedes lineage). The
+        # lineage has to come with the ORIGINAL TEXT: an amend_trigger carries
+        # no body, and normalizing the empty one filled the `-revised` draft
+        # with placeholder prose that superseded — and disabled — a real
+        # hand-written skill on approval.
         if action == 'amend_trigger' and _isBundledSkill(str(verdict.get('skill', '')).strip()):
+            skillName = str(verdict.get('skill', '')).strip()
+            original = _bundledSkillText(skillName)
             verdict = {
                 **verdict,
                 'action': 'create_skill',
-                'name': f"{str(verdict.get('skill')).strip()}-revised",
-                'supersedes': str(verdict.get('skill')).strip(),
+                'name': f'{skillName}-revised',
+                'supersedes': skillName,
+                'description': verdict.get('description') or (original[0] if original else '') or skillName,
+                'body_markdown': (original[1] if original else ''),
             }
             action = 'create_skill'
         from app.services.harness_self_improve import save_proposal
@@ -699,6 +1018,8 @@ def apply_verdict(
             SkillValidationError,
             _ensure_canonical_body,
             _validateName,
+            bodySubstance,
+            renderSkillBody,
         )
 
         name = str(verdict.get('name', '') or verdict.get('skill', '')).strip()
@@ -713,11 +1034,52 @@ def apply_verdict(
             return 'rejected-name'
         if _draftExists(fingerprint, action, target):
             return 'duplicate-draft'
-        normalized = _ensure_canonical_body(body or description, name=name, description=description or name, is_learned=True)
+        description, descProblem = _fitDescription(description or name)
+        if descProblem:
+            logger.info('distiller draft is a rule, not a skill: %s', descProblem)
+            return apply_verdict(
+                _asLessonVerdict(verdict, name, description), fingerprint, mode, scope=scope
+            )
+        if action == 'create_skill':
+            # The judge's own markdown wins when it wrote any: honouring the
+            # structured fields over a hand-written body would throw away real
+            # prose to enforce a template.
+            authored = body or renderSkillBody(
+                name,
+                description,
+                {key: verdict.get(key) for key in _DRAFT_FIELDS if key in verdict},
+            )
+            body = authored
+            # Measured on what was DRAFTED, before the normalizer runs: padding
+            # is exactly what let a one-line rule pass for a skill, so scoring
+            # the padded result would score the template rather than the work.
+            thin = (
+                bodySubstance(name, description, authored)
+                if authored.strip()
+                else 'no skill body drafted'
+            )
+            if thin:
+                logger.info('distiller draft is a rule, not a skill: %s', thin)
+                return apply_verdict(
+                    _asLessonVerdict(verdict, name, description), fingerprint, mode, scope=scope
+                )
+        else:
+            # amend_trigger carries no body. Normalizing an empty one used to
+            # build description-derived PLACEHOLDER text into payload.body, and
+            # `_apply_skill_write` writes payload.body OVER the target — so
+            # approving a trigger patch replaced a real skill's procedure with
+            # boilerplate. Carry the current body through instead; a patch that
+            # changes only when a skill fires must not change what it says.
+            prior = _learnedSkillText(name)
+            if prior is None:
+                logger.info('distiller amend_trigger: %r is not a learned skill', name)
+                return 'rejected-unknown-skill'
+            body = prior[1]
+        normalized = _ensure_canonical_body(body, name=name, description=description, is_learned=True)
         try:
             save_proposal(
                 problem=f'distiller {action} for fingerprint {fingerprint} (episode {episodeId})',
-                evidence=_episodeWindow({'id': episodeId, 'kind': '', 'outcome': '', 'events': verdict.get('events') or []})[:4000]
+                evidence=_evidenceWindow(verdict, episodeId)
                 or f'flagged fingerprint {fingerprint}',
                 proposal=(f'{action}: {name}' + (f' — {description}' if description else ''))[:4000],
                 rollback=(
@@ -731,6 +1093,10 @@ def apply_verdict(
                     'description': description or name,
                     'body': normalized,
                     'trigger': trigger,
+                    # The judge's own tags, so approval does not spend a second
+                    # model call re-inventing them (`_apply_skill_write` falls
+                    # back to keyword expansion only when this is empty).
+                    'keywords': _draftKeywords(verdict.get('keywords')),
                     'fingerprint': fingerprint,
                     'action': action,
                     'target': target,
@@ -797,13 +1163,23 @@ def apply_verdict(
             return 'amend_body-no-target'
         if _isBundledSkill(skill):
             # Bundled skills are never amended in place — fresh draft with
-            # supersession lineage, same rule as amend_trigger.
+            # supersession lineage, same rule as amend_trigger. The lineage is
+            # only honest if the revision CONTAINS what it revises: with no body
+            # carried through, the create path below normalized an empty one
+            # into a `skill_create` proposal whose entire body was placeholder
+            # text superseding a real human-written skill.
+            original = _bundledSkillText(skill)
+            patch = str(verdict.get('patch_markdown', '')).strip()
+            if original is None or not patch:
+                return 'amend_body-target-missing'
             return apply_verdict(
                 {
                     **verdict,
                     'action': 'create_skill',
                     'name': f'{skill}-revised',
                     'supersedes': skill,
+                    'description': verdict.get('description') or original[0] or skill,
+                    'body_markdown': f'{original[1]}\n\n{patch}'.strip(),
                 },
                 fingerprint,
                 mode,

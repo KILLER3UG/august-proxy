@@ -401,6 +401,22 @@ inside the skill directory, so the install tree stays free of it, and
 `skill_delete` / `patchSkill` / the usage counter all key on `SKILL.md` rather
 than directory existence.
 
+A **learned skill is a procedure, not a rule.** The distiller judge drafts from
+an episode window that now carries the window's tool calls in order — the
+successful ones included, which `events` deliberately omits because it is the
+fingerprint substrate — and answers with section fields (`intro`, `when_to_use`,
+`steps`, `pitfalls`, `verification`) that `skill_service.renderSkillBody` renders
+into the canonical heading order: the shape is code's job, the content is the
+model's. `skill_service.bodySubstance` then measures **what was drafted, before
+`_ensure_canonical_body` pads it** — a situation to use it in, at least two
+steps, a pitfall that actually happened in the episode, a way to verify. A draft
+below the bar is filed to memory as a lesson instead of into the proposal inbox
+as a skill; padding every gap with `_placeholder_for` boilerplate is exactly what
+used to let a one-sentence rule ship wearing a skill's headings.
+`amend_trigger` carries no body at all, so it ships the target's current body
+through unchanged — normalizing the empty one used to overwrite a real skill's
+procedure with placeholders on approval.
+
 [`routers/curator.py`](../backend-py/app/routers/curator.py)
 manages the agent-authored lifecycle. Status is a **frontmatter flag, not a file
 move**: draft / active / superseded / retired (`skill_service.SKILL_STATUSES`), read back through `meta`

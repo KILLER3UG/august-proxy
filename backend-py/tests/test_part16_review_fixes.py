@@ -399,10 +399,14 @@ class TestF10SkillDrafted:
             'labeled': 0, 'correct': 0, 'precision': 0.0, 'amendBodyEnabled': False})
         label = sd.apply_verdict(
             {'episode': 1, 'action': 'create_skill', 'name': 'drafted-skill',
-             'description': 'Drafted.', 'body': '# What this skill is\n\nx\n'},
+             'description': 'Drafted.',
+             'when_to_use': ['when the flow is re-run'],
+             'steps': [{'do': 'run it', 'command': 'flow --flat=on'}, {'do': 'read the receipt'}],
+             'pitfalls': [{'seen': 'the flow opens a GUI', 'instead': 'pass --flat=on'}],
+             'verification': ['the receipt exit code is zero']},
             fp, mode='full',
         )
-        assert label == 'proposal-filed'
+        assert label == 'proposal-filed', label
         status = em._conn().execute(
             'SELECT status FROM failure_fingerprints WHERE fingerprint = ?', (fp,)
         ).fetchone()['status']

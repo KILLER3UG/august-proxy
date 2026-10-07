@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
+import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { getAutoApplyHistory } from '@/api/api-client/skills-versions';
 import { Badge } from '@/components/ui/badge';
 import { qk } from '@/lib/query-keys';
@@ -249,6 +250,11 @@ export function HarnessImprovementsSection() {
   }, [harnessQ.data, memoryQ.data]);
 
   const selected = rows.find((r) => rowKey(r) === selectedId) ?? null;
+  /* A skill proposal IS a document. `payload` used to be dumped as escaped
+   * JSON in a 10rem box, so the one person who can say no to a learned skill
+   * was approving a body they could not read. */
+  const draftedBody = typeof selected?.payload?.body === 'string' ? selected.payload.body : '';
+  const draftedLabel = selected?.kind === 'skill_patch' ? 'Body this patch writes' : 'Drafted skill';
   // Same key the disclosure and the chat chip use, so this is one request, not
   // three — react-query dedupes by key.
   const autoQ = useQuery({
@@ -503,12 +509,35 @@ export function HarnessImprovementsSection() {
 
             <EvidenceRow label="Evidence" body={selected.evidence} />
             <InfoRow label="Proposed change" body={selected.proposal} mono={false} />
+            {draftedBody && (
+              <div>
+                <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {draftedLabel}
+                </p>
+                <div
+                  className="mt-1 max-h-96 overflow-y-auto rounded-lg border border-border/40 bg-muted/20 px-3 py-2"
+                  data-testid="proposal-drafted-body"
+                >
+                  <Markdown content={draftedBody} />
+                </div>
+              </div>
+            )}
             <InfoRow label="Rollback" body={selected.rollback} mono={false} />
             {selected.expectedMetric && (
               <InfoRow label="Expected metric" body={selected.expectedMetric} mono={false} />
             )}
             {selected.payload && Object.keys(selected.payload).length > 0 && (
-              <InfoRow label="Payload" body={JSON.stringify(selected.payload, null, 2)} mono />
+              <InfoRow
+                label="Payload"
+                body={JSON.stringify(
+                  draftedBody
+                    ? { ...selected.payload, body: `${draftedBody.length} chars — rendered above` }
+                    : selected.payload,
+                  null,
+                  2,
+                )}
+                mono
+              />
             )}
             {selected.applyResult?.error && (
               <InfoRow label="Apply error" body={selected.applyResult.error} mono={false} />

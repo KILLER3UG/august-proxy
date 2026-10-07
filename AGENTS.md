@@ -151,7 +151,16 @@ frontmatter wholesale**, so any field a `skill_patch` proposal does not restate
 is gone: `supersedes`, `origin`, `learned_from` and `trigger` are therefore read
 back off the existing file before the write. Losing `trigger` is not cosmetic —
 it is what per-turn relevance matching reads, so a silent patch would retire a
-skill from recall.
+skill from recall. **A learned skill is a procedure, not a rule**: the distiller
+drafts section fields (`steps`, `pitfalls`, `verification`, …) that
+`skill_service.renderSkillBody` renders, and `skill_service.bodySubstance`
+measures **what was drafted before `_ensure_canonical_body` pads it** (two steps,
+one pitfall that happened, one verification, one situation to use it in). Below
+the bar the verdict becomes a memory lesson instead of a padded skill — the
+padding is what used to let a one-sentence rule ship with every heading present.
+`amend_trigger` carries no body, so it must ship the target's current body
+through: normalizing the empty one wrote placeholders over a real skill on
+approval.
 
 **Memory survives independently of recall** — `app/services/brain_backup.py`
 takes online copies through SQLite's backup API (read-only handle, no write lock

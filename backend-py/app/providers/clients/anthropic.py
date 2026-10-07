@@ -55,9 +55,17 @@ class AnthropicClient(BaseProviderClient):
 
     async def generate(self, prompt: str, system: str | None = None) -> str:
         """v2: Anthropic-specific generate using the messages API."""
+        # A caller with a long answer to produce (the distiller judge drafts
+        # whole skill bodies in one reply) raises this through its client
+        # config; 2048 stays the default every other path has always had.
+        maxTokens = 2048
+        try:
+            maxTokens = int(str(self.config.get('max_tokens') or '').strip() or 2048)
+        except ValueError:
+            pass
         body: dict[str, object] = {
             'model': self.config.get('model', ''),
-            'max_tokens': 2048,
+            'max_tokens': maxTokens,
             'messages': [{'role': 'user', 'content': prompt}],
         }
         if system:

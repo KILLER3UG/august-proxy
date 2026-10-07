@@ -46,9 +46,15 @@ def _skillBody(name: str) -> str:
 CREATE = {
     'action': 'create_skill',
     'name': 'receipt-gate',
-    'description': 'Documents how a tool receipt is read',
-    'body_markdown': '# Receipt gate\n\nRead the receipt, not the prose.\n',
+    'description': 'Read the tool receipt, not the prose.',
     'trigger': 'when episode mining is reviewed',
+    'when_to_use': ['a tool call reported success but the output looks empty'],
+    'steps': [
+        {'do': 'Take the exit code from the receipt block', 'command': 'run_command(command="make")'},
+        {'do': 'Only then read the assistant summary'},
+    ],
+    'pitfalls': [{'seen': 'prose claimed a file was written', 'instead': 'stat the path'}],
+    'verification': ['the receipt and the artefact agree'],
 }
 
 
