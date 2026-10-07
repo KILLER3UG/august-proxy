@@ -617,8 +617,12 @@ export function SessionList({
         />
 
         {/* Sessions | Bots tab strip (Hermes) — the roster gets its own
-            surface instead of stacking into the session list. */}
-        <div className="flex items-center gap-1 px-1.5 pt-1.5" role="tablist" aria-label="Sidebar">
+            surface instead of stacking into the session list. The sort toggle
+            is a sibling of the tablist, not a child of it: a `role="tablist"`
+            may only contain `role="tab"`, and axe fails the route critically
+            when anything else sits inside — which this button did. */}
+        <div className="flex items-center gap-1 px-1.5 pt-1.5">
+          <div className="flex items-center gap-1" role="tablist" aria-label="Sidebar">
           <button
             type="button"
             role="tab"
@@ -660,6 +664,7 @@ export function SessionList({
               </span>
             ) : null}
           </button>
+          </div>
           {railTab === 'sessions' ? (
             <button
               type="button"
