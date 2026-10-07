@@ -1,5 +1,7 @@
 # August Chat UI — Deep Dive & Minimal-Design Alignment
 
+> **Dated snapshot, not live guidance (2026-08-23).** Added 2026-10-07 — this file had no provenance banner despite the banner sweep recorded in `docs/GAPS_AND_BUGS.md`. The chat UI has been restructured since (0.18 restyle, the UI/UX refactor passes). Verify in code first.
+
 **Date:** 2026-08-23 · **Scope:** `frontend/desktop/src/sections/chat/`, `components/chat/`, `components/shell/`
 **Reference designs:** Hermes Agent desktop app (docs/user-guide/desktop), DeepSeek harness chat, Kilo Code context popover.
 

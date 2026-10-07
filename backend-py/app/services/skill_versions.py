@@ -137,8 +137,13 @@ def snapshot_before_write(
     *,
     actor: str,
     rationale: str,
-) -> None:
+) -> str:
     """Preserve the CURRENT ``SKILL.md`` before ``new_content`` replaces it.
+
+    Returns the id the snapshot was stored under, or ``''`` when nothing was
+    written. The id is what makes an undo addressable: the auto-apply path
+    records it, so probation can name the exact bytes to put back instead of
+    guessing at "the previous version" after someone else has written one.
 
     ``new_content`` is not written here — this records what is about to be
     lost, so a caller keeps ONE write site and the history cannot disagree
@@ -154,10 +159,10 @@ def snapshot_before_write(
         directory = Path(skill_dir)
         md = directory / 'SKILL.md'
         if not md.is_file():
-            return  # a create has no previous content to preserve
+            return ''  # a create has no previous content to preserve
         current = md.read_text(encoding='utf-8')
         if current == new_content:
-            return  # a no-op write is not a revision
+            return ''  # a no-op write is not a revision
         versions_dir = _versions_dir(directory)
         versions_dir.mkdir(parents=True, exist_ok=True)
         ts = int(time.time())
@@ -181,3 +186,7 @@ def snapshot_before_write(
             with best_effort('skill-versions.prune'):
                 stale.unlink(missing_ok=True)
         _write_meta(versions_dir, records)
+        return str(ts)
+    # Reached only when best_effort swallowed a failure: the write went ahead
+    # with no snapshot, so there is no id to name.
+    return ''

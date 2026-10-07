@@ -85,20 +85,85 @@ class TestRecord:
 
 
 class TestClassify:
+    """The classifier is the ONLY thing that decides whether a change stays in
+    place or is put back, so its thresholds are the safety property. Two rules
+    were wrong and are corrected here rather than tuned:
+
+      * untargeted read a resolved-rate move of 0.05 on as few as 3 episodes per
+        side — on a rate estimated from 3 samples, ±0.05 is inside the noise, so
+        the job could call a change regressed and revert it on nothing;
+      * targeted compared the recurrence COUNT against zero, ignoring the
+        denominator entirely, so a busier window looked worse even if the
+        failure became proportionally rarer. Its own fixture proved the bug:
+        `episodes: 1` with `fingerprintRecurrence: 3` is not a possible
+        measurement — recurrence counts episodes carrying the fingerprint, so it
+        can never exceed the total. A rule that accepts that input is not
+        reading a rate.
+    """
+
     def test_small_sample_says_insufficient(self) -> None:
         assert ho._classify({'episodes': 1}, {'episodes': 1}) == 'insufficient'
+
+    def test_the_noisy_three_episode_case_is_insufficient(self) -> None:
+        """The exact case the old floor let through: a full 1.0 → 0.8 swing on 3
+        samples is a coin flip, not a regression, and must never revert a
+        change."""
+        b = {'episodes': 3, 'resolvedRate': 1.0}
+        a = {'episodes': 3, 'resolvedRate': 0.0}
+        assert ho._classify(b, a) == 'insufficient'
+        # One side short is enough to refuse the verdict.
+        assert ho._classify({'episodes': 7, 'resolvedRate': 1.0}, {'episodes': 8, 'resolvedRate': 0.2}) == (
+            'insufficient'
+        )
+        # Eight on both sides is the floor, and it is measured, not assumed.
+        assert ho._classify({'episodes': 8, 'resolvedRate': 1.0}, {'episodes': 8, 'resolvedRate': 0.2}) == (
+            'regressed'
+        )
+
+    def test_a_small_rate_move_is_flat(self) -> None:
+        """0.05 and 0.10 used to classify as improved/regressed. On this scale
+        they are noise, and the cost of a false 'regressed' is an automated
+        revert."""
+        assert ho._classify({'episodes': 20, 'resolvedRate': 0.5}, {'episodes': 20, 'resolvedRate': 0.55}) == 'flat'
+        assert ho._classify({'episodes': 20, 'resolvedRate': 0.5}, {'episodes': 20, 'resolvedRate': 0.4}) == 'flat'
+        assert ho._classify({'episodes': 20, 'resolvedRate': 0.5}, {'episodes': 20, 'resolvedRate': 0.34}) == 'regressed'
+        assert ho._classify({'episodes': 20, 'resolvedRate': 0.5}, {'episodes': 20, 'resolvedRate': 0.66}) == 'improved'
 
     def test_rate_moves_classify(self) -> None:
         assert ho._classify({'episodes': 10, 'resolvedRate': 0.4}, {'episodes': 10, 'resolvedRate': 0.6}) == 'improved'
         assert ho._classify({'episodes': 10, 'resolvedRate': 0.6}, {'episodes': 10, 'resolvedRate': 0.4}) == 'regressed'
         assert ho._classify({'episodes': 10, 'resolvedRate': 0.6}, {'episodes': 10, 'resolvedRate': 0.62}) == 'flat'
 
-    def test_targeted_recurrence_decides_on_any_sample(self) -> None:
-        b = {'episodes': 1, 'fingerprintRecurrence': 3}
-        a0 = {'episodes': 1, 'fingerprintRecurrence': 0}
-        a3 = {'episodes': 1, 'fingerprintRecurrence': 2}
-        assert ho._classify(b, a0, targeted=True) == 'improved'
-        assert ho._classify(b, a3, targeted=True) == 'regressed'
+    def test_targeted_reads_the_recurrence_RATE(self) -> None:
+        """Same absolute recurrence, different denominators, different verdict —
+        which is what "compare the rates" means."""
+        # 6/20 → 6/24 is 0.30 → 0.25: the failure got proportionally RARER, so
+        # the old count rule's "any recurrence is a regression" was wrong here.
+        assert ho._classify(
+            {'episodes': 20, 'fingerprintRecurrence': 6},
+            {'episodes': 24, 'fingerprintRecurrence': 6},
+            targeted=True,
+        ) == 'flat'
+        # 2/20 → 8/20 is 0.10 → 0.40: a real worsening.
+        assert ho._classify(
+            {'episodes': 20, 'fingerprintRecurrence': 2},
+            {'episodes': 20, 'fingerprintRecurrence': 8},
+            targeted=True,
+        ) == 'regressed'
+        # 8/20 → 1/20 is 0.40 → 0.05: a real improvement.
+        assert ho._classify(
+            {'episodes': 20, 'fingerprintRecurrence': 8},
+            {'episodes': 20, 'fingerprintRecurrence': 1},
+            targeted=True,
+        ) == 'improved'
+
+    def test_targeted_still_needs_a_sample_on_both_sides(self) -> None:
+        """The retracted rule claimed a verdict on any sample. It no longer
+        does: a rate over 2 episodes is not a rate."""
+        b = {'episodes': 2, 'fingerprintRecurrence': 2}
+        a = {'episodes': 2, 'fingerprintRecurrence': 0}
+        assert ho._classify(b, a, targeted=True) == 'insufficient'
+        assert ho._classify(b, a) == 'insufficient'
 
 
 class TestMeasureAndJob:

@@ -499,13 +499,15 @@ Settings is **3 header groups, not 8 hubs**: `basics` (label "Basics"),
 `SETTINGS_CATEGORIES` in
 [`settings-registry.ts`](../frontend/desktop/src/settings/settings-registry.ts).
 The rail is an inline tree (header → section → optional grandchild), not pill
-tabs. Today that is 44 sections (15 `basic`, 1 `advanced`, 28 `hidden`); `tier:
-'hidden'` ids are interior views that deep-link into their parent via
-`railCanonicalId`. There is **no "Show advanced" toggle** in the rail —
-`useSettingsAdvancedPreference.ts` still exists but nothing imports it, so the
-`advanced` tier in the registry is vestigial. (`RAIL_CHILDREN` is exported but
-**imported by nothing** despite being named in `WorkspaceShell.tsx` comments — do
-not treat it as the grandchild mechanism.) `docs/settings-audit.md` describes the
+tabs. Today that is **43 sections — 17 `basic` and 26 `hidden`, with no `advanced` tier
+at all**; `tier: 'hidden'` ids are interior views that deep-link into their parent via
+`railCanonicalId`. There is no "Show advanced" toggle and no advanced preference to
+toggle: both `useSettingsAdvancedPreference.ts` and the `RAIL_CHILDREN` map this section
+previously described as vestigial-but-present are **gone from the tree**, so the
+registry's two tiers are the whole model. (Counted 2026-10-07 from the tier assignments
+in `settings-registry.ts`, excluding its own doc comment near `:149` — that comment names
+both tiers in prose, so a plain `grep -c "tier: '"` over-counts by two.)
+`docs/settings-audit.md` describes the
 superseded 2026-08-28 IA; the registry is the source of truth.
 
 Settings source of truth: [`settings-registry.ts`](../frontend/desktop/src/settings/settings-registry.ts).

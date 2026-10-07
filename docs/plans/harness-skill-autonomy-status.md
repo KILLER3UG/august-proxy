@@ -5,9 +5,21 @@
 > block progress, and the traps. This file remains the full item log and the
 > reasoning behind each call.
 
-Resumes Pass 1 of the four-pass plan. Read this before touching code.
+**State: the four-pass plan is FINISHED.** Pass 1 (items 1-7), Pass 2 (8-11), Pass 3 (12-15) and
+both review rounds are merged into `master`. What is open is listed in `## Open, in order` below
+and nowhere else.
 
-## Done
+**How to read this file.** Everything from `## Item log` down is append-only history: each entry
+records what was true at the commit it names, including the errors the session made and the numbers
+it first reported wrong. Do not correct history — add the correction. The sections ABOVE the item
+log were written as planning text before the work landed; they are labelled as such now, and only
+their current-state claims are maintained.
+
+## Done — Pass 1 item 1, as planned for it
+
+Written before that commit landed. The mechanism below is what shipped; the USER-VISIBLE bullet
+under it was an over-claim and is corrected where it stands, against a real browser measurement.
+
 - **Item 1 — the structured tool-error receipt.** Mined failures now come from what the
   harness recorded, never from prose.
   - `tool_protocol.tool_result_failed()` is the ONE classifier: prefix-anchored on the
@@ -28,6 +40,11 @@ Resumes Pass 1 of the four-pass plan. Read this before touching code.
   - **USER-VISIBLE:** `[Blocked]` / `[Validation Error]` / `[Tool result missing]` tool cards
     now render red instead of neutral. Adjacent to `d73022be` B6 but NOT it — B6's four prose
     patterns stay unimplemented.
+    **Corrected 2026-10-06: this is wrong as written, and the tone split that shipped days later
+    is why.** Only `Error` and `[Validation Error]` are `failure` (red). `[Blocked]` and
+    `[Tool result missing]` are `denial` (`tool_protocol.RECEIPT_TONE`) and render MUTED on
+    purpose — a guardrail that said "no" is not a tool that broke. Verified in a real browser
+    below, not from the table.
   - **Verified no provider leak:** every `role == 'tool'` translator rebuilds the message from
     scratch, so `is_error` never reaches an upstream body
     (`openai.py:511,704,826`; `anthropic.py:275,1268`). Checked, not assumed — AGENTS.md's
@@ -36,13 +53,19 @@ Resumes Pass 1 of the four-pass plan. Read this before touching code.
     `save_workbench_session_sot`); 6 pre-existing tests rewritten to the receipt contract
     (`test_episode_miner.py` ×5, `test_tool_protocol_hardening.py` ×1) + 4 seeds in
     `test_part16_review_fixes.py`, each keeping its original purpose.
-- Backup taken: `%LOCALAPPDATA%\Temp\august_brain.pre-signal-fix.<ts>.sqlite` (copy of
-  `data/august_brain.sqlite`). **No data mutated yet** — the 41 bogus episodes are still in
-  the dev DB for item 4 to quarantine.
-  ^ STALE — superseded by the item 5 entry in the Item log and by
-  `data/backups/MANUAL-pre-052-20261004T184540Z.sqlite` (see "Live database" below).
+- Backups taken: `data/backups/MANUAL-pre-052-20261004T184540Z.sqlite` (the one that matters —
+  integrity ok, schema v51, 323 messages, 41 episodes) and
+  `%LOCALAPPDATA%\Temp\august_brain.pre-quarantine-20261005-023651.sqlite`. The
+  `pre-signal-fix.<ts>` copy first named here is gone; the quarantine run replaced it.
+  **Still true, and still the user's boot to make false:** the 41 invented episodes remain in
+  `data/august_brain.sqlite`, because migration 052 has not run on that store yet. It marks them
+  `quarantined`, it does not delete them — 052's own header says the rows are the audit trail for
+  how the loop escalated, and only the doors that ACT on an episode go blind to them.
 
-## Item 2 finding (measured, ready to implement)
+## Item 2 finding (measured, ready to implement) — LANDED as predicted
+The content-derived dedupe key this section asked for is what shipped:
+`episode_miner.py:449-456` keys a window on its own content, and `start_message_id` is still
+stored but read by nothing — provenance only, exactly the reasoning below.
 Dedupe identity is `episodes (session_id, start_message_id, kind)` (`_episodeExists:439`,
 `save_episode:406`) and `start_message_id` is a **`messages.rowid`** — while
 `save_workbench_session_sot` rewrites the transcript as DELETE-all + re-INSERT
@@ -69,6 +92,11 @@ a content-derived key over `(session_id, kind, first excerpt)` is stable across 
   not named as reported. Re-derive in Pass 1 item 7 with a real call.
 
 ## Key discovery for item 1 — CONFIRMED, `is_error` does NOT survive
+Half of this conclusion was right and half was wrong, and the wrong half is worth keeping:
+the diagnosis (no persisted error state to read) is what shipped against, but the predicted
+"**plus a migration**" was not needed — `blocks_json` is a JSON blob and
+`types/chat.ts` already declared `tool.status = 'error'`, so item 1 was a write-path change
+only. The migration that did land in this window, 052, is the episode quarantine, not this.
 `messages` has **no `is_error` column** (`memory_schema.py:82-98`). Read over the real dev DB:
 268 messages yielded only two block kinds, `finalOutput` (49) and `toolCall` (252). A `toolCall`
 block is exactly `{id, type, tool, content}` with `tool = {id, name, args, status}`, and `status`
@@ -94,17 +122,26 @@ Do NOT add a second prose matcher. `d73022be` item B6 stays stale and unimplemen
   auto-apply; counter configurable, `0` disables burn-in.
 
 ## Reuse map (extend, do not add)
-- Proposals: `harness_self_improve.save_proposal:293` → `data/harness_proposals/*.json` +
-  `ledger.jsonl` (`_append_ledger:359`). Apply: `decide_proposal:419` → `_apply_approved:840` over
-  `_APPROVERS:830`, documented as the ONLY proposal→change path. Reviewer never writes files.
-- Undo: `skill_versions.read_version:117` returns exact previous bytes, `MAX_VERSIONS=20`, but
-  **no restore endpoint exists** — `SkillVersionsPanel.tsx:11-17` says so. That route is new work.
-- Rate limit: reuse `harness_outcome` (`record_proposal_outcome:173`, `applied_at`+`target`);
-  per-day precedent `escalationBudgetPerDay` (`brain_config_service.py:242`, default 2).
-- Probation: reuse `turn_outcomes.skill_lift:617` (absent key = no evidence, never 0.0) and
-  `harness_outcome.measure_pending:208`. Provenance: `messages.source` + `MACHINE_SOURCES`.
-- Kill switch: add to `brain_config_service.fieldTable:139` **and** `boolKeys:47`/`numKeys:69`,
-  else `allowedKeys:101` rejects the PUT silently.
+Anchors here are **symbols, not line numbers**. I re-measured all eleven numbered ones against the
+merged tree: **nine had drifted**, two had not (`read_version:117`, `boolKeys:47`). The worst was
+`_apply_approved:840`, which now lives at `:1280` — a pointer that looked like proof and pointed at
+nothing is worse than no pointer. Grep the name.
+
+- Proposals: `harness_self_improve.save_proposal` → `data/harness_proposals/*.json` +
+  `ledger.jsonl` (`_append_ledger`). Apply: `decide_proposal` → `_apply_approved` over
+  `_APPROVERS`, documented as the ONLY proposal→change path. Reviewer never writes files.
+- Undo: `skill_versions.read_version` returns exact previous bytes, `MAX_VERSIONS=20`. The
+  restore route landed in Pass 3 item 13: `POST /api/skills/{name}/versions/{ts}/restore` →
+  `skill_service.restoreVersion`, which is the only path from a version id to file content and is
+  what item 14's probation auto-revert calls (not a revert proposal).
+- Rate limit: reuse `harness_outcome.record_proposal_outcome` (`applied_at`+`target`);
+  per-day precedent `escalationBudgetPerDay` (default 2).
+- Probation: reuse `turn_outcomes.skill_lift` (absent key = no evidence, never 0.0) and
+  `harness_outcome.measure_pending`. Provenance: `messages.source` + `MACHINE_SOURCES`.
+- Kill switch: add the key to `brain_config_service.fieldTable` **and** the typed door it needs
+  (`boolKeys` / `numKeys` / `strKeys`), else `allowedKeys` rejects the PUT silently. All six
+  autonomy keys went through all four doors, and `test_brain_config._ALLCamelKeys` is what fails
+  if one is missed again.
 - Shared helper: `review_gate.resolve_independent_reviewer(producer_model, hint) -> (client|None, reason)`;
   `refine_store._review_refine_batch:905` must call it. **Import `make_review_llm_client` lazily at
   call time** — `test_refine_store_t15.py:551` monkeypatches it by path, and a module-level import
@@ -350,18 +387,61 @@ pytest's own final summary line. They agree, which is the point of the rule.
   run and shown failing (or newly asserting) before/with the change.
 
 ## Open, in order
-1. **Item 2 of your follow-ups is NOT done: the real-app check of the red tool cards.** I
-   cannot launch the packaged desktop app from here and the in-app browser reports
-   `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`. So item 1's `[Blocked]` / `[Tool result missing]`
-   red rendering remains **UNVERIFIED**. If you can run it, that is the thing to look at: one
-   genuine tool error, one guardrail block, one missing-result card. Decide there whether
-   guardrail blocks deserve a quieter treatment than a real failure — my code currently makes
-   all four prefixes equally red.
-2. Item 7 — reproduce the distiller judge failure with a real call; measure "13 failures /
-   0 successes" from the snapshot using the correct lifecycle columns (still UNVERIFIED).
-3. Pass 2 (items 8-11), then Pass 3 (12-15) if room remains. Autonomy stays **OFF**.
-4. Tidy pass: the top "## Done" and "## Key discovery for item 1" sections now describe
-   pre-commit state and are marked stale — worth folding into the Item log when convenient.
+
+**DONE, and it found a bug: the real-browser check of red vs muted tool cards.** See the session-8
+entry below for the measurements. It confirmed the tone rule renders correctly on `ToolStepRow` and
+found that `EditRailRow` — where edit-class receipts actually render — never read `tone` at all, so
+a `[Blocked]` edit measured red in the running app. Fixed in `836c8d4d`.
+
+1. **A real reviewer call has never run.** Provider `opencode-zen-41527c` answers
+   `Insufficient account funds`; `claude-sonnet-5` resolves and the gate hands back a client.
+   Blocked on the user. The action after funding is
+   `POST /api/curator/scheduler/run/reviewer`.
+2. **Migration 052 has not run on the live store.** It lands at the app's next boot, and the
+   quarantine sweep at its first mining pass. Pre-boot backup:
+   `data/backups/MANUAL-pre-052-20261004T184540Z.sqlite`.
+3. **RESOLVED 2026-10-07 — the two live `config.json` artifacts are gone.** Re-read read-only: no
+   `judge-model-x` anywhere in the file, the orchestrator block holds only `memory_sensitive_topics`,
+   and no top-level `_tier3_test_flag`. That name survives only in `rollbackLog` at `:95` as a
+   `status: "undone"` entry from 2026-07-22 — a record of the undo, not a setting. `skillLearning`
+   remains unset, so the `'propose'` default does reach the model.
+4. **`Type check` ran on the pushed merge (`7b20a966`) and is STILL RED — the three fixes cleared,
+   and two more gates were behind them.** Backend failed in 44s, frontend in 1m33s. What had been
+   broken, now proven fixed:
+   - Backend: mypy on Linux rejected `ctypes.WinDLL` (a typeshed surface that exists only on
+     Windows). Reproduced with `mypy --platform linux`, the only way this machine shows what the
+     runner sees. **Cleared** — the job now gets past mypy.
+   - Frontend: 4 `no-unnecessary-type-assertion` errors. **Cleared** — 0 errors, and the job now
+     gets past eslint and the design guardrail.
+   - `ChatMarkdown.perf.test.tsx`: asserted a ratio this file had already documented as
+     load-independent, and it is not (contention slows the React side more than the parse side).
+     Estimator fixed to min-of-3, threshold unchanged.
+5. **THE TWO GATES THAT ARE NOW BLOCKING CI — both this workstream's, both reproducible locally.**
+   - `node scripts/check-naming.mjs` → **10 new camelCase params in service signatures**:
+     `episode_miner.py` `blocksJson`/`errorReceipts`/`eventType`, `harness_rails.py`
+     `applyAction`/`findingKey`/`versionTs`, `harness_self_improve.py`
+     `dryRun`/`producerModel`/`timeoutS`, `skill_service.py` `trashId`. Fix by renaming to
+     snake_case, **not** by `--update` — that re-baselines the ratchet instead of correcting code.
+     `skill_service.trashId` is a FastAPI **path parameter**, so its rename changes the OpenAPI spec,
+     `API_INDEX.md` and the typed client: regenerate with `gen:openapi` + `gen:api-index` + `gen:api`,
+     never hand-edit. `dryRun` is reached from a router query param, so every keyword caller and test
+     has to move with it.
+   - `node scripts/lint-ratchet.mjs` → **325 warnings against a budget of 308**. eslint's
+     `--max-warnings=600` is not the binding constraint; this is a separate tighter ratchet. 17
+     warnings to fix or individually justify.
+   - **Why this matters beyond red ink: pytest has STILL never executed in CI.** The naming gate is
+     step 6 of the backend job (`type-check.yml:41`) and pytest is step 14 (`:99`); on the frontend,
+     `lint:ratchet` (`:177`) sits ahead of vitest. So every suite number in this file is a local
+     result — run with CI's flags, but not a CI verdict.
+   - **The standing lesson, now three gates deep:** `check:design` was missed for five days, then
+     `check:naming` and `lint:ratchet` were missed the same way, all because the "five gates" list was
+     inherited between sessions instead of re-derived. Read the step names out of the workflow file:
+     `grep -n "^\s*- name:" .github/workflows/type-check.yml`.
+
+Items 2-4 of the previous version of this list — item 7's judge measurement, Pass 2, Pass 3, and
+the tidy pass — are all closed, and this file's own Item log is where they were closed. The list had
+simply not been re-read since. Autonomy still defaults **OFF**, and `autonomyKinds` still arms
+`skill_patch` only.
 
 ## Item log — session 3
 - **Correction to `da7cf07f`'s message:** it says 145 passed; the run reported **165 passed**
@@ -534,21 +614,23 @@ The live store's brain config carries TWO test artifacts:
   - `_tier3_test_flag` (stray top-level key) → safe to remove.
 Set these in Settings, or tell me the model id and I'll put the exact edit in a report.
 
-## Remaining backlog
-- 13 (undo): the version-restore route + one Undo button; probation auto-revert uses version
-  restore, not a revert proposal; update the `SkillVersionsPanel` comment. Not started.
-- 14 (rails): hard-limit categories to inbox, daily rate limit + one change per skill per day,
-  probation, kill switch, readable history, burn-in counter. Not started.
-- 15 (SkillEvolvedChip announces only applied changes, with Undo). Not started.
-- Re-run the real reviewer call once the provider funding is fixed (item 9).
+## Remaining backlog — closed, superseded
+This is where items 13, 14 and 15 were marked "Not started" long after they shipped. They landed as
+`eef0b3fd` (undo + restore route), `1553d369`/`29758a69` (the rails, then the rails round) and
+`732e295e` (the chip). The one line here that was still true — re-run the reviewer once the provider
+is funded — now lives as `## Open, in order` item 2. The heading stays so anyone reaching this
+section from the handoff or from a search finds the answer instead of a hole.
 
 ## Definitive suites (tip `ecd56fa5`, no edits to the tree during either run)
 - **backend: 4829 passed, 10 skipped, 0 failed in 10:01** — `PYTEST_EXIT=0`, zero FAILED/ERROR
   lines, read from the log itself.
 - **frontend: 1517 passed across 195 files** (vitest).
-- `npm run check:docs` passes (all 6 pinned claims). `check:api` shows a pre-existing
-  `/api/skills/{name}/restore` spec drift in this worktree, unrelated to these changes and
-  left alone rather than adding unrelated regeneration churn.
+- `npm run check:docs` passes (all 6 pinned claims). `check:api` FAILS, and the cause is now
+  known: `c332b526` added `POST /api/skills/restore/{trashId}` (undo a *deleted* skill) and never
+  regenerated `docs/api/openapi.json`, so the committed spec lacks one path. It is NOT a
+  half-built version-restore route — item 13's route (`/api/skills/{name}/restore`) is a
+  different path and does not collide with it. Regenerate once item 13's route lands, so one
+  commit carries the route and its spec.
 
 ## Checks on the shipped work (2026-10-05, post-acceptance)
 
@@ -579,3 +661,627 @@ the scheduled distiller only for `extract-only`/`full`, so the new default
 (`propose`) silently stopped the scheduled pass entirely — a mode nobody ran.
 Fixed, pinned by a test. Also fixed `curator.py:23`, whose fallback default still
 said `extract-only` while the config default said `propose`.
+
+## Item log — session 6
+- **The branch landed.** `harness-skill-autonomy` is now `master` (`3d0763ad`); the worktree is
+  the working copy for the rest of the backlog. **Everything committed after that point in this
+  file — items 13, 14, 15 and the reviewer wiring — is on the branch only, not on `master`.** The main checkout keeps the *other* session's
+  39 dirty files — no path overlap, verified again by diffing changed-path lists.
+- **`check:api` drift resolved (item 13's "investigate first")** — see the correction in the
+  definitive-suites section above. No half-built route exists; the committed spec is simply one
+  path behind `c332b526`.
+- **Reviewer pass now has a caller** → `learning_scheduler._reviewer_job`, registered as job
+  `reviewer` with cadence key `reviewerIntervalHours` (default 6h, matching the introspection
+  cadence that files what it reviews). Wiring was the whole gap: the pass had 20 tests and zero
+  callers, which is the failure mode this file's own `test_learning_scheduler_wiring.py` exists
+  to catch — and did not, because it only asserted the *two original* jobs.
+  - New brain-config key done through all four doors the handoff warns about: `numKeys`,
+    `fieldTable`, the interval validation branch, and `test_brain_config.py::_ALLCamelKeys`
+    (a closed-world list, so the new key is a conscious addition, not a silent one).
+  - The job imports `run_reviewer_pass` at call time, so patching the module attribute is the
+    thing that runs — pinned, not assumed.
+  - Cost is nil while no reviewer model resolves: the gate refuses before any HTTP call, so the
+    pass writes a verdict line and returns.
+- **A refusal is no longer a verdict.** `run_reviewer_pass` used to skip any proposal carrying a
+  non-empty `review`, so the first scheduler tick on this install — where the configured reviewer
+  is `judge-model-x` and the provider is unfunded — would have stamped every open proposal
+  `unavailable` **permanently**, and fixing the config later would never re-review them. That is
+  item 7's cooldown-on-a-config-fault mistake in new clothing, and it would have poisoned item
+  14's rails, which read the verdict. Now an `unavailable` row is retried (free: no call was
+  made); a `KEEP`/`DISCARD` row stays terminal, which the pre-existing
+  `test_an_already_reviewed_proposal_is_not_reviewed_again` still pins.
+- Tests: 4 written red first and shown failing (job registered / cadence tunable / job calls the
+  pass / unavailable retried), then 51 green across the three files, plus 97 green across the
+  harness+review cluster (`test_harness_self_improve`, `test_harness_wiring`, `test_review_gate`,
+  `test_review_proposal_path`, `test_proposal_expiry`, `test_skill_learning_propose_mode`,
+  `test_skill_review_pass`, `test_gate_participation`). ruff and mypy clean on the changed files.
+  **A full backend suite from this tip is still owed** (it was already owed from `3300f28d`).
+- **Reviewer line in the inbox** (handoff §5) → one muted `<p>` under the detail header's badge
+  row in `HarnessImprovementsSection.tsx`, plus `review?: {verdict, reason, model, advisory}` on
+  that file's `Proposal` type. No new section, no backend change — **verified**, not inherited:
+  `routers/harness_proposals.py:26` returns `list_proposals()` rows whole, and
+  `list_proposals:400` returns the parsed proposal file, so the `review` object already travels.
+  - `reviewerLine()` mirrors `review_summary()`'s wording. That is two formatters, which this
+    project normally refuses (the tone-split decision rejected a second marker list). Accepted
+    here because the backend already persists the structured fields, and each side is pinned by
+    its own test: `test_reviewer_pass.py` asserts `'Reviewer unavailable'` / `'Reviewer: discard'`
+    prefixes there, `HarnessImprovementsSection.reviewer.test.tsx` asserts the same strings here.
+    A rename on one side fails a test and names the other side in its comment.
+  - Rendered in the detail view because that is where the human decides. 152 tests green across
+    `src/sections/settings/__tests__/` (22 files); `tsc --noEmit` clean.
+  - My own harness bug, recorded because it looked like a feature failure at first: all three
+    tests reported an empty `<body />`, which was `openDetail()` querying before anything was
+    rendered — not a component crash. Debugged by dumping the DOM in a scratch test rather than
+    by guessing, then the scratch file was deleted. The same class bit once more in item 13's
+    panel tests: `findByTestId('skill-version-diff')` resolves the instant the wrapper renders,
+    while the diff query is still loading, so the assertions had to await the control itself.
+- **Item 13 — undo lands.** One write path, from both ends:
+  - `skill_service.restoreVersion(name, ts, workspace)` is the ONLY route from a version id to
+    file content. Verbatim bytes, NOT `patchSkill` — that canonicalizes the body and re-renders
+    frontmatter, and an undo that rewrites the bytes it restores is not an undo. It snapshots the
+    content it replaces first, so every restore is itself undoable (which is what item 14's
+    probation auto-revert needs) and the history keeps agreeing with the file.
+  - **Refuses a bundled root.** The install tree is the payload an update replaces, so a write
+    there is invisible to the next patch and unfixable by it. Pinned by a test that plants a
+    `.versions` directory in a fake install tree and checks the bytes are untouched.
+  - Route `POST /api/skills/{name}/versions/{ts}/restore` — 404 for an unknown skill or version
+    (the vocabulary its two sibling GET routes already use), 400 for a refusal. Chosen over
+    `/api/skills/{name}/restore` + body: no shape collision with the trash route at all, and the
+    version id stays in the path where the digit guard already applies.
+  - `test_harness_revert_proposal.py`'s rule is untouched: the applier still never undoes a
+    learning write; a revert is a *user* action through this route, and item 14's probation will
+    call the same service function directly rather than file a proposal.
+  - Frontend: `restoreSkillVersion()` in `api-client/skills-versions.ts` (same all-digits gate)
+    and ONE button in the diff pane, offered only when the diff is non-empty — restoring the
+    version already in force is a write with nothing to say. The button label is a sentence, not
+    the unixts it posts. On success both reads are invalidated, so the history shows the snapshot
+    the restore took and the diff goes empty, which IS the confirmation; no toast was added.
+  - Comments REWRITTEN, not appended, in three places that argued for read-only
+    (`SkillVersionsPanel.tsx` header, `api-client/skills-versions.ts` header, and the old §101
+    reuse-map line here): each now says why the write path exists and where it lives.
+- **Generated artifacts back in step.** `check:api` was red at session start for the reason in
+  the correction above; after item 13's route `npm run gen:openapi`, `gen:api-index` and `gen:api`
+  were run and all three checks pass (`check:api`, `check:api-index`, `check:docs` — 6 claims).
+  Spec diff: +95 lines, exactly the two missing paths, zero deletions. Client: +114, zero
+  deletions. **`openapi.ts` is regenerated too** so the three derived files move together — there
+  is no CI check on the typed client, so leaving it behind would have been silent drift.
+- Item 13 checks: 6 backend tests red-first then green (36 in the file), 4 panel tests red-first
+  then green (13 in the file, 156 across `settings/__tests__/`), `-k skill` across the backend
+  **242 passed / 2 skipped**, `test_gate_participation` 27 passed, ruff + mypy clean on the
+  changed modules, `tsc --noEmit` clean.
+
+## Item 14 — what landed and what is still open
+- **Rails core landed** (`app/services/harness_rails.py`, 25 tests in `test_harness_rails.py`):
+  one entry point `auto_apply_allowed(row)` answering with `{allowed, rule, reason}`, and it sits
+  ON the path — `review_proposal` asks before it decides, so a caller cannot read the answer and
+  ignore it. Autonomy ships off, so every answer in the shipped config is `autonomy-off`.
+  - **Allow-list, not deny-list**: only `skill_create` / `skill_patch` may auto-apply; `HARD_KINDS`
+    is written out and a test proves it still equals `VALID_KINDS` minus those two, so a new kind
+    is held by default and the derivation cannot rot.
+  - Evidence must be the user's own words: cited episodes have to include a trusted kind
+    (`user_correction` / `user_rescue` / `abandoned_approach`), **quarantined rows excluded** —
+    item 5's 41 invented episodes still have ids, and one must not vouch for a write. A URL in
+    the evidence is fetched content and is refused on its own, so the fetched-evidence hold fires
+    even with a real citation behind it.
+  - Content rails on the skill body: shell fence or shell prose, any URL, any credential
+    vocabulary. Coarse on purpose — a false positive costs a human a glance, a false negative
+    costs an unreviewed write to the agent's own instructions.
+  - Rate rails read the proposal ledger (`action: 'auto_apply'`), which is the one existing
+    store for "who did what, when": daily cap (`autoApplyPerDay`, default 2), one change per
+    skill per day, and burn-in (`autonomyBurnInCount`, default 5, **0 disables**) holding the
+    first N clean verdicts in the inbox beside their verdict.
+  - `RULES` is a declared set and a test walks real refusals through it, because an unnamed rule
+    is how a guard starts defaulting to allowing.
+- **Three config keys, in every door the handoff warns about**: `boolKeys` / `numKeys`,
+  `fieldTable`, the validation branch, and `test_brain_config._ALLCamelKeys`. Plus one door the
+  handoff did NOT list: `saveBrainConfig` takes a **flat camelCase patch** — the nested
+  `auxiliary.cognitive.orchestrator` shape is what it WRITES, not what it reads. A test helper
+  that posts the nested shape "succeeds" and changes nothing; `_configure` now asserts `ok` and
+  the arm is exercised through the real API door in every armed test.
+- **Two contracts rewritten, not deleted** (`test_review_proposal_path.py`, item 10's file):
+  `test_a_keep_verdict_approves_through_the_normal_path` → `..._when_the_rails_allow` plus a new
+  `..._is_held_while_autonomy_is_off`; `test_approval_still_goes_through_the_deterministic_applier`
+  now arms the switch. DISCARD still rejects with the switch off, and that asymmetry is pinned by
+  its own test: the rails stop CHANGES, a refusal writes no file, and `reopen` is the undo.
+- **A latent bug found while wiring the receipt**: `review_proposal` returned
+  `ok=bool(result.get('ok'))` while `decide_proposal` answers with the proposal ROW, which has no
+  `ok` key — so `ok` was False for every decision the reviewer ever made and nothing asserted it.
+  Now derived from `status` (`applied` / `rejected`), with `applied` and `status` added to the
+  receipt and a test naming the old mistake.
+- **A test-isolation leak found by an in-suite failure that passed alone**: `getRuntimeConfig`
+  memoizes for 2s and records no data dir, so a test that wrote `skillAutonomy=True` handed it to
+  the next test's fresh directory — the kill switch read True in a test that never armed it, and
+  that test APPLIED a proposal. `bustRuntimeCache()` now runs in conftest's
+  `_reset_module_singletons` beside the model-cache bust, which is the same class of swap. This is
+  the `judge-model-x` failure mode again, one layer up.
+- Still open in item 14: **probation auto-revert** (uses item 13's `restoreVersion`, and needs
+  `snapshot_before_write` to hand back the ts it wrote so the apply can name the version it took
+  back) and the **readable history of auto-changes** (settings only; `auto_apply_history()` is
+  already the only reader of those ledger rows).
+
+## Item 14 — probation and the history (the rest of it)
+- `snapshot_before_write` now RETURNS the id it wrote (`''` for a no-op or a swallowed failure).
+  Without an addressable id, "restore the previous version" is a guess the moment anyone else has
+  written the file. The applier carries it as `applyResult.snapshotTs`, and `record_auto_apply`
+  stores it on the ledger row (`version_ts`) — so the record of an auto-change names the exact
+  bytes it can put back.
+- **`harness_rails.probation_revert(...)`** is called by `harness_outcome._file_revert_proposal`
+  BEFORE it files, and returns `None` for everything that is not ours to undo, in which case the
+  old behavior is unchanged. It restores only when ALL of: the outcome's source is a proposal of a
+  skill kind; an `auto_apply` row exists for that proposal (a human's apply is a human's undo);
+  autonomy is still on; a `version_ts` is on file; and **our snapshot is still the newest version**
+  — if a human edited the skill afterwards, restoring would delete their work to undo our mistake,
+  so the regression is left to the human with its proposal. The revert goes through
+  `skill_service.restoreVersion`, item 13's single path, so it is itself recorded in the history.
+- `test_harness_revert_proposal.py` is untouched and still green: that file pins the PROPOSAL
+  APPLIER never undoing a learning write. Probation is the measurement job putting back bytes it
+  took, through a different door, and the distinction is written into both docstrings.
+- The kill switch stops this too, deliberately, even though refusing means a known regression
+  stays in place: "off" has to mean the machine is not writing to my files, in either direction.
+  The honest consequence is that the revert proposal is filed instead, so the human is handed the
+  regression rather than the machine quietly fixing or ignoring it. Pinned by
+  `test_the_kill_switch_hands_the_regression_to_the_human`.
+- **History**: `GET /api/harness/proposals/auto-history` (registered BEFORE `/{pid}`, or the
+  literal would be captured as a proposal id and 404) joins `auto_apply` rows to their
+  `probation_revert` and returns `{autonomy, changes[]}`. The switch rides every response: a list
+  of auto-changes without it reads as "this is what happens" when it is "what happened".
+  Frontend: one `<details>` disclosure in the Review Inbox, rows labelled by skill + relative time
+  (never the proposal id), `restored` on the reverted ones, and NOTHING rendered when the list is
+  empty — the switch state already says it.
+- Known limit, not fixed (inventing it would be a new feature): after a probation revert the same
+  distiller verdict can re-file and re-apply tomorrow, because a reverted skill is not
+  blacklisted. The per-day and per-skill rails bound the rate, not the repeat. Worth a decision
+  with the user rather than a guessed blocklist.
+- Checks: 8 new tests red-first (arity error on `record_auto_apply` was the honest red) then green,
+  **131 passed** across probation/rails/revert-proposal/reviewer/pass/versions/outcome-P5,
+  ruff clean on `app/` + the new tests, mypy clean on the four changed modules, 160 frontend tests
+  in `settings/__tests__` (23 files), `tsc --noEmit` clean, and `check:api` / `check:api-index`
+  green after regeneration (diffs additive: +39 spec, +60 client, 7 lines of index).
+- Item 14 rails-core checks: 25 new tests red-first then green, 96 across
+  rails/reviewer/proposal-path/brain-config/propose-mode, and a broad
+  `-k "brain or harness or skill or review or distill or consolid or config or autonomy or learning"`
+  slice **855 passed / 3 skipped / 0 failed** with `-n auto`. ruff + mypy clean.
+
+## Definitive suites (tip `29758a69`, clean tree, no edits during either run)
+The run the handoff owed since `3300f28d`. Both numbers are read from the logs themselves — the
+runner's summary line AND the exit code captured immediately after the runner returned, with no
+pipe in front of it.
+- **backend: 4902 passed, 10 skipped, 0 failed in 13:06** — `PYTEST_EXIT=0`, `grep -c '^FAILED'`
+  = 0. Up from 4829 at `ecd56fa5`: session 6 added 73 tests.
+- **frontend: 1528 passed across 197 files** (vitest) — `VITEST_EXIT=0`. Up from 1517/195.
+- `git status --porcelain | wc -l` was 0 at the tip before the run and after it, so the numbers
+  describe one tree.
+
+## Item 15 — SkillEvolvedChip
+- **Placement was the user's call and they chose live event + history read** (asked, because the
+  handoff specified the chip's content but never where it lives or how it learns).
+- The implementation turned out to need NO new frontend channel: `emit_realtime('skill-evolved',
+  …, queryKeys=['harness-auto-history'])` rides the bridge's already-existing forward-compatible
+  default case, which invalidates any `queryKeys` it is handed. So the chip and the settings
+  history read the SAME query key, and a live apply refreshes it. One store, one signal, no
+  second mechanism.
+- `src/realtime/bridge.test.ts` (new, the bridge had no test) pins exactly that hop — an event
+  nobody invalidates would be a chip that only appears after a reload, and "the chip shows up
+  live" would otherwise be a claim with nothing behind it.
+- Backend emits from `review_proposal`'s applied branch next to `record_auto_apply`, so the event
+  and the ledger row are written by the same success. A **human `decide_proposal` emits nothing and
+  records nothing** — pinned by `test_a_human_approval_is_not_an_auto_change`, which is also what
+  makes "a human-approved change does not get a chip" true by construction rather than by a
+  frontend filter.
+- Chip: one line above the composer (`ComposerDecisionStack`, beside `SubagentProposalBar`),
+  skill name + Undo + details + dismiss. Never rendered while `autonomy` is false even when a
+  change is on file — the required OFF test, seeded with a change. Rows name skills and relative
+  times; the proposal id is never a label.
+- **Narrowed the plan's "with Undo" in one case, deliberately:** an auto-CREATED skill has no
+  previous version — `snapshot_before_write` returns '' for a create — so there is nothing to
+  restore and the chip announces it WITHOUT an undo. Offering "delete it" would be a second write
+  path invented in the UI, the exact mistake item 13's comment rewrite was about. Pinned by
+  `test_announces_a_change_it_cannot_undo_without_pretending_it_can`. If the user wants a create
+  to be undoable, that is a new backend operation (retire-or-delete with its own route), not a
+  frontend choice.
+- Dismissal is a localStorage watermark on the newest `at` (anything older is quiet), with local
+  state as well so clicking dismiss actually hides the chip; storage failures fall back to showing
+  it rather than throwing.
+- Client: `getAutoApplyHistory()` + `AutoAppliedChange` moved into
+  `api-client/skills-versions.ts` because two surfaces read them — the settings disclosure now
+  uses the same function instead of a second inline copy of the shape.
+- Checks: 2 backend tests (one red first) then 10 green in the probation file, 86 green across the
+  harness cluster; 6 chip tests + 1 bridge test red-first then green; 169 across
+  chat/settings/realtime (25 files); `tsc --noEmit` clean; ruff + mypy clean.
+
+## One reviewer-line formatter (found by the self-diff review)
+- The review asked "is any new code uncalled?" and the answer was yes: `review_summary()` had no
+  production caller, because item 15-era inbox re-implemented its wording in TypeScript. Two
+  formatters for one record is the pattern this project refuses (the tone-split decision rejected a
+  second marker list for exactly this reason), so `routers/harness_proposals.py` now adds
+  `reviewLine` from `review_summary()` on BOTH reads (list and single), and the inbox renders that
+  field. The local `reviewerLine()` and the UI's `review?: {verdict, reason, model, advisory}`
+  type are deleted, not left as an alternative surface.
+- Asserting the exact sentence then exposed **two real defects**, neither of which any previous
+  test could have caught because they only asserted substrings:
+  1. `run_reviewer_pass` called bare `asyncio.run(...)`, which RAISES inside a running loop. The
+     scheduled path is safe (`run_job_async` → `asyncio.to_thread`, no loop), but any in-loop
+     caller — a route that awaited the job body without the thread hop — would have stamped EVERY
+     open proposal `Reviewer unavailable: RuntimeError: asyncio.run() cannot be called from a
+     running event loop`, and the record would look like a reviewer problem. Now handles both loop
+     shapes the way `skill_distiller._run_batch` already does, including a named grace-window
+     timeout instead of silence.
+  2. The verdict parser stripped `' -–:.'` — an EN dash — while models answer `KEEP — reason` with
+     an EM dash, so the reason kept its leading dash and the inbox line read
+     `Reviewer: keep — — reason`. Fixed with `_VERDICT_PUNCT` spelling both as escapes. **This is
+     item 4's bug class a second time**: the punctuation a model or a phone emits is not the
+     punctuation a source file happens to contain, and a substring assertion cannot see it.
+- Timeout reason wording changed from "did not answer within 60s" to name `timeout`, because
+  `test_a_timeout_is_unavailable` pins that the reason contains 'time' — an existing contract the
+  refactor briefly broke, caught by running the file rather than by trusting the new code.
+- Checks: 3 backend tests red-first then green (79 across reviewer/rails/probability/proposal-path
+  after the loop fix), 161 frontend in `settings/__tests__` (23 files), `tsc --noEmit` clean, ruff
+  clean on `app/` + tests, `check:api` and `check:docs` green (the response shape is untyped in the
+  spec, so no regeneration churn for a derived key).
+
+## Real-app verification (end-of-run item, done 2026-10-06)
+Run against **a labeled test profile** — `C:\Dev\august-verify-profile`, created for this and
+deleted afterwards — with the real backend (`uvicorn app.main:app`, port 8091, real migrations
+including 052) serving the real `web-dist` bundle, driven by headless chromium (playwright).
+**Your live store was never the target**: `C:\Dev\august-proxy\data` has no `verify-restore` skill
+and no `prop_verify*` file, and your own app on :8085 was not touched.
+- `POST /api/skills` → `PATCH` → `GET /versions` → `POST /versions/{ts}/restore` over HTTP: the
+  restore is **byte-exact** (`sha256[:12]` `b6d2996cdc1b` round-tripped), the restore itself lands
+  in the history (`restored verify-restore to version …`), and an unknown version is a real 404.
+- `GET /api/harness/proposals` and `/api/harness/proposals/{pid}` both carry `reviewLine`, formed
+  server-side, and agree with each other. The rendered inbox line reads
+  `Reviewer: keep — the gap is real and durable` with **exactly one** em dash — the doubled-dash
+  bug was measured in the running app, not only in a unit test.
+- `PUT /api/brain/config` accepts `skillAutonomy` / `autoApplyPerDay` / `autonomyBurnInCount` and
+  they read back — the closed-world key door is open for all three.
+- `POST /api/curator/scheduler/run/reviewer` with autonomy ON and no reviewer model: ledger row
+  written, detail `{reviewed: 1, unavailable: 1, applied: 0, held: 0}`, the proposal stamped with
+  the real cause `no reviewer model available` (NOT the asyncio RuntimeError the old code produced),
+  and nothing applied.
+- **Chip in the running app**: renders `August updated verify-restore by itself · Undo · details`
+  (skill name as the label, no id). Clicking Undo posted the restore and **changed the file on
+  disk**, then the chip dismissed itself.
+- **Version panel in the running app**: the undo is offered only on a snapshot that differs from
+  what is live (`Undo — restore this version`), clicking it changed the file, and afterwards the
+  control disappeared and the `No differences — this snapshot is exactly what the current file
+  says` message appeared. The withheld-when-live rule works against a real file.
+- Screenshots: `.probe-artifacts/01…12` (untracked scratch evidence, not committed).
+- **Two environment findings worth keeping**:
+  1. The first-run **setup modal covers the composer**, so the chip is not clickable until it is
+     dismissed. A fresh install with autonomy armed will show the chip behind that modal.
+  2. `AUGUST_CORS_ORIGINS` is **comma**-separated (`_cors_extra_origins` splits on `,`), and a
+     browser POST from an origin the guard does not trust is a 403 `untrusted origin` — including
+     same-origin `http://127.0.0.1:8091` for a backend started without it. My first browser run
+     "failed to undo" for exactly this reason; the chip correctly surfaced the named error rather
+     than pretending, which is the behavior the error path was built for.
+
+## A UI promise my own work made false (found by looking at the screenshot)
+The inbox header said "Nothing applies until you approve it" unconditionally. With item 14 that is
+only true while the switch is off, so the page misdescribed when its own machinery writes. The
+sentence now tracks `autonomy` (read through the same deduped `harness-auto-history` query):
+on → "the rails apply qualifying skill changes on their own, and every one of them is listed below
+and undoable"; off → the original promise. Two tests red-first, and both wait for the switch read
+because the first paint is the off-state sentence. Verified in the running app: the header reads
+the on-state sentence against a live `autonomy: true` config.
+
+## User review round (2026-10-06, items 3–7 requested explicitly)
+- **(3) Ambiguous / unparseable verdicts.** No production change was needed and that is stated
+  rather than dressed up as a fix: the parser already fails closed. What was missing is a test that
+  proves it **with the rails armed** — every pre-existing fail-closed test ran with autonomy off, so
+  none of them could tell a refusal apart from a switch that was never going to write anyway. Nine
+  tests now: seven garbled replies through the real pass (`applied == 0`, status open, verdict
+  `unavailable`, reason named), the parser's own KEEP/DISCARD-vs-tie boundary asserted directly, and
+  a direct `review_proposal(pid, 'KEEP DISCARD')` call. The last one pins the ordering that matters:
+  an unusable answer is refused **before** the rails are consulted, so a garbled string can never
+  reach `decide_proposal` even if the proposal is otherwise clean.
+- **(6) Shadow mode.** `skillAutonomyShadow` (bool, default False) — the reviewer decides, the run
+  records `wouldApply`, nothing is written. Two ordering rules make it meaningful, both tested:
+  the rails are consulted FIRST (a shadow that reported "would apply" for a fetched-content
+  proposal would be lying about a write it is not allowed to make), and `skillAutonomy` remains the
+  master (shadow on + autonomy off rehearses nothing). A shadow run writes no ledger row, so it
+  cannot spend the daily budget it is rehearsing against. `rule: 'shadow-mode'` is in `RULES`, and
+  the pass counts `wouldApply` separately from `applied` and `held`.
+- Config door: `skillAutonomyShadow` added to `boolKeys`, `fieldTable` and
+  `test_brain_config._ALLCamelKeys` in the same commit, which is what makes the closed-world list
+  earn its keep.
+- Checks: 9 + 6 tests red-first (the shadow ones failed on the config door, which is the honest
+  red), then 124 green across rails/reviewer/proposal-path/probation/brain-config/propose-mode;
+  ruff clean.
+
+## (5) Cooldown after a probation revert
+A revert that only puts the bytes back leaves the same finding free to re-apply the next morning,
+so the rails now hold it. Keyed on the **finding**, not the skill: `finding_key(row)` is
+`sha256(skill + fingerprint)[:16]`, falling back to the normalized problem text when the distiller
+supplied no fingerprint. The fingerprint is preferred because it is stable across re-filings while
+the evidence prose shifts with the episode window — and the test asserts exactly that precedence.
+- `record_auto_apply` gained a `findingKey` argument (passed by `review_proposal`), and
+  `probation_revert` copies it onto the revert row, so the ban is written by the same path that
+  performed the undo.
+- New rule `probation-cooldown`, checked **after** the content rails and **before** burn-in and the
+  rate rails, so the reason a human reads is the real one.
+- `PROBATION_COOLDOWN_DAYS = 30`, deliberately longer than the 14-day measurement window: the
+  measurement that condemned the change took that long to arrive, and a shorter cooldown would
+  expire about when the evidence did.
+- An empty key matches nothing, on purpose: rows written before this field existed must not read as
+  "every finding is barred".
+- 7 tests: held after a revert, different finding on the same skill passes, same finding on another
+  skill passes, the window expires, an unkeyed row blocks nothing, the key is stable across reloads
+  and prefers the fingerprint, and one end-to-end through `measure_pending` (the revert row carries
+  a key, and the re-filed finding is held by `probation-cooldown`).
+
+## (7) What an auto-applied change can actually touch
+- **The two allow-listed kinds are `skill_create` and `skill_patch`.** Every other kind in
+  `VALID_KINDS` — `brain_config`, `skill_delete`, `retire`, `promote`, `revert`, `observation`,
+  `tool_bucket`, `tool_description`, `flow_map` — is refused with `rule: 'hard-kind'`, and a test
+  sweeps the vocabulary rather than a hand-written list, so a new kind cannot enter silently.
+- **Measured, not asserted.** `tests/test_harness_rails_containment.py` fingerprints every
+  `.py`/`.json`/`.md` under `app/` (size + sha256), performs a real auto-apply through the reviewer
+  path, and requires the diff to be empty. Backend source, the rails module, `brain_config_service`
+  (the allow-list and every setting), `skill_service`, `tool_registry` and the whole `sandbox/`
+  policy tree are named explicitly so a refactor cannot move them out of the glob and leave the
+  test measuring nothing.
+- **The instrument is proved to bite** (`TestTheInstrumentItself`): it writes one file under `app/`
+  and asserts the scan reports exactly that path. A green tree-scan that cannot see a write is the
+  failure mode this whole file keeps hitting.
+- **A payload cannot smuggle a config change.** A `skill_create` carrying `patch`, `brain_config`
+  and a nested `auxiliary` block applies only its SKILL.md; `maxAgentDepth` and `enabled` are
+  unchanged afterwards. The applier dispatches on kind, never on payload keys.
+- **Names cannot escape**: `../evil`, `a/b`, `..\evil`, `/etc/passwd`, `.hidden`, empty and
+  over-length all raise `SkillValidationError`.
+- **One real side effect found and gated.** `_apply_skill_write` honours `payload.supersedes` by
+  calling `setEnabled(other, False)` — disabling a SECOND skill inside the same write. Both writes
+  are inside the skills root, so the tree scan would not have flagged it; it is now its own rule,
+  `supersedes-another-skill`, because a change that quietly retires another skill is not one the
+  machine should make unwatched. `''` (the applier's "nothing superseded") still passes.
+
+## (4) An auto-created skill now has an undo: the soft disable
+The earlier decision — announce a create with no button, because there is no version to restore —
+is superseded by the user's instruction: undo a create by **disabling** it through the existing
+enable/disable path, never by deleting.
+- `record_auto_apply` gained `apply_action` (`'created'` / `'patched'`, straight from the applier's
+  own receipt), and `auto_apply_history()` exposes it as `created`. The history has to say which
+  kind of change it was or the UI cannot offer the right undo.
+- `disableSkill(name)` in `api-client/skills-versions.ts` is `PATCH /api/skills/{name}
+  {disabled: true}` — the identical call the Skills page toggle makes. No new write path is
+  invented; the existing one is named. A delete would have taken the user's file with it.
+- The chip branches: a patch restores its version, a create disables the skill, and the button says
+  which ("Undo — restore the earlier version" / "Undo — disable the skill"). Tests assert the
+  negative too — `restoreSkillVersion` and `api.delete` are both *not* called for a create.
+- Backend tests pin the distinction end-to-end through the real reviewer path: a create's history
+  row is `created: true` with an empty `versionTs` (there genuinely is nothing to restore), a patch
+  is `created: false` with a version the applier's own snapshot took.
+
+## Real-app re-check of the two chip branches (2026-10-06, after item 4)
+Same method as before: the backend serving `web-dist` on :8092 against a labeled test profile
+(`C:\Dev\august-verify-profile2`, deleted afterwards — the live store again shows no
+`*-undo-demo` skill), headless chromium, real clicks, files inspected on disk afterwards.
+- **Create branch.** Chip read `August updated created-undo-demo by itself | Undo — disable the
+  skill`. After the click: the file **still exists**, its frontmatter gained `disabled: true`, the
+  body text is preserved, and the chip is gone. No 4xx/5xx. So the undo is the soft disable, not a
+  delete — the property the user asked for, measured rather than asserted.
+- **Patch branch (regression, because the mutation code was rewritten).** Chip read
+  `Undo — restore the earlier version`; the file went from the v2 body back to the v1 body, the
+  chip dismissed itself, no error responses.
+- `GET /api/harness/proposals/auto-history` returned `created: true` for the create row and
+  `created: false` with a real `versionTs` for the patch row, over HTTP — the field the UI branches
+  on is produced by the server, not inferred in the browser.
+- Screenshots: `.probe-artifacts/13…15`.
+
+## Definitive suites (tip `85e10438`, clean tree, nothing edited during the runs)
+- **backend: 4940 passed, 10 skipped, 0 failed in 9:53** — `PYTEST_EXIT=0`, `grep -c '^FAILED'`
+  = 0. Measured at `2df1d601`; `git diff 2df1d601..HEAD -- backend-py` is empty, so the number
+  still describes this tip. Up from 4907 before the review round (+33 tests).
+- **frontend: 1538 passed across 199 files** — `VITEST_EXIT=0`, re-run at `85e10438` after the
+  `act()` fix. Count unchanged because item 4 replaced one chip test with one.
+- **Every repo gate green**: `check:api`, `check:api-index`, `check:docs` (6 claims),
+  `check:doc-links` (123 files), `check:version`.
+- The only remaining stderr in the frontend run is `src/api/workbench/stream.test.ts`, a
+  pre-existing SSE-parser suite this workstream never touched. The chip tests are silent now.
+- **Live config**: the two test artifacts are gone from `C:\Dev\august-proxy\data\config.json`
+  (backup `config.json.pre-artifact-cleanup-20261005T201148Z`), verified by re-reading the file.
+  `skill_learning_judge_model` and top-level `_tier3_test_flag` removed; the `rollbackLog` entry
+  that merely *mentions* the flag was left alone — it is history, not a setting. The earlier claim
+  that an `apiFormat` field also held `judge-model-x` did not survive a scan: only the one field did.
+
+## (3) Autonomy is now armed per kind
+`autonomyKinds` (str, default `'skill_patch'`) selects which kinds the switch automates, **inside**
+the code's ceiling. `AUTO_APPLIABLE_KINDS` stays the maximum: `armed_kinds()` intersects the config
+value with it, so no setting can widen what may be automated. A create — inventing an instruction
+that never existed — stays on review until the user asks for it.
+- New rule `kind-not-armed`, checked right after `hard-kind` (the cheaper, more fundamental reason
+  first).
+- **The config door validates rather than filters.** A value naming `skill_delete` is refused at
+  `PUT` (an escalation attempt), and so is a typo like `skill_pach` — silently intersecting away an
+  unknown name would arm nothing and read as "autonomy is broken" rather than "your value was
+  wrong". `''` is valid and arms nothing, which is the way to keep the switch on and automate
+  nothing.
+- Contracts rewritten, not deleted, because the default changed what "armed" means:
+  `test_the_kill_switch_is_the_only_thing_holding_it` now arms both ceiling kinds so the switch is
+  again the single variable it claims to test; and the `_arm()`/`_armAutonomy()` helpers in
+  `test_harness_rails_containment.py`, `test_harness_probation.py` and
+  `test_review_proposal_path.py` arm both explicitly — those files test what a change can touch,
+  not which kinds are automatable, and eight of their tests were failing for the unrelated reason.
+  Each says so in a comment.
+- 8 new tests: default arms only patch, create held with `kind-not-armed`, patch passes, explicit
+  arming works, ceiling cannot be widened, unknown kind refused, empty value valid, and a held
+  create emits no `skill-evolved` event and spends no budget.
+
+## (1) Shadow decisions get their own log, and a readout
+- **A separate store, not the proposal ledger.** Burn-in, the daily cap and the per-skill rule all
+  read `ledger.jsonl`; a rehearsal recorded there would be counted as a change that happened and
+  would spend the budget it was rehearsing against. So: `<proposals>/shadow_decisions.jsonl`,
+  capped at 200 entries on write (a 6-hour cadence with no prune is an unbounded file).
+- Each entry: `at, proposalId, kind, skill, verdict, wouldApply, heldBy, reason, rails[]` where
+  `rails[]` is `{rule, passed}` for **every** rail.
+- **`rail_trace(row)` is now the single implementation** and `auto_apply_allowed` is derived from it
+  (first failing rail). That was the design point, not a convenience: two orderings — the one that
+  decides and the one that logs — is exactly the drift this project keeps having to fix. The trace
+  evaluates every rail even after one fails, because a trace that stops at the first refusal
+  answers the question the decision already answered. All rails are reads.
+  - Pinned by `test_the_decision_and_the_trace_cannot_disagree` (four shapes, decision vs trace) and
+    `test_the_trace_covers_every_rail` (every name in `RULES` except the two non-rails is
+    evaluated, so a new rail cannot be declared and never run).
+- Written from `review_proposal`'s approve branch, once per KEEP, **before** the shadow answer —
+  so a shadow run that the rails held is logged too, with `heldBy` naming the rail. A DISCARD is
+  not logged: nothing was rehearsed, and recording it would fill the file with non-decisions.
+- **Readout**: the auto-history endpoint gained `shadow: [...]`, kept as a separate array from
+  `changes` precisely so a would-have-applied cannot be read as an apply. The panel's disclosure now
+  counts them apart ("1 change applied by itself · 2 shadow decisions · autonomy is on") and each
+  row says `would have applied` or `held by <rail-name>` — the rail's own name, not a paraphrase,
+  because which rail held it is the whole reason to read the list. Renders nothing when both lists
+  are empty.
+- 10 new tests (7 rails + 1 endpoint + 3 panel), 170 green across the harness cluster, 173 across
+  chat/settings/realtime, ruff + mypy clean, `check:api` and `check:docs` green (the response is an
+  untyped dict, so no spec churn).
+
+## Definitive suites (tip `656df7be`, clean tree, nothing edited during the runs)
+- **backend: 4958 passed, 10 skipped, 0 failed in 10:38** — `PYTEST_EXIT=0`, `grep -c '^FAILED'`
+  = 0. Up from 4940 before this round (+18 tests).
+- **frontend: 1541 passed across 199 files** — `VITEST_EXIT=0`. Up from 1538 (+3 panel tests).
+- **`npm run build:web` green** (`BUILD_EXIT=0`).
+- **All five gates green**: `check:api`, `check:api-index`, `check:docs`, `check:doc-links`,
+  `check:version`.
+- Dead-code pass over this round's symbols: `rail_trace`, `record_shadow_decision`,
+  `shadow_decisions`, `_append_shadow`, `armed_kinds`, `disableSkill`, `ShadowDecision`,
+  `kind-not-armed` — every one has a caller outside its own definition and its own tests.
+
+## Session 8 — the merge, and what "all five gates" did not cover
+- **Merged.** `harness-skill-autonomy` → `master` with `--no-ff` in a clean worktree (the main
+  checkout carries another session's ~39 uncommitted files), pushed as a fast-forward to
+  `origin/master` at `9a686bec`. The three generated artifacts (`docs/api/openapi.json`,
+  `docs/API_INDEX.md`, `src/api/gen/openapi.ts`) were **regenerated from the merged tree**, not
+  hand-merged, and proved to have zero content drift. `.gitignore` was the only hand-resolved
+  conflict, keeping both sides' rules.
+- **The CRLF class, separately committed** (`0980f3f1`, `.gitattributes` `eol=lf` for those three
+  generated files): `check:api-index` fails in a fresh Windows worktree while passing on Linux,
+  because `core.autocrlf=true` rewrites the generated LF files at checkout. Same blob hash
+  (`f1b11faa`), zero diff after stripping CR — so it was never a content problem. Verified green in
+  a second fresh worktree after the rule.
+- **Item 15 left a collision, now fixed** (`7231a756`): `sections/chat/SkillEvolvedChip.tsx` and a
+  pre-existing `components/chat/SkillEvolvedChip.tsx` shared a component name AND
+  `data-testid="skill-evolved-chip"`. With autonomy on, both are in the document at once — proven
+  red first (`getAllByTestId` returned 2). They are different news: the transcript chip reports a
+  SKILL.md THIS turn wrote (no backend event exists for a tool-path write), the composer chip
+  reports what the six-hour job did on its own with no turn to point at. The first is now
+  `SkillReceiptChip`.
+- **The gate this workstream did not run.** Every session here reported "all five gates" —
+  `check:api`, `check:api-index`, `check:docs`, `check:doc-links`, `check:version`. `check:design`
+  is a **sixth** gate and CI runs it (`.github/workflows/type-check.yml:172`). Item 15's chip added
+  three raw `<button>`s, which the ratchet counts as new drift, so `check:design` has been red on
+  master since `732e295e` landed and no report in this file said so. The buttons are on the `Button`
+  primitive now and the gate is green. Lesson: a gate list copied between sessions needs to be
+  re-derived from the workflow file, not inherited.
+- **`Type check` is red on `master` and it is not the harness.** Last green run was 2026-10-01;
+  the merge commit failed in ~2 minutes because both jobs fail before their test steps:
+  - Backend — mypy on Ubuntu reports `Module has no attribute 'WinDLL'` at
+    `app/services/computer_use_policy.py:151-152`. `ctypes.WinDLL` is behind a `sys.platform`
+    guard in typeshed, so it typechecks on this Windows machine and not on the runner. **pytest
+    never runs at all** on that job.
+  - Frontend — 4 `@typescript-eslint/no-unnecessary-type-assertion` **errors** (the warning budget
+    of 600 is not what fails it): `src/components/shell/__tests__/RightDrawer.test.tsx:453`,
+    `src/hooks/useResizablePane.ts:141`,
+    `src/sections/settings/__tests__/TurnLimitsSection.test.tsx:36` and `:42`.
+  Neither set is harness code. AGENTS.md says to confirm `Type check` is green before pushing a
+  tag, so this blocks the next release until it is fixed — and it is a third party to the
+  autonomy work, not a consequence of it.
+- Frontend suite from tip `7231a756`, clean tree, nothing edited during the run: **1542 passed
+  across 199 files** (`VITEST_EXIT=0`), +1 over the previous tip for the collision test.
+  `check:design` green, `tsc -b` green, eslint clean on all five touched files.
+- One flake worth recording rather than repeating: `ChatMarkdown.perf.test.tsx` asserted a 2x
+  wall-clock ratio and measured **1.99** in one full-suite run, then passed twice on the same tree.
+  Its own duration in those runs was 6.8s and 13.8s. A perf assertion with a threshold that close
+  to the measured value is load-sensitive by construction — the same class as the `-n auto`
+  failures in this project's history. Not touched here; it needs the mechanism fixed, not the
+  number lowered.
+
+## Session 8 — the real-browser check, run properly, found a bug
+The deferred item was never possible with `take_screenshot` (the in-app browser reports
+`NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`). It is possible headless: serve `web-dist` from the backend
+itself so everything is same-origin, seed the transcript through the real routes, and read
+`getComputedStyle` rather than trusting a look.
+
+**Recipe, because four dead ends went into finding it:**
+- Start the backend with `AUGUST_DATA_DIR` pointed at a scratch dir **and**
+  `AUGUST_CORS_ORIGINS=http://127.0.0.1:<port>`. Without the origin, a browser `POST` to
+  `/api/sessions/.../messages` is a **403**; `urllib` from a script succeeds, so the seed looks
+  like it worked and the page shows nothing.
+- The sidebar roster is **localStorage** (`august-sessions-list-v1`, `august_last_session`), not
+  `/api/sessions`. A session created only server-side never appears, and clicking around the
+  titlebar (`session-bar-title`) silently mints a new one. The working sequence is: let the app
+  create a session, seed rows into a server session, then write the roster entry (copied from one
+  the app itself wrote) and reload. A new browser context drops localStorage, so seed, reload and
+  measure must happen in one script run.
+- Settled receipts are **folded** behind `.activity-summary-header[aria-expanded]`. Nothing renders
+  until that is clicked, which is what makes a count of `[data-slot="tool-step-row"]` look like a
+  broken feature when it is just collapsed.
+- Edit-class receipts do **not** render in `ToolStepRow` at all. `AssistantBlockTimeline` routes
+  them to `EditRailRow`, so a check that only measures step rows cannot see them — which is exactly
+  how the bug below hid.
+
+**Measured, with the migration-052 scratch store, 6 receipts, one per tone family:**
+
+| Receipt | Renders in | Glyph colour | Expected |
+|---|---|---|---|
+| `Error: …` (failure) | ToolStepRow | `rgb(240,118,106)` | red |
+| `[Validation Error] …` (failure) | **EditRailRow** | `rgb(240,118,106)` | red |
+| `[Blocked] …` (denial) | ToolStepRow | grey, alpha 0.75 | muted |
+| `[Blocked] …` (denial) | **EditRailRow** | grey, alpha 0.85 — **was red before the fix** | muted |
+| no tone at all + `status: error` | ToolStepRow | `rgb(240,118,106)` | red (fail-visible) |
+| `status: done` | ToolStepRow | blue file glyph | untinted |
+
+`EditRailRow` read `tool.status` and never `tool.tone` (`836c8d4d`), so every guardrail block on an
+edit — `[Blocked]`, the most common denial there is — rendered as a failure. The 25 `ToolStepRow`
+render tests could not catch this because they only cover the component the edits do not use, which
+is the standing lesson: **a tone rule applied at one render path is not applied to the turn.**
+Pinned now by `EditRailRow.test.tsx` on all four cases, including that an absent tone stays red.
+
+Also verified in passing, on a store that had never seen it: **migration 052 applies cleanly**
+(`Applied migration 052: 052_episode_quarantine.sql`, startup complete, promotion pass ran) — which
+is evidence for the live boot, not a substitute for it.
+
+## Definitive suites (tip `9d032441`, clean tree, nothing edited during the run)
+- **frontend: 1546 passed across 200 files** — `VITEST_EXIT=0`. Up from 1542/199 before this
+  session (+4 for `EditRailRow.test.tsx`, +1 file). The `ChatMarkdown.perf` flake did not recur.
+- **backend: unchanged at 4958 passed / 10 skipped** — `git diff --stat 656df7be..HEAD --
+  backend-py` is **empty**, so re-running ten minutes of byte-identical code would prove nothing
+  about these four commits, which are frontend and docs only.
+- `tsc -b` green, eslint clean on every touched file, `build:web` green.
+- **All six gates green from this tip**: `check:api`, `check:api-index`, `check:docs`,
+  `check:doc-links`, `check:version`, `check:design`. None of the four commits touches a route, a
+  schema or a version file, so the first three are not expected to move — but they were run rather
+  than assumed. Note this worktree predates `0980f3f1`, so `check:api-index` passing here is not
+  evidence the CRLF fix is unnecessary; it is evidence this checkout happens to already match.
+- Commits this session: `7231a756` (chip collision), `ab6ee8c8` (status-doc self-contradiction),
+  `836c8d4d` (EditRailRow tone), `9d032441` (browser-check record). All on
+  `harness-skill-autonomy`; **none pushed**, because `master` moved to `9a686bec` after these
+  branch commits were merged, so this branch is now ahead of `master` by four and needs its own
+  merge decision.
+
+## CI-shaped verification (tip `69c1db85`) — corrects the backend line above
+The bullet above said the backend suite was byte-identical so it need not be re-run. **That stopped
+being true after this session**: `837b2c87` edits `app/services/computer_use_policy.py`, so the
+number was re-earned rather than inherited. Commands were taken from
+`.github/workflows/type-check.yml` itself, not from habit — which is the whole lesson of this
+section, since three of them had been run wrong for five days:
+
+| CI step | Command as CI runs it | Result |
+|---|---|---|
+| ruff | `ruff check .` | exit 0, all checks passed |
+| mypy | `python -m mypy app/` **on Linux** | `Success: 337 files` — reproduced the old failure with `mypy --platform linux`, which is the only way to see it from a Windows box |
+| pytest | `pytest -q --tb=short -n auto --cov` (addopts carries `--cov-fail-under=55`) | **4958 passed, 10 skipped, 0 failed**, exit 0, coverage **71.04%** vs the 55% floor |
+| frontend lint | `eslint . --max-warnings=600` | **0 errors**, 325 warnings — the budget was never the cause of the red |
+| frontend types/tests | `tsc -b`, `vitest run` | green; **1546 passed / 200 files** |
+
+Two things this exposes about the history, not just the present:
+- **`--cov-fail-under=55` had never been verified in CI** since 2026-10-01, because the mypy step
+  exited before pytest ran. It passes (71.04%), but "the backend suite is green" had been a local
+  `--no-cov` claim repeated as a CI claim.
+- A local run with `--no-cov` is NOT the CI command. Any project whose addopts carries a gate needs
+  the gate exercised with the real flags, on the runner's platform.
+
+Still branch-local: `master` (`9a686bec`) keeps failing `Type check` until these merge. Commits
+`837b2c87`, `127cbde7`, `4f750030`, `69c1db85` are the CI fixes and this record.
+
+**This table is not the whole job, and treating it as such is exactly the error that produced the
+next red.** It covers five steps; `type-check.yml` has fourteen on the backend. `check:naming` and
+`lint:ratchet` were never run here, both are CI-enforced, both fail — see `## Open, in order` item 5.

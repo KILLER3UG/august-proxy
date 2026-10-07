@@ -204,7 +204,8 @@ All paths below are relative to `/api/workbench`.
 | `GET /api/subagents/workstreams/{name}/episodes` | Episode history for Continue |
 | `POST /api/subagents/workstreams/{name}/continue` | Fresh worker on that thread |
 | `GET /api/subagents/jobs` · `POST /api/subagents/jobs/{jobId}/cancel` | Long-running harness jobs |
-| `GET /api/harness/proposals` · `/inbox/count` · `/{pid}` · `POST /{pid}/decide` · `POST /promotion/run` | Harness improvement proposal queue |
+| `GET /api/harness/proposals` · `/inbox/count` · `/{pid}` · `POST /{pid}/decide` · `POST /promotion/run` | Harness improvement proposal queue. Both reads add `reviewLine` — the independent reviewer's verdict as one sentence, formed by `review_summary()` server-side so the wording lives in one place (`''` = never reviewed). A `revert` proposal is filed by the outcome job when a change measures as a regression; a change the rails applied themselves is undone by a version restore instead, so it never appears as a question |
+| `GET /api/harness/proposals/auto-history?limit=` | `{autonomy, changes: [{at, proposalId, skill, versionTs, reverted}]}` — every change the machine applied by itself, newest first, from the proposal ledger. `autonomy` rides the response because a list of auto-changes without the switch state reads as "this is what happens" when it may be "what happened" |
 | `POST /mcp/harness` | MCP tools: `harness_list_workstreams`, `harness_spawn`, `harness_steer`, `harness_continue`, `harness_list_jobs`, `harness_cancel_job`. Note the path — this router is mounted **without** the `/api` prefix |
 
 > There is no `GET /api/brain/harness/evals` and no `/api/harness/trends`. The
@@ -313,8 +314,10 @@ Snapshot, alias CRUD, settings put — operator convenience surface.
 | `POST /api/skills` | Create agent-authored |
 | `PATCH /api/skills/{name}` | Patch (copy-on-write for bundled). A patch rewrites frontmatter **wholesale** — anything it does not restate is lost, so `trigger`, `supersedes`, `origin` and `learned_from` are read back off the file first |
 | `DELETE /api/skills/{name}?workspace=` | Delete agent-authored |
+| `POST /api/skills/restore/{trashId}` | Undo a delete within the **24h** trash window — the sibling of the version restore below, which puts a whole directory back rather than one file's bytes. Unknown or already-restored id, or an unreadable trash entry → **400** (the route maps `SkillValidationError`, so it is a client error, not a crash). Listed here because it was missing: `routers/skills.py:249` has served it since `c332b526`, and **the desktop UI has no caller** — only `src/api/gen/openapi.ts` knows about it, so nothing in Settings offers it |
 | `GET /api/skills/{name}/versions?workspace=` | Version history → `{versions: [{ts, actor, rationale, sha}]}`, newest first. `ts` is the unixts id the snapshot is stored under; `sha` is the SHA-256 of that snapshot's content |
 | `GET /api/skills/{name}/versions/{ts}/diff?workspace=` | `{diff}` — a `difflib.unified_diff` of that version against the **current** `SKILL.md` |
+| `POST /api/skills/{name}/versions/{ts}/restore?workspace=` | Write that snapshot back as the live `SKILL.md`, **byte-exact** (not through `PATCH`, which canonicalizes the body and re-renders frontmatter). The content it replaces is snapshotted first, so the restore is itself undoable. 404 for an unknown skill or version, 400 for a skill it will not overwrite (bundled root). The one path from a version id to file content — the panel's Undo and a probation auto-revert both use it |
 
 Both version routes 404 for an unknown skill, or for a version id that is not
 retained. Snapshots are taken automatically by every `SKILL.md` content write

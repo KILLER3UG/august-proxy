@@ -24,8 +24,14 @@
 | [**AUDIT_RECOMMENDATIONS_2026-08-11.md**](AUDIT_RECOMMENDATIONS_2026-08-11.md) | **Superseded** by `audit-2026-08/` + `research/` |
 | [`audit-2026-08/`](audit-2026-08/) | 12-agent August audit sweep — per-area findings, most **not** dispositioned |
 | [**HARNESS-FINDINGS-2026-09-15.md**](HARNESS-FINDINGS-2026-09-15.md) | Harness findings, same-day implementation status |
-| [**UI-SCAN-2026-09-16.md**](UI-SCAN-2026-09-16.md) | Desktop UI scan pinned to v0.18.11 |
 | [**CHAT_UI_DEEP_DIVE_2026-08-23.md**](CHAT_UI_DEEP_DIVE_2026-08-23.md) | Chat UI inventory |
+| [**API_INDEX.md**](API_INDEX.md) | **Generated** operation index over `api/openapi.json`; CI-gated by `check:api-index`, so it cannot drift silently — the one to read for "what exists" |
+| [**HARNESS_ENHANCEMENTS_2026-09-27.md**](HARNESS_ENHANCEMENTS_2026-09-27.md) | Harness hardening round: runaway backstop, gate-participation audit, coverage ratchet — all 14 items landed |
+| [**AUDIT_REPORT_2026-10-01.md**](AUDIT_REPORT_2026-10-01.md) | Most recent full-repo audit |
+
+<!-- UI-SCAN-2026-09-16.md was removed 2026-10-07 rather than indexed: 6 of its 8 items
+     were fixed by research/august-frontend-ui-audit.md, which supersedes it, and its
+     evidence directory is gone so nothing in it is re-verifiable. -->
 | [**CIRCUIT_SIMULATION_RESEARCH.md**](CIRCUIT_SIMULATION_RESEARCH.md) | Circuit / EDA feature research and `[implemented]` notes |
 
 ### Design research (current)

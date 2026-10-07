@@ -1,5 +1,7 @@
 # Agent 1 — Backend Audit Findings (proxy adapters, workbench, security)
 
+> **Dated snapshot, and some of it is now actively wrong.** Added 2026-10-07: this was the one `audit-2026-08/` report left without a provenance banner, and it praises machinery the project then deleted on purpose. Specifically, do NOT treat the opt-in `verifierEnforced` gate, the `/api/workbench/verifier` endpoints, the `AUGUST_VERIFIER_REVIEWER` critic or `AUGUST_AUTO_ROUTE` turn rerouting as things to preserve — all were removed 2026-08-24 and again in Part 25 Phase 4, and `AGENTS.md` records those removals as deliberate.
+
 **Scope:** `backend-py/app/` — proxy adapters, managed tool loops, sandbox, verifier, code runner.
 **Status:** all items landed & green (ruff/mypy/pytest) in `d1938423` + follow-up batches. B2 was pre-fixed by the same audit pass; the remaining Phase-0 items shipped with this doc.
 

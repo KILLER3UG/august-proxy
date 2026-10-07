@@ -2,7 +2,7 @@ import { ChangesCard } from '@/components/chat/ChangesCard';
 import { CircuitArtifactCard } from '@/components/chat/CircuitArtifactCard';
 import { TurnProvenanceChip } from '@/components/chat/TurnProvenanceChip';
 import { SavePointChip } from '@/components/chat/SavePointChip';
-import { SkillEvolvedChip } from '@/components/chat/SkillEvolvedChip';
+import { SkillReceiptChip } from '@/components/chat/SkillReceiptChip';
 import type { WorkbenchCheckpoint } from '@/api/workbench';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 import type { GitDiffResult } from '@/api/git';
@@ -231,13 +231,14 @@ export function AssistantMessageContent({
             gated on the same `!(isLast && streaming)` as its siblings: the
             frame that carries it is emitted at turn close, never mid-stream. */}
         {!(isLast && streaming) && <TurnProvenanceChip provenance={message.provenance} />}
-        {/* SavePointChip + SkillEvolvedChip join the provenance row; both hide
+        {/* SavePointChip + SkillReceiptChip join the provenance row; both hide
             mid-stream on the same gate (nothing to say about a turn that is
-            still running). */}
+            still running). SkillReceiptChip is the turn's own skill write — the
+            autonomy notice is SkillEvolvedChip, above the composer. */}
         {!(isLast && streaming) && (
           <SavePointChip checkpoints={savePoints ?? []} sessionId={sessionId} />
         )}
-        {!(isLast && streaming) && <SkillEvolvedChip tools={message.tools} />}
+        {!(isLast && streaming) && <SkillReceiptChip tools={message.tools} />}
       </div>
       <AssistantMessageActions
         showActions={showActions}

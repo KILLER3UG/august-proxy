@@ -117,8 +117,8 @@ def isolatedData(tmp_path, monkeypatch):
 def _reset_module_singletons():
     """Reset in-memory module singletons between tests so cross-file
     ordering cannot leak state (prompt cache, MCP servers, service-connections
-    config cache, prompt segments cache, model cache, tool registry, and the
-    RAM workbench-session registry)."""
+    config cache, prompt segments cache, model cache, brain-config runtime memo,
+    tool registry, and the RAM workbench-session registry)."""
     try:
         from app.services import tool_registry as _tr
 
@@ -145,6 +145,15 @@ def _reset_module_singletons():
     try:
         from app.services.workbench import prompt_segments_cache
         prompt_segments_cache.clear()
+    except Exception:
+        pass
+    # The brain-config runtime memo has a 2s TTL and records no data dir, so a
+    # test that wrote a switch can otherwise hand it to the next test's empty
+    # directory — observed as `skillAutonomy` reading True in a test that never
+    # armed it, which applied a proposal the shipped default must hold.
+    try:
+        from app.services.brain_config_service import bustRuntimeCache
+        bustRuntimeCache()
     except Exception:
         pass
     try:

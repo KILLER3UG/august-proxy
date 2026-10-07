@@ -48,6 +48,24 @@ describe('WorkspaceShell — hub IA', () => {
     localStorage.clear();
   });
 
+  it('centres the content column in the window, not in the space left by the rail', () => {
+    // The rail is w-60 (240px) and the region is what remains, so plain
+    // justify-centre puts the column 120px right of screen centre — measured,
+    // not theorised. Mirroring the rail width on the right is what makes the
+    // two classes meaningful together; dropping either silently un-centres
+    // every settings tab, and no browser check exists in CI to catch it.
+    renderShell(
+      <WorkspaceShell sections={pickSections()} active="skills">
+        <div>main</div>
+      </WorkspaceShell>,
+    );
+    const region = screen.getByTestId('settings-content-region');
+    const cls = region.className;
+    expect(cls).toContain('justify-center');
+    expect(cls).toMatch(/\bpr-60\b/);
+    expect(screen.getByTestId('settings-content-column').className).toContain('max-w-[680px]');
+  });
+
   it('shows category headings and sections in the rail when not searching', () => {
     renderShell(
       <WorkspaceShell sections={pickSections()} active="skills">

@@ -5,7 +5,7 @@
 
 # API Index — every route
 
-413 routes across 340 paths,
+415 routes across 342 paths,
 grouped by family. **This file is generated.** For the prose that explains what
 these are for and when to reach for them, read
 [`API_REFERENCE.md`](./API_REFERENCE.md) — it covers the families that matter in
@@ -139,7 +139,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `DELETE` | `/api/brain/stores/{name}/{row_id}` | Delete one row from a brain store (per-entry Delete in the Memory UI). |
 | `GET` | `/api/brain/turn-outcomes` | M5 telemetry: per-model/provider error rates plus the per-turn verdict distribution (046) for the Observabili… |
 
-## Skills (11)
+## Skills (12)
 
 | Method | Path | Summary |
 | --- | --- | --- |
@@ -150,6 +150,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `DELETE` | `/api/skills/{name}` | Delete a skill. Refuses bundled skills. |
 | `GET` | `/api/skills/{name}/versions` | Version history for one skill: ``{versions: [{ts, actor, rationale, sha}]}``. |
 | `GET` | `/api/skills/{name}/versions/{ts}/diff` | Unified diff of one version against the CURRENT SKILL.md. |
+| `POST` | `/api/skills/{name}/versions/{ts}/restore` | Undo a skill change: write version ``ts`` back as the live SKILL.md. |
 | `GET` | `/api/skills/packs` | Packs List |
 | `POST` | `/api/skills/packs` | Packs Install |
 | `DELETE` | `/api/skills/packs/{name}` | Packs Uninstall |
@@ -171,13 +172,14 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/curator/scheduler` | Per-job cadence + last-run ledger for the Learning panel: the single place to answer 'when did the learning b… |
 | `POST` | `/api/curator/scheduler/run/{job}` | Run one scheduler job now (same ledger rows as the cadence). |
 
-## Harness (6)
+## Harness (7)
 
 | Method | Path | Summary |
 | --- | --- | --- |
 | `GET` | `/api/harness/proposals` | List harness proposals, newest first (optionally filtered by status). |
 | `GET` | `/api/harness/proposals/{pid}` | path: pid |
 | `POST` | `/api/harness/proposals/{pid}/decide` | Approve/reject/dismiss. Approval runs the deterministic applier. |
+| `GET` | `/api/harness/proposals/auto-history` | Every change the machine made by itself, newest first. |
 | `GET` | `/api/harness/proposals/inbox/count` | Open review counts across every review queue — the settings-rail badge. Deliberately cheap: counts only (file… |
 | `POST` | `/api/harness/proposals/promotion/demote-scan` | Part 17 Phase E measurement: demote suggestions for promoted items that never triggered outside their origin … |
 | `POST` | `/api/harness/proposals/promotion/run` | Run the cross-project promotion judge now. |
@@ -532,4 +534,4 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 
 ---
 
-Generated from `docs/api/openapi.json` (413 operations).
+Generated from `docs/api/openapi.json` (415 operations).

@@ -340,7 +340,25 @@ export function WorkspaceShell({
           whole settings pane a horizontal scrollbar.
           contentRef scopes the ?field= deep link to the section body, so a
           control search never resolves against the rail that listed it. */}
-        <div ref={contentRef} className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">{children}</div>
+        {/* Centre the reading column in the WINDOW, not in the leftover region.
+         *  The dialog is max-w-[1180px] with a w-60 (240px) rail, so the region
+         *  spans 371..1309 at a 1440 viewport and its centre is 840 — 120px right
+         *  of the screen. Centring inside it reproduced the complaint exactly.
+         *  pr-60 mirrors the rail's own width on the right, which puts the
+         *  region's content box at 371..1069 with centre 720 = screen centre.
+         *  Keep pr-60 tied to the rail's w-60: change one and the column drifts. */}
+        <div
+          ref={contentRef}
+          className="flex min-h-0 flex-1 justify-center overflow-y-auto overflow-x-hidden pr-60"
+          data-testid="settings-content-region"
+        >
+          <div
+            className="flex min-h-full w-full max-w-[680px] flex-col"
+            data-testid="settings-content-column"
+          >
+            {children}
+          </div>
+        </div>
 
         {/* Claude puts the dismiss control at the top-right of the content pane,
             not in the nav rail — the rail is for moving around inside. */}

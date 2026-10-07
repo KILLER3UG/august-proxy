@@ -1188,6 +1188,53 @@ def patchSkill(
     return parsed or {'name': name, 'description': frontmatter.get('description', '')}
 
 
+def restoreVersion(name: str, ts: str, workspace: str | Path | None = None) -> dict[str, object]:
+    """Write one retained snapshot back as the live ``SKILL.md``, byte-exact.
+
+    The ONLY path from a version id to file content. The UI's Undo and
+    item 14's probation auto-revert both come through here, so "undo" cannot
+    mean two things. It is deliberately NOT :func:`patchSkill`: that function
+    canonicalizes the body and re-renders frontmatter, and an undo that
+    rewrites the bytes it is restoring is not an undo.
+
+    The content being replaced is snapshotted first, which makes the restore
+    itself undoable and keeps the history agreeing with the file.
+
+    Refuses a bundled root: the install tree is the payload an update replaces,
+    so a write there is invisible to the next patch and unfixable by it.
+    """
+    skill = get(name, workspace)
+    if not skill:
+        raise SkillValidationError(f"Skill '{name}' not found.")
+    raw = str(skill.get('path') or '')
+    md = Path(raw) if raw else None
+    if md is None or not md.is_file():
+        raise SkillValidationError(f"Skill '{name}' has no SKILL.md on disk.")
+    skill_dir = md.parent
+    try:
+        bundled = SKILLS_DIR.resolve()
+        underBundledRoot = skill_dir.resolve().is_relative_to(bundled)
+    except OSError:
+        underBundledRoot = False
+    if underBundledRoot:
+        raise SkillValidationError(
+            f"Skill '{name}' is bundled; patch it first so it has a writable copy."
+        )
+
+    from app.services.skill_versions import read_version, snapshot_before_write
+
+    content = read_version(skill_dir, ts)
+    if content is None:
+        raise SkillValidationError(f"Version '{ts}' is not retained for skill '{name}'.")
+    snapshot_before_write(
+        skill_dir, content, actor='user', rationale=f'restored {name} to version {ts}'
+    )
+    md.write_text(content, 'utf-8')
+    _bust_prompt_skills_cache()
+    parsed = _parseSkill(md)
+    return parsed or {'name': name}
+
+
 # ---------------------------------------------------------------------------
 # Delete trash — one-level undo for a skill delete (2026-10-03)
 #
@@ -1278,21 +1325,21 @@ def _allowedRestoreParent(parent: Path) -> bool:
     return parent.name == 'skills' and parent.parent.name == '.aug'
 
 
-def restoreSkill(trashId: str) -> dict[str, object]:
+def restoreSkill(trash_id: str) -> dict[str, object]:
     """Undo a delete: move a trashed skill directory back where it came from."""
     import shutil as _shutil
 
-    _validateTrashId(trashId)
-    entry = _trashRoot() / trashId
+    _validateTrashId(trash_id)
+    entry = _trashRoot() / trash_id
     manifest_path = entry / 'manifest.json'
     if not entry.is_dir() or not manifest_path.is_file():
-        raise SkillValidationError(f"Trash entry '{trashId}' not found (or already restored).")
+        raise SkillValidationError(f"Trash entry '{trash_id}' not found (or already restored).")
     try:
         manifest = json.loads(manifest_path.read_text('utf-8'))
     except (OSError, json.JSONDecodeError) as exc:
-        raise SkillValidationError(f"Trash entry '{trashId}' is unreadable.") from exc
+        raise SkillValidationError(f"Trash entry '{trash_id}' is unreadable.") from exc
     if not isinstance(manifest, dict):
-        raise SkillValidationError(f"Trash entry '{trashId}' is unreadable.")
+        raise SkillValidationError(f"Trash entry '{trash_id}' is unreadable.")
     name = str(manifest.get('name') or '')
     _validateName(name)
     scope = 'project' if manifest.get('scope') == 'project' else 'agent'
@@ -1317,9 +1364,9 @@ def restoreSkill(trashId: str) -> dict[str, object]:
     return {'restored': name, 'scope': scope}
 
 
-def _validateTrashId(trashId: str) -> None:
+def _validateTrashId(trash_id: str) -> None:
     """Trash ids are bare timestamps (`20261004T102533613844`, `-N` on collision)."""
-    if not trashId or not _TRASH_ID_PATTERN.match(trashId):
+    if not trash_id or not _TRASH_ID_PATTERN.match(trash_id):
         raise SkillValidationError('Invalid trash id.')
 
 

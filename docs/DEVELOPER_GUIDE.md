@@ -121,7 +121,7 @@ uv run pytest tests/test_workbench.py --no-cov -n auto
 uv run pytest -k plan_mode --no-cov -n auto
 uv run pytest --lf
 
-# Always pass -n auto. The serial suite is ~2h across ~4,090 tests because the
+# Always pass -n auto. The serial suite is ~2h across ~4,970 tests because the
 # slow ones shell out to real external toolchains (Quartus, arduino-cli, ngspice)
 # in independent temp dirs; -n auto measured 2.6x on 4 workers (8m22s on 16
 # cores). A test that only passes serially is load-sensitive — fix the test.

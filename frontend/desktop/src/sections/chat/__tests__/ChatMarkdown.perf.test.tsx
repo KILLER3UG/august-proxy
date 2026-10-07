@@ -75,37 +75,65 @@ const _SECTION = [
 const LONG_ANSWER = Array.from({ length: 12 }, () => _SECTION).join('\n\n---\n\n');
 
 it('profiles legacy full-parse vs block-cached live render across a growing stream', () => {
-  const steps = 120;
+  const steps = 40;
   const contents: string[] = [];
   for (let i = 1; i <= steps; i++) {
     contents.push(LONG_ANSWER.slice(0, Math.floor((LONG_ANSWER.length * i) / steps)));
   }
 
-  // LEGACY: full convert + marked.parse of the whole document per flush PLUS
-  // the whole-tree innerHTML replace the old component performed (React set
-  // dangerouslySetInnerHTML on the root div every flush). The pre-A.1 live
-  // path did both of these on every ~32ms flush.
-  const t0 = performance.now();
-  for (const c of contents) {
-    const div = document.createElement('div');
-    div.innerHTML = renderMarkdown(c);
-  }
-  const legacyMs = performance.now() - t0;
+  // One round of both sides. Returns the pair so the caller can keep the
+  // minimum per side.
+  const round = () => {
+    // LEGACY: full convert + marked.parse of the whole document per flush PLUS
+    // the whole-tree innerHTML replace the old component performed (React set
+    // dangerouslySetInnerHTML on the root div every flush). The pre-A.1 live
+    // path did both of these on every ~32ms flush.
+    const t0 = performance.now();
+    for (const c of contents) {
+      const div = document.createElement('div');
+      div.innerHTML = renderMarkdown(c);
+    }
+    const legacyMs = performance.now() - t0;
 
-  // NEW: block-cached live renderer (parse once per completed block, DOM
-  // reconciliation included — React skips untouched blocks). Mount once and
-  // re-render with each growing content, exactly like a real stream flush.
-  const { container, rerender } = render(<Markdown content={contents[0]} live={true} />);
-  const t1 = performance.now();
-  for (const c of contents.slice(1)) {
-    rerender(<Markdown content={c} live={true} />);
+    // NEW: block-cached live renderer (parse once per completed block, DOM
+    // reconciliation included — React skips untouched blocks). Mount once and
+    // re-render with each growing content, exactly like a real stream flush.
+    const mounted = render(<Markdown content={contents[0]} live={true} />);
+    const t1 = performance.now();
+    for (const c of contents.slice(1)) {
+      mounted.rerender(<Markdown content={c} live={true} />);
+    }
+    const newMs = performance.now() - t1;
+    const ok = mounted.container;
+    mounted.unmount();
+    return { legacyMs, newMs, ok };
+  };
+
+  // Contention is the whole problem. Vitest runs files in parallel, so a worker
+  // that is starved adds time to whichever side waits on scheduling — and the
+  // React side waits on scheduling while the parse side does not. That skews the
+  // two sides UNEQUALLY, which is why a single round measured 1.99x on a loaded
+  // runner and 5x on an idle one: the ratio below 2 was the machine, not the
+  // renderer. Extra load can only ADD milliseconds, so the minimum of several
+  // rounds is the load-tolerant estimate of each side, and the threshold stays
+  // exactly where a real regression needs it.
+  const rounds = 3;
+  let legacyMs = Infinity;
+  let newMs = Infinity;
+  let container: Element | null = null;
+  const samples: string[] = [];
+  for (let r = 0; r < rounds; r++) {
+    const m = round();
+    samples.push(`${m.legacyMs.toFixed(0)}/${m.newMs.toFixed(0)}`);
+    if (m.legacyMs < legacyMs) legacyMs = m.legacyMs;
+    if (m.newMs < newMs) newMs = m.newMs;
+    container = m.ok;
   }
-  const newMs = performance.now() - t1;
 
   console.log(
-    `[A.1 Perf] growing ${LONG_ANSWER.length}-char stream, ${steps} flushes — ` +
-      `legacy full-parse: ${legacyMs.toFixed(1)}ms, block-cached live: ${newMs.toFixed(1)}ms ` +
-      `(${(legacyMs / Math.max(newMs, 0.001)).toFixed(1)}x faster)`,
+    `[A.1 Perf] growing ${LONG_ANSWER.length}-char stream, ${steps} flushes × ${rounds} rounds — ` +
+      `min legacy full-parse: ${legacyMs.toFixed(1)}ms, min block-cached live: ${newMs.toFixed(1)}ms ` +
+      `(${(legacyMs / Math.max(newMs, 0.001)).toFixed(1)}x faster) rounds=${samples.join(' ')}`,
   );
   expect(container).toBeTruthy();
 
@@ -116,12 +144,17 @@ it('profiles legacy full-parse vs block-cached live render across a growing stre
   // rather than the renderer, which is how this gate went red on the normal
   // path for as long as it existed.
   //
-  // The ratio is what matters and it is load-independent: both sides are
-  // measured in the same run, so a slow machine inflates both. Before the
-  // incremental splitter the live path was SLOWER than legacy (4196ms vs
-  // 6372ms — a ratio below 1), which is exactly the regression this test
-  // exists to catch; a 2x margin separates that from the ~5x a working
-  // path shows.
+  // The ratio was believed load-independent, and that belief was wrong: it is
+  // only independent if contention slows both sides equally, and it does not.
+  // Measured on this tree, the same code produced 1.99x in a parallel run and
+  // 5x in an isolated one, because the block-cached side spends its time in
+  // React scheduling and is therefore the side that waits. Taking the minimum
+  // of several rounds is what makes the ratio load-tolerant; the threshold
+  // stays at 2 because that is where the regression it guards actually is.
+  //
+  // What it guards: before the incremental splitter the live path was SLOWER
+  // than legacy (4196ms vs 6372ms — a ratio below 1). A 2x margin separates
+  // that from the ~5x a working path shows.
   expect(legacyMs / Math.max(newMs, 0.001)).toBeGreaterThan(2);
 
   // One absolute number stays, as a tripwire against a genuine hang rather

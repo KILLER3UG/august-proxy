@@ -171,7 +171,7 @@ def _isMachineRow(source: str, text: str) -> bool:
 # ── window extraction ─────────────────────────────────────────
 
 
-def _errorReceipts(blocksJson: object) -> list[str]:
+def _errorReceipts(blocks_json: object) -> list[str]:
     """The failures this message's structured blocks record, as excerpts.
 
     ``blocks_json`` (migration 047) carries the tool cards the harness itself
@@ -182,7 +182,7 @@ def _errorReceipts(blocksJson: object) -> list[str]:
     from app.services.memory_store.transcript_blocks import decode_blocks
 
     out: list[str] = []
-    blocks = decode_blocks(blocksJson).get('blocks')
+    blocks = decode_blocks(blocks_json).get('blocks')
     if not isinstance(blocks, list):
         return out
     for block in blocks:
@@ -201,7 +201,7 @@ def _extractEvents(
     role: str,
     text: str,
     source: str = '',
-    errorReceipts: tuple[str, ...] = (),
+    error_receipts: tuple[str, ...] = (),
 ) -> list[dict[str, str]]:
     """Typed events observable in one stored message.
 
@@ -211,8 +211,8 @@ def _extractEvents(
     """
     events: list[dict[str, str]] = []
     stripped = text.strip()
-    if role in ('assistant', 'tool') and errorReceipts:
-        for excerpt in errorReceipts:
+    if role in ('assistant', 'tool') and error_receipts:
+        for excerpt in error_receipts:
             events.append({'type': 'tool_error', 'excerpt': excerpt[:_MAX_EXCERPT]})
     if not stripped:
         return events
@@ -902,9 +902,9 @@ def _judgeHealth() -> dict[str, Any]:
         "'distiller_judge_unavailable') ORDER BY id"
     ).fetchall()
 
-    def _last(eventType: str) -> tuple[str, dict[str, Any]] | tuple[None, None]:
+    def _last(event_type: str) -> tuple[str, dict[str, Any]] | tuple[None, None]:
         for row in reversed(rows):
-            if str(row['event_type']) != eventType:
+            if str(row['event_type']) != event_type:
                 continue
             try:
                 detail = json.loads(str(row['detail'] or '{}'))

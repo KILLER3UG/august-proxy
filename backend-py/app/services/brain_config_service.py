@@ -56,6 +56,8 @@ boolKeys: tuple[str, ...] = (
     'cameraAccess',
     'consolidationModelSummarize',
     'preferenceRetireEnabled',
+    'skillAutonomy',
+    'skillAutonomyShadow',
     'projectMemory',
     'projectSkills',
     'fileMemory',
@@ -74,9 +76,12 @@ numKeys: tuple[str, ...] = (
     'consolidationIntervalHours',
     'introspectionIntervalHours',
     'refineIntervalHours',
+    'reviewerIntervalHours',
     'outcomeIntervalHours',
     'outcomeWindowDays',
     'escalationBudgetPerDay',
+    'autoApplyPerDay',
+    'autonomyBurnInCount',
     'episodicRetentionDays',
     'preferenceRetireDays',
     'subagentMaxConcurrent',
@@ -97,7 +102,12 @@ numKeys: tuple[str, ...] = (
     'runawayStopRounds',
 )
 floatKeys: tuple[str, ...] = ('flagRateCap',)
-strKeys: tuple[str, ...] = ('titleModel', 'skillLearning', 'skillLearningJudgeModel')
+strKeys: tuple[str, ...] = (
+    'titleModel',
+    'skillLearning',
+    'skillLearningJudgeModel',
+    'autonomyKinds',
+)
 allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys + floatKeys + strKeys)
 maxAgentDepthRange = (1, 5)
 maxWorkbenchLoopsRange = (1, 500)
@@ -209,6 +219,9 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # consolidation, since the P5 batch); and the outcome-measurement job's
     # cadence + pre/post episode window.
     ('refineIntervalHours', 'refine_interval_hours', 24, 'num'),
+    # The reviewer job's own cadence (learning_scheduler._reviewer_job). Six
+    # hours because that is how often introspection files what it reviews.
+    ('reviewerIntervalHours', 'reviewer_interval_hours', 6, 'num'),
     ('outcomeIntervalHours', 'outcome_interval_hours', 72, 'num'),
     ('outcomeWindowDays', 'outcome_window_days', 14, 'num'),
     ('consolidationModelSummarize', 'consolidation_model_summarize', False, 'bool'),
@@ -243,6 +256,25 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # (empty = fall back to the background-review memory model, then the
     # titler resolver order — keyless gateways keep working).
     ('skillLearningJudgeModel', 'skill_learning_judge_model', '', 'str'),
+    # Item 14 — the autonomy switch and its two rails. OFF is the shipped
+    # default, and `harness_rails.autonomy_enabled()` is the only reader, so
+    # "off" cannot mean two things in two files. The rate keys are read by the
+    # same module; a key that the API could not PUT would be a rail nobody could
+    # move, which is the budgetSoftUsd mistake (fieldTable entry, missing from
+    # numKeys, every PUT naming it rejected).
+    ('skillAutonomy', 'skill_autonomy', False, 'bool'),
+    # Shadow mode: the reviewer decides and the run records what it WOULD have
+    # written, with no write at all. It is a rehearsal of the decision, never a
+    # way to perform one — `skillAutonomy` remains the master, and the rails are
+    # consulted before the shadow answer is given.
+    ('skillAutonomyShadow', 'skill_autonomy_shadow', False, 'bool'),
+    # Which kinds the switch actually automates, selected WITHIN the code's
+# allow-list. Defaults to skill_patch alone: editing a skill the user already
+# accepted is a smaller step than inventing a new instruction that never
+# existed, so a create stays on review until it is asked for.
+    ('autonomyKinds', 'autonomy_kinds', 'skill_patch', 'str'),
+    ('autoApplyPerDay', 'auto_apply_per_day', 2, 'num'),
+    ('autonomyBurnInCount', 'autonomy_burn_in_count', 5, 'num'),
     # Part 16 cost gates: tier-2 escalations per day and the max fraction of
     # scored episodes flagged to tier 2 (episode_miner.flag_top_slice).
     ('escalationBudgetPerDay', 'escalation_budget_per_day', 2, 'num'),
@@ -374,6 +406,20 @@ def _loadPersisted() -> dict[str, object]:
     return dict(val) if isinstance(val, dict) else {}
 
 
+def bustRuntimeCache() -> None:
+    """Drop the 2s memo.
+
+    The cache records nothing about WHERE the values came from, so a process
+    that changes the data directory underneath it — a test fixture, a profile
+    swap — keeps answering from the previous install's config until the TTL
+    expires. A switch read through `getRuntimeConfig` can therefore be a switch
+    some other context turned on. Writers clear it; whoever changes the ground
+    under it must too.
+    """
+    global _runtime_cache
+    _runtime_cache = None
+
+
 def _savePersisted(snakeCfg: dict[str, object]) -> None:
     """Replace ``auxiliary.cognitive.orchestrator``; drop legacy top-level key."""
     global _runtime_cache
@@ -439,6 +485,20 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                     False,
                     f'{key!r} must be off | extract-only | propose | full (got {value!r})',
                 )
+            if key == 'autonomyKinds':
+                # Validated against the code's ceiling, and unknown names are
+                # REFUSED rather than dropped: a typo that silently armed nothing
+                # would read as "autonomy is broken", and a value that could name
+                # skill_delete would turn a preference into an escalation.
+                from app.services.harness_rails import AUTO_APPLIABLE_KINDS
+
+                wanted = [k.strip().lower() for k in value.split(',') if k.strip()]
+                bad = [k for k in wanted if k not in AUTO_APPLIABLE_KINDS]
+                if bad:
+                    return (
+                        False,
+                        f'{key!r} accepts only {sorted(AUTO_APPLIABLE_KINDS)} (got {bad})',
+                    )
         elif kind == 'float':
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 return (False, f'{key!r} must be a number (got {type(value).__name__})')
@@ -454,12 +514,20 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 lo, hi = minSamplesRange
             elif key == 'consolidationIntervalHours' or key == 'introspectionIntervalHours':
                 lo, hi = consolidationIntervalRange
-            elif key in ('refineIntervalHours', 'outcomeIntervalHours'):
+            elif key in ('refineIntervalHours', 'outcomeIntervalHours', 'reviewerIntervalHours'):
                 lo, hi = consolidationIntervalRange
             elif key == 'outcomeWindowDays':
                 lo, hi = (3, 90)
             elif key == 'escalationBudgetPerDay':
                 lo, hi = escalationBudgetRange
+            elif key == 'autoApplyPerDay':
+                # 0 is writable on purpose: a zero budget is how the daily rail
+                # is disarmed without disarming the switch itself.
+                lo, hi = (0, 50)
+            elif key == 'autonomyBurnInCount':
+                # 0 disables burn-in (the plan's documented escape), and the
+                # ceiling keeps "first N clean changes" a real window.
+                lo, hi = (0, 100)
             elif key == 'subagentMaxConcurrent':
                 lo, hi = subagentMaxConcurrentRange
             elif key == 'subagentMaxIterations':
