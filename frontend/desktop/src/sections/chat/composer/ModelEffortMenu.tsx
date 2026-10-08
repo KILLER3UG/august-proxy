@@ -21,6 +21,7 @@ import { chipTrigger, menuPanel, menuItem } from '@/lib/motion';
 import { providersApi } from '@/api/providers';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import type { ModelItem } from '../model-display';
+import { groupModelsByProvider } from '@/components/model/modelList';
 import { compareModelsRanked, modelDisplayParts } from '../model-display';
 import type { EffortLevel } from '../hooks/useChatSend';
 
@@ -385,21 +386,12 @@ export function ModelEffortMenu({
     },
   });
 
-  // Provider-grouped catalog, ranked like everywhere else (pinned → free →
-  // name). Insertion order of the reduce preserves global rank for the
-  // provider list, so the strongest provider floats to the top.
-  const groups = useMemo(() => {
-    const acc = new Map<string, ModelItem[]>();
-    for (const m of visibleModels) {
-      if (!acc.has(m.provider)) acc.set(m.provider, []);
-      acc.get(m.provider)!.push(m);
-    }
-    const out: { provider: string; models: ModelItem[] }[] = [];
-    for (const [provider, list] of acc) {
-      out.push({ provider, models: [...list].sort(compareModelsRanked) });
-    }
-    return out;
-  }, [visibleModels]);
+  // Provider-grouped catalog, ranked like everywhere else — the shared
+  // primitive, so pinning and provider ordering behave identically in this
+  // composer, the settings dropdown and the visibility modal. Insertion order
+  // of the grouping preserves global rank for the provider list, so the
+  // strongest provider floats to the top.
+  const groups = useMemo(() => groupModelsByProvider(visibleModels), [visibleModels]);
 
   // Which provider's models are shown: explicit hover/tap wins, then the
   // selected model's provider, then the first group.
@@ -813,8 +805,8 @@ export function ModelEffortMenu({
                 style={{ top: flyoutPos.top, left: flyoutPos.left, width: FLYOUT_W, maxHeight: FLYOUT_H }}
                 data-testid="provider-models-flyout"
               >
-                {activeGroup.models.length > 0 ? (
-                  activeGroup.models.map((m) => modelRow(m))
+                {activeGroup.items.length > 0 ? (
+                  activeGroup.items.map((m) => modelRow(m))
                 ) : (
                   <div className="px-3 py-2 text-xs text-muted-foreground">No models.</div>
                 )}

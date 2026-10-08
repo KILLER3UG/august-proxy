@@ -76,3 +76,33 @@ describe('modelMatchesQuery', () => {
     expect(modelMatchesQuery(MODELS[2], 'not-a-model')).toBe(false);
   });
 });
+
+describe('separator-agnostic matching', () => {
+  /* Ids carry `-`, `_`, `/` and `:` where a person types a space. The composer
+   * already collapsed both sides; the settings dropdown and the visibility
+   * modal did not, so "claude haiku" found nothing in two of the three pickers
+   * while finding it in the third. One matcher now answers for all of them. */
+  it('finds a hyphenated id by the words a user types', () => {
+    expect(modelMatchesQuery(MODELS[0], 'claude haiku')).toBe(true);
+    expect(modelMatchesQuery(MODELS[1], 'claude sonnet')).toBe(true);
+    // The collapse is one-directional: separators become spaces, so a
+    // run-together query matches nothing. 'claudehaiku' is not 'claude haiku'.
+    expect(modelMatchesQuery(MODELS[0], 'claudehaiku')).toBe(false);
+  });
+
+  it('finds a model with no name by its id words', () => {
+    expect(modelMatchesQuery(MODELS[3], 'gpt 5 mini')).toBe(true);
+    expect(modelMatchesQuery(MODELS[3], 'openai gpt-5')).toBe(true);
+  });
+
+  it('is applied by the grouping, so every filtered list agrees', () => {
+    expect(groupModelsByProvider(MODELS, 'claude haiku').flatMap((g) => g.items).map((i) => i.id))
+      .toEqual(['anthropic/claude-haiku-4']);
+    expect(groupModelsByProvider(MODELS, 'gemini')).toHaveLength(1);
+  });
+
+  it('gives an unattributed model a group with a label', () => {
+    const groups = groupModelsByProvider([m({ id: 'x', provider: '' })]);
+    expect(groups.map((g) => g.provider)).toEqual(['Unknown']);
+  });
+});

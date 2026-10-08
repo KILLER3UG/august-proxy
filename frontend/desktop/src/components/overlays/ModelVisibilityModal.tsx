@@ -4,7 +4,8 @@ import { useState, useMemo, useEffect } from 'react';
 import { BackdropEscape } from '@/components/overlays/BackdropEscape';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Search, Check } from 'lucide-react';
-import { modelDisplayParts, getModelDisplayName } from '@/sections/chat/ChatThread';
+import { modelDisplayParts } from '@/sections/chat/ChatThread';
+import { groupModelsByProvider } from '@/components/model/modelList';
 import { cn } from '@/lib/utils';
 
 interface ModelItem {
@@ -63,24 +64,12 @@ export function ModelVisibilityModal({ open, onClose, models, loading, hiddenMod
 
   const isLoading = loading || internalLoading;
 
-  const grouped = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const filtered = q
-      ? models.filter(m =>
-          m.id.toLowerCase().includes(q) ||
-          getModelDisplayName(m.id).toLowerCase().includes(q) ||
-          m.provider.toLowerCase().includes(q)
-        )
-      : models;
-
-    const groups: Record<string, ModelItem[]> = {};
-    filtered.forEach(m => {
-      if (!groups[m.provider]) groups[m.provider] = [];
-      groups[m.provider].push(m);
-    });
-
-    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
-  }, [models, search]);
+  // One grouping for every model list in the app: provider order is catalog
+  // order (first seen) and each group is ranked by the shared comparator
+  // (pinned → free → name). This view used to sort providers with
+  // `localeCompare` and leave the models inside them unranked, so pinning a
+  // model moved it in the composer and the settings dropdown but not here.
+  const grouped = useMemo(() => groupModelsByProvider(models, search), [models, search]);
 
   if (!open) return null;
 
@@ -144,7 +133,7 @@ export function ModelVisibilityModal({ open, onClose, models, loading, hiddenMod
                   {search ? 'No models match your search' : 'No models available'}
                 </div>
               ) : (
-                grouped.map(([provider, providerModels]) => (
+                grouped.map(({ provider, items: providerModels }) => (
                   <div key={provider} className="mb-3">
                     <div className="px-2 py-1 text-2xs uppercase tracking-widest text-muted-foreground/50 font-semibold">
                       {provider}

@@ -14,12 +14,28 @@
  */
 
 import { compareModelsRanked, getModelDisplayName } from '@/sections/chat/model-display';
-import type { AggregatedModel } from '@/api/api-client';
 
-export interface ModelGroup {
+/** The minimum a picker needs. `AggregatedModel` satisfies it, and so does the
+ *  narrower shape the visibility modal is handed — structural typing here is
+ *  what lets all three surfaces share one grouping without casts. */
+export interface ListableModel {
+  id: string;
+  name?: string;
   provider: string;
-  items: AggregatedModel[];
+  isFree?: boolean;
+  pinned?: boolean;
 }
+
+export interface ModelGroup<T extends ListableModel = ListableModel> {
+  provider: string;
+  items: T[];
+}
+
+/** Ids carry `-`, `_`, `/` and `:` where a person types a space, so both sides
+ *  collapse to single spaces before comparison: "claude sonnet" has to reach
+ *  `anthropic/claude-sonnet-4-5` and "kimi k3" has to reach `kimi-k3`. */
+const collapseSeparators = (text: string): string =>
+  text.toLowerCase().replace(/[-_/:]/g, ' ').replace(/\s+/g, ' ').trim();
 
 /**
  * What a query matches. Deliberately wider than any previous surface: the
@@ -28,25 +44,27 @@ export interface ModelGroup {
  * types when `name` is unset. An unmatched `name` falls through to the derived
  * display name rather than filtering as an empty string.
  */
-export function modelMatchesQuery(m: AggregatedModel, query: string): boolean {
-  const q = query.trim().toLowerCase();
+export function modelMatchesQuery(m: ListableModel, query: string): boolean {
+  const q = collapseSeparators(query);
   if (!q) return true;
-  return [
-    m.id,
-    m.name && m.name.length > 0 ? m.name : getModelDisplayName(m.id),
-    m.provider,
-  ].some((field) => String(field ?? '').toLowerCase().includes(q));
+  return collapseSeparators(
+    [
+      m.id,
+      m.name && m.name.length > 0 ? m.name : getModelDisplayName(m.id),
+      m.provider,
+    ].join(' '),
+  ).includes(q);
 }
 
 /**
  * Group by provider, preserving first-seen provider order, and rank inside each
  * group with the shared comparator (pinned, then free, then display name).
  */
-export function groupModelsByProvider(
-  models: readonly AggregatedModel[],
+export function groupModelsByProvider<T extends ListableModel>(
+  models: readonly T[],
   query = '',
-): ModelGroup[] {
-  const byProvider = new Map<string, AggregatedModel[]>();
+): ModelGroup<T>[] {
+  const byProvider = new Map<string, T[]>();
   for (const m of models) {
     if (!modelMatchesQuery(m, query)) continue;
     const key = m.provider || 'Unknown';
@@ -61,12 +79,12 @@ export function groupModelsByProvider(
 }
 
 /** Paint order across groups — what a keyboard cursor indexes into. */
-export function flattenGroups(groups: readonly ModelGroup[]): AggregatedModel[] {
+export function flattenGroups<T extends ListableModel>(groups: readonly ModelGroup<T>[]): T[] {
   return groups.flatMap((g) => g.items);
 }
 
 /** Where each group starts in that flattened order, by group index. */
-export function groupOffsets(groups: readonly ModelGroup[]): number[] {
+export function groupOffsets<T extends ListableModel>(groups: readonly ModelGroup<T>[]): number[] {
   const offsets: number[] = [];
   let acc = 0;
   for (const g of groups) {

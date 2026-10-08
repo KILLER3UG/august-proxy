@@ -159,7 +159,7 @@ export function ModelPickerDropdown({
 
   // The preview cap is this surface's own concern — a popover has to stay
   // scannable — so it is applied after the shared ordering, never inside it.
-  const shown: ModelGroup[] = ranked.map((g) => ({
+  const shown: ModelGroup<AggregatedModel>[] = ranked.map((g) => ({
     provider: g.provider,
     items:
       isSearching || expandedProviders.has(g.provider)
