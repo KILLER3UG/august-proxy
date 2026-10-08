@@ -229,6 +229,10 @@ _URL_IN_TEXT_RE = re.compile(r'https?://[^\s<>"\')\]]+')
 # "already seen in this conversation".
 _searchSuppliedUrls: dict[str, set[str]] = {}
 _provenanceLock = threading.Lock()
+# Both bounds exist because this lives for the life of the process: a backend
+# that serves hundreds of sessions must not accumulate a URL set per session.
+_PROVENANCE_MAX_PER_SESSION = 500
+_PROVENANCE_MAX_SESSIONS = 64
 
 
 def _normUrl(raw: str) -> str:
@@ -265,11 +269,18 @@ def _noteSearchResults(results: object) -> None:
     if not fresh:
         return
     with _provenanceLock:
-        bucket = _searchSuppliedUrls.setdefault(sessionId, set())
+        # Move the session to the end so the eviction below drops the least
+        # recently ACTIVE one, not whichever happens to sort first.
+        _searchSuppliedUrls.pop(sessionId, None)
+        bucket = _searchSuppliedUrls.setdefault(sessionId, fresh.copy())
         bucket.update(fresh)
-        # A long-lived session must not grow this without bound.
-        if len(bucket) > 500:
-            _searchSuppliedUrls[sessionId] = set(list(bucket)[-500:])
+        # A set has no order, so this keeps an ARBITRARY bounded subset rather
+        # than the most recent 500. That is the right trade: dropping a URL this
+        # forgets yields a "verify this" hint, never a refusal.
+        if len(bucket) > _PROVENANCE_MAX_PER_SESSION:
+            _searchSuppliedUrls[sessionId] = set(list(bucket)[:_PROVENANCE_MAX_PER_SESSION])
+        while len(_searchSuppliedUrls) > _PROVENANCE_MAX_SESSIONS:
+            _searchSuppliedUrls.pop(next(iter(_searchSuppliedUrls)))
 
 
 def _urlProvenance(url: str) -> str:

@@ -204,6 +204,20 @@ class TestFetchProvenance:
         )
         assert _urlProvenance('https://guessed.test/docs') == 'unseen'
 
+    def test_the_ledger_is_bounded_across_sessions(self):
+        """The map lives for the life of the process, so a backend that serves
+        hundreds of sessions must not accumulate a URL set for each."""
+        from app.services.tool_registrations import web_tools
+        from app.services.workbench.context import currentSessionId
+
+        for i in range(web_tools._PROVENANCE_MAX_SESSIONS + 20):
+            currentSessionId.set(f'bulk-{i}')
+            web_tools._noteSearchResults([{'url': f'https://bulk.test/{i}'}])
+        assert len(web_tools._searchSuppliedUrls) <= web_tools._PROVENANCE_MAX_SESSIONS
+        # The most recent session is still known; an evicted one is simply
+        # unseen again, which yields a hint and never a refusal.
+        assert web_tools._urlProvenance(f'https://bulk.test/{web_tools._PROVENANCE_MAX_SESSIONS + 19}') == 'search'
+
     def test_one_session_search_does_not_whitewash_another(self):
         from app.services.tool_registrations.web_tools import (
             _noteSearchResults,
