@@ -1908,9 +1908,13 @@ async def workbenchDoctor():
         try:
             from app.services import service_connections as sc
 
-            conns = sc.get_connections() if hasattr(sc, 'get_connections') else {}
-            g = (conns or {}).get('google') if isinstance(conns, dict) else None
-            if isinstance(g, dict) and (g.get('hasClientId') or g.get('clientId') or g.get('connected')):
+            # `get_connections` never existed on that module — the real
+            # accessor is `list_connections()` — so this guard read as `{}` on
+            # every call and a machine with Google already connected still got
+            # the "no OAuth client id" error.
+            conns = as_dict(sc.list_connections().get('connections'))
+            g = conns.get('google') if isinstance(conns.get('google'), dict) else None
+            if isinstance(g, dict) and (g.get('hasClientId') or g.get('connected')):
                 has_id = True
         except Exception:
             pass
