@@ -91,7 +91,10 @@ interface SchedulerJob {
   };
 }
 interface DistillerStatus {
-  state?: 'ready' | 'unconfigured' | 'no-provider' | string;
+  /** `ready` | `unconfigured` | `no-provider` — the three states
+   *  `skill_distiller.judgeStatus()` reports. Anything unrecognised renders
+   *  nothing rather than guessing at a message. */
+  state?: 'ready' | 'unconfigured' | 'no-provider';
   reason?: string;
   model?: string;
   mode?: string;

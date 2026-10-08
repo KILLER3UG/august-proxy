@@ -405,38 +405,32 @@ a `[Blocked]` edit measured red in the running app. Fixed in `836c8d4d`.
    and no top-level `_tier3_test_flag`. That name survives only in `rollbackLog` at `:95` as a
    `status: "undone"` entry from 2026-07-22 — a record of the undo, not a setting. `skillLearning`
    remains unset, so the `'propose'` default does reach the model.
-4. **`Type check` ran on the pushed merge (`7b20a966`) and is STILL RED — the three fixes cleared,
-   and two more gates were behind them.** Backend failed in 44s, frontend in 1m33s. What had been
-   broken, now proven fixed:
-   - Backend: mypy on Linux rejected `ctypes.WinDLL` (a typeshed surface that exists only on
-     Windows). Reproduced with `mypy --platform linux`, the only way this machine shows what the
-     runner sees. **Cleared** — the job now gets past mypy.
-   - Frontend: 4 `no-unnecessary-type-assertion` errors. **Cleared** — 0 errors, and the job now
-     gets past eslint and the design guardrail.
-   - `ChatMarkdown.perf.test.tsx`: asserted a ratio this file had already documented as
-     load-independent, and it is not (contention slows the React side more than the parse side).
-     Estimator fixed to min-of-3, threshold unchanged.
-5. **THE TWO GATES THAT ARE NOW BLOCKING CI — both this workstream's, both reproducible locally.**
-   - `node scripts/check-naming.mjs` → **10 new camelCase params in service signatures**:
-     `episode_miner.py` `blocksJson`/`errorReceipts`/`eventType`, `harness_rails.py`
-     `applyAction`/`findingKey`/`versionTs`, `harness_self_improve.py`
-     `dryRun`/`producerModel`/`timeoutS`, `skill_service.py` `trashId`. Fix by renaming to
-     snake_case, **not** by `--update` — that re-baselines the ratchet instead of correcting code.
-     `skill_service.trashId` is a FastAPI **path parameter**, so its rename changes the OpenAPI spec,
-     `API_INDEX.md` and the typed client: regenerate with `gen:openapi` + `gen:api-index` + `gen:api`,
-     never hand-edit. `dryRun` is reached from a router query param, so every keyword caller and test
-     has to move with it.
-   - `node scripts/lint-ratchet.mjs` → **325 warnings against a budget of 308**. eslint's
-     `--max-warnings=600` is not the binding constraint; this is a separate tighter ratchet. 17
-     warnings to fix or individually justify.
-   - **Why this matters beyond red ink: pytest has STILL never executed in CI.** The naming gate is
-     step 6 of the backend job (`type-check.yml:41`) and pytest is step 14 (`:99`); on the frontend,
-     `lint:ratchet` (`:177`) sits ahead of vitest. So every suite number in this file is a local
-     result — run with CI's flags, but not a CI verdict.
-   - **The standing lesson, now three gates deep:** `check:design` was missed for five days, then
-     `check:naming` and `lint:ratchet` were missed the same way, all because the "five gates" list was
-     inherited between sessions instead of re-derived. Read the step names out of the workflow file:
-     `grep -n "^\s*- name:" .github/workflows/type-check.yml`.
+4. ~~**CI is red / pytest has never executed in CI.**~~ **Closed, and the wording here was
+   FALSE as of 2026-10-08 — re-verified against the runs API, not against this file.** On
+   `origin/master` (`6b01226f`) all three jobs succeed: `Backend — mypy + ruff + pytest`,
+   `Frontend — tsc + eslint + vitest`, `Mobile — typecheck + parity audit`, and backend
+   **step 14 `Run pytest` = success**. The two gates this item listed as blockers were fixed
+   in `d3700f34` (22 `void` sites, ratchet budget 308→300) and `d4d383f1` (the tablist
+   `aria-required-children` that the never-run axe step then caught). Leaving the old wording
+   standing is the same failure this file has now recorded three times: a gate that never ran
+   was reported as a gate that passed, and a gate that started running was left reading red.
+   Read the step names out of the workflow file
+   (`grep -n "^\s*- name:" .github/workflows/type-check.yml`) and the conclusions out of the
+   API (`gh run view --json jobs --jq '.jobs[].steps[]'`) rather than trusting a list
+   inherited between sessions — including this one.
+
+5. **The learning loop has never produced a learned skill on the dev install.** Read-only
+   measurement of `data/` on 2026-10-08: 45 mined episodes, 12 flagged tier 2 and unjudged,
+   3 fingerprints, and `data/skills/` holds no `SKILL.md` at all (the lone `circuit-sim`
+   folder is a usage-only leftover). The cause was invisible by construction: an
+   unresolvable judge is not an error, so it wrote no lifecycle row and no UI state, and the
+   last `distiller_judge_failed` row (2026-10-05) carried only
+   `{"batchSize": 5, "cooldownUntil": …}`. Fixed in `215b69b1` — `resolve_judge()` now falls
+   back to the fleet's `hippocampus` role, `judgeStatus()` reports state / reason / mode /
+   waiting-episodes, and it rides `GET /api/curator/scheduler` into one muted line on the
+   Learning panel. **Still open, and it is the user's action:** point a real model at it
+   (Settings → Skills judge, the auto-memory selector, or the fleet hippocampus role), then
+   `POST /api/curator/scheduler/run/consolidation` and read what it drafts.
 
 Items 2-4 of the previous version of this list — item 7's judge measurement, Pass 2, Pass 3, and
 the tidy pass — are all closed, and this file's own Item log is where they were closed. The list had
