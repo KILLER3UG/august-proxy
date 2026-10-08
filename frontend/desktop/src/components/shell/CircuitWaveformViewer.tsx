@@ -10,8 +10,9 @@
  * a separate program, which is the license-compliant embedding mode.     */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FileClock } from 'lucide-react';
+import { FileClock, WifiOff } from 'lucide-react';
 import { whenReady } from '@/api/client';
+import { revealInFolder } from '@/lib/tauri-shell';
 import {
   WAVEFORM_EXT,
   artifactsForMessages,
@@ -59,8 +60,27 @@ export function CircuitWaveformViewer({
   const waves = useMemo(() => collectWaveformArtifacts(messages), [messages]);
   const [selected, setSelected] = useState<string | null>(null);
   const [srcDocReady, setSrcDocReady] = useState(false);
+  /** The hosted WASM viewer is a network dependency inside a signed desktop
+   *  app that is expected to work offline, and a cross-origin iframe reports
+   *  "no network" exactly like it reports "still loading" — an offline machine
+   *  showed an empty 240px box under "captures open in the embedded viewer",
+   *  which reads as *no data*. `navigator.onLine` is the honest signal here: it
+   *  answers "is this machine connected", which is the case that silently
+   *  produced a blank panel; it does not claim the far host will answer. */
+  const [online, setOnline] = useState(() => navigator.onLine !== false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const activePath = selected ?? waves[0]?.path ?? null;
+
+  useEffect(() => {
+    const up = () => setOnline(true);
+    const down = () => setOnline(false);
+    window.addEventListener('online', up);
+    window.addEventListener('offline', down);
+    return () => {
+      window.removeEventListener('online', up);
+      window.removeEventListener('offline', down);
+    };
+  }, []);
 
   // Boot the surfer iframe once and LoadUrl the active waveform whenever
   // it changes. The iframe is same-URL always; only the postMessage load
@@ -138,17 +158,45 @@ export function CircuitWaveformViewer({
               ))}
             </div>
           )}
-          <div className="h-[240px] overflow-hidden rounded-lg border border-border/50 bg-background">
-            <iframe
-              ref={iframeRef}
-              src={SURFER_URL}
-              title="Surfer waveform viewer"
-              className="h-full w-full border-0"
-              // Separate-program embed: surfer needs its own origin +
-              // scripts. No allow-same-origin into August's assets.
-              sandbox="allow-scripts allow-same-origin allow-downloads"
-            />
-          </div>
+          {!online ? (
+            <div
+              className="flex h-[240px] flex-col items-center justify-center gap-2 rounded-lg border border-border/50 bg-background px-4 text-center"
+              data-testid="waveform-viewer-offline"
+            >
+              <WifiOff className="size-4 shrink-0 text-muted-foreground/70" />
+              <p className="text-2xs leading-relaxed text-muted-foreground">
+                This machine is offline and the waveform viewer is a hosted app. The capture
+                itself is on disk.
+              </p>
+              {activePath && (
+                <p className="max-w-full truncate font-mono text-2xs text-muted-foreground/80">
+                  {activePath}
+                </p>
+              )}
+              {activePath && (
+                <button
+                  type="button"
+                  onClick={() => void revealInFolder(activePath)}
+                  className="rounded-md border border-border/50 bg-card/50 px-2 py-1 text-2xs text-foreground transition hover:border-primary/30"
+                  data-testid="waveform-reveal"
+                >
+                  Reveal in folder
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="h-[240px] overflow-hidden rounded-lg border border-border/50 bg-background">
+              <iframe
+                ref={iframeRef}
+                src={SURFER_URL}
+                title="Surfer waveform viewer"
+                className="h-full w-full border-0"
+                // Separate-program embed: surfer needs its own origin +
+                // scripts. No allow-same-origin into August's assets.
+                sandbox="allow-scripts allow-same-origin allow-downloads"
+              />
+            </div>
+          )}
         </>
       )}
     </div>
