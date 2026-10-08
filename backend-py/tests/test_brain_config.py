@@ -54,6 +54,9 @@ _ALLCamelKeys = {
     'introspectionIntervalHours',
     'refineIntervalHours',
     'reviewerIntervalHours',
+    # The conversation-review job's cadence, and the switch that arms it.
+    'reviewIntervalHours',
+    'memoryReview',
     'outcomeIntervalHours',
     'outcomeWindowDays',
     'episodicRetentionDays',

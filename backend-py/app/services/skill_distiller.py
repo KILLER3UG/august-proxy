@@ -605,14 +605,17 @@ def _episodeWindow(ep: dict[str, Any]) -> str:
     return '\n'.join(lines)
 
 
-def build_judge_prompt(batch: list[dict[str, Any]]) -> str:
-    skills = _skillIndex()
-    skillLines = '\n'.join(
-        f"- {s['name']}: {s['description'][:160]}" for s in skills[:40]
+def _skillIndexLines() -> str:
+    """The catalogue line both judge passes send — one format, two callers."""
+    return '\n'.join(
+        f"- {s['name']}: {s['description'][:160]}" for s in _skillIndex()[:40]
     ) or '(no skills yet)'
+
+
+def build_judge_prompt(batch: list[dict[str, Any]]) -> str:
     windows = '\n\n'.join(_episodeWindow(ep) for ep in batch)
     return (
-        f'Existing skills (titles/descriptions only):\n{skillLines}\n\n'
+        f'Existing skills (titles/descriptions only):\n{_skillIndexLines()}\n\n'
         f'Flagged episode windows:\n{windows}\n\n'
         'Return verdicts for every episode id above.'
     )
@@ -727,8 +730,14 @@ def take_judge_failure() -> tuple[str, str]:
     return out
 
 
-async def call_judge(prompt: str) -> dict[str, Any] | None:
+async def call_judge(
+    prompt: str, system: str = _JUDGE_SYSTEM
+) -> dict[str, Any] | None:
     """One judge model call. Returns parsed JSON or None (judge failed).
+
+    ``system`` is the authoring contract; the conversation-review pass sends the
+    same contract with a different preamble, so the two passes cannot drift in
+    what they accept.
 
     §12 F-7: uses an UNPOOLED client, closed after the call — judge batches
     run on throwaway event loops (one ``asyncio.run`` per pass), and a
@@ -770,7 +779,7 @@ async def call_judge(prompt: str) -> dict[str, Any] | None:
                 # fails the batch and burns the cooldown.
                 'max_tokens': _JUDGE_MAX_TOKENS,
             }
-            raw = await client.generate(prompt, system=_JUDGE_SYSTEM)
+            raw = await client.generate(prompt, system=system)
             try:
                 data = _extractJson(str(raw))
             except Exception as exc:
@@ -789,7 +798,7 @@ async def call_judge(prompt: str) -> dict[str, Any] | None:
                 _, dropped = parse_verdicts(data)
                 repair = _repair_prompt(prompt, dropped)
                 logger.info('distiller judge: %d invalid verdict(s), one repair retry', len(dropped))
-                raw2 = await client.generate(repair, system=_JUDGE_SYSTEM)
+                raw2 = await client.generate(repair, system=system)
                 return _extractJson(str(raw2))
             return data
         finally:
@@ -1371,6 +1380,266 @@ def apply_verdict(
 # ── the pass (piggybacks the consolidation cadence) ─────────────────────
 
 
+# ── the conversation review: the positive half of learning ───────────────
+#
+# Everything above learns from PAIN — a window reaches the judge only because a
+# tool failed or a user pushed back. Both reference harnesses do the opposite as
+# well: they review the conversation periodically and ask what is worth keeping,
+# with "nothing to save" as the expected answer (Hermes every 10 user turns,
+# after the reply is delivered). Without that, a session that goes well teaches
+# August nothing — which is why the store held zero learned facts while hundreds
+# of real turns passed.
+#
+# It is OPT-IN and default-off, like every other rule in this loop that spends a
+# model call: an absent config key means off, not the shipped constant.
+
+_REVIEW_CURSOR_KEY = 'skill_distiller:review:cursors'
+_REVIEW_MAX_MESSAGES = 60
+_REVIEW_LINE_CAP = 420
+_REVIEW_TOTAL_CAP = 9000
+# How many of the most recently active sessions one pass is willing to look at,
+# and how many cursor entries are kept. Both bound a daily job against a store
+# that grows for as long as the app is installed.
+_REVIEW_SCAN_SESSIONS = 50
+_REVIEW_CURSOR_CAP = 500
+
+_REVIEW_SYSTEM = _JUDGE_SYSTEM + (
+    'THIS PASS: the evidence is a recent CONVERSATION window (user turns,'
+    ' assistant turns, and tool calls in order), not flagged failure episodes.'
+    ' Nothing in it is evidence that something broke. Look instead for the three'
+    ' things a good session leaves behind that a later session cannot'
+    ' reconstruct: a standing preference the user stated ("always", "never", "I'
+    ' prefer"); a fact about them or their environment that will still be true'
+    ' next week and is not in the repo or an instruction file; and a procedure'
+    ' that took more than one attempt to get right. Most windows contain none of'
+    ' those — answer "none" for every id. A memory written because the pass felt'
+    ' it had to write something is worse than no memory at all.\n'
+)
+
+
+def _reviewCursors() -> dict[str, int]:
+    """Per-session high-water message ids, from `internal_state`.
+
+    A MAP, not one number, because a single global cursor skips real work: work
+    in session A, open B, return to A, and A's ids sit on both sides of B's. A
+    pass that reads "the newest session past the cursor" reviews B, then jumps
+    past every A message below it — so B is the only thing ever learned from and
+    A is silently never read. Losing an entry is not dangerous: the memory bar
+    and `duplicateOf` reject a restated fact, so a re-read costs one judge call,
+    not a second copy of a memory.
+    """
+    try:
+        from app.services.memory_store import get_internal_state
+
+        raw = get_internal_state(_REVIEW_CURSOR_KEY)
+    except Exception:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, int] = {}
+    for key, value in raw.items():
+        # isinstance, not a bare try/except: `bool` is an `int` subclass, so a
+        # corrupt `true` entry would otherwise be read as cursor 1 and silently
+        # skip the first message of a session.
+        if isinstance(value, int) and not isinstance(value, bool):
+            out[str(key)] = value
+        elif isinstance(value, str):
+            try:
+                out[str(key)] = int(value)
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def _reviewTarget() -> tuple[str, int]:
+    """``(session_id, cursor)`` for the most recently active session that still
+    has unreviewed messages — or ``('', 0)`` when none does.
+
+    One session per pass, and its own scope: a Bot's conversation must not
+    distill lessons into global memory, which is the leak the remember/forget
+    doors close and this side door has to close too.
+    """
+    cursors = _reviewCursors()
+    try:
+        rows = _conn().execute(
+            'SELECT session_id, MAX(id) AS newest FROM messages'
+            " WHERE session_id IS NOT NULL AND session_id != ''"
+            ' GROUP BY session_id ORDER BY newest DESC LIMIT ?',
+            (_REVIEW_SCAN_SESSIONS,),
+        ).fetchall()
+    except Exception:
+        logger.debug('review target lookup failed', exc_info=True)
+        return '', 0
+    for row in rows:
+        sessionId = str(row['session_id'] or '')
+        if not sessionId:
+            continue
+        cursor = cursors.get(sessionId, 0)
+        try:
+            newest = int(row['newest'])
+        except (TypeError, ValueError):
+            continue
+        if newest > cursor:
+            return sessionId, cursor
+    return '', 0
+
+
+def _flattenMessageText(raw: object) -> str:
+    """A stored message as plain text: str, JSON dict, or content-block list."""
+    if raw is None:
+        return ''
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode('utf-8', 'replace')
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text.startswith('{') or text.startswith('['):
+            try:
+                raw = json.loads(text)
+            except Exception:
+                return text
+        else:
+            return text
+    if isinstance(raw, dict):
+        inner = raw.get('content', raw.get('text'))
+        if isinstance(inner, str):
+            return inner
+        return _flattenMessageText(inner)
+    if isinstance(raw, list):
+        parts: list[str] = []
+        for item in raw:
+            if isinstance(item, dict) and isinstance(item.get('text'), str):
+                parts.append(item['text'])
+            elif isinstance(item, str):
+                parts.append(item)
+        return ' '.join(parts)
+    return str(raw)
+
+
+def _reviewWindow(session_id: str, cursor: int) -> tuple[str, int]:
+    """(rendered window, newest message id reviewed)."""
+    rows: list[Any] = []
+    try:
+        rows = list(
+            _conn().execute(
+                'SELECT id, role, content FROM messages'
+                ' WHERE session_id = ? AND id > ? ORDER BY id DESC LIMIT ?',
+                (session_id, cursor, _REVIEW_MAX_MESSAGES),
+            ).fetchall()
+        )
+    except Exception:
+        logger.debug('review window read failed', exc_info=True)
+        return '', cursor
+    newest = int(rows[0]['id']) if rows else cursor
+    lines: list[str] = []
+    used = 0
+    for r in reversed(rows):
+        text = ' '.join(_flattenMessageText(r['content']).split())
+        if not text:
+            continue
+        if len(text) > _REVIEW_LINE_CAP:
+            text = text[:_REVIEW_LINE_CAP] + '…'
+        line = f"  [{r['id']}] {r['role']}: {text}"
+        used += len(line) + 1
+        if used > _REVIEW_TOTAL_CAP:
+            lines.append('  … window truncated …')
+            break
+        lines.append(line)
+    return '\n'.join(lines), newest
+
+
+def run_review_pass() -> dict[str, Any]:
+    """One conversation review. Never raises; a failed judge call costs a
+    cooldown, exactly as the episode pass does."""
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        cfg = getRuntimeConfig()
+    except Exception:
+        cfg = {}
+    if not bool(cfg.get('memoryReview', False)):
+        return {'status': 'disabled'}
+    mode = str(cfg.get('skillLearning', 'propose') or 'propose')
+    if mode == 'off':
+        return {'status': 'skillLearning-off'}
+    if _in_cooldown():
+        return {'skipped': 'judge cooldown'}
+
+    sessionId, cursor = _reviewTarget()
+    if not sessionId:
+        return {'status': 'idle', 'reviewed': 0}
+    window, newest = _reviewWindow(sessionId, cursor)
+    if not window.strip():
+        # Advance the cursor anyway: a window of nothing but empty tool rows
+        # must not be re-read on every future pass.
+        _setReviewCursor(sessionId, newest)
+        return {'status': 'idle', 'reviewed': 0}
+
+    prompt = (
+        f'Existing skills (titles/descriptions only):\n{_skillIndexLines()}\n\n'
+        f'Conversation window for session {sessionId} (episode ids are message ids):\n'
+        f'{window}\n\n'
+        'Return a verdict for every message id above. Prefer "none": the burden of'
+        ' proof is on the memory, not on the pass to fill itself.'
+    )
+    verdicts = _run_judge_sync(prompt, _REVIEW_SYSTEM)
+    if verdicts is None:
+        _cooldown_batch(len(window.splitlines()))
+        return {'status': 'judge-failed', 'session': sessionId}
+    applicable, dropped = parse_verdicts(verdicts)
+    _record_judge_success(len(applicable) + len(dropped), verdicts)
+
+    scope = ''
+    try:
+        from app.services import session_scope as _ss
+        from app.services.workbench.sessions import get_workbench_session
+
+        sess = get_workbench_session(sessionId)
+        if sess is not None:
+            scope = str(_ss.resolve_scope(sess) or '')
+    except Exception:
+        scope = ''
+
+    results: list[dict[str, Any]] = []
+    for d in dropped:
+        results.append({'episode': d.get('episode'), 'label': 'dropped-invalid'})
+    for v in applicable:
+        label = apply_verdict(v, f'review:{sessionId}', mode, scope=scope)
+        results.append({'episode': v.get('episode'), 'label': label})
+    _setReviewCursor(sessionId, newest)
+    return {
+        'session': sessionId,
+        'reviewed': len(applicable) + len(dropped),
+        'upToMessage': newest,
+        'results': results,
+    }
+
+
+def _setReviewCursor(session_id: str, message_id: int) -> None:
+    """Advance one session's cursor, keeping the map bounded.
+
+    Eviction takes the LOWEST cursor, not the newest: a session that has been
+    reviewed furthest along is the one a re-read would cost the most, and an
+    evicted entry only ever re-runs the judge over a quiet session.
+    """
+    if not session_id:
+        return
+    cursors = _reviewCursors()
+    cursors[session_id] = max(cursors.get(session_id, 0), int(message_id))
+    if len(cursors) > _REVIEW_CURSOR_CAP:
+        keep = sorted(cursors.items(), key=lambda kv: kv[1], reverse=True)[:_REVIEW_CURSOR_CAP]
+        cursors = dict(keep)
+    try:
+        from app.services.memory_store import set_internal_state
+
+        # Declared `dict[str, object]` because that is the arm of `JsonValue`
+        # this writes — a `dict[str, int]` is not assignable to it (invariance),
+        # and a cast would hide it rather than state it.
+        payload: dict[str, object] = dict(cursors)
+        set_internal_state(_REVIEW_CURSOR_KEY, payload)
+    except Exception:
+        logger.debug('review cursor could not be stored', exc_info=True)
+
+
 def run_distiller_pass(dryRun: bool = False) -> dict[str, Any]:
     """One batched judge pass over flagged tier-2 episodes."""
     from app.services.episode_miner import flagged_episodes, set_judge_verdict
@@ -1444,11 +1713,17 @@ def run_distiller_pass(dryRun: bool = False) -> dict[str, Any]:
     }
 
 
-def _run_batch(batch: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """One judge model call over a batch. None = judge failed."""
+def _run_judge_sync(
+    prompt: str, system: str = _JUDGE_SYSTEM
+) -> dict[str, Any] | None:
+    """One judge call from sync code. None = judge failed.
+
+    Shared by the episode batch and the conversation review so the loop-guard
+    behaviour (never block a live event loop; always name the failure cause)
+    exists in exactly one place.
+    """
     import asyncio
 
-    prompt = build_judge_prompt(batch)
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -1457,10 +1732,12 @@ def _run_batch(batch: list[dict[str, Any]]) -> dict[str, Any] | None:
         # A live loop (e.g. the runCurator API handler) must NOT
         # block on the judge — but it must not silently skip either. Offload
         # to a worker thread that owns a fresh event loop.
-        return _run_batch_off_loop(prompt)
+        return _run_batch_off_loop(prompt, system)
     take_judge_failure()  # clear any stale reason before this batch
     try:
-        return asyncio.run(asyncio.wait_for(call_judge(prompt), timeout=_JUDGE_TIMEOUT_S))
+        return asyncio.run(
+            asyncio.wait_for(call_judge(prompt, system), timeout=_JUDGE_TIMEOUT_S)
+        )
     except asyncio.TimeoutError:
         _note_judge_failure('timeout', 'judge exceeded ' + str(_JUDGE_TIMEOUT_S) + 's')
         logger.warning('distiller judge batch timed out after %ss', _JUDGE_TIMEOUT_S)
@@ -1471,7 +1748,12 @@ def _run_batch(batch: list[dict[str, Any]]) -> dict[str, Any] | None:
         return None
 
 
-def _run_batch_off_loop(prompt: str) -> dict[str, Any] | None:
+def _run_batch(batch: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """One judge model call over a batch. None = judge failed."""
+    return _run_judge_sync(build_judge_prompt(batch))
+
+
+def _run_batch_off_loop(prompt: str, system: str = _JUDGE_SYSTEM) -> dict[str, Any] | None:
     """Run one judge call on a worker thread. None = judge failed
     or timed out past the grace window."""
     import asyncio
@@ -1482,7 +1764,7 @@ def _run_batch_off_loop(prompt: str) -> dict[str, Any] | None:
     def worker() -> None:
         try:
             box['result'] = asyncio.run(
-                asyncio.wait_for(call_judge(prompt), timeout=_JUDGE_TIMEOUT_S)
+                asyncio.wait_for(call_judge(prompt, system), timeout=_JUDGE_TIMEOUT_S)
             )
         except asyncio.TimeoutError:
             _note_judge_failure('timeout', 'judge exceeded ' + str(_JUDGE_TIMEOUT_S) + 's')

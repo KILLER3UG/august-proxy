@@ -23,6 +23,7 @@ import { MemorySection } from '../MemorySection';
 
 const getMock = vi.mocked(api.get);
 const postMock = vi.mocked(api.post);
+const putMock = vi.mocked(api.put);
 
 const iso = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
 
@@ -212,5 +213,43 @@ describe('MemorySection — a pane replaces the column', () => {
     // And it does not echo that sentence back underneath itself: a plain
     // fact's title is its whole text, so a second copy is noise.
     expect(within(detail).getAllByText(/Prefers dark mode/)).toHaveLength(1);
+  });
+});
+
+/* The conversation-review switch. It is the only door that lets August write a
+ * memory nobody asked for, so two things must be true on this surface: an
+ * absent config key renders OFF (not "unknown", not on), and the label that
+ * search finds is the label the page actually says. */
+describe('MemorySection — learn-from-conversations switch', () => {
+  it('is off when the server sends no memoryReview key', async () => {
+    renderPage();
+    const sw = await screen.findByTestId('memory-review-toggle');
+    expect(sw).toHaveAttribute('role', 'switch');
+    expect(sw).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('reflects an armed switch and PUTs only the key it owns', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.startsWith('/api/brain/config')) return Promise.resolve({ config: { memoryReview: true } });
+      if (url.startsWith('/api/brain/stores/')) {
+        return Promise.resolve({ store: 'x', rows: [], total: 0, limit: 200, offset: 0 });
+      }
+      if (url.startsWith('/api/brain/stores')) return Promise.resolve({ stores: [] });
+      if (url.startsWith('/api/brain/consolidation/log')) return Promise.resolve({ entries: [] });
+      if (url.startsWith('/api/august/memory/workspaces')) return Promise.resolve({ workspaces: [] });
+      if (url.startsWith('/api/brain/integrity')) return Promise.resolve({ ok: true, exists: true });
+      if (url.startsWith('/api/brain/backups')) return Promise.resolve({ backups: [] });
+      return Promise.resolve({});
+    });
+    putMock.mockResolvedValue({});
+    renderPage();
+    const sw = await screen.findByTestId('memory-review-toggle');
+    // The row renders before the config query resolves, so await the state the
+    // server sent rather than the first paint.
+    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'true'));
+    fireEvent.click(sw);
+    await waitFor(() =>
+      expect(putMock).toHaveBeenCalledWith('/api/brain/config', { memoryReview: false }),
+    );
   });
 });

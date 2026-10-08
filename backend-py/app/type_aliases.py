@@ -132,6 +132,7 @@ class BrainConfigDict(TypedDict, total=False):
     autoRouteMinSamples: int
     modelMemoryRead: bool
     memoryAutoInject: bool
+    memoryReview: bool
     modelMemoryWrites: bool
     memorySensitiveTopics: bool
     cameraAccess: bool

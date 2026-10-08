@@ -151,10 +151,10 @@ class TestF3FlagToJudgeChain:
         assert not str(row['judge_verdict'] or '').strip(), 'tier-1 score must not pre-fill judge_verdict'
         assert row['tier1_result'], 'tier-1 score must be stored in tier1_result'
 
-        calls: list[str] = []
+        calls: list[tuple[str, str]] = []
 
-        async def fake_judge(prompt: str) -> dict:
-            calls.append(prompt)
+        async def fake_judge(prompt: str, system: str = sd._JUDGE_SYSTEM) -> dict:
+            calls.append((prompt, system))
             return {'verdicts': [{'episode': eid, 'action': 'none', 'reason': 'one-off'}]}
 
         monkeypatch.setattr(sd, 'call_judge', fake_judge)
@@ -165,6 +165,10 @@ class TestF3FlagToJudgeChain:
         out = sd.run_distiller_pass()
         assert out.get('verdicts', 0) >= 1, f'distiller judged nothing: {out}'
         assert calls, 'judge model call must actually run'
+        # The episode pass sends the EPISODE prompt. `call_judge` gained a
+        # `system` argument for the conversation-review pass, and a review
+        # prompt here would mean the failure loop lost its own contract.
+        assert calls[0][1] == sd._JUDGE_SYSTEM
         judged = em._conn().execute('SELECT judge_verdict FROM episodes WHERE id = ?', (eid,)).fetchone()
         assert 'one-off' in str(judged['judge_verdict'])
 
@@ -192,7 +196,7 @@ class TestF4CuratorRouterOffLoop:
 
         calls: list[int] = []
 
-        async def fake_judge(prompt: str) -> dict:
+        async def fake_judge(prompt: str, system: str = sd._JUDGE_SYSTEM) -> dict:
             calls.append(1)
             return {'verdicts': [{'episode': eid, 'action': 'none', 'reason': 'x'}]}
 

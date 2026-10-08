@@ -198,6 +198,33 @@ re-read `list_facts` after writing rather than trusting that index — keep the
 prompt text and that behaviour in step if either changes. Sub-agents read and
 recall but never write; the parent turn is the single memory write door.
 
+**The loop's only positive trigger is opt-in** — every other learning pass is
+started by something going wrong (a flagged episode, a filed observation, a
+failing automation), so nothing ever read a session that went *well*.
+`skill_distiller.run_review_pass()` does: one session per pass, the most recently
+active one that still has unreviewed messages, rendered as a message-id'd window
+and judged with `_REVIEW_SYSTEM` — an extension of `_JUDGE_SYSTEM`, not a second
+copy, because "prefer none" must be said once. Verdicts go through the SAME
+`apply_verdict` door as episode verdicts, so the memory bar and the dedupe cannot
+disagree with themselves by call site, and the fingerprint is `review:<sessionId>`
+(a bare message id collides with the `episodes` id space and would let two
+sessions silence each other's drafts). Review progress is a **per-session cursor
+map** (`internal_state` key `skill_distiller:review:cursors`, JSON dict, capped at
+500 entries by lowest cursor) — NOT one global high-water id: work in A, open B,
+return to A and A's message ids sit on both sides of B's, so a single cursor
+reviews B and then jumps past all of A, which is exactly the "only one session
+ever gets learned from" failure the pass exists to fix. An empty window still
+advances that session's cursor, so tool-ack-only rows are never re-read. Gated by
+brain-config `memoryReview` (**default OFF** — absent key = off, like the runaway
+backstop) and scheduled as the `review` job in `learning_scheduler`, so it has its
+own ledger row, cadence (`reviewIntervalHours`) and run-now button. Its job
+adapter **must drop `results`** before returning: `_finish_run` truncates the
+serialized detail at 2000 chars, a 60-entry list measured 2994, and a half-JSON
+blob parses to `{}` in `scheduler_status` — a successful review would report as an
+unexplained one. Settings → Memory is where the switch is; the Learning panel's
+job row names that switch when it is off, so an armed-but-idle loop and a
+never-armed one do not look identical.
+
 **Agent modes (0.12.55+)** — `set_agent_mode(chat|agent|code|orchestrator)`
 (`planner` is an alias for `orchestrator`) switches the
 session: `chat` blocks tool calls (text only), `agent` is native tool calling

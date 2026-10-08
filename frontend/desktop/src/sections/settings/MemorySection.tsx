@@ -58,7 +58,7 @@ interface StorePage {
 
 interface BrainConfigResponse {
   source?: string;
-  config?: { modelMemoryRead?: boolean; memoryAutoInject?: boolean; modelMemoryWrites?: boolean; memorySensitiveTopics?: boolean } & Record<string, unknown>;
+  config?: { modelMemoryRead?: boolean; memoryAutoInject?: boolean; memoryReview?: boolean; modelMemoryWrites?: boolean; memorySensitiveTopics?: boolean } & Record<string, unknown>;
   defaults?: Record<string, unknown>;
 }
 
@@ -867,6 +867,14 @@ export function MemorySection({ active }: { active: { id: string } }) {
           description="Lets August persist durable facts it learns while you chat (the remember tool)."
           disabled={configQ.isLoading || configMut.isPending}
           data-testid="memory-model-writes-toggle"
+        />
+        <SettingsToggle
+          checked={Boolean(cfg?.memoryReview)}
+          onCheckedChange={(next) => configMut.mutate({ memoryReview: next })}
+          label="Learn from finished conversations"
+          description="Off (recommended): August only saves what you or the model ask it to. On: once a day it reads the most recent conversation and keeps a stated preference, a lasting fact about you, or a procedure that took more than one attempt. Anything else it has seen is dropped. Costs one model call per pass, and every memory it writes is one you can retire here."
+          disabled={configQ.isLoading || configMut.isPending}
+          data-testid="memory-review-toggle"
         />
         <SettingsToggle
           checked={Boolean(cfg?.memorySensitiveTopics)}

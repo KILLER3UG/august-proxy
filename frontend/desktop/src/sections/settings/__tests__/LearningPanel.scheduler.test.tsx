@@ -148,6 +148,43 @@ describe('LearningPanel scheduler section', () => {
     expect(cons.textContent).toContain('errored');
   });
 
+  it('names the switch that would arm an idle conversation review', async () => {
+    /* `review` is opt-in and off in the shipped config, so "disabled" is the
+     * state this row reads in almost every install. An bare cadence line looks
+     * identical to a job that ran and found nothing — the same blind spot the
+     * distiller line was added for. */
+    mockRoutes({
+      '/api/curator/scheduler': {
+        jobs: [
+          { job: 'review', intervalHours: 24, lastRunAt: '2026-10-08T01:56:06+00:00', lastStatus: 'ok', lastDurationS: 0.1, nextDueAt: null, summary: { status: 'disabled' } },
+        ],
+        runs: [],
+      },
+    });
+    renderPanel();
+    fireEvent.click(screen.getByText('Learning'));
+
+    const row = await screen.findByTestId('learning-scheduler-job-review');
+    expect(row.textContent).toContain('Learn from finished conversations');
+  });
+
+  it('reports what a conversation review actually read and kept', async () => {
+    mockRoutes({
+      '/api/curator/scheduler': {
+        jobs: [
+          { job: 'review', intervalHours: 24, lastRunAt: '2026-10-08T01:56:06+00:00', lastStatus: 'ok', lastDurationS: 9, nextDueAt: null, summary: { session: 's-1', reviewed: 14, kept: 2 } },
+        ],
+        runs: [],
+      },
+    });
+    renderPanel();
+    fireEvent.click(screen.getByText('Learning'));
+
+    const row = await screen.findByTestId('learning-scheduler-job-review');
+    expect(row.textContent).toContain('14 message(s) read');
+    expect(row.textContent).toContain('2 kept');
+  });
+
   it('says out loud when the distiller has no judge to run', async () => {
     /* The distiller is not a job row — it piggybacks consolidation — and an
      * unconfigured judge writes no ledger entry and no error. Without this the

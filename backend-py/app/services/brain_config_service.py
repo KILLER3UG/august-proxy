@@ -50,6 +50,7 @@ boolKeys: tuple[str, ...] = (
     'skillKeywordExpansion',
     'modelMemoryRead',
     'memoryAutoInject',
+    'memoryReview',
     'modelMemoryWrites',
     'memorySensitiveTopics',
     'subagentWorktreeIsolation',
@@ -77,6 +78,7 @@ numKeys: tuple[str, ...] = (
     'introspectionIntervalHours',
     'refineIntervalHours',
     'reviewerIntervalHours',
+    'reviewIntervalHours',
     'outcomeIntervalHours',
     'outcomeWindowDays',
     'escalationBudgetPerDay',
@@ -222,6 +224,11 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # The reviewer job's own cadence (learning_scheduler._reviewer_job). Six
     # hours because that is how often introspection files what it reviews.
     ('reviewerIntervalHours', 'reviewer_interval_hours', 6, 'num'),
+    # The conversation-review job's cadence (learning_scheduler._review_job) and
+    # its gate. Daily because it reads one session per pass and a longer interval
+    # would leave whole days of conversation unread.
+    ('reviewIntervalHours', 'review_interval_hours', 24, 'num'),
+    ('memoryReview', 'memory_review', False, 'bool'),
     ('outcomeIntervalHours', 'outcome_interval_hours', 72, 'num'),
     ('outcomeWindowDays', 'outcome_window_days', 14, 'num'),
     ('consolidationModelSummarize', 'consolidation_model_summarize', False, 'bool'),
@@ -514,7 +521,7 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 lo, hi = minSamplesRange
             elif key == 'consolidationIntervalHours' or key == 'introspectionIntervalHours':
                 lo, hi = consolidationIntervalRange
-            elif key in ('refineIntervalHours', 'outcomeIntervalHours', 'reviewerIntervalHours'):
+            elif key in ('refineIntervalHours', 'outcomeIntervalHours', 'reviewerIntervalHours', 'reviewIntervalHours'):
                 lo, hi = consolidationIntervalRange
             elif key == 'outcomeWindowDays':
                 lo, hi = (3, 90)

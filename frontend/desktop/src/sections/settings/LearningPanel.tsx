@@ -87,6 +87,12 @@ interface SchedulerJob {
     v_flat?: number;
     v_regressed?: number;
     v_insufficient?: number;
+    // The conversation-review job's row. `results` (one entry per message read)
+    // is dropped by the job adapter before it reaches the ledger, because
+    // _finish_run truncates the serialized detail at 2000 chars — `kept` is the
+    // count that survives.
+    reviewed?: number;
+    kept?: number;
     error?: string;
   };
 }
@@ -232,6 +238,19 @@ function jobOutcomeLine(j: SchedulerJob): string {
         s.v_insufficient ? `${s.v_insufficient} insufficient` : null,
       ].filter(Boolean);
       return `${s.measured} measured${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
+    }
+    return '';
+  }
+  if (j.job === 'review') {
+    // The conversation review is opt-in, so "disabled" is its shipped state and
+    // the common read of this row. Naming the switch that would arm it is the
+    // difference between an idle job and a dead one.
+    if (s.status === 'disabled') return 'off — turn on “Learn from finished conversations”';
+    if (s.status === 'skillLearning-off') return 'off — skill learning is off';
+    if (s.status === 'idle') return 'nothing unreviewed';
+    if (s.status === 'judge-failed') return 'the model call failed';
+    if (typeof s.reviewed === 'number') {
+      return `${s.reviewed} message(s) read${s.kept ? ` · ${s.kept} kept` : ''}`;
     }
     return '';
   }

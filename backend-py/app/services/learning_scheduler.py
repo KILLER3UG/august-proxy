@@ -275,11 +275,44 @@ def _reviewer_job() -> dict[str, Any]:
     return run_reviewer_pass()
 
 
+def _review_job() -> dict[str, Any]:
+    """Read ONE recent conversation and ask what it is worth keeping.
+
+    The other five jobs are all triggered by something going wrong — a flagged
+    episode, an observation, a failing automation. Nothing looked at a session
+    that went *well* and extracted the preference or the multi-attempt procedure
+    it contained, which is why the store stayed empty while hundreds of real
+    turns passed. Opt-in and default-off: this spends a model call on a cadence,
+    so an absent `memoryReview` means off, the same rule `runawayNudgeRounds`
+    follows. Imported at call time so patching the module attribute is what runs.
+    """
+    from app.services.skill_distiller import run_review_pass
+
+    out = run_review_pass()
+    if not isinstance(out, dict):
+        return {'result': out}
+    # Compact ledger row, exactly as _refine_job does. `results` carries one
+    # entry per message read (up to 60), and _finish_run truncates the serialized
+    # detail at 2000 chars — a cut JSON blob then fails to parse in
+    # scheduler_status and the whole summary line vanishes, so the row would
+    # report a successful review as an unexplained one.
+    detail = {k: v for k, v in out.items() if k != 'results'}
+    results = out.get('results')
+    if isinstance(results, list):
+        # The two labels that mean "something was kept": apply_verdict's full
+        # return set is otherwise refusals, drops and duplicates.
+        detail['kept'] = sum(
+            1 for r in results if isinstance(r, dict) and r.get('label') in ('memory-saved', 'proposal-filed')
+        )
+    return detail
+
+
 _register(Job('introspection', _introspection_job, _config_interval('introspectionIntervalHours', 6.0)))
 _register(Job('consolidation', _consolidation_job, _config_interval('consolidationIntervalHours', 24.0)))
 _register(Job('refine', _refine_job, _config_interval('refineIntervalHours', 24.0)))
 _register(Job('reviewer', _reviewer_job, _config_interval('reviewerIntervalHours', 6.0)))
 _register(Job('outcome', _outcome_job, _config_interval('outcomeIntervalHours', 72.0)))
+_register(Job('review', _review_job, _config_interval('reviewIntervalHours', 24.0)))
 
 
 # ── Execution ─────────────────────────────────────────────────────────────
