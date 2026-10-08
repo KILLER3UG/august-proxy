@@ -712,6 +712,82 @@ class TestModelResolution:
         monkeypatch.setattr(sd, '_resolveProvider', lambda m: {'name': m} if m else None)
         assert sd.resolve_judge_model() in ('', 'auto-memory-model-x')
 
+    def test_the_fleet_hippocampus_role_is_a_judge_fallback(self, monkeypatch):
+        """The distiller piggybacks the consolidation cadence and distills the
+        memory store, so the memory model is the semantically right fallback —
+        without it, an install that configured only the fleet never gets judged.
+        Resolved through `resolveRoleModel`, so the role's gateway travels with
+        its model id."""
+        from app.services.brain_config_service import saveBrainConfig
+        from app.services.model_fleet_service import updateFleet
+
+        saveBrainConfig({'skillLearningJudgeModel': '', 'autoMemoryModel': '', 'titleModel': ''})
+        updateFleet({'models': {'hippocampus': 'fleet-mem-model'}, 'providers': {'hippocampus': 'gate-mem'}})
+        monkeypatch.setattr(sd, '_resolveProvider', lambda m, hint='': {'id': m} if m else None)
+        assert sd.resolve_judge() == ('fleet-mem-model', 'gate-mem')
+
+    def test_judge_status_says_why_the_loop_is_idle(self, brain, monkeypatch):
+        """Twelve episodes sat flagged for tier 2 with nothing written about
+        why. An unresolvable judge is not an error, so no lifecycle row existed
+        — this read is what the Learning panel renders instead."""
+        from app.services.brain_config_service import saveBrainConfig
+
+        saveBrainConfig({'skillLearningJudgeModel': '', 'autoMemoryModel': '', 'titleModel': ''})
+        monkeypatch.setattr(sd, '_resolveProvider', lambda m, hint='': None)
+        status = sd.judgeStatus()
+        assert status['state'] == 'unconfigured'
+        assert 'no judge model resolves' in status['reason'].lower()
+        assert status['pendingEpisodes'] == 0
+        assert 'Set "Judge model"' in status['reason']
+
+    def test_judge_status_counts_the_episodes_still_waiting(self, brain, monkeypatch):
+        from app.services import episode_miner as em
+        from app.services.brain_config_service import saveBrainConfig
+
+        sd._conn().execute("INSERT OR IGNORE INTO sessions (id, title) VALUES ('js-1', 't')")
+        first = int(
+            sd._conn().execute(
+                'INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)',
+                ('js-1', 'tool', 'run_command: boom'),
+            ).lastrowid
+        )
+        epId = em.save_episode({
+            'session_id': 'js-1', 'kind': 'failure_recovery', 'outcome': 'unresolved',
+            'start_message_id': first, 'end_message_id': first,
+            'events': [{'type': 'tool_error', 'excerpt': 'run_command: boom'}],
+            'fingerprint_id': 'tool-error:status',
+        })
+        sd._conn().execute('UPDATE episodes SET tier = 2 WHERE id = ?', (epId,))
+        sd._conn().commit()
+        saveBrainConfig({'skillLearningJudgeModel': '', 'autoMemoryModel': '', 'titleModel': ''})
+        monkeypatch.setattr(sd, '_resolveProvider', lambda m, hint='': None)
+        assert sd.judgeStatus()['pendingEpisodes'] == 1
+
+        em.set_judge_verdict(epId, '{"action": "none"}')
+        assert sd.judgeStatus()['pendingEpisodes'] == 0
+
+    def test_judge_status_reports_a_model_no_gateway_serves(self, brain, monkeypatch):
+        from app.services.brain_config_service import saveBrainConfig
+
+        saveBrainConfig({'skillLearningJudgeModel': 'ghost-model-x'})
+        monkeypatch.setattr(sd, '_resolveProvider', lambda m, hint='': None)
+        status = sd.judgeStatus()
+        assert status['state'] == 'no-provider'
+        assert 'ghost-model-x' in status['reason']
+
+    def test_judge_status_is_ready_when_a_provider_resolves(self, brain, monkeypatch):
+        from app.services.brain_config_service import saveBrainConfig
+
+        saveBrainConfig({'skillLearningJudgeModel': 'real-model-x'})
+        monkeypatch.setattr(sd, '_resolveProvider', lambda m, hint='': {'id': m} if m else None)
+        status = sd.judgeStatus()
+        assert status['state'] == 'ready'
+        assert status['reason'] == ''
+        assert status['model'] == 'real-model-x'
+        saveBrainConfig({'skillLearningJudgeModel': ''})
+
+
+
 
 class TestJudgeFailureNamesItsCause:
     """Measured on the real install: 13 `distiller_judge_failed` lifecycle rows,

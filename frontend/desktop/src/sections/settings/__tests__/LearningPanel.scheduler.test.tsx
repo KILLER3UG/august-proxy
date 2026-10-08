@@ -147,4 +147,43 @@ describe('LearningPanel scheduler section', () => {
     const cons = screen.getByTestId('learning-scheduler-job-consolidation');
     expect(cons.textContent).toContain('errored');
   });
+
+  it('says out loud when the distiller has no judge to run', async () => {
+    /* The distiller is not a job row — it piggybacks consolidation — and an
+     * unconfigured judge writes no ledger entry and no error. Without this the
+     * panel showed every job green while twelve episodes went unjudged. */
+    mockRoutes({
+      '/api/curator/scheduler': {
+        jobs: [
+          { job: 'consolidation', intervalHours: 24, lastRunAt: '2026-10-07T01:56:06+00:00', lastStatus: 'ok', lastDurationS: 3, nextDueAt: null, summary: { expired: 0 } },
+        ],
+        runs: [],
+        distiller: { state: 'unconfigured', reason: 'no judge model resolves', mode: 'propose', pendingEpisodes: 12 },
+      },
+    });
+    renderPanel();
+    fireEvent.click(screen.getByText('Learning'));
+
+    const line = await screen.findByTestId('distiller-status');
+    expect(line.textContent).toContain('Skill learning is idle');
+    expect(line.textContent).toContain('no judge model resolves');
+    expect(line.textContent).toContain('12 waiting');
+  });
+
+  it('says nothing when the judge is ready and caught up', async () => {
+    mockRoutes({
+      '/api/curator/scheduler': {
+        jobs: [
+          { job: 'consolidation', intervalHours: 24, lastRunAt: '2026-10-08T01:56:06+00:00', lastStatus: 'ok', lastDurationS: 3, nextDueAt: null, summary: { expired: 0 } },
+        ],
+        runs: [],
+        distiller: { state: 'ready', reason: '', model: 'deepseek-v4', mode: 'propose', pendingEpisodes: 0 },
+      },
+    });
+    renderPanel();
+    fireEvent.click(screen.getByText('Learning'));
+
+    await screen.findByTestId('learning-scheduler-job-consolidation');
+    expect(screen.queryByTestId('distiller-status')).toBeNull();
+  });
 });

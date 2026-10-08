@@ -362,11 +362,15 @@ def _asLessonVerdict(verdict: dict[str, Any], name: str, description: str) -> di
 def resolve_judge() -> tuple[str, str]:
     """``(model, gateway)`` for the distiller judge: the dedicated
     ``skillLearningJudgeModel``, then the ``autoMemoryModel`` background
-    selector, then the titler's ``titleModel``. An empty model means nothing
-    resolves and the judge skips the pass.
+    selector, then the fleet's ``hippocampus`` (the memory-consolidation model —
+    the distiller piggybacks that cadence and distills that store), then the
+    titler's ``titleModel``. An empty model means nothing resolves and the judge
+    skips the pass.
 
-    Only the background selector carries a configured gateway; the brain-config
-    ones are resolved by model id, as they always were.
+    Only the background selector and the fleet role carry a configured gateway;
+    the brain-config ones are resolved by model id, as they always were. A role
+    is resolved through :func:`resolveRoleModel`, never by taking a model from
+    one place and a provider from nowhere.
     """
     try:
         from app.services.brain_config_service import getRuntimeConfig
@@ -385,11 +389,67 @@ def resolve_judge() -> tuple[str, str]:
     except Exception:
         pass
     try:
+        from app.services.model_fleet_service import resolveRoleModel
+
+        model, provider = resolveRoleModel('hippocampus')
+        if model.strip():
+            return model.strip(), provider.strip()
+    except Exception:
+        pass
+    try:
         from app.services.brain_config_service import getRuntimeConfig
 
         return str(getRuntimeConfig().get('titleModel', '') or '').strip(), ''
     except Exception:
         return '', ''
+
+
+def judgeStatus() -> dict[str, Any]:
+    """Why the distiller is or is not looking at the flagged episodes.
+
+    The loop went silent on an install with twelve episodes flagged for tier 2
+    and nothing to explain it: an empty ``resolve_judge()`` is not an error, so
+    no lifecycle row was ever written, and the Learning panel showed the
+    consolidation job running happily while the half of it that learns sat
+    unconfigured. This is the read that makes that state visible.
+    """
+    model, provider = resolve_judge()
+    pending = 0
+    try:
+        row = _conn().execute(
+            'SELECT COUNT(*) AS n FROM episodes'
+            " WHERE tier = 2 AND quarantined = 0"
+            "   AND (judge_verdict IS NULL OR judge_verdict = '')"
+        ).fetchone()
+        pending = int(row['n']) if row else 0
+    except Exception:
+        logger.debug('distiller pending-episode count failed', exc_info=True)
+    if not model:
+        state, reason = 'unconfigured', (
+            'No judge model resolves. Set "Judge model" under Settings → Skills, or '
+            'configure the auto-memory selector or the fleet hippocampus role.'
+        )
+    elif not _resolveProvider(model, provider):
+        state, reason = 'no-provider', (
+            f'No configured gateway serves {model!r}, so the judge cannot be called.'
+        )
+    else:
+        state, reason = 'ready', ''
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        mode = str(getRuntimeConfig().get('skillLearning', 'propose') or 'propose')
+    except Exception:
+        mode = 'propose'
+    return {
+        'state': state,
+        'reason': reason,
+        'model': model,
+        'provider': provider,
+        'mode': mode,
+        'pendingEpisodes': pending,
+        'inCooldown': _in_cooldown(),
+    }
 
 
 def resolve_judge_model() -> str:

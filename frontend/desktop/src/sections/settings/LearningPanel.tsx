@@ -90,9 +90,39 @@ interface SchedulerJob {
     error?: string;
   };
 }
+interface DistillerStatus {
+  state?: 'ready' | 'unconfigured' | 'no-provider' | string;
+  reason?: string;
+  model?: string;
+  mode?: string;
+  pendingEpisodes?: number;
+  inCooldown?: boolean;
+}
 interface SchedulerState {
   jobs: SchedulerJob[];
   runs: Array<{ job: string; finished_at?: string; status?: string }>;
+  /** The distiller piggybacks the consolidation cadence and is not a job row,
+   *  so its own readiness arrives beside the ledger. */
+  distiller?: DistillerStatus;
+}
+
+/** One honest line about the learning half of consolidation. An unconfigured
+ *  judge writes no ledger row and no error, so without this the panel shows
+ *  every job green while nothing is being learned. */
+function distillerLine(d?: DistillerStatus): string {
+  if (!d) return '';
+  const waiting = Number(d.pendingEpisodes ?? 0);
+  if (d.mode === 'off') return 'Skill learning is off — episodes are mined, never judged.';
+  if (d.state === 'unconfigured') {
+    return `Skill learning is idle — no judge model resolves${waiting ? ` (${waiting} waiting)` : ''}.`;
+  }
+  if (d.state === 'no-provider') {
+    return `Skill learning is idle — no gateway serves ${d.model || 'the judge model'}.`;
+  }
+  if (waiting > 0) {
+    return `Judge ready — ${waiting} flagged episode${waiting === 1 ? '' : 's'} waiting for the next pass.`;
+  }
+  return '';
 }
 
 /* ── 046 turn verdicts ─────────────────────────────────────────────────── */
@@ -637,6 +667,11 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
             <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
               Background jobs
             </p>
+            {distillerLine(schedulerQ.data?.distiller) && (
+              <p className="mb-1.5 text-xs text-muted-foreground" data-testid="distiller-status">
+                {distillerLine(schedulerQ.data?.distiller)}
+              </p>
+            )}
             {!schedulerQ.data?.jobs?.length ? (
               <p className="text-xs text-muted-foreground">
                 Scheduler status unavailable — the learning loop runs on its cadence anyway.

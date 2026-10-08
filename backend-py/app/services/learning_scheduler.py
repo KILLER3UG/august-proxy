@@ -375,4 +375,14 @@ def scheduler_status() -> dict[str, Any]:
                 'summary': detail,
             }
         )
-    return {'jobs': jobs, 'runs': recent_runs(limit=10)}
+    # The distiller is not a registered job — it piggybacks the consolidation
+    # cadence — so its own readiness would otherwise be invisible here. An
+    # unconfigured judge writes no ledger row and no error: the panel would
+    # show consolidation running fine while the learning half sat idle.
+    try:
+        from app.services.skill_distiller import judgeStatus
+
+        distiller = judgeStatus()
+    except Exception:
+        distiller = {}
+    return {'jobs': jobs, 'runs': recent_runs(limit=10), 'distiller': distiller}
