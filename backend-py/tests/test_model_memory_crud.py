@@ -138,6 +138,28 @@ async def testForgetAllowsUserAndImportedSources():
 
 
 @pytest.mark.asyncio
+async def testForgetAllowsAHarnessLesson():
+    """The distiller's `memory` verdicts carry source='harness'. Refusing them
+    meant a wrong lesson about the model's own behaviour could never be
+    corrected by the actor that formed it — while `extracted`/consolidation
+    rows stay protected below."""
+    from app.services import rollback_store
+
+    memory_store.save_fact(
+        'distilled:retry-once', 'Do not retry a timed-out build twice.',
+        source='harness', kind='lesson',
+    )
+    out = json.loads(await st._forget('distilled:retry-once'))
+    assert out['deleted'] is True, out
+    assert memory_store.get_fact('distilled:retry-once') is None
+    entries = [
+        e for e in rollback_store.list_entries()
+        if e.get('type') == 'restore_memory_item' and e.get('target') == 'distilled:retry-once'
+    ]
+    assert len(entries) == 1, 'the delete must stay undoable through the same door as any other'
+
+
+@pytest.mark.asyncio
 async def testForgetRefusesSystemOwnedFact():
     memory_store.save_fact('lesson:extracted', 'a daemon-extracted fact that must survive', source='extracted')
     out = json.loads(await st._forget('lesson:extracted'))

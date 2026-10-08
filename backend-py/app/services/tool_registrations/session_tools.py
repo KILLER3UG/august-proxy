@@ -442,9 +442,16 @@ async def _remember(
 
 
 # Sources the model may delete via `forget`: its own writes, user-added
-# entries, and imports. Anything else (extracted / lesson / consolidation
-# daemons) is system-owned and survives model cleanup.
-_FORGET_ALLOWED_SOURCES = ('model', 'user', '')
+# entries, and imports. Anything else (extracted / consolidation daemons) is
+# system-owned and survives model cleanup.
+#
+# 'harness' is on the list because those facts are the model's OWN lessons —
+# the distiller's `memory` verdict writes with this source. Refusing them meant
+# a wrong lesson could never be corrected by the actor that formed it, which is
+# the failure the substance bar now prevents at write time. The delete is still
+# undoable: `record_rollback` below snapshots the row first, and
+# `rollback_store` restores it byte-for-byte.
+_FORGET_ALLOWED_SOURCES = ('model', 'user', 'harness', '')
 
 
 async def _forget(key: str) -> str:

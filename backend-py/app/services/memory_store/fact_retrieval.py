@@ -285,6 +285,34 @@ def _usage_for(keys: list[str]) -> dict[str, tuple[int, str]]:
     return out
 
 
+def _confidence_for(keys: list[str]) -> dict[str, float]:
+    """Stored confidence per candidate key — a PRIOR on the fact being right.
+
+    Separate from :func:`_usage_for` on purpose: usage is what happened to a
+    fact after it was written, confidence is what the writing door believed when
+    it wrote it (`remember` stores 0.7 for a model-authored fact,
+    `turn_outcomes` 0.6 for an inferred lesson, an explicit user statement 1.0).
+    Missing rows read 1.0, the column default, so a fact with no recorded
+    belief is never penalised for the absence.
+    """
+    out: dict[str, float] = {}
+    uniq = [k for k in dict.fromkeys(keys) if k][:200]
+    if not uniq:
+        return out
+    try:
+        placeholders = ','.join('?' for _ in uniq)
+        rows = _conn().execute(
+            f'SELECT fact_key, confidence FROM facts WHERE fact_key IN ({placeholders})',
+            uniq,
+        ).fetchall()
+        for r in rows:
+            raw = r['confidence']
+            out[str(r['fact_key'])] = 1.0 if raw is None else float(raw)
+    except Exception as exc:
+        logging.debug('candidate confidence fetch failed: %s', exc)
+    return out
+
+
 def _hot_usage() -> dict[str, tuple[int, str]]:
     """``(use_count, last_used_at)`` for EVERY fact with a non-zero use_count.
 
@@ -314,6 +342,11 @@ def _hot_usage() -> dict[str, tuple[int, str]]:
 # did not match lexically. One use, undecayed, is exactly 0.05 — the smallest
 # boost that should count as a live signal.
 _MIN_USEFUL_BOOST = 0.05
+
+# How far a stored confidence of 0.0 may dampen a lexical score. Confidence can
+# only demote — the factor is exactly 1.0 at the column default, so no fact that
+# exists today changes rank because this line was added.
+_CONF_FLOOR = 0.85
 
 
 def _usage_map(keys: list[str]) -> dict[str, tuple[int, str]]:
@@ -411,9 +444,17 @@ def retrieve_relevant_facts(
     # time (halved at 30 days unused); usage values are fetched fresh for
     # the candidate set — not from the (usage-free) cached corpus.
     usage = _usage_map([str(row.get('key')) for _, row in scored])
+    confidence = _confidence_for([str(row.get('key')) for _, row in scored])
     boosted: list[tuple[float, dict[str, object]]] = []
     for s, row in scored:
         use_count, last_used_at = usage.get(str(row.get('key')), (0, ''))
+        # Dampen by the stored prior BEFORE the usage boost is added, and only
+        # ever dampen: at 1.0 (the column default, and every explicitly-stated
+        # fact) the factor is exactly 1, so this cannot move an existing
+        # ranking. A 0.6 inferred lesson still surfaces when it is the only
+        # match — it just loses a tie against a fact the user asserted.
+        conf = confidence.get(str(row.get('key')), 1.0)
+        s *= _CONF_FLOOR + (1.0 - _CONF_FLOOR) * max(0.0, min(1.0, conf))
         # A decayed boost is a tiny POSITIVE float, not zero: a fact last used
         # in 2000 gets ~9e-99, so filtering the final score on `> 0` promoted
         # it anyway. Usage may only promote a fact whose usage signal is still

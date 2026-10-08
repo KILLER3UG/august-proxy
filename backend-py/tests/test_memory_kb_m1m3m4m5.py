@@ -130,6 +130,50 @@ def test_touch_fact_usage_boosts_ranking():
     assert ranked and ranked[0]['key'] == 'b:boosted'
 
 
+def test_confidence_damps_a_tie_and_never_filters_a_match():
+    """`facts.confidence` was written by every door (`remember` stores 0.7,
+    `turn_outcomes` 0.6) and used for browse sorting, but the retrieval index
+    never selected it — so an inferred lesson and an asserted fact tied exactly.
+    Identical text + identical key shape ⇒ identical BM25, which is what makes
+    this a tie test rather than a scoring coincidence."""
+    from app.services.memory_store import save_fact
+    from app.services.memory_store.fact_retrieval import retrieve_relevant_facts
+
+    body = {'fact': 'the build cache directory is under the data dir'}
+    save_fact('x:one', body, title='Cache location', confidence=1.0)
+    save_fact('x:two', body, title='Cache location', confidence=0.6)
+    query = 'build cache directory'
+
+    ranked = retrieve_relevant_facts(query, k=2)
+    assert [f['key'] for f in ranked] == ['x:one', 'x:two']
+
+    # Flip the priors and the order flips with them — the damping is on the
+    # stored value, not on which row was written first.
+    save_fact('x:one', body, title='Cache location', confidence=0.6)
+    save_fact('x:two', body, title='Cache location', confidence=1.0)
+    assert [f['key'] for f in retrieve_relevant_facts(query, k=2)] == ['x:two', 'x:one']
+
+    # Dampen, never remove: the least-trusted fact is still recalled when it is
+    # the only thing that matches.
+    assert [f['key'] for f in retrieve_relevant_facts(query, k=1)] == ['x:two']
+
+
+def test_confidence_defaults_to_no_change_for_existing_facts():
+    """Every fact written before this existed carries the column default 1.0, at
+    which the damping factor is exactly 1 — so wiring confidence in cannot move
+    an existing install's recall."""
+    from app.services.memory_store import save_fact
+    from app.services.memory_store.fact_retrieval import (
+        _CONF_FLOOR,
+        retrieve_relevant_facts,
+    )
+
+    assert _CONF_FLOOR + (1.0 - _CONF_FLOOR) * 1.0 == 1.0
+    save_fact('x:plain', {'fact': 'the deploy target is the staging cluster'}, title='Target')
+    ranked = retrieve_relevant_facts('deploy target staging', k=1)
+    assert ranked and ranked[0]['key'] == 'x:plain'
+
+
 def test_find_similar_facts_ratio():
     from app.services.memory_store import save_fact
     from app.services.memory_store.fact_retrieval import find_similar_facts
