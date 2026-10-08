@@ -76,6 +76,13 @@ export function WorkspaceUsageSection() {
   const currentStreakDisplay = `${stats?.currentStreak ?? 0} d`;
   const longestStreakDisplay = `${stats?.longestStreak ?? 0} d`;
   const sessionsCountDisplay = `${stats?.sessions ?? 0} sessions`;
+  // Cache reads are not billed like fresh input, so they never belong in
+  // `totalTokens` — but without them the page cannot explain a low cost.
+  const cacheHitNum = stats?.cacheHitTokens ?? 0;
+  const cacheDisplay =
+    cacheHitNum > 0
+      ? `${formatShortTokens(cacheHitNum)} cached · ${Math.round((stats?.cacheHitRate ?? 0) * 100)}%`
+      : '';
 
   // Real trend data for spline chart
   const trendData = byDay.map((d) => ({
@@ -122,6 +129,11 @@ export function WorkspaceUsageSection() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 text-center flex flex-col justify-center">
           <div className="text-xl font-bold tracking-tight text-foreground">{totalTokensDisplay}</div>
+          {cacheDisplay && (
+            <div className="mt-0.5 text-2xs text-muted-foreground/80" data-testid="usage-cache-split">
+              {cacheDisplay}
+            </div>
+          )}
           <div className="mt-1 text-xs text-muted-foreground">Total tokens</div>
         </div>
         <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 text-center flex flex-col justify-center">

@@ -6,7 +6,15 @@ export type UsageRange = '7d' | '30d';
 
 export interface UsageStats {
   range: UsageRange;
+  /** BILLED tokens (input + output). Cache reads are reported separately so a
+   *  warm session's prompt re-reads never inflate this number. */
   totalTokens: number;
+  /** Prompt tokens served from the provider cache in this range. */
+  cacheHitTokens: number;
+  /** Prompt tokens written to the cache in this range (billed as input). */
+  cacheMissTokens: number;
+  /** cacheHit / (cacheHit + cacheMiss); 0 when no cache activity was recorded. */
+  cacheHitRate: number;
   peakTokens: number;
   sessions: number;
   messages: number;
@@ -27,6 +35,8 @@ export interface ModelShare {
   model: string;
   tokens: number;
   percent: number;
+  cacheHitTokens: number;
+  cacheMissTokens: number;
 }
 
 export interface DailyTokens {

@@ -99,3 +99,45 @@ describe('WorkspaceUsageSection — query failures', () => {
     expect(screen.getByText('Total tokens')).toBeTruthy();
   });
 });
+
+/* ── the cache split ──────────────────────────────────────────────────────
+ * Cached prompt re-reads are billed nothing like fresh input, so they are NOT
+ * folded into "Total tokens" — but without them the page cannot explain a
+ * heavy week that cost almost nothing. */
+describe('WorkspaceUsageSection — cache split', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.heatmap.mockResolvedValue({ results: [] });
+    mocks.byModel.mockResolvedValue({ results: [] });
+    mocks.byDay.mockResolvedValue({ results: [] });
+  });
+
+  it('shows what the provider served from cache, under the billed total', async () => {
+    mocks.stats.mockResolvedValue({
+      ...STATS,
+      totalTokens: 4200,
+      cacheHitTokens: 40000,
+      cacheMissTokens: 5000,
+      cacheHitRate: 0.889,
+    });
+    renderSection();
+
+    const split = await screen.findByTestId('usage-cache-split');
+    expect(split.textContent).toBe('40K cached · 89%');
+    // The two numbers stay distinct: 4.2K billed, 40K cached.
+    expect(screen.getByText('4.2K')).toBeTruthy();
+  });
+
+  it('says nothing when the range had no cache activity', async () => {
+    mocks.stats.mockResolvedValue({
+      ...STATS,
+      cacheHitTokens: 0,
+      cacheMissTokens: 0,
+      cacheHitRate: 0,
+    });
+    renderSection();
+
+    await waitFor(() => expect(screen.getByText('Total tokens')).toBeTruthy());
+    expect(screen.queryByTestId('usage-cache-split')).toBeNull();
+  });
+});

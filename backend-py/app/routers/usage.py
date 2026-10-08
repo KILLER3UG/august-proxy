@@ -41,8 +41,10 @@ def get_usage_stats(range: str = Query("30d")) -> dict[str, Any]:
     # Total tokens, sessions, messages in the range
     row = conn.execute(
         """
-        SELECT 
+        SELECT
             COALESCE(SUM(input_tokens + output_tokens), 0) AS total_tokens,
+            COALESCE(SUM(cache_hit_tokens), 0) AS cache_hit,
+            COALESCE(SUM(cache_miss_tokens), 0) AS cache_miss,
             COUNT(DISTINCT session_id) AS session_count,
             COUNT(*) AS message_count,
             COUNT(DISTINCT strftime('%Y-%m-%d', created_at)) AS active_days
@@ -56,6 +58,15 @@ def get_usage_stats(range: str = Query("30d")) -> dict[str, Any]:
     session_count = int(row["session_count"]) if row else 0
     message_count = int(row["message_count"]) if row else 0
     active_days = int(row["active_days"]) if row else 0
+    # The cache split, in the SAME key names `memory_store.get_usage` already
+    # uses. These columns were written and never read here, so a session that
+    # re-read 60k cached tokens looked identical to one that re-sent them: the
+    # page could not explain why its own cost was low. `totalTokens` stays
+    # BILLED tokens (input + output) — folding cache reads into it would move
+    # every historical number on the page and double-count the prompt.
+    cache_hit = int(row["cache_hit"]) if row else 0
+    cache_miss = int(row["cache_miss"]) if row else 0
+    cache_total = cache_hit + cache_miss
 
     # Peak tokens in a single day
     peak_row = conn.execute(
@@ -133,6 +144,9 @@ def get_usage_stats(range: str = Query("30d")) -> dict[str, Any]:
     return {
         "range": range,
         "totalTokens": total_tokens,
+        "cacheHitTokens": cache_hit,
+        "cacheMissTokens": cache_miss,
+        "cacheHitRate": round(cache_hit / cache_total, 3) if cache_total else 0.0,
         "peakTokens": peak_tokens,
         "sessions": session_count,
         "messages": message_count,
@@ -192,9 +206,11 @@ def get_usage_by_model(range: str = Query("30d")) -> dict[str, Any]:
 
     rows = conn.execute(
         """
-        SELECT 
+        SELECT
             COALESCE(model, 'unknown') AS model_name,
-            COALESCE(SUM(input_tokens + output_tokens), 0) AS model_tokens
+            COALESCE(SUM(input_tokens + output_tokens), 0) AS model_tokens,
+            COALESCE(SUM(cache_hit_tokens), 0) AS model_cache_hit,
+            COALESCE(SUM(cache_miss_tokens), 0) AS model_cache_miss
         FROM usage_events
         WHERE created_at >= ?
         GROUP BY model_name
@@ -211,6 +227,8 @@ def get_usage_by_model(range: str = Query("30d")) -> dict[str, Any]:
             "model": r["model_name"],
             "tokens": tokens,
             "percent": pct,
+            "cacheHitTokens": int(r["model_cache_hit"]),
+            "cacheMissTokens": int(r["model_cache_miss"]),
         })
 
     return {"results": results}
