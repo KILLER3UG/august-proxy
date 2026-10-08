@@ -57,6 +57,11 @@ export interface AutomationJob {
   /** Optional cap on terminal runs; the job auto-disables once reached. */
   maxRuns?: number;
   limitReached?: boolean;
+  /** Consecutive terminal failures at the time the job last finished. */
+  consecutiveFailures?: number;
+  /** Set when the scheduler stopped a job for failing repeatedly. */
+  failureStop?: boolean;
+  failureStopReason?: string;
   /** Execution policy the unattended run uses (set by the Automations form). */
   guardMode?: string | null;
   sandboxMode?: string | null;

@@ -38,6 +38,11 @@ _lock = asyncio.Lock()
 JOB_TYPES: Final[frozenset[str]] = frozenset({'shell', 'workbench', 'http', 'noop'})
 DEFAULT_JOB_TYPE = 'workbench'
 MAX_RUNS = 20
+# Consecutive failures after which the scheduler stops a job and says why. Ten
+# is far past any plausible transient at the shortest cadence this app ships
+# (*/5 * * * * → ~50 minutes) and far under the 661 attempts one install
+# recorded for a command its shell cannot run.
+MAX_CONSECUTIVE_FAILURES = 10
 STALE_RUNNING_MINUTES = 30
 
 Mutator = Callable[[dict[str, dict[str, object]]], object]
@@ -898,6 +903,32 @@ async def _finish_run(
                 job['enabled'] = False
                 job['limitReached'] = True
                 job['nextRunAt'] = None
+        # Consecutive-failure stop, same shape as the run-limit stop above.
+        # One install carried 155 leftover test crons whose command is `true` —
+        # which cmd.exe has never heard of — and nothing bounded the retry: the
+        # runs ledger reached 101,701 identical failures at five-minute cadence
+        # while the UI said only "error". Ten in a row is not a transient; a job
+        # that cannot work is disabled, told to the human, and stays re-enabling
+        # with one click.
+        streak = 0
+        for r in reversed(as_list(job.get('runs'))):
+            if not isinstance(r, dict):
+                break
+            state = as_str(r.get('status'))
+            if state in ('running', 'cancelled'):
+                continue
+            if state in ('idle', 'succeeded'):
+                break
+            streak += 1
+        job['consecutiveFailures'] = streak
+        if streak >= MAX_CONSECUTIVE_FAILURES and as_bool(job.get('enabled'), True):
+            job['enabled'] = False
+            job['failureStop'] = True
+            job['failureStopReason'] = (
+                f'{streak} consecutive failures — stopped. Last error: '
+                f'{as_str(job.get("lastError"))[:160] or "no output"}'
+            )
+            job['nextRunAt'] = None
 
     await _mutate(mut)
 

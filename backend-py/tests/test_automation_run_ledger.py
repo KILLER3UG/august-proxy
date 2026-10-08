@@ -203,3 +203,83 @@ class TestM11DerivedSummaryFields:
         asyncio.run(run())
         fresh = automations_store.get_job(job['id'])
         assert 'boom' in (fresh['lastError'] or '')
+
+
+class TestConsecutiveFailureStop:
+    """A job whose command cannot work was retried forever: one install carried
+    155 leftover test crons running `true` (no cmd.exe equivalent) at five-minute
+    cadence and its runs ledger reached 101,701 identical failures while the UI
+    said only "error". The scheduler now stops at a streak and says why; the
+    human re-arms it with one action."""
+
+    @staticmethod
+    def _failThen(store, job, monkeypatch, outcomes):
+        from app.services import automations_store
+        from app.services.workbench import workbench as wb
+
+        queue = list(outcomes)
+
+        async def fakeStream(sessionId, message, **kwargs):
+            emit = kwargs.get('emit')
+            if emit is None:
+                return
+            nxt = queue.pop(0) if queue else 'error'
+            if nxt == 'error':
+                emit({'type': 'error', 'error': "'true' is not recognized as an internal or external command"})
+            else:
+                emit({'type': 'text', 'content': 'fine'})
+
+        monkeypatch.setattr(wb, 'sendWorkbenchMessageStream', fakeStream)
+
+        async def run(n):
+            for _ in range(n):
+                await automations_store._run_workbench_stream(job['id'], dict(job), trigger='cron')
+
+        asyncio.run(run(len(outcomes) if outcomes else 10))
+
+    def test_a_failure_streak_stops_the_job_with_a_reason(self, store, isolatedData, monkeypatch):
+        from app.services import automations_store
+
+        job = _seedJob(isolatedData)
+        self._failThen(store, job, monkeypatch, [])
+        fresh = automations_store.get_job(job['id'])
+        assert fresh['consecutiveFailures'] == automations_store.MAX_CONSECUTIVE_FAILURES
+        assert fresh['failureStop'] is True
+        assert fresh['enabled'] is False, 'a doomed job must stop being retried'
+        assert fresh['nextRunAt'] in (None, ''), 'no future tick for a stopped job'
+        assert 'consecutive failures' in fresh['failureStopReason']
+        assert 'not recognized' in fresh['failureStopReason']
+
+    def test_a_success_between_failures_resets_the_streak(self, store, isolatedData, monkeypatch):
+        from app.services import automations_store
+
+        job = _seedJob(isolatedData)
+        nine = ['error'] * 9
+        self._failThen(store, job, monkeypatch, [*nine, 'ok'])
+        fresh = automations_store.get_job(job['id'])
+        assert fresh['consecutiveFailures'] == 0
+        assert not fresh.get('failureStop')
+        assert fresh['enabled'] is True
+        # Nine failures then a clean run then nine more: the stop is a streak,
+        # not a lifetime count.
+        self._failThen(store, job, monkeypatch, [])
+        assert automations_store.get_job(job['id'])['failureStop'] is True
+
+    def test_re_enabling_a_stopped_job_clears_the_stop(self, store, isolatedData, monkeypatch):
+        from app.routers import automations as router
+        from app.services import automations_store
+
+        job = _seedJob(isolatedData)
+        self._failThen(store, job, monkeypatch, [])
+        assert automations_store.get_job(job['id'])['failureStop'] is True
+
+        async def rearm():
+            return await router.patch_automation(job['id'], router.PatchBody(enabled=True))
+
+        asyncio.run(rearm())
+        fresh = automations_store.get_job(job['id'])
+        assert fresh['enabled'] is True
+        assert not fresh.get('failureStop')
+        assert fresh['failureStopReason'] == ''
+        assert fresh['consecutiveFailures'] == 0
+        assert fresh['nextRunAt'], 're-arming must restore a future schedule'

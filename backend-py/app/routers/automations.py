@@ -218,8 +218,11 @@ async def patch_automation(job_id: str, body: PatchBody):
         # job that still says "limit reached" after Resume.
         if body.enabled:
             current = store.get_job(job_id) or {}
-            if current.get('limitReached'):
+            if current.get('limitReached') or current.get('failureStop'):
                 updates['limitReached'] = False
+                updates['failureStop'] = False
+                updates['failureStopReason'] = ''
+                updates['consecutiveFailures'] = 0
                 updates['nextRunAt'] = compute_next_run_at(
                     as_str(current.get('schedule')),
                     as_str(current.get('timezone')) or system_local_timezone(),

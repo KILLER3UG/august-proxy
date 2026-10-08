@@ -837,17 +837,30 @@ function AutomationCard({
 
             <div className="flex items-center gap-3 mt-1.5 text-2xs text-muted-foreground font-mono flex-wrap">
               <StatusPill
-                variant={job.enabled && !job.paused && !job.limitReached ? 'ok' : 'muted'}
+                variant={job.enabled && !job.paused && !job.limitReached && !job.failureStop ? 'ok' : 'muted'}
                 label={
-                  job.limitReached
-                    ? 'limit reached'
-                    : job.paused
-                      ? 'paused'
-                      : job.enabled
-                        ? 'enabled'
-                        : 'disabled'
+                  job.failureStop
+                    ? 'stopped — failing'
+                    : job.limitReached
+                      ? 'limit reached'
+                      : job.paused
+                        ? 'paused'
+                        : job.enabled
+                          ? 'enabled'
+                          : 'disabled'
                 }
               />
+              {job.failureStop && job.failureStopReason && (
+                /* The scheduler stopped a job that kept failing; without the
+                 * reason this is a job that silently stopped running. */
+                <span
+                  className="inline-flex items-center text-2xs text-warning"
+                  data-testid="automation-failure-stop"
+                  title={job.failureStopReason}
+                >
+                  {job.failureStopReason}
+                </span>
+              )}
               {job.schedule && (
                 <span className="inline-flex items-center gap-1" title={job.schedule}>
                   <Clock className="size-2.5" /> {scheduleLabel(job.schedule)}
