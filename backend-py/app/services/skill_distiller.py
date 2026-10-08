@@ -117,6 +117,19 @@ _JUDGE_SYSTEM = (
     '- keywords: 3-8 words a future request would contain.\n'
     '- Never write health, identity or financial details into a skill; the'
     ' denylist refuses them either way.\n'
+    '\n'
+    'WHAT IS NOT WORTH REMEMBERING (action: memory). A memory is a rule that'
+    ' still holds when nobody mentions the conversation that produced it, so'
+    ' skip: trivial or obvious information; anything re-discoverable in a'
+    ' moment; anything the repo, its instruction files or a tool description'
+    ' already says; task progress, completed-work logs and TODO state; runtime'
+    ' detail that goes stale silently (ports, versions, token counts, temp'
+    ' paths); dates, ticket ids and quoted user text — state the mechanism'
+    ' instead. Say WHY: "run the flow with --flat=on because the default mode'
+    ' re-resolves every artifact" is a memory; "the user prefers --flat=on" is'
+    ' a preference with no reason and will be re-litigated every session.'
+    ' NOTHING TO SAVE IS THE EXPECTED ANSWER for most episodes — answering'
+    ' `none` costs nothing and a bad memory is paid back on every future turn.\n'
 )
 
 # ── per-action verdict schemas (audit P2#16) ──────────────────────────
@@ -685,6 +698,27 @@ def _note_judge_failure(reason: str, error: str = '') -> None:
     _judgeFailure = (reason, (error or '')[:300])
 
 
+def _noteMemoryDrop(reason: str, episode: object, text: str) -> None:
+    """Record a refused lesson where a human can find it.
+
+    A silent drop is indistinguishable from a loop that never ran — the failure
+    this whole file has kept re-discovering. The turn-outcome promotion door
+    already writes `lesson_promotion_skipped`; this is the same record for the
+    same event at the other automatic door.
+    """
+    logger.info('distiller memory verdict dropped (%s): %s', reason, text[:120])
+    try:
+        from app.services.memory_store import record_lifecycle
+
+        record_lifecycle(
+            '',
+            'distiller_memory_dropped',
+            {'reason': reason, 'episode': episode, 'text': text[:160]},
+        )
+    except Exception:
+        logger.debug('distiller memory drop could not be recorded', exc_info=True)
+
+
 def take_judge_failure() -> tuple[str, str]:
     """Read and clear why the last judge call did not answer."""
     global _judgeFailure
@@ -1032,6 +1066,21 @@ def apply_verdict(
         if not summary or isSensitiveMemory(summary, title):
             return 'rejected-denylist'
         factScope = normalize_scope(scope) if (scope or '').strip() else GLOBAL_SCOPE
+        # The memory bar. Everything before this checked what the text was MADE
+        # of (non-empty, not sensitive); nothing checked that it is a memory.
+        # This door writes straight into the store with no human in the loop —
+        # unlike the skill doors, which file a proposal — so an unguarded write
+        # is how the store fills with task-state nobody asked for.
+        from app.services.memory_quality import DEDUPE_SIMILARITY, duplicateOf, memoryIsJunk
+
+        junk = memoryIsJunk(summary)
+        if junk:
+            _noteMemoryDrop(junk, episodeId, summary)
+            return 'dropped-not-durable'
+        ratio, dupKey = duplicateOf(summary, scope=factScope)
+        if ratio >= DEDUPE_SIMILARITY:
+            _noteMemoryDrop(f'already known (matches {dupKey!r} at {ratio:.2f})', episodeId, summary)
+            return 'dropped-duplicate'
         expiresDays = verdict.get('expires_days')
         expiresAt = (
             (datetime.now(timezone.utc) + timedelta(days=int(expiresDays))).date().isoformat()

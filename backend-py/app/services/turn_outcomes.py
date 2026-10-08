@@ -43,6 +43,11 @@ from app.services.error_families import family_for_class  # noqa: F401  (re-expo
 from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 
+# One dedupe threshold for both automatic memory doors — this promotion path and
+# the distiller's `memory` verdict — so they cannot disagree about what "we
+# already know this" means. It lives beside the bar that reads it.
+from app.services.memory_quality import DEDUPE_SIMILARITY as _DEDUPE_SIMILARITY
+
 logger = logging.getLogger(__name__)
 
 _RETENTION_DAYS = 30
@@ -52,8 +57,8 @@ _PROMOTE_WINDOW_DAYS = 7
 # One promotion per signature per cooldown — no lesson spam.
 _PROMOTE_COOLDOWN_DAYS = 7
 _LESSON_CHAR_CAP = 300
-# Candidate lessons too similar to an existing fact are discarded (Q2-b).
-_DEDUPE_SIMILARITY = 0.55
+# (Q2-b) Candidate lessons too similar to an existing fact are discarded; the
+# shared threshold is imported above from `memory_quality`.
 
 # ── failure classes (promotion signature spaces) ─────────────────────────
 # Which ledger column carries the evidence for one candidate lesson. The

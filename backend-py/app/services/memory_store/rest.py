@@ -81,7 +81,20 @@ def save_fact(
     key that consolidation had superseded/retired must revive it, or the model
     believes it saved while retrieval keeps filtering the stale row out.
     """
+    from app.lib.paths import assertPytestDataDirIsolated
     from app.services.session_scope import GLOBAL_SCOPE, normalize_scope
+
+    # The per-writer isolation guard `save_episode`, `save_internal` and the
+    # workbench session writer all call. `save_fact` — the door with the most
+    # callers and the only one that can fill the always-on profile lane — was
+    # the one without it. The `dataDir()` hard raise added on 2026-09-26 is what
+    # stopped the leak; this names the site so the next one is greppable rather
+    # than inferred. That same day a test wrote 13 `profile:` fixture rows
+    # ("Profile detail 7 describing the person reading this right now") into one
+    # install's brain DB, and they are still injected into every turn: `profile`
+    # rides the lane with no keyword gate, so test junk there is prompt junk
+    # until a human deletes it.
+    assertPytestDataDirIsolated('memory_store.save_fact')
 
     # 'project:<path>' is documented above as a legal home, but
     # session_scope.resolve_scope() only ever returns 'global' or 'bot:<id>',
