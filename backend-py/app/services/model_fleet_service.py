@@ -53,6 +53,33 @@ def getFleetProviders() -> dict[str, str]:
     return {role: as_str(user.get(role)) for role in ROLES}
 
 
+def composerModel() -> tuple[str, str]:
+    """``(model, gateway)`` of the model the user is chatting with.
+
+    The fleet's own comment says a blank role means "use the session's selected
+    model", but a background pass has no session of its own — consolidation, the
+    distiller judge, compression. Without this they had two options: a hardcoded
+    vendor id, or nothing. This is the third: read the newest workbench session
+    that actually carries a model and inherit it, gateway included, so the work
+    follows the user's choice instead of a name baked into the app.
+    """
+    try:
+        from app.services.memory_store import list_workbench_blobs
+
+        for blob in list_workbench_blobs(limit=20):
+            if not isinstance(blob, dict):
+                continue
+            model = as_str(blob.get('model')).strip()
+            if not model:
+                # A session opened and never sent carries '' — the composer's
+                # selection is the newest session that has one.
+                continue
+            return model, as_str(blob.get('provider')).strip()
+    except Exception:
+        pass
+    return '', ''
+
+
 def resolveRoleModel(role: str) -> tuple[str, str]:
     """``(model, provider)`` for a role. The only accessor that may be used to
     build a client for a role — taking the model from ``getFleet()`` and a

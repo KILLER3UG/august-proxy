@@ -698,7 +698,7 @@ class TestModelResolution:
     def test_explicit_setting_wins(self, monkeypatch):
         from app.services.brain_config_service import saveBrainConfig
 
-        monkeypatch.setattr(sd, '_resolveProvider', lambda m: {'name': m} if m else None)
+        monkeypatch.setattr(sd, '_resolveProvider', lambda m, hint='': {'name': m} if m else None)
         saveBrainConfig({'skillLearningJudgeModel': 'judge-model-x', 'titleModel': 'title-model-y'})
         try:
             assert sd.resolve_judge_model() == 'judge-model-x'
@@ -709,7 +709,7 @@ class TestModelResolution:
         from app.services.brain_config_service import saveBrainConfig
 
         saveBrainConfig({'skillLearningJudgeModel': '', 'titleModel': ''})
-        monkeypatch.setattr(sd, '_resolveProvider', lambda m: {'name': m} if m else None)
+        monkeypatch.setattr(sd, '_resolveProvider', lambda m, hint='': {'name': m} if m else None)
         assert sd.resolve_judge_model() in ('', 'auto-memory-model-x')
 
     def test_the_fleet_hippocampus_role_is_a_judge_fallback(self, monkeypatch):
@@ -787,6 +787,64 @@ class TestModelResolution:
         saveBrainConfig({'skillLearningJudgeModel': ''})
 
 
+
+    @staticmethod
+    def _seedChatSession(model: str, provider: str, when: str = '2026-10-08 00:00:00') -> None:
+        import json as _json
+        sd._conn().execute(
+            "INSERT OR IGNORE INTO sessions (id, title, updated_at) VALUES (?, 'chat', ?)",
+            (f'wb-{model}', when),
+        )
+        sd._conn().execute(
+            "UPDATE sessions SET workbench_blob = ? WHERE id = ?",
+            (_json.dumps({'id': f'wb-{model}', 'model': model, 'provider': provider}), f'wb-{model}'),
+        )
+        sd._conn().commit()
+    def test_a_blank_fleet_role_judges_on_the_chat_model(self, brain, monkeypatch):
+        """A background pass has no session of its own, so "blank role = use the
+        session's model" was a promise nothing could keep — the alternative was
+        a vendor id baked into the app. It reads the composer's choice instead,
+        gateway included."""
+        from app.services.brain_config_service import saveBrainConfig
+        from app.services.model_fleet_service import composerModel
+        saveBrainConfig({'skillLearningJudgeModel': '', 'autoMemoryModel': '', 'titleModel': ''})
+        self._seedChatSession('stepfun/step-3.7-flash:free', 'KiloCode')
+        assert composerModel() == ('stepfun/step-3.7-flash:free', 'KiloCode')
+        monkeypatch.setattr(sd, '_resolveProvider', lambda m, hint='': {'id': m} if m else None)
+        assert sd.resolve_judge_full() == (
+            'stepfun/step-3.7-flash:free', 'KiloCode', 'composer',
+        )
+    def test_a_stale_role_id_does_not_strand_the_loop(self, brain, monkeypatch):
+        """One install's memory role names a Claude model none of its gateways
+        lists. The chain must keep looking, not idle on a dead string."""
+        from app.services.brain_config_service import saveBrainConfig
+        from app.services.model_fleet_service import updateFleet
+        saveBrainConfig({'skillLearningJudgeModel': '', 'autoMemoryModel': '', 'titleModel': ''})
+        updateFleet({'models': {'hippocampus': 'claude-3-haiku-20240307'}})
+        self._seedChatSession('minimax-m2.7', 'B.AI')
+        served = {'minimax-m2.7'}
+        monkeypatch.setattr(
+            sd, '_resolveProvider', lambda m, hint='': ({'id': m} if m in served else None)
+        )
+        model, provider, source = sd.resolve_judge_full()
+        assert (model, provider, source) == ('minimax-m2.7', 'B.AI', 'composer')
+    def test_the_newest_session_without_a_model_does_not_win(self, brain, monkeypatch):
+        """A chat opened and never sent stores an empty model; the composer's
+        selection is the newest session that actually has one."""
+        from app.services.brain_config_service import saveBrainConfig
+        from app.services.model_fleet_service import composerModel
+        saveBrainConfig({'skillLearningJudgeModel': '', 'autoMemoryModel': '', 'titleModel': ''})
+        self._seedChatSession('older-model', 'OpenRouter', when='2026-10-01 00:00:00')
+        self._seedChatSession('', 'stub-anthropic', when='2026-10-08 00:00:00')
+        assert composerModel() == ('older-model', 'OpenRouter')
+    def test_nothing_is_resolved_when_no_setting_and_no_session(self, brain, monkeypatch):
+        """The guard against a baked-in default: with no configuration at all the
+        judge resolves to nothing rather than to a vendor model id."""
+        from app.services.brain_config_service import saveBrainConfig
+        saveBrainConfig({'skillLearningJudgeModel': '', 'autoMemoryModel': '', 'titleModel': ''})
+        monkeypatch.setattr(sd, '_resolveProvider', lambda m, hint='': None)
+        assert sd.resolve_judge() == ('', '')
+        assert sd.judgeStatus()['state'] == 'unconfigured'
 
 
 class TestJudgeFailureNamesItsCause:

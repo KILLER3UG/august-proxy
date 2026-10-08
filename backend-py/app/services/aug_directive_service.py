@@ -555,16 +555,38 @@ async def _callLlm(messages: list[dict[str, object]], *, model: str = '') -> str
         providers = providerResolver.list_available()
         if not providers:
             return ''
-        provider = providerResolver.resolve(model) if model else providers[0]
+        # No model was passed: use the one the user is chatting with. The
+        # alternative was the first provider's `defaultModel` or, worse, the
+        # vendor id that used to sit at the end of this chain — a name dialed
+        # against whichever gateway happened to be first, which is exactly the
+        # kind of baked-in default that breaks the moment the user's gateways
+        # are not Anthropic's.
+        chatModel = (model or '').strip()
+        chatProvider = ''
+        if not chatModel:
+            from app.services.model_fleet_service import composerModel
+
+            chatModel, chatProvider = composerModel()
+        provider = (
+            providerResolver.resolve(chatProvider or chatModel) if chatModel else providers[0]
+        ) or providers[0]
         if not provider:
             provider = providers[0]
         client = getClient(provider)
-        if not client or not hasattr(client, 'chatCompletions'):
+        # `chatCompletions` — with a capital C — is a method no client in this
+        # app has ever defined (the real one is `chat_completions`), so this
+        # guard returned '' on every call and /init never produced a draft.
+        if not client or not hasattr(client, 'chat_completions'):
             return ''
         apiKey = client.resolveApiKey()
         if not apiKey:
             return ''
-        useModel = model or provider.get('defaultModel', '') or 'claude-sonnet-4-20250514'
+        useModel = chatModel or str(provider.get('defaultModel') or '')
+        if not useModel:
+            # Nothing to name. Saying so and producing no draft is honest;
+            # guessing a model id is how a wrong answer gets attributed to the
+            # model the user never chose.
+            return ''
         req_body = {'model': useModel, 'messages': messages, 'max_tokens': 2000}
         resp = await client.chat_completions(req_body)
         if getattr(resp, 'status', 200) != 200:

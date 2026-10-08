@@ -359,49 +359,69 @@ def _asLessonVerdict(verdict: dict[str, Any], name: str, description: str) -> di
 # ── model resolution ────────
 
 
-def resolve_judge() -> tuple[str, str]:
-    """``(model, gateway)`` for the distiller judge: the dedicated
-    ``skillLearningJudgeModel``, then the ``autoMemoryModel`` background
-    selector, then the fleet's ``hippocampus`` (the memory-consolidation model —
-    the distiller piggybacks that cadence and distills that store), then the
-    titler's ``titleModel``. An empty model means nothing resolves and the judge
-    skips the pass.
+def resolve_judge_full() -> tuple[str, str, str]:
+    """``(model, gateway, source)`` for the distiller judge.
 
-    Only the background selector and the fleet role carry a configured gateway;
-    the brain-config ones are resolved by model id, as they always were. A role
-    is resolved through :func:`resolveRoleModel`, never by taking a model from
-    one place and a provider from nowhere.
+    Precedence: the dedicated ``skillLearningJudgeModel``, the ``autoMemoryModel``
+    background selector, the fleet's ``hippocampus`` role (the distiller
+    piggybacks the consolidation cadence and distills that store), the model the
+    user is actually chatting with, then the titler's ``titleModel``. No vendor
+    id is baked in anywhere: a blank role means "follow the composer", which is
+    what the fleet's own comment promises and what a background pass can now
+    actually do.
+
+    The first candidate a gateway really serves wins, because a stale id in one
+    setting must not strand the loop — on one install the memory role names a
+    Claude model none of its four configured gateways lists, and the judge simply
+    never ran while writing no error anywhere. When nothing resolves the first
+    candidate comes back anyway, so the caller can name what it tried.
     """
+    candidates: list[tuple[str, str, str]] = []
+
+    def add(model: str, provider: str, source: str) -> None:
+        if model.strip():
+            candidates.append((model.strip(), provider.strip(), source))
+
     try:
         from app.services.brain_config_service import getRuntimeConfig
 
-        explicit = str(getRuntimeConfig().get('skillLearningJudgeModel', '') or '').strip()
-        if explicit:
-            return explicit, ''
+        cfg = getRuntimeConfig()
+        add(str(cfg.get('skillLearningJudgeModel', '') or ''), '', 'skillLearningJudgeModel')
     except Exception:
-        pass
+        cfg = {}
     try:
         from app.services.background_review_service import resolveSelector
 
-        model, provider = resolveSelector('autoMemory')
-        if model.strip():
-            return model.strip(), provider.strip()
+        add(*resolveSelector('autoMemory'), 'autoMemoryModel')
     except Exception:
         pass
     try:
-        from app.services.model_fleet_service import resolveRoleModel
+        from app.services.model_fleet_service import composerModel, resolveRoleModel
 
-        model, provider = resolveRoleModel('hippocampus')
-        if model.strip():
-            return model.strip(), provider.strip()
+        add(*resolveRoleModel('hippocampus'), 'fleet:hippocampus')
+        add(*composerModel(), 'composer')
+    except Exception:
+        logger.debug('judge fleet/composer fallback failed', exc_info=True)
+    try:
+        add(str(cfg.get('titleModel', '') or ''), '', 'titleModel')
     except Exception:
         pass
-    try:
-        from app.services.brain_config_service import getRuntimeConfig
 
-        return str(getRuntimeConfig().get('titleModel', '') or '').strip(), ''
-    except Exception:
-        return '', ''
+    for cand in candidates:
+        if _resolveProvider(cand[0], cand[1]):
+            return cand
+    return candidates[0] if candidates else ('', '', 'unconfigured')
+
+
+def resolve_judge() -> tuple[str, str]:
+    """The ``(model, gateway)`` view of :func:`resolve_judge_full`."""
+    model, provider, _source = resolve_judge_full()
+    return model, provider
+
+
+def resolve_judge_model() -> str:
+    """The model-only view of :func:`resolve_judge`."""
+    return resolve_judge()[0]
 
 
 def judgeStatus() -> dict[str, Any]:
@@ -413,7 +433,7 @@ def judgeStatus() -> dict[str, Any]:
     consolidation job running happily while the half of it that learns sat
     unconfigured. This is the read that makes that state visible.
     """
-    model, provider = resolve_judge()
+    model, provider, source = resolve_judge_full()
     pending = 0
     try:
         row = _conn().execute(
@@ -427,7 +447,8 @@ def judgeStatus() -> dict[str, Any]:
     if not model:
         state, reason = 'unconfigured', (
             'No judge model resolves. Set "Judge model" under Settings → Skills, or '
-            'configure the auto-memory selector or the fleet hippocampus role.'
+            'configure the auto-memory selector or a fleet role — chatting with any '
+            'model works too, since the composer choice is the default.'
         )
     elif not _resolveProvider(model, provider):
         state, reason = 'no-provider', (
@@ -446,15 +467,11 @@ def judgeStatus() -> dict[str, Any]:
         'reason': reason,
         'model': model,
         'provider': provider,
+        'source': source,
         'mode': mode,
         'pendingEpisodes': pending,
         'inCooldown': _in_cooldown(),
     }
-
-
-def resolve_judge_model() -> str:
-    """The model-only view of :func:`resolve_judge`."""
-    return resolve_judge()[0]
 
 
 def _resolveProvider(model: str, provider_hint: str = '') -> dict[str, object] | None:

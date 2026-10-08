@@ -89,3 +89,62 @@ def testGenerateRefineMode(tmp_path, monkeypatch):
     assert result['mode'] == 'refine'
     assert result['existing'] is True
     assert 'Refined' in result['draft']
+
+
+class TestCallLlmModelChoice:
+    """`_callLlm` used to end its model chain with a literal vendor id, so an
+    AUG draft could be produced by a model the user never chose and dialled
+    against whichever gateway happened to be first in providers.json. It now
+    follows the composer, then the provider's own default, then says nothing."""
+
+    class _Resp:
+        def __init__(self, body):
+            self.status = 200
+            self.body = body
+
+    class _Client:
+        def __init__(self, sink):
+            self._sink = sink
+
+        def resolveApiKey(self):
+            return 'k'
+
+        async def chat_completions(self, body):
+            self._sink.append(body)
+            return TestCallLlmModelChoice._Resp(
+                {'choices': [{'message': {'content': '# AGENTS\n'}}]}
+            )
+
+    def _patch(self, monkeypatch, providers, resolve_map, sink):
+        from app.providers import clients as clients_mod
+        from app.providers import resolver as resolver_mod
+
+        monkeypatch.setattr(resolver_mod, 'list_available', lambda: providers)
+        monkeypatch.setattr(resolver_mod, 'resolve', lambda q: resolve_map.get(q, providers[0]))
+        monkeypatch.setattr(clients_mod, 'getClient', lambda p: self._Client(sink))
+
+    @pytest.mark.asyncio
+    async def test_no_model_and_no_default_produces_no_guess(self, monkeypatch):
+        sink: list = []
+        self._patch(monkeypatch, [{'name': 'Gateway', 'models': []}], {}, sink)
+        assert await aug_directive_service._callLlm([{'role': 'user', 'content': 'go'}]) == ''
+        assert sink == [], 'no request must be dialed without a model to name'
+
+    @pytest.mark.asyncio
+    async def test_the_composer_model_is_what_gets_dialed(self, monkeypatch, isolatedData):
+        from app.services.memory_store import init
+        from app.services.workbench import sessions as wb_sessions
+
+        init()
+        sink: list = []
+        gate = {'name': 'KiloCode', 'defaultModel': ''}
+        self._patch(monkeypatch, [gate], {'minimax/minimax-m3': gate}, sink)
+        # The composer's selection is a persisted workbench session's model.
+        monkeypatch.setattr(
+            'app.services.model_fleet_service.composerModel',
+            lambda: ('minimax/minimax-m3', 'KiloCode'),
+        )
+        out = await aug_directive_service._callLlm([{'role': 'user', 'content': 'go'}])
+        assert out.startswith('# AGENTS')
+        assert sink[0]['model'] == 'minimax/minimax-m3'
+        assert wb_sessions is not None  # keeps the session module import honest
