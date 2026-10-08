@@ -366,7 +366,12 @@ _CLARIFY_SCHEMA: dict[str, object] = {
     'properties': {
         'questions': {
             'type': 'array',
-            'description': 'One or more clarifying questions to ask the user at once.',
+            'description': 'One or more clarifying questions to ask the user at once '
+            '(at most 4 — a longer list is a wall of questions, not a clarification).',
+            # The pager renders any count, so an unbounded array let a model emit
+            # a questionnaire in one turn. The prompt said "at most one round";
+            # this is the same rule with teeth.
+            'maxItems': 4,
             'items': {
                 'type': 'object',
                 'properties': {

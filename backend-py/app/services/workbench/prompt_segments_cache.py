@@ -24,7 +24,8 @@ CLARIFY_BLOCK = (
     '`submit_clarify` tool with a `questions` array — one object per question, each shaped '
     '`{question: string, choices?: string[], multiSelect?: boolean}`. `question` is 1-2 '
     'sentences; `choices` are up to 5 short options the user can pick from; set `multiSelect: '
-    'true` when several options may apply. Always use the `questions` array (even for a single '
+    'true` when several options may apply; at most 4 questions per round, because a longer list '
+    'is a wall of questions rather than a clarification. Always use the `questions` array (even for a single '
     'question) so the UI renders a consistent pager. The UI adds its own free-text input for '
     "anything not covered, so do NOT include a 'something else' option yourself. "
     "Ask at most one round of clarifying questions unless the user's answer reveals new ambiguity. "

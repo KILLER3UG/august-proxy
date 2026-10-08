@@ -1113,17 +1113,19 @@ def buildSystemPrompt(
                 caps = ''
             _caps_block_cache[capsKey] = caps
         if caps:
-            parts.append(f'<capabilities>\n{caps}\n</capabilities>')
+            # `build_capabilities_block` returns the COMPLETE element — it opens
+            # with `<capabilities>` and closes with `</capabilities>`. Wrapping it
+            # here too put a nested duplicate in every prompt the app assembled.
+            parts.append(caps)
     # Conditional policy blocks: only when the matching tools are offered.
-    # CLARIFY stays unconditional. The stated reason was WRONG and has been
-    # corrected by tests/test_prompt_instruction_honesty.py: `submit_clarify`
-    # IS registered (tool_registrations/system_tools.py:498, asserted by
-    # test_part27_fixes.py) as well as loop-intercepted. So this block is not
-    # the model's only source of the schema, and on a bare/reduced surface
-    # `submit_clarify` is in neither _BARE_TOOL_ALLOW nor AUGUST_CORE_TOOLS —
-    # an instruction naming a tool that surface cannot call. It is left
-    # ungated deliberately for now; gating it on `offeredTools` is the fix.
-    parts.append(_seg_cache.CLARIFY_BLOCK)
+    # `<clarify_policy>` names `submit_clarify`, which is registered
+    # (system_tools.py:498) but in NEITHER `_BARE_TOOL_ALLOW` NOR
+    # `AUGUST_CORE_TOOLS` — so on a bare or reduced surface it was an
+    # instruction for a tool that surface cannot call, and the model reading a
+    # bare "unknown tool" for something the prompt just declared concludes the
+    # deployment is broken. Same rule the memory blocks already follow.
+    if 'submit_clarify' in offeredTools:
+        parts.append(_seg_cache.CLARIFY_BLOCK)
     if offeredTools & {
         'bulk',
         'read_files',

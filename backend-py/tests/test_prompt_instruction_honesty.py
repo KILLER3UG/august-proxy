@@ -35,10 +35,12 @@ The repo already fixed this class once, for memory CRUD — see the comment in
 unreachable"). The skills/harness instructions were never given the same
 treatment.
 
-**Scope note.** This file pins the FACT that the mismatch exists, so that it
-cannot silently grow. The fix — gating the digest on ``offeredTools`` — is
-tracked separately; changing it here would make the test assert the opposite of
-the current, documented state.
+**Scope note.** The digest half of this class was FIXED first — `prompt_build.harness_guide_for`
+takes the offered surface and drops the tool-directed lines a surface cannot honour, which is what
+`TestBareSurfaceInstructionHonesty` below pins. `CLARIFY_BLOCK` was the remaining ungated case and is
+now gated on `submit_clarify` being offered; `TestRenderedPromptHonesty` pins that, the single
+`<capabilities>` element, and the `questions` bound. Keep the premise guards even after the fixes:
+they are what stops a future edit re-introducing the mismatch silently.
 """
 
 from __future__ import annotations
@@ -144,3 +146,68 @@ class TestClarifyBlockPremise:
             '("loop-intercepted, not registered") is stale'
         )
         assert 'submit_clarify' not in _BARE_TOOL_ALLOW
+
+
+class TestRenderedPromptHonesty:
+    """The fixes, asserted against the RENDERED prompt rather than a comment."""
+
+    @staticmethod
+    def _prompt(tools: list[str]) -> str:
+        from app.services.workbench import workbench as wb
+
+        session = wb.createWorkbenchSession(provider='', agentId='build', guardMode='full')
+        return wb.buildSystemPrompt(session, tools=[{'name': n} for n in tools])
+
+    def test_clarify_policy_is_dropped_when_the_tool_is_not_offered(self):
+        prompt = self._prompt(['read_file', 'run_command'])
+        assert '<clarify_policy>' not in prompt
+        assert 'submit_clarify' not in prompt, (
+            'the prompt still instructs a tool this surface cannot call'
+        )
+
+    def test_clarify_policy_survives_when_the_tool_is_offered(self):
+        """The other half: gating must not quietly delete a real capability's
+        instructions — the pager contract lives in this block."""
+        prompt = self._prompt(['submit_clarify', 'read_file'])
+        assert '<clarify_policy>' in prompt
+        assert '`questions` array' in prompt
+
+    def test_the_capabilities_element_is_not_nested_in_itself(self):
+        """`build_capabilities_block` returns the complete element; the caller
+        wrapped it again, so every prompt carried `<capabilities>` twice."""
+        from app.services.capabilities_prompt import build_capabilities_block
+
+        built = build_capabilities_block(['read_file'], catalogue=[], compact_skills=True)
+        assert built.startswith('<capabilities>')
+        assert built.rstrip().endswith('</capabilities>')
+
+        prompt = self._prompt(['read_file', 'load_skill'])
+        # Counting substrings lies: the <intake> manifest names the tag in prose
+        # ("details in <capabilities>"), which is a reference, not a wrapper.
+        # The defect was a nested ELEMENT, so count the tags on their own line.
+        lines = [line.strip() for line in prompt.splitlines()]
+        assert lines.count('<capabilities>') == 1, (
+            f'{lines.count("<capabilities>")} element-opening lines — the double wrap is back'
+        )
+        assert lines.count('</capabilities>') == 1
+
+    def test_the_clarify_questions_array_is_bounded(self):
+        """The pager renders any count, so the bound has to live in the schema."""
+        from app.services.tool_registrations.system_tools import _CLARIFY_SCHEMA
+
+        questions = _CLARIFY_SCHEMA['properties']['questions']
+        assert questions['maxItems'] == 4
+        # Prompt text and schema must say the same thing.
+        assert 'at most 4 questions' in _segClarify()
+
+    def test_the_prompt_text_still_names_the_tool_the_gate_checks(self):
+        """Drift guard: if `submit_clarify` is renamed, the gate above checks a
+        name that no longer appears anywhere and passes vacuously."""
+        assert 'submit_clarify' in _segClarify()
+
+
+def _segClarify() -> str:
+    from app.services.workbench.prompt_segments_cache import CLARIFY_BLOCK
+
+    assert CLARIFY_BLOCK, 'CLARIFY_BLOCK was renamed or emptied — the gate would pass vacuously'
+    return CLARIFY_BLOCK
