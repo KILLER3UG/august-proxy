@@ -113,7 +113,6 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
           <div className="mt-0.5 flex items-center gap-2 font-mono text-xs tabular-nums">
             {added > 0 && <span className="text-success">+{added}</span>}
             {removed > 0 && <span className="text-danger">-{removed}</span>}
-            {!added && !removed && <span className="text-muted-foreground/60">0</span>}
           </div>
         </div>
         <div className="flex items-center gap-1.5">

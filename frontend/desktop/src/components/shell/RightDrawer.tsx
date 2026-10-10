@@ -265,7 +265,7 @@ export function RightDrawer({
 
             <div className={showingFile ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-0 flex-1 overflow-hidden px-2 pb-2 pt-1.5'}>
               {showingFile ? (
-                <RightDrawerFileSection file={filePreview} />
+                <RightDrawerFileSection file={filePreview} bare />
               ) : chooserActive ? (
                 /* ZCode "Open tab": centered card grid replaces the body. */
                 <SectionChooser openSections={sections} />
@@ -440,9 +440,6 @@ function SectionChooser({ openSections }: { openSections: RightDrawerSectionId[]
       className="flex h-full min-h-0 flex-col items-center overflow-y-auto px-4 py-10 chat-scroll"
     >
       <h2 className="text-center text-xl font-semibold tracking-tight text-foreground">Open tab</h2>
-      <p className="mt-1 text-center text-[0.8125rem] text-muted-foreground">
-        Choose a tab to open in the side pane.
-      </p>
       <div role="listbox" aria-label="Sections" className="mt-8 grid w-full max-w-[340px] grid-cols-2 gap-3">
         {SECTION_ADD_ORDER.map((id) => {
           const meta = TAB_META[id];

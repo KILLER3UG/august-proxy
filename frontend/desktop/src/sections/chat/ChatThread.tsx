@@ -692,7 +692,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     loadMessagesForSession,
   });
 
-  const { voiceActive, startVoiceInput } = useChatVoiceCommands({
+  const { voiceActive, startVoiceInput, stopVoiceInput } = useChatVoiceCommands({
     sessionId,
     messages,
     setMessages,
@@ -756,6 +756,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     handleRevert,
     handleEdit,
     handleRegenerate,
+    handleContinue,
     handleClarifyAnswer,
     confirmState,
     handleConfirm,
@@ -769,6 +770,39 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     streaming,
     generateAIResponse,
   });
+
+  /** Turn-end "Edit prompt": open the originating user row's editor.
+   *
+   *  The editor is `MessageBubble`-local state, so the only way to reach it
+   *  from a control on the assistant row above it is a signal the parent owns.
+   *  We walk BACK from the stopped assistant message to the user turn that
+   *  produced it — the same walk `handleRegenerate` does to find its target.
+   *
+   *  Deliberately no auto-resend: the confirm dialog in `saveEdit` discloses
+   *  that follow-ups are removed, and re-sending on the user's behalf would
+   *  spend tokens before they had read what was about to change. The button's
+   *  title says "then press Send to re-run" for that reason. */
+  const [editPromptSignal, setEditPromptSignal] = useState<{
+    index: number;
+    nonce: number;
+  } | null>(null);
+
+  const handleEditPromptFrom = useCallback(
+    (assistantIndex: number) => {
+      let userIndex = assistantIndex;
+      for (let i = assistantIndex; i >= 0; i--) {
+        if (messages[i]?.role === 'user') {
+          userIndex = i;
+          break;
+        }
+      }
+      setEditPromptSignal((prev) => ({
+        index: userIndex,
+        nonce: (prev?.nonce ?? 0) + 1,
+      }));
+    },
+    [messages],
+  );
 
   /** Fork the conversation from a message: branch the backend session up to
    *  that index, seed the new UI transcript with the visible prefix, and open
@@ -1449,6 +1483,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       setThinkingEnabled={setThinkingEnabled}
       voiceActive={voiceActive}
       startVoiceInput={startVoiceInput}
+      stopVoiceInput={stopVoiceInput}
       scrolledFromBottom={scrolledFromBottom}
       showNewContentPill={hasNewContentWhileUnpinned}
       onScrollToBottom={scrollToBottom}
@@ -1694,6 +1729,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 onRevert={handleRevert}
                 onEdit={handleEdit}
                 onRegenerate={handleRegenerate}
+                onContinue={() => { void handleContinue(); }}
+                onEditPrompt={handleEditPromptFrom}
+                editPromptSignal={editPromptSignal}
                 onDismissError={handleDismissError}
                 onFork={handleFork}
                 onClarifyAnswer={handleClarifyAnswer}

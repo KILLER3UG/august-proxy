@@ -128,14 +128,14 @@ async def testApiGitStatus(client):
 
 
 @pytest.mark.asyncio
-async def testWorkbenchDefaultWorkspace(client):
-    # Folderless "Tasks" sessions anchor at the OS user's home directory —
-    # resolved dynamically per host user, never hardcoded.
+async def testWorkbenchSessionWithoutWorkspaceStaysFolderless(client):
+    # A chat with no folder bound owns no directory. It used to be silently
+    # anchored at the OS home, which made every "Tasks" chat a project rooted
+    # at ~ and hid the fact that nothing was selected.
     from pathlib import Path
 
-    resp = await client.get('/api/workbench/default-workspace')
+    resp = await client.post('/api/workbench/session', json={'provider': '', 'agentId': ''})
     assert resp.status_code == 200
-    data = resp.json()
-    assert data['path'] == str(Path.home())
-    assert data['path']
+    assert resp.json()['workspacePath'] == ''
+    assert resp.json()['workspacePath'] != str(Path.home())
 

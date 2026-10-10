@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
 import { cn } from '@/lib/utils';
+import { PdfPager } from './PdfPager';
 import { closeRightDrawer } from './RightDrawerState';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import type { FileAttachment } from '@/types/chat';
@@ -57,6 +58,7 @@ function describePreview(file: FileAttachment): {
   hasText: boolean;
   isHtml: boolean;
   isMarkdown: boolean;
+  isPdf: boolean;
 } {
   const hasText = file.type === 'text' && typeof file.content === 'string';
   const isHtml =
@@ -65,7 +67,12 @@ function describePreview(file: FileAttachment): {
   const isMarkdown =
     hasText && /\.(md|markdown|mdown|mkdn|mdx)$/i.test(file.name || '');
   const isImage = file.type === 'image' && !!(file.dataUrl || file.previewUrl);
-  return { isImage, hasText, isHtml, isMarkdown };
+  // A PDF is readable page-by-page only when its bytes are in the webview
+  // (data: or http(s) URL). The extracted text alone can't paginate, so a PDF
+  // with neither falls through to the text view.
+  const isPdf =
+    /\.pdf$/i.test(file.name || '') && !!(file.dataUrl || file.previewUrl);
+  return { isImage, hasText, isHtml, isMarkdown, isPdf };
 }
 
 /** The zoom-scaled preview body — rendered identically in the drawer pane
@@ -73,11 +80,12 @@ function describePreview(file: FileAttachment): {
  *  source choice comes from the header toggle (`showSource`). */
 function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom: number; showSource: boolean }) {
   const imageSrc = file.dataUrl || file.previewUrl;
-  const { isImage, isHtml, isMarkdown } = describePreview(file);
+  const { isImage, isHtml, isMarkdown, isPdf } = describePreview(file);
   // Live HTML documents render in a sandboxed iframe (scripts allowed —
   // these are the model's interactive explainers); "source" shows the code.
   const liveSrcDoc = isHtml ? file.content ?? '' : '';
   const hasText = file.type === 'text' && typeof file.content === 'string';
+  const pdfSrc = file.dataUrl || file.previewUrl;
 
   return (
     <div
@@ -92,6 +100,17 @@ function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom:
             className="max-h-full max-w-full object-contain"
             draggable={false}
           />
+        </div>
+      ) : isPdf && pdfSrc ? (
+        // Rendered = page-by-page pdf.js; source = the extracted text the model
+        // reads. Both stay reachable: the 50-page text extraction feeds the
+        // model and must not disappear behind the pager.
+        <div className="flex h-full min-h-full flex-col bg-background" data-testid="file-preview-pdf">
+          {showSource ? (
+            <TextPreview content={file.content ?? ''} />
+          ) : (
+            <PdfPager src={pdfSrc} label={file.name} className="flex-1" />
+          )}
         </div>
       ) : isHtml ? (
         <div className="flex h-full min-h-full flex-col bg-background" data-testid="file-preview-html-live">
@@ -151,21 +170,27 @@ function ViewModeToggle({
   file,
   isHtml,
   isMarkdown,
+  isPdf,
   showSource,
   setShowSource,
 }: {
   file: FileAttachment;
   isHtml: boolean;
   isMarkdown: boolean;
+  isPdf: boolean;
   showSource: boolean;
   setShowSource: (v: boolean) => void;
 }) {
-  const hasRenderable = isHtml || isMarkdown;
+  // The Eye now targets the PDF pager too, so a PDF has a rendered view.
+  const hasRenderable = isHtml || isMarkdown || isPdf;
   const ext = file.name.split('.').pop()?.toUpperCase() ?? '';
-  const noPreviewTip =
-    ext === 'PPT' || ext === 'PPTX'
-      ? `No preview available for ${ext}`
-      : 'No rendered preview for this file type';
+  // Office formats have no client-side renderer and we do not add a LibreOffice
+  // dependency for them — say so plainly rather than promising a preview that
+  // only exists where soffice happens to be installed.
+  const OFFICE = new Set(['PPT', 'PPTX', 'DOC', 'DOCX', 'XLS', 'XLSX', 'ODT', 'ODS', 'ODP']);
+  const noPreviewTip = OFFICE.has(ext)
+    ? `No rendered preview for ${ext} — the source text is available`
+    : 'No rendered preview for this file type';
   return (
     <div className="flex items-center gap-0.5">
       <button
@@ -272,7 +297,7 @@ function ZoomControls({ zoom, setZoom }: { zoom: number; setZoom: (fn: (z: numbe
   );
 }
 
-export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
+export function RightDrawerFileSection({ file, bare = false }: { file: FileAttachment; bare?: boolean }) {
   const fileIcon = getFileIcon(file.name);
   const Icon = fileIcon.Icon;
   // Claude-style viewer: zoom applies to the image/iframe canvas.
@@ -281,7 +306,7 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
   const [fullscreen, setFullscreen] = useState(false);
   // Preview-vs-source choice, lifted here so the header toggle and the
   // canvas (drawer + fullscreen) share one state.
-  const { hasText, isHtml, isMarkdown } = describePreview(file);
+  const { hasText, isHtml, isMarkdown, isPdf } = describePreview(file);
   const [showSource, setShowSource] = useState(false);
   useEffect(() => {
     setShowSource(false);
@@ -299,49 +324,68 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
     return () => document.removeEventListener('keydown', onKey);
   }, [fullscreen]);
 
+  // In bare mode the OUTER drawer header already shows the filename + close,
+  // so this renders only the viewer's controls on a slim bar — one title bar
+  // for one document, the way a Claude artifact reads. Fullscreen always keeps
+  // its own full header: it is a separate window-sized surface.
+  const controls = (
+    <>
+      {file.truncated && (
+        <span className="rounded border border-warning/30 bg-warning/10 px-2 py-1 text-2xs text-warning">
+          Truncated
+        </span>
+      )}
+      {hasText && (
+        <ViewModeToggle file={file} isHtml={isHtml} isMarkdown={isMarkdown} isPdf={isPdf} showSource={showSource} setShowSource={setShowSource} />
+      )}
+      {hasText && file.content && (
+        <CopyFileButton content={file.content} />
+      )}
+      <ZoomControls zoom={zoom} setZoom={setZoom} />
+      <button
+        type="button"
+        onClick={() => setFullscreen(true)}
+        title="Fullscreen preview"
+        aria-label="Fullscreen preview"
+        data-testid="file-preview-fullscreen"
+        className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground cursor-pointer"
+      >
+        <Maximize2 className="size-3" />
+      </button>
+      {!bare && (
+        <button
+          type="button"
+          onClick={closeRightDrawer}
+          title="Close preview" aria-label="Close preview"
+          data-testid="file-preview-close"
+          className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground cursor-pointer"
+        >
+          <X className="size-4" />
+        </button>
+      )}
+    </>
+  );
+
   return (
     <>
       <div className="flex h-full min-h-0 flex-col bg-background" data-testid="right-drawer-file-preview">
-        <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border/70 bg-card/70 px-4">
-          <Icon size={17} color={fileIcon.color} className="shrink-0" />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold text-foreground">{file.name}</div>
-            <div className="text-2xs uppercase tracking-[0.12em] text-muted-foreground/70">
-              {extensionLabel(file.name)} · {file.size || 'Attached file'}
-            </div>
+        {bare ? (
+          // Controls-only bar; the filename lives in the drawer header above.
+          <div className="flex h-10 shrink-0 items-center justify-end gap-2.5 border-b border-border/60 px-3">
+            {controls}
           </div>
-          {file.truncated && (
-            <span className="rounded border border-warning/30 bg-warning/10 px-2 py-1 text-2xs text-warning">
-              Truncated
-            </span>
-          )}
-          {hasText && (
-            <ViewModeToggle file={file} isHtml={isHtml} isMarkdown={isMarkdown} showSource={showSource} setShowSource={setShowSource} />
-          )}
-          {hasText && file.content && (
-            <CopyFileButton content={file.content} />
-          )}
-          <ZoomControls zoom={zoom} setZoom={setZoom} />
-          <button
-            type="button"
-            onClick={() => setFullscreen(true)}
-            title="Fullscreen preview"
-            aria-label="Fullscreen preview"
-            data-testid="file-preview-fullscreen"
-            className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground cursor-pointer"
-          >
-            <Maximize2 className="size-3" />
-          </button>
-          <button
-            type="button"
-            onClick={closeRightDrawer}
-            title="Close preview" aria-label="Close preview"
-            data-testid="file-preview-close"
-            className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground cursor-pointer"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
+        ) : (
+          <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border/70 bg-card/70 px-4">
+            <Icon size={17} color={fileIcon.color} className="shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold text-foreground">{file.name}</div>
+              <div className="text-2xs text-muted-foreground/70">
+                {file.size || 'Attached file'}
+              </div>
+            </div>
+            {controls}
+          </div>
+        )}
 
         <div className="min-h-0 flex-1 overflow-auto">
           <PreviewCanvas file={file} zoom={zoom} showSource={showSource} />
@@ -358,14 +402,17 @@ export function RightDrawerFileSection({ file }: { file: FileAttachment }) {
             data-testid="file-preview-overlay"
           >
             <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border/70 bg-card/70 px-4">
+              <Icon size={17} color={fileIcon.color} className="shrink-0" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold text-foreground">{file.name}</div>
-                <div className="text-2xs uppercase tracking-[0.12em] text-muted-foreground/70">
-                  {extensionLabel(file.name)} · Fullscreen
-                </div>
               </div>
+              {file.truncated && (
+                <span className="rounded border border-warning/30 bg-warning/10 px-2 py-1 text-2xs text-warning">
+                  Truncated
+                </span>
+              )}
               {hasText && (
-                <ViewModeToggle file={file} isHtml={isHtml} isMarkdown={isMarkdown} showSource={showSource} setShowSource={setShowSource} />
+                <ViewModeToggle file={file} isHtml={isHtml} isMarkdown={isMarkdown} isPdf={isPdf} showSource={showSource} setShowSource={setShowSource} />
               )}
               {hasText && file.content && (
                 <CopyFileButton content={file.content} />

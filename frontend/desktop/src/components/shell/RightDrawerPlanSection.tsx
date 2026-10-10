@@ -27,9 +27,6 @@ export function RightDrawerPlanSection({
     return (
       <div className="chat-message-text text-foreground/90 p-3 space-y-3 max-w-none">
         <div className="text-xs text-muted-foreground">No plan yet</div>
-        <div className="rounded-lg border border-border/50 bg-card/60 p-4 text-center text-muted-foreground">
-          The Workbench plan will appear here after the model creates one.
-        </div>
       </div>
     );
   }
@@ -39,9 +36,6 @@ export function RightDrawerPlanSection({
   return (
     <div className="h-full p-3 chat-message-text text-foreground/90 space-y-3 max-w-none">
       <Markdown content={body} variant="assistant" />
-      {plan.planPath && (
-        <div className="text-2xs font-mono text-muted-foreground/50">{plan.planPath}</div>
-      )}
     </div>
   );
 }

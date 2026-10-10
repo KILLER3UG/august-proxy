@@ -660,9 +660,9 @@ export interface paths {
         put?: never;
         /**
          * Decide Memory Proposal
-         * @description Approve/reject a memory proposal. For a retire-preference proposal,
-         *     approving flips the fact's status to 'retired' (reversible — the row
-         *     survives); rejecting keeps it. See consolidation.apply_retire_decision.
+         * @description Approve/reject a memory proposal. For a retirement proposal, approving
+         *     flips the fact's status to 'retired' (reversible — the row survives);
+         *     rejecting keeps it. See consolidation.apply_retire_decision.
          */
         post: operations["decide_memory_proposal_api_august_memory_proposals__proposal_id__decide_post"];
         delete?: never;
@@ -4954,7 +4954,7 @@ export interface paths {
         put?: never;
         /**
          * Restoreskill
-         * @description Undo a delete: restore a trashed skill directory (24h window).
+         * @description Undo a delete or an approved archive: restore a trashed skill directory (24h window).
          */
         post: operations["restoreSkill_api_skills_restore__trashId__post"];
         delete?: never;
@@ -6487,29 +6487,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/workbench/default-workspace": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Defaultworkspace
-         * @description Default workspace for folderless ("Tasks") sessions.
-         *
-         *     The OS user's home directory — the same place a fresh terminal opens.
-         *     Resolved per host user at request time, never hardcoded.
-         */
-        get: operations["defaultWorkspace_api_workbench_default_workspace_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/workbench/doctor": {
         parameters: {
             query?: never;
@@ -6779,6 +6756,11 @@ export interface paths {
         /**
          * Createsessiondirect
          * @description Create a new workbench session.
+         *
+         *     An empty ``workspacePath`` is a supported state, not a stand-in for the OS
+         *     home directory: a folderless chat has no project, so reads resolve anywhere
+         *     and writes land in the system temp area (see
+         *     ``app.services.sandbox.paths.bind_path``).
          */
         post: operations["createSessionDirect_api_workbench_session_post"];
         delete?: never;
@@ -20039,26 +20021,6 @@ export interface operations {
         };
     };
     setCostCeiling_api_workbench_cost_ceiling_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    defaultWorkspace_api_workbench_default_workspace_get: {
         parameters: {
             query?: never;
             header?: never;

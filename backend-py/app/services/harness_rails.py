@@ -38,7 +38,9 @@ logger = logging.getLogger(__name__)
 # ── Vocabulary ────────────────────────────────────────────────────────────
 
 #: The only kinds an auto-apply may ever perform. Everything else — settings,
-#: deletion, retirement, promotion, and every observation kind — is human-only.
+#: deletion, retirement, ARCHIVING, promotion, and every observation kind —
+#: is human-only. An archive is a directory move out of the skills root, so
+#: it sits here with the delete it is the second half of.
 AUTO_APPLIABLE_KINDS = frozenset({'skill_create', 'skill_patch'})
 
 #: Everything the vocabulary allows that is not prose. Written out rather than
@@ -50,6 +52,7 @@ HARD_KINDS = frozenset(
         'skill_delete',
         'brain_config',
         'retire',
+        'archive',
         'promote',
         'revert',
         'observation',

@@ -321,7 +321,7 @@ modules**, not one file:
 | `memory_store/brain.py` | `brain_query` multi-store FTS/SQL domain (and the store PATCH whitelist) |
 | `memory_store/kv.py` | Key-value memory blob + FTS search |
 | `memory_store/fact_retrieval.py` | BM25 recall, the injected `<memory>` tail, the per-session boot index, `memory_context_preview` |
-| `memory_store/consolidation.py` | One scheduled consolidation job: expiry, episodic/usage sweeps, duplicate merge, contradiction supersede, retire proposals, skill-learning pass |
+| `memory_store/consolidation.py` | One scheduled consolidation job: expiry, episodic/usage sweeps, duplicate merge, contradiction supersede, memory + skill retire/archive proposals, skill-learning pass |
 | `memory_store/wire.py` | snake_case rows → camelCase wire |
 | [`workbench/prompt_build.py`](../backend-py/app/services/workbench/prompt_build.py) (+ `prompt_segments_cache.py`, `prompt_variants.py`) | Assembles the system prompt from memory + agent + tools |
 | [`workbench/context_compressor.py`](../backend-py/app/services/workbench/context_compressor.py) | Summarizes the middle of a long conversation |
@@ -420,8 +420,14 @@ procedure with placeholders on approval.
 [`routers/curator.py`](../backend-py/app/routers/curator.py)
 manages the agent-authored lifecycle. Status is a **frontmatter flag, not a file
 move**: draft / active / superseded / retired (`skill_service.SKILL_STATUSES`), read back through `meta`
-because `_parseSkill` nests unrecognized frontmatter. Nothing relocates skills
-into a `.archive/` directory. The curator also drives the `refine` proposal set
+because `_parseSkill` nests unrecognized frontmatter. The lifecycle is two
+proposal-only steps filed by `consolidation._skill_retire_pass` /
+`_skill_archive_pass` and applied by `_APPROVERS` only when a human approves:
+`retire` writes the label (reversible with one frontmatter edit, and the skill
+stops being offered while staying reachable), `archive` **moves** the directory
+into the 24h skills trash via `_trashDir` — the same call `deleteSkill` makes —
+so the undo is `POST /api/skills/restore/{trashId}` rather than a second
+restore path. The curator also drives the `refine` proposal set
 (`/refine`, `/refine/run`, `/refine/{id}/rollback`) and reports through
 `/report`, `/outcomes`, `/episodes`.
 

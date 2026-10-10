@@ -270,11 +270,42 @@ What is real:
   (explicit runs apply immediately).
 - **Proposals** that need a human go through
   `GET /api/august/memory/proposals?status=pending` and
-  `POST /api/august/memory/proposals/{id}/decide`. Approving a retire-preference
+  `POST /api/august/memory/proposals/{id}/decide`. Approving a retirement
   proposal flips the fact's `status` to `retired`; the row survives, so it is
   reversible.
 - Direct store browsing/editing is `GET /api/brain/stores[/{name}]` and
   `PATCH`/`DELETE /api/brain/stores/{name}/{id}`, plus `POST /api/august/memory/manage`.
+
+### Skill lifecycle (propose-only)
+
+The skill library has the same shape as memory: a scheduled pass proposes, a
+human decides, and no pass applies anything by itself. Both steps are
+approvable kinds (`retire`, `archive`) and both are human-only for autonomy —
+`harness_rails.HARD_KINDS` holds them beside `skill_delete`.
+
+- **Retire** — filed by the consolidation pass for an agent-scope skill with no
+  loads in 30 days and no measured lift. Approving writes `status: retired`
+  in the frontmatter; the file, its version history and its usage counters all
+  stay on disk, and an approved `skill_patch` sets the status back to `active`.
+  A retired skill is no longer *offered* — it drops out of `<capabilities>`,
+  `<relevant_skills>` and the subagent preload — but it stays reachable
+  through `GET /api/skills`, `list_skills` and `load_skill`, and loading it
+  records a use, which is what keeps a retired-but-wanted skill from looking
+  stale.
+- **Archive** — filed by the same pass for a skill that is already retired and
+  has stayed quiet for the window. Approving **moves** the directory into the
+  24h delete trash (the same move `DELETE` performs) and answers with the
+  `trashId`; `POST /api/skills/restore/{trashId}` moves it back. Config keys:
+
+  | Key | Default | Meaning |
+  |-----|---------|---------|
+  | `skillArchiveEnabled` | `true` | Files archive proposals at all. |
+  | `skillArchiveDays` | `60` | How long a retired skill must be quiet — no usage inside the window and no write to its `SKILL.md` since — before it is proposed. |
+
+  Both are read by `consolidation._skill_archive_pass` through
+  `brain_config_service`; there is no separate scheduler job, because the
+  archive scan rides the consolidation cadence beside the retire scan it
+  follows.
 
 ### Harness / orchestrator
 

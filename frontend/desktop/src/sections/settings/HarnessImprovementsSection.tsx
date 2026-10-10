@@ -49,7 +49,7 @@ interface Proposal {
   payload?: Record<string, unknown>;
   decidedAt?: string;
   decisionNote?: string;
-  applyResult?: { ok?: boolean; error?: string; action?: string; name?: string };
+  applyResult?: { ok?: boolean; error?: string; action?: string; name?: string; trashId?: string };
   queue: Queue;
   /** The reviewer's verdict as one sentence, formed by the backend's
    *  `review_summary()`. `''` when no reviewer saw this proposal, which is how
@@ -68,7 +68,16 @@ interface MemoryProposalRow {
   status: string;
   createdAt?: string;
   decidedAt?: string;
-  content?: { key?: string; title?: string; reason?: string; lastTouch?: string };
+  content?: {
+    key?: string;
+    title?: string;
+    /** The fact's kind, which the backend now names in every retirement
+     *  payload — the card says "retire stale profile memory" rather than
+     *  always "memory" because of it. */
+    kind?: string;
+    reason?: string;
+    lastTouch?: string;
+  };
 }
 
 type Filter = 'open' | 'all';
@@ -81,9 +90,25 @@ const STATUS_META: Record<Proposal['status'], { label: string; className: string
   dismissed: { label: 'Dismissed', className: 'border-border bg-muted/40 text-muted-foreground' },
 };
 
-const APPROVABLE = new Set(['brain_config', 'skill_create', 'skill_patch', 'skill_delete']);
+/** The kinds the backend can APPLY on approval — the same list the
+ *  `_APPROVERS` registry carries. `archive` is the second half of the skill
+ *  lifecycle: approving it moves the skill into the delete trash, and the
+ *  result row below renders the trash id with a Restore button beside it.
+ *  `retire` and `promote` are here because they are approvable kinds too —
+ *  they were missing, which left a landed proposal kind with a disabled
+ *  Approve button and a "human-only" badge that described the opposite of
+ *  the truth. */
+const APPROVABLE = new Set([
+  'brain_config',
+  'skill_create',
+  'skill_patch',
+  'skill_delete',
+  'retire',
+  'archive',
+  'promote',
+]);
 
-/** Map one memory-store retire-preference row into the shared card shape
+/** Map one memory-store retirement row into the shared card shape
  *  so both queues render with one component. The memory queue has no
  *  'dismissed' state (approve/reject only) — rejected covers both. */
 function memoryToProposal(r: MemoryProposalRow): Proposal {
@@ -94,7 +119,7 @@ function memoryToProposal(r: MemoryProposalRow): Proposal {
     createdAt: r.createdAt ?? '',
     kind: r.proposalType,
     status: r.status === 'pending' ? 'open' : r.status === 'approved' ? 'applied' : 'rejected',
-    problem: `Retire stale preference “${title}”?`,
+    problem: `Retire stale ${content.kind || 'memory'} “${title}”?`,
     evidence: content.reason ?? '',
     proposal:
       'Approve retires the fact (row survives, reversible from the memory UI); reject keeps it.',
@@ -204,6 +229,7 @@ export function HarnessImprovementsSection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [restoring, setRestoring] = useState(false);
 
   const harnessQ = useQuery({
     queryKey: qk.harnessProposals(filter),
@@ -297,6 +323,29 @@ export function HarnessImprovementsSection() {
       setError(e instanceof Error ? e.message : 'Decision failed');
     } finally {
       setBusy(false);
+    }
+  };
+
+  /** Undo an approved archive through the SAME route a delete uses. The
+   *  decision stays recorded — this moves the bytes back, it does not rewrite
+   *  history — and the inbox count is refreshed because the row is unchanged
+   *  but the skill is alive again. */
+  const restoreArchived = async (row: Proposal) => {
+    const trashId = String(row.applyResult?.trashId ?? '');
+    if (!trashId) return;
+    setRestoring(true);
+    setError(null);
+    try {
+      const res = await api.post<{ restored?: string }>(
+        `/api/skills/restore/${encodeURIComponent(trashId)}`,
+      );
+      toast.success(`Restored ${res?.restored ?? 'the skill'} — still retired; un-retire it in Settings → Skills`);
+      void queryClient.invalidateQueries({ queryKey: ['skills-list'] });
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Restore failed');
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -542,6 +591,28 @@ export function HarnessImprovementsSection() {
             {selected.applyResult?.error && (
               <InfoRow label="Apply error" body={selected.applyResult.error} mono={false} />
             )}
+            {selected.applyResult?.trashId && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+                <span className="text-2xs text-muted-foreground">
+                  Trashed as <code className="font-mono">{selected.applyResult.trashId}</code> —
+                  restorable within 24 h
+                </span>
+                {/* The undo, in the place the decision was made. Without it the
+                    trash id is an answer nobody asked for: the archive is a
+                    move, so the restore route is what makes the move
+                    reversible rather than merely non-destructive. */}
+                <button
+                  type="button"
+                  disabled={busy || restoring}
+                  onClick={() => void restoreArchived(selected)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border/60 px-2 py-1 text-2xs font-medium transition hover:bg-muted/40 disabled:opacity-40"
+                  data-testid="proposal-restore-archive"
+                >
+                  {restoring ? <Loader2 className="size-3 animate-spin" /> : <Undo2 className="size-3" />}
+                  Restore skill
+                </button>
+              </div>
+            )}
             {selected.decisionNote && (
               <InfoRow label="Decision note" body={selected.decisionNote} mono={false} />
             )}
@@ -566,11 +637,13 @@ export function HarnessImprovementsSection() {
                     title={
                       selected.queue === 'memory'
                         ? 'Retire the fact (reversible in the memory UI)'
-                        : APPROVABLE.has(selected.kind)
-                          ? 'Run the deterministic applier'
-                          : selected.kind === 'revert'
-                            ? 'A measured regression is undone by hand — run the rollback, then reject or dismiss'
-                            : 'This kind is recorded only — approval does not apply anything'
+                        : selected.kind === 'archive'
+                          ? 'Move the skill into the delete trash — restore it from the result below'
+                          : APPROVABLE.has(selected.kind)
+                            ? 'Run the deterministic applier'
+                            : selected.kind === 'revert'
+                              ? 'A measured regression is undone by hand — run the rollback, then reject or dismiss'
+                              : 'This kind is recorded only — approval does not apply anything'
                     }
                     className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
                     data-testid="proposal-approve"

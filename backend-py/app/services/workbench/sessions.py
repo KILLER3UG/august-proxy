@@ -147,6 +147,17 @@ class WorkbenchSession:
     # this flag. RAM-only like _frozen_mem_index — never serialized.
     _memory_nudge_pending: bool = False
 
+    def __post_init__(self) -> None:
+        # One door for the session workspace. Construction is how every session
+        # arrives — `create_workbench_session`, and `_load_sessions` rebuilding
+        # rows from disk — so an install whose rows were backfilled with the OS
+        # home directory normalizes to folderless at load, with no migration
+        # writing to the store. Lazy import: `app.services.sandbox` pulls in the
+        # backends, which import workbench (same reason line 1007 defers it).
+        from app.services.sandbox.paths import normalize_session_workspace
+
+        self.workspacePath = normalize_session_workspace(self.workspacePath)
+
     def toDict(self) -> dict[str, object]:
         return {
             'id': self.id,

@@ -6,7 +6,7 @@
  * bitstreams reveal in folder.                                             */
 
 import { useMemo, useState } from 'react';
-import { Cpu, FolderOpen } from 'lucide-react';
+import { FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { FileIcon } from '@/components/ui/FileIcon';
 import {
@@ -74,13 +74,6 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="circuit-panel">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
-        <Cpu className="size-3 text-muted-foreground/70" />
-        <span className="truncate text-xs font-semibold text-foreground">Circuit workbench</span>
-        <span className="ml-auto rounded bg-muted/40 px-1.5 py-0.5 text-2xs text-muted-foreground">
-          {artifacts.length}
-        </span>
-      </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2 chat-scroll">
         {netlists.length > 0 ? (
           <>
@@ -110,9 +103,6 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
         {artifacts.length === 0 ? (
           <p className="px-1 py-6 text-center text-2xs leading-relaxed text-muted-foreground/70">
             No circuit artifacts yet.
-            <br />
-            Ask August to build a netlist, simulate it, or render the 3D board —
-            everything it produces lands here.
           </p>
         ) : (
           <ul className="flex flex-col gap-1.5">

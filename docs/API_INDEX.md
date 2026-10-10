@@ -5,7 +5,7 @@
 
 # API Index — every route
 
-415 routes across 342 paths,
+414 routes across 341 paths,
 grouped by family. **This file is generated.** For the prose that explains what
 these are for and when to reach for them, read
 [`API_REFERENCE.md`](./API_REFERENCE.md) — it covers the families that matter in
@@ -24,7 +24,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/v1/models` | Delegate model listing to the model-service-backed OpenAI route. |
 | `POST` | `/v1/responses` | OpenAI Responses API proxy. |
 
-## Workbench chat (67)
+## Workbench chat (66)
 
 | Method | Path | Summary |
 | --- | --- | --- |
@@ -50,7 +50,6 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `POST` | `/api/workbench/code-bridge` | T13 tool bridge: a code-mode child process calls back with a one-shot token to run a managed tool. The token … |
 | `POST` | `/api/workbench/confirm-mutation` | Alias for POST /mutations/respond (legacy frontend path). |
 | `POST` | `/api/workbench/cost-ceiling` | Set a per-session spend ceiling (USD). 0 clears it. |
-| `GET` | `/api/workbench/default-workspace` | Default workspace for folderless ("Tasks") sessions. |
 | `GET` | `/api/workbench/doctor` | Setup / health doctor for the first-run checklist and Settings. |
 | `GET` | `/api/workbench/files/raw` | Raw file bytes for embedded cross-origin viewers. |
 | `GET` | `/api/workbench/files/read` | Read a file as base64 for the right-drawer viewer. |
@@ -154,7 +153,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/skills/packs` | Packs List |
 | `POST` | `/api/skills/packs` | Packs Install |
 | `DELETE` | `/api/skills/packs/{name}` | Packs Uninstall |
-| `POST` | `/api/skills/restore/{trashId}` | Undo a delete: restore a trashed skill directory (24h window). |
+| `POST` | `/api/skills/restore/{trashId}` | Undo a delete or an approved archive: restore a trashed skill directory (24h window). |
 
 ## Curator & learning (11)
 
@@ -431,7 +430,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `POST` | `/api/august/memory/import/ai` | Ask the model the user picked (composer dropdown) to ARRANGE a memory export into concrete operations. The mo… |
 | `POST` | `/api/august/memory/manage` | Manage Memory |
 | `GET` | `/api/august/memory/proposals` | Pending memory proposals (OQ5 preference-retire, and any future propose-only consolidation pass). Returns the… |
-| `POST` | `/api/august/memory/proposals/{proposal_id}/decide` | Approve/reject a memory proposal. For a retire-preference proposal, approving flips the fact's status to 'ret… |
+| `POST` | `/api/august/memory/proposals/{proposal_id}/decide` | Approve/reject a memory proposal. For a retirement proposal, approving flips the fact's status to 'retired' (… |
 | `GET` | `/api/august/memory/workspaces` | Known project workspaces for the Memory/Skills scope selector (C-1/C-9). |
 | `POST` | `/api/august/models/select` | Select Model |
 | `POST` | `/api/august/providers/manage` | Manage Providers |
@@ -534,4 +533,4 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 
 ---
 
-Generated from `docs/api/openapi.json` (415 operations).
+Generated from `docs/api/openapi.json` (414 operations).

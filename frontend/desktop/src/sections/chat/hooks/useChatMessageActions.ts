@@ -159,6 +159,32 @@ export function useChatMessageActions({
     [streaming, messages, setMessages, sessionId, generateAIResponse, truncateBackend],
   );
 
+  /** Turn-end "Continue": resume a turn that stopped mid-answer (`length`,
+   *  `stall-stop`) WITHOUT discarding the partial output.
+   *
+   *  Deliberately NOT `handleRegenerate` — that truncates at the user turn and
+   *  re-sends, which throws away exactly the partial work we want kept. Here
+   *  the existing transcript is appended to and sent as-is, so the model
+   *  continues from where it broke. */
+  const handleContinue = useCallback(
+    async () => {
+      if (streaming) return;
+      const next = [
+        ...messages,
+        {
+          id: `m${Date.now()}`,
+          role: 'user' as const,
+          content: 'Continue',
+          timestamp: new Date().toISOString(),
+        },
+      ];
+      setMessages(next);
+      persistMessages(sessionId, next);
+      await generateAIResponse(next);
+    },
+    [streaming, messages, setMessages, sessionId, generateAIResponse],
+  );
+
   const handleClarifyAnswer = useCallback(
     (msgId: string, answer: string) => {
       // The backend tool loop already broke out of the turn when it proposed
@@ -192,6 +218,7 @@ export function useChatMessageActions({
     handleRevert,
     handleEdit,
     handleRegenerate,
+    handleContinue,
     handleClarifyAnswer,
     // Dialog state for the edit-message confirm — rendered by the .tsx
     // consumer (JSX is not allowed in .ts files).

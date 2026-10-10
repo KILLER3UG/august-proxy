@@ -38,7 +38,7 @@ describe('UncategorizedHeader (Tasks)', () => {
     expect(onToggleCollapse).not.toHaveBeenCalled();
   });
 
-  it('shows the group name without a folder icon and surfaces the home path as tooltip', () => {
+  it('shows the group name without a folder icon and names no directory', () => {
     render(
       <UncategorizedHeader
         count={0}
@@ -46,12 +46,13 @@ describe('UncategorizedHeader (Tasks)', () => {
         onToggleCollapse={vi.fn()}
         onNewSession={vi.fn()}
         onDelete={vi.fn()}
-        workspaceHint="/home/test-user"
       />,
     );
 
+    // The Tasks group binds nothing, so it must not tooltip a path the user
+    // never chose (it used to print the OS home).
     const label = screen.getByText('Tasks');
-    expect(label).toHaveAttribute('title', 'Tasks — /home/test-user');
+    expect(label).not.toHaveAttribute('title');
     // Chevron only — no folder icon in the Tasks group.
     expect(document.querySelector('svg.lucide-folder')).toBeNull();
     expect(document.querySelector('svg.lucide-folder-open')).toBeNull();

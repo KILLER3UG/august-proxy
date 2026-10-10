@@ -110,6 +110,7 @@ export interface ChatThreadComposerProps {
   setThinkingEnabled: Dispatch<SetStateAction<boolean>>;
   voiceActive: boolean;
   startVoiceInput: () => void;
+  stopVoiceInput: () => void;
   /** Jump-to-bottom affordance anchored to the composer card's top border. */
   scrolledFromBottom: boolean;
   showNewContentPill: boolean;
@@ -169,6 +170,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     setThinkingEnabled,
     voiceActive,
     startVoiceInput,
+    stopVoiceInput,
     scrolledFromBottom,
     showNewContentPill,
     onScrollToBottom,
@@ -447,7 +449,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           />
         </div>
         {voiceActive ? (
-          <ComposerVoiceListening />
+          <ComposerVoiceListening onStop={stopVoiceInput} />
         ) : (
           <>
             {/* Folder + branch context row — only on a fresh session (empty

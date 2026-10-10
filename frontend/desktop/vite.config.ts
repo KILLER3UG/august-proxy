@@ -49,6 +49,13 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Bind IPv4 loopback explicitly. With no `host`, vite 5 can come up on
+    // the IPv6 wildcard only (`[::1]:5173`), which leaves `127.0.0.1:5173`
+    // refusing connections — and the page then loads as `http://[::1]:5173`,
+    // an origin the backend's TrustedOriginGuard does not trust (see
+    // `_cors_allow_origins` in backend-py/app/main.py). Pinning the host makes
+    // `localhost:5173` work as every allowlist entry and the dev docs assume.
+    host: '127.0.0.1',
     // `tauri dev` has cargo writing .dll/.exe into src-tauri/target at the
     // same time; watching those makes the dev server exit on EBUSY when the
     // linker holds a lock on them.

@@ -10,7 +10,6 @@ import {
   CircleAlert,
   ListX,
   Loader2,
-  SquareTerminal,
 } from 'lucide-react';
 import { cn, fmtElapsed } from '@/lib/utils';
 import {
@@ -78,7 +77,7 @@ function JobRow({ task, onDismiss }: { task: BackgroundTask; onDismiss?: () => v
           </div>
         ) : null}
       </div>
-      {spanMs > 0 ? (
+      {running && spanMs > 0 ? (
         <span className="shrink-0 pt-0.5 font-mono text-2xs tabular-nums text-muted-foreground/60">
           {fmtElapsed(spanMs)}
         </span>
@@ -114,11 +113,7 @@ export function RightDrawerJobsSection({ sessionId }: { sessionId: string | null
   if (visible.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-        <SquareTerminal className="size-5 text-muted-foreground/40" aria-hidden />
-        <p className="text-xs text-muted-foreground/70">
-          No background jobs. Long-running work started from Settings or an
-          overflowing queue appears here.
-        </p>
+        <p className="text-xs text-muted-foreground/70">No background jobs.</p>
       </div>
     );
   }
@@ -127,7 +122,7 @@ export function RightDrawerJobsSection({ sessionId }: { sessionId: string | null
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2">
         <span className="text-2xs font-medium uppercase tracking-wider text-muted-foreground/70">
-          {activeCount > 0 ? `${activeCount} running` : 'Idle'}
+          {activeCount > 0 ? `${activeCount} running` : ''}
         </span>
         {finishedCount > 0 ? (
           <button

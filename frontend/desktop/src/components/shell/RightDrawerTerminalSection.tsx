@@ -3,7 +3,7 @@
 import { useRightDrawerHidden } from './RightDrawerState';
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ExternalLink, Loader2, Plus, RefreshCw, ShieldAlert, Trash2, X, Inbox, AlertCircle } from 'lucide-react';
+import { Check, ExternalLink, Loader2, Plus, RefreshCw, ShieldAlert, Trash2, X, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -390,9 +390,8 @@ export function RightDrawerTerminalSection() {
       )}
 
       {!active && !isLoading && !createSession.isPending && (
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center text-muted-foreground">
-          <Inbox className="size-6 text-muted-foreground/40" />
-          <div className="mt-2 text-2xs">Click + to start a terminal session.</div>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center text-2xs text-muted-foreground">
+          Click + to start a terminal session.
         </div>
       )}
     </div>

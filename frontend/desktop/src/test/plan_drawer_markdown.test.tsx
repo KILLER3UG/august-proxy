@@ -22,8 +22,9 @@ describe('RightDrawerPlanSection', () => {
     expect(screen.getByText('extract the hook')).toBeTruthy();
     // Same Markdown variant as assistant messages.
     expect(container.querySelector('.markdown-content--assistant')).toBeTruthy();
-    // The plan file path is surfaced for reference.
-    expect(screen.getByText('.aug/plans/plan.md')).toBeTruthy();
+    // The plan's on-disk path is developer metadata with no action attached,
+    // so the panel shows the plan and nothing else.
+    expect(screen.queryByText('.aug/plans/plan.md')).toBeNull();
   });
 
   it('ignores legacy structured arrays — no Steps/Files/Risks/Verification', () => {

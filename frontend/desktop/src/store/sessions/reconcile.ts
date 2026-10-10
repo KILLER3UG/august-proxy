@@ -97,10 +97,16 @@ export async function reconcileSessionsFromBackend(
           provider: backend.provider || local.provider,
           model: (backend.model) || local.model,
           workbenchProvider: backend.provider || local.workbenchProvider,
-          // Keep the local workspace; fall back to the backend's so a linked
-          // session never loses its true path (the task-home backfill would
-          // otherwise reassign it to ~).
-          workspacePath: local.workspacePath || backend.workspacePath || null,
+          // A chat the user never filed runs wherever the BACKEND says it
+          // runs, so the backend owns its path. Local rows still carry the OS
+          // home directory the old folderless default wrote into every one of
+          // them, and `normalize_session_workspace` now refuses home — reading
+          // the backend for unfiled rows retires those stale values with no
+          // migration writing to anyone's store. Filed rows keep the local
+          // precedence: a folder group is a deliberate local choice.
+          workspacePath: local.folderId
+            ? local.workspacePath || backend.workspacePath || null
+            : backend.workspacePath || null,
           // The server owns the archive column now; an absent flag means the
           // backend has no opinion, so the local value stands. This is the ONE
           // field read from the manage plane — everything else below (id,
@@ -156,9 +162,12 @@ export async function reconcileSessionsFromBackend(
             provider: bs.provider || pending.provider,
             model: (bs.model) || pending.model,
             workbenchProvider: bs.provider || pending.workbenchProvider,
-            // Draft had no path of its own → inherit the backend session's so
-            // the row reflects where its turns actually run.
-            workspacePath: pending.workspacePath || bs.workspacePath || null,
+            // Same precedence as the merge above: an unfiled draft inherits the
+            // backend's path, while a draft filed in a project keeps the folder
+            // it was made in.
+            workspacePath: pending.folderId
+              ? pending.workspacePath || bs.workspacePath || null
+              : bs.workspacePath || null,
           };
           merged[pendingIdx] = nextRow;
           // Register the newly attached workbench id so a later backend row

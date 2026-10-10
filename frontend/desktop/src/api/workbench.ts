@@ -248,11 +248,6 @@ export async function getWorkbenchDoctor(): Promise<DoctorReport> {
   return workbenchClient.doctor();
 }
 
-/** OS home directory — default workspace for folderless "Tasks" chats. */
-export async function getDefaultWorkspace(): Promise<{ path: string }> {
-  return workbenchClient.defaultWorkspace();
-}
-
 export async function approveWorkbenchPlan(sessionId: string): Promise<WorkbenchSession> {
   return workbenchClient.approvePlan(sessionId);
 }

@@ -122,6 +122,7 @@ pub fn run() {
             backend::select_directory,
             backend::read_file_base64,
             backend::reveal_in_folder,
+            backend::copy_files_to_dir,
             backend::backend_last_error,
             backend::backend_setup_status,
             backend::sync_backend_deps,

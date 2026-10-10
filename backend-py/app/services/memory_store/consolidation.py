@@ -18,10 +18,11 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from app.json_narrowing import as_int
+from app.json_narrowing import as_int, as_str
 from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 from app.services.memory_conn import db_path as _db_path
+from app.services.memory_store.rest import PROFILE_FACT_KIND
 
 logger = logging.getLogger('august.consolidation')
 
@@ -197,19 +198,47 @@ def _sweep_usage() -> int:
         return 0
 
 
-def _retire_stale_preferences() -> tuple[int, list[str]]:
-    """OQ5 (Part 21, 2026-09-04): propose-only preference retire.
+# Which kinds the retirement scan may propose, and which config key holds the
+# silence each must show first.
+#
+# `profile` is on its own, tighter window because it is injected into EVERY
+# turn regardless of the auto-inject gate (`fact_retrieval.build_profile_block`),
+# so a stale one is paid for whether or not it is relevant. The others only ever
+# appear when something recalls them, so a long window costs nothing.
+#
+# This set replaces a scan that filtered `kind = 'preference'` — which meant a
+# stale profile row could never be proposed, never retire, and never leave. The
+# consequence was measured on a live install on 2026-10-10: thirteen test
+# fixtures written as `profile` on 2026-09-26 were still spending ~1.8 KB of
+# every turn's prompt two weeks later, and no pass could have removed them.
+_RETIRE_WINDOWS: dict[str, str] = {
+    PROFILE_FACT_KIND: 'profileRetireDays',
+    'preference': 'memoryRetireDays',
+    'fact': 'memoryRetireDays',
+    'lesson': 'memoryRetireDays',
+    'skill-note': 'memoryRetireDays',
+}
 
-    A ``preference`` fact that has been untouched for ``preferenceRetireDays``
-    (default 180) AND never quoted (``use_count`` 0) is a stale guess about
-    what the user likes. The ruling is PROPOSE-ONLY: this writes a
-    ``retire-preference`` proposal per candidate and flips NOTHING — a human
-    decides via ``decide_proposal`` (approve → the fact's status goes
-    'retired'; reject → it stays). Non-destructive by construction, so it can
-    ride the scheduled consolidation pass safely.
+# Proposal type of the current scan, plus the one filed before it was widened:
+# both are deduped and both are decidable, because rows of the old type may
+# already sit in a user's inbox from an earlier release.
+_RETIRE_TYPES = ('retire-fact', 'retire-preference')
 
-    Deduped: a key with an already-open proposal is skipped, so a pass that
-    runs daily does not stack duplicates. Returns ``(proposed, notes)``.
+
+def _retire_stale_memories() -> tuple[int, list[str]]:
+    """OQ5 (Part 21, 2026-09-04), widened 2026-10-10: propose-only retire.
+
+    A durable memory of any kind that has been untouched for its window AND
+    never quoted (``use_count`` 0) is a stale guess about the user. The ruling
+    is PROPOSE-ONLY: this writes one proposal per candidate and flips NOTHING —
+    a human decides via ``apply_retire_decision`` (approve → status 'retired',
+    which retrieval excludes and a later flip restores; reject → it stays).
+    Non-destructive by construction, so it can ride the scheduled pass.
+
+    Deduped: a key with a proposal of ANY status is skipped, so a daily pass
+    neither stacks duplicates nor re-files something a human already refused
+    (the §12 F-8 pattern the distiller already fixed). Returns
+    ``(proposed, notes)``.
     """
     from app.services.brain_config_service import getRuntimeConfig
     from app.services.memory_store import save_proposal
@@ -218,44 +247,51 @@ def _retire_stale_preferences() -> tuple[int, list[str]]:
         cfg = getRuntimeConfig()
     except Exception:
         cfg = {}
-    if not bool(cfg.get('preferenceRetireEnabled', True)):
+    if not bool(cfg.get('memoryRetireEnabled', True)):
         return 0, []
-    try:
-        days = int(float(str(cfg.get('preferenceRetireDays', 180))))
-    except (TypeError, ValueError):
-        days = 180
-    days = max(1, min(3650, days))
+
+    def _days(key: str, fallback: int) -> int:
+        try:
+            value = int(float(str(cfg.get(key, fallback))))
+        except (TypeError, ValueError):
+            return fallback
+        return max(1, min(3650, value))
+
+    profileDays = _days('profileRetireDays', 45)
+    defaultDays = _days('memoryRetireDays', 180)
 
     conn = _conn()
     notes: list[str] = []
     proposed = 0
     try:
-        cutoff = f'-{days} days'
-        # Never quoted (use_count 0 / NULL) + untouched since before the
-        # cutoff (last touch = last_used_at, else updated_at, else created_at).
+        # Never quoted (use_count 0 / NULL) + untouched since before its own
+        # kind's window (last touch = last_used_at, else updated_at, else
+        # created_at). A NULL last_touch fails the comparison and is skipped —
+        # silence is not evidence of staleness.
         rows = conn.execute(
-            'SELECT fact_key, title, '
-            "  COALESCE(NULLIF(last_used_at, ''), NULLIF(updated_at, ''), created_at) AS last_touch "
+            'SELECT fact_key, title, kind, '
+            "  COALESCE(NULLIF(last_used_at, ''), NULLIF(updated_at, ''), created_at) AS last_touch, "
+            '  CASE kind '
+            "    WHEN 'profile' THEN ? "
+            '    ELSE ? '
+            '  END AS window_days '
             'FROM facts '
-            "WHERE kind = 'preference' AND (status IS NULL OR status = 'active') "
+            "WHERE (status IS NULL OR status = 'active') "
             'AND COALESCE(use_count, 0) = 0 '
-            'AND julianday('
+            'AND kind IN (' + ','.join('?' for _ in _RETIRE_WINDOWS) + ') '
+            'AND julianday(\'now\') - julianday('
             "  COALESCE(NULLIF(last_used_at, ''), NULLIF(updated_at, ''), created_at)"
-            ") IS NOT NULL "
-            "AND julianday(COALESCE(NULLIF(last_used_at, ''), NULLIF(updated_at, ''), created_at)) "
-            "  < julianday('now', ?)",
-            (cutoff,),
+            ') > CASE kind '
+            "    WHEN 'profile' THEN ? "
+            '    ELSE ? END',
+            (profileDays, defaultDays, *sorted(_RETIRE_WINDOWS), profileDays, defaultDays),
         ).fetchall()
         if not rows:
             return 0, []
-        # Open OR decided proposals for this type → skip keys already proposed.
-        # 2.19: dedupe across ALL statuses, not just pending — a
-        # human-rejected retire must not re-file on every pass (the §12 F-8
-        # pattern the distiller already fixed).
         openKeys: set[str] = set()
         try:
             for pr in conn.execute(
-                "SELECT content FROM proposals WHERE proposal_type = 'retire-preference'"
+                "SELECT content FROM proposals WHERE proposal_type IN ('retire-fact', 'retire-preference')"
             ).fetchall():
                 raw = pr['content']
                 try:
@@ -272,35 +308,49 @@ def _retire_stale_preferences() -> tuple[int, list[str]]:
             key = str(r['fact_key'] or '')
             if not key or key in openKeys:
                 continue
+            kind = str(r['kind'] or 'fact')
+            days = int(r['window_days'] or defaultDays)
             title = str(r['title'] or '') or key
             reason = (
-                f'preference untouched for {days}+ days and never quoted — '
+                f'{kind} untouched for {days}+ days and never quoted — '
                 'proposed for retirement (approve to retire, reject to keep)'
             )
             try:
                 save_proposal(
                     'consolidation',
-                    'retire-preference',
-                    {'key': key, 'title': title, 'reason': reason, 'lastTouch': str(r['last_touch'] or '')},
+                    'retire-fact',
+                    {
+                        'key': key,
+                        'title': title,
+                        'kind': kind,
+                        'days': days,
+                        'reason': reason,
+                        'lastTouch': str(r['last_touch'] or ''),
+                    },
                 )
                 proposed += 1
                 notes.append(f'retirement proposed: {title}')
             except Exception:
-                logger.debug('retire-preference proposal failed', exc_info=True)
+                logger.debug('retire-fact proposal failed', exc_info=True)
     except Exception:
-        logger.debug('preference retire scan failed', exc_info=True)
+        logger.debug('memory retire scan failed', exc_info=True)
         return 0, notes
     return proposed, notes
 
 
 def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'user') -> dict[str, Any]:
-    """Act on a ``retire-preference`` proposal decision.
+    """Act on a retirement proposal decision.
 
     The scan is propose-only; THIS is the decide half that makes a proposal
     actionable. Approve → the fact's ``status`` flips to ``'retired'`` (the
     row survives — retrieval excludes it, a later restore is a status flip);
     reject → the proposal closes, the fact stays active. Either way the
     proposal itself is stamped via ``decide_proposal``.
+
+    Both proposal types are decidable: ``retire-fact`` is what the widened scan
+    files, and ``retire-preference`` is what it filed before the scan covered
+    every kind — those rows may still sit in a user's inbox from an earlier
+    release, and a proposal nobody can decide is a stuck one.
     """
     from app.services.memory_store import decide_proposal, get_proposal
 
@@ -308,8 +358,8 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
     if prop is None:
         return {'ok': False, 'error': f'no proposal {proposal_id}'}
     ptype = str(prop.get('proposalType') or prop.get('proposal_type') or '')
-    if ptype != 'retire-preference':
-        return {'ok': False, 'error': f'proposal {proposal_id} is not a retire-preference'}
+    if ptype not in _RETIRE_TYPES:
+        return {'ok': False, 'error': f'proposal {proposal_id} is not a memory retirement'}
     status = 'approved' if approve else 'rejected'
     decide_proposal(proposal_id, status, decidedBy=decidedBy)
     if not approve:
@@ -1077,6 +1127,180 @@ def _skill_retire_pass() -> tuple[int, list[str]]:
     return filed, notes
 
 
+# ── Archived skills: the second half of the lifecycle (2026-10-10) ─────────
+# `retire` above is a LABEL — the SKILL.md, its version history and its usage
+# counters all stay in the agent root, and an approved patch sets the status
+# back. That is the right first step (a human can change their mind with one
+# frontmatter edit), but it means a skill nobody has wanted for a year is
+# still on disk, still parsed by discovery and still listed in Settings.
+#
+# This is the removal step, and it is deliberately a MOVE rather than a
+# delete: the applier calls the SAME `_trashDir` that `deleteSkill` calls, so
+# the undo is the delete-trash's own restore route
+# (`POST /api/skills/restore/{trashId}`) and the whole directory — file,
+# history, counters — comes back. Propose-only for the same reason the retire
+# pass is: this one moves bytes, so a human decides.
+#
+# The window is the same idea as memory retirement's: the candidate must be
+# QUIET, not merely old. Two clocks, both cheap, both required:
+#   * USAGE — the per-skill sidecar (`count` / `lastUsed`), the same reader
+#     the retire pass uses. A skill that was loaded recently is not stale
+#     however long it has been retired.
+#   * THE FILE — `updatedAt` from the parse (SKILL.md's own mtime). For a
+#     retired skill the last writer is `setStatus`, so that stamp reads as
+#     "how long has this been retired", and any later patch — which restates
+#     the status, keeping it retired — restarts it. A skill someone touched
+#     is not stale.
+_SKILL_ARCHIVE_DAYS = 60
+_SKILL_ARCHIVE_MAX = 5
+
+
+def _skill_archive_candidates(days: int) -> list[dict[str, Any]]:
+    """Agent-scope skills that are ``retired`` and have been quiet for `days`.
+
+    Mirrors :func:`_skill_retire_candidates` and inverts its status test:
+    that pass looks for a live skill with nothing to show, this one for a
+    retired skill that stayed that way. Bundled, project and bot roots are
+    excluded for the applier's reason — the trash manifest restores to the
+    agent root, so proposing a move for a skill that lives anywhere else
+    would file something that cannot be applied honestly.
+    """
+    from app.services import skill_service
+
+    try:
+        rows = list(skill_service.list_all(None) or [])
+    except Exception:
+        logger.debug('skill archive: catalogue read failed', exc_info=True)
+        return []
+    try:
+        from app.services.turn_outcomes import skill_lift
+
+        lifts = skill_lift(days)
+    except Exception:
+        logger.debug('skill archive: lift read failed', exc_info=True)
+        lifts = {}
+    cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
+    out: list[dict[str, Any]] = []
+    for s in rows:
+        name = as_str(s.get('name'), '').strip()
+        if not name or as_str(s.get('scope'), '') != 'agent':
+            continue
+        if not s.get('enabled', True):
+            continue
+        if skill_service.skill_status(s.get('status')) != 'retired':
+            continue
+        try:
+            usage = skill_service.read_skill_usage(name)
+        except Exception:
+            continue
+        count = as_int(usage.get('count'), 0)
+        last_used = as_str(usage.get('lastUsed'), '')
+        if count > 0:
+            if not last_used:
+                continue
+            try:
+                stamp = datetime.fromisoformat(last_used).timestamp()
+            except Exception:
+                continue
+            if stamp >= cutoff:
+                continue
+        # The file's own stamp, surfaced as `updatedAt` by the parse. A missing
+        # or non-numeric one reads as "no clock" and does not disqualify.
+        raw_touched = s.get('updatedAt')
+        touched = float(raw_touched) if isinstance(raw_touched, (int, float)) else 0.0
+        if touched and touched >= cutoff:
+            continue
+        lift = float(lifts.get(name, 0.0))
+        if lift > 0:
+            # A skill the harness measured as helping is not dead weight, even
+            # retired and unused — it is the thing you reach for on purpose.
+            continue
+        out.append(
+            {
+                'name': name,
+                'loads': count,
+                'lift': lift,
+                'lastUsed': last_used,
+                'retiredForDays': days,
+            }
+        )
+    return out
+
+
+def _skill_archive_pass() -> tuple[int, list[str]]:
+    """File an ``archive`` proposal per long-retired, still-quiet skill.
+
+    Returns (filed, notes). Never applies anything — approving is what moves.
+    """
+    from app.services.brain_config_service import getRuntimeConfig
+
+    try:
+        cfg = getRuntimeConfig()
+    except Exception:
+        cfg = {}
+    if not bool(cfg.get('skillArchiveEnabled', True)):
+        return 0, []
+    try:
+        days = int(float(str(cfg.get('skillArchiveDays', _SKILL_ARCHIVE_DAYS))))
+    except (TypeError, ValueError):
+        days = _SKILL_ARCHIVE_DAYS
+    days = max(1, min(3650, days))
+    notes: list[str] = []
+    candidates = _skill_archive_candidates(days)
+    if not candidates:
+        return 0, notes
+    try:
+        from app.services.harness_self_improve import save_proposal
+    except Exception:
+        logger.debug('skill archive: proposal door unavailable', exc_info=True)
+        return 0, notes
+    pending = _open_skill_proposal_names()
+    filed = 0
+    for cand in candidates[:_SKILL_ARCHIVE_MAX]:
+        name = as_str(cand.get('name'), '')
+        if not name or name in pending:
+            continue
+        try:
+            save_proposal(
+                problem=(
+                    f"Skill '{name}' has been retired and unused for "
+                    f"{days}+ days — archive it?"
+                ),
+                evidence=(
+                    f'{name}: status=retired loads={cand["loads"]} '
+                    f'lastUsed={cand["lastUsed"] or "never"} '
+                    f'lift={cand["lift"]} over {days}d; SKILL.md untouched since '
+                    'the retirement (turn_outcomes.skills_injected)'
+                ),
+                proposal=(
+                    f"Archive '{name}': move its directory out of the skills root "
+                    'into the delete trash. The file, its version history and its '
+                    'counters all survive the move, and the trash restore route '
+                    'puts it back exactly where it was.'
+                ),
+                rollback=(
+                    'Reject the proposal; or, once archived, restore it with '
+                    'POST /api/skills/restore/<trashId> — the approval response '
+                    'names the id.'
+                ),
+                kind='archive',
+                expected_metric='the skill stops being discovered, parsed and listed',
+                payload={
+                    'name': name,
+                    'loads': cand['loads'],
+                    'lift': cand['lift'],
+                    'lastUsed': cand['lastUsed'],
+                    'days': days,
+                },
+                session_id='consolidation',
+            )
+            filed += 1
+            notes.append(f'skill archive proposed — {name}')
+        except Exception:
+            logger.debug('skill archive proposal failed', exc_info=True)
+    return filed, notes
+
+
 def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
     """One consolidation pass. Synchronous; callers wrap it. Never raises."""
     from app.services.memory_store import record_lifecycle, set_internal_state
@@ -1102,7 +1326,7 @@ def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
         notes.extend(superNotes)
         # Propose-only preference retire (non-destructive).
         try:
-            retiredProposed, retireNotes = _retire_stale_preferences()
+            retiredProposed, retireNotes = _retire_stale_memories()
             summary['preferencesProposed'] = retiredProposed
             notes.extend(retireNotes)
         except Exception:
@@ -1130,6 +1354,16 @@ def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
             notes.extend(retireNotes)
         except Exception:
             logger.debug('skill retire pass failed', exc_info=True)
+        # The archive half of the skill lifecycle: a skill that has been
+        # retired and has stayed quiet for its window is proposed for a TRASH
+        # MOVE — reversible through the delete trash's own restore route, but
+        # the decision is still a human's, so this only ever files.
+        try:
+            archiveFiled, archiveNotes = _skill_archive_pass()
+            summary['skillArchiveProposed'] = archiveFiled
+            notes.extend(archiveNotes)
+        except Exception:
+            logger.debug('skill archive pass failed', exc_info=True)
         summary['outcomesSwept'] = sweep_old_outcomes()
         # M-4: episodic_timeline retention sweep (table was unbounded).
         try:

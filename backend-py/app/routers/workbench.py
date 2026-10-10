@@ -362,7 +362,13 @@ async def getSessionByQuery(sessionId: str = ''):
 
 @router.post('/session')
 async def createSessionDirect(request: Request):
-    """Create a new workbench session."""
+    """Create a new workbench session.
+
+    An empty ``workspacePath`` is a supported state, not a stand-in for the OS
+    home directory: a folderless chat has no project, so reads resolve anywhere
+    and writes land in the system temp area (see
+    ``app.services.sandbox.paths.bind_path``).
+    """
     body = await request.json() if request.headers.get('content-type') else {}
     session = wb.createWorkbenchSession(
         provider=body.get('provider', ''),
@@ -373,16 +379,6 @@ async def createSessionDirect(request: Request):
         sandboxNetwork=body.get('sandboxNetwork') if 'sandboxNetwork' in body else body.get('sandbox_network'),
     )
     return session.toDict()
-
-
-@router.get('/default-workspace')
-async def defaultWorkspace():
-    """Default workspace for folderless ("Tasks") sessions.
-
-    The OS user's home directory — the same place a fresh terminal opens.
-    Resolved per host user at request time, never hardcoded.
-    """
-    return {'path': str(Path.home())}
 
 
 @router.delete('/sessions/{sessionId}')
@@ -2356,7 +2352,14 @@ async def _apply_sandbox_body(sessionId: str, body: dict) -> dict[str, object]:
     if 'sandboxNetwork' in body:
         session.sandboxNetwork = bool(body.get('sandboxNetwork'))
     if 'workspacePath' in body or 'workspace_path' in body:
-        session.workspacePath = str(body.get('workspacePath') or body.get('workspace_path') or '')
+        # Assigning the attribute bypasses ``WorkbenchSession.__post_init__``,
+        # so this door has to refuse the OS home too — otherwise binding a
+        # folder from the UI re-anchors a folderless chat at ``~``.
+        from app.services.sandbox.paths import normalize_session_workspace
+
+        session.workspacePath = normalize_session_workspace(
+            body.get('workspacePath') or body.get('workspace_path') or ''
+        )
     if session.sandboxMode == 'danger-full-access':
         session.sandboxNetwork = True
     session.updatedAt = datetime.now(timezone.utc).isoformat()

@@ -1,18 +1,18 @@
 /* ── Combined model + effort menu ─────────────────────────────────────── */
-/* Z.ai-style picker matching the reference screenshot: the model chip     */
-/* opens a narrow provider list whose header block shows the CURRENT       */
-/* provider + model ("Manage models" pinned at the bottom), and hovering   */
-/* a provider slides a SEPARATE flyout card beside the panel with that     */
-/* provider's models — plain rows, pin on hover, check on selected.        */
-/* The effort chip opens a small pane with a vertical effort list (✓ on   */
-/* the active row) + thinking toggle. The models panel carries a search    */
-/* field: typing a model name replaces the provider list with a flat,     */
-/* cross-provider result set, which is the one thing the two-level layout  */
-/* cannot do on its own.                                                  */
+/* Reference-style picker: ONE combined dropdown. Provider names are group
+ * headers, and each provider's models sit directly beneath it — no two-step
+ * provider-then-flyout. The search field filters across every provider at
+ * once (ids use `-`,`_`,`/`,`:` where a person types a space, so both sides
+ * collapse the same way). The effort chip keeps its own small pane.
+ *
+ * The previous layout was a provider list whose hover revealed a SEPARATE
+ * flyout card beside the panel. The reference shows provider-over-model in a
+ * single view, which is both fewer moving parts and the layout the shared
+ * groupModelsByProvider() helper already produces. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight, Gauge, Pin, RefreshCw, Search, X } from 'lucide-react';
+import { Check, ChevronDown, Gauge, Pin, RefreshCw, Search, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -22,7 +22,7 @@ import { providersApi } from '@/api/providers';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import type { ModelItem } from '../model-display';
 import { groupModelsByProvider } from '@/components/model/modelList';
-import { compareModelsRanked, modelDisplayParts } from '../model-display';
+import { modelDisplayParts } from '../model-display';
 import type { EffortLevel } from '../hooks/useChatSend';
 
 const EFFORT_OPTIONS: {
@@ -65,45 +65,29 @@ export function chipModelLabel(model: ModelItem | null): string {
 /** Row label: the catalog's friendly name when it carries one, else the
  *  prettified id with its variant split into a tag (the rule the model lists
  *  and the idle dropdown already use). `m.name` alone is not enough —
- *  `useChatModels` sets `name = name || id`, so it can still be an identifier. */
+ *  `useChatModels` sets `name = name || id`, so it can still be an identifier.
+ *
+ *  The provider prefix is stripped from `tag` when it duplicates the group
+ *  header: "Sonnet 4 5 / anthropic" under an "Anthropic" header says the same
+ *  thing twice. */
 function modelRowLabel(model: ModelItem): { name: string; tag: string } {
   if (model.name && model.name !== model.id) return { name: model.name, tag: '' };
   const parts = modelDisplayParts(model.id || model.name);
-  // `modelDisplayParts` puts the id's provider prefix in `tag`. In this panel the
-  // provider is the group header — or the right-hand column of a search hit — so
-  // "Sonnet 4 5 / anthropic" under "Anthropic" says the same thing twice.
   const tag = parts.tag.toLowerCase() === model.provider.toLowerCase() ? '' : parts.tag;
   return { name: parts.name, tag };
 }
 
-/** Search is separator-agnostic: ids use `-`, `_`, `/` and `:` where a person
- *  types a space, so "claude sonnet" has to reach `anthropic/claude-sonnet-4-5`
- *  and "kimi k3" has to reach `kimi-k3`. Both sides collapse the same way. */
-const searchNormalize = (text: string): string =>
-  text.toLowerCase().replace(/[-_/:]/g, ' ').replace(/\s+/g, ' ').trim();
-
-const searchHaystack = (model: ModelItem): string => {
-  const parts = modelRowLabel(model);
-  return searchNormalize(
-    `${model.id} ${model.name ?? ''} ${model.provider} ${parts.name} ${parts.tag}`,
-  );
-};
-
 type PaneKind = 'models' | 'effort';
-
-type AnchorPos = { top: number; left: number };
 
 /** Composer-anchored panels: positioned by their BOTTOM edge (CSS bottom +
  *  clamped maxHeight) so short lists hug the chip instead of floating far
  *  above it. */
 type PanelPos = { left: number; bottom: number; maxHeight: number };
 
-const MODELS_PANEL_W = 232;
+const MODELS_PANEL_W = 280;
 /** Ideal heights — panels render shorter than these when room is tight. */
-const MODELS_PANEL_H = 420;
+const MODELS_PANEL_H = 440;
 const EFFORT_PANEL_H = 150;
-const FLYOUT_W = 232;
-const FLYOUT_H = 340;
 const EFFORT_PANEL_W = 264;
 
 /** Gap between the panel's bottom edge and the trigger chip. */
@@ -112,18 +96,12 @@ const PANEL_GAP = 8;
 const VIEWPORT_MARGIN = 8;
 /** Never shrink below this — the list scrolls internally instead. */
 const MIN_PANEL_H = 96;
-/** Ceiling on rendered search hits, so a one-letter query cannot mount
- *  hundreds of rows; `search.hidden` tells the user what the cap dropped. */
+/** Ceiling on rendered search hits per provider, so a one-letter query cannot
+ *  mount hundreds of rows; `hidden` tells the user what the cap dropped. */
 const SEARCH_RESULT_CAP = 80;
 
 function clampLeft(left: number, w: number): number {
   return Math.max(8, Math.min(left, window.innerWidth - w - 8));
-}
-
-/** Side flyouts anchor by top edge (they sit BESIDE the panel, not above
- *  the chip), clamped to the viewport. */
-function clampTop(top: number, h: number): number {
-  return Math.max(8, Math.min(top, window.innerHeight - h - 8));
 }
 
 /**
@@ -208,38 +186,40 @@ export function ModelEffortMenu({
   openSignal?: number;
 }) {
   const [pane, setPane] = useState<PaneKind | null>(null);
-  // Provider whose models are revealed in the flyout (hover / tap).
-  const [activeProvider, setActiveProvider] = useState<string | null>(null);
   const [modelsPos, setModelsPos] = useState<PanelPos | null>(null);
-  const [flyoutPos, setFlyoutPos] = useState<AnchorPos | null>(null);
   const [effortPos, setEffortPos] = useState<PanelPos | null>(null);
-  // Model-name search. Non-empty query swaps the provider list for a flat
-  // cross-provider result set — the two-level layout can't reach a model
-  // without the user knowing which provider filed it under.
+  // Model-name search, applied INSIDE groupModelsByProvider so a query filters
+  // the grouped layout rather than replacing it with a separate flat list.
   const [query, setQuery] = useState('');
+  // Which provider groups are collapsed. A click on a provider header folds
+  // its models away (the reference lets you collapse a provider to scan the
+  // rest); clicking again reopens. While searching, collapse is disabled —
+  // filtering already narrows the list, and folding a match out of sight would
+  // fight the query.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const toggleCollapsed = useCallback((provider: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(provider)) next.delete(provider);
+      else next.add(provider);
+      return next;
+    });
+  }, []);
   const searchRef = useRef<HTMLInputElement>(null);
   const modelChipRef = useRef<HTMLButtonElement>(null);
   const effortChipRef = useRef<HTMLButtonElement>(null);
   const modelsPanelRef = useRef<HTMLDivElement>(null);
-  // The effort panel and the models flyout live OUTSIDE modelsPanelRef in the
-  // portal — without their own refs, mousedown on a row inside them would
-  // hit the outside-click handler and close the menu before the click could
-  // land, making options silently fail to switch.
+  // The effort panel lives OUTSIDE modelsPanelRef in the portal — without its
+  // own ref, mousedown on a row inside it would hit the outside-click handler
+  // and close the menu before the click could land.
   const effortPanelRef = useRef<HTMLDivElement>(null);
-  const flyoutRef = useRef<HTMLDivElement>(null);
 
   // ── Keyboard: roving focus through the open panel ──────────────────────
   // Every row here was mouse-only: ArrowDown did nothing and Tab walked out
   // of the menu entirely, which made the highest-frequency picker in the
-  // composer unusable without a pointer. Provider rows already reveal their
-  // models on focus, so moving focus is enough to drive the flyout too.
-  const lastPaneRef = useRef<PaneKind | null>(null);
-
-  // Visibility check is style-based, not layout-based, on purpose. Neither of
-  // the usual shortcuts works here: these panels are fixed-position portals,
-  // so `offsetParent` is null for every row, and jsdom returns an empty
-  // `getClientRects()` for everything, which would make roving focus silently
-  // dead in tests while looking correct in a browser.
+  // composer unusable without a pointer. With provider headers inline, focus
+  // simply walks the painted rows in order — provider header, its models, the
+  // next provider — so there is no second panel to coordinate.
   const isNavigateTarget = (el: HTMLElement): boolean => {
     if (el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return false;
     const style = getComputedStyle(el);
@@ -268,7 +248,6 @@ export function ModelEffortMenu({
     // editing (Home/End to the caret). Without this the roving focus swallowed
     // the key and moved out of the field the user was typing in.
     if ((e.target as HTMLElement).tagName === 'INPUT') return;
-    const inFlyout = e.currentTarget === flyoutRef.current;
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
@@ -286,21 +265,6 @@ export function ModelEffortMenu({
         e.preventDefault();
         focusItem(e.currentTarget, 'last');
         break;
-      case 'ArrowRight':
-        // Provider list → its models. The flyout is already positioned by the
-        // row's focus handler, so focusing it is enough.
-        if (!inFlyout && flyoutRef.current) {
-          e.preventDefault();
-          flyoutRef.current.focus();
-          focusItem(flyoutRef.current, 'first');
-        }
-        break;
-      case 'ArrowLeft':
-        if (inFlyout) {
-          e.preventDefault();
-          modelsPanelRef.current?.focus();
-        }
-        break;
       default:
         break;
     }
@@ -316,15 +280,13 @@ export function ModelEffortMenu({
   useEffect(() => {
     if (pane) {
       hasOpenedRef.current = true;
-      lastPaneRef.current = pane;
       const panel = pane === 'models' ? modelsPanelRef.current : effortPanelRef.current;
       panel?.focus();
       return;
     }
     if (!hasOpenedRef.current) return;
     hasOpenedRef.current = false;
-    const chip = lastPaneRef.current === 'effort' ? effortChipRef.current : modelChipRef.current;
-    lastPaneRef.current = null;
+    const chip = pane === 'effort' ? effortChipRef.current : modelChipRef.current;
     chip?.focus();
   }, [pane, modelsPos, effortPos]);
 
@@ -334,8 +296,6 @@ export function ModelEffortMenu({
 
   const closeAll = useCallback(() => {
     setPane(null);
-    setActiveProvider(null);
-    setFlyoutPos(null);
   }, []);
 
   // Pin/unpin straight from the flyout: resolve the provider entry behind
@@ -388,44 +348,39 @@ export function ModelEffortMenu({
 
   // Provider-grouped catalog, ranked like everywhere else — the shared
   // primitive, so pinning and provider ordering behave identically in this
-  // composer, the settings dropdown and the visibility modal. Insertion order
-  // of the grouping preserves global rank for the provider list, so the
-  // strongest provider floats to the top.
-  const groups = useMemo(() => groupModelsByProvider(visibleModels), [visibleModels]);
-
-  // Which provider's models are shown: explicit hover/tap wins, then the
-  // selected model's provider, then the first group.
-  const effectiveProvider =
-    activeProvider ??
-    groups.find((g) => g.provider === selected?.provider)?.provider ??
-    groups[0]?.provider ??
-    null;
-  const activeGroup = groups.find((g) => g.provider === effectiveProvider) ?? null;
-
+  // composer, the settings dropdown and the visibility modal. The query is
+  // passed INTO the helper, so searching filters the grouped layout (a
+  // provider header disappears only when none of its models match) rather
+  // than flattening it into a separate result list.
+  const groups = useMemo(() => groupModelsByProvider(visibleModels, query), [visibleModels, query]);
   const searching = query.trim().length > 0;
-  // `hidden` is what the cap dropped: a long list cut off without a word looks
-  // like "no other model matches".
-  const search = useMemo(() => {
-    const q = searchNormalize(query);
-    if (!q) return { results: [] as ModelItem[], hidden: 0 };
-    const matched = visibleModels
-      .filter((m) => searchHaystack(m).includes(q))
-      .sort(compareModelsRanked);
-    return {
-      results: matched.slice(0, SEARCH_RESULT_CAP),
-      hidden: Math.max(0, matched.length - SEARCH_RESULT_CAP),
-    };
-  }, [query, visibleModels]);
+  const totalMatches = useMemo(() => groups.reduce((n, g) => n + g.items.length, 0), [groups]);
 
-  // Position the panels once on open (above the chips, like the reference);
-  // reset the flyout whenever the pane closes.
+  // Cap the FLATTENED match count while SEARCHING, so a one-letter query cannot
+  // mount hundreds of rows across every provider. `capped` reports what the cap
+  // held back. Unfiltered (no query) lists are never capped — the full catalog
+  // is the honest default, and the panel scrolls.
+  const cappedGroups = useMemo(() => {
+    if (!searching || totalMatches <= SEARCH_RESULT_CAP) return groups;
+    let remaining = SEARCH_RESULT_CAP;
+    const out: typeof groups = [];
+    for (const g of groups) {
+      if (remaining <= 0) break;
+      const take = g.items.slice(0, remaining);
+      remaining -= take.length;
+      out.push({ ...g, items: take });
+    }
+    return out;
+  }, [groups, searching, totalMatches]);
+  const cappedCount = Math.max(0, totalMatches - SEARCH_RESULT_CAP);
+
+  // Position the panel once on open (above the chip, like the reference).
   useEffect(() => {
     if (!pane) {
       setModelsPos(null);
       setEffortPos(null);
-      setFlyoutPos(null);
-      setActiveProvider(null);
       setQuery('');
+      setCollapsed(new Set());
       return;
     }
     if (pane === 'models') {
@@ -462,7 +417,6 @@ export function ModelEffortMenu({
       if (effortChipRef.current?.contains(target)) return;
       if (modelsPanelRef.current?.contains(target)) return;
       if (effortPanelRef.current?.contains(target)) return;
-      if (flyoutRef.current?.contains(target)) return;
       closeAll();
     };
     document.addEventListener('mousedown', onDown);
@@ -472,44 +426,6 @@ export function ModelEffortMenu({
       document.removeEventListener('keydown', onKey);
     };
   }, [pane, closeAll]);
-
-  // Flyout geometry: beside the models panel, top near the hovered row,
-  // flipping to the left side when the right edge would overflow.
-  const updateFlyoutPos = useCallback((rowEl: HTMLElement) => {
-    const panelRect = modelsPanelRef.current?.getBoundingClientRect();
-    const rowRect = rowEl.getBoundingClientRect();
-    const panelRight = panelRect?.right ?? rowRect.right;
-    const flip = panelRight + FLYOUT_W + 8 > window.innerWidth;
-    setFlyoutPos({
-      top: clampTop(rowRect.top - 6, FLYOUT_H),
-      left: flip
-        ? clampLeft((panelRect?.left ?? rowRect.left) - FLYOUT_W - 8, FLYOUT_W)
-        : clampLeft(panelRight + 8, FLYOUT_W),
-    });
-  }, []);
-
-  // Default flyout: opening the pane immediately reveals the selected
-  // provider's models (the reference screenshot's resting state) — no
-  // hover required. Once the user hovers another row, that wins.
-  useEffect(() => {
-    if (pane !== 'models' || !modelsPos || flyoutPos) return;
-    const rows = modelsPanelRef.current?.querySelectorAll<HTMLButtonElement>('button[data-testid^="provider-row-"]');
-    const wanted = `provider-row-${effectiveProvider ?? ''}`;
-    for (const row of rows ?? []) {
-      if (row.dataset.testid === wanted) {
-        updateFlyoutPos(row);
-        break;
-      }
-    }
-  }, [pane, modelsPos, flyoutPos, effectiveProvider, updateFlyoutPos]);
-
-  const onProviderHover = useCallback(
-    (provider: string) => (e: React.MouseEvent<HTMLButtonElement> | React.FocusEvent<HTMLButtonElement>) => {
-      setActiveProvider(provider);
-      updateFlyoutPos(e.currentTarget);
-    },
-    [updateFlyoutPos],
-  );
 
   const modelRow = (m: ModelItem, showProvider = false) => {
     const isSel = selected?.id === m.id && selected?.provider === m.provider;
@@ -685,7 +601,6 @@ export function ModelEffortMenu({
                       value={query}
                       onChange={(e) => {
                         setQuery(e.target.value);
-                        setFlyoutPos(null);
                       }}
                       onKeyDown={(e) => {
                         // Escape clears the search first — one layer per press.
@@ -719,61 +634,56 @@ export function ModelEffortMenu({
                   data-testid="models-panel-list"
                   className="py-1 overflow-y-auto min-h-0 flex-1 chat-scroll"
                 >
-                  {searching ? (
-                    search.results.length > 0 ? (
-                      <>
-                        {search.results.map((m) => modelRow(m, true))}
-                        {search.hidden > 0 && (
-                          <div className="px-3 py-2 text-2xs text-muted-foreground">
-                            {search.hidden} more match “{query.trim()}” — keep typing to narrow.
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div className="px-3 py-2 text-[0.8125rem] text-muted-foreground">
-                        No model matches “{query.trim()}”.
-                      </div>
-                    )
-                  ) : (
-                    <>
                   {groups.length === 0 && (
                     <div className="px-3 py-2 text-[0.8125rem] text-muted-foreground">
-                      {loading ? 'Loading…' : 'No providers.'}
+                      {loading
+                        ? 'Loading…'
+                        : searching
+                          ? `No model matches “${query.trim()}”.`
+                          : 'No providers.'}
                     </div>
                   )}
-                  {groups.map((g) => {
-                    const isActive = g.provider === effectiveProvider;
+                  {cappedGroups.map((g) => {
                     const isCur = g.provider === selected?.provider;
+                    const isCollapsed = collapsed.has(g.provider);
                     return (
-                      <button
-                        key={`p_${g.provider}`}
-                        type="button"
-                        data-testid={`provider-row-${g.provider}`}
-                        onMouseEnter={onProviderHover(g.provider)}
-                        onFocus={onProviderHover(g.provider)}
-                        onClick={(e) => {
-                          setActiveProvider(g.provider);
-                          updateFlyoutPos(e.currentTarget);
-                        }}
-                        className={cn(
-                          'mx-1.5 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2 rounded-md px-2.5 py-[10px] text-left text-[0.9375rem] transition-colors',
-                          isActive
-                            ? 'bg-muted/60 text-foreground'
-                            : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
-                        )}
-                      >
-                        {isCur && <Check className="size-3 shrink-0 text-primary" />}
-                        <span className="min-w-0 flex-1 truncate">{g.provider}</span>
-                        <ChevronRight
+                      <div key={`g_${g.provider}`} data-testid={`provider-group-${g.provider}`}>
+                        {/* Provider group header — models sit directly beneath,
+                            matching the reference's provider-over-model view.
+                            Clicking the header collapses/expands that provider's
+                            models so a long catalog can be scanned by provider. */}
+                        <button
+                          type="button"
+                          onClick={() => toggleCollapsed(g.provider)}
+                          aria-expanded={!isCollapsed}
+                          aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${g.provider}`}
+                          data-testid={`provider-header-${g.provider}`}
                           className={cn(
-                            'size-3 shrink-0 transition-opacity',
-                            isActive ? 'opacity-90' : 'opacity-30',
+                            'flex w-full items-center gap-2 px-3 pt-2 pb-1 text-left text-2xs font-semibold uppercase tracking-wide transition-colors',
+                            isCur ? 'text-primary' : 'text-muted-foreground/70 hover:text-foreground',
                           )}
-                        />
-                      </button>
+                        >
+                          {isCur && <Check className="size-2.5 shrink-0" />}
+                          <ChevronDown
+                            className={cn(
+                              'size-3 shrink-0 transition-transform',
+                              isCollapsed && '-rotate-90',
+                            )}
+                          />
+                          <span className="min-w-0 flex-1 truncate">{g.provider}</span>
+                          <span className="shrink-0 font-normal tabular-nums text-muted-foreground/50">
+                            {g.items.length}
+                          </span>
+                        </button>
+                        {!isCollapsed && g.items.map((m) => modelRow(m))}
+                      </div>
                     );
                   })}
-                    </>
+                  {cappedCount > 0 && (
+                    <div className="px-3 py-2 text-2xs text-muted-foreground">
+                      Showing the first {SEARCH_RESULT_CAP} of {totalMatches} matches — keep
+                      typing to narrow.
+                    </div>
                   )}
                 </div>
                 {onEditModels && (
@@ -791,24 +701,6 @@ export function ModelEffortMenu({
                       Manage models
                     </button>
                   </>
-                )}
-              </motion.div>
-            )}
-            {modelsOpen && flyoutPos && activeGroup && !searching && (
-              <motion.div
-                key="models-flyout"
-                ref={flyoutRef}
-                {...menuPanel}
-                tabIndex={-1}
-                onKeyDown={onPanelKeyDown}
-                className="fixed z-50 bg-popover border border-border/60 rounded-xl shadow-2xl overflow-y-auto py-1 chat-scroll"
-                style={{ top: flyoutPos.top, left: flyoutPos.left, width: FLYOUT_W, maxHeight: FLYOUT_H }}
-                data-testid="provider-models-flyout"
-              >
-                {activeGroup.items.length > 0 ? (
-                  activeGroup.items.map((m) => modelRow(m))
-                ) : (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">No models.</div>
                 )}
               </motion.div>
             )}

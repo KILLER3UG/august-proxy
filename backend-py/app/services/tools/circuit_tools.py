@@ -99,11 +99,13 @@ CIRCUIT_HINT = (
     'mega there, m means milli. For .tran/.ac decks add '
     '.measure statements (or .control meas blocks) — those numbers come '
     'back parsed as measures; .op also returns every node voltage '
-    'v(node)/source current i(vsrc). To see waveforms, pass '
-    "circuit_simulate a traces list (e.g. ['v(out)', 'i(r1)', "
-    "'vdb(out)']) on .tran/.ac/.dc runs — it returns downsampled "
-    'x/y traces plus a tracesFile you can hand straight to render_chart '
-    '(kind=line) to plot real oscilloscope/Bode data. To sweep a part '
+    'v(node)/source current i(vsrc). A .tran/.ac/.dc run samples the '
+    "deck's own nodes when you name no traces — batch ngspice will not "
+    'run a deck that asks for no output — so waveforms come back without '
+    "extra work. Pass a traces list (e.g. ['v(out)', 'i(r1)', "
+    "'vdb(out)']) to choose the expressions instead; either way you get "
+    'downsampled x/y traces plus a tracesFile you can hand straight to '
+    'render_chart (kind=line) to plot real oscilloscope/Bode data. To sweep a part '
     'value (e.g. "find where the cutoff hits 1 kHz"), pass '
     'circuit_simulate sweep={param, from, to, steps} and reference the '
     'value in the netlist as {param}; per-step measures come back as '
@@ -1217,7 +1219,16 @@ def _alias_op_measures(measures: dict[str, float], deck_text: str) -> None:
 # expression keeps the column layout unambiguous.
 
 _TRACE_MAX = 8        # expressions sampled per run
-_TRACE_POINTS = 2000  # downsample budget per trace
+_TRACE_POINTS = 2000  # downsample budget per trace, in the sidecar file
+# A tool result is capped at MAX_TOOL_RESULT_CHARS on its way into the
+# transcript, and the Circuit panel parses THAT copy: a JSON string cut
+# mid-array does not parse at all, so an over-sized trace set reads as "no
+# simulation yet" — measured, two 2009-point traces serialize to 117 KB and the
+# panel showed nothing. The inline copy is thinned to its own budget; the file
+# keeps the full-fidelity one for render_chart.
+_TRACE_INLINE_BUDGET = 24_000  # characters of JSON the inline traces may spend
+_TRACE_CHARS_PER_POINT = 30    # measured cost of one (x, y) pair, both arrays
+_TRACE_INLINE_MIN_POINTS = 60  # however many traces, never thinner than this
 # Whitelist keeps expressions inside ngspice's vector math — no newlines,
 # no control-language escapes, nothing a deck couldn't already say.
 _TRACE_EXPR_RE = re.compile(r'[A-Za-z0-9_().,+\-*/@%$ ]+')
@@ -1250,6 +1261,47 @@ def _normalize_trace_exprs(traces: object) -> tuple[list[str], list[str]]:
         warnings.append(f'only the first {_TRACE_MAX} trace expressions are sampled')
         exprs = exprs[:_TRACE_MAX]
     return exprs, warnings
+
+
+_NODE_NAME_RE = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
+
+# When the caller names no traces, the deck's own signal nodes are sampled.
+_TRACE_AUTO_MAX = 4
+
+
+def _auto_trace_exprs(deck_text: str) -> list[str]:
+    """``v(node)`` for the deck's signal nodes, in deck order, capped.
+
+    This is not a convenience. ngspice batch mode refuses to run a
+    ``.tran``/``.ac``/``.dc`` deck that asks for no output — "no \".plot\",
+    \".print\", or \".fourier\" lines in batch mode; no simulations run!" — so a
+    plain transient deck exited 1 and produced nothing to surface. Sampling the
+    deck's nodes is what makes an ordinary circuit simulate AND puts the node
+    voltages over time where the user can see them, instead of only in the
+    ngspice log.
+
+    Nodes come from ``_parse_components``, which knows how many nodes each
+    device class carries. ``_deck_node_names`` over-collects on purpose (a
+    MOSFET's model name reads as a node); harmless when aliasing measures, but
+    here it would ask ngspice for vectors that do not exist.
+    """
+    exprs: list[str] = []
+    seen: set[str] = set()
+    for element in _parse_components(deck_text):
+        for raw in element.nodes:
+            name = raw.strip('[]')
+            key = name.lower()
+            if key == '0' or key in seen or not _NODE_NAME_RE.fullmatch(name):
+                continue
+            seen.add(key)
+            exprs.append(f'v({name})')
+    return exprs[:_TRACE_AUTO_MAX]
+
+
+def _inline_point_budget(n_traces: int) -> int:
+    """Points per trace that keep the inline trace set inside its budget."""
+    per_trace = _TRACE_INLINE_BUDGET // max(1, n_traces) // _TRACE_CHARS_PER_POINT
+    return max(_TRACE_INLINE_MIN_POINTS, min(_TRACE_POINTS, per_trace))
 
 
 def _detect_analysis(deck_text: str) -> str:
@@ -1530,9 +1582,13 @@ async def simulate_circuit(
 
     ``traces`` (optional) lists waveform expressions to sample on
     ``.tran/.ac/.dc`` runs — e.g. ``['v(out)', 'i(r1)', 'vdb(out)']``.
+    Left empty on one of those runs, the deck's own signal nodes are
+    sampled instead — batch ngspice refuses to run a deck that asks for
+    no output, so naming nothing used to mean simulating nothing.
     They come back as ``traces: {expr: {x, y, xunit, unit, points}}``
-    downsampled to a rendering budget, plus a ``tracesFile`` JSON in the
-    workspace that ``render_chart`` accepts directly.
+    downsampled to fit the transcript cap, plus a ``tracesFile`` JSON in
+    the workspace at full resolution that ``render_chart`` accepts
+    directly.
 
     ``sweep`` (optional) is ``{param, from, to, steps}`` — the deck is
     re-run once per parameter value (LTspice-.step semantics via an
@@ -1590,6 +1646,8 @@ async def simulate_circuit(
                 'traces need a .tran/.ac/.dc sweep — deck has none; skipped'
             )
             trace_exprs = []
+        if not trace_exprs and analysis in ('tran', 'ac', 'dc'):
+            trace_exprs = _auto_trace_exprs(deck_text)
         wrdata_lines = [f'wrdata tr{i}.dat {e}' for i, e in enumerate(trace_exprs)]
 
         # Parametric sweep setup: rewrite the deck into an alterparam loop.
@@ -1744,7 +1802,7 @@ async def simulate_circuit(
         # Waveform traces: read back the wrdata files from the final run.
         if trace_exprs and exit_code in (0, None):
             xunit = _TRACE_XUNITS.get(analysis) or _dc_sweep_unit(deck_text)
-            traces_out: dict[str, object] = {}
+            sampled: list[tuple[str, list[float], list[float], int, str]] = []
             for i, expr in enumerate(trace_exprs):
                 tf = Path(tmpdir) / f'tr{i}.dat'
                 if not tf.exists():
@@ -1761,21 +1819,39 @@ async def simulate_circuit(
                 xs, ys, is_mag = parsed
                 total = len(xs)
                 xs, ys = _downsample(xs, ys)
-                traces_out[expr] = {
-                    'x': xs,
-                    'y': ys,
-                    'xunit': xunit,
-                    'unit': _trace_y_unit(expr, is_mag),
-                    'points': total,
+                sampled.append((expr, xs, ys, total, _trace_y_unit(expr, is_mag)))
+
+            if sampled:
+                traces_out: dict[str, dict[str, object]] = {
+                    expr: {
+                        'x': xs,
+                        'y': ys,
+                        'xunit': xunit,
+                        'unit': unit,
+                        'points': total,
+                    }
+                    for expr, xs, ys, total, unit in sampled
                 }
-            if traces_out:
-                result['traces'] = traces_out
                 if ws:
                     base = str(name)
                     base = base[: -len('.cir')] if base.endswith('.cir') else base
                     keep_traces = _bind(f'{base}_traces.json', ws, for_write=True)
                     keep_traces.write_text(json.dumps(traces_out), encoding='utf-8')
                     result['tracesFile'] = str(keep_traces)
+                # The panel reads the result copy, so it is thinned to survive
+                # the transcript cap; `points` still reports the run's own size.
+                budget = _inline_point_budget(len(traces_out))
+                inline: dict[str, dict[str, object]] = {}
+                for expr, xs, ys, total, unit in sampled:
+                    ixs, iys = _downsample(xs, ys, budget)
+                    inline[expr] = {
+                        'x': ixs,
+                        'y': iys,
+                        'xunit': xunit,
+                        'unit': unit,
+                        'points': total,
+                    }
+                result['traces'] = inline
         if (
             not measures
             and not errors

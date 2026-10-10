@@ -138,7 +138,6 @@ function ScopeView({ traces }: { traces: Record<string, TraceData> }) {
     return {
       width: 340,
       height: 190,
-      title: 'Transient (scope)',
       cursor: { drag: { x: true, y: false } },
       legend: { live: true },
       scales: { x: { time: false } },
@@ -170,10 +169,6 @@ function ScopeView({ traces }: { traces: Record<string, TraceData> }) {
   return (
     <div className="flex flex-col gap-1" data-testid="circuit-scope">
       <div ref={ref} className="w-full" />
-      <p className="text-2xs leading-relaxed text-muted-foreground/80">
-        Drag horizontally to zoom a time window — legend values follow the
-        cursor for Δ measurements.
-      </p>
     </div>
   );
 }
@@ -212,7 +207,6 @@ function BodeView({ traces }: { traces: Record<string, TraceData> }) {
     return {
       width: 340,
       height: 190,
-      title: 'Bode (magnitude)',
       scales: { x: { time: false } },
       series: [
         {},
@@ -235,8 +229,7 @@ function BodeView({ traces }: { traces: Record<string, TraceData> }) {
   if (!mag) {
     return (
       <p className="px-1 py-4 text-2xs text-muted-foreground/70" data-testid="circuit-bode-empty">
-        No frequency response yet — simulate an .ac deck with a vdb(out) trace
-        (e.g. traces=['vdb(out)']) to see the Bode plot.
+        No frequency response yet — this comes from an .ac sweep.
       </p>
     );
   }
@@ -253,8 +246,7 @@ function MeterView({ rows }: { rows: MeterRow[] }) {
   if (rows.length === 0) {
     return (
       <p className="px-1 py-4 text-2xs text-muted-foreground/70" data-testid="circuit-meter-empty">
-        No operating point yet — simulate with a .op card; every node voltage
-        and source current lands here like a multimeter readout.
+        No operating point yet — this comes from an .op run.
       </p>
     );
   }
@@ -279,22 +271,10 @@ function MeterView({ rows }: { rows: MeterRow[] }) {
 
 type InstrumentKind = 'scope' | 'bode' | 'meter';
 
-const INSTRUMENT_META: Record<InstrumentKind, { label: string; icon: typeof Waves; hint: string }> = {
-  scope: {
-    label: 'Scope',
-    icon: Waves,
-    hint: 'Transient traces from the latest circuit_simulate .tran run.',
-  },
-  bode: {
-    label: 'Bode',
-    icon: Activity,
-    hint: 'Frequency response from .ac traces (vdb or computed dB).',
-  },
-  meter: {
-    label: 'Meter',
-    icon: Gauge,
-    hint: 'Operating-point node voltages and source currents from .op runs.',
-  },
+const INSTRUMENT_META: Record<InstrumentKind, { label: string; icon: typeof Waves }> = {
+  scope: { label: 'Scope', icon: Waves },
+  bode: { label: 'Bode', icon: Activity },
+  meter: { label: 'Meter', icon: Gauge },
 };
 
 /** Newest simulate result that has traces (for Scope/Bode); the Meter uses
@@ -333,7 +313,6 @@ export function CircuitInstruments({ messages }: { messages?: ChatMessage[] | nu
       <div className="flex items-center gap-2">
         <active.icon className="size-3 shrink-0 text-muted-foreground/70" />
         <span className="shrink-0 text-xs font-semibold text-foreground">Instruments</span>
-        <span className="truncate text-2xs text-muted-foreground">{active.hint}</span>
       </div>
 
       {/* Vertical rail — no horizontal pill tabs (design directive). */}
@@ -364,8 +343,7 @@ export function CircuitInstruments({ messages }: { messages?: ChatMessage[] | nu
       <div className="min-h-0 rounded-lg border border-border/40 bg-card/40 p-1.5">
         {sims.length === 0 && (
           <p className="px-1 py-4 text-2xs leading-relaxed text-muted-foreground/70">
-            No simulation yet. Ask August to simulate a deck — its traces and
-            measures feed these instruments automatically.
+            No simulation yet.
           </p>
         )}
         {sims.length > 0 && kind === 'scope' && (
@@ -373,8 +351,7 @@ export function CircuitInstruments({ messages }: { messages?: ChatMessage[] | nu
             <ScopeView traces={scopeReady.traces!} />
           ) : (
             <p className="px-1 py-4 text-2xs text-muted-foreground/70">
-              Latest run had no traces — pass traces=['v(out)', 'i(r1)'] to
-              circuit_simulate for scope data.
+              No waveform in these runs — Meter shows what an .op run reported.
             </p>
           )
         )}

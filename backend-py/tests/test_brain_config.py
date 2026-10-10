@@ -62,9 +62,13 @@ _ALLCamelKeys = {
     'episodicRetentionDays',
     'usageRetentionDays',
     'consolidationModelSummarize',
-    # Propose-only preference-retire pass (toggle + window).
-    'preferenceRetireEnabled',
-    'preferenceRetireDays',
+    # Propose-only memory-retire pass (toggle + the two kind windows).
+    'memoryRetireEnabled',
+    'memoryRetireDays',
+    'profileRetireDays',
+    # Skill-lifecycle archive half: the switch and its quiet window.
+    'skillArchiveEnabled',
+    'skillArchiveDays',
     # M7 titling target override.
     'titleModel',
     # Part 16/17 skill-learning judge mode (off | extract-only | full).

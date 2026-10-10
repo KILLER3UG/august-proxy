@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Check, Copy, History, Pencil, RotateCw } from 'lucide-react';
-import { cn, formatClockTime } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { MessageTimestamp } from '@/components/chat/MessageTimestamp';
 import type { ChatMessage } from '@/types/chat';
 import { Markdown } from '../ChatMarkdown';
 import { ChatAttachmentService } from '../services/ChatAttachmentService';
@@ -116,9 +117,10 @@ export function UserMessageBubble({
           </button>
         )}
         {!editing && message.timestamp && (
-          <span className="bubble-footer-text mr-0.5 font-medium text-muted-foreground/50">
-            {formatClockTime(message.timestamp)}
-          </span>
+          <MessageTimestamp
+            timestamp={message.timestamp}
+            className="bubble-footer-text mr-0.5 font-medium text-muted-foreground/50"
+          />
         )}
         {!editing && editCount > 0 && (
           <div className="relative">

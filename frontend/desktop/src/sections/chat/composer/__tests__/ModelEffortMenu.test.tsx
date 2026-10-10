@@ -58,10 +58,19 @@ function setup(selected: ModelItem | null = MODELS[2], list: ModelItem[] = MODEL
   );
 }
 
-/** The flyout is remounted on every provider hover, so re-query it each time. */
-function flyout(): HTMLElement {
-  const el = document.querySelector('[data-testid="provider-models-flyout"]');
-  if (!el) throw new Error('model flyout is not open');
+/** Provider groups are inline (no flyout), so the whole panel list is the
+ *  scope. Scoped to the list, not the body, so any exiting animation's rows
+ *  don't leak into a count. */
+function panelList(): HTMLElement {
+  const el = document.querySelector('[data-testid="models-panel-list"]');
+  if (!el) throw new Error('models panel list is not open');
+  return el as HTMLElement;
+}
+
+/** A provider's models now sit directly under its header in the same panel. */
+function providerGroup(provider: string): HTMLElement {
+  const el = document.querySelector(`[data-testid="provider-group-${provider}"]`);
+  if (!el) throw new Error(`provider group ${provider} is not present`);
   return el as HTMLElement;
 }
 
@@ -97,24 +106,42 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     expect(long.endsWith('…')).toBe(true);
   });
 
-  it('opens to a provider list; hovering a provider reveals its models in a flyout', () => {
+  it('opens to one grouped dropdown: provider headers with models directly beneath', () => {
     setup();
     openModelsPane();
-    // Providers pane lists both providers…
-    expect(document.querySelector('[data-testid="provider-row-OpenCode Zen"]')).toBeTruthy();
-    expect(document.querySelector('[data-testid="provider-row-KiloCode"]')).toBeTruthy();
-    // …and the default flyout shows the SELECTED provider's models (KiloCode).
-    // Rows carry the catalog's friendly name (variant folded into it, since the
-    // provider supplied the whole label). These asserted the raw ids
-    // (`ox-alpha-free`, `kimi-k3`) until 2026-10-07, which pinned the defect of
-    // listing identifiers right under a header that said "Ox Alpha".
-    expect(within(flyout()).getByText('Ox Alpha')).toBeTruthy();
-    expect(within(flyout()).getByText('Ox Alpha Free')).toBeTruthy();
-    expect(within(flyout()).queryByText('Kimi K3')).toBeNull();
-    // Hover another provider → its models swap in.
-    fireEvent.mouseEnter(document.querySelector('[data-testid="provider-row-OpenCode Zen"]')!);
-    expect(within(flyout()).getByText('Kimi K3')).toBeTruthy();
-    expect(within(flyout()).queryByText(/Ox Alpha/)).toBeNull();
+    // ONE panel, provider as a group header, its models nested under it —
+    // not a provider list with a separate flyout card.
+    expect(document.querySelector('[data-testid="provider-header-OpenCode Zen"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="provider-header-KiloCode"]')).toBeTruthy();
+    // No second flyout panel exists any more.
+    expect(document.querySelector('[data-testid="provider-models-flyout"]')).toBeNull();
+    // Each provider's models are inside its own group.
+    expect(within(providerGroup('KiloCode')).getByText('Ox Alpha')).toBeTruthy();
+    expect(within(providerGroup('KiloCode')).getByText('Ox Alpha Free')).toBeTruthy();
+    // A model from the OTHER provider is not inside this group.
+    expect(within(providerGroup('KiloCode')).queryByText('Kimi K3')).toBeNull();
+    expect(within(providerGroup('OpenCode Zen')).getByText('Kimi K3')).toBeTruthy();
+  });
+
+  it('clicking a provider header collapses its models; clicking again reopens', () => {
+    setup();
+    openModelsPane();
+    const header = document.querySelector('[data-testid="provider-header-KiloCode"]') as HTMLElement;
+    // Expanded by default: the provider's models are on screen.
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    expect(within(providerGroup('KiloCode')).getByText('Ox Alpha')).toBeTruthy();
+
+    // Collapse: models fold away, the header stays (so the provider is still
+    // scannable), and the OTHER provider is untouched.
+    fireEvent.click(header);
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+    expect(within(providerGroup('KiloCode')).queryByText('Ox Alpha')).toBeNull();
+    expect(within(providerGroup('OpenCode Zen')).getByText('Kimi K3')).toBeTruthy();
+
+    // Reopen.
+    fireEvent.click(header);
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    expect(within(providerGroup('KiloCode')).getByText('Ox Alpha')).toBeTruthy();
   });
 
   it('Manage models sits at the bottom of the provider pane', () => {
@@ -177,10 +204,10 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     fireEvent.change(search, { target: { value: 'no-such-model-xyz' } });
     expect(document.body.textContent).toContain('No model matches');
 
-    // Clearing restores the provider list.
+    // Clearing restores the grouped provider list.
     fireEvent.change(search, { target: { value: '' } });
     expect(document.body.textContent).not.toContain('No model matches');
-    expect(document.querySelectorAll('[data-testid^="provider-row-"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-testid^="provider-header-"]').length).toBeGreaterThan(0);
   });
 
   it('also matches the prettified id, so a space-typed query reaches a catalog with no names', () => {
@@ -218,11 +245,14 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     fireEvent.change(search, { target: { value: 'claude sonnet' } });
     const sonnetRow = modelRow('Anthropic', 'anthropic/claude-sonnet-4-5');
     expect(sonnetRow).toBeTruthy();
-    // The provider is the row's own badge in search mode — repeating it as the
-    // id-prefix tag put "Anthropic" under "Anthropic". So exactly ONE element in
-    // this row says the provider, not two.
     expect(sonnetRow!.textContent).toContain('Sonnet 4 5');
-    expect(within(sonnetRow as HTMLElement).getAllByText(/^anthropic$/i)).toHaveLength(1);
+    // The provider is now the GROUP HEADER above the row, so the row itself must
+    // not repeat it as an id-prefix tag — "Anthropic" under an "Anthropic"
+    // header says the same thing twice. Assert the row carries zero provider
+    // text, and the header carries it exactly once.
+    expect(within(sonnetRow as HTMLElement).queryAllByText(/^anthropic$/i)).toHaveLength(0);
+    const header = document.querySelector('[data-testid="provider-header-Anthropic"]');
+    expect(header!.textContent).toMatch(/anthropic/i);
   });
 
   it('renders a colon-tier id as a name plus a tier, never "Laguna S 2.1:Free"', () => {
@@ -259,11 +289,11 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     setup(bulk[0], bulk);
     openModelsPane();
     fireEvent.change(screen.getByPlaceholderText('Search models'), { target: { value: 'bulk' } });
-    // Scoped to the list: the flyout the search replaced is still mid-exit
-    // animation in jsdom, so its rows are on the body but not in this panel.
-    const list = document.querySelector<HTMLElement>('[data-testid="models-panel-list"]')!;
+    const list = panelList();
+    // The cap still mounts only the first 80 rows, and now names the total it
+    // held back — grouped layout, same honesty about what was dropped.
     expect(list.querySelectorAll('[data-testid="model-option"]')).toHaveLength(80);
-    expect(list.textContent).toContain('10 more match');
+    expect(list.textContent).toContain('Showing the first 80 of 90 matches');
   });
 
   it('pins stay available on model rows', () => {
@@ -274,23 +304,22 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     expect(pins.length).toBeGreaterThan(0);
   });
 
-  it('provider list and models flyout scroll internally when tall', () => {
+  it('the grouped panel scrolls internally when tall', () => {
     setup();
     openModelsPane();
     const list = document.querySelector('[data-testid="models-panel-list"]');
     expect(list).toBeTruthy();
     expect(list!.className).toContain('overflow-y-auto');
-    const flyout = document.querySelector('[data-testid="provider-models-flyout"]');
-    expect(flyout).toBeTruthy();
-    expect(flyout!.className).toContain('overflow-y-auto');
+    // No second flyout panel to scroll — the models live inside the one list.
+    expect(document.querySelector('[data-testid="provider-models-flyout"]')).toBeNull();
   });
 
   it('roomy reference rows: 15px text with generous padding', () => {
     setup();
     openModelsPane();
-    const row = document.querySelector('[data-testid="provider-row-KiloCode"]') as HTMLElement;
-    expect(row.className).toContain('py-[10px]');
-    expect(row.className).toContain('text-[0.9375rem]');
+    const row = modelRow('KiloCode', 'ox-alpha') as HTMLElement;
+    expect(row.className).toContain('py-[8px]');
+    expect(row.className).toContain('text-[0.875rem]');
   });
 
   it('effort chip opens the effort pane with the list + thinking switch', () => {
@@ -400,8 +429,8 @@ describe('ModelEffortMenu dropdown anchoring (bottom-edge-hugs-chip)', () => {
     // bottom: 8 gap between panel bottom edge (y=692) and chip top (700);
     // viewport is 768 tall → CSS bottom = 768 − 692 = 76.
     expect(panel.style.bottom).toBe('76px');
-    // Height caps at the ideal size while there is room (700 − 16 > 420).
-    expect(panel.style.maxHeight).toBe('420px');
+    // Height caps at the ideal size while there is room (700 − 16 > 440).
+    expect(panel.style.maxHeight).toBe('440px');
   });
 
   it('short viewport above the chip shrinks the panel instead of overflowing', () => {

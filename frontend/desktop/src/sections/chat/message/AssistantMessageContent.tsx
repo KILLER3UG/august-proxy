@@ -14,7 +14,8 @@ import {
 } from './AssistantBlockTimeline';
 import { Clock } from 'lucide-react';
 import { AssistantMessageActions } from './AssistantMessageActions';
-import { turnEndPhrase, turnEndRemedy } from '@/lib/turn-end';
+import { TurnEndActionRow } from './TurnEndActionRow';
+import { turnEndActions, turnEndPhrase, turnEndRemedy } from '@/lib/turn-end';
 
 type DisplayBlock = MessageBlock;
 
@@ -44,6 +45,8 @@ export function AssistantMessageContent({
   reanswerOpen,
   onCompare,
   onDismissError,
+  onContinue,
+  onEditPrompt,
 }: {
   message: ChatMessage;
   isLast?: boolean;
@@ -82,6 +85,10 @@ export function AssistantMessageContent({
   onCompare?: () => void;
   /** Dismiss the provider-error bubble (removes the error block). */
   onDismissError?: () => void;
+  /** Turn-end "Continue" — resume a stopped turn from where it broke. */
+  onContinue?: () => void;
+  /** Turn-end "Edit prompt" — open the originating user message for editing. */
+  onEditPrompt?: () => void;
 }) {
   return (
     <>
@@ -221,6 +228,27 @@ export function AssistantMessageContent({
                 <div className="opacity-60">
                   turn_end: {message.turnEnd.reason ?? 'no reason recorded'}
                 </div>
+                {/* Recovery controls, hung off the notice itself rather than
+                    making the reader scroll to the composer. Both reference
+                    UIs do this, and a turn that stopped is the one moment the
+                    user most wants a one-click path back in.
+
+                    `error`-flavoured stops whose message already renders an
+                    error block get NOTHING here: the provider bubble owns
+                    retry + switch-model, and a second retry control on the
+                    same message reads as a bug. The check is on the rendered
+                    block, not the reason string, because `turn_end.error` is
+                    broader than `reason === 'error'`. */}
+                <TurnEndActionRow
+                  actions={turnEndActions(
+                    message.turnEnd.reason,
+                    (message.blocks ?? []).some((b) => b.type === 'error'),
+                  )}
+                  streaming={streaming}
+                  onContinue={onContinue}
+                  onRetry={onRegen}
+                  onEditPrompt={onEditPrompt}
+                />
               </div>
             </details>
           </div>

@@ -929,9 +929,9 @@ async def list_memory_proposals(status: str = 'pending'):
 
 @router.post('/memory/proposals/{proposal_id}/decide')
 async def decide_memory_proposal(proposal_id: int, body: ProposalDecideBody):
-    """Approve/reject a memory proposal. For a retire-preference proposal,
-    approving flips the fact's status to 'retired' (reversible — the row
-    survives); rejecting keeps it. See consolidation.apply_retire_decision."""
+    """Approve/reject a memory proposal. For a retirement proposal, approving
+    flips the fact's status to 'retired' (reversible — the row survives);
+    rejecting keeps it. See consolidation.apply_retire_decision."""
     from app.services.memory_store import consolidation
 
     decision = (body.decision or '').strip().lower()

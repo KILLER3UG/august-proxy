@@ -1,0 +1,134 @@
+[
+  {
+    "route": "/",
+    "name": "chat-empty",
+    "leafCount": 136,
+    "buttons": 105,
+    "icons": 90,
+    "inputs": 4,
+    "timestamps": 1,
+    "longCopy": 4,
+    "switches": 0
+  },
+  {
+    "route": "/settings",
+    "name": "settings-general",
+    "leafCount": 89,
+    "buttons": 34,
+    "icons": 34,
+    "inputs": 4,
+    "timestamps": 0,
+    "longCopy": 10,
+    "switches": 4
+  },
+  {
+    "route": "/settings/appearance",
+    "name": "settings-appearance",
+    "leafCount": 94,
+    "buttons": 55,
+    "icons": 38,
+    "inputs": 37,
+    "timestamps": 0,
+    "longCopy": 7,
+    "switches": 0
+  },
+  {
+    "route": "/settings/providers",
+    "name": "settings-providers",
+    "leafCount": 31,
+    "buttons": 25,
+    "icons": 26,
+    "inputs": 1,
+    "timestamps": 0,
+    "longCopy": 1,
+    "switches": 0
+  },
+  {
+    "route": "/settings/memory",
+    "name": "settings-memory",
+    "leafCount": 52,
+    "buttons": 33,
+    "icons": 27,
+    "inputs": 2,
+    "timestamps": 0,
+    "longCopy": 8,
+    "switches": 5
+  },
+  {
+    "route": "/settings/skills",
+    "name": "settings-skills",
+    "leafCount": 67,
+    "buttons": 43,
+    "icons": 32,
+    "inputs": 12,
+    "timestamps": 0,
+    "longCopy": 8,
+    "switches": 0
+  },
+  {
+    "route": "/automations",
+    "name": "automations",
+    "leafCount": 130,
+    "buttons": 98,
+    "icons": 79,
+    "inputs": 2,
+    "timestamps": 1,
+    "longCopy": 3,
+    "switches": 0
+  },
+  {
+    "route": "/board",
+    "name": "board",
+    "leafCount": 152,
+    "buttons": 99,
+    "icons": 82,
+    "inputs": 6,
+    "timestamps": 1,
+    "longCopy": 5,
+    "switches": 0
+  },
+  {
+    "route": "/runs",
+    "name": "runs",
+    "leafCount": 633,
+    "buttons": 162,
+    "icons": 257,
+    "inputs": 2,
+    "timestamps": 32,
+    "longCopy": 3,
+    "switches": 0
+  },
+  {
+    "route": "/history",
+    "name": "history",
+    "leafCount": 324,
+    "buttons": 175,
+    "icons": 157,
+    "inputs": 3,
+    "timestamps": 1,
+    "longCopy": 3,
+    "switches": 0
+  },
+  {
+    "route": "/learning",
+    "name": "learning",
+    "leafCount": 141,
+    "buttons": 105,
+    "icons": 83,
+    "inputs": 3,
+    "timestamps": 1,
+    "longCopy": 5,
+    "switches": 0
+  },
+  {
+    "route": "/live",
+    "name": "live",
+    "leafCount": 132,
+    "buttons": 102,
+    "icons": 82,
+    "inputs": 2,
+    "timestamps": 1,
+    "longCopy": 2,
+    "switches": 0
+  }
+]

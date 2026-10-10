@@ -31,6 +31,7 @@ import { api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { QueryErrorState } from '@/components/QueryErrorState';
+import { SettingsTabs } from '@/components/settings/SettingsTabs';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
 import { LearningPanel } from '@/sections/settings/LearningPanel';
 import { SkillPacksPanel } from '@/sections/settings/SkillPacksPanel';
@@ -372,7 +373,21 @@ export function SkillsSection() {
   // Bulk selection for enable/disable (a dozen one-at-a-time switches is
   // how nobody curates a catalogue).
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const allVisible = useMemo(() => Object.values(grouped).flat().map((s) => s.name), [grouped]);
+  // Scope pill filter. `null` = All, which preserves the previous behaviour
+  // of listing every scope in its own section.
+  const [scopeTab, setScopeTab] = useState<SkillScopeKey | 'all'>('all');
+  // Derived from the FILTERED set, never from `grouped` wholesale: under a
+  // scope tab, select-all must pick only what is on screen. Deriving it from
+  // all groups silently enables/disables skills the user cannot see — the
+  // one bulk action whose blast radius is invisible while it happens.
+  const allVisible = useMemo(
+    () =>
+      (scopeTab === 'all'
+        ? Object.values(grouped).flat()
+        : (grouped[scopeTab] ?? [])
+      ).map((s) => s.name),
+    [grouped, scopeTab],
+  );
   const togglePicked = (name: string) =>
     setPicked((prev) => {
       const next = new Set(prev);
@@ -625,32 +640,67 @@ export function SkillsSection() {
                   </div>
                 )}
               </div>
-              {SKILL_SCOPE_GROUPS.map(({ key, label, note }) => {
-                const group = grouped[key];
-                if (group.length === 0) return null;
+              {/* Scope pills (Claude-style), not per-scope sections. The
+                  component auto-flips to a vertical rail at 5+ items, so
+                  orientation is pinned: four scopes plus "All" would silently
+                  become a left rail. */}
+              <SettingsTabs
+                value={scopeTab}
+                onChange={(k) => setScopeTab(k as SkillScopeKey | 'all')}
+                orientation="horizontal"
+                label="Skill scope"
+                items={[
+                  { key: 'all', label: 'All', count: skills.length },
+                  ...SKILL_SCOPE_GROUPS.map(({ key, label }) => ({
+                    key,
+                    label,
+                    count: grouped[key]?.length ?? 0,
+                  })),
+                ]}
+              />
+              {(() => {
+                const shown =
+                  scopeTab === 'all'
+                    ? SKILL_SCOPE_GROUPS.filter((g) => (grouped[g.key]?.length ?? 0) > 0)
+                    : SKILL_SCOPE_GROUPS.filter((g) => g.key === scopeTab);
+                const note = SKILL_SCOPE_GROUPS.find((g) => g.key === scopeTab)?.note;
                 return (
-                  <section key={key} data-testid={`skill-group-${key}`}>
-                    <h3 className="flex items-baseline gap-2 pb-0.5 text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55">
-                      {label}
-                      <span className="text-2xs font-normal normal-case tracking-normal text-muted-foreground/60">
-                        {group.length}
-                      </span>
-                    </h3>
-                    {note && <p className="pb-1 text-2xs text-muted-foreground/70">{note}</p>}
-                    <div className="divide-y divide-white/[0.06]">
-                      {group.map((s) => (
-                        <SkillRow
-                          key={s.name}
-                          skill={s}
-                          selected={picked.has(s.name)}
-                          onToggleSelect={() => togglePicked(s.name)}
-                          onOpen={() => openDetail(s.name)}
-                        />
-                      ))}
-                    </div>
-                  </section>
+                  <>
+                    {scopeTab !== 'all' && note && (
+                      <p className="text-2xs text-muted-foreground/70">{note}</p>
+                    )}
+                    {shown.map(({ key, label }) => {
+                      const group = grouped[key] ?? [];
+                      return (
+                        <section key={key} data-testid={`skill-group-${key}`}>
+                          {scopeTab === 'all' && (
+                            <h3 className="flex items-baseline gap-2 pb-0.5 text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55">
+                              {label}
+                              <span className="text-2xs font-normal normal-case tracking-normal text-muted-foreground/60">
+                                {group.length}
+                              </span>
+                            </h3>
+                          )}
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {group.map((s) => (
+                              <SkillCard
+                                key={s.name}
+                                skill={s}
+                                selected={picked.has(s.name)}
+                                onToggleSelect={() => togglePicked(s.name)}
+                                onOpen={() => openDetail(s.name)}
+                                onToggleEnabled={() =>
+                                  void toggleEnabled(s.name, s.enabled !== false)
+                                }
+                              />
+                            ))}
+                          </div>
+                        </section>
+                      );
+                    })}
+                  </>
                 );
-              })}
+              })()}
             </div>
           )}
         </div>
@@ -1041,66 +1091,121 @@ function skillScopeKey(s: SkillSummary): SkillScopeKey {
       : 'bundled';
 }
 
-/* One line per skill: name, what it does, and the two facts that say whether it
- * is live and whether anyone uses it. The whole row opens the detail pane. */
-function SkillRow({
+/* One card per skill in the 2-column grid: name, what it does, and the two
+ * facts that say whether it is live and whether anyone uses it. The card
+ * opens the detail pane; the enable control is a REAL toggle that calls the
+ * existing patch endpoint, not a status glyph — the whole point of a catalogue
+ * is being able to curate it from the grid.
+ *
+ * The enable control keeps visible "Disabled" text so the state is never
+ * colour-only. The bulk checkbox stays a separate element outside the open
+ * target so checking a box does not also navigate to the detail pane. */
+function SkillCard({
   skill,
   onOpen,
+  onToggleEnabled,
   selected = false,
   onToggleSelect,
 }: {
   skill: SkillSummary;
   onOpen: () => void;
+  onToggleEnabled: () => void;
   selected?: boolean;
   onToggleSelect?: () => void;
 }) {
+  const enabled = skill.enabled !== false;
   return (
-    <div className="flex w-full items-center gap-2 transition hover:bg-white/[0.03]">
-      <input
-        type="checkbox"
-        checked={selected}
-        onChange={onToggleSelect}
-        aria-label={`Select ${skill.name}`}
-        data-testid={`skill-select-${skill.name}`}
-        className="ml-1 size-3 shrink-0 accent-[var(--dt-primary)]"
-      />
-      <button
-      type="button"
-      onClick={onOpen}
+    <div
+      // The testid is on the OUTERMOST card element so everything the row
+      // says about a skill — name, badges, usage chip, enable control — is
+      // inside it. Putting it on the inner button leaves the usage footer a
+      // sibling, and `within(row).getByTestId('skill-usage-badge')` then finds
+      // nothing even though the badge is on screen.
+      //
+      // The card itself is the open target, as the row was before: clicking
+      // anywhere on it except the checkbox or the enable toggle opens detail.
+      // Those two stopPropagation so a bulk check or a flip does not also
+      // navigate away from the grid.
       data-testid={`skill-row-${skill.name}`}
-      className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
-    >
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5">
-          <span className="truncate text-[0.8125rem] font-medium text-foreground/90">{skill.name}</span>
-          {skill.enabled === false && (
-            <span className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1 py-0.5 text-2xs uppercase tracking-wide text-warning-fg">
-              disabled
-            </span>
-          )}
-          {skill.overrides && (
-            <span
-              className="shrink-0 rounded border border-sky-500/30 bg-sky-500/10 px-1 py-0.5 text-2xs uppercase tracking-wide text-sky-400"
-              data-testid="skill-row-overrides"
-            >
-              overrides {skill.overrides}
-            </span>
-          )}
-        </span>
-        <span className="mt-0.5 block truncate text-[0.71875rem] text-muted-foreground/75">
-          {skill.description || 'No description'}
-        </span>
-      </span>
-      {skill.createdBy && (
-        <span className="shrink-0 text-2xs uppercase tracking-wide text-muted-foreground/50">
-          {skill.createdBy}
-        </span>
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className={cn(
+        'flex cursor-pointer flex-col gap-1.5 rounded-lg border p-2.5 text-left transition hover:bg-white/[0.03]',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+        enabled ? 'border-white/[0.06]' : 'border-warning/20 bg-warning/[0.03]',
       )}
-      <UsageChip skill={skill} />
-      </button>
+    >
+      <div className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Select ${skill.name}`}
+          data-testid={`skill-select-${skill.name}`}
+          className="mt-1 size-3 shrink-0 accent-[var(--dt-primary)]"
+        />
+        <div className="min-w-0 flex-1 text-left">
+          <span className="flex flex-wrap items-center gap-1.5">
+            <span className="truncate text-[0.8125rem] font-medium text-foreground/90">
+              {skill.name}
+            </span>
+            {!enabled && (
+              <span className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1 py-0.5 text-2xs uppercase tracking-wide text-warning-fg">
+                Disabled
+              </span>
+            )}
+            {skill.overrides && (
+              <span
+                className="shrink-0 rounded border border-sky-500/30 bg-sky-500/10 px-1 py-0.5 text-2xs uppercase tracking-wide text-sky-400"
+                data-testid="skill-row-overrides"
+              >
+                overrides {skill.overrides}
+              </span>
+            )}
+          </span>
+          <span className="mt-0.5 line-clamp-2 block text-[0.71875rem] text-muted-foreground/75">
+            {skill.description || 'No description'}
+          </span>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleEnabled();
+          }}
+          aria-pressed={!enabled}
+          aria-label={`${enabled ? 'Disable' : 'Enable'} ${skill.name}`}
+          data-testid={`skill-toggle-${skill.name}`}
+          className={cn(
+            'shrink-0',
+            enabled
+              ? 'border-white/[0.08] text-muted-foreground/70'
+              : 'border-warning/30 text-warning-fg',
+          )}
+        >
+          {enabled ? 'On' : 'Off'}
+        </Button>
+      </div>
+      <div className="flex items-center justify-between pl-5 text-2xs text-muted-foreground/50">
+        {skill.createdBy && (
+          <span className="uppercase tracking-wide">{skill.createdBy}</span>
+        )}
+        <UsageChip skill={skill} />
+      </div>
     </div>
   );
 }
+
 
 function FormField({
   label,

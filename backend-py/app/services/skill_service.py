@@ -98,6 +98,19 @@ _NAMEMax = 64
 SKILL_STATUSES: tuple[str, ...] = ('draft', 'active', 'superseded', 'retired')
 SKILL_STATUS_DEFAULT = 'active'
 
+# Lifecycle-end labels: a skill carrying one of these is no longer OFFERED.
+# `catalogue()` is the single door every prompt surface reads — the Tier-1
+# `<capabilities>` name index, `<intake>`, the per-turn `<relevant_skills>`
+# block and the subagent preload — so filtering here is what stops a retired
+# skill from being injected into turns nobody asked for it in. It is a
+# withdrawal of the OFFER, not of the skill: `list_all` and `get` (and
+# therefore `GET /api/skills`, the version routes, the skill tools and the
+# approve path that would un-retire it) still see the entry, and an explicit
+# `load_skill` still loads it and records the use — which is exactly what
+# keeps a retired-but-still-wanted skill from ever looking stale.
+# `draft` is deliberately absent: it is an authoring flag, not a lifecycle end.
+SKILL_CATALOGUE_HIDDEN_STATUSES = frozenset({'retired'})
+
 
 def skill_status(meta_or_text: object) -> str:
     """Normalize a raw ``status:`` value to the vocabulary above.
@@ -519,6 +532,12 @@ def catalogue(
     need a second predicate. Sorted by name for stable prompt output;
     ``created_by`` labels evolving/agent-authored skills.
 
+    Lifecycle: a ``retired`` skill is filtered OUT of this list but stays
+    in ``list_all`` (see :data:`SKILL_CATALOGUE_HIDDEN_STATUSES`) —
+    retiring it is what stops the per-turn offer, and archiving it is what
+    removes the file. Two doors, so a mis-retire costs one frontmatter edit
+    rather than a restore.
+
     Latency pass 0.16.8: results are memoized against the skill roots'
     mtimes (a cold build parses ~84 SKILL.md files ≈ 0.5s and this used to
     run on MANY turns via the Tier-3 relevance pass). Any create/patch/
@@ -548,6 +567,9 @@ def catalogue(
     for s in list_all(workspace, agent_id):
         if not s.get('enabled'):
             continue
+        status = skill_status(s.get('status'))
+        if status in SKILL_CATALOGUE_HIDDEN_STATUSES:
+            continue
         name = as_str(s['name'], '')
         scope = as_str(s.get('scope'), '')
         shadowed = ''
@@ -567,7 +589,7 @@ def catalogue(
             # named HERE as well as in the parse — a key missing from this
             # dict is silently absent from the catalogue, and the catalogue is
             # what the per-turn relevance pass scores.
-            'status': skill_status(s.get('status')),
+            'status': status,
             'keywords': s.get('keywords', []),
         }
         if shadowed:

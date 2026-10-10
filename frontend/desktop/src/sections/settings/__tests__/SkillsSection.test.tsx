@@ -181,8 +181,12 @@ describe('SkillsSection — scope selector + rows', () => {
     expect(within(learned).getByTestId('skill-row-circuit-helper')).toBeInTheDocument();
     expect(within(learned).getByTestId('skill-row-legacy-flow')).toBeInTheDocument();
     expect(within(project).getByTestId('skill-row-overrides')).toHaveTextContent('overrides agent');
-    // A disabled skill says so on its row rather than just vanishing.
-    expect(within(learned).getByTestId('skill-row-legacy-flow')).toHaveTextContent('disabled');
+    // A disabled skill says so on its row rather than just vanishing. The
+    // label is Title Case in the grid (it reads as a state, not a lowercase
+    // tag), so match on the name case-insensitively.
+    expect(within(learned).getByTestId('skill-row-legacy-flow')).toHaveTextContent(
+      /disabled/i,
+    );
   });
 
   it('list fetch passes workspace once a scope is selected (C-1)', async () => {
@@ -385,6 +389,69 @@ describe('SkillsSection — lineage and the learning loop', () => {
       const facts = screen.getByTestId('skill-facts');
       expect(facts.textContent).not.toContain('awaiting your decision');
       expect(within(facts).queryByTestId('skill-open-inbox')).toBeNull();
+    });
+  });
+});
+
+/* ── Scope pills + bulk selection under a filter ─────────────────────────────
+ * The catalogue moved from per-scope sections to a scope pill filter over one
+ * grid. Two things had to survive that move and neither is covered above:
+ *
+ *   1. Select-all must pick only what the pill is showing. It used to derive
+ *      from every group at once, so picking all under the "Project" pill also
+ *      enabled/disabled every agent and bundled skill — a bulk action whose
+ *      blast radius is invisible while it happens.
+ *   2. The enable control must actually call the endpoint. It was a status
+ *      glyph, which is why curating a catalogue meant opening every skill.
+ */
+describe('SkillsSection — scope pills', () => {
+  it('renders one pill per scope plus All, with per-scope counts', () => {
+    renderSection();
+    const tablist = screen.getByRole('tablist', { name: /skill scope/i });
+    expect(within(tablist).getByRole('tab', { name: /^All/ })).toBeInTheDocument();
+    expect(within(tablist).getByRole('tab', { name: /project/i })).toBeInTheDocument();
+    expect(within(tablist).getByRole('tab', { name: /global/i })).toBeInTheDocument();
+    // Counts ride the pills so filtering does not lose the totals.
+    expect(within(tablist).getByRole('tab', { name: /project/i }).textContent).toContain('1');
+  });
+
+  it('stays one horizontal row rather than becoming a vertical rail', () => {
+    // SettingsTabs auto-flips to a rail at 5+ items, which would turn the
+    // catalogue into a left-hand sidebar the caller never asked for. Assert on
+    // the layout the caller pinned, not on an aria attribute: the horizontal
+    // branch does not emit aria-orientation at all.
+    renderSection();
+    const tablist = screen.getByRole('tablist', { name: /skill scope/i });
+    expect(tablist.className).toContain('inline-flex');
+    expect(tablist.className).not.toContain('flex-col');
+    // A rail is 11rem wide and wraps nothing; pills scroll instead.
+    expect(tablist.className).toContain('overflow-x-auto');
+  });
+
+  it('filters the grid to the chosen scope', () => {
+    renderSection();
+    fireEvent.click(screen.getByRole('tab', { name: /project/i }));
+    expect(screen.getByTestId('skill-row-quartus-flow')).toBeInTheDocument();
+    // An agent-scoped skill is filtered out, not merely ungrouped.
+    expect(screen.queryByTestId('skill-row-circuit-helper')).toBeNull();
+  });
+
+  it('select-all under a scope pill picks only the shown rows', () => {
+    renderSection();
+    fireEvent.click(screen.getByRole('tab', { name: /project/i }));
+    fireEvent.click(screen.getByTestId('skills-select-all'));
+    // Only the project skill is selected; the agent/bundled ones are untouched.
+    expect(screen.getByTestId('skill-select-quartus-flow')).toBeChecked();
+    expect(screen.queryByTestId('skill-select-circuit-helper')).toBeNull();
+  });
+
+  it('the enable control calls the patch endpoint', async () => {
+    renderSection();
+    fireEvent.click(screen.getByTestId('skill-toggle-circuit-helper'));
+    await waitFor(() => {
+      const patches = (api.patch as ReturnType<typeof vi.fn>).mock.calls;
+      expect(patches.length).toBeGreaterThan(0);
+      expect(String(patches[0][0])).toContain('circuit-helper');
     });
   });
 });

@@ -9,17 +9,7 @@ import { Search, MessageSquare, Plus, Trash2, History } from 'lucide-react';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { deleteSession, useSessionsStore, type Session } from '@/store/sessions';
-
-function dayKey(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return 'Unknown';
-  const today = new Date();
-  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diffDays = Math.round((startOf(today) - startOf(d)) / 86_400_000);
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
-  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
-}
+import { groupByDate } from '@/lib/date-group';
 
 export function HistoryPage() {
   const sessions = useSessionsStore((s) => s.sessions);
@@ -58,14 +48,7 @@ export function HistoryPage() {
     const sorted = [...filtered].sort((a, b) =>
       String(b.startedAt || '').localeCompare(String(a.startedAt || '')),
     );
-    const map = new Map<string, Session[]>();
-    for (const s of sorted) {
-      const key = dayKey(s.startedAt);
-      const bucket = map.get(key);
-      if (bucket) bucket.push(s);
-      else map.set(key, [s]);
-    }
-    return [...map.entries()];
+    return groupByDate(sorted, (s) => s.startedAt);
   }, [filtered]);
 
   return (
@@ -102,13 +85,13 @@ export function HistoryPage() {
           No conversations match “{query}”.
         </div>
       ) : (
-        groups.map(([day, items]) => (
-          <section key={day}>
+        groups.map((g) => (
+          <section key={g.label}>
             <h2 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">
-              {day} · {items.length}
+              {g.label} · {g.items.length}
             </h2>
             <ul className="space-y-1">
-              {items.map((s) => (
+              {g.items.map((s) => (
                 <li key={s.id}>
                   <div className="group flex items-center gap-3 rounded-lg border border-border/50 bg-card/50 px-3 py-2 transition hover:border-primary/30 hover:bg-card">
                     <button

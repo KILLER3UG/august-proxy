@@ -593,22 +593,13 @@ export function RightDrawerSubagentsSection({
     const startedMs = selectedBlock?.startedAt
       ? (selectedBlock.startedAt > 1e12 ? selectedBlock.startedAt : selectedBlock.startedAt * 1000)
       : undefined;
-    // Only the SETTLED branch needs a number here; the running branch is
-    // rendered by <LiveElapsed>, which owns the clock.
-    const elapsedSec = !running && selectedBlock?.finishedAt && startedMs
-      ? (selectedBlock.finishedAt - startedMs) / 1000
-      : !running && typeof selectedAgent.elapsed === 'number'
-        ? selectedAgent.elapsed
-        : undefined;
 
     const headerLabel =
       running && startedMs != null ? (
         <>
           Working for <LiveElapsed startedMs={startedMs} fmt={fmtElapsed} />
         </>
-      ) : elapsedSec != null
-        ? `Worked for ${fmtElapsed(elapsedSec)}`
-        : statusWord(selectedAgent.status);
+      ) : statusWord(selectedAgent.status);
 
     return (
       <div className="flex h-full min-h-0 flex-col drawer-section-text">
@@ -718,7 +709,7 @@ export function RightDrawerSubagentsSection({
       <div className="min-h-0 flex-1 overflow-y-auto">
       {visibleEntries.length === 0 ? (
         <p className="px-4 py-6 text-center text-[0.8125rem] text-muted-foreground/60">
-          No subagents yet. Delegate a task and it will show up here like a second conversation.
+          No subagents yet.
         </p>
       ) : (
         <div className="px-1.5 py-1.5">

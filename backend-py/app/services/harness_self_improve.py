@@ -7,7 +7,9 @@ promotes via ``decide_proposal`` (POST /api/harness/proposals/{id}/decide),
 or that the deterministic applier executes after approval.
 
 Authority boundary (deliberate):
-  * approvable kinds   -> brain_config patches, skill create/patch/delete
+  * approvable kinds   -> brain_config patches, skill create/patch/delete,
+                           and the two lifecycle steps (retire = frontmatter
+                           label, archive = a trash move)
                           (written straight into the agent skills dir)
   * observation kinds  -> tool_bucket / tool_description / flow_map /
                           observation — recorded for a human PR, never applied
@@ -42,8 +44,12 @@ from app.services.review_gate import resolve_independent_reviewer
 # writes `status: retired` into the skill's frontmatter and leaves the file,
 # its version history and its counters in place. It is approvable — and only
 # approvable — because the scheduled passes can only ever file it.
+# `archive` is the second half of that lifecycle: the removal. It is a MOVE
+# of the whole directory into the delete trash, so the undo is the trash's own
+# restore route (`POST /api/skills/restore/{trashId}`) rather than a second
+# applier. Same rule as `retire`: human approval only, never automatic.
 APPROVABLE_KINDS = frozenset(
-    {'brain_config', 'skill_create', 'skill_patch', 'skill_delete', 'retire'}
+    {'brain_config', 'skill_create', 'skill_patch', 'skill_delete', 'retire', 'archive'}
 )
 # Analysis-only kinds — always safe to store, never auto-applied.
 OBSERVATION_KINDS = frozenset({'tool_bucket', 'tool_description', 'flow_map', 'observation'})
@@ -833,6 +839,74 @@ def _apply_skill_retire(row: dict[str, Any]) -> dict[str, Any]:
         return {'ok': False, 'error': str(exc)}
 
 
+def _apply_skill_archive(row: dict[str, Any]) -> dict[str, Any]:
+    """``archive`` — MOVE the skill directory into the delete trash.
+
+    The end of the lifecycle: ``retire`` is the label, this is the removal.
+    The label half is deliberately weak (the file and its counters stay, and
+    an approved patch un-retires), so a skill that stays retired and unused
+    needs a second, stronger step — and that step must still be undoable,
+    because "it has been dead for two months" and "I will never want this
+    again" are different statements.
+
+    Three refusals, which together are what makes this an honest applier
+    rather than a delete with extra steps:
+
+    * the name is not in the AGENT skills root. The trash manifest restores
+      to the agent root, so a bundled or project-scoped name has nowhere to
+      come back to — proposing it earlier is refused, and approving one
+      anyway fails here rather than mis-filing it.
+    * the skill is not currently ``retired``. Archive is the SECOND step of
+      the chain; an active skill is not reachable by it, so a proposal that
+      outlived its own evidence (the skill was edited and re-activated
+      meanwhile) fails instead of removing live work.
+    * anything at all goes wrong while moving — :func:`_trashDir` is the same
+      call ``deleteSkill`` makes, and it either moves the directory or raises.
+
+    It is never an rmtree: ``_trashDir`` records the original name, scope and
+    restore target in a manifest, so ``POST /api/skills/restore/{trashId}``
+    — the existing undo for a delete — puts the directory (SKILL.md, version
+    history, usage counters) back where it was. The returned ``trashId`` is
+    what that URL takes, and what the inbox renders its Restore button from.
+    """
+    payload = as_dict(row.get('payload'))
+    name = as_str(payload.get('name'), '').strip()
+    if not name:
+        return {'ok': False, 'error': 'archive proposals need payload.name'}
+    try:
+        from app.services.skill_service import (
+            _agentSkillDir,
+            _agentSkillsDir,
+            _bust_prompt_skills_cache,
+            _parseSkill,
+            _trashDir,
+            _validateName,
+            skill_status,
+        )
+
+        _validateName(name)
+        agent_dir = _agentSkillDir(name)
+        if not (agent_dir / 'SKILL.md').is_file():
+            return {'ok': False, 'error': f'skill {name!r} not found in agent skills'}
+        parsed = _parseSkill(agent_dir / 'SKILL.md')
+        if parsed is None:
+            return {'ok': False, 'error': f"skill {name!r} has no readable SKILL.md"}
+        current = skill_status(parsed.get('status'))
+        if current != 'retired':
+            return {
+                'ok': False,
+                'error': (
+                    f'skill {name!r} is {current!r}, not retired — the retire '
+                    'proposal comes first, and a live skill is not archivable'
+                ),
+            }
+        trashId, _entry = _trashDir(agent_dir, name, scope='agent', restore_to=_agentSkillsDir())
+        _bust_prompt_skills_cache()
+        return {'ok': True, 'action': 'archived', 'name': name, 'trashId': trashId}
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc)}
+
+
 def _apply_promote(row: dict[str, Any]) -> dict[str, Any]:
     # Copy-on-write promotion (global fact or global
     # skill with provenance) — the deterministic applier lives in
@@ -853,6 +927,7 @@ _APPROVERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     'skill_patch': _apply_skill_write,
     'skill_delete': _apply_skill_delete,
     'retire': _apply_skill_retire,
+    'archive': _apply_skill_archive,
     'promote': _apply_promote,
 }
 

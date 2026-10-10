@@ -559,6 +559,72 @@ def test_traces_skipped_without_sweep_analysis():
     _assert_close(result, 'v(mid)', 5.0, 1e-3)
 
 
+# No .control card and no traces named. Batch ngspice answers this deck
+# "no ".plot", ".print", or ".fourier" lines in batch mode; no simulations
+# run!" and exits 1 — so an ordinary transient simulation used to produce
+# nothing at all, which is what the Circuit panel then showed as empty.
+_RC_PLAIN = """* golden: RC step, nothing asked for
+V1 in 0 PULSE(0 5 0 1n 1n 10m 20m)
+R1 in out 1k
+C1 out 0 1u
+.tran 10u 12m
+.end
+"""
+
+_CMOS_INVERTER = """* golden: transistor-level inverter
+VDD vdd 0 dc 5
+VIN in 0 dc 0 pulse(0 5 1u 1n 1n 5u 10u)
+MM1 out in vdd vdd nmos W=4u L=1u
+MM2 out in 0 0 pmos W=8u L=1u
+.model nmos nmos level=1 vto=1
+.model pmos pmos level=1 vto=-1
+.tran 0.1u 20u
+.end
+"""
+
+
+def test_tran_deck_that_asks_for_nothing_still_runs_and_curves():
+    result = asyncio.run(circuit_tools.simulate_circuit(_RC_PLAIN, name='golden_auto_tr'))
+    assert result.get('exitCode') == 0, result.get('logTail')
+    traces = result.get('traces')
+    assert isinstance(traces, dict), f'no auto-sampled traces: {result.get("traceWarnings")}'
+    assert set(traces) == {'v(in)', 'v(out)'}
+    # Ground is a reference, not a signal to plot.
+    assert 'v(0)' not in traces
+    out = traces['v(out)']
+    assert out['xunit'] == 's' and out['unit'] == 'V'
+    # The physics survives August choosing the vectors: the cap charges to the
+    # rail the source reaches.
+    assert max(out['y']) == pytest.approx(5.0, rel=5e-2)
+    assert max(traces['v(in)']['y']) == pytest.approx(5.0, rel=1e-3)
+
+
+def test_auto_traces_never_ask_ngspice_for_a_model_name():
+    """`_deck_node_names` over-collects on purpose — here a MOSFET's model name
+    reads as a node, and `v(nmos)` is a vector that does not exist."""
+    exprs = circuit_tools._auto_trace_exprs(_CMOS_INVERTER)
+    assert set(exprs) == {'v(vdd)', 'v(in)', 'v(out)'}
+
+
+def test_inline_traces_stay_inside_the_transcript_cap():
+    """The panel parses the stored copy of the tool result. A JSON string cut at
+    the cap does not parse at all, so an over-sized trace set reads to the user
+    as "no simulation yet" — two 2009-point traces measured 117 KB."""
+    import json
+
+    from app.services.workbench.loop.surface import MAX_TOOL_RESULT_CHARS
+
+    widest = circuit_tools._inline_point_budget(circuit_tools._TRACE_MAX)
+    assert (
+        widest
+        * circuit_tools._TRACE_MAX
+        * circuit_tools._TRACE_CHARS_PER_POINT
+        <= MAX_TOOL_RESULT_CHARS
+    )
+    result = asyncio.run(circuit_tools.simulate_circuit(_RC_PLAIN, name='golden_cap'))
+    assert len(json.dumps(result)) < MAX_TOOL_RESULT_CHARS
+
+
 # ── Parametric sweeps (P1.2) ──────────────────────────────────────────────
 
 _RC_STEP_PARAM = """* golden: RC step with sweepable R

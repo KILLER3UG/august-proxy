@@ -5,6 +5,21 @@
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx-js-style';
 
+/*
+ * The pdf.js worker is a MODULE worker that must be served as a real asset
+ * from the app's own origin. `publicDir: false` (vite.config.ts) rules out a
+ * public/ folder, so `?url` is the only correct mechanism: Vite emits the
+ * worker as a hashed asset and resolves `workerUrl` to a same-origin path.
+ *
+ * The previous CDN `workerSrc` (`https://unpkg.com/pdfjs-dist@…`) broke the
+ * moment the machine was offline or on a locked-down network: `getDocument`
+ * rejected and readFile() swallowed it as `{ type: 'unsupported' }`, so PDF
+ * attachments silently became unreadable with nothing to explain why. `?url`
+ * also pins the worker to the installed pdfjs-dist, removing the version
+ * skew the template literal hid.
+ */
+import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
 // ── Limits ──────────────────────────────────────────────────────────────────
 const TEXT_MAX_CHARS = 100_000;   // 100 KB of extracted text
 const IMAGE_MAX_SIZE = 10 * 1024 * 1024; // 10 MB for images
@@ -156,8 +171,10 @@ async function extractPdfText(
   // Dynamic import so the heavy pdf.js library is only loaded when needed
   const pdfjsLib = await import('pdfjs-dist');
 
-  // Set the worker source to a CDN to avoid bundling issues
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+  // Set the worker source to the bundled, same-origin worker asset so PDF
+  // reading works with no network at all. The URL comes from a Vite `?url`
+  // import (see the note at the top of this file) rather than a CDN string.
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
   const arrayBuffer = await readFileAsArrayBuffer(file, onProgress);
   onProgress?.(75);

@@ -56,3 +56,52 @@ export async function revealInFolder(path: string): Promise<void> {
     await open(path);
   }
 }
+
+/**
+ * Open the OS folder picker and return the chosen folder, or null if the user
+ * cancelled. Backed by the existing `select_directory` Rust command, which
+ * runs the picker FROM Rust via the dialog plugin — so no JS dialog ACL
+ * (no `dialog:allow-save` capability) is needed, exactly like
+ * reveal_in_folder / read_file_base64 before it. Returns null off-desktop.
+ */
+export async function selectDirectory(): Promise<string | null> {
+  if (!isTauri) return null;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke<string | null>('select_directory', {});
+  } catch (err) {
+    console.warn('[tauri-shell] select_directory failed:', err);
+    return null;
+  }
+}
+
+/** What the bulk copy reports back. camelCase — matches the Rust CopyReport. */
+export interface CopyReport {
+  copied: number;
+  failed: number;
+  skipped: number;
+  collisions: string[];
+}
+
+/**
+ * Copy a batch of files into `destDir`, flat (no subdirectories). Off-desktop
+ * there is no folder picker or FS write, so this returns null and the caller
+ * falls back to sequential anchor downloads (the documented non-desktop path).
+ *
+ * A basename already present in the destination is SKIPPED, not overwritten —
+ * the report carries the collisions so the UI can say so rather than claim a
+ * count that silently clobbered files.
+ */
+export async function copyFilesToDir(
+  destDir: string,
+  paths: string[],
+): Promise<CopyReport | null> {
+  if (!isTauri) return null;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke<CopyReport>('copy_files_to_dir', { destDir, paths });
+  } catch (err) {
+    console.warn('[tauri-shell] copy_files_to_dir failed:', err);
+    return null;
+  }
+}

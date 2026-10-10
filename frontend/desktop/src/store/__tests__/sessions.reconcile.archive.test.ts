@@ -9,6 +9,7 @@ rule that nothing else about a row is taken from the server. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   $sessions,
+  createFolder,
   createSession,
   reconcileSessionsFromBackend,
   updateSessionWorkbenchMetadata,
@@ -72,7 +73,10 @@ describe('archive hydration', () => {
   });
 
   it('takes the flag and nothing else — id, title and path stay local', async () => {
-    const local = createSession(null, 'My own title', 'C:/Dev/keep-me');
+    // Filed in a project folder: a folder group is a deliberate local choice,
+    // so the local row wins over whatever the backend carries.
+    const folder = createFolder('Repo');
+    const local = createSession(folder.id, 'My own title', 'C:/Dev/keep-me');
     updateSessionWorkbenchMetadata(local.id, { workbenchSessionId: 'wb_4' });
     backendRow({
       id: 'wb_4',
@@ -91,5 +95,36 @@ describe('archive hydration', () => {
     expect(merged?.title).toBe('My own title');
     expect(merged?.workspacePath).toBe('C:/Dev/keep-me');
     expect(merged?.isArchived).toBe(true);
+  });
+});
+
+describe('a folderless chat takes its workspace from the backend', () => {
+  it('retires a stale home path the old default wrote into the local row', async () => {
+    // Rows on live installs still carry C:/Users/<name> from the folderless
+    // default. The backend refuses home now, so reading it here is what clears
+    // the label without a migration touching anyone's store.
+    const local = createSession(null, 'Task chat', 'C:/Users/rober');
+    updateSessionWorkbenchMetadata(local.id, { workbenchSessionId: 'wb_5' });
+    backendRow({ id: 'wb_5', title: 'Task chat', provider: 'p', messageCount: 3 });
+
+    await reconcileSessionsFromBackend();
+
+    expect(row(local.id)?.workspacePath).toBeNull();
+  });
+
+  it('gives an unfiled row the directory its turns actually run in', async () => {
+    const local = createSession(null, 'Automation chat', null);
+    updateSessionWorkbenchMetadata(local.id, { workbenchSessionId: 'wb_6' });
+    backendRow({
+      id: 'wb_6',
+      title: 'Automation chat',
+      provider: 'p',
+      messageCount: 3,
+      workspacePath: 'C:/Dev/elsewhere',
+    });
+
+    await reconcileSessionsFromBackend();
+
+    expect(row(local.id)?.workspacePath).toBe('C:/Dev/elsewhere');
   });
 });

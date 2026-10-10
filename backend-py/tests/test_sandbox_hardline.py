@@ -126,3 +126,96 @@ def test_reader_plain_uses_still_allowed():
     assert check_hardline_command("awk '{print $1}' .env") is None
     assert check_hardline_command('find . -name .env -print') is None
     assert check_hardline_command('grep KEY .env') is None
+
+
+# ── 2026-10-10 — the two stores the name list missed ─────────────────────────
+# Found by listing what a real install actually keeps rather than by reading the
+# pattern: this install's Google Workspace store holds four per-account token
+# files, an `oauth_states.json` and `pkce<account>.json` verifiers, all of them
+# INSIDE `credentials/` — which the file-anchored `credentials$` pattern matched
+# none of. August's own `{dataDir}/config.json` separately holds
+# `serviceConnections.github.token` and a Google `accessToken`.
+
+_STORE = 'C:/Users/rober/.google_workspace_mcp'
+
+
+def test_files_inside_a_credential_store_are_blocked():
+    """`credentials$` anchored the read rule on the FILE named `credentials`, so
+    every file INSIDE a `credentials/` store read straight through — which is the
+    shape a per-account token store actually has."""
+    stored = f'{_STORE}/credentials/robertacepayales69@gmail.com.json'
+    assert check_hardline_path(stored, for_write=False) is not None
+    assert check_hardline_path(stored, for_write=True) is not None
+    assert check_hardline_command(f'cat {stored}') is not None
+
+
+def test_oauth_state_and_verifier_files_are_blocked():
+    """The state/verifier material of the exchange, not just the finished
+    tokens. The live install keeps these under `credentials/`; both shapes are
+    asserted because the rule is the directory, so it must not depend on which
+    one a future version of that store uses."""
+    for rel in ('credentials/oauth_states.json', 'credentials/pkce@gmail.com.json',
+                'oauth_states.json', 'pkce@gmail.com.json'):
+        assert check_hardline_path(f'{_STORE}/{rel}', for_write=False) is not None
+    assert check_hardline_command('cat ~/.google_workspace_mcp/credentials/oauth_states.json') is not None
+
+
+def test_other_known_token_stores_are_blocked():
+    """Same class, different tool: an SSO cache token is not a file named
+    `credentials`, and a Docker `config.json` is secret-bearing only because of
+    the directory it lives in."""
+    assert check_hardline_path('/home/u/.aws/sso/cache/6f2a1b.json', for_write=False) is not None
+    assert check_hardline_path('C:/Users/u/.docker/config.json', for_write=False) is not None
+    assert check_hardline_path('/home/u/.kube/config', for_write=False) is not None
+    assert check_hardline_command('cat ~/.docker/config.json') is not None
+
+
+def test_august_own_config_json_blocked(isolatedData):
+    """`{dataDir}/config.json` now carries live OAuth tokens."""
+    cfg = isolatedData / 'config.json'
+    assert check_hardline_path(str(cfg), for_write=False) is not None
+    assert check_hardline_path(str(cfg), for_write=True) is not None
+
+
+def test_ordinary_config_json_stays_readable():
+    """The refusal must be the DIRECTORY, never the filename — `config.json` is
+    one of the commonest names in any project, and a model told it cannot read
+    one reports the file as missing."""
+    assert check_hardline_path('/proj/nginx/config.json', for_write=False) is None
+    assert check_hardline_path('/proj/apps/desktop/config.json', for_write=True) is None
+    assert check_hardline_command('cat config.json') is None
+    assert check_hardline_command('cat ./src/config.json') is None
+
+
+def test_source_named_credentials_is_not_a_token_store():
+    """A project module directory called `credentials` is not a token store, so
+    the new store rule must not read-refuse it. The store list is dot-anchored
+    for exactly that reason.
+
+    Writing there is still refused — but by the pre-existing `_PROTECTED_WRITE_
+    PATTERN` component anchor (see the comment at hardline.py:35), which is a
+    deliberate line, not something this rule added. The asymmetry is asserted
+    rather than smoothed over so the next reader sees both halves.
+    """
+    source = '/proj/src/credentials/login.tsx'
+    assert check_hardline_path(source, for_write=False) is None
+    assert check_hardline_command(f'cat {source}') is None
+    assert check_hardline_path(source, for_write=True) is not None
+    assert check_hardline_path('/proj/docs/credentials.md', for_write=True) is None
+
+
+def test_stores_are_not_listable():
+    from app.services.sandbox.hardline import is_credential_directory
+
+    assert is_credential_directory(_STORE) is True
+    assert is_credential_directory(f'{_STORE}/credentials') is True
+    assert is_credential_directory('C:/Users/rober/.docker') is True
+    # …while an ordinary project folder keeps its file tree.
+    assert is_credential_directory('/proj/src/credentials') is False
+
+
+def test_public_ssh_members_stay_readable():
+    """Control for the deliberate `.ssh` decision — the store rule must not
+    swallow the one public member (`authorized_keys`) that stays readable."""
+    assert check_hardline_command('head -5 ~/.ssh/authorized_keys') is None
+    assert check_hardline_path('C:/Users/rober/.ssh/config', for_write=False) is None

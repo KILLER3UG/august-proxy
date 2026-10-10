@@ -11,6 +11,7 @@ import { motion } from 'framer-motion';
 import { messagePop, userMessagePop } from '@/lib/motion';
 import { ScrollToTopButton } from '@/components/chat/ScrollToTopButton';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
+import { MessageTimestampTicker } from '@/components/chat/MessageTimestamp';
 import { MessageBubble } from './MessageBubble';
 import { InThreadSearch } from './InThreadSearch';
 import { ChangesPill } from '@/components/chat/git/ChangesPill';
@@ -39,6 +40,9 @@ export function ChatThreadMessagePane({
   onRevert,
   onEdit,
   onRegenerate,
+  onContinue,
+  onEditPrompt,
+  editPromptSignal,
   onFork,
   onClarifyAnswer,
   footerSlot,
@@ -73,6 +77,19 @@ export function ChatThreadMessagePane({
   onRevert: (index: number) => void;
   onEdit: (index: number, text: string) => void;
   onRegenerate: (index: number) => void | Promise<void>;
+  /** Turn-end "Continue" — resume the stopped turn, keeping partial work. */
+  onContinue: () => void | Promise<void>;
+  /** Turn-end "Edit prompt" — open the originating user row's editor.
+   *  Owned by ChatThread because it must walk the message list to find the
+   *  user turn this assistant message answered. */
+  onEditPrompt: (assistantIndex: number) => void;
+  /**
+   * Externally-triggered "open this user message for editing". Bumped by the
+   * turn-end "Edit prompt" action; the user row `useEffect`s it into
+   * `startEdit()`. A counter rather than a boolean so pressing it twice on the
+   * same message re-opens the editor both times.
+   */
+  editPromptSignal?: { index: number; nonce: number } | null;
   onFork: (index: number) => void;
   onClarifyAnswer: (msgId: string, answer: string) => void;
   /** Composer or plan banner under the list. */
@@ -137,6 +154,16 @@ export function ChatThreadMessagePane({
   const [searchQuery, setSearchQuery] = useState('');
   const [matchedIndices, setMatchedIndices] = useState<number[]>([]);
 
+  // Newest timestamp in the thread. Drives the shared age ticker, which can
+  // stop once every row has aged past the relative-time window.
+  const newestTimestamp = useMemo(() => {
+    let newest = '';
+    for (const m of messages) {
+      if (m.timestamp && m.timestamp > newest) newest = m.timestamp;
+    }
+    return newest || null;
+  }, [messages]);
+
   const handleSearch = useCallback(
     (query: string): number => {
       setSearchQuery(query);
@@ -184,6 +211,7 @@ export function ChatThreadMessagePane({
   }, []);
 
   return (
+    <MessageTimestampTicker newestTimestamp={newestTimestamp}>
     <div className="august-message-pane flex-1 flex flex-col min-h-0 relative">
       <InThreadSearch
         messageCount={messages.length}
@@ -245,6 +273,17 @@ export function ChatThreadMessagePane({
                   onRegenerate={() => {
                     void onRegenerate(realIndex);
                   }}
+                  onContinue={() => {
+                    void onContinue();
+                  }}
+                  onEditPrompt={() => {
+                    onEditPrompt(realIndex);
+                  }}
+                  editPromptSignal={
+                    editPromptSignal && editPromptSignal.index === realIndex
+                      ? editPromptSignal
+                      : null
+                  }
                   onFork={() => onFork(realIndex)}
                   onClarifyAnswer={(ans) => onClarifyAnswer(m.id, ans)}
                   toolProgress={toolProgress}
@@ -311,5 +350,6 @@ export function ChatThreadMessagePane({
         {footerSlot}
       </div>
     </div>
+    </MessageTimestampTicker>
   );
 }

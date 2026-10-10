@@ -307,24 +307,37 @@ words in description). See `skill_service` validation helpers.
 
 ### Curator retired a skill I need
 
-There is no `.archive/` directory and no archive-restore route — curation lifecycle is
-a **`SKILL.md` frontmatter flag** (draft / active / superseded / retired; `stale` and `archived` are
-rejected by `setStatus` — see `skill_service.SKILL_STATUSES`), and
-the old `POST /api/curator/restore/{name}` / `/pin/{name}` routes never survived
-the curator rewrite.
+Retirement is a **`SKILL.md` frontmatter flag** (draft / active / superseded /
+retired; `stale` and `archived` are rejected by `setStatus` — see
+`skill_service.SKILL_STATUSES`). Nothing is relocated and nothing is deleted
+by it, and there is no `POST /api/curator/restore/{name}` / `/pin/{name}` —
+those routes never survived the curator rewrite.
 
-Do not confuse this with `POST /api/skills/{name}/versions/{ts}/restore`, which
-does exist: it puts one retained `SKILL.md` snapshot back. That undoes a content
-change; it does not un-retire a skill, because retirement is a frontmatter flag
-and the snapshot it would restore carries that flag with it.
+To bring a retired one back, fix the frontmatter. `PATCH /api/skills/{name}`
+flips `disabled` and rewrites `body` / `description` / `trigger` / `category`,
+but it does **not** accept a `status` field — so the status line is corrected
+by editing the skill file. Beware: `_apply_approved` rewrites frontmatter
+**wholesale**, so any approved patch that does not restate `status`,
+`trigger`, `supersedes`, `origin` and `learned_from` drops them. Losing
+`trigger` silently retires the skill from per-turn relevance matching — and
+an un-retired skill that is still missing `trigger` will not come back into
+`<relevant_skills>` even though its status is `active` again.
 
-To bring one back, fix the frontmatter. `PATCH /api/skills/{name}` flips
-`disabled` and rewrites `body` / `description` / `trigger` / `category`, but it
-does **not** accept a `status` field — so the status line is corrected by editing
-the skill file. Beware: `_apply_approved` rewrites frontmatter **wholesale**, so
-any approved patch that does not restate `status`, `trigger`, `supersedes`,
-`origin` and `learned_from` drops them. Losing `trigger` silently retires the
-skill from per-turn relevance matching.
+Do not confuse either with `POST /api/skills/{name}/versions/{ts}/restore`,
+which does exist: it puts one retained `SKILL.md` snapshot back. That undoes a
+content change; it does not un-retire a skill, because retirement is a
+frontmatter flag and the snapshot it would restore carries that flag with it.
+
+### Curator archived a skill I need
+
+Archiving is the second lifecycle step and it is a **move**, not a delete: the
+directory leaves `<dataDir>/skills/` for `<dataDir>/.trash/skills/<trashId>/`
+(the same 24h trash a delete uses), with its version history and usage
+counters inside it. `POST /api/skills/restore/{trashId}` moves it back to the
+agent skills root — still carrying `status: retired`, so fix the frontmatter
+afterwards as above. The approval response to the `archive` proposal names the
+`trashId`; after the 24h window the entry is pruned and the copy is gone, so
+act on the toast rather than waiting.
 
 For a curator *proposal* (rather than a lifecycle flag), rollback is
 `POST /api/curator/refine/{entry_id}/rollback`.

@@ -59,7 +59,8 @@ describe('RightDrawer section chooser (ZCode "Open tab")', () => {
     const chooser = document.querySelector('[data-testid="drawer-section-chooser"]');
     expect(chooser).toBeTruthy();
     expect(screen.getByText('Open tab')).toBeTruthy();
-    expect(screen.getByText('Choose a tab to open in the side pane.')).toBeTruthy();
+    // The heading plus the card grid say it once; no helper sentence repeats it.
+    expect(screen.queryByText('Choose a tab to open in the side pane.')).toBeNull();
     // Card grid offers the workbench sections…
     for (const label of ['Terminal (bottom)', 'Diffs', 'Notepad', 'Artifacts']) {
       expect(screen.getByText(label)).toBeTruthy();
@@ -273,7 +274,7 @@ describe('RightDrawer tab-strip header (Zed-style)', () => {
     const chooser = document.querySelector('[data-testid="drawer-section-chooser"]');
     expect(chooser).toBeTruthy();
     expect(screen.getByText('Open tab')).toBeTruthy();
-    expect(screen.getByText('Choose a tab to open in the side pane.')).toBeTruthy();
+    expect(screen.queryByText('Choose a tab to open in the side pane.')).toBeNull();
     // …offers closed sections as cards…
     expect(screen.getByText('Notepad')).toBeTruthy();
     // Picking one opens it as a tab and leaves the chooser.

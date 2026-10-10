@@ -56,7 +56,8 @@ boolKeys: tuple[str, ...] = (
     'subagentWorktreeIsolation',
     'cameraAccess',
     'consolidationModelSummarize',
-    'preferenceRetireEnabled',
+    'memoryRetireEnabled',
+    'skillArchiveEnabled',
     'skillAutonomy',
     'skillAutonomyShadow',
     'projectMemory',
@@ -85,7 +86,9 @@ numKeys: tuple[str, ...] = (
     'autoApplyPerDay',
     'autonomyBurnInCount',
     'episodicRetentionDays',
-    'preferenceRetireDays',
+    'memoryRetireDays',
+    'profileRetireDays',
+    'skillArchiveDays',
     'subagentMaxConcurrent',
     'subagentMaxIterations',
     'subagentMaxDepth',
@@ -239,13 +242,33 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # Keep a generous default and let operators shorten it for long-lived
     # installs; the consolidation pass owns the sweep.
     ('usageRetentionDays', 'usage_retention_days', 365, 'num'),
-    # OQ5 (Part 21, 2026-09-04): preference-retire propose-only pass. A
-    # preference fact untouched for this many days AND never quoted
-    # (use_count 0) is proposed for retirement (non-destructive — a human
-    # decides via the proposal). Default on, 180 d harmonizes with the 30 d
-    # usage-decay half-life / 90 d episodic / 30 d automation-run windows.
-    ('preferenceRetireEnabled', 'preference_retire_enabled', True, 'bool'),
-    ('preferenceRetireDays', 'preference_retire_days', 180, 'num'),
+    # OQ5 (Part 21, 2026-09-04), widened 2026-10-10: propose-only retirement for
+    # durable memories of ANY kind. A fact untouched for its window AND never
+    # quoted (use_count 0) is proposed for retirement — the scan flips nothing,
+    # a human decides, so it rides the scheduled pass safely.
+    #
+    # The scan used to filter `kind = 'preference'`, which left `profile` — the
+    # lane injected into EVERY turn regardless of the auto-inject gate —
+    # permanently unretirable. Thirteen stale test fixtures were still costing
+    # ~1.8 KB per turn two weeks after being written. `profile` gets its own,
+    # tighter window because its cost is paid every turn, not on a match.
+    # 180 d harmonizes with the 30 d usage-decay half-life / 90 d episodic /
+    # 30 d automation-run windows.
+    ('memoryRetireEnabled', 'memory_retire_enabled', True, 'bool'),
+    ('memoryRetireDays', 'memory_retire_days', 180, 'num'),
+    ('profileRetireDays', 'profile_retire_days', 45, 'num'),
+    # The archive half of the skill lifecycle (2026-10-10). A skill that has
+    # been RETIRED and has stayed quiet — no usage inside the window AND no
+    # write to its SKILL.md since — is proposed for a trash MOVE, reversible
+    # through the delete trash's own restore route. Propose-only, so it rides
+    # the consolidation job like the retire pass above it rides it; the switch
+    # is here because the two windows answer different questions and an
+    # operator who wants the label without the move can have exactly that.
+    # 60 d sits beyond the 30 d retire window on purpose: retiring is the
+    # first answer to "nobody wants this", and archiving is the answer to
+    # "nobody has wanted it since".
+    ('skillArchiveEnabled', 'skill_archive_enabled', True, 'bool'),
+    ('skillArchiveDays', 'skill_archive_days', 60, 'num'),
     # M7 item 3: optional cheap model for session titling. Empty string =
     # fall back to the turn's own model (existing behavior).
     ('titleModel', 'title_model', '', 'str'),

@@ -184,3 +184,49 @@ class TestTheFileListerUsesTheSameGate:
         resp = await client.get('/api/workspace/files', params={'path': str(good)})
         assert resp.status_code == 200, resp.text
         assert 'readme.md' in resp.text
+
+
+class TestFolderlessSessionReadsTheMachine:
+    """A chat with no folder bound reads MORE of the machine than one anchored
+    at the home directory, so the old default did the opposite of what it looked
+    like: `workspacePath = ~` contained every path under it, which is a gate,
+    not a starting point. Home is therefore refused as a workspace."""
+
+    def test_the_home_directory_is_refused_as_a_workspace(self):
+        from pathlib import Path
+
+        from app.services.sandbox.paths import normalize_session_workspace
+
+        assert normalize_session_workspace(str(Path.home())) == ''
+        assert normalize_session_workspace('~') == ''
+        assert normalize_session_workspace('   ') == ''
+        # A real project under home is a choice, not the default.
+        assert normalize_session_workspace(str(Path.home() / 'project')) == str(
+            Path.home() / 'project'
+        )
+
+    def test_a_session_constructed_at_home_loads_as_folderless(self):
+        from pathlib import Path
+
+        from app.services.workbench.sessions import WorkbenchSession
+
+        session = WorkbenchSession(id='wb_x', workspacePath=str(Path.home()))
+        assert session.toDict()['workspacePath'] == ''
+
+    def test_binding_home_blocks_reads_that_no_folder_allows(self, tmp_path, _set_security):
+        """The consequence, measured rather than argued: the same read outside
+        the bound directory is refused with a workspace and permitted without
+        one. A stand-in home keeps this off the real one — on Windows the
+        genuine home contains the whole temp tree, which would prove nothing."""
+        _set_security('allowlist', [])
+        home = tmp_path / 'home'
+        home.mkdir()
+        elsewhere = tmp_path / 'elsewhere'
+        elsewhere.mkdir()
+        note = elsewhere / 'notes.txt'
+        note.write_text('hello', encoding='utf-8')
+
+        assert bind_path(str(note), str(home))[0] is None
+        path, err = bind_path(str(note), None)
+        assert err is None
+        assert path == note.resolve()

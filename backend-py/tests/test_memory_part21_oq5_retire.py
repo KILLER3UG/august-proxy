@@ -1,10 +1,14 @@
-"""Part 21 OQ5 (2026-09-04) — propose-only preference retire + OQ1 retire.
+"""Part 21 OQ5 (2026-09-04) — propose-only retire + OQ1 retire.
 
-OQ5: a ``preference`` fact untouched for ``preferenceRetireDays`` (default
-180) AND never quoted (use_count 0) is PROPOSED for retirement — the scan
+OQ5: a durable memory of ANY kind untouched for its window (``memoryRetireDays``
+default 180, ``profileRetireDays`` default 45 for the always-injected profile
+lane) AND never quoted (use_count 0) is PROPOSED for retirement — the scan
 flips nothing; a human decides via ``apply_retire_decision`` (approve →
 status 'retired', reversible; reject → stays). Non-destructive by
 construction so it rides the scheduled consolidation pass.
+
+The scan covered only ``kind = 'preference'`` until 2026-10-10, which made a
+stale profile row permanent — see ``test_every_kind_is_now_a_candidate``.
 
 OQ1: auto_memories is retired (migration 033) — the privacy summary/export
 and the memory UI no longer surface it.
@@ -42,7 +46,7 @@ class TestPreferenceRetire:
 
         store.save_fact('user:oldpref', {'fact': 'prefers serif fonts'}, kind='preference', title='Serif')
         _backdate('user:oldpref', 200)
-        proposed, notes = consolidation._retire_stale_preferences()
+        proposed, notes = consolidation._retire_stale_memories()
         assert proposed == 1
         assert any('Serif' in n for n in notes)
         # The fact is UNTOUCHED — propose-only, non-destructive.
@@ -59,7 +63,7 @@ class TestPreferenceRetire:
 
         store.save_fact('user:fresh', {'fact': 'prefers dark mode'}, kind='preference', title='Dark')
         _backdate('user:fresh', 30)
-        proposed, _ = consolidation._retire_stale_preferences()
+        proposed, _ = consolidation._retire_stale_memories()
         assert proposed == 0
 
     def test_quoted_preference_not_proposed(self, store):
@@ -68,24 +72,55 @@ class TestPreferenceRetire:
         store.save_fact('user:used', {'fact': 'prefers metric units'}, kind='preference', title='Metric')
         _backdate('user:used', 400)
         touch_fact_usage(['user:used'])  # use_count > 0 → never-quoted fails
-        proposed, _ = consolidation._retire_stale_preferences()
+        proposed, _ = consolidation._retire_stale_memories()
         assert proposed == 0
 
-    def test_non_preference_kind_ignored(self, store):
+    def test_every_kind_is_now_a_candidate(self, store):
+        """Widened 2026-10-10. The scan used to filter ``kind = 'preference'``,
+        so a stale ``profile`` / ``lesson`` / ``fact`` row could never even be
+        proposed — and ``profile`` is the lane injected into EVERY turn
+        regardless of the auto-inject gate. Measured on a live install: four
+        stale kinds, 200 days old, never quoted, and exactly ONE was proposed."""
+        import json
+
+        from app.services.memory_conn import conn
         from app.services.memory_store import consolidation
 
-        store.save_fact('proj:stale', {'fact': 'an old project fact'}, kind='fact', title='OldFact')
-        _backdate('proj:stale', 400)
-        proposed, _ = consolidation._retire_stale_preferences()
-        assert proposed == 0
+        for key, kind in (('p:stale', 'profile'), ('l:stale', 'lesson'), ('f:stale', 'fact')):
+            store.save_fact(
+                key, {'fact': f'a durable {kind} statement about the user'}, kind=kind, title=f'{kind} title'
+            )
+            _backdate(key, 200)
+
+        proposed, notes = consolidation._retire_stale_memories()
+        assert proposed == 3, notes
+        rows = conn().execute(
+            "SELECT content FROM proposals WHERE proposal_type = 'retire-fact'"
+        ).fetchall()
+        kinds = sorted(json.loads(r['content'])['kind'] for r in rows)
+        assert kinds == ['fact', 'lesson', 'profile']
+
+    def test_the_always_in_lane_uses_the_tighter_window(self, store):
+        """45 days for ``profile`` against 180 for a preference: a stale profile
+        line is paid for on every turn, not only when something matches it."""
+        from app.services.memory_store import consolidation
+
+        store.save_fact('p:mid', {'fact': 'an older profile statement about the user'}, kind='profile', title='Mid')
+        store.save_fact('u:mid', {'fact': 'prefers serif fonts in documents'}, kind='preference', title='MidPref')
+        _backdate('p:mid', 60)
+        _backdate('u:mid', 60)
+
+        proposed, notes = consolidation._retire_stale_memories()
+        assert proposed == 1, notes
+        assert any('Mid' in n for n in notes)
 
     def test_dedupe_no_double_proposal(self, store):
         from app.services.memory_store import consolidation
 
         store.save_fact('user:dup', {'fact': 'prefers tabs'}, kind='preference', title='Tabs')
         _backdate('user:dup', 300)
-        first, _ = consolidation._retire_stale_preferences()
-        second, _ = consolidation._retire_stale_preferences()
+        first, _ = consolidation._retire_stale_memories()
+        second, _ = consolidation._retire_stale_memories()
         assert first == 1
         assert second == 0  # already has an open proposal
 
@@ -95,10 +130,10 @@ class TestPreferenceRetire:
 
         store.save_fact('user:go', {'fact': 'prefers go'}, kind='preference', title='Go')
         _backdate('user:go', 300)
-        consolidation._retire_stale_preferences()
+        consolidation._retire_stale_memories()
         pid = int(
             conn().execute(
-                "SELECT id FROM proposals WHERE proposal_type = 'retire-preference' "
+                "SELECT id FROM proposals WHERE proposal_type = 'retire-fact' "
                 "AND status = 'pending' ORDER BY id DESC LIMIT 1"
             ).fetchone()['id']
         )
@@ -116,10 +151,10 @@ class TestPreferenceRetire:
 
         store.save_fact('user:keep', {'fact': 'prefers keep'}, kind='preference', title='Keep')
         _backdate('user:keep', 300)
-        consolidation._retire_stale_preferences()
+        consolidation._retire_stale_memories()
         pid = int(
             conn().execute(
-                "SELECT id FROM proposals WHERE proposal_type = 'retire-preference' "
+                "SELECT id FROM proposals WHERE proposal_type = 'retire-fact' "
                 "AND status = 'pending' ORDER BY id DESC LIMIT 1"
             ).fetchone()['id']
         )
@@ -135,11 +170,11 @@ class TestPreferenceRetire:
         monkeypatch.setattr(
             brain_config_service,
             'getRuntimeConfig',
-            lambda: {'preferenceRetireEnabled': False},
+            lambda: {'memoryRetireEnabled': False},
         )
         store.save_fact('user:off', {'fact': 'prefers off'}, kind='preference', title='Off')
         _backdate('user:off', 300)
-        proposed, _ = consolidation._retire_stale_preferences()
+        proposed, _ = consolidation._retire_stale_memories()
         assert proposed == 0
 
 

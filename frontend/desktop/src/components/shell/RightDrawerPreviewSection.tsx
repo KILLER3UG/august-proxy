@@ -5,7 +5,6 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, Check, Globe, Loader2, Play, RefreshCw, ShieldAlert, Square, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import {
@@ -89,16 +88,6 @@ export function RightDrawerPreviewSection({
 
   return (
     <div className="h-full space-y-3 drawer-section-text">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-xs text-muted-foreground">
-          Run a local dev server and inspect the browser preview
-        </div>
-        <Badge variant="secondary" className="text-2xs">
-          <Globe className="size-3" />
-          local preview
-        </Badge>
-      </div>
-
       {approvals.length > 0 && (
         <PreviewApprovalList approvals={approvals} approve={approve} reject={reject} />
       )}
@@ -155,14 +144,7 @@ export function RightDrawerPreviewSection({
         <div className="min-w-0 space-y-3">
           {active ? (
             <>
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
-                    <Badge variant="secondary" className="text-2xs">{active.id}</Badge>
-                    <span>{active.status}</span>
-                  </div>
-                  <div className="mt-1 truncate text-xs text-muted-foreground/70">{active.cwd}</div>
-                </div>
+              <div className="flex items-start justify-end gap-2">
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -214,22 +196,20 @@ export function RightDrawerPreviewSection({
             </>
           ) : (
             <div className="flex h-full min-h-[260px] flex-col items-center justify-center rounded-lg border border-border/50 bg-card/40 text-center text-muted-foreground">
-              <Play className="size-6 text-muted-foreground/40" />
-              <div className="mt-2 text-2xs">{isLoading ? 'Loading previews…' : 'Start a local dev server preview.'}</div>
+              <div className="text-2xs">{isLoading ? 'Loading previews…' : 'Start a local dev server preview.'}</div>
             </div>
           )}
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
+          {!!(activePreview?.log || active?.status === 'running') && (
+            <div className="space-y-2">
               <div className="text-2xs uppercase tracking-wider text-muted-foreground font-semibold">Logs</div>
-              {activePreview?.logLength ? <span className="font-mono text-2xs text-muted-foreground">{activePreview.logLength}</span> : null}
+              <div className="max-h-[120px] overflow-auto rounded-lg bg-black/80 p-3 font-mono text-2xs leading-relaxed text-success/90">
+                <pre className="whitespace-pre-wrap break-all">
+                  {activePreview?.log || 'Waiting for preview logs…'}
+                </pre>
+              </div>
             </div>
-            <div className="max-h-[120px] overflow-auto rounded-lg bg-black/80 p-3 font-mono text-2xs leading-relaxed text-success/90">
-              <pre className="whitespace-pre-wrap break-all">
-                {activePreview?.log || active?.status === 'running' ? 'Waiting for preview logs…' : 'No preview logs yet.'}
-              </pre>
-            </div>
-          </div>
+          )}
 
           <NetworkList requests={recentRequests} />
         </div>
@@ -276,31 +256,25 @@ function PreviewApprovalList({
 }
 
 function NetworkList({ requests }: { requests: RequestEntry[] }) {
+  if (requests.length === 0) return null;
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="text-2xs uppercase tracking-wider text-muted-foreground font-semibold">Network</div>
+      <div className="flex items-center gap-1.5 text-2xs uppercase tracking-wider text-muted-foreground font-semibold">
         <Activity className="size-3 text-muted-foreground/60" />
+        Network
       </div>
-      {requests.length === 0 && (
-        <div className="rounded-lg border border-border/50 bg-card/40 p-3 text-center text-muted-foreground/70">
-          No recent requests yet.
-        </div>
-      )}
       <div className="space-y-1">
         {requests.map((request) => (
           <div key={request.reqId} className="rounded-md border border-border/50 bg-card/40 px-2.5 py-2">
             <div className="flex items-center justify-between gap-2">
               <span className="truncate font-mono text-[0.65625rem]">{request.endpoint}</span>
-              <span className={cn(
-                'font-mono text-2xs',
-                request.status === 'success' || request.status === 'completed' ? 'text-success' : 'text-danger'
-              )}>
-                {Math.round(request.durationMs)}ms
-              </span>
-            </div>
-            <div className="mt-0.5 text-2xs text-muted-foreground/65 truncate">
-              {request.model || request.clientType}
+              <span
+                title={request.status}
+                className={cn(
+                  'size-1.5 shrink-0 rounded-full',
+                  request.status === 'success' || request.status === 'completed' ? 'bg-success' : 'bg-danger'
+                )}
+              />
             </div>
           </div>
         ))}

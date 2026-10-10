@@ -348,7 +348,7 @@ export function CircuitSchematicEditor({
             onClick={() => void save()}
             disabled={!dirty || saving}
             className="rounded p-1 text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground disabled:opacity-40"
-            title="Save the layout sidecar"
+            title="Save this layout"
             data-testid="schematic-save"
           >
             {saving ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
@@ -419,11 +419,6 @@ export function CircuitSchematicEditor({
       ) : (
         <p className="px-1 py-3 text-2xs text-muted-foreground/70">No components in this deck.</p>
       )}
-      {dirty ? (
-        <p className="px-1 text-2xs text-muted-foreground/70">
-          Unsaved layout — saving writes the sidecar only; the netlist is untouched.
-        </p>
-      ) : null}
     </div>
   );
 }

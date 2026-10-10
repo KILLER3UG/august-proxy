@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Bookmark, Loader2, StickyNote } from 'lucide-react';
+import { Bookmark, Loader2 } from 'lucide-react';
 import { api } from '@/api/client';
 
 function notesKey(sessionId: string | null): string {
@@ -37,8 +37,6 @@ export function RightDrawerNotesSection({ sessionId }: { sessionId: string | nul
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     };
   }, [value, sessionId]);
-
-  const words = value.trim() ? value.trim().split(/\s+/).length : 0;
 
   /** Promote the current note into the facts store under a searchable
    *  `note:` key — brain_query(store=facts) finds it in any future session. */
@@ -71,23 +69,17 @@ export function RightDrawerNotesSection({ sessionId }: { sessionId: string | nul
       <textarea
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder={
-          'Scratch notes for this chat…\n\nPlans, snippets, things to check — autosaved as you type.'
-        }
+        placeholder={'Scratch notes for this chat…'}
         className="flex-1 min-h-0 w-full resize-none rounded-lg border border-border/60 bg-card/40 p-3 text-[0.8125rem] leading-relaxed text-foreground/90 outline-none placeholder:text-muted-foreground/50 focus:border-primary/40"
         spellCheck={false}
       />
-      <div className="flex items-center justify-between text-2xs text-muted-foreground/70">
-        <span className="inline-flex items-center gap-1">
-          <StickyNote className="size-3" />
-          {words} word{words === 1 ? '' : 's'}
-        </span>
+      <div className="flex items-center justify-end text-2xs text-muted-foreground/70">
         <span className="inline-flex items-center gap-2">
           <button
             type="button"
             onClick={() => void promote()}
             disabled={promoting || !value.trim()}
-            title="Save this note into memory — searchable via brain_query(store=facts) in any session"
+            title="Save this note into memory, searchable in any session"
             className="inline-flex items-center gap-1 rounded border border-border/60 px-1.5 py-0.5 text-2xs text-muted-foreground hover:border-primary/40 hover:text-primary disabled:opacity-40"
             data-testid="promote-note-to-memory"
           >

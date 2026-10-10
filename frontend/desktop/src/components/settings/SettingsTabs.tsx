@@ -10,6 +10,8 @@ export interface SettingsTabItem {
   label: string;
   icon?: LucideIcon;
   description?: string;
+  /** Trailing count badge (e.g. skill total). Additive — omit for none. */
+  count?: number;
 }
 
 interface SettingsTabsProps {
@@ -99,7 +101,7 @@ export function SettingsTabs({
         className,
       )}
     >
-      {items.map(({ key, label: tabLabel, icon: Icon }) => {
+      {items.map(({ key, label: tabLabel, icon: Icon, count }) => {
         const active = value === key;
         return (
           <button
@@ -118,6 +120,16 @@ export function SettingsTabs({
           >
             {Icon && <Icon className="size-3" />}
             {tabLabel}
+            {count != null && (
+              <span
+                className={cn(
+                  'tabular-nums',
+                  active ? 'text-foreground/60' : 'text-muted-foreground/50',
+                )}
+              >
+                {count}
+              </span>
+            )}
           </button>
         );
       })}

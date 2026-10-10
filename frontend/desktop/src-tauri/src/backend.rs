@@ -2362,6 +2362,67 @@ pub fn reveal_in_folder(path: String) -> Result<String, String> {
     }
 }
 
+/// Result of a bulk copy: how many landed, how many errored, and how many were
+/// skipped because a file of the same basename already sat in the destination.
+/// camelCase on every field — the JS side's `camelcase` lint rule is an error,
+/// so a snake_case Rust payload would hard-fail the build.
+#[derive(serde::Serialize)]
+pub struct CopyReport {
+    pub copied: usize,
+    pub failed: usize,
+    pub skipped: usize,
+    /// Basenames that collided with an existing file and were not overwritten.
+    pub collisions: Vec<String>,
+}
+
+/// Copy files into a destination folder, flat (no subdirectories). Bytes stay
+/// in Rust rather than round-tripping through the webview: a per-file read would
+/// hit the 25 MB `/files/read` envelope and an O(n) `atob` loop in JS, both of
+/// which a session's worth of artifacts easily exceeds.
+///
+/// A basename collision is reported as `skipped`, never silently truncated or
+/// overwritten — "Download all" over a folder the user already used must not
+/// clobber a different file that happens to share a name.
+#[tauri::command]
+pub fn copy_files_to_dir(dest_dir: String, paths: Vec<String>) -> Result<CopyReport, String> {
+    let dest = std::path::Path::new(&dest_dir);
+    if !dest.is_dir() {
+        return Err(format!("destination is not a folder: {dest_dir}"));
+    }
+
+    let mut report = CopyReport {
+        copied: 0,
+        failed: 0,
+        skipped: 0,
+        collisions: Vec::new(),
+    };
+
+    for path in &paths {
+        let src = std::path::Path::new(path);
+        let name = match src.file_name() {
+            Some(n) => n.to_os_string(),
+            None => {
+                report.failed += 1;
+                continue;
+            }
+        };
+        let target = dest.join(&name);
+        // Refuse to overwrite an existing file; record the collision so the UI
+        // can say so instead of lying about how many landed.
+        if target.exists() {
+            report.skipped += 1;
+            report.collisions.push(name.to_string_lossy().to_string());
+            continue;
+        }
+        match std::fs::copy(src, &target) {
+            Ok(_) => report.copied += 1,
+            Err(_) => report.failed += 1,
+        }
+    }
+
+    Ok(report)
+}
+
 #[tauri::command]
 pub fn backend_setup_status(app: AppHandle) -> SetupPhase {
     if let Some(state) = app.try_state::<BackendSetupStatus>() {

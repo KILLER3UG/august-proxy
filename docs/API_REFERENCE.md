@@ -327,11 +327,26 @@ has no history.
 
 Skills also carry a lifecycle label, `status: draft|active|superseded|retired`
 in frontmatter (absent = `active`); it rides `GET /api/skills` and
-`GET /api/skills/{name}` as `status`. Retirement is **proposal-only**: the
-consolidation pass files a `retire` harness proposal for a skill with no loads
-in 30 days and no measured lift, and a human approving it is what writes
-`status: retired`. The file, its version history and its usage counters all
-stay on disk, and an approved `skill_patch` sets the status back to `active`.
+`GET /api/skills/{name}` as `status`. The lifecycle past `active` is two
+proposal-only steps, and nothing applies either on its own — both kinds are in
+`harness_rails.HARD_KINDS`, so the autonomy rails hold them exactly as they
+hold a delete:
+
+- **Retire.** The consolidation pass files a `retire` harness proposal for a
+  skill with no loads in 30 days and no measured lift; a human approving it is
+  what writes `status: retired`. The file, its version history and its usage
+  counters all stay on disk, an approved `skill_patch` sets the status back to
+  `active`, and the skill leaves every prompt catalogue (`<capabilities>`,
+  `<relevant_skills>`) while staying reachable through `list_skills` /
+  `load_skill` and `GET /api/skills` — an explicit load records a use, which
+  is what keeps a retired-but-wanted skill from ever looking stale.
+- **Archive.** The same pass files an `archive` proposal for a skill that is
+  already retired and has stayed quiet for `skillArchiveDays` (default 60): no
+  usage inside the window and no write to its `SKILL.md` since. Approving
+  **moves** the directory into the 24h delete trash — the same move `DELETE`
+  performs — and answers with the `trashId`; `POST /api/skills/restore/{trashId}`
+  puts the whole directory back where it was, still retired. Config:
+  `skillArchiveEnabled` (default `true`) and `skillArchiveDays`.
 
 There are no per-skill support-file routes (`…/files`) — support files travel
 inside the skill directory that `SKILL.md` describes. Bundled skills are listed
@@ -347,12 +362,14 @@ separately under `/api/skills/packs`.
 | `POST /api/curator/refine/{entry_id}/rollback` · `DELETE /refine/{entry_id}` | Proposal lifecycle |
 | `GET /api/curator/scheduler` · `POST /scheduler/run/{job}` | Scheduler state / manual fire |
 
-Pin / archive / restore / usage-telemetry routes **do not exist**. Curation
-lifecycle is a `SKILL.md` **frontmatter status flag** (draft / active /
-superseded / retired, per `skill_service.SKILL_STATUSES` — `stale` and `archived`
-are NOT valid values and `setStatus` refuses them), not an endpoint and not a
-directory move, and usage is read from the
-`<dataDir>/skills/<name>/.usage.json` sidecar.
+Pin / usage-telemetry routes **do not exist**. Curation lifecycle is a
+`SKILL.md` **frontmatter status flag** (draft / active / superseded / retired,
+per `skill_service.SKILL_STATUSES` — `stale` and `archived` are NOT valid
+values and `setStatus` refuses them), and usage is read from the
+`<dataDir>/skills/<name>/.usage.json` sidecar. The archival half of the
+lifecycle is not a fifth status value: it is a proposal plus a directory move
+into the skills trash, undone by `POST /api/skills/restore/{trashId}` — see
+the `archive` step under `/api/skills` above.
 
 ---
 

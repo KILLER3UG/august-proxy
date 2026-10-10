@@ -33,6 +33,15 @@ export type AugPreviewState = {
   workspacePath: string;
 };
 
+/** The minimal shape of a SpeechRecognition instance we hold + cancel. The
+ *  DOM lib types don't expose `webkitSpeechRecognition`, so this local type
+ *  keeps the ref honest without reaching for `any`. */
+interface SpeechRecognitionInstance {
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
 export interface UseChatVoiceCommandsOptions {
   sessionId: string | null;
   messages: ChatMessage[];
@@ -72,6 +81,10 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
   } = opts;
 
   const [voiceActive, setVoiceActive] = useState(false);
+
+  // The live SpeechRecognition handle, so stopVoiceInput can cancel mid-listen
+  // rather than waiting for the one-shot session to self-end.
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -407,6 +420,10 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
     const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!SpeechRecognition) return;
     const recognition = new SpeechRecognition();
+    // Hold the handle so stopVoiceInput can cancel mid-listen. A visible mic
+    // with no off switch is worse than a menu entry, so the stop signal must
+    // exist before the button does.
+    recognitionRef.current = recognition;
     recognition.continuous = false;
     recognition.interimResults = true;
     recognition.lang = 'en-US';
@@ -444,6 +461,7 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
     };
 
     recognition.onend = () => {
+      recognitionRef.current = null;
       setVoiceActive(false);
       if (!finalTranscript) {
         toast.info('No speech detected');
@@ -479,6 +497,7 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
     };
 
     recognition.onerror = (event) => {
+      recognitionRef.current = null;
       setVoiceActive(false);
       if (event.error !== 'no-speech') {
         toast.error(`Speech error: ${event.error}`);
@@ -488,5 +507,21 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
     recognition.start();
   }, [voiceActive, sessionId, messages, setMessages, setInput]);
 
-  return { voiceActive, startVoiceInput };
+  /** Cancel an in-progress listen. `stop()` fires onend (which clears the ref
+   *  and the active flag), so the state stays consistent whether the session
+   *  ends on its own or the user taps the mic off. */
+  const stopVoiceInput = useCallback(() => {
+    const recognition = recognitionRef.current;
+    if (!recognition) return;
+    recognitionRef.current = null;
+    try {
+      recognition.stop();
+    } catch {
+      // A stop after the session already ended throws in some browsers; the
+      // onend handler has run or will run, so just clear local state.
+      setVoiceActive(false);
+    }
+  }, []);
+
+  return { voiceActive, startVoiceInput, stopVoiceInput };
 }

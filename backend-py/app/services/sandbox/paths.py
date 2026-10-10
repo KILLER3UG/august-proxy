@@ -163,6 +163,29 @@ def _allowlist_denied(resolved: Path, root: Path | None) -> str | None:
     )
 
 
+def normalize_session_workspace(raw: object) -> str:
+    """The workspace a session may bind, or ``''`` when it binds none.
+
+    The OS home directory is refused rather than stored. A chat with no project
+    is folderless, not anchored at ``~``, and the rest of the app already treats
+    home as a non-project root (memory workspace enumeration in
+    ``routers/august.py`` and auto-project memory in
+    ``tool_registrations/session_tools.py`` both skip it). Keeping home out of
+    ``workspacePath`` is also what makes a folderless chat able to read the
+    machine: a bound workspace CONTAINS everything under it, so anchoring at
+    home narrowed the reachable set instead of opening it.
+    """
+    text = str(raw or '').strip()
+    if not text:
+        return ''
+    try:
+        home = os.path.normcase(str(Path.home().resolve(strict=False)))
+        candidate = os.path.normcase(str(Path(text).expanduser().resolve(strict=False)))
+    except OSError:
+        return text
+    return '' if candidate == home else text
+
+
 def bind_path(path: str, workspace: str | None, *, for_write: bool = False) -> tuple[Path | None, str | None]:
     """Resolve ``path`` and ensure it stays inside the workspace when set.
 

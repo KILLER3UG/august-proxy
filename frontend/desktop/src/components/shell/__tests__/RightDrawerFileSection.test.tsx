@@ -176,7 +176,50 @@ describe('RightDrawerFileSection fullscreen preview', () => {
       '[data-testid="html-preview-tab-render"]',
     ) as HTMLButtonElement;
     expect(eye.disabled).toBe(true);
-    expect(eye.title).toBe('No preview available for PPTX');
+    // The tooltip names the format AND points at the source text that IS
+    // available — an office file has no client-side renderer, but its extracted
+    // text is still readable, so say both rather than a bare "no preview".
+    expect(eye.title).toBe('No rendered preview for PPTX — the source text is available');
+  });
+
+  it('treats a PDF with bytes in the webview as renderable (Eye enabled, pager mounts)', () => {
+    // A PDF's extracted text alone cannot paginate — it needs the bytes. With a
+    // dataUrl present, the Eye toggle targets the page-by-page pager, and the
+    // source view (extracted text) stays reachable behind the Code2 toggle.
+    setup({
+      name: 'report.pdf',
+      size: '2 MB',
+      type: 'text',
+      content: '--- Page 1 ---\nsome extracted text',
+      dataUrl: 'data:application/pdf;base64,JVBERi0xLjQK',
+    });
+    const eye = document.querySelector(
+      '[data-testid="html-preview-tab-render"]',
+    ) as HTMLButtonElement;
+    expect(eye.disabled).toBe(false);
+    // The pager is the rendered view (it will show a loading state in jsdom,
+    // where pdf.js has no 2D canvas — the controls and label still mount).
+    expect(document.querySelector('[data-testid="file-preview-pdf"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="pdf-pager"]')).toBeTruthy();
+    // Source view still reachable: the extracted text the model reads.
+    fireEvent.click(document.querySelector('[data-testid="html-preview-tab-source"]')!);
+    expect(screen.getByText(/some extracted text/)).toBeTruthy();
+  });
+
+  it('a PDF with no bytes in the webview is NOT renderable (text view only)', () => {
+    // Extracted text without a dataUrl/previewUrl cannot paginate, so the Eye
+    // stays disabled — no pager mounts from text alone.
+    setup({
+      name: 'report.pdf',
+      size: '2 MB',
+      type: 'text',
+      content: '--- Page 1 ---\nsome extracted text',
+    });
+    const eye = document.querySelector(
+      '[data-testid="html-preview-tab-render"]',
+    ) as HTMLButtonElement;
+    expect(eye.disabled).toBe(true);
+    expect(document.querySelector('[data-testid="pdf-pager"]')).toBeNull();
   });
 
   it('hides the toggle pair for image previews', () => {

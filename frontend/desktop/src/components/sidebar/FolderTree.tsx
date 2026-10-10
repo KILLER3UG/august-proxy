@@ -191,22 +191,20 @@ export function FolderHeader({
 }
 
 /** Collapsible header for sessions that are not in any folder ("Tasks").
- *  No folder icon — just the collapse chevron and the name. The group's
- *  workspace is the OS home directory, surfaced as a tooltip. */
+ *  No folder icon — just the collapse chevron and the name. The group binds no
+ *  directory, so it names none. */
 export function UncategorizedHeader({
   count,
   isCollapsed,
   onToggleCollapse,
   onNewSession,
   onDelete,
-  workspaceHint,
 }: {
   count: number;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   onNewSession?: () => void;
   onDelete: () => void;
-  workspaceHint?: string | null;
 }) {
   return (
     <div
@@ -222,10 +220,7 @@ export function UncategorizedHeader({
         >
           <ChevronRight className="size-3" />
         </span>
-        <span
-          className="truncate text-[0.78125rem] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80"
-          title={workspaceHint ? `Tasks — ${workspaceHint}` : "Tasks"}
-        >
+        <span className="truncate text-[0.78125rem] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80">
           Tasks
         </span>
         {count > 0 && (

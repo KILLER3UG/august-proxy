@@ -5584,7 +5584,7 @@
     },
     "/api/august/memory/proposals/{proposal_id}/decide": {
       "post": {
-        "description": "Approve/reject a memory proposal. For a retire-preference proposal,\napproving flips the fact's status to 'retired' (reversible — the row\nsurvives); rejecting keeps it. See consolidation.apply_retire_decision.",
+        "description": "Approve/reject a memory proposal. For a retirement proposal, approving\nflips the fact's status to 'retired' (reversible — the row survives);\nrejecting keeps it. See consolidation.apply_retire_decision.",
         "operationId": "decide_memory_proposal_api_august_memory_proposals__proposal_id__decide_post",
         "parameters": [
           {
@@ -13968,7 +13968,7 @@
     },
     "/api/skills/restore/{trashId}": {
       "post": {
-        "description": "Undo a delete: restore a trashed skill directory (24h window).",
+        "description": "Undo a delete or an approved archive: restore a trashed skill directory (24h window).",
         "operationId": "restoreSkill_api_skills_restore__trashId__post",
         "parameters": [
           {
@@ -17059,23 +17059,6 @@
         "summary": "Setcostceiling"
       }
     },
-    "/api/workbench/default-workspace": {
-      "get": {
-        "description": "Default workspace for folderless (\"Tasks\") sessions.\n\nThe OS user's home directory — the same place a fresh terminal opens.\nResolved per host user at request time, never hardcoded.",
-        "operationId": "defaultWorkspace_api_workbench_default_workspace_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Defaultworkspace"
-      }
-    },
     "/api/workbench/doctor": {
       "get": {
         "description": "Setup / health doctor for the first-run checklist and Settings.\n\nChecks: backend alive, workspace disk, MCP registry, Google OAuth config.",
@@ -17366,7 +17349,7 @@
         "summary": "Getsessionbyquery"
       },
       "post": {
-        "description": "Create a new workbench session.",
+        "description": "Create a new workbench session.\n\nAn empty ``workspacePath`` is a supported state, not a stand-in for the OS\nhome directory: a folderless chat has no project, so reads resolve anywhere\nand writes land in the system temp area (see\n``app.services.sandbox.paths.bind_path``).",
         "operationId": "createSessionDirect_api_workbench_session_post",
         "responses": {
           "200": {

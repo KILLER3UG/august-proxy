@@ -40,10 +40,14 @@ describe('RightDrawerJobsSection', () => {
     expect(screen.getByText('1 running')).toBeInTheDocument();
   });
 
-  it('says Idle when every job has settled', () => {
+  it('names no status once every job has settled', () => {
+    // The row glyphs already say done/failed/queued; an "Idle" label is a
+    // second place saying what the list shows.
     seed([{ ...base, id: 'a', label: 'Preparing Python sandbox', status: 'done' }]);
     render(<RightDrawerJobsSection sessionId="s1" />);
-    expect(screen.getByText('Idle')).toBeInTheDocument();
+    expect(screen.getByText('Preparing Python sandbox')).toBeInTheDocument();
+    expect(screen.queryByText('Idle')).toBeNull();
+    expect(screen.queryByText(/running/)).toBeNull();
   });
 
   it('hides jobs belonging to another session', () => {

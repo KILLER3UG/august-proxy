@@ -18,7 +18,6 @@ import { t } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useAppUpdate } from "@/hooks/useAppUpdate";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
-import { useDefaultWorkspace } from "@/hooks/useDefaultWorkspace";
 import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
 import {
   useSessionsStore,
@@ -50,6 +49,7 @@ import { SessionListNav } from "./SessionListNav";
 import { SessionRow } from "./SessionRow";
 import { BotsRail } from "./BotsRail";
 import { Section, FolderHeader, UncategorizedHeader } from "./FolderTree";
+import { groupByDate } from "@/lib/date-group";
 import {
   UserDropdown,
   type UserDropdownAction,
@@ -95,6 +95,30 @@ function ShownOfTotal({ shown, total }: { shown: number; total: number }) {
     >
       {shown}/{total}
     </p>
+  );
+}
+
+/** Date sub-heading INSIDE a leaf pool (a folder, or Unfiled).
+ *
+ *  Deliberately NOT a <Section>: `Section` gates its action buttons on the
+ *  title string, so a date header rendered as one would either sprout
+ *  irrelevant controls or force that component to learn a new title. The
+ *  typography is copied from FolderTree's own heading so the two read as the
+ *  same level of hierarchy.
+ *
+ *  Only rendered when date grouping is on, which the sort toggle controls —
+ *  grouping by date is meaningless when rows are sorted by name. */
+function DateGroupHeader({ label, count }: { label: string; count: number }) {
+  return (
+    <h4
+      className="px-2 pt-1.5 pb-0.5 text-2xs text-sidebar-foreground/45 font-medium tracking-wide uppercase"
+      data-testid="date-group-header"
+    >
+      {label}
+      {count > 0 && (
+        <span className="ml-1 text-sidebar-foreground/30 tabular-nums">{count}</span>
+      )}
+    </h4>
   );
 }
 
@@ -160,9 +184,6 @@ export function SessionList({
     () => localStorage.getItem("august-uncategorized-collapsed") === "1",
   );
   const [searchQuery, setSearchQuery] = useState("");
-
-  // OS home directory — shown as the "Tasks" group tooltip (dynamic per user).
-  const { path: defaultWorkspacePath } = useDefaultWorkspace();
 
   const accounts = useAccountStore((s) => s.accounts);
   const activeAccountId = useAccountStore((s) => s.activeAccountId);
@@ -420,6 +441,12 @@ export function SessionList({
     );
   }, [visible, pinnedIds, sortBy]);
 
+  /** Date headers only make sense when rows are ordered by date. Under
+   *  `sortBy === 'name'` the list is alphabetical, so a "Today" heading over
+   *  alphabetically-adjacent rows would describe nothing. Grouping is gated on
+   *  this rather than adding a second toggle the user has to keep in step. */
+  const groupDates = sortBy === 'updated';
+
   const togglePin = useCallback((id: string) => {
     const next = new Set(latest.current.pinnedIds);
     void (next.has(id) ? next.delete(id) : next.add(id));
@@ -674,10 +701,10 @@ export function SessionList({
                 localStorage.setItem('august-sidebar-sort', next);
               }}
               className="ml-auto rounded-md px-1.5 py-1 text-2xs text-sidebar-foreground/50 transition-colors hover:bg-white/[0.04] hover:text-sidebar-foreground"
-              aria-label={`Sort sessions by ${sortBy === 'updated' ? 'name' : 'recent activity'}`}
+              aria-label={`Sort sessions by ${sortBy === 'updated' ? 'name' : 'date started'}`}
               data-testid="sidebar-sort-toggle"
             >
-              {sortBy === 'updated' ? 'Recent' : 'Name'}
+              {sortBy === 'updated' ? 'Recent · by date' : 'Name'}
             </button>
           ) : null}
         </div>
@@ -829,17 +856,38 @@ export function SessionList({
                           total={poolTotals.byFolder.get(folder.id) ?? folderSessions.length}
                         />
                         <AnimatePresence initial={false} mode="popLayout">
-                          {renderable.map((s) => (
-                            <SessionRow
-                              key={s.id}
-                              session={s}
-                              active={activeId === s.id}
-                              pinned={false}
-                              status={statusFor(s)}
-                              folders={folders}
-                              {...sessionRowHandlers.get(s.id)!}
-                            />
-                          ))}
+                          {/* Cap FIRST, group second: the ShownOfTotal caption
+                              above must stay honest about what is on screen,
+                              and date headers over a truncated list would
+                              describe rows that were never rendered. */}
+                          {(groupDates
+                            ? groupByDate(renderable, (s) => s.startedAt).map((g) => (
+                                <div key={g.label} className="space-y-px">
+                                  <DateGroupHeader label={g.label} count={g.items.length} />
+                                  {g.items.map((s) => (
+                                    <SessionRow
+                                      key={s.id}
+                                      session={s}
+                                      active={activeId === s.id}
+                                      pinned={false}
+                                      status={statusFor(s)}
+                                      folders={folders}
+                                      {...sessionRowHandlers.get(s.id)!}
+                                    />
+                                  ))}
+                                </div>
+                              ))
+                            : renderable.map((s) => (
+                                <SessionRow
+                                  key={s.id}
+                                  session={s}
+                                  active={activeId === s.id}
+                                  pinned={false}
+                                  status={statusFor(s)}
+                                  folders={folders}
+                                  {...sessionRowHandlers.get(s.id)!}
+                                />
+                              )))}
                         </AnimatePresence>
                         {folderSessions.length === 0 && !searching && (
                           // Teaches the affordance that is actually on this
@@ -868,7 +916,6 @@ export function SessionList({
                       onToggleCollapse={toggleUncategorizedCollapse}
                       onNewSession={() => onNewInFolder?.(null)}
                       onDelete={handleDeleteUncategorized}
-                      workspaceHint={defaultWorkspacePath}
                     />
 
                     {(!uncategorizedCollapsed || searching) && (
@@ -881,17 +928,37 @@ export function SessionList({
                           total={searching ? poolTotals.unfiled : unfiledSessions.length}
                         />
                         <AnimatePresence initial={false} mode="popLayout">
-                          {renderableUnfiled.map((s) => (
-                            <SessionRow
-                              key={s.id}
-                              session={s}
-                              active={activeId === s.id}
-                              pinned={false}
-                              status={statusFor(s)}
-                              folders={folders}
-                              {...sessionRowHandlers.get(s.id)!}
-                            />
-                          ))}
+                          {/* Cap FIRST, group second — same rule as the folder
+                              pool above, so the caption and the headers agree
+                              about what is actually on screen. */}
+                          {(groupDates
+                            ? groupByDate(renderableUnfiled, (s) => s.startedAt).map((g) => (
+                                <div key={g.label} className="space-y-px">
+                                  <DateGroupHeader label={g.label} count={g.items.length} />
+                                  {g.items.map((s) => (
+                                    <SessionRow
+                                      key={s.id}
+                                      session={s}
+                                      active={activeId === s.id}
+                                      pinned={false}
+                                      status={statusFor(s)}
+                                      folders={folders}
+                                      {...sessionRowHandlers.get(s.id)!}
+                                    />
+                                  ))}
+                                </div>
+                              ))
+                            : renderableUnfiled.map((s) => (
+                                <SessionRow
+                                  key={s.id}
+                                  session={s}
+                                  active={activeId === s.id}
+                                  pinned={false}
+                                  status={statusFor(s)}
+                                  folders={folders}
+                                  {...sessionRowHandlers.get(s.id)!}
+                                />
+                              )))}
                         </AnimatePresence>
                         {unfiledSessions.length === 0 && !searching && (
                           // Same rule as the folder line above: name the gesture

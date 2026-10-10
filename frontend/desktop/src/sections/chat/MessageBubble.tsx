@@ -1,9 +1,10 @@
 /* ── Message bubble + tool cards ─────────────────────────────────────── */
 /* Renders a single chat message: text, thinking, tool calls, and badges. */
 
-import { useState, useMemo, memo } from 'react';
+import { useState, useMemo, useEffect, memo } from 'react';
 import type { WorkbenchCheckpoint } from '@/api/workbench';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
+import { MessageTimestamp } from '@/components/chat/MessageTimestamp';
 import type { ChatMessage } from '@/types/chat';
 import type { ModelItem } from './model-display';
 import { getDisplayBlocks } from './message-blocks';
@@ -31,6 +32,9 @@ function MessageBubbleInner({
   onRevert,
   onEdit,
   onRegenerate,
+  onContinue,
+  onEditPrompt,
+  editPromptSignal,
   onFork,
   onClarifyAnswer,
   toolProgress,
@@ -52,6 +56,17 @@ function MessageBubbleInner({
   onRevert?: () => void;
   onEdit?: (text: string) => void;
   onRegenerate?: () => void;
+  /** Turn-end "Continue" — resume the stopped turn, keeping partial work. */
+  onContinue?: () => void;
+  /** Turn-end "Edit prompt" — open the originating user message for editing. */
+  onEditPrompt?: () => void;
+  /**
+   * External trigger to open this row's editor. Bumped by the turn-end
+   * "Edit prompt" action; `useEffect`ed into `startEdit()` below. A nonce
+   * rather than a boolean so repeat presses re-open. This mirrors the
+   * `openSignal` pattern `ModelEffortMenu` uses to be opened from outside.
+   */
+  editPromptSignal?: { index: number; nonce: number } | null;
   /** Fork the conversation from this message into a new chat. */
   onFork?: () => void;
   onClarifyAnswer?: (answer: string) => void;
@@ -121,6 +136,18 @@ function MessageBubbleInner({
     setEditText(ChatAttachmentService.displayText(message.content, message.attachments));
     setEditing(true);
   };
+
+  // Turn-end "Edit prompt": open this row's editor on an external signal.
+  // The editor state is local (see the `editing` state above), so the only way
+  // to reach it from a control on a *different* row is to bump a nonce the
+  // parent owns and effect it open here. The nonce — not a boolean — is what
+  // lets a second press re-open the editor after the user closes it.
+  useEffect(() => {
+    if (editPromptSignal) startEdit();
+    // startEdit is recreated every render but only touches setState, so
+    // depending on the nonce alone is correct and intentional.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editPromptSignal?.nonce]);
 
   const saveEdit = () => {
     if (editText.trim() && onEdit) onEdit(editText);
@@ -350,6 +377,8 @@ function MessageBubbleInner({
           onRegen={() => { void handleRegenClick(); }}
           onFork={onFork}
           onDismissError={onDismissError}
+          onContinue={onContinue}
+          onEditPrompt={onEditPrompt}
           onReanswer={
             models && onReanswerWithModel
               ? () => setReanswerOpen((v) => !v)
@@ -359,6 +388,14 @@ function MessageBubbleInner({
           onCompare={onCompare}
         />
       )}
+      {/* Always-visible age stamp, not hover-revealed: a timestamp is
+          detail the user *pulls*, and the reference shows it without a
+          pointer interaction. Fed by the shared ticker in the message pane
+          so it ages despite this row being memoised. Sits outside the
+          isUser ternary so both roles read identically. */}
+      {!streaming && message.timestamp ? (
+        <MessageTimestamp timestamp={message.timestamp} className="self-start mt-0.5" />
+      ) : null}
       {!isUser && reanswerOpen && models && onReanswerWithModel ? (
         <div className="relative self-start mt-1" data-testid="reanswer-model-list">
           <div className="absolute left-0 top-0 z-20 w-60 max-h-56 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg">

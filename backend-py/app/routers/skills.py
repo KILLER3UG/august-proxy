@@ -248,7 +248,7 @@ async def patchSkill(name: str, body: SkillPatch):
 
 @router.post('/restore/{trashId}')
 async def restoreSkill(trashId: str):
-    """Undo a delete: restore a trashed skill directory (24h window)."""
+    """Undo a delete or an approved archive: restore a trashed skill directory (24h window)."""
     try:
         return skill_service.restoreSkill(trashId)
     except SkillValidationError as exc:

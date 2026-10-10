@@ -8,7 +8,7 @@ import { useShellWidth } from '@/hooks/useShellWidth';
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, ensureTaskHomeWorkspace, toggleFolderCollapse, ensureFolderForWorkspacePath, resolveActiveSession } from "@/store/sessions";
+import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, toggleFolderCollapse, ensureFolderForWorkspacePath, resolveActiveSession } from "@/store/sessions";
 import { startRealtimeBridge } from "@/realtime/bridge";
 import { addWorkspace, useWorkspacesStore } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
@@ -33,7 +33,6 @@ import type { RightDrawerSectionId } from "./RightDrawerState";
 import { dispatchFocusComposer, dispatchInsertComposerText, onUiAction } from "@/api/ui-events";
 import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
-import { useDefaultWorkspace } from "@/hooks/useDefaultWorkspace";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
@@ -64,11 +63,6 @@ export function ChatLayout() {
     ? workspaces.find(w => w.id === currentWorkspaceId)?.path ?? null
     : null;
 
-  // OS home directory — workspace for folderless "Tasks" chats (dynamic per user).
-  const { path: defaultWorkspacePath } = useDefaultWorkspace();
-  const defaultWorkspaceRef = useRef(defaultWorkspacePath);
-  defaultWorkspaceRef.current = defaultWorkspacePath;
-
   // Keep layout flag in sync with drawer store (both open and close).
   // Chooser-only state (zero tabs + chooserActive) still counts as visible,
   // otherwise the ZCode "Open tab" view could never appear on screen.
@@ -96,25 +90,14 @@ export function ChatLayout() {
     // Collapse any sess_* + wb_* duplicate pairs left by older builds / races.
     healDuplicateSessions();
     startRealtimeBridge();
-    // Backfill after the merge settles so freshly-restored backend sessions are
-    // included (reconcile always resolves; the backfill is an idempotent no-op
-    // once every unfiled chat carries the home workspace).
-    void reconcileSessionsFromBackend().then(() => {
-      ensureTaskHomeWorkspace(defaultWorkspaceRef.current);
-    });
-    const t = setInterval(() => {
-      void reconcileSessionsFromBackend().then(() => {
-        ensureTaskHomeWorkspace(defaultWorkspaceRef.current);
-      });
-    }, 60_000);
+    // Safety-net merge of the backend roster into localStorage — live changes
+    // arrive via /api/realtime/stream. This is also where an unfiled chat picks
+    // up its workspace from the backend (store/sessions/reconcile), so a chat
+    // never keeps showing a directory it does not run in.
+    void reconcileSessionsFromBackend();
+    const t = setInterval(() => void reconcileSessionsFromBackend(), 60_000);
     return () => clearInterval(t);
   }, []);
-
-  // Backfill the "Tasks" group default: existing unfiled chats point at the
-  // OS home directory once it resolves (created chats get it at creation).
-  useEffect(() => {
-    if (defaultWorkspacePath) ensureTaskHomeWorkspace(defaultWorkspacePath);
-  }, [defaultWorkspacePath]);
 
   // Sidebar "needs handoff" dots: one lightweight aggregate poll for the
   // whole session list (per-session workstream polls would fan out).
@@ -328,12 +311,13 @@ export function ChatLayout() {
 
   const createSessionInCurrentWorkspace = () => {
     const path = currentWorkspacePath || null;
-    if (path && path !== defaultWorkspacePath) {
+    if (path) {
       const { folder } = ensureFolderForWorkspacePath(path);
       return createSession(folder.id, defaultSessionTitle(), path);
     }
-    // No project workspace selected → task chat anchored at the OS home dir.
-    return createSession(null, defaultSessionTitle(), defaultWorkspacePath ?? null);
+    // No project workspace selected → a folderless task chat, which binds no
+    // directory. Its tools read anywhere on the machine and write to temp.
+    return createSession(null, defaultSessionTitle(), null);
   };
 
   // C4: remember the last active session so `/` restores it after a restart.
@@ -418,14 +402,10 @@ export function ChatLayout() {
 
     // Explicit "Tasks" target — the "+" on the Tasks header passes null on
     // purpose. Bypass the workspace divert below so the new chat stays
-    // uncategorized instead of landing in a Projects folder. It still gets
-    // the default workspace (the OS home directory, like a fresh terminal).
+    // uncategorized instead of landing in a Projects folder, and bind it to
+    // nothing — a task chat has no directory until the user picks one.
     if (folderId === null) {
-      const newSess = getOrCreateEmptySession(
-        null,
-        defaultSessionTitle(),
-        defaultWorkspacePath ?? null,
-      );
+      const newSess = getOrCreateEmptySession(null, defaultSessionTitle(), null);
       void navigate(`/c/${newSess.id}`);
       return;
     }
@@ -452,36 +432,24 @@ export function ChatLayout() {
       ? folders.find((f) => f.id === activeFolderId)
       : null;
 
-    // A task chat's workspace is the OS home dir. Treat home as "no project"
-    // wherever it appears as a fallback, otherwise an active task chat would
-    // make the next New chat spawn a Projects folder for ~ and add ~ to the
-    // workspace list — both must never happen.
-    const isHomePath = (p: string | null | undefined): boolean =>
-      !!p && !!defaultWorkspacePath && p === defaultWorkspacePath;
-
     const projectPath =
       activeFolder?.workspacePath ??
-      (isHomePath(active?.workspacePath) ? null : active?.workspacePath) ??
-      (isHomePath(currentWorkspacePath) ? null : currentWorkspacePath) ??
+      active?.workspacePath ??
+      currentWorkspacePath ??
       null;
 
-    let targetFolderId: string | null =
-      activeFolder?.workspacePath && !isHomePath(activeFolder.workspacePath)
-        ? activeFolderId
-        : null;
+    let targetFolderId: string | null = activeFolder?.workspacePath ? activeFolderId : null;
     if (!targetFolderId && projectPath) {
       targetFolderId = ensureFolderForWorkspacePath(projectPath).folder.id;
     }
 
-    // No project workspace in play → the chat lands in "Tasks" with the OS
-    // home directory as its workspace (like a fresh terminal). Home never
-    // spawns a Projects folder and is never added to the workspace list.
-    const targetPath = projectPath ?? defaultWorkspacePath ?? null;
-
+    // No project in play → the chat lands in "Tasks" and binds no directory at
+    // all. It reads anywhere on the machine and writes to temp until the user
+    // opens a folder.
     const newSess = getOrCreateEmptySession(
       targetFolderId,
       defaultSessionTitle(),
-      targetPath,
+      projectPath,
     );
     if (projectPath) {
       addWorkspace(projectPath);

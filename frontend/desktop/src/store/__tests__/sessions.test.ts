@@ -11,7 +11,6 @@ import {
   createEmptySessionInFolder,
   deleteUncategorizedSessions,
   getOrCreateEmptySession,
-  ensureTaskHomeWorkspace,
   saveSessionsToStorage,
   saveFoldersToStorage,
   dedupeSessions,
@@ -294,49 +293,14 @@ describe('getOrCreateEmptySession — no blank stacking', () => {
   });
 });
 
-describe('ensureTaskHomeWorkspace — Tasks group home backfill', () => {
-  const HOME = '/home/u';
-
-  it('points unfiled, non-archived, path-less chats at the home dir', () => {
+describe('a folderless chat binds no directory', () => {
+  it('leaves workspacePath null instead of defaulting it anywhere', () => {
+    // The old default wrote the OS home into every unfiled chat, so the UI
+    // claimed a folder the user never chose. Task chats name nothing.
     const task = createSession(null, 'Task', null);
     expect(task.workspacePath).toBeNull();
-
-    const changed = ensureTaskHomeWorkspace(HOME);
-
-    expect(changed).toBe(1);
-    expect($sessions.get().find((s) => s.id === task.id)?.workspacePath).toBe(HOME);
-  });
-
-  it('never overrides a project path or touches folder/archived sessions', () => {
-    const project = createSession(null, 'Project', 'C:/Dev/proj');
-    const folder = createFolder('Repo');
-    const grouped = createSession(folder.id, 'Grouped', null);
-    const archived = createSession(null, 'Archived', null);
-    $sessions.set($sessions.get().map((s) =>
-      s.id === archived.id ? { ...s, isArchived: true } : s,
-    ));
-
-    const changed = ensureTaskHomeWorkspace(HOME);
-
-    // Only nothing-to-backfill remains: project keeps its path, grouped is
-    // in a folder, archived is out of the Tasks group.
-    expect(changed).toBe(0);
-    expect($sessions.get().find((s) => s.id === project.id)?.workspacePath).toBe('C:/Dev/proj');
-    expect($sessions.get().find((s) => s.id === grouped.id)?.workspacePath).toBeNull();
-    expect($sessions.get().find((s) => s.id === archived.id)?.workspacePath).toBeNull();
-  });
-
-  it('is idempotent — a second run changes nothing', () => {
-    createSession(null, 'Task', null);
-    expect(ensureTaskHomeWorkspace(HOME)).toBe(1);
-    expect(ensureTaskHomeWorkspace(HOME)).toBe(0);
-    expect($sessions.get()).toHaveLength(1);
-  });
-
-  it('is a no-op until the home path is known', () => {
-    createSession(null, 'Task', null);
-    expect(ensureTaskHomeWorkspace(null)).toBe(0);
-    expect($sessions.get()[0]?.workspacePath).toBeNull();
+    const reused = getOrCreateEmptySession(null, 'Task 2', null);
+    expect(reused.workspacePath).toBeNull();
   });
 });
 

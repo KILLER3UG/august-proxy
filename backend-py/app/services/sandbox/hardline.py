@@ -17,6 +17,13 @@ Enforcement model:
 - READS of credential files (private keys, ``.aws/credentials``,
   ``providers.json``, any ``.pem``/``.key``) are blocked outright; bare
   ``credentials`` filenames and globs under protected dirs are covered.
+- Credential STORES are blocked by directory, read and write alike
+  (``_CREDENTIAL_STORES``), because the two patterns above are name lists and
+  name lists go stale: a token one level inside ``credentials/``, an OAuth
+  verifier beside it, or an SSO cache file named after a hash matches none of
+  them. ``{dataDir}/config.json`` joins that rule by absolute path — it carries
+  live service tokens, and the filename alone could never be refused without
+  refusing every project's config.
 
 Scope: shell commands (checked before any backend runs, sandboxed or
 unsandboxed) and file-tool paths (checked by ``bind_path``). MCP-server
@@ -90,6 +97,82 @@ _CREDENTIAL_READ_PATTERN = re.compile(
 # secret set in a single response, and no legitimate file tree shows it.
 _CREDENTIAL_DIRECTORIES = ('.ssh', '.aws', '.gnupg')
 
+# Stores whose ENTIRE subtree is secret material, matched on the directory
+# rather than the filename. The two patterns above are name lists, and name
+# lists go stale — this gap was found by listing what a real install keeps, not
+# by reading the guard:
+#   * `.google_workspace_mcp/credentials/<account>.json` — the anchor
+#     `credentials$` names a FILE, so a token one level inside it matched
+#     nothing. The live store also keeps `oauth_states.json` and per-account
+#     `pkce<account>.json` verifiers in that same directory;
+#   * `.aws/sso/cache/<hash>.json`, `.kube/config`, `.docker/config.json` —
+#     tokens under names no credential filename list would ever guess.
+# Matching the directory also solves the collision the name list creates:
+# `config.json` is secret-bearing inside `.docker` and ordinary in any project
+# tree, and `credentials/` is a token store in a home directory and a component
+# module in a repo.
+#
+# `.ssh` is deliberately absent — `authorized_keys` and `config` stay readable by
+# the decision recorded above, and its keys are already named by the read
+# pattern. A leading dot is load-bearing: it keeps `aws/` and `.dockerignore` out.
+_CREDENTIAL_STORES = (
+    '.aws',
+    '.gnupg',
+    '.google_workspace_mcp',
+    '.docker',
+    '.kube',
+    '.azure',
+    '.config/gh',
+    '.config/gcloud',
+)
+
+
+def _credential_store(canonical: str) -> str | None:
+    """The credential store a canonical path lives in or is, else None.
+
+    Padded so every store matches on whole components only.
+    """
+    padded = f'/{_canonical(canonical).strip("/")}/'.lower()
+    for store in _CREDENTIAL_STORES:
+        if f'/{store}/' in padded:
+            return store
+    return None
+
+
+def _august_secret_files() -> tuple[str, ...]:
+    """August's own live secret stores, by absolute path.
+
+    `config.json` is far too common a name to block machine-wide — this is the
+    one that holds `serviceConnections.github.token` and a Google `accessToken`,
+    so the rule is the data directory, never the filename. `providers.json`
+    beside it is already blocked by name, being a key store by definition.
+    """
+    try:
+        from app.config import settings  # lazy: app.config must not import here
+
+        data = _canonical(str(settings.dataDir)).lower().rstrip('/')
+    except (ImportError, AttributeError, OSError, ValueError):
+        # Narrow on purpose — this is a security guard, and a bare
+        # `except Exception` here would hide any future import breakage by
+        # quietly dropping the rule. The other patterns still run either way.
+        return ()
+    return (f'{data}/config.json',)
+
+
+def _secret_store_reason(path: str) -> str | None:
+    """Why `path` is a store the agent may neither read nor write, else None.
+
+    Reads land in the conversation transcript and go upstream to the provider,
+    so this is refused in every mode — the same immunity the two patterns have.
+    """
+    canonical = _canonical(path).lower()
+    store = _credential_store(canonical)
+    if store:
+        return f'credential store {store}'
+    if canonical in _august_secret_files():
+        return "August's own credential store"
+    return None
+
 
 def is_credential_directory(path: str) -> bool:
     """True when `path` IS a credential store, so its contents must not be listed.
@@ -103,10 +186,18 @@ def is_credential_directory(path: str) -> bool:
     up with a trailing dot, slash or space.
     """
     try:
-        name = Path(path).resolve().name.lower()
+        resolved = Path(path).resolve()
     except OSError:
+        resolved = None
+    if resolved is None:
         name = _canonical(path).rstrip('/').rsplit('/', 1)[-1].lower()
-    return name in _CREDENTIAL_DIRECTORIES
+        return name in _CREDENTIAL_DIRECTORIES
+    if resolved.name.lower() in _CREDENTIAL_DIRECTORIES:
+        return True
+    # A token store is unlistable root AND subtree: enumerating
+    # `.google_workspace_mcp` prints every connected account, and the directory
+    # below it is the tokens themselves.
+    return _credential_store(_canonical(str(resolved))) is not None
 
 # Explicit mutating markers (in-place edits, deletes, copies, network fetch).
 _WRITE_VERB_PATTERN = re.compile(
@@ -217,6 +308,9 @@ def check_hardline_command(command: str) -> str | None:
     write_intent = _is_write_intent(command)
     for raw_tok in _tokenize(command):
         tok = _canonical(raw_tok)
+        store = _secret_store_reason(tok)
+        if store:
+            return f'hardline protected {store} in command: {raw_tok}'
         if write_intent and _PROTECTED_WRITE_PATTERN.search(tok) and not _is_env_template(tok):
             return f'hardline protected path in command: {raw_tok}'
         if not write_intent and _CREDENTIAL_READ_PATTERN.search(tok):
@@ -229,6 +323,9 @@ def check_hardline_path(path: str, *, for_write: bool) -> str | None:
     if not path:
         return None
     canonical = _canonical(path)
+    store = _secret_store_reason(canonical)
+    if store:
+        return f'hardline protected {store}: {path}'
     if for_write and _PROTECTED_WRITE_PATTERN.search(canonical) and not _is_env_template(canonical):
         return f'hardline protected path: {path}'
     if not for_write and _CREDENTIAL_READ_PATTERN.search(canonical):
