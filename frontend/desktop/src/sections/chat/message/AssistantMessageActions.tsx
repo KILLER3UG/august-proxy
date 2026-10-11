@@ -1,5 +1,6 @@
 import { Check, Copy, RefreshCw, Play, Pause, GitBranch, ArrowLeftRight, GitCompare } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { MessageTimestamp } from '@/components/chat/MessageTimestamp';
 
 /** Speak / copy / re-answer / regenerate / fork controls under an assistant message. */
 export function AssistantMessageActions({
@@ -15,6 +16,7 @@ export function AssistantMessageActions({
   onReanswer,
   reanswerOpen,
   onCompare,
+  timestamp,
 }: {
   showActions: boolean;
   copied: boolean;
@@ -31,6 +33,9 @@ export function AssistantMessageActions({
   reanswerOpen?: boolean;
   /** "Compare" — re-run the prompt on 2–3 models side by side (Arena lanes). */
   onCompare?: () => void;
+  /** Age stamp, rendered as the last item on this row. The reference's only
+   *  time marker is the muted `5 minutes ago` after the buttons. */
+  timestamp?: string | null;
 }) {
   return (
     <div className={cn(
@@ -118,6 +123,15 @@ export function AssistantMessageActions({
           <GitBranch className="size-3" />
         </button>
       )}
+      {/* The age stamp, as the LAST item on the same row — matching the
+          reference, where the only time marker on a message is the muted
+          `5 minutes ago` that follows the action buttons. It used to render as
+          a sibling row 26px below them. */}
+      {timestamp ? (
+        <span className="ml-1 pl-1">
+          <MessageTimestamp timestamp={timestamp} />
+        </span>
+      ) : null}
     </div>
   );
 }

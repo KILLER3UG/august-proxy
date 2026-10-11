@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { X, Mic } from 'lucide-react';
+import { X, Mic, MicOff } from 'lucide-react';
 import { useLiveSession } from './useLiveSession';
 import { LiveOrb } from './LiveOrb';
 import { LiveCaptions } from './LiveCaptions';
@@ -49,6 +49,12 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
   const startListening = async () => {
     if (session.state !== 'idle') return;
     sessionIdRef.current = sessionIdRef.current || (await liveClient.startSession());
+    // Stop whatever the previous run left holding the microphone. The error
+    // path below idles the session WITHOUT stopping its STT, so a fresh click
+    // used to build a second capture (and a second getUserMedia stream) on top
+    // of the half-dead one — one leaked mic session per click.
+    void sttRef.current?.stop();
+    void ttsRef.current?.cancel();
     // Prefer browser speech; only use server STT/TTS when Settings mark them ready.
     let sttReady = false;
     let ttsReady = false;
@@ -97,7 +103,13 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
         args: { message: err.message },
         status: 'error',
       });
+      // session.stop() alone only resets state — the capture kept running,
+      // so the next Start built a second one on top of it (the leak).
       session.stop();
+      void stt.stop();
+      void tts.cancel();
+      sttRef.current = null;
+      ttsRef.current = null;
     });
 
     session.start();
@@ -111,7 +123,22 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
     >
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <div className="text-sm font-medium">Live voice</div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">Live voice</span>
+          {/* Mute is a mic-only state (capture stops; TTS playback is separate)
+              and used to be visible ONLY as the Mute/Unmute label swap on the
+              small bottom button — while looking at the orb you could not tell
+              the session was muted at all. The badge sits where the eye is. */}
+          {session.isMuted && (
+            <span
+              data-testid="live-muted-badge"
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs font-medium text-warning bg-warning/10"
+            >
+              <MicOff className="size-3" aria-hidden />
+              Muted
+            </span>
+          )}
+        </div>
         <button
           type="button"
           aria-label="Close"
@@ -169,7 +196,6 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
       <div className="flex items-center justify-center p-4 border-t border-border">
         <LiveControls
           isMuted={session.isMuted}
-          continuousMode={false}
           onToggleMute={() => {
             // Toggle the underlying audio capture directly; the hook's
             // isMuted state updates through toggleMute() but we don't
@@ -187,7 +213,6 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
             if (sessionIdRef.current) void liveClient.stopSession(sessionIdRef.current);
             onSwitchToChat();
           }}
-          onToggleContinuous={() => {}}
           onSwitchToChat={onSwitchToChat}
         />
       </div>

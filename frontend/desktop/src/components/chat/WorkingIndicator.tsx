@@ -29,24 +29,9 @@ function trimLine(s: string): string {
   return t.length > 96 ? `${t.slice(0, 94)}…` : t;
 }
 
-function AugWordmark() {
-  const LETTERS = ['A', 'U', 'G', 'U', 'S', 'T'];
-  return (
-    <span className="flex items-center justify-center gap-[3px]">
-      {LETTERS.map((letter, i) => (
-        <span
-          key={i}
-          className="aug-letter text-2xs font-semibold tracking-[0.18em] text-muted-foreground/80"
-          style={{ animationDelay: `${i * 0.12}s` }}
-        >
-          {letter}
-        </span>
-      ))}
-      <span className="aug-caret ml-0.5 text-2xs font-semibold text-primary/70">|</span>
-    </span>
-  );
-}
-
+/* The AUG wordmark used to lead this indicator and is deliberately gone —
+ * see the note at its former call site. The component keeps the identity
+ * out of the status line and spends the row on the sentence stack. */
 function Dots({ tone = 'text-muted-foreground/70' }: { tone?: string }) {
   return (
     <span className={`ml-0.5 inline-flex items-baseline ${tone}`} data-testid="typing-dots">
@@ -122,8 +107,16 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
       aria-label="Assistant is working"
       data-aug-indicator
     >
+      {/* No wordmark here. This line used to open with an `A U G U S T |`
+          row — six separately-animated letters plus a caret, 18px tall, to
+          spell a name that is already in the sidebar header and again in the
+          status bar at the bottom of the window. Seven glyphs of chrome in
+          front of the one thing this component exists to say.
+          The reference spends this row on status instead: Claude's activity
+          line is `···  <title>  <elapsed> ⌄`, and the word "Claude" appears
+          nowhere in it. The progressive sentence stack below is that same
+          line, and it is the part worth the pixels. */}
       <div className="flex flex-col items-center gap-0.5 py-0.5">
-        <AugWordmark />
         {todoList.length > 0 ? (
           /* Live todo checklist (submit_todos / update_todos) — the header
              pill answers "how many steps and where are we"; expanding it

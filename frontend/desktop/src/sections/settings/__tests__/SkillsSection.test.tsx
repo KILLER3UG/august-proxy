@@ -189,6 +189,16 @@ describe('SkillsSection — scope selector + rows', () => {
     );
   });
 
+  it('does not steal Space or Enter from the card checkbox and enable control', () => {
+    renderSection();
+    const checkbox = screen.getByRole('checkbox', { name: 'Select circuit-helper' });
+    const toggle = screen.getByRole('button', { name: 'Disable circuit-helper' });
+
+    expect(fireEvent.keyDown(checkbox, { key: ' ' })).toBe(true);
+    expect(fireEvent.keyDown(toggle, { key: 'Enter' })).toBe(true);
+    expect(screen.queryByTestId('skill-detail')).not.toBeInTheDocument();
+  });
+
   it('list fetch passes workspace once a scope is selected (C-1)', async () => {
     renderSection();
     fireEvent.change(screen.getByTestId('skills-scope-select'), {

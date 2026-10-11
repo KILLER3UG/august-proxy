@@ -87,6 +87,17 @@ export interface SessionUsage {
   }[];
 }
 
+/** The four aggregate fields a sidebar `+input / −output` delta needs. Cheaper
+ *  than {@link SessionUsage}, which also carries the 500-row event list and a
+ *  per-event pricing sweep. Keyed by the session id the caller asked for. */
+export interface SessionTokenDelta {
+  sessionId: string;
+  totalEvents: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalTokens: number;
+}
+
 export const usageApi = {
   stats:    (range: UsageRange = '30d')       => api.get<UsageStats>(withRange('/api/usage/stats', range)),
   heatmap:  (range: UsageRange = '30d')       => api.get<{ results: HeatmapCell[] }>(withRange('/api/usage/heatmap', range)),
@@ -94,4 +105,10 @@ export const usageApi = {
   byDay:    (range: UsageRange = '30d')       => api.get<{ results: DailyTokens[] }>(withRange('/api/usage/by-day', range)),
   /** Per‑session usage breakdown from the backend usage_events table. */
   session:  (sessionId: string)               => api.get<SessionUsage>(`/api/usage/session?id=${encodeURIComponent(sessionId)}`),
+  /** Many sessions at once — ONE grouped query behind the sidebar's per-row
+   *  delta. Ask for every id the list is about to render; never one call per
+   *  row (see `get_usage_batch`). Ids with no usage rows are absent. */
+  sessions: (sessionIds: string[])            => api.get<{ results: Record<string, SessionTokenDelta> }>(
+    `/api/usage/sessions?ids=${sessionIds.map(encodeURIComponent).join(',')}`,
+  ),
 };

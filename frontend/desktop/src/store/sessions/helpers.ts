@@ -1,6 +1,7 @@
 /* Pure session title/id/dedupe helpers with no store side effects. */
 
 import type { Session } from './types';
+import { legacyMessagesStorageKey, messagesStorageKey } from '@/sections/chat/message-storage';
 
 /** Human-readable session id with local date/time, e.g.
  *  session_20260715_143052_a1b2. Legacy sessions keep their `sess_*` ids —
@@ -184,15 +185,31 @@ export function sessionIsEmpty(s: Session): boolean {
   if ((s.messageCount ?? 0) > 0) return false;
   for (const id of [s.id, s.workbenchSessionId].filter(Boolean) as string[]) {
     try {
-      const raw = localStorage.getItem(`chat_messages_${id}`);
-      if (!raw) continue;
-      const msgs = JSON.parse(raw) as Array<{ role?: string }>;
-      if (
-        Array.isArray(msgs) &&
-        msgs.some((m) => m?.role === 'user' || m?.role === 'assistant')
-      ) {
-        return false;
-      }
+      /* The v2 key first, then the pre-v2 one. Reading only v2 makes every
+       * session look empty between the upgrade and the user opening that chat
+       * once — and `findReusableEmptySession` would then hand a REAL
+       * conversation to "New chat", bump its startedAt and drop the user into a
+       * chat they did not ask for. The v1 key is not read for content (that
+       * goes through `loadMessagesForSession`, which merges and repairs it); it
+       * is read here only as a "this session is not empty" signal.
+       *
+       * The v1 fallback must survive a v2 key holding an EMPTY ARRAY, not just
+       * an absent one. `getItem(v2) ?? getItem(v1)` short-circuits on `"[]"`,
+       * which `persistMessages` writes for a genuinely empty transcript — so the
+       * protection re-enabled itself the moment the first empty fetch landed. */
+      const candidates = [
+        localStorage.getItem(messagesStorageKey(id)!),
+        localStorage.getItem(legacyMessagesStorageKey(id)!),
+      ];
+      const nonEmpty = candidates.some((raw) => {
+        if (!raw) return false;
+        const msgs = JSON.parse(raw) as Array<{ role?: string }>;
+        return (
+          Array.isArray(msgs) &&
+          msgs.some((m) => m?.role === 'user' || m?.role === 'assistant')
+        );
+      });
+      if (nonEmpty) return false;
     } catch {
       /* ignore corrupt storage */
     }

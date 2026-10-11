@@ -15,10 +15,12 @@ export function RightDrawerDropdown({
   // Kept for call-site compatibility; the chooser replaced the dropdown.
   onSelect,
   workersBadge = 0,
+  artifactsCount = 0,
 }: {
   drawerOpen: boolean;
   onSelect?: (section: RightDrawerSectionId) => void;
   workersBadge?: number;
+  artifactsCount?: number;
 }) {
   void onSelect;
   const state = useRightDrawer();
@@ -35,8 +37,8 @@ export function RightDrawerDropdown({
         openRightDrawerChooser();
       }}
       className="relative size-11 flex items-center justify-center shrink-0 hover:bg-accent text-muted-foreground/60 hover:text-foreground transition"
-      title={drawerOpen ? 'Workbench sections' : 'Open Workbench'}
-      aria-label={drawerOpen ? 'Workbench sections' : 'Open Workbench'}
+      title={artifactsCount > 0 ? `${artifactsCount} artifacts available · ${drawerOpen ? 'Workbench sections' : 'Open Workbench'}` : drawerOpen ? 'Workbench sections' : 'Open Workbench'}
+      aria-label={artifactsCount > 0 ? `Open Workbench, ${artifactsCount} artifacts available` : drawerOpen ? 'Workbench sections' : 'Open Workbench'}
       data-testid="workbench-launcher"
     >
       {drawerOpen ? (
@@ -48,6 +50,13 @@ export function RightDrawerDropdown({
         <span className="absolute right-1.5 top-1.5 min-w-3.5 rounded-full bg-warning px-1 text-2xs font-semibold leading-4 text-warning-foreground">
           {workersBadge > 9 ? '9+' : workersBadge}
         </span>
+      ) : null}
+      {artifactsCount > 0 ? (
+        <span
+          className="absolute bottom-2 right-2 size-1.5 rounded-full bg-primary"
+          aria-hidden="true"
+          data-testid="workbench-artifacts-indicator"
+        />
       ) : null}
     </button>
   );

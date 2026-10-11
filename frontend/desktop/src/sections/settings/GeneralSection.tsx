@@ -230,60 +230,17 @@ export function GeneralSection() {
           </div>
         </SettingsCard>
 
-        {/* Text size */}
-        <SettingsCard
-          icon={Asterisk}
-          title="Text size"
-          description={
-            <span>
-              Scales all chat, sidebar, and drawer text proportionally.{' '}
-              <SettingsTooltip content="The display heading on the empty chat stays a fixed size so the wordmark is always readable." />
-            </span>
-          }
-          actions={<Badge variant="outline" className="font-mono">{textSize}</Badge>}
-          inert
-        >
-          <div className="space-y-3">
-            <div className="grid grid-cols-4 gap-2">
-              {TEXT_SIZE_OPTIONS.map((opt) => {
-                const active = textSize === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    onClick={() => setTextSize(opt.id)}
-                    className={cn(
-                      'flex flex-col items-center justify-center gap-0.5 rounded-lg border px-2 py-3 transition',
-                      active
-                        ? 'border-primary bg-primary/5 text-foreground'
-                        : 'border-border text-muted-foreground hover:bg-muted/40',
-                    )}
-                  >
-                    <span
-                      className="font-semibold leading-none"
-                      style={{ fontSize: `${parseFloat(opt.scale) * 1.1}rem` }}
-                    >
-                      Aa
-                    </span>
-                    <span className="text-2xs uppercase tracking-caps">{opt.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+        {/* The global 4-step "Text size" picker used to live here and is
+            gone. It had been marked `inert` — a visible control that could
+            not be pressed — while Appearance grew the four PER-SURFACE rows
+            that replaced it, so the most-visited settings page was showing a
+            dead duplicate of a working control. Sizing lives in Appearance
+            now (Interface / Chat messages / Chat input / Code), which is
+            also the only reference shape: four quiet rows, one pill each.
 
-            {/* Live preview block */}
-            <div className="rounded-md border border-border bg-background px-3 py-2.5 space-y-1.5">
-              <p className="text-foreground font-medium leading-snug">
-                August Proxy
-              </p>
-              <p className="text-muted-foreground leading-relaxed">
-                Reads project files, runs commands, and surfaces a clean timeline of what it did.
-              </p>
-              <p className="text-muted-foreground/80 leading-relaxed">
-                Use code, ask questions, or delegate to a sub-agent — every step stays legible.
-              </p>
-            </div>
-          </div>
-        </SettingsCard>
+            `data-text-size` itself is untouched — it still scales the root
+            rem for surfaces with no per-surface override, so an existing
+            user who had picked "spacious" keeps it. */}
 
         {/* The "Experience" preset picker that used to sit here wrote
             `localStorage['august_preset']` and read it back for nothing but its

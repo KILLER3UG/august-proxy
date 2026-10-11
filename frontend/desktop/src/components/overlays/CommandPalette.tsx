@@ -25,7 +25,6 @@ import {
   Keyboard,
   StickyNote,
   Square,
-  ArrowLeftRight,
   GalleryVertical,
 } from "lucide-react";
 import {
@@ -153,13 +152,13 @@ export function CommandPalette() {
             >
               <Square className="size-3" /> Stop generation
             </Command.Item>
-            <Command.Item
-              value="action switch model picker"
-              onSelect={chatAction('open_model_picker')}
-              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-primary/15 aria-selected:text-tier-1 data-[selected=true]:bg-primary/15"
-            >
-              <ArrowLeftRight className="size-3" /> Switch model…
-            </Command.Item>
+            {/* The "Switch model…" item was removed with the composer model row it opened.
+         * `ModelEffortMenu` had exactly two entry points — that row and this
+         * command — so both went together. Leaving the item would have made
+         * the palette dispatch `open_model_picker` to nothing, which is the
+         * dead command the removal was supposed to avoid. Switching model is
+         * still available from an assistant turn's re-answer action and from
+         * Settings. */}
             <Command.Item
               value="action branch chat fork"
               onSelect={chatAction('branch_session')}

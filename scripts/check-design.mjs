@@ -113,6 +113,22 @@ function walkFiles(dir) {
 /** relpath:match for every violation, plus a line number for reporting. */
 function collect() {
   const entries = [];
+  /* Occurrence-indexed keys.
+   *
+   * The key used to be `${rel}:${m[0]}` — path plus matched text, with NO
+   * occurrence index. A Set of those collapses N identical violations in one
+   * file into ONE baseline entry, so the baseline held 494 keys for 987 real
+   * violations and the gate had ~493 slots of silent slack. It was not
+   * theoretical: appending 8 raw `<button>`s to `SessionRow.tsx` took
+   * raw-button from 532 to 540 and the gate still printed "ok — no new design
+   * drift". Any `check-design ok` before this change was therefore only
+   * evidence about the FIRST occurrence of each distinct string per file.
+   *
+   * The counter makes every occurrence its own key, so a new one is always
+   * new. It is deliberately NOT a line number: line-based keys churn the whole
+   * baseline on any edit above them, which is how ratchets get switched off.
+   * An occurrence index is stable under insertions and deletions. */
+  const seen = new Map();
   for (const file of walkFiles(SRC)) {
     const rel = relative(REPO, file).replace(/\\/g, '/');
     const lines = readFileSync(file, 'utf8').split('\n');
@@ -122,7 +138,16 @@ function collect() {
         if (rule.exclude?.some((frag) => rel.includes(frag))) continue;
         // Fresh regex per line: the /g flag is stateful across calls.
         for (const m of line.matchAll(new RegExp(rule.re.source, rule.re.flags))) {
-          entries.push({ key: `${rel}:${m[0]}`, rule: rule.id, rel, line: i + 1, match: m[0] });
+          const base = `${rel}:${m[0]}`;
+          const n = (seen.get(base) ?? 0) + 1;
+          seen.set(base, n);
+          entries.push({
+            key: `${base}#${n}`,
+            rule: rule.id,
+            rel,
+            line: i + 1,
+            match: m[0],
+          });
         }
       }
     }

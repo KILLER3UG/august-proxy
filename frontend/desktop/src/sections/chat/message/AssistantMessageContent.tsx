@@ -282,6 +282,7 @@ export function AssistantMessageContent({
         onReanswer={onReanswer}
         reanswerOpen={reanswerOpen}
         onCompare={onCompare}
+        timestamp={!streaming ? message.timestamp : null}
       />
     </>
   );

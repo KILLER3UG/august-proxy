@@ -14,18 +14,20 @@ import { DebateLaunchModal } from './debate/DebateLaunchModal';
 import type { DebateRun } from './debate/debate-store';
 import { WifiOff } from 'lucide-react';
 import type { QueuedUserMessage } from './queue-store';
-import { type ContextBreakdown } from './ChatComposer';
 import { Markdown } from './ChatMarkdown';
 import { TaskProgressPill } from '@/components/chat/TaskProgressPill';
 import { ScrollToBottomButton } from '@/components/chat/ScrollToBottomButton';
 import type { ModelItem } from './model-display';
 import type { SessionUsageState } from './hooks/useChatUsage';
+/* `EffortLevel` is back for the footer's muted word after the model name. Only
+ * the `setEffort` half of the old model row's props is still gone — the state
+ * itself remains in ChatThread and is still sent with every turn. */
 import type { EffortLevel } from './hooks/useChatSend';
+import { ModelEffortMenu } from './composer/ModelEffortMenu';
 import {
   useComposerPopovers,
   type ComposerDropdownApi,
 } from './composer/useComposerPopovers';
-import { onUiAction } from '@/api/ui-events';
 import { ComposerAttachmentChips } from './composer/ComposerAttachmentChips';
 import { ComposerMentionsDropdown } from './composer/ComposerMentionsDropdown';
 import { ComposerCommandsDropdown } from './composer/ComposerCommandsDropdown';
@@ -62,7 +64,6 @@ export interface ChatThreadComposerProps {
   send: ChatSendFn;
   stop: () => void;
   /** Optional: lets the composer toolbar append a synthetic handoff-notice card. */
-  setMessages?: Dispatch<SetStateAction<ChatMessage[]>>;
   /** Creates the backend workbench session on demand (before the first
    *  send on a fresh chat). */
   ensureWorkbenchSession: () => Promise<WorkbenchSession | null>;
@@ -79,18 +80,22 @@ export interface ChatThreadComposerProps {
   workspacePath?: string | null;
   activeWorkbenchSessionId?: string | null;
   /** Context ring inputs */
-  pct: number;
-  estTokens: number;
-  maxContext: number;
-  contextBreakdown: ContextBreakdown;
   sessionUsage: SessionUsageState;
-  models: ModelItem[];
   visibleModels: ModelItem[];
-  modelsLoading: boolean;
   selectedModel: ModelItem | null;
-  setSelectedModel: Dispatch<SetStateAction<ModelItem | null>>;
-  userSelectedRef: MutableRefObject<string | null>;
-  onEditModels: () => void;
+  /** The muted word after the model name on the footer line. The reference
+   *  shows `Sonnet 5.5  High` there — effort in muted, no chip — but it stays
+   *  changeable through the effort pane (`onEffortChange`); an earlier round
+   *  of the redesign made this read-only and the reference re-read undid it. */
+  effort: EffortLevel;
+  onSelectModel: (m: ModelItem) => void;
+  onEffortChange: (v: EffortLevel) => void;
+  /** Opens the Edit Models (visibility) modal in ChatThread. Without it the
+   *  model pane's "Manage models" footer never renders and a hidden model
+   *  cannot be un-hidden — the hide action would be irreversible. */
+  onEditModels?: () => void;
+  thinkingEnabled: boolean;
+  onThinkingChange: (v: boolean) => void;
   /** Arena ("ask in parallel"): run the prompt on 2–3 models in forks. */
   onArenaLaunch?: (targets: ModelItem[], prompt: string) => void;
   /** Structured debate (A5): two models argue in this chat, optional judge. */
@@ -104,10 +109,6 @@ export interface ChatThreadComposerProps {
   /** Offline compose (C9): queued messages waiting for the backend. */
   offlineCount?: number;
   onFlushOffline?: () => void;
-  effort: EffortLevel;
-  setEffort: Dispatch<SetStateAction<EffortLevel>>;
-  thinkingEnabled: boolean;
-  setThinkingEnabled: Dispatch<SetStateAction<boolean>>;
   voiceActive: boolean;
   startVoiceInput: () => void;
   stopVoiceInput: () => void;
@@ -139,7 +140,6 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     streaming,
     send,
     stop,
-    setMessages,
     ensureWorkbenchSession,
     queuedMessages,
     workbenchSession,
@@ -148,26 +148,19 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     setWorkbenchMode,
     workspacePath,
     activeWorkbenchSessionId,
-    pct,
-    estTokens,
-    maxContext,
-    contextBreakdown,
     sessionUsage,
-    models,
     visibleModels,
-    modelsLoading,
     selectedModel,
-    setSelectedModel,
-    userSelectedRef,
+    effort,
+    onSelectModel,
+    onEffortChange,
     onEditModels,
+    thinkingEnabled,
+    onThinkingChange,
     onArenaLaunch,
     onDebateLaunch,
     offlineCount = 0,
     onFlushOffline,
-    effort,
-    setEffort,
-    thinkingEnabled,
-    setThinkingEnabled,
     voiceActive,
     startVoiceInput,
     stopVoiceInput,
@@ -317,15 +310,14 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     [attachFiles],
   );
 
-  // Command palette "Switch model" → bump the counter so the model menu
-  // opens (ModelEffortMenu re-fires on each increment).
-  const [modelMenuSignal, setModelMenuSignal] = useState(0);
-  useEffect(() => {
-    const unsub = onUiAction((e) => {
-      if (e.action === 'open_model_picker') setModelMenuSignal((n) => n + 1);
-    });
-    return unsub;
-  }, []);
+  /* The command palette's "Switch model…" bumped a counter that opened
+   * `ModelEffortMenu`, which only existed in the removed model row. Both the
+   * counter and the palette item are gone with it — leaving either would be a
+   * command that dispatches an action nothing listens for.
+   *
+   * `handoffPreparing` went with the rest: the row was the only caller of its
+   * setter, so the toolbar's "Preparing handoff…" notice could never render.
+   * That is a dead branch, not a temporarily-disabled feature. */
 
   // Arena ("ask in parallel") modal state.
   const [arenaOpen, setArenaOpen] = useState(false);
@@ -456,14 +448,6 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
                 transcript), where the workspace choice is still open. Once the
                 chat has messages the binding is fixed; the titlebar chips stay
                 as the read-only context. */}
-            {messages.length === 0 ? (
-              <ComposerWorkspaceChips
-                sessionId={sessionId}
-                workbenchSessionId={workbenchSession?.id || activeWorkbenchSessionId || null}
-                workspacePath={workspacePath}
-                className="px-2 pt-1.5"
-              />
-            ) : null}
             <ComposerAttachmentChips
               attachments={attachments}
               onRemove={removeAttachment}
@@ -525,6 +509,21 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
         <ComposerToolbar
           sessionId={sessionId}
           loadedSessionId={loadedSessionId}
+          /* The folder chip used to occupy its own full-width row INSIDE the
+             card, which made the composer three stacked rows — chip, input,
+             toolbar — where every reference has one. It rides the toolbar's
+             left cluster instead, beside the `+`. Only on a fresh session:
+             once the chat has messages the binding is fixed and the titlebar
+             chips are the read-only context. */
+          folderSlot={
+            messages.length === 0 ? (
+              <ComposerWorkspaceChips
+                sessionId={sessionId}
+                workbenchSessionId={workbenchSession?.id || activeWorkbenchSessionId || null}
+                workspacePath={workspacePath}
+              />
+            ) : null
+          }
           input={input}
           attachmentsCount={readyAttachmentsCount ?? attachments.length}
           attachmentsReading={attachmentsReading}
@@ -532,30 +531,14 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           send={sendOrSteer}
           stop={stop}
           sendKind={streaming ? 'steer' : sendKind}
-          setMessages={setMessages}
           ensureWorkbenchSession={ensureWorkbenchSession}
           workbenchSession={workbenchSession}
           setWorkbenchSession={setWorkbenchSession}
           workbenchMode={workbenchMode}
           setWorkbenchMode={setWorkbenchMode}
-          workspacePath={workspacePath}
-          pct={pct}
-          estTokens={estTokens}
-          maxContext={maxContext}
-          contextBreakdown={contextBreakdown}
           sessionUsage={sessionUsage}
-          models={models}
           visibleModels={visibleModels}
-          modelsLoading={modelsLoading}
           selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
-          userSelectedRef={userSelectedRef}
-          onEditModels={onEditModels}
-          effort={effort}
-          setEffort={setEffort}
-          thinkingEnabled={thinkingEnabled}
-          setThinkingEnabled={setThinkingEnabled}
-          modelMenuOpenSignal={modelMenuSignal}
           actionsOpen={popovers.showComposerActionsDropdown}
           actionsPos={popovers.composerActionsPos}
           actionsTriggerRef={popovers.composerActionsTriggerRef}
@@ -586,8 +569,37 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
         />
       </div>
 
-      <div className="mt-2 text-center text-2xs text-muted-foreground/60 select-none">
-        August is an AI assistant and can make mistakes. Please double-check responses.
+      {/* Footer line under the card: disclaimer left, model + effort right.
+
+          This renders `ModelEffortMenu`, whose own header already says it:
+          "Claude draws this as plain text on its footer line — model at normal
+          weight, effort lighter." It is borderless, border-pill-free, and was
+          built for this exact slot.
+
+          It was left unrendered when the composer model row was removed, which
+          removed the LAST way to change the model: `open_model_picker` and the
+          palette item went with it, and `useChatModels.selectModel` had no
+          caller. Restoring only the *text* made it worse — it rendered
+          `qwen3.8-flash medium` as inert copy, so the model was both visible
+          and unchangeable.
+
+          The only deviation from the reference is the chevron, which is hidden
+          at rest and shown on hover/focus: the reference screenshot is a
+          non-hovered state, but a control with no affordance at all is worse. */}
+      <div className="mt-1.5 flex items-baseline justify-between gap-3 px-1 select-none">
+        <p className="truncate text-2xs text-muted-foreground/60">
+          August is an AI assistant and can make mistakes. Please double-check responses.
+        </p>
+        <ModelEffortMenu
+          visibleModels={visibleModels}
+          selected={selectedModel}
+          onSelect={onSelectModel}
+          onEditModels={onEditModels}
+          effort={effort}
+          onEffortChange={onEffortChange}
+          thinkingEnabled={thinkingEnabled}
+          onThinkingChange={onThinkingChange}
+        />
       </div>
 
       {debateOpen ? (

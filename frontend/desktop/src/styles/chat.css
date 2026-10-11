@@ -338,10 +338,18 @@
   border-radius: 0.45rem;
 }
 
+/* Selection is a LIGHTER FILL and nothing else.
+ *
+ * The `box-shadow: inset 2px 0 0 var(--dt-primary)` painted a 2px brand-blue
+ * bar down the left edge of the active row — measured `rgb(96,130,208)` at
+ * x+2/x+3 against a `rgb(41,41,41)` fill. Measured off the Claude reference
+ * at 2.4x, a selected chat row is a lighter rounded-rect fill with no accent
+ * of any kind: rule 5 in docs/plans/2026-10-11-ui-reference-capture.md says
+ * "selection is a lighter fill, never a left bar or an underline". */
 .august-session-row-active {
   background: color-mix(in srgb, var(--dt-foreground) 10%, transparent) !important;
   border-color: color-mix(in srgb, var(--dt-border) 90%, transparent);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--dt-primary) 78%, transparent);
+  box-shadow: none;
 }
 
 .august-other-chats-row {
@@ -431,8 +439,14 @@
  * ignore the preference entirely. The rem term keeps the hero on the same scale
  * as every other size in the app while the vw term keeps it responsive.
  */
+/* 38px was marketing-hero treatment for what is a prompt, not a page title.
+ * The reference's chat surface is quiet: a content column at body scale with
+ * the cursor in an empty composer and nothing else. Measured, this rendered at
+ * 38px in a 440x42 box — the loudest element on an empty screen, competing
+ * with the composer the user is meant to type into. Dropped to the page-title
+ * scale the rest of the shell uses. */
 .august-empty-state .august-empty-title {
-  font-size: clamp(1.875rem, 1.5rem + 1vw, 2.375rem);
+  font-size: clamp(1.125rem, 1.05rem + 0.2vw, 1.25rem);
   font-weight: 650;
   letter-spacing: -0.04em;
   line-height: 1.1;

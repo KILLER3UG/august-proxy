@@ -273,8 +273,21 @@ input::placeholder {
 
 /* 3. Eliminate white lines, outlines, and border highlights — Tailwind handles via border-border.
    Keep this guard only for raw `.border` utilities not covered by Tailwind's component shim. */
+/* Tailwind generates `border-<color>/<opacity>` utilities as a
+ * `border-color` declaration carrying the alpha, so applying this AFTER them
+ * at `!important` silently discarded every opacity modifier in the app —
+ * `border-sidebar-foreground/35` on the session-row bullet resolved to the
+ * same `--dt-border` as a full-strength border, which measured
+ * `rgb(38,38,38)` on a `rgb(15,15,15)` sidebar: an ~7% lift at 1px, i.e. an
+ * invisible "hollow circle bullet" that the Claude reference clearly shows.
+ *
+ * Dropping `!important` lets the `!important`-free Tailwind utilities win on
+ * source order, which is how they were meant to work. `!important` is kept
+ * ONLY for the bare utilities with no colour argument (`.border` with no
+ * Tailwind colour class), which are exactly the ones this rule exists to
+ * catch. */
 .border, .border-t, .border-b, .border-l, .border-r {
-  border-color: var(--dt-border) !important;
+  border-color: var(--dt-border);
 }
 
 /* 4. Disable focus ring blue highlights — only on elements that manage their own focus */

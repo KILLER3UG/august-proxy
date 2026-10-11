@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import type { GitDiffResult } from '@/api/git';
 import type { FileAttachment } from '@/types/chat';
+import { toast } from 'sonner';
 
 export type RightDrawerSectionId =
   | 'preview'
@@ -122,6 +123,13 @@ export function openRightDrawer(section?: Exclude<RightDrawerSectionId, 'file'>,
   const nextSections = baseSections.includes(target)
     ? baseSections
     : [...baseSections, target].slice(-MAX_SECTIONS);
+  if (!baseSections.includes(target) && baseSections.length >= MAX_SECTIONS) {
+    const removed = baseSections[0];
+    const label = removed ? removed[0].toUpperCase() + removed.slice(1) : 'A panel';
+    toast.info(`${label} was replaced in the side panel.`, {
+      description: 'The side panel keeps up to four sections open.',
+    });
+  }
 
   useRightDrawerStore.setState({
     ...current,

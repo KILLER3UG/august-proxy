@@ -15,7 +15,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
-import { AlertCircle, UploadCloud } from 'lucide-react';
+import { UploadCloud } from 'lucide-react';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import {
   useSessionsStore,
@@ -26,11 +26,7 @@ import {
   resolveActiveSession,
 } from '@/store/sessions';
 import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
-import { useContextLiveStore, selectContextLive } from '@/store/contextLive';
 import {
-  useContextSectionsStore,
-  selectSkillsMemoryBytes,
-  selectSkillsByName,
 } from '@/store/contextSectionsLive';
 import { AnimatePresence } from 'framer-motion';
 import { SCROLL_TO_TOP_THRESHOLD } from '@/components/chat/ScrollToTopButton';
@@ -79,7 +75,6 @@ import {
   createWorkbenchSession,
   answerWorkbenchBtw,
   getWorkbenchSession,
-  listWorkbenchCapabilities,
   getQueuedWorkbenchMessages,
   branchWorkbenchSession,
   truncateWorkbenchSession,
@@ -99,7 +94,6 @@ import {
   WORKBENCH_GUARD_MODES,
   type WorkbenchGuardMode,
 } from '@/components/chat/WorkbenchModeSelector';
-import { estimateContextBreakdown, type ContextBreakdown } from './ChatComposer';
 import { PlanProposalBanner } from '@/components/shell/PlanProposalBanner';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { normalizeWorkbenchSession, shouldShowPlanBanner } from '@/lib/workbench-plan';
@@ -138,6 +132,7 @@ import {
   parseThinkingAndContent,
 } from './message-blocks';
 import { ChatEmptyState } from './ChatEmptyState';
+import { HistoryLoadError, RosterError } from './TranscriptErrorStates';
 import { ChatThreadMessagePane } from './ChatThreadMessagePane';
 
 export {
@@ -192,6 +187,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     toggleModelVisibility,
     selectedModel,
     setSelectedModel,
+    selectModel,
     userSelectedRef,
   } = useChatModels(sessionId, activeSession);
 
@@ -255,13 +251,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     sessionId,
     workbenchSession?.id,
     activeSession?.workbenchSessionId,
-    // Refresh after each turn so the context ring tracks session fill.
+    // Refresh after each turn so the usage readout in the cost chip stays live.
     streaming ? 'streaming' : `idle-${messages.length}`,
   );
 
-  const [workbenchToolCount, setWorkbenchToolCount] = useState<number | null>(null);
-  const [workbenchToolTokens, setWorkbenchToolTokens] = useState<number | null>(null);
-  const [workbenchMcpTokens, setWorkbenchMcpTokens] = useState<number | null>(null);
   const [workbenchMode, setWorkbenchMode] = useState<WorkbenchGuardMode>(() => {
     const saved = localStorage.getItem(
       'august_last_workbench_guard_mode',
@@ -336,6 +329,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       (Array.isArray(sessionStatus?.pendingMutations) &&
         sessionStatus.pendingMutations.some((m) => !!m?.token)));
 
+  /* Effort state lives here and flows DOWN only: ModelEffortMenu's effort pane
+   * writes through `onEffortChange={setEffort}`, the send path reads `effort`,
+   * and every change re-seeds `august_last_effort` + the `august:effort-changed`
+   * event. (An earlier round of the redesign deleted the composer's model row
+   * and this setter with it; the reference re-read restored the row, so the
+   * setter is back — the "effort is read-only" comment that described the
+   * intermediate state was stale, not a ruling.) */
   const [effort, setEffort] = useState<'low' | 'medium' | 'high' | 'max'>(() => {
     try {
       const saved = localStorage.getItem('august_last_effort');
@@ -527,34 +527,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       mountedRef.current = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (!sessionId) {
-      setWorkbenchToolCount(null);
-      setWorkbenchToolTokens(null);
-      return;
-    }
-
-    let cancelled = false;
-    listWorkbenchCapabilities()
-      .then(({ totalTools, toolTokenEstimate, mcpToolTokens }) => {
-        if (cancelled) return;
-        if (Number.isFinite(totalTools)) setWorkbenchToolCount(totalTools);
-        if (Number.isFinite(toolTokenEstimate)) setWorkbenchToolTokens(toolTokenEstimate!);
-        if (Number.isFinite(mcpToolTokens)) setWorkbenchMcpTokens(mcpToolTokens!);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setWorkbenchToolCount(null);
-          setWorkbenchToolTokens(null);
-          setWorkbenchMcpTokens(null);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId]);
 
   useEffect(() => {
     visibleSessionId = sessionId;
@@ -929,6 +901,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     try {
       localStorage.setItem('august_last_effort', effort);
+      window.dispatchEvent(new CustomEvent('august:effort-changed', { detail: effort }));
     } catch {
       /* silent */
     }
@@ -1027,24 +1000,62 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [queryClient, refetchModels]);
 
   const prevModelsRef = useRef<ModelItem[]>(models);
+  /* Upgrade an EXISTING selection when the catalog refreshes. This effect never
+   * invents a default — see the next one, which owns that.
+   *
+   * It used to end with `if (!targetId) return models[0]`, i.e. the defaulting
+   * was bolted onto the catalog-identity guard. That guard is
+   * `models === prevModelsRef.current`, and `prevModelsRef` is seeded with
+   * `models` at mount — so on a WARM mount, where react-query already holds the
+   * catalog and `models` is non-empty on render #1, the guard swallows that
+   * exact array and the effect returns without ever running. It does not come
+   * back later either: react-query's `replaceEqualDeep` preserves object
+   * identity for deep-equal data, and the 120s catalog poll and the 30s
+   * provider-availability poll both return deep-equal payloads.
+   *
+   * With the composer model row gone, nothing else could recover from that:
+   * `selectedModel` stayed null, `canSend` requires `!!selectedModel`, so Send
+   * was permanently disabled, and the only escape was a full trip through the
+   * AI Setup wizard. Repro: open Settings -> Models & Providers (warms the
+   * query), then create a chat. */
   useEffect(() => {
     if (models.length === 0 || models === prevModelsRef.current) return;
     prevModelsRef.current = models;
     setSelectedModel((prev) => {
-      const targetId = userSelectedRef.current || prev?.id || null;
-      if (!targetId) return models[0];
+      if (!prev) return null; // nothing to upgrade — the default effect below owns this case
+      const targetId = userSelectedRef.current || prev.id;
       // Matched on gateway as well as id: the catalog repeats ids across
       // providers, and a refresh that lands mid-edit would otherwise re-point
       // the composer at whichever provider lists the id first.
-      const matched = findCatalogModel(models, targetId, prev?.provider);
+      const matched = findCatalogModel(models, targetId, prev.provider);
       if (matched) return matched;
       // Saved selection is not in the freshly-loaded catalog (provider
       // refresh in flight, runtime/environment switch): keep the previous
-      // pick instead of silently falling back to models[0] — the saved id
-      // rematches once the provider finishes loading.
-      return prev ?? null;
+      // pick — the saved id rematches once the provider finishes loading.
+      return prev;
     });
   }, [models, setSelectedModel, userSelectedRef]);
+
+  /* Nothing selected -> default to the best VISIBLE model, and persist it.
+   *
+   * Deliberately NOT guarded by catalog identity — that guard is exactly what
+   * made the previous arrangement fall through on a warm remount.
+   *
+   * `visibleModels` (ranked by `compareModelsRanked`, hidden-filtered) rather
+   * than raw `models`: picking a model the user deliberately hid in the
+   * visibility modal would be wrong. `selectModel` rather than raw
+   * `setSelectedModel`, so the default is written to `august_last_model` and
+   * the session — otherwise the choice silently changes if catalog ranking
+   * changes between launches, and the status bar shows nothing because the
+   * session row's `model` stays ''.
+   *
+   * Fires only from null, so it cannot override a real choice. */
+  useEffect(() => {
+    if (selectedModel !== null) return;
+    const first = visibleModels[0];
+    if (!first) return;
+    selectModel(first);
+  }, [selectedModel, visibleModels, selectModel]);
 
   // Model selection from ModelPickerCard — unified with the composer-menu
   // switch path: stop + handoff when streaming, server-computed handoff +
@@ -1212,98 +1223,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     };
   }, [sessionId, streaming]);
 
-  // The backend's per-turn `contextPressure` event is the authoritative
-  // occupancy measurement (proper tokenizer over system + tools + messages).
-  // Prefer it when present; fall back to the model profile, then 128k.
-  const liveContext = useContextLiveStore((s) => selectContextLive(s, sessionId));
-  const maxContext =
-    liveContext?.maxContext && liveContext.maxContext > 0
-      ? liveContext.maxContext
-      : modelForRequest?.contextWindow && modelForRequest.contextWindow > 0
-        ? modelForRequest.contextWindow
-        : 128000;
-  const toolCountForBreakdown = workbenchToolCount ?? 30;
-  const toolTokenEstimate = workbenchToolTokens;
-  const serverContextTokens = sessionUsage?.contextTokens ?? 0;
-  const hasServerTruth = serverContextTokens > 0;
-  const hasContentToSend = input.length > 0 || messages.length > 0;
-  const toolOverhead =
-    hasServerTruth || hasContentToSend
-      ? (toolTokenEstimate ?? Math.ceil(toolCountForBreakdown * 180))
-      : 0;
-  // Prefer full transcript size (content + thinking + tool payloads), not
-  // just message.content — assistant turns often park most tokens in blocks.
-  // When blocks exist, use them as the source of truth to avoid double-counting
-  // against message.content / thinking mirrors.
-  const transcriptChars = messages.reduce((sum, m) => {
-    if (m.blocks?.length) {
-      let n = 0;
-      let hasThinkingBlock = false;
-      for (const b of m.blocks) {
-        n += b.content?.length ?? 0;
-        if (b.type === 'thinking') hasThinkingBlock = true;
-        if (b.tool) {
-          n += (b.tool.args?.length ?? 0) + (b.tool.preview?.length ?? 0) + (b.tool.summary?.length ?? 0);
-        }
-      }
-      if (!hasThinkingBlock) n += m.thinking?.length ?? 0;
-      return sum + n;
-    }
-    return sum + (m.content?.length ?? 0) + (m.thinking?.length ?? 0);
-  }, 0) + input.length;
-  const fallbackEstimate = Math.ceil(transcriptChars / 4) + toolOverhead;
-  // Take the HIGHEST of every measurement we have. Any one source can be
-  // stale or under-count (the persisted `input_tokens` excluded cache
-  // buckets; the DB row lags the newest messages; the local char/4 estimate
-  // misses the system prompt), so a maximum can only be a more honest
-  // lower bound than trusting one of them alone. The prior idle branch took
-  // the persisted value verbatim, which is what pinned a warm session to a
-  // stable wrong ~10%.
-  const estTokens = Math.max(
-    serverContextTokens,
-    liveContext?.totalTokens ?? 0,
-    fallbackEstimate,
-  );
-  const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
-
-  // Byte size of the memory + skills blocks the backend injected on the
-  // current turn. Null until it has reported, which the ring renders as
-  // "not measured" — the previous behaviour was to report a confident 0 for
-  // a contributor nothing ever measured.
-  const coreMemoryBytes = useContextSectionsStore((s) => selectSkillsMemoryBytes(s, sessionId));
-  const skillsByName = useContextSectionsStore((s) => selectSkillsByName(s, sessionId));
-
-  const contextBreakdown: ContextBreakdown = useMemo(
-    () =>
-      estimateContextBreakdown({
-        messages,
-        input,
-        toolCount: toolCountForBreakdown,
-        toolTokenEstimate: toolTokenEstimate ?? undefined,
-        mcpToolTokens: workbenchMcpTokens ?? undefined,
-        coreMemoryBytes: coreMemoryBytes ?? undefined,
-        skillsByName,
-        scaleToTotal: hasServerTruth || !!liveContext
-          ? estTokens
-          : hasContentToSend
-            ? undefined
-            : 0,
-      }),
-    [
-      messages,
-      input,
-      toolCountForBreakdown,
-      toolTokenEstimate,
-      workbenchMcpTokens,
-      coreMemoryBytes,
-      skillsByName,
-      hasServerTruth,
-      liveContext,
-      estTokens,
-      hasContentToSend,
-    ],
-  );
-
   /** "Answer this with another model" (A4): switch the session model and
    *  regenerate the turn — the backend is truncated at that turn by
    *  handleRegenerate, and the deferred call runs after re-render so the
@@ -1452,7 +1371,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       streaming={streaming}
       send={send}
       stop={stop}
-      setMessages={setMessages}
       ensureWorkbenchSession={ensureWorkbenchSession}
       queuedMessages={queuedMessages}
       workbenchSession={workbenchSession}
@@ -1461,26 +1379,19 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       setWorkbenchMode={setWorkbenchMode}
       workspacePath={activeSession?.workspacePath}
       activeWorkbenchSessionId={activeSession?.workbenchSessionId}
-      pct={pct}
-      estTokens={estTokens}
-      maxContext={maxContext}
-      contextBreakdown={contextBreakdown}
       sessionUsage={sessionUsage}
-      models={models}
       visibleModels={visibleModels}
-      modelsLoading={modelsLoading}
       selectedModel={selectedModel}
-      setSelectedModel={setSelectedModel}
-      userSelectedRef={userSelectedRef}
+      effort={effort}
+      onSelectModel={selectModel}
+      onEffortChange={setEffort}
       onEditModels={() => setShowModelVisibility(true)}
+      thinkingEnabled={thinkingEnabled}
+      onThinkingChange={setThinkingEnabled}
       onArenaLaunch={launchArena}
       onDebateLaunch={launchDebate}
       offlineCount={offlineCount}
       onFlushOffline={() => void flushOffline()}
-      effort={effort}
-      setEffort={setEffort}
-      thinkingEnabled={thinkingEnabled}
-      setThinkingEnabled={setThinkingEnabled}
       voiceActive={voiceActive}
       startVoiceInput={startVoiceInput}
       stopVoiceInput={stopVoiceInput}
@@ -1650,21 +1561,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             </div>
           )}
           {agentsQuery.isError && hasSubagentRows && (
-            <div
-              className="mx-auto w-full max-w-3xl px-6 pt-3"
-              role="status"
-              data-testid="roster-error"
-            >
-              <div className="flex items-center gap-2 rounded-lg border border-warning/25 bg-warning/5 px-3 py-1.5 text-2xs text-muted-foreground">
-                <AlertCircle className="size-3 shrink-0 text-warning" aria-hidden />
-                <span>Sub-agent status is temporarily unavailable — retrying.</span>
-              </div>
-            </div>
+            <RosterError onRetry={() => void agentsQuery.refetch()} />
           )}
           <AnimatePresence initial={false}>
             {messages.length === 0 && historyStatus === 'loading' ? (
               <div
-                className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-10"
+                className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-[var(--shell-inset-x)] py-10"
                 role="status"
                 aria-label="Loading conversation"
               >
@@ -1677,20 +1579,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 ))}
               </div>
             ) : messages.length === 0 && historyError ? (
-              <div className="mx-auto flex w-full max-w-md flex-col items-center gap-3 px-6 py-16 text-center">
-                <AlertCircle className="size-6 text-danger" />
-                <p className="text-sm font-medium text-foreground">Couldn't load this conversation</p>
-                <p className="text-2xs text-muted-foreground">{historyError}</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (sessionId) retrySessionHistory(sessionId);
-                  }}
-                  className="rounded-md border border-border px-3 py-1.5 text-xs text-foreground transition hover:bg-accent"
-                >
-                  Try again
-                </button>
-              </div>
+              <HistoryLoadError
+                error={historyError}
+                onRetry={() => {
+                  if (sessionId) retrySessionHistory(sessionId);
+                }}
+              />
             ) : messages.length === 0 ? (
               <ChatEmptyState
                 workspacePath={activeSession?.workspacePath}

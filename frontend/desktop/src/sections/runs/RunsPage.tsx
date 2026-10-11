@@ -115,9 +115,14 @@ function fmtCost(c?: number): string {
 }
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  /* Borderless: four of these sat side by side as four hairline boxes, which
+   * is exactly the "N bordered cards" shape reference rule 2 bans — spacing
+   * does the work (ChatGPT's installed grid is the same move). The label is
+   * sentence case: the reference's section labels are muted and small, and
+   * UPPERCASE tracking was the old admin-panel signature. */
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-card/60 p-3.5">
-      <p className="text-2xs uppercase tracking-wider text-muted-foreground">{label}</p>
+    <div className="bg-card/60 p-3.5" data-testid="runs-stat">
+      <p className="text-2xs text-muted-foreground">{label}</p>
       <p className="mt-1 text-xl font-semibold text-foreground">{value}</p>
       {hint ? <p className="mt-0.5 text-2xs text-muted-foreground/70">{hint}</p> : null}
     </div>
@@ -240,9 +245,10 @@ export function RunsPage() {
       data-testid="runs-page"
     >
       <div className="flex items-center gap-3">
-        <History className="size-7 text-primary" />
+        <History className="size-7 text-muted-foreground" />
         <div className="flex-1">
-          <h1 className="text-2xl font-semibold">Runs</h1>
+          {/* h2, not h1: the titlebar already renders this route's single h1. */}
+          <h2 className="text-2xl font-semibold">Runs</h2>
           <p className="text-sm text-muted-foreground">
             Workbench sessions — status, tokens, cost, and jump-back-into-chat
           </p>

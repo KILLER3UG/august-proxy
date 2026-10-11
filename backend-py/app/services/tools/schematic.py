@@ -38,18 +38,24 @@ from app.services.sandbox.paths import bind_path
 # ── Grid ───────────────────────────────────────────────────────────────────
 
 GRID = 10.0          # px per grid cell
-PIN_OFFSETS: dict[str, tuple[tuple[int, int], tuple[int, int]]] = {
-    # kind -> ((left-pin col,row), (right-pin col,row)) in grid cells,
-    # relative to the component's layout origin. 2-terminal parts are
-    # symmetric; sources get their + on the left.
+# kind -> pin offsets in grid cells, relative to the component's layout
+# origin. Most parts are 2-terminal and symmetric; sources get their + on
+# the left. The 3-terminal entries follow SPICE node order — `Q<ref> NC NB NE`
+# is collector, base, emitter and `M<ref> ND NG NS` is drain, gate, source —
+# and the three offsets must average to (0, 0): the editor pivots drags and
+# labels on the mean of the pins, and a mean off the origin skids the body.
+# The old 2-pin entries made build_graph drop the third node silently (the
+# `i >= len(comp_pins)` break), so no wire ever attached to an emitter or a
+# source terminal.
+PIN_OFFSETS: dict[str, tuple[tuple[int, int], ...]] = {
     'resistor': ((-2, 0), (2, 0)),
     'capacitor': ((-2, 0), (2, 0)),
     'inductor': ((-2, 0), (2, 0)),
     'diode': ((-2, 0), (2, 0)),  # anode left
     'voltage': ((-2, 0), (2, 0)),
     'isource': ((-2, 0), (2, 0)),
-    'transistor': ((-1, 0), (1, 0)),
-    'mosfet': ((-1, 0), (1, 0)),
+    'transistor': ((1, -1), (-2, 0), (1, 1)),   # C, B, E
+    'mosfet': ((1, -1), (-2, 0), (1, 1)),       # D, G, S
     'subckt': ((-2, 0), (2, 0)),
     'switch': ((-2, 0), (2, 0)),
 }
@@ -277,16 +283,14 @@ class Component:
         return (self.col * GRID, self.row * GRID)
 
     def pins(self) -> list[tuple[float, float]]:
-        (lx, ly), (rx, ry) = PIN_OFFSETS.get(self.kind, DEFAULT_OFFSETS)
+        offs = PIN_OFFSETS.get(self.kind, DEFAULT_OFFSETS)
         cx, cy = self.px()
         if self.rot % 2:
             # Rotate the offsets 90° about the centre: (dx, dy) -> (-dy, dx).
             # Reading the row offsets alone here returned the centre twice,
             # so every wire on a vertical part attached to its middle.
-            return [(cx - ly * GRID, cy + lx * GRID),
-                    (cx - ry * GRID, cy + rx * GRID)]
-        return [(cx + lx * GRID, cy + ly * GRID),
-                (cx + rx * GRID, cy + ry * GRID)]
+            return [(cx - ly * GRID, cy + lx * GRID) for (lx, ly) in offs]
+        return [(cx + lx * GRID, cy + ly * GRID) for (lx, ly) in offs]
 
 
 @dataclass
@@ -409,7 +413,6 @@ def _inductor_path(x0: float, y: float, x1: float) -> str:
 
 def _symbol_svg(comp: Component, color: str, voltage: float | None,
                 current: float | None) -> list[str]:
-    (x0, y0), (x1, y1) = comp.pins()
     parts: list[str] = []
     vertical = comp.rot % 2 == 1
     stroke = '#334155'
@@ -424,10 +427,48 @@ def _symbol_svg(comp: Component, color: str, voltage: float | None,
                 + '\n'.join(_symbol_svg(Component(comp.ref, comp.kind, comp.nodes,
                                                    comp.value, comp.params, 0, 0, 0), color, voltage, current))
                 + '</g>']
-    half = 8  # body half-height
+    ps = comp.pins()
     # Round-bodied parts (sources r=11, BJT/MOSFET r=14) need the label clear of
     # the circle; a 14px gap used to print the ref straight onto the symbol.
     label_gap = 26 if comp.kind in ('voltage', 'isource', 'transistor', 'mosfet') else 20
+    if comp.kind in ('transistor', 'mosfet') and len(ps) >= 3:
+        # SPICE node order — Q: collector, base, emitter; M: drain, gate,
+        # source — matches the pin order, so ps[0] is the output-side terminal
+        # that used to exist only as a zero-length line while ps[2] (the
+        # emitter/source) had no pin at all and no wire could attach.
+        (xc, yc), (xb, yb), (xe, ye) = ps[0], ps[1], ps[2]
+        bcx = (xc + xb + xe) / 3
+        bcy = (yc + yb + ye) / 3
+        bar_x = bcx - 4
+        gate_x = bar_x - 4 if comp.kind == 'mosfet' else bar_x
+        parts.append(f'<circle cx="{bcx:.0f}" cy="{bcy:.0f}" r="14" fill="none" stroke="{stroke}" stroke-width="1.5"/>')
+        parts.append(f'<line x1="{xb:.0f}" y1="{yb:.0f}" x2="{gate_x:.0f}" y2="{yb:.0f}" stroke="{stroke}" stroke-width="1.5"/>')
+        parts.append(f'<line x1="{bar_x:.0f}" y1="{bcy - 7:.0f}" x2="{bar_x:.0f}" y2="{bcy + 7:.0f}" stroke="{stroke}" stroke-width="1.5"/>')
+        if comp.kind == 'mosfet':
+            # The insulated gate is a second bar parallel to the channel bar;
+            # without it a MOSFET reads as an arrowless BJT.
+            parts.append(f'<line x1="{gate_x:.0f}" y1="{bcy - 7:.0f}" x2="{gate_x:.0f}" y2="{bcy + 7:.0f}" stroke="{stroke}" stroke-width="1.5"/>')
+        parts.append(f'<line x1="{bar_x:.0f}" y1="{bcy - 4:.0f}" x2="{xc:.0f}" y2="{yc:.0f}" stroke="{stroke}" stroke-width="1.5"/>')
+        emit_y = bcy + 4
+        if comp.kind == 'transistor':
+            # NPN arrow: conventional current leaves through the emitter, so
+            # the head points at the emitter pin. (The netlist's model card
+            # decides NPN/PNP and the graph does not carry it; NPN is the
+            # common case and the arrow direction is the only difference.)
+            ang = math.atan2(ye - emit_y, xe - bar_x)
+            hx, hy = xe - 7 * math.cos(ang), ye - 7 * math.sin(ang)
+            px_, py_ = -3 * math.cos(ang + math.pi / 2), -3 * math.sin(ang + math.pi / 2)
+            parts.append(f'<line x1="{bar_x:.0f}" y1="{emit_y:.0f}" x2="{hx:.1f}" y2="{hy:.1f}" stroke="{stroke}" stroke-width="1.5"/>')
+            parts.append(f'<path d="M {hx + px_:.1f} {hy + py_:.1f} L {xe:.1f} {ye:.1f} L {hx - px_:.1f} {hy - py_:.1f} Z" fill="{stroke}" stroke="none"/>')
+        else:
+            parts.append(f'<line x1="{bar_x:.0f}" y1="{emit_y:.0f}" x2="{xe:.0f}" y2="{ye:.0f}" stroke="{stroke}" stroke-width="1.5"/>')
+        label_x, label_y = bcx, bcy - label_gap
+        cur_y = bcy + label_gap + 8
+    else:
+        (x0, y0), (x1, y1) = ps[0], ps[1]
+        label_x, label_y = (x0 + x1) / 2, y0 - label_gap
+        cur_y = y0 + label_gap + 8
+    half = 8  # body half-height (capacitor plates, diode triangle)
     if comp.kind == 'resistor':
         parts.append(f'<polyline points="{_resistor_path(x0 + 4, y0, x1 - 4, y0)}" fill="none" stroke="{stroke}" stroke-width="2"/>')
     elif comp.kind == 'capacitor':
@@ -469,16 +510,16 @@ def _symbol_svg(comp: Component, color: str, voltage: float | None,
         parts.append(f'<rect x="{(x0 + x1) / 2 - abs(x1 - x0) * 0.32:.0f}" y="{y0 - h / 2:.0f}" width="{abs(x1 - x0) * 0.64:.0f}" height="{h}" fill="none" stroke="{stroke}" stroke-width="2" rx="3"/>')
         _ = w, mid
     elif comp.kind in ('transistor', 'mosfet'):
-        parts.append(f'<circle cx="{(x0 + x1) / 2:.0f}" cy="{y0:.0f}" r="14" fill="none" stroke="{stroke}" stroke-width="1.5"/>')
-        for pin, yy in ((x0, y0 - 8), (x0, y0 + 8), (x1, y0)):
-            parts.append(f'<line x1="{pin:.0f}" y1="{y0:.0f}" x2="{pin:.0f}" y2="{yy:.0f}" stroke="{stroke}" stroke-width="1.5"/>')
+        # Already drawn from all three pins above; the generic 2-pin body
+        # would draw an unrelated box over it.
+        pass
     else:
         parts.append(f'<line x1="{x0:.0f}" y1="{y0:.0f}" x2="{x1:.0f}" y2="{y0:.0f}" stroke="{stroke}" stroke-width="2"/>')
         parts.append(f'<rect x="{(x0 + x1) / 2 - 10:.0f}" y="{y0 - 8:.0f}" width="20" height="16" fill="none" stroke="{stroke}" stroke-width="1.5" rx="2"/>')
-    parts.append(f'<text x="{(x0 + x1) / 2:.0f}" y="{y0 - label_gap:.0f}" text-anchor="middle" font-size="11" font-family="Segoe UI, system-ui, sans-serif" fill="#0f172a">{label}</text>')
+    parts.append(f'<text x="{label_x:.0f}" y="{label_y:.0f}" text-anchor="middle" font-size="11" font-family="Segoe UI, system-ui, sans-serif" fill="#0f172a">{label}</text>')
     cur = current
     if cur is not None and math.isfinite(cur):
-        parts.append(f'<text x="{(x0 + x1) / 2:.0f}" y="{y0 + label_gap + 8:.0f}" text-anchor="middle" font-size="10" font-family="Segoe UI, system-ui, sans-serif" fill="#b91c1c">{cur:.3g} A</text>')
+        parts.append(f'<text x="{label_x:.0f}" y="{cur_y:.0f}" text-anchor="middle" font-size="10" font-family="Segoe UI, system-ui, sans-serif" fill="#b91c1c">{cur:.3g} A</text>')
     _ = voltage
     return parts
 

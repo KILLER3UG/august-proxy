@@ -82,8 +82,16 @@ describe('SessionList — delete-active fallback (Bug 1)', () => {
     );
     const trigger = screen.getByLabelText('More options');
     expect(trigger.className).toContain('focus-visible:ring-2');
-    expect(trigger.parentElement?.className).toContain('opacity-100');
-    expect(trigger.parentElement?.className).not.toContain('group-hover:opacity-100');
+    // Hover-revealed, not permanent. It used to assert the opposite
+    // (`opacity-100` and NOT `group-hover:opacity-100`) on the theory that an
+    // always-visible glyph is more discoverable. Against the references that
+    // is wrong: a column of three-dot glyphs on every row is the single
+    // loudest thing in a 40-row sidebar, and none of them show one at rest.
+    // Discoverability comes from hover and focus-within, which this keeps.
+    expect(trigger.parentElement?.className).toContain('opacity-0');
+    expect(trigger.parentElement?.className).toContain('group-hover:opacity-100');
+    // Focus must still reveal it — a keyboard user cannot hover.
+    expect(trigger.parentElement?.className).toContain('focus-within:opacity-100');
     trigger.focus();
     fireEvent.keyDown(trigger, { key: 'ArrowDown' });
     const firstItem = (await screen.findAllByRole('menuitem'))[0];

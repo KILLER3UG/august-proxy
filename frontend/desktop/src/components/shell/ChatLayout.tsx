@@ -34,6 +34,7 @@ import { dispatchFocusComposer, dispatchInsertComposerText, onUiAction } from "@
 import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { StatusBar } from './StatusBar';
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 
@@ -660,6 +661,13 @@ export function ChatLayout() {
           {rightDrawer.bottomTerminal && !isSettings && (
             <BottomTerminalDock onClose={() => toggleBottomTerminal(false)} />
           )}
+          {/* The full-width status bar (`qwen3.8-flash · medium  + 219.9k − 15.2k`)
+              is removed. It is not in any reference: Claude puts the model on the
+              one line under the composer and has no footer bar at all, and the
+              token deltas it showed duplicate the per-session deltas being
+              removed from the sidebar rows. The model name is now rendered by
+              the composer footer beside the disclaimer, where the reference has
+              it. `StatusBar` itself is left on disk but no longer rendered here. */}
         </div>
       </div>
       <ConfirmDialog

@@ -516,6 +516,11 @@ export function RightDrawerSubagentsSection({
     label: displayLabels.get(e.key) || getAgentRoleLabel(e.agent.agentId),
     elapsed: typeof e.agent.elapsed === 'number' ? e.agent.elapsed : undefined,
   }));
+  const recentTabs = tabs.slice(-5);
+  const selectedTab = tabs.find((tab) => tab.taskId === selectedTaskId);
+  const stripTabs = selectedTab && !recentTabs.some((tab) => tab.taskId === selectedTab.taskId)
+    ? [selectedTab, ...recentTabs]
+    : recentTabs;
 
   const tabsStrip =
     entries.length > 0 ? (
@@ -528,7 +533,7 @@ export function RightDrawerSubagentsSection({
           aria-label="Subagent workers"
           className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
         >
-          {tabs.map((t) => {
+          {stripTabs.map((t) => {
             const agent = visibleEntries.find((e) => e.key === t.taskId)?.agent;
             if (!agent) return null;
             const active = t.taskId === selectedTaskId;
@@ -547,6 +552,19 @@ export function RightDrawerSubagentsSection({
                   type="button"
                   role="tab"
                   aria-selected={active}
+                  tabIndex={active ? 0 : -1}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+                    event.preventDefault();
+                    const tabButtons = Array.from(
+                      event.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
+                    );
+                    const index = tabButtons.indexOf(event.currentTarget);
+                    const offset = event.key === 'ArrowRight' ? 1 : -1;
+                    const next = tabButtons[(index + offset + tabButtons.length) % tabButtons.length];
+                    next?.focus();
+                    next?.click();
+                  }}
                   onClick={() => {
                     setSelectedTaskId(t.taskId);
                     setSeenKeys((prev) => new Set(prev).add(t.taskId));

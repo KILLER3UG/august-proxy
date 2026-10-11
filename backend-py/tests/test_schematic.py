@@ -239,6 +239,54 @@ def test_rotated_component_pins_stay_apart():
         assert centre == (30.0, 80.0)
 
 
+def test_three_terminal_parts_have_all_three_pins():
+    """`Q`/`M` parse THREE nodes (SPICE: NC NB NE / ND NG NS) but the old
+    2-entry PIN_OFFSETS made build_graph drop the third node at the
+    `i >= len(comp_pins)` break — an emitter or source terminal that no wire
+    could ever attach to."""
+    q = schematic.Component('Q1', 'transistor', ['c', 'b', 'e'], 'Qmod', '', 3, 8, 0)
+    pins = q.pins()
+    assert len(pins) == 3
+    # The offsets are symmetric about the layout origin, so the pin mean IS
+    # the origin — the point drags and labels pivot on.
+    cx = sum(p[0] for p in pins) / len(pins)
+    cy = sum(p[1] for p in pins) / len(pins)
+    assert (cx, cy) == q.px()
+    # Rotation moves all three but keeps the mean.
+    up = schematic.Component('Q1', 'transistor', ['c', 'b', 'e'], 'Qmod', '', 3, 8, 1).pins()
+    assert len(set(up)) == 3
+    assert (sum(p[0] for p in up) / 3, sum(p[1] for p in up) / 3) == q.px()
+
+
+def test_bjt_emitter_net_gets_a_wire():
+    """The observable the dropped pin hid: with `Q1 c b e`, net `e` joins the
+    transistor's emitter to Re — previously only Re's pin existed on that net,
+    so no wire was emitted at all and the emitter drew floating."""
+    deck = TOPOLOGIES['bjt']
+    graph = schematic.build_graph(deck, {'components': {}})
+    wire_nets = {w.nodes[0] for w in graph['wires']}
+    assert {'c', 'b', 'e'} <= wire_nets, f'missing transistor nets in {wire_nets}'
+    q1 = next(c for c in graph['components'] if c.ref == 'Q1')
+    assert len(q1.pins()) == 3
+
+
+def test_transistor_symbol_draws_three_leads_and_polarity_differs():
+    """The old symbol drew its third lead as a ZERO-LENGTH line (`y2 == y1`)
+    and a MOSFET was indistinguishable from an arrowless BJT."""
+    q = schematic.Component('Q1', 'transistor', ['c', 'b', 'e'], 'Qmod', '', 3, 8, 0)
+    m = schematic.Component('M1', 'mosfet', ['d', 'g', 's'], 'Mmod', '', 3, 8, 0)
+    qsvg = '\n'.join(schematic._symbol_svg(q, '#334155', None, None))
+    msvg = '\n'.join(schematic._symbol_svg(m, '#334155', None, None))
+    for svg in (qsvg, msvg):
+        leads = [ln for ln in svg.splitlines() if '<line' in ln]
+        assert len(leads) >= 4, f'expected base lead + bar + 2 channel leads, got {leads}'
+    # NPN emitter arrow is a filled triangle; the MOSFET has the insulated
+    # gate bar instead and no arrow.
+    assert '<path' in qsvg and 'fill="#334155"' in qsvg
+    assert '<path' not in msvg
+    assert msvg.count('stroke-width="1.5"') >= qsvg.count('stroke-width="1.5"')
+
+
 def test_vertical_symbol_renders_on_its_own_pins():
     """The rotated group must land where pins() says, or the artifact and the
     editor draw two different circuits."""
@@ -413,9 +461,12 @@ def _body_box(comp: schematic.Component) -> tuple[float, float, float, float]:
 
 
 def _label_box(comp: schematic.Component) -> tuple[float, float, float, float]:
+    # Mean of ALL pins — the label anchors on the body centre, which for a
+    # 3-terminal part is not the pins[0]/pins[1] midpoint (that pair is
+    # collector/base and sits half a cell off the origin).
     pins = comp.pins()
-    cx = (pins[0][0] + pins[1][0]) / 2
-    cy = (pins[0][1] + pins[1][1]) / 2
+    cx = sum(p[0] for p in pins) / len(pins)
+    cy = sum(p[1] for p in pins) / len(pins)
     gap = 26 if comp.kind in _ROUND_BODY else 20
     half_w = 6.2 * len(f'{comp.ref} {comp.value}'.strip()) / 2
     return (cx - half_w, cy - gap - 10, cx + half_w, cy - gap + 2)
@@ -444,8 +495,8 @@ def test_rendered_topology_has_no_collisions(name: str, deck: str):
             assert not _clash(labels[a], bodies[b]), f'{name}: label {a} sits on body {b}'
 
     # The title is painted at (minx+8, miny+20) over a viewBox built from pins.
-    xs = [v for c in parts for v in (c.pins()[0][0], c.pins()[1][0])]
-    ys = [v for c in parts for v in (c.pins()[0][1], c.pins()[1][1])]
+    xs = [p[0] for c in parts for p in c.pins()]
+    ys = [p[1] for c in parts for p in c.pins()]
     minx, miny = min(xs) - 40, min(ys) - 40 - 26
     title = (minx + 8, miny + 8, minx + 8 + 7.5 * len(name), miny + 22)
     for ref in refs:

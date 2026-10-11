@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bot,
+  Check,
   ExternalLink,
   Globe,
   Layers,
@@ -212,6 +213,7 @@ interface SkillRow {
   name: string;
   description?: string;
   source?: string;
+  enabled?: boolean;
 }
 
 export function PluginsSection() {
@@ -245,11 +247,18 @@ export function PluginsSection() {
               No MCP servers configured — add one under Settings → MCP Servers.
             </p>
           ) : (
-            servers.data!.servers.map((s) => (
-              <Row key={s.id} label={s.name} hint={s.status || undefined}>
-                <span className="text-xs text-muted-foreground">{s.status ?? (s.enabled ? 'enabled' : 'disabled')}</span>
-              </Row>
-            ))
+            <div className="grid gap-2 sm:grid-cols-2" data-testid="plugin-server-grid">
+              {servers.data!.servers.map((s) => (
+                <div key={s.id} className="flex min-w-0 items-center gap-2.5 rounded-lg border border-border/60 bg-background/50 p-3">
+                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted/60 text-primary"><Plug className="size-4" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-medium text-foreground">{s.name}</span>
+                    <span className="block truncate text-2xs text-muted-foreground">{s.status || (s.enabled ? 'Enabled' : 'Disabled')}</span>
+                  </span>
+                  {s.enabled ? <Check className="size-3.5 shrink-0 text-success" aria-label="Enabled" /> : null}
+                </div>
+              ))}
+            </div>
           )}
           <button
             type="button"
@@ -266,11 +275,18 @@ export function PluginsSection() {
           ) : skillCount === 0 ? (
             <p className="py-3 text-xs text-muted-foreground">No skills installed.</p>
           ) : (
-            skills.data!.skills.slice(0, 12).map((s) => (
-              <Row key={s.name} label={s.name} hint={s.description?.slice(0, 90)}>
-                {s.source ? <span className="text-2xs uppercase text-muted-foreground">{s.source}</span> : null}
-              </Row>
-            ))
+            <div className="grid gap-2 sm:grid-cols-2" data-testid="plugin-skill-grid">
+              {skills.data!.skills.slice(0, 12).map((s) => (
+                <div key={s.name} className="flex min-w-0 items-center gap-2.5 rounded-lg border border-border/60 bg-background/50 p-3">
+                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted/60 text-primary"><Layers className="size-4" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-medium text-foreground">{s.name}</span>
+                    <span className="block truncate text-2xs text-muted-foreground">{s.description?.slice(0, 90) || s.source || 'Skill'}</span>
+                  </span>
+                  {s.enabled !== false ? <Check className="size-3.5 shrink-0 text-success" aria-label="Enabled" /> : null}
+                </div>
+              ))}
+            </div>
           )}
           <button
             type="button"

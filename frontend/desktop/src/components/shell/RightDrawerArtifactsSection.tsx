@@ -4,7 +4,7 @@
 /* collectArtifacts so it stays in sync with the inline ChangesCard.      */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Image as ImageIcon, FileText, Link2, Clock, FolderOpen, Download } from 'lucide-react';
+import { Search, Image as ImageIcon, FileText, Link2, FolderOpen, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { FileIcon } from '@/components/ui/FileIcon';
@@ -254,17 +254,30 @@ export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string |
             ) : null}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
+          /* One full-width row per artifact, the reference shape — NOT a 2-column
+           * grid. A grid gave each card ~200px inside a 420px drawer, which is
+           * wide enough for an icon tile and nothing else: filenames truncated to
+           * about a dozen characters. The reference runs a single column of
+           * ~470px rows, and the name is the thing you are scanning for.
+           *
+           * Two more differences, both measured against the same screenshot:
+           * the reference has NO metadata row under the name (August carried a
+           * `timeAgo · jump` line, which is two pieces of text per artifact that
+           * nobody asked for), and its folder action is permanently visible
+           * rather than hover-only — it is the primary action on the row, not a
+           * secret. The timestamp survives as a `title` on the row, so it is
+           * still reachable without costing a line of text. */
+          <div className="flex flex-col gap-1.5">
             {filtered.map((a) => (
               <div
                 key={a.id}
-                className="group flex flex-col gap-1.5 rounded-lg border border-border/40 bg-card/40 p-2 hover:bg-card hover:border-border/60 transition"
+                className="group flex items-center gap-2.5 rounded-lg border border-border/40 bg-card/40 p-2 transition hover:border-border/60 hover:bg-card"
               >
                 <button
                   type="button"
                   onClick={() => void openArtifact(a)}
                   title={a.href}
-                  className="flex items-start gap-2 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                 >
                   <ArtifactThumb a={a} />
                   <span className="min-w-0 flex-1">
@@ -276,45 +289,49 @@ export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string |
                     </span>
                   </span>
                 </button>
-                <div className="flex items-center justify-between gap-1 pl-1">
-                  <span className="flex min-w-0 items-center gap-1 text-2xs text-muted-foreground/50">
-                    <Clock className="size-2.5 shrink-0" />
-                    <span className="truncate">{timeAgo(a.timestamp)}</span>
-                    <span className="opacity-40 shrink-0">·</span>
-                    <button type="button" onClick={() => jumpTo(a)} className="underline decoration-dotted underline-offset-2 hover:text-foreground/70 shrink-0">
-                      jump
-                    </button>
-                  </span>
-                  {/* Reveal/download only for real files. A `link`'s href is a
-                      URL and an `image`'s may be a data: or http: URL, neither
-                      of which has anything to reveal on disk. */}
-                  {a.kind === 'file' && (
-                    <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-6"
-                        onClick={() => void reveal(a)}
-                        title="Reveal in folder"
-                        aria-label={`Reveal ${a.label} in folder`}
-                      >
-                        <FolderOpen className="size-3" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-6"
-                        onClick={() => download(a)}
-                        title="Download"
-                        aria-label={`Download ${a.label}`}
-                      >
-                        <Download className="size-3" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
+                {/* Reveal/download only for real files. A `link`'s href is a
+                    URL and an `image`'s may be a data: or http: URL, neither
+                    of which has anything to reveal on disk. Always visible —
+                    see the note above. */}
+                {a.kind === 'file' && (
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-6 text-muted-foreground/60 hover:text-foreground"
+                      onClick={() => void reveal(a)}
+                      title={`Reveal in folder · ${timeAgo(a.timestamp)}`}
+                      aria-label={`Reveal ${a.label} in folder`}
+                    >
+                      <FolderOpen className="size-3" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-6 text-muted-foreground/60 hover:text-foreground"
+                      onClick={() => download(a)}
+                      title="Download"
+                      aria-label={`Download ${a.label}`}
+                    >
+                      <Download className="size-3" />
+                    </Button>
+                  </div>
+                )}
+                {/* Jump is a text link in the old card and is still a real
+                    action, so it moves into the row's tooltip surface rather
+                    than being deleted: the footer button that survived. */}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 shrink-0 px-1.5 text-2xs text-muted-foreground/60 hover:text-foreground"
+                  onClick={() => jumpTo(a)}
+                  title={`Jump to ${a.label} in the transcript`}
+                >
+                  jump
+                </Button>
               </div>
             ))}
           </div>

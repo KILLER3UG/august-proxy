@@ -754,6 +754,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     legacyAliases: ['reliability', 'harness-proposals'],
   },
   {
+    // `category: 'capabilities'` is the truth here — the rail and search group
+    // by it, and this section reads as a model knob, not a statistic. It sits
+    // after the Data block purely because it was appended there historically,
+    // which is the kind of positional fact that silently drifts; grouping is
+    // the field's job, so nothing depends on where the entry lives.
     id: 'model-families',
     label: 'Model Families',
     description: 'Which wire parameters August may send per model — reasoning effort, thinking budget, default tier — and the family table that decides it.',

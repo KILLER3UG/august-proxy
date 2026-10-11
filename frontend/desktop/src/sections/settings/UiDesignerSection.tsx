@@ -272,11 +272,6 @@ export function UiDesignerSection() {
                   Reflects draft colors only — not the real app until Apply.
                 </p>
               </div>
-              {dirty ? (
-                <Badge className="bg-primary/15 text-primary border-primary/20">previewing</Badge>
-              ) : (
-                <Badge variant="outline">in sync</Badge>
-              )}
             </div>
 
             <div

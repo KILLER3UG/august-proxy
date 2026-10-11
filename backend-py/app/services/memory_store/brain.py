@@ -762,7 +762,11 @@ def brain_index_snippet(scope: str = 'global') -> str:
 # store with no live writer — rows are deletable (see _ROW_DELETABLE) but not
 # editable.
 _ROW_EDIT_FIELDS: dict[str, frozenset[str]] = {
-    'facts': frozenset({'fact_value', 'title', 'kind', 'description', 'category', 'confidence', 'expires_at'}),
+    # `status` is whitelisted for exactly one writer: the Memory UI's
+    # "Restore" on a retired row (status='active'; brain_update_row refuses
+    # any other value). Consolidation remains the only writer of 'retired' /
+    # 'superseded'.
+    'facts': frozenset({'fact_value', 'title', 'kind', 'description', 'category', 'confidence', 'expires_at', 'status'}),
     'memory': frozenset({'value'}),
     'timeline': frozenset({'event_summary', 'category'}),
 }
@@ -842,6 +846,12 @@ def brain_update_row(store: str, row_id: object, patch: dict[str, object]) -> di
     resolved = _resolve_store(store)
     if resolved == 'heuristics':
         return {'ok': False, 'status': 403, 'error': "store 'heuristics' is read-only legacy"}
+    # `status` is whitelisted for exactly one direction: LIFTING retirement.
+    # Consolidation's proposal flow stays the only writer of 'retired' /
+    # 'superseded' — the settings door must never park a row the model is
+    # using, even if a future UI bug asks it to.
+    if resolved == 'facts' and str(patch.get('status') or '').strip() not in ('', 'active'):
+        return {'ok': False, 'error': "status may only be set to 'active' (retirement is consolidation's decision)"}
     allowed = _ROW_EDIT_FIELDS.get(resolved)
     if allowed is None or resolved not in _BRAINStores:
         return {'ok': False, 'error': f"store '{store}' does not support per-entry edit"}

@@ -81,6 +81,7 @@ export function ComputerUseSection() {
           <h3 className="text-sm font-semibold">Health Checks</h3>
           <button
             onClick={() => { void handleRefresh(); }}
+            aria-label="Refresh health checks"
             className="text-sm text-muted-foreground hover:text-foreground"
           >
             <RefreshCw className="size-4" />

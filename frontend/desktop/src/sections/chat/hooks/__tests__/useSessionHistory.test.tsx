@@ -19,6 +19,7 @@ import { useChatUiActions } from '../useChatUiActions';
 import { useSessionStream } from '../useSessionStream';
 import { useSessionStreamStore, evictSessionStreamState, persistMessagesDebounced } from '../../stream/session-stream-store';
 import { ensureSessionHistory, injectSessionMessage } from '../../stream/session-history';
+import { messagesStorageKey } from '../../message-storage';
 
 const id = 'wb_history_review';
 const turn: ChatMessage[] = [
@@ -53,7 +54,7 @@ function useThread(sessionId: string) {
   return stream;
 }
 function persisted(sessionId = id): ChatMessage[] {
-  return JSON.parse(localStorage.getItem(`chat_messages_${sessionId}`) ?? '[]') as ChatMessage[];
+  return JSON.parse(localStorage.getItem(messagesStorageKey(sessionId)!) ?? '[]') as ChatMessage[];
 }
 
 beforeEach(() => {
@@ -66,7 +67,7 @@ describe('session history', () => {
   it('does not let a pending stream persistence overwrite Undo', async () => {
     vi.useFakeTimers();
     try {
-      localStorage.setItem(`chat_messages_${id}`, JSON.stringify(turn));
+      localStorage.setItem(messagesStorageKey(id)!, JSON.stringify(turn));
       const mounted = renderHook(() => useThread(id), { wrapper: Wrapper });
       persistMessagesDebounced(id, turn);
       await act(async () => { dispatchUiAction({ action: 'undo_last_turn', target: 'active' }); });
@@ -114,7 +115,7 @@ describe('session history', () => {
     const request = deferred();
     vi.mocked(api.get).mockReturnValue(request.promise);
     injectSessionMessage(id, injected);
-    expect(localStorage.getItem(`chat_messages_${id}`)).toBeNull();
+    expect(localStorage.getItem(messagesStorageKey(id)!)).toBeNull();
     request.resolve({ messages: turn });
     await ensureSessionHistory(id);
     expect(persisted().map(m => m.id)).toEqual(['u1', 'a1', 'qm-1']);
@@ -152,20 +153,20 @@ describe('session history', () => {
     request.resolve({ messages: turn });
     await pending;
     expect(useSessionStreamStore.getState().bySession[id]).toBeUndefined();
-    expect(localStorage.getItem(`chat_messages_${id}`)).toBeNull();
+    expect(localStorage.getItem(messagesStorageKey(id)!)).toBeNull();
   });
 
   it('does not let pending persistence resurrect a deleted session', async () => {
     vi.useFakeTimers();
     try {
       const deleted = 'wb_history_deleted';
-      localStorage.setItem(`chat_messages_${deleted}`, JSON.stringify(turn));
+      localStorage.setItem(messagesStorageKey(deleted)!, JSON.stringify(turn));
       persistMessagesDebounced(deleted, turn);
       tombstoneSessionId(deleted);
-      localStorage.removeItem(`chat_messages_${deleted}`);
+      localStorage.removeItem(messagesStorageKey(deleted)!);
       expect(isSessionIdTombstoned(deleted)).toBe(true);
       await act(async () => { vi.advanceTimersByTime(1001); });
-      expect(localStorage.getItem(`chat_messages_${deleted}`)).toBeNull();
+      expect(localStorage.getItem(messagesStorageKey(deleted)!)).toBeNull();
     } finally {
       vi.useRealTimers();
     }

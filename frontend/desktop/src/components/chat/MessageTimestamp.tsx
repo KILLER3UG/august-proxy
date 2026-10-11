@@ -21,6 +21,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { absoluteDate, timeAgo } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 /** Re-render cadence for relative ages. 30s keeps "3m ago" honest. */
 const TICK_MS = 30_000;
@@ -86,7 +87,7 @@ export function MessageTimestamp({
 
   return (
     <span
-      className={className ?? 'text-2xs tabular-nums text-muted-foreground'}
+      className={cn('text-2xs tabular-nums text-muted-foreground', className)}
       title={full || undefined}
       data-testid="message-timestamp"
     >

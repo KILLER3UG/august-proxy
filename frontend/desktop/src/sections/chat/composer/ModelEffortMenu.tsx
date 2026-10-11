@@ -170,9 +170,7 @@ export function ModelEffortMenu({
   onEffortChange,
   thinkingEnabled,
   onThinkingChange,
-  openSignal,
 }: {
-  models: ModelItem[];
   visibleModels: ModelItem[];
   loading?: boolean;
   selected: ModelItem | null;
@@ -182,8 +180,6 @@ export function ModelEffortMenu({
   onEffortChange: (v: EffortLevel) => void;
   thinkingEnabled: boolean;
   onThinkingChange: (v: boolean) => void;
-  /** Incrementing counter — each change opens the menu (command palette). */
-  openSignal?: number;
 }) {
   const [pane, setPane] = useState<PaneKind | null>(null);
   const [modelsPos, setModelsPos] = useState<PanelPos | null>(null);
@@ -289,10 +285,6 @@ export function ModelEffortMenu({
     const chip = pane === 'effort' ? effortChipRef.current : modelChipRef.current;
     chip?.focus();
   }, [pane, modelsPos, effortPos]);
-
-  useEffect(() => {
-    if (openSignal) setPane('models');
-  }, [openSignal]);
 
   const closeAll = useCallback(() => {
     setPane(null);
@@ -490,58 +482,80 @@ export function ModelEffortMenu({
 
   return (
     <>
-      {/* Model chip — Provider · model name; the exact id is the tooltip. */}
+      {/* One visual control with two accessible choices: model and effort. Claude
+         draws this as plain text on its footer line — model at normal weight,
+         effort lighter — and Haze fills the whole thing as one pill. It used to
+         be a segmented `bg-muted/30` plate with a hover panel per half, which is
+         the loudest of the three and matched none of them. KiloCode does use two
+         pills, which is why the two triggers stay separate; only the surface
+         changed. */}
+      <div className="inline-flex min-w-0 shrink-0 items-center gap-1" data-testid="model-effort-control">
       <motion.button
         ref={modelChipRef}
         type="button"
         {...chipTrigger}
         onClick={() => (pane === 'models' ? closeAll() : setPane('models'))}
         className={cn(
-          'relative inline-flex items-center gap-1 text-[0.75rem] outline-none cursor-pointer h-7 max-w-[240px]',
-          'text-muted-foreground hover:text-foreground transition-colors duration-200',
-          'bg-muted/30 hover:bg-muted/50 rounded-lg px-2 py-0.5',
+          'relative inline-flex items-center gap-1 text-[0.75rem] outline-none cursor-pointer h-6 max-w-[220px]',
+          'text-foreground/85 hover:text-foreground transition-colors duration-200',
+          'rounded-md px-1.5 py-0.5 hover:bg-muted/50',
+          /* Chevron hidden at rest. The Claude reference is a non-hovered
+             capture and shows no affordance beside the model name; revealing it
+             on hover/focus keeps the control discoverable without putting a
+             glyph in the resting layout that the reference does not have. */
+          'group',
         )}
         title={selected ? `${selected.provider}/${selected.id}` : 'Select model'}
         aria-expanded={pane === 'models'}
         aria-haspopup="dialog"
         data-testid="model-chip"
       >
-        <span className="min-w-0 truncate font-medium text-foreground">
+        <span className="min-w-0 truncate font-medium">
           {chipModelLabel(selected)}
         </span>
         <ChevronDown
           className={cn(
-            'size-3 shrink-0 opacity-60 transition-transform duration-200',
-            modelsOpen && 'rotate-180',
+            'size-3 shrink-0 transition-transform duration-200',
+            'opacity-0 group-hover:opacity-60 focus-visible:opacity-60',
+            modelsOpen && 'rotate-180 opacity-60',
           )}
         />
       </motion.button>
 
-      {/* Effort chip — icon + effort word, its own pane. */}
+      {/* Effort is the quieter half of the line — a weight, not a second button. */}
       <motion.button
         ref={effortChipRef}
         type="button"
         {...chipTrigger}
         onClick={() => (pane === 'effort' ? closeAll() : setPane('effort'))}
         className={cn(
-          'relative inline-flex items-center gap-1 text-[0.75rem] outline-none cursor-pointer h-7',
+          'group relative inline-flex items-center gap-1 text-[0.75rem] outline-none cursor-pointer h-6',
           'text-muted-foreground hover:text-foreground transition-colors duration-200',
-          'bg-muted/30 hover:bg-muted/50 rounded-lg px-2 py-0.5',
+          'rounded-md px-1.5 py-0.5 hover:bg-muted/50',
         )}
         title={`Effort: ${effortOpt.label} · extended thinking ${thinkingEnabled ? 'on' : 'off'}`}
         aria-expanded={pane === 'effort'}
         aria-haspopup="dialog"
         data-testid="effort-chip"
       >
-        <Gauge className="size-3 shrink-0 opacity-70" />
+        {/* The reference's effort half is a BARE WORD — `Sonnet 5.5  High`, with
+            "no chip, no border, no pill, no background, no chevron" (measured at
+            2.6x). A `Gauge` before it and a permanently-visible `ChevronDown`
+            after it both contradict that, and the gauge at 0.7 opacity is
+            effectively always shown — the most visible offender on the line.
+            Both glyphs now reveal on hover/focus only, matching the model half's
+            treatment so the two halves of one control disclose the same way. */}
+        <Gauge className="size-3 shrink-0 opacity-0 group-hover:opacity-70 focus-visible:opacity-70 transition-opacity" />
         <span className="shrink-0">{effortOpt.triggerLabel}</span>
         <ChevronDown
           className={cn(
-            'size-3 shrink-0 opacity-60 transition-transform duration-200',
-            effortOpen && 'rotate-180',
+            'size-3 shrink-0 transition-transform duration-200',
+            'opacity-0 group-hover:opacity-60 focus-visible:opacity-60',
+            effortOpen && 'rotate-180 opacity-60',
           )}
         />
       </motion.button>
+      </div>
 
       {typeof document !== 'undefined' &&
         createPortal(
@@ -645,7 +659,11 @@ export function ModelEffortMenu({
                   )}
                   {cappedGroups.map((g) => {
                     const isCur = g.provider === selected?.provider;
-                    const isCollapsed = collapsed.has(g.provider);
+                    // A search result must stay visible even if its provider
+                    // was collapsed before the query. Searching is a temporary
+                    // focused view; clearing the query restores the user's
+                    // previous collapsed groups.
+                    const isCollapsed = !searching && collapsed.has(g.provider);
                     return (
                       <div key={`g_${g.provider}`} data-testid={`provider-group-${g.provider}`}>
                         {/* Provider group header — models sit directly beneath,
@@ -654,12 +672,21 @@ export function ModelEffortMenu({
                             models so a long catalog can be scanned by provider. */}
                         <button
                           type="button"
-                          onClick={() => toggleCollapsed(g.provider)}
+                          onClick={() => {
+                            if (!searching) toggleCollapsed(g.provider);
+                          }}
+                          disabled={searching}
                           aria-expanded={!isCollapsed}
-                          aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${g.provider}`}
+                          aria-label={
+                            searching
+                              ? `${g.provider} results are expanded while searching`
+                              : `${isCollapsed ? 'Expand' : 'Collapse'} ${g.provider}`
+                          }
+                          title={searching ? 'Clear search to collapse providers' : undefined}
                           data-testid={`provider-header-${g.provider}`}
                           className={cn(
                             'flex w-full items-center gap-2 px-3 pt-2 pb-1 text-left text-2xs font-semibold uppercase tracking-wide transition-colors',
+                            searching && 'cursor-default',
                             isCur ? 'text-primary' : 'text-muted-foreground/70 hover:text-foreground',
                           )}
                         >

@@ -71,7 +71,12 @@ export function KanbanSection() {
             card on is this one.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        {/* flex-wrap: the two fixed-width inputs + two buttons need ~700px.
+            In a ~660px column (900px window) the row overflowed its
+            overflow-hidden ancestor and "Clear done" kept only a 27px sliver
+            visible — the dead-button-at-900px report. Inputs shrink first
+            (min-w-0), the buttons wrap whole. */}
+        <div className="flex flex-wrap items-center gap-2">
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -79,7 +84,7 @@ export function KanbanSection() {
               if (e.key === 'Enter') onAdd();
             }}
             placeholder="New card title…"
-            className="w-56 rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 text-xs"
+            className="w-56 min-w-0 flex-1 rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 text-xs sm:flex-none"
           />
           <input
             value={detail}
@@ -89,7 +94,7 @@ export function KanbanSection() {
             }}
             placeholder="Detail for whoever picks it up (optional)"
             aria-label="New card detail"
-            className="w-72 rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 text-xs"
+            className="w-72 min-w-0 flex-1 rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 text-xs sm:flex-none"
           />
           <Button size="sm" onClick={onAdd}>
             <Plus className="size-3" /> Add

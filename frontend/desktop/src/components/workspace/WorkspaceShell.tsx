@@ -147,10 +147,17 @@ export function WorkspaceShell({
   }, [decorated, visibleForSearch, query]);
 
   const isFiltering = query.trim().length > 0;
+  // Rows the rail actually draws, on its resting (unfiltered) shape: every
+  // basic-tier section except the Onboard entry, which renders as a separate
+  // standalone row rather than inside the list.
+  const railRowCount = useMemo(
+    () => decorated.filter((s) => s.tier !== 'hidden' && s.id !== 'ai-setup').length,
+    [decorated],
+  );
   const totalShown = useMemo(() => {
     if (isFiltering) return Array.from(filtered.values()).reduce((n, items) => n + items.length, 0);
-    return SETTINGS_CATEGORIES.length;
-  }, [filtered, isFiltering]);
+    return railRowCount;
+  }, [railRowCount, filtered, isFiltering]);
 
   const closeToWorkspace = () => {
     // Return to the exact chat the user came from (saved when navigating into
@@ -164,40 +171,91 @@ export function WorkspaceShell({
   // transient, so it should leave the way a dialog does.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeToWorkspace();
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const nestedDialogOpen = Array.from(document.querySelectorAll('[role="dialog"]'))
+        .some((dialog) => dialog !== trapRef.current);
+      if (!nestedDialogOpen) closeToWorkspace();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  });
+  }, [location.pathname, location.search]);
 
   return (
     /* Settings is a panel floating over the workspace rather than a page that
-     * replaces it: the chat stays behind the scrim, and the panel owns its own
-     * scroll so no section can stretch the frame. */
+     * replaces it: the chat stays behind, and the panel owns its own scroll so
+     * no section can stretch the frame.
+     *
+     * The backdrop carries NO tint. The reference settings modal floats over a
+     * completely unchanged app — sidebar, transcript and composer all stay at
+     * full brightness — and `bg-scrim` here was `rgb(0 0 0 / 0.55)`, which
+     * visibly darkened every one of them. Modality is still enforced by what
+     * actually enforces it: `aria-modal` and the focus trap. The dialog's own
+     * hairline border and shadow are what separate it visually, which is the
+     * affordance the reference uses. Click-outside-to-close still works — this
+     * element is the hit target either way.
+     *
+     * Click handling is unchanged and still safe with a transparent fill: the
+     * dialog stops propagation, so only a click on the exposed app dismisses. */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-3 sm:p-8"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-8"
       onClick={closeToWorkspace}
       data-testid="settings-backdrop"
     >
+      {/* 920x680 — the reference panel's exact measured size. It used to be
+       * `h-full max-h-full` inside a `fixed inset-0` flex box, which pinned it
+       * to the full viewport height minus padding: 92% of the window at ANY
+       * window size, so opening settings covered essentially the whole app.
+       * `min()` keeps the cap honest on a short window, where the panel
+       * scrolls internally instead of overflowing. */}
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
         ref={trapRef}
-        className="relative flex h-full max-h-full w-full max-w-[1180px] overflow-hidden rounded-2xl border border-hairline-strong bg-background shadow-2xl"
+        className="relative flex max-h-[min(680px,calc(100vh-4rem))] w-full max-w-[920px] overflow-hidden rounded-2xl border border-hairline-strong bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Left rail */}
-        <aside className="flex min-h-0 h-full w-60 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
+        {/* Left rail.
+            No `h-full`: the panel's height is content-driven and capped by
+            `max-h`, so a percentage height resolves against an indefinite
+            parent and falls back to the rail's own content height — 670px
+            inside a 636px panel, with the profile footer clipped by the
+            panel's `overflow-hidden`. `align-items: stretch` plus `min-h-0`
+            makes the rail exactly the panel height and lets the inner nav
+            scroll, which is what the row of 17 sections needs.
+
+            The rail is RESPONSIVE, and that was measured rather than assumed.
+            At a fixed `w-60` (240px) it never yielded, so forcing the panel
+            narrow produced: 560px panel -> 313px column with the "Dark" button
+            of the Mode control pushed outside it; 420px -> 173px column with
+            System/Light/Dark AND all four font pills overflowing; 340px -> 93px
+            column and a horizontal scrollbar on the content region. `w-44`
+            below `sm` gives the column 360px at a 560px panel and 220px at
+            420px, which holds. The reference rail is narrow too (~180px in an
+            880px panel) — this is that proportion, applied responsively. */}
+        <aside
+          className="flex min-h-0 w-44 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar sm:w-60"
+          aria-label="Settings sections"
+        >
           <div className="px-3 pb-2 pt-3">
           <SettingsSearch value={query} onChange={setQuery} />
           {isFiltering && (
-            <p className="mt-1.5 px-1 text-xs text-muted-foreground/70">
-              {totalShown} of {decorated.length} sections
+            /* Search reaches EVERY section, the 26 hidden ones included — that
+             * is deliberate, since they are deep-linkable and otherwise
+             * unreachable. So the honest denominator is the whole registry,
+             * not the 17 rows the rail draws: naming the rail count too is
+             * what stops "2 of 43" reading as a contradiction of a 17-row
+             * list. Announced because filtering a rail is otherwise silent. */
+            <p
+              className="mt-1.5 px-1 text-xs text-muted-foreground/70"
+              role="status"
+              data-testid="settings-search-count"
+            >
+              {totalShown} of {decorated.length} sections · {railRowCount} in the rail
             </p>
           )}
         </div>
-        <nav className="min-h-0 flex-1 overflow-y-auto pb-3 pt-1">
+        <nav className="min-h-0 flex-1 overflow-y-auto pb-3 pt-1" aria-label="Settings">
           {isFiltering ? (
             totalShown === 0 ? (
               <div className="px-4 py-6 text-center text-xs text-muted-foreground">
@@ -271,41 +329,29 @@ export function WorkspaceShell({
               })
             )
           ) : (
-            <div className="px-2 py-1 flex flex-col gap-3">
-              {SETTINGS_CATEGORIES.map((cat) => {
-                const items = decorated.filter(
-                  (s) =>
-                    s.category === cat.id && s.tier !== 'hidden' && s.id !== 'ai-setup',
-                );
-                if (items.length === 0) return null;
-                return (
-                  <div key={cat.id} className="flex flex-col gap-0.5">
-                    <div className="px-2.5 pb-1 pt-1 text-xs font-medium text-sidebar-foreground/50">
-                      {cat.label}
-                    </div>
-                    {items.map((s) => (
-                      <WorkspaceNavLink
-                        key={s.id}
-                        icon={s.icon}
-                        label={s.label}
-                        active={active === s.id || railActive === s.id}
-                        badge={
-                          s.id === 'app-updates' && updateAvailable
-                            ? 'New'
-                            : s.id === 'harness-improve' && inbox.total > 0
-                              ? String(inbox.total)
-                              : null
-                        }
-                        onSelect={() => {
-                          if (s.id === active) return;
-                          setQuery('');
-                          void navigate(`/settings/${s.id}`);
-                        }}
-                      />
-                    ))}
-                  </div>
-                );
-              })}
+            <div className="px-2 py-1 flex flex-col gap-0.5">
+              {decorated
+                .filter((s) => s.tier !== 'hidden' && s.id !== 'ai-setup')
+                .map((s) => (
+                  <WorkspaceNavLink
+                    key={s.id}
+                    icon={s.icon}
+                    label={s.label}
+                    active={active === s.id || railActive === s.id}
+                    badge={
+                      s.id === 'app-updates' && updateAvailable
+                        ? 'New'
+                        : s.id === 'harness-improve' && inbox.total > 0
+                          ? String(inbox.total)
+                          : null
+                    }
+                    onSelect={() => {
+                      if (s.id === active) return;
+                      setQuery('');
+                      void navigate(`/settings/${s.id}`);
+                    }}
+                  />
+                ))}
               {/* Standalone Onboard entry */}
               {(() => {
                 const onboard = getSection('ai-setup');
@@ -335,21 +381,30 @@ export function WorkspaceShell({
         <ProfileRailRow />
       </aside>
 
-      {/* Main content — each section renders its own h1 inside.
-          overflow-x-hidden: wide children (tables, pre) must not give the
-          whole settings pane a horizontal scrollbar.
-          contentRef scopes the ?field= deep link to the section body, so a
-          control search never resolves against the rail that listed it. */}
-        {/* Centre the reading column in the WINDOW, not in the leftover region.
-         *  The dialog is max-w-[1180px] with a w-60 (240px) rail, so the region
-         *  spans 371..1309 at a 1440 viewport and its centre is 840 — 120px right
-         *  of the screen. Centring inside it reproduced the complaint exactly.
-         *  pr-60 mirrors the rail's own width on the right, which puts the
-         *  region's content box at 371..1069 with centre 720 = screen centre.
-         *  Keep pr-60 tied to the rail's w-60: change one and the column drifts. */}
+      {/* The reading column is centred in the space LEFT BY THE RAIL, and is
+         * deliberately NOT re-centred on the window. It used to carry `pr-60`
+         * — mirroring the rail's width on the right — to put the column's
+         * centre on screen centre. That cost 240px of content width: measured
+         * 361px of usable column inside an 848px panel, against ~640px in the
+         * reference. And the thing it bought does not exist in the reference.
+         * Haze's dialog spans 520..1400 (centre 960, the window centre) while
+         * its content pane spans 731..1372 — centre 1051, i.e. 91px RIGHT of
+         * window centre, because the rail sits inside the modal on the left. A
+         * left rail in a centred dialog pushes its content pane right by
+         * construction; every reference works that way.
+         *
+         * So the lost width was the bug and the off-centre column was never
+         * the fix. `workspace-shell-tier-filter.test.tsx` asserted `pr-60` was
+         * load-bearing; that pinned the wrong claim as a test, so it is
+         * rewritten below rather than deleted.
+         *
+         * contentRef scopes the ?field= deep link to the section body, so a
+         * control search never resolves against the rail that listed it.
+         * overflow-x-hidden: wide children (tables, pre) must not give the
+         * whole settings pane a horizontal scrollbar. */}
         <div
           ref={contentRef}
-          className="flex min-h-0 flex-1 justify-center overflow-y-auto overflow-x-hidden pr-60"
+          className="flex min-h-0 flex-1 justify-center overflow-y-auto overflow-x-hidden"
           data-testid="settings-content-region"
         >
           <div

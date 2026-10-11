@@ -1,7 +1,13 @@
-/* ── ComposerWorkspaceChips — folder + branch row inside the composer ── */
-/* ZCode parity: the message box itself selects the project folder and    */
-/* shows its git branch. Covers the folder menu, the bind flow (store +   */
-/* backend workspace sync + git cache invalidation) and the native picker. */
+/* ── ComposerWorkspaceChips — the folder row inside the composer ──────── */
+/* The message box itself selects the project folder. Covers the folder      */
+/* menu, the bind flow (store + backend workspace sync + git cache           */
+/* invalidation) and the native picker.                                     */
+/*                                                                          */
+/* The branch chip that used to sit here is GONE (spec §6.1 C6): it mounted  */
+/* the same WorkspaceBranchChip the status bar shows, so the composer had    */
+/* two controls reading the same fact. That test case was deleted rather than */
+/* moved — the branch now has exactly one home, and this component no longer */
+/* imports @/api/git at all.                                                 */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -10,19 +16,8 @@ import type { ReactNode } from 'react';
 import { ComposerWorkspaceChips } from '../ComposerWorkspaceChips';
 import { useWorkspacesStore } from '@/store/workspaces';
 
-const branchMock = vi.fn();
 const bindMock = vi.fn();
 const pickMock = vi.fn();
-
-vi.mock('@/api/git', () => ({
-  gitApi: {
-    branch: (...a: unknown[]) => branchMock(...a),
-    branches: vi.fn(async () => ({ workspace: null, branches: [] })),
-    status: vi.fn(async () => ({ workspace: null, files: [], added: 0, removed: 0 })),
-    checkout: vi.fn(async () => ({ workspace: null, branch: '', ok: true })),
-    log: vi.fn(async () => ({ workspace: null, log: '' })),
-  },
-}));
 
 vi.mock('@/api/folder', () => ({
   openFolderViaTauri: (...a: unknown[]) => pickMock(...a),
@@ -51,10 +46,8 @@ function setup(ui = {}) {
 
 describe('ComposerWorkspaceChips', () => {
   beforeEach(() => {
-    branchMock.mockReset();
     bindMock.mockReset();
     pickMock.mockReset();
-    branchMock.mockResolvedValue({ workspace: 'C:/Dev/august-proxy', current: 'master' });
     bindMock.mockReturnValue({
       session: { id: 'session_1', workbenchSessionId: 'wb_1', workspacePath: 'C:/Dev/other' },
       created: false,
@@ -73,14 +66,13 @@ describe('ComposerWorkspaceChips', () => {
     );
   });
 
-  it('shows the bound folder name and its branch', async () => {
+  it('shows the bound folder name, and no branch chip', async () => {
     setup();
     expect(screen.getByTestId('composer-folder-chip').textContent).toContain('august-proxy');
-    await waitFor(() => expect(branchMock).toHaveBeenCalled());
-    // waitFor passing on "called" does not mean the resolved value has
-    // settled into the query yet — assert the render after it lands, not
-    // synchronously (this raced since the 30s refetchInterval was added).
-    await waitFor(() => expect(screen.getByText('master')).toBeTruthy());
+    // One home for the branch (the status bar), not two. This row renders the
+    // folder and nothing else — it does not even import the git client.
+    expect(screen.queryByText('master')).toBeNull();
+    expect(screen.getByTestId('composer-folder-chip').textContent).not.toContain('master');
   });
 
   it('falls back to "Open folder" when the chat has no workspace', () => {

@@ -258,12 +258,12 @@ export function useChatSend(opts: UseChatSendOptions) {
       // model-switch stale.
       const useModel = modelForRequestRef.current;
       if (!useModel?.id) {
-        toast.error('Select a model first (e.g. a free OpenCode model)');
+        toast.error('No model selected - set one in Settings, then try again');
         releaseSendLatch();
         return 'skipped';
       }
       if (!useModel.provider) {
-        toast.error('Selected model has no provider — pick it again from the model list');
+        toast.error('The selected model has no provider - check Settings');
         releaseSendLatch();
         return 'skipped';
       }
@@ -430,12 +430,12 @@ export function useChatSend(opts: UseChatSendOptions) {
       // persisting it first meant a send with no selected model left a ghost
       // persisted bubble when generateAIResponse bailed with this toast.
       if (!modelForRequest?.id) {
-        toast.error('Select a model first (e.g. a free OpenCode model)');
+        toast.error('No model selected - set one in Settings, then try again');
         releaseSendLatch();
         return 'skipped';
       }
       if (!modelForRequest?.provider) {
-        toast.error('Selected model has no provider — pick it again from the model list');
+        toast.error('The selected model has no provider - check Settings');
         releaseSendLatch();
         return 'skipped';
       }

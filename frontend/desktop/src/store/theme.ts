@@ -11,8 +11,10 @@ export {
   hydrateTheme,
   setThemeMode,
   setTextSize,
+  applySurfaceFontSizes,
+  setSurfaceFontSize,
 } from '@/lib/theme';
-export type { ThemeMode, TextSize } from '@/lib/theme';
+export type { ThemeMode, TextSize, SurfaceFontKey, SurfaceFontSizes } from '@/lib/theme';
 
 /* Backward-compat shim: keep `$theme` as 'light' | 'dark' for any
  * existing consumers. Returns the resolved theme (system resolved to

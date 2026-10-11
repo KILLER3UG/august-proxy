@@ -36,14 +36,18 @@ export function Section({
     <div className="august-sidebar-section">
       <div className="august-sidebar-section-header flex items-center justify-between mb-1 px-2">
         <div className="flex items-center gap-1">
-          <h3 className="text-2xs text-sidebar-foreground/45 font-medium tracking-wide uppercase">
+          {/* Count removed, and the label is sentence case with normal
+              tracking. Measured off the Claude reference at 2.4x, the section
+              header reads `Chats and tasks` — sentence case, muted, with NO
+              number beside it. The two icons on the right (magnifier, sort) are
+              kept; they are in the reference.
+
+              August rendered the same total twice, as `CHATS AND TASKS 39`
+              containing a nested `Tasks 39`. The nested `Tasks` group header is
+              removed separately below. */}
+          <h3 className="text-2xs text-sidebar-foreground/45 font-medium">
             {title}
           </h3>
-          {count > 0 && (
-            <span className="text-2xs text-sidebar-foreground/30 tabular-nums">
-              {count}
-            </span>
-          )}
         </div>
         {(title === "Sessions" || title === "Recents" || title === "Projects" || title === "Chats and tasks") && (
           <div className="flex items-center gap-0.5">
@@ -95,6 +99,7 @@ export function Section({
 export interface FolderHeaderProps {
   folder: Folder;
   count: number;
+  /** Whether a chat in this folder is currently working or streaming. */
   hasActiveSession?: boolean;
   onToggleCollapse: () => void;
   onNewSession: () => void;
@@ -106,7 +111,7 @@ export interface FolderHeaderProps {
 export function FolderHeader({
   folder,
   count,
-  hasActiveSession: _hasActiveSession,
+  hasActiveSession = false,
   onToggleCollapse,
   onNewSession,
   onRename,
@@ -146,6 +151,15 @@ export function FolderHeader({
         <span className="truncate text-[0.78125rem] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80">
           {folder.name}
         </span>
+        {hasActiveSession ? (
+          <span
+            role="img"
+            className="size-1.5 shrink-0 rounded-full bg-warning"
+            title="A chat in this project is active"
+            aria-label="A chat in this project is active"
+            data-testid={`folder-active-${folder.id}`}
+          />
+        ) : null}
         {count > 0 && (
           <span className="text-2xs text-sidebar-foreground/25 tabular-nums shrink-0">
             {count}
@@ -223,11 +237,9 @@ export function UncategorizedHeader({
         <span className="truncate text-[0.78125rem] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80">
           Tasks
         </span>
-        {count > 0 && (
-          <span className="text-2xs text-sidebar-foreground/25 tabular-nums shrink-0">
-            {count}
-          </span>
-        )}
+        {/* Count removed. This row is nested INSIDE `Chats and tasks`, so the
+            number beside it was the same total the section header already
+            showed one line up. */}
       </div>
       <div className="flex items-center gap-0.5 shrink-0">
         {onNewSession && (

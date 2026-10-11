@@ -81,8 +81,9 @@ function describePreview(file: FileAttachment): {
 function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom: number; showSource: boolean }) {
   const imageSrc = file.dataUrl || file.previewUrl;
   const { isImage, isHtml, isMarkdown, isPdf } = describePreview(file);
-  // Live HTML documents render in a sandboxed iframe (scripts allowed —
-  // these are the model's interactive explainers); "source" shows the code.
+  // Render HTML as a static, fully sandboxed preview. The desktop app's CSP
+  // intentionally blocks inline scripts, so advertising a live interactive
+  // preview here would promise behavior the packaged webview cannot provide.
   const liveSrcDoc = isHtml ? file.content ?? '' : '';
   const hasText = file.type === 'text' && typeof file.content === 'string';
   const pdfSrc = file.dataUrl || file.previewUrl;
@@ -118,8 +119,8 @@ function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom:
             <TextPreview content={file.content ?? ''} />
           ) : (
             <iframe
-              title={`Interactive preview of ${file.name}`}
-              sandbox="allow-scripts allow-pointer-lock"
+              title={`HTML preview of ${file.name}`}
+              sandbox=""
               srcDoc={liveSrcDoc}
               className="min-h-[24rem] w-full flex-1 border-0 bg-white dark:bg-sunken"
             />

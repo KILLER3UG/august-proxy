@@ -2,7 +2,7 @@
 /* Mid-response queue: drag reorder, edit pill text, cancel, clear-all.   */
 
 import { useState } from 'react';
-import { GripVertical, Pencil, Trash2, X, Check, Zap } from 'lucide-react';
+import { MoreHorizontal, Trash2, X, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { workbenchClient } from '@/api/workbench';
@@ -13,6 +13,7 @@ import {
   type QueuedUserMessage,
 } from './queue-store';
 import { describeSubagentReceipt, parseSubagentReceipt } from './subagent-receipt';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 type Props = {
   /** Sidebar / UI session id (local store key). */
@@ -25,8 +26,6 @@ type Props = {
 export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const wbId = workbenchSessionId || sessionId;
 
@@ -85,30 +84,18 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
     });
   };
 
-  const onDrop = (targetId: string) => {
-    if (!dragId || dragId === targetId) {
-      setDragId(null);
-      setDragOverId(null);
-      return;
-    }
+  const moveQueuedMessage = (id: string, offset: -1 | 1) => {
     const ids = items.map((e) => e.id);
-    const from = ids.indexOf(dragId);
-    const to = ids.indexOf(targetId);
-    if (from < 0 || to < 0) {
-      setDragId(null);
-      setDragOverId(null);
-      return;
-    }
+    const from = ids.indexOf(id);
+    const to = from + offset;
+    if (from < 0 || to < 0 || to >= ids.length) return;
     const next = [...ids];
-    next.splice(from, 1);
-    next.splice(to, 0, dragId);
+    [next[from], next[to]] = [next[to], next[from]];
     reorderQueuedMessagesLocal(sessionId, next);
     void workbenchClient.reorderQueue(wbId, next).catch((err) => {
       console.error('[reorder queue] failed', err);
       toast.error('Could not reorder queue');
     });
-    setDragId(null);
-    setDragOverId(null);
   };
 
   return (
@@ -139,17 +126,6 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
         return (
         <div
           key={q.id}
-          draggable={editingId !== q.id}
-          onDragStart={() => setDragId(q.id)}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOverId(q.id);
-          }}
-          onDragEnd={() => {
-            setDragId(null);
-            setDragOverId(null);
-          }}
-          onDrop={() => onDrop(q.id)}
           className={cn(
             'flex items-center gap-2 px-2 py-1.5 rounded-xl border text-2xs transition',
             q.kind === 'steer'
@@ -157,17 +133,8 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
               : receipt
                 ? 'border-border/60 bg-muted/25'
                 : 'border-warning/30 bg-warning/5',
-            dragOverId === q.id && dragId !== q.id && 'ring-1 ring-primary/50',
-            dragId === q.id && 'opacity-60',
           )}
         >
-          <span
-            className="cursor-grab active:cursor-grabbing text-muted-foreground shrink-0"
-            title="Drag to reorder"
-            aria-label="Drag to reorder"
-          >
-            <GripVertical className="size-3" />
-          </span>
           <span
             className={cn(
               'font-semibold uppercase tracking-wider shrink-0',
@@ -223,27 +190,20 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
                   ? [describeSubagentReceipt(receipt), receipt.goal && `— ${receipt.goal}`].filter(Boolean).join(' ')
                   : q.text.length > 120 ? q.text.slice(0, 120).trim() + '…' : q.text}
               </span>
-              {!receipt && q.kind !== 'steer' ? (
-                <button
-                  type="button"
-                  onClick={() => promoteToSteer(q)}
-                  className="p-0.5 rounded text-muted-foreground hover:text-primary hover:bg-muted transition shrink-0"
-                  title="Promote to direction (apply mid-run instead of after this turn)"
-                  aria-label="Promote to direction"
-                >
-                  <Zap className="size-3" />
-                </button>
-              ) : null}
               {!receipt ? (
-              <button
-                type="button"
-                onClick={() => startEdit(q)}
-                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition shrink-0"
-                title="Edit message"
-                aria-label="Edit queued message"
-              >
-                <Pencil className="size-3" />
-              </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button type="button" className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`More options for queued message ${i + 1}`}>
+                      <MoreHorizontal className="size-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem disabled={i === 0} onSelect={() => moveQueuedMessage(q.id, -1)}>Move earlier</DropdownMenuItem>
+                    <DropdownMenuItem disabled={i === items.length - 1} onSelect={() => moveQueuedMessage(q.id, 1)}>Move later</DropdownMenuItem>
+                    {q.kind !== 'steer' ? <DropdownMenuItem onSelect={() => promoteToSteer(q)}>Promote to direction</DropdownMenuItem> : null}
+                    <DropdownMenuItem onSelect={() => startEdit(q)}>Edit message</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               ) : null}
               <button
                 type="button"

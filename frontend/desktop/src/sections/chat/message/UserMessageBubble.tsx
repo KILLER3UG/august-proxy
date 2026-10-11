@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Check, Copy, History, Pencil, RotateCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { MessageTimestamp } from '@/components/chat/MessageTimestamp';
 import type { ChatMessage } from '@/types/chat';
 import { Markdown } from '../ChatMarkdown';
 import { ChatAttachmentService } from '../services/ChatAttachmentService';
@@ -64,7 +63,10 @@ export function UserMessageBubble({
         ) : null}
 
         {(editing || displayContent || message.queued) && (
-          <div className="rounded-2xl bg-user-bubble px-4 py-2.5 w-full border border-border/20 shadow-2xs hover:border-border/40 transition-colors duration-150 text-[0.84375rem] leading-relaxed">
+          <div className="rounded-2xl bg-user-bubble px-4 py-2.5 w-full text-[0.84375rem] leading-relaxed">
+            {/* No border: reference rule 3 makes the user bubble the only
+                elevated chat surface, elevated by FILL alone — a hairline box
+                around it is exactly the "borders are boxes" shape rule 2 bans. */}
             {message.queued && (
               <div className="mb-1 flex items-center gap-1 text-2xs font-semibold uppercase tracking-wider text-warning">
                 <span className="size-1.5 rounded-full bg-warning" />
@@ -107,6 +109,16 @@ export function UserMessageBubble({
           showActions ? 'opacity-100' : 'opacity-0',
         )}
       >
+        {/* No timestamp on the user bubble. It was rendered here with
+            `bubble-footer-text`, which sets `text-transform: uppercase`, so
+            one exchange showed `9M AGO` on the user's message and `9m ago`
+            on the assistant's — the same `MessageTimestamp` component in two
+            cases, twenty pixels apart, disagreeing about the same moment. The
+            reference draws no timestamp on a user message at all; its only
+            time marker is the single `5 minutes ago` at the end of the
+            assistant's action row. The assistant message still carries this
+            one, so the information is not lost — it is stated once, in one
+            case, in the place the reference puts it. */}
         {isLong && !editing && (
           <button
             type="button"
@@ -115,12 +127,6 @@ export function UserMessageBubble({
           >
             {userMsgExpanded ? 'Show less' : 'Show more'}
           </button>
-        )}
-        {!editing && message.timestamp && (
-          <MessageTimestamp
-            timestamp={message.timestamp}
-            className="bubble-footer-text mr-0.5 font-medium text-muted-foreground/50"
-          />
         )}
         {!editing && editCount > 0 && (
           <div className="relative">

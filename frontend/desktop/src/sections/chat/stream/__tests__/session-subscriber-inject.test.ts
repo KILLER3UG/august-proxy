@@ -26,6 +26,7 @@ import {
   useSessionStreamStore,
 } from '../session-stream-store';
 import { useSessionsStore } from '@/store/sessions';
+import { messagesStorageKey } from '../../message-storage';
 
 const msg = (id: string, content = id): ChatMessage =>
   ({ id, role: 'assistant', content, blocks: [] }) as unknown as ChatMessage;
@@ -53,7 +54,7 @@ describe('userMessageInjected transcript guard', () => {
   it('seeds the stored transcript instead of injecting into an empty one', () => {
     // The good transcript lives in storage (per-turn persistence wrote it).
     const transcript = [msg('u1', 'hello'), msg('a1', 'hi there')];
-    localStorage.setItem(`chat_messages_${UI_ID}`, JSON.stringify(transcript));
+    localStorage.setItem(messagesStorageKey(UI_ID)!, JSON.stringify(transcript));
 
     ensureSessionSubscriber(UI_ID);
     const handlers = captured.handlers as unknown as {
@@ -73,7 +74,7 @@ describe('userMessageInjected transcript guard', () => {
     expect(after.map((m) => m.id)).toEqual(['u1', 'a1', 'qm-m-9']);
 
     const persisted = JSON.parse(
-      localStorage.getItem(`chat_messages_${UI_ID}`) || '[]',
+      localStorage.getItem(messagesStorageKey(UI_ID)!) || '[]',
     ) as ChatMessage[];
     expect(persisted.map((m) => m.id)).toEqual(['u1', 'a1', 'qm-m-9']);
   });

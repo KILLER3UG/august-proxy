@@ -143,10 +143,9 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
   },
 ] as const;
 
-/* Settings tabs are derived from the settings registry so the sidebar,
- * routes, and command palette all stay in sync. Legacy tab keys still
- * resolve via the registry's LEGACY_TAB_MAP (see resolveLegacyTab). */
-export const SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_SECTIONS.map((section) => ({
+/* Hidden-tier settings stay deep-linkable and searchable, but must not be
+ * surfaced by the command palette any more than they are in the rail. */
+export const SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_SECTIONS.filter((section) => section.tier !== 'hidden').map((section) => ({
   key: section.id,
   label: section.label,
   Icon: section.icon,
@@ -204,4 +203,3 @@ export const SECTION_NAV_ITEMS: readonly NavItem[] = SECTION_ROUTES.filter((rout
   label: route.label,
   Icon: route.Icon,
 }));
-

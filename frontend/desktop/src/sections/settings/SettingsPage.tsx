@@ -219,7 +219,7 @@ const HEADERLESS_SECTION_IDS = new Set([
   'model-fleet',
   'model-live',
   'model-quotas',
-  'account',
+  'model-families',
 ]);
 
 function SectionHeader({ active }: { active: SettingsSection }) {

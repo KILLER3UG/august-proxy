@@ -3,14 +3,12 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { LiveControls } from '@/sections/live/LiveControls';
 
 describe('v4 — LiveControls', () => {
-  it('renders Mute, End, push-to-talk toggle, and Switch to chat', () => {
+  it('renders Mute, End, and Switch to chat', () => {
     render(
       <LiveControls
         isMuted={false}
-        continuousMode={false}
         onToggleMute={() => {}}
         onEnd={() => {}}
-        onToggleContinuous={() => {}}
         onSwitchToChat={() => {}}
       />,
     );
@@ -24,10 +22,8 @@ describe('v4 — LiveControls', () => {
     render(
       <LiveControls
         isMuted={false}
-        continuousMode={false}
         onToggleMute={onToggleMute}
         onEnd={() => {}}
-        onToggleContinuous={() => {}}
         onSwitchToChat={() => {}}
       />,
     );
@@ -39,10 +35,8 @@ describe('v4 — LiveControls', () => {
     render(
       <LiveControls
         isMuted={true}
-        continuousMode={false}
         onToggleMute={() => {}}
         onEnd={() => {}}
-        onToggleContinuous={() => {}}
         onSwitchToChat={() => {}}
       />,
     );
@@ -54,10 +48,8 @@ describe('v4 — LiveControls', () => {
     render(
       <LiveControls
         isMuted={false}
-        continuousMode={false}
         onToggleMute={() => {}}
         onEnd={onEnd}
-        onToggleContinuous={() => {}}
         onSwitchToChat={() => {}}
       />,
     );

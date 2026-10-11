@@ -1,8 +1,7 @@
 /* ── Empty chat state ──────────────────────────────────────────────────── */
 
 import { motion } from 'framer-motion';
-import { Asterisk, GitBranch, Send } from 'lucide-react';
-import { workspaceBaseName } from '@/lib/utils';
+import { GitBranch, Send } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { normalizeHarnessMode } from '@/components/chat/HarnessModeChip';
 import { t } from '@/lib/motion';
@@ -26,7 +25,6 @@ const ORCH_EXAMPLES = [
 ];
 
 export function ChatEmptyState({
-  workspacePath,
   children,
   agentMode,
 }: {
@@ -35,7 +33,6 @@ export function ChatEmptyState({
   agentMode?: string | null;
 }) {
   const harness = normalizeHarnessMode(agentMode);
-  const project = workspacePath ? workspaceBaseName(workspacePath) : 'your project';
   return (
     <motion.div
       key="centered-layout"
@@ -45,25 +42,6 @@ export function ChatEmptyState({
       transition={t.smooth}
       className="august-empty-state flex-1 flex flex-col items-center justify-center px-6 relative overflow-hidden"
     >
-      {/* DeepSeek-inspired soft glow: one blurred ellipse centered behind the hero, not a card */}
-      <svg
-        aria-hidden
-        className="pointer-events-none absolute left-1/2 top-[42%] -translate-x-1/2 -translate-y-1/2 w-[820px] h-[360px] opacity-[0.55] dark:opacity-[0.45]"
-        viewBox="0 0 1051 468"
-        fill="none"
-      >
-        <defs>
-          <filter id="august-hero-glow" x="0" y="0" width="1051" height="468" filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
-            <feFlood floodOpacity="0" result="BackgroundImageFix" />
-            <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
-            <feGaussianBlur stdDeviation="48" result="glow" />
-          </filter>
-        </defs>
-        <g filter="url(#august-hero-glow)">
-          <ellipse cx="525.5" cy="234" rx="425.5" ry="134" fill="#6187D8" fillOpacity="0.07" />
-        </g>
-      </svg>
-
       <div className="august-empty-state-content relative w-full max-w-3xl px-4 flex flex-col items-center gap-6">
         {harness === 'orchestrator' ? (
           <>
@@ -72,20 +50,10 @@ export function ChatEmptyState({
                 <GitBranch className="size-3 opacity-60" />
                 Orchestrator
               </span>
-              <h1 className="text-[1.625rem] font-[650] tracking-[-0.03em] leading-tight text-foreground">
+              <p className="text-[1.625rem] font-[650] tracking-[-0.03em] leading-tight text-foreground">
                 Plan a wave, then dispatch
-              </h1>
-              <p className="max-w-md text-[0.84375rem] leading-relaxed text-muted-foreground">
-                in <span className="font-mono text-foreground/70">{project}</span> — you stay here, workers edit and run.
               </p>
             </div>
-            <ol className="flex items-center gap-1.5 text-2xs font-medium tracking-wide text-muted-foreground/70">
-              <li className="rounded-full bg-muted/40 px-2.5 py-1 border border-border/30">Plan</li>
-              <li className="opacity-30">→</li>
-              <li className="rounded-full bg-muted/40 px-2.5 py-1 border border-border/30">Dispatch</li>
-              <li className="opacity-30">→</li>
-              <li className="rounded-full bg-muted/40 px-2.5 py-1 border border-border/30">Review</li>
-            </ol>
             <div className="flex flex-wrap justify-center gap-2" data-testid="orchestrator-empty-examples">
               {ORCH_EXAMPLES.map((ex) => (
                 <button
@@ -118,29 +86,33 @@ export function ChatEmptyState({
                 answering, so it leads with the mark instead of a bare prompt.
                 The glyph is decorative — the wordmark beside it carries the
                 name, so the mark is hidden from AT rather than announced
-                twice. */}
+                twice.
+
+                REMOVED: the `Asterisk` glyph in a primary-tinted bordered box.
+                `Asterisk` is Claude's OWN brand mark, and this redesign is
+                measured against Claude — lifting its logo as August's identity
+                is the opposite of the goal. It was also the only saturated
+                element on the empty screen. The wordmark alone carries the
+                name; the reference's empty state shows nothing but the cursor
+                in an empty composer. */}
             <div className="flex items-center gap-2.5">
-              <span
-                aria-hidden
-                className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary"
-              >
-                <Asterisk className="size-5" />
-              </span>
               <span className="text-2xs font-semibold uppercase tracking-caps text-muted-foreground">
                 August
               </span>
             </div>
-            <h1 className="august-empty-title text-foreground">
+            {/* Not an <h1>: the titlebar already renders the chat's title as
+                the page's single h1, and an empty chat has BOTH on screen at
+                once — a screen with two h1s has no page title at all, as far
+                as heading navigation is concerned. This is the prompt under
+                the title, not the title. */}
+            <p className="august-empty-title text-foreground">
               What should we work on?
-            </h1>
+            </p>
             {/* Voice line — concrete claims only: reading and editing the
                 workspace, running it, and the brain's durable memory. Each one
                 maps to a tool the harness actually has. */}
             <p className="hero-subtitle max-w-xl text-muted-foreground/75">
               paste an error, a goal, or a whole repo. i’ll read the code, run it, and remember what mattered for next time.
-            </p>
-            <p className="text-[0.8125rem] text-muted-foreground/60">
-              in <span className="font-mono text-foreground/55">{project}</span>
             </p>
           </div>
         )}

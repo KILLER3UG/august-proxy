@@ -11,7 +11,6 @@ import { Check, ChevronDown, Folder, FolderPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { openFolderViaTauri, folderNameFromPath } from '@/api/folder';
-import { WorkspaceBranchChip } from '@/components/workspace/WorkspaceBranchChip';
 import { useWorkspacesStore } from '@/store/workspaces';
 import { cn, workspaceBaseName } from '@/lib/utils';
 
@@ -209,12 +208,6 @@ export function ComposerWorkspaceChips({
         )}
       </div>
 
-      <WorkspaceBranchChip
-        sessionId={workbenchSessionId || sessionId}
-        repoPath={current || undefined}
-        className="min-w-0"
-        menuPlacement="up"
-      />
     </div>
   );
 }

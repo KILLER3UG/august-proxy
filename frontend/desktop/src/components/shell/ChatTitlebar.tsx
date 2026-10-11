@@ -14,8 +14,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Share2,
-  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -31,7 +29,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { RightDrawerDropdown } from "./RightDrawerLauncher";
 import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
-import { WorkspaceBranchChip } from "@/components/workspace/WorkspaceBranchChip";
+import { useSessionStream } from '@/sections/chat/hooks/useSessionStream';
+import { collectArtifacts } from '@/lib/artifacts';
 import type { Session } from "@/store/sessions";
 import type { RightDrawerSectionId } from "./RightDrawerState";
 
@@ -57,6 +56,11 @@ export function ChatTitlebar({
   // some Tauri webviews and unstyled next to every other dialog.
   const [renameOpen, setRenameOpen] = useState(false);
   const location = useLocation();
+  const stream = useSessionStream(session?.id ?? null);
+  const artifactsCount = useMemo(
+    () => collectArtifacts(stream?.messages ?? []).length,
+    [stream?.messages],
+  );
 
   /* Route-aware title (2026-09-16 UI scan B2): the bar used to render
    * `session?.title ?? "New chat"` on EVERY route, so Board/Runs/History/
@@ -230,63 +234,15 @@ export function ChatTitlebar({
             </h1>
           )}
 
-          {/* Folder chip */}
-          {session?.workspacePath ? (
-            <button
-              type="button"
-              onClick={() => { void revealInFolder(session.workspacePath || ''); }}
-              className="shrink-0 inline-flex items-center gap-1 h-6 px-1.5 rounded-md text-2xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              title={session.workspacePath}
-              aria-label="Open workspace folder"
-              data-testid="titlebar-folder-chip"
-            >
-              <Folder className="size-3" />
-              <span className="max-w-[10rem] truncate">{session.workspacePath.split(/[\\/]/).filter(Boolean).pop()}</span>
-            </button>
-          ) : null}
-
-          {/* Branch selector */}
-          {session ? (
-            <WorkspaceBranchChip
-              sessionId={session.id}
-              repoPath={session.workspacePath || undefined}
-              className="shrink-0"
-              menuPlacement="down"
-            />
-          ) : null}
         </div>
       </div>
 
       <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => onSelectRightDrawerSection('artifacts')}
-          className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md hover:bg-accent text-xs text-muted-foreground hover:text-foreground transition"
-          title="Open Artifacts"
-        >
-          <FileText className="size-3" />
-          <span>Artifacts</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            if (session) {
-              void navigator.clipboard.writeText(window.location.href);
-              toast.success('Chat link copied to clipboard');
-            }
-          }}
-          className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md hover:bg-accent text-xs text-muted-foreground hover:text-foreground transition"
-          title="Share / Copy Link"
-        >
-          <Share2 className="size-3" />
-          <span>Share</span>
-        </button>
-
         <RightDrawerDropdown
           drawerOpen={rightDrawerOpen}
           onSelect={onSelectRightDrawerSection}
           workersBadge={workersBadge}
+          artifactsCount={artifactsCount}
         />
 
         {/* Windows-style title bar buttons — Tauri only (dead no-ops in the

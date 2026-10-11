@@ -54,8 +54,9 @@ export function HistoryPage() {
   return (
     <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden p-6 max-w-3xl mx-auto space-y-5" data-testid="history-page">
       <div className="flex items-center gap-3">
-        <History className="size-5 text-primary" />
-        <h1 className="text-base font-semibold">Conversation history</h1>
+        <History className="size-5 text-muted-foreground" />
+        {/* h2, not h1: the titlebar already renders this route's single h1. */}
+        <h2 className="text-base font-semibold">Conversation history</h2>
         <button
           type="button"
           onClick={() => void navigate('/')}

@@ -158,7 +158,12 @@ it('reads a kind=profile fact as profile whatever its category', async () => {
   await renderTab();
   const row = await waitFor(() => requireRow('I train small Qwen models'));
   expect(row).toHaveAttribute('data-kind', 'profile');
-  expect(within(row).getByTestId('memory-kind-label')).toHaveTextContent('profile');
+  // The per-row kind chip is gone by design: it was a 56px coloured badge
+  // stamped on every single line, where the reference labels a memory by the
+  // GROUP it sits under. `data-kind` on the row is the stable contract for
+  // which kind this is, and the kind is surfaced as a group header whenever a
+  // kind filter is active.
+  expect(within(row).queryByTestId('memory-kind-label')).toBeNull();
 });
 
 it('leaves non-profile rows on their existing derivation', async () => {
@@ -248,7 +253,9 @@ it('demotes a profile row back to fact', async () => {
 
   const row = await openMenu('I train small Qwen models');
   const action = await screen.findByText('Remove from profile');
-  expect(within(row).getByTestId('memory-kind-label')).toHaveTextContent('profile');
+  // `data-kind` is what says a row is profile now that the per-row kind chip
+  // is gone (see the note in "reads a kind=profile fact as profile").
+  expect(row).toHaveAttribute('data-kind', 'profile');
   fireEvent.click(action);
 
   await waitFor(() =>

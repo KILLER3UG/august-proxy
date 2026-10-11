@@ -167,6 +167,20 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
     });
   }, [models, selectedId, selectedProvider]);
 
+  /* No fallback belongs here. An earlier attempt added one — "when nothing is
+   * selected, default to `visibleModels[0]`" — reasoning that `selectedModel` is
+   * seeded from `modelFromSession(activeSession) || loadLastModel()` and that
+   * the two effects above both bail when it is null, leaving Send permanently
+   * disabled with a tooltip naming a deleted picker.
+   *
+   * The premise was wrong: `ChatThread.tsx` already owns that fallback
+   * (`if (!targetId) return models[0]`), and it fires when the catalog arrives —
+   * `models` changes identity after mount, so the first run's early return is
+   * not the steady state. Adding a second fallback here made things WORSE: this
+   * one picked `visibleModels[0]` (ranked, hidden-filtered) while the existing
+   * one picks `models[0]` (raw order), so which model you got depended on hook
+   * registration order; and it called raw `setSelectedModel`, so the default was
+   * never persisted to `august_last_model` or the session. */
   return {
     models,
     visibleModels,

@@ -141,7 +141,9 @@ export function ShortcutsModal() {
             </p>
           )}
           <p className="pt-1 text-center text-2xs text-muted-foreground/70">
-            Ctrl = ⌘ on macOS
+            {typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+              ? '⌘ is used on Apple devices; Ctrl is used elsewhere.'
+              : 'Ctrl is used for shortcuts on this device.'}
           </p>
         </div>
       </div>

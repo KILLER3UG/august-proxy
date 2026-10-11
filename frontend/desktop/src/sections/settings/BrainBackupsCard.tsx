@@ -113,8 +113,12 @@ export function BrainBackupsCard() {
       </header>
 
       <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+        {/* Prose reduced to a bare status token. The reference surfaces carry status as
+          a glyph and a short phrase, not sentences — and this line is the only
+          thing that ever rendered "Checking database integrity…", a sentence
+          describing an implementation detail, on the Memory page. */}
         {integrity.isLoading ? (
-          'Checking database integrity…'
+          'Checking…'
         ) : integrity.isError ? (
           <>
             <TriangleAlert className="size-3 text-warning" />

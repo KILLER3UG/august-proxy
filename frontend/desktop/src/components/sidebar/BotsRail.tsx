@@ -653,7 +653,7 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
                   {room.name}
                 </span>
                 <span className="shrink-0 text-xs text-tier-2 tabular-nums">
-                  {room.members.length}b
+                  {room.members.length}
                 </span>
                 {room.needs_you && (
                   <span

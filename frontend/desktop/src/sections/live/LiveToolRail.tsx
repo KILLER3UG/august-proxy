@@ -1,4 +1,4 @@
-import { Wrench, CheckCircle2, Loader2 } from 'lucide-react';
+import { Wrench, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import type { ToolEvent } from './useLiveSession';
 
 interface LiveToolRailProps {
@@ -8,7 +8,7 @@ interface LiveToolRailProps {
 const STATUS_ICON = {
   running: Loader2,
   done: CheckCircle2,
-  error: CheckCircle2,
+  error: XCircle,
 };
 
 export function LiveToolRail({ events }: LiveToolRailProps) {
@@ -31,7 +31,7 @@ export function LiveToolRail({ events }: LiveToolRailProps) {
           >
             <Icon
               className={`size-3 mt-0.5 shrink-0 ${
-                e.status === 'running' ? 'animate-spin text-warning' : 'text-success'
+                e.status === 'running' ? 'animate-spin text-warning' : e.status === 'error' ? 'text-danger' : 'text-success'
               }`}
             />
             <div className="flex-1 min-w-0">

@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AlertCircle, ChevronDown } from 'lucide-react';
+import { AlertCircle, ChevronDown, MoreHorizontal } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
@@ -151,20 +151,21 @@ export function ActivitySummary({
 }: ActivitySummaryProps) {
   const [open, setOpen] = useState(defaultOpen);
   const [bodyClip, setBodyClip] = useState(true);
-  const wasLiveRef = useRef(live);
   useEffect(() => {
     if (open) setBodyClip(true);
   }, [open]);
-  // As soon as the final response starts, collapse thinking/tools.
+  // ONE collapse trigger, not two. `collapseWhen` (the final answer started)
+  // and the falling edge of `live` (the turn finished) say the same thing —
+  // the process detail has served its purpose. As two effects they wrote the
+  // same state independently, and the timeline stacks both props, so every
+  // turn ran two closes; any future third trigger would have been a third
+  // copy of this rule.
+  const wasLiveRef = useRef(live);
   useEffect(() => {
-    if (collapseWhen) setOpen(false);
-  }, [collapseWhen]);
-  // If the user re-expanded during final generation, collapse again when
-  // the turn fully finishes.
-  useEffect(() => {
-    if (wasLiveRef.current && !live) setOpen(false);
+    const turnEnded = wasLiveRef.current && !live;
     wasLiveRef.current = live;
-  }, [live]);
+    if (collapseWhen || turnEnded) setOpen(false);
+  }, [collapseWhen, live]);
   const segments = buildActivityCountSegments({
     thoughtCount,
     toolsCount,
@@ -224,14 +225,14 @@ export function ActivitySummary({
       >
         {isCompletion ? (
           <>
-            <ChevronDown
-              className={cn(
-                'size-3 shrink-0 text-muted-foreground transition-transform duration-200',
-                open && 'rotate-180',
-              )}
+            {/* The 3-dot glyph leads every activity header in the reference —
+                it is what marks the row as "process" rather than content, and
+                the completion bar is the same row in its settled state. */}
+            <MoreHorizontal
+              className="size-3 shrink-0 text-muted-foreground"
               aria-hidden
             />
-            <span className="activity-summary-counts flex min-w-0 items-center gap-1.5">
+            <span className="activity-summary-counts flex min-w-0 flex-1 items-center gap-1.5">
               <span
                 className={cn(
                   'shrink-0 font-semibold text-foreground',
@@ -275,9 +276,26 @@ export function ActivitySummary({
                 {durationLabel}
               </span>
             ) : null}
+            {/* The chevron CLOSES the row in the reference — title, duration,
+                then the affordance at the far right. It led this header for no
+                reason the other mode shares: the activity header below has
+                always ended with it. */}
+            <ChevronDown
+              className={cn(
+                'size-3 shrink-0 text-muted-foreground transition-transform duration-200',
+                open && 'rotate-180',
+              )}
+              aria-hidden
+            />
           </>
         ) : (
           <>
+            {/* Same leading 3-dot glyph as the completion header — one row
+                anatomy for both states of the block. */}
+            <MoreHorizontal
+              className="size-3 shrink-0 text-muted-foreground"
+              aria-hidden
+            />
             <span className="activity-summary-counts flex min-w-0 flex-1 items-center gap-2">
               {/* The live label stays in the header in BOTH states: collapsed
                   it surfaces what the model is doing even when counts exist;

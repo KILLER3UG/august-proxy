@@ -1,10 +1,13 @@
 /* ── Composer toolbar ──────────────────────────────────────────────────── */
-/* Slim pill controls: + menu, model/effort, voice, send / steer / stop.   */
+/* Slim pill controls: + menu, voice, send / steer / stop.               */
+ /* The model + effort control is gone from this toolbar and from the composer
+  * below the card; the prop list shrank with it. `selectedModel` and
+  * `visibleModels` stay because the send gate and the subagent modal still
+  * need them. */
 
-import { useState, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
-import { ArrowUp, Loader2, Square } from 'lucide-react';
+import { useState, useEffect, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { ArrowUp, Square } from 'lucide-react';
 import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchAgentMode } from '@/api/workbench';
-import { updateSessionModel } from '@/store/sessions';
 import type { WorkbenchSession } from '@/types/workbench';
 import type { ChatMessage } from '@/types/chat';
 import {
@@ -15,22 +18,15 @@ import {
   normalizeSandboxMode,
   type WorkbenchSandboxMode,
 } from '@/components/chat/SandboxModeSelector';
-import { ProjectRulesBadge } from '@/components/chat/ProjectRulesBadge';
-import { ContextRing, type ContextBreakdown } from '../ChatComposer';
 import type { ModelItem } from '../model-display';
 import type { SessionUsageState } from '../hooks/useChatUsage';
-import type { EffortLevel } from '../hooks/useChatSend';
 import { ComposerActionsMenu } from './ComposerActionsMenu';
 import { CameraPopover } from './CameraPopover';
-import { ModelEffortMenu } from './ModelEffortMenu';
 import { SubagentSpawnModal } from './SubagentSpawnModal';
 import { CostCeilingChip } from './CostCeilingChip';
 import type { AnchorPos } from './useComposerPopovers';
 import { cn } from '@/lib/utils';
-import { usePromptCacheLiveStore, selectPromptCacheLive } from '@/store/promptCacheLive';
 import { normalizeHarnessMode, type HarnessAgentMode } from '@/components/chat/HarnessModeChip';
-import { GalleryVertical } from 'lucide-react';
-import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
 import type { ChatSendFn } from '../hooks/useChatSend';
 
 export function ComposerToolbar({
@@ -42,35 +38,20 @@ export function ComposerToolbar({
   streaming,
   send,
   stop,
-  setMessages,
   ensureWorkbenchSession,
   workbenchSession,
   setWorkbenchSession,
   workbenchMode,
   setWorkbenchMode,
-  workspacePath,
-  pct,
-  estTokens,
-  maxContext,
-  contextBreakdown,
   sessionUsage,
-  models,
   visibleModels,
-  modelsLoading,
   selectedModel,
-  setSelectedModel,
-  userSelectedRef,
-  onEditModels,
-  effort,
-  setEffort,
-  thinkingEnabled,
-  setThinkingEnabled,
-  modelMenuOpenSignal,
   actionsOpen,
   actionsPos,
   actionsTriggerRef,
   onToggleActions,
   onAttach,
+  folderSlot,
   onMention,
   onVoice,
   onCamera,
@@ -92,7 +73,6 @@ export function ComposerToolbar({
   send: ChatSendFn;
   stop: () => void;
   /** Optional: lets the toolbar append a synthetic handoff-notice card. */
-  setMessages?: Dispatch<SetStateAction<ChatMessage[]>>;
   /** Creates the backend workbench session on demand — must run BEFORE the
    *  first send creates the session (session-scoped settings on fresh chats). */
   ensureWorkbenchSession: () => Promise<WorkbenchSession | null>;
@@ -105,30 +85,17 @@ export function ComposerToolbar({
   ) => void;
   workbenchMode: WorkbenchGuardMode;
   setWorkbenchMode: Dispatch<SetStateAction<WorkbenchGuardMode>>;
-  workspacePath?: string | null;
-  pct: number;
-  estTokens: number;
-  maxContext: number;
-  contextBreakdown: ContextBreakdown;
   sessionUsage: SessionUsageState;
-  models: ModelItem[];
   visibleModels: ModelItem[];
-  modelsLoading: boolean;
   selectedModel: ModelItem | null;
-  setSelectedModel: Dispatch<SetStateAction<ModelItem | null>>;
-  userSelectedRef: MutableRefObject<string | null>;
-  onEditModels: () => void;
-  effort: EffortLevel;
-  setEffort: Dispatch<SetStateAction<EffortLevel>>;
-  thinkingEnabled: boolean;
-  setThinkingEnabled: Dispatch<SetStateAction<boolean>>;
-  /** Incrementing counter — opens the model menu (command palette). */
-  modelMenuOpenSignal?: number;
   actionsOpen: boolean;
   actionsPos: AnchorPos | null;
   actionsTriggerRef: React.RefObject<HTMLButtonElement | null>;
   onToggleActions: () => void;
   onAttach: () => void;
+  /** Optional control rendered beside the `+` in the left cluster — the
+   *  composer passes the folder chip here so the card stays one row tall. */
+  folderSlot?: ReactNode;
   onMention: () => void;
   onVoice: () => void;
   /** Open the camera capture popover. When omitted, no camera item is shown. */
@@ -145,12 +112,7 @@ export function ComposerToolbar({
   onAskParallel?: () => void;
   onStartDebate?: () => void;
 }) {
-  const [handoffPreparing, setHandoffPreparing] = useState(false);
   const [spawnOpen, setSpawnOpen] = useState(false);
-  // Live prompt-cache stats from the turn's contextPressure SSE event —
-  // fresher than the aggregated session-usage poll (Bug 9a).
-  const livePromptCache = usePromptCacheLiveStore((s) => selectPromptCacheLive(s, sessionId));
-
   useEffect(() => {
     const onOpen = () => setSpawnOpen(true);
     window.addEventListener('august:open-spawn', onOpen);
@@ -245,6 +207,20 @@ export function ComposerToolbar({
     <div className="flex flex-col gap-0">
       <div className="flex items-center justify-between gap-1.5 px-2 pb-1 pt-0">
       <div className="flex items-center gap-1 min-w-0">
+        {/* REMOVED: the `⌘` "Browse slash commands" trigger.
+            The reference composer has no such control — its only left-hand
+            affordance is the `+` beside the placeholder. Removed as the button
+            itself plus the `onCommands` prop and its call site, not hidden with
+            a class, so there is no dead element left in the DOM.
+
+            NOT deleted: `ComposerCommandsDropdown` and the
+            `showCommandsDropdown` state it is driven by. This button was its
+            ONLY entry point (`ChatThread.tsx:415` exposes the setter on a ref,
+            but nothing calls that ref method), and the ⌘K Command Palette does
+            not list slash commands. Removing the dropdown as well would delete
+            the feature rather than the icon, which is a different decision and
+            the user's to make. */}
+        {folderSlot}
         <ComposerActionsMenu
           open={actionsOpen}
           pos={actionsPos}
@@ -276,6 +252,14 @@ export function ComposerToolbar({
           }
           extras={
             <div className="flex items-center gap-2 px-1.5 flex-wrap pt-0.5">
+              <WorkbenchModeSelector
+                selectedMode={workbenchMode}
+                onChange={handleModeChange}
+                sandboxMode={sandboxMode}
+                onSandboxChange={handleSandboxChange}
+                harnessMode={normalizeHarnessMode(workbenchSession?.agentMode)}
+                onHarnessChange={persistHarnessMode}
+              />
               {sessionUsage && workbenchSession?.id && (
                 <CostCeilingChip
                   sessionId={workbenchSession.id}
@@ -284,7 +268,6 @@ export function ComposerToolbar({
                   initialCeiling={workbenchSession.costCeiling ?? 0}
                 />
               )}
-              <ProjectRulesBadge workspacePath={workspacePath} />
             </div>
           }
         />
@@ -299,47 +282,22 @@ export function ComposerToolbar({
       </div>
 
       <div className="flex items-center gap-1 shrink-0">
-        {handoffPreparing && (
-          <span
-            className="inline-flex items-center gap-1 text-2xs text-muted-foreground/70 px-1"
-            aria-live="polite"
-          >
-            <Loader2 className="size-3 animate-spin" />
-            Preparing handoff…
-          </span>
-        )}
-
-        {/* ZCode parity: no always-on mic button in the row (voice input
-            lives in the "+" actions menu); while streaming the slot shows the
-            spinner instead. */}
-        {streaming ? (
-          <span
-            className="h-8 w-8 flex items-center justify-center text-muted-foreground"
-            aria-live="polite"
-          >
-            <Loader2 className="size-3 animate-spin" />
-          </span>
-        ) : null}
 
         {streaming ? (
           <>
-            <button
-              type="button"
-              onClick={() => {
-                void send();
-              }}
-              disabled={!canSend}
-              title="Steer mid-run — applies after the current tool step without stopping"
-              className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40"
-            >
-              Steer
-            </button>
+            {/* Neutral, circular, monochrome — measured off the Claude reference:
+                the composer's right-hand control is a CIRCLE (a stop button while
+                generating, an outlined circle here), and neither it nor anything
+                else in the card is the accent colour. August's `bg-primary` made
+                this the only saturated element on the whole surface.
+                `rounded-full` + a token-based fill keeps it legible on either
+                theme without inventing a hue. */}
             <button
               type="button"
               onClick={stop}
               title="Stop"
               aria-label="Stop"
-              className="h-8 w-8 rounded-lg flex items-center justify-center bg-primary text-primary-foreground hover:bg-primary/90 transition"
+              className="size-8 shrink-0 rounded-full flex items-center justify-center bg-foreground/90 text-background hover:bg-foreground transition"
             >
               <Square className="size-3 fill-current" />
             </button>
@@ -361,7 +319,7 @@ export function ComposerToolbar({
                     : canSend
                       ? 'Send (Enter)'
                       : !selectedModel
-                        ? 'Select a model first — open the model picker above'
+                        ? 'No model available — check Settings → AI Setup'
                         : !sessionId
                           ? 'Open a chat session first'
                           : 'Type a message to send'
@@ -376,9 +334,12 @@ export function ComposerToolbar({
                     : 'Send'
             }
             className={cn(
-              'h-8 w-8 justify-center rounded-lg p-0 text-xs font-medium flex items-center gap-1.5 transition',
-              'bg-primary text-primary-foreground hover:bg-primary/90',
-              'disabled:opacity-40 disabled:pointer-events-none',
+              /* Same reasoning as the stop button above: circular and neutral.
+                 The reference's send control is not the accent colour, and a
+                 32px circle matches the stop button it swaps into. */
+              'size-8 justify-center rounded-full p-0 text-xs font-medium flex items-center gap-1.5 transition',
+              'bg-foreground/90 text-background hover:bg-foreground',
+              'disabled:opacity-30 disabled:pointer-events-none',
             )}
           >
             <ArrowUp className="size-3" />
@@ -387,121 +348,10 @@ export function ComposerToolbar({
       </div>
       </div>
 
-      <div
-        className="flex items-center gap-1 overflow-x-auto px-2 pb-1.5 pt-0.5 text-2xs text-muted-foreground scrollbar-none"
-        data-testid="composer-island-footer"
-      >
-        {/* Tool reach (read-only / workspace / full access) lives in the
-            WorkbenchModeSelector menu + tooltip — the standalone chip was
-            redundant "Workspace" text. The git branch selector lives in the
-            titlebar (WorkspaceBranchChip), which shows for any open workspace. */}
-        <WorkbenchModeSelector
-          selectedMode={workbenchMode}
-          onChange={handleModeChange}
-          sandboxMode={sandboxMode}
-          onSandboxChange={handleSandboxChange}
-          harnessMode={normalizeHarnessMode(workbenchSession?.agentMode)}
-          onHarnessChange={persistHarnessMode}
-        />
-        <button
-          type="button"
-          onClick={() => addRightDrawerSection('artifacts')}
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-2xs leading-none text-muted-foreground/50 hover:bg-muted/40 hover:text-foreground/80 transition"
-          title="Artifacts — files, images, links from this chat"
-        >
-          <GalleryVertical className="size-3 opacity-70" />
-        </button>
-        <ModelEffortMenu
-          models={models}
-          visibleModels={visibleModels}
-          loading={modelsLoading}
-          selected={selectedModel}
-          onEditModels={onEditModels}
-          effort={effort}
-          onEffortChange={setEffort}
-          thinkingEnabled={thinkingEnabled}
-          onThinkingChange={setThinkingEnabled}
-          openSignal={modelMenuOpenSignal}
-          onSelect={(m) => {
-            void (async () => {
-              const prev = selectedModel;
-              const { getOrInitSessionStreamState } = await import(
-                '@/sections/chat/stream/session-stream-store'
-              );
-              const msgs = sessionId
-                ? getOrInitSessionStreamState(sessionId).messages || []
-                : [];
-
-              const { switchChatModel } = await import('@/sections/chat/switch-model');
-              const result = await switchChatModel({
-                sessionId,
-                prevModel: prev,
-                nextModel: m,
-                streaming,
-                stopStream: async () => {
-                  if (!sessionId) return;
-                  const { stopChatStream } = await import(
-                    '@/sections/chat/stream/start-stop-stream'
-                  );
-                  await stopChatStream(sessionId);
-                },
-                getMessages: () => msgs,
-                setMessages: (updater) => setMessages?.(updater),
-                onModelApplied: (mm) => {
-                  setSelectedModel(mm);
-                  userSelectedRef.current = mm.id;
-                  try {
-                    localStorage.setItem('august_last_model', JSON.stringify(mm));
-                  } catch {
-                    /* silent */
-                  }
-                  if (sessionId) updateSessionModel(sessionId, mm.id, mm.provider);
-                },
-                onHandoffPreparingChange: setHandoffPreparing,
-              });
-              if (result.interrupted && sessionId) {
-                // Sequence the auto-continue AFTER the server handoff settles
-                // (the skipSwitch re-dispatch below runs it) so the re-send
-                // carries the upgraded summary — the switch race fix. Capped.
-                await Promise.race([
-                  result.handoffReady.catch(() => undefined),
-                  new Promise<void>((r) => window.setTimeout(r, 8000)),
-                ]);
-                window.dispatchEvent(
-                  new CustomEvent('august:model-selected', {
-                    detail: { modelId: m.id, provider: m.provider, skipSwitch: true, interrupted: true },
-                  }),
-                );
-              }
-            })();
-          }}
-        />
-        {/* Context ring sits right after the model/effort dropdown. */}
-        <span className="inline-flex items-center">
-          <ContextRing
-            pct={pct}
-            estTokens={estTokens}
-            maxContext={maxContext}
-            size={20}
-            breakdown={contextBreakdown}
-            promptCache={
-              livePromptCache
-                ? {
-                    hitTokens: livePromptCache.hitTokens,
-                    missTokens: livePromptCache.missTokens,
-                    hitRate: livePromptCache.hitRate,
-                  }
-                : sessionUsage
-                  ? {
-                      hitTokens: sessionUsage.cacheHitTokens ?? 0,
-                      missTokens: sessionUsage.cacheMissTokens ?? 0,
-                      hitRate: sessionUsage.cacheHitRate,
-                    }
-                  : null
-            }
-          />
-        </span>
-      </div>
+      {/* The model+effort control lived here once, then below the card, and is now
+         * gone entirely by request. This slot stays empty on purpose: a third
+         * row inside the card is what made the composer read as a control panel
+         * rather than a text field, and nothing may claim it back. */}
       <SubagentSpawnModal
         sessionId={workbenchSession?.id}
         open={spawnOpen}
@@ -511,4 +361,3 @@ export function ComposerToolbar({
     </div>
   );
 }
-

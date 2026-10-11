@@ -147,9 +147,10 @@ export function BoardPage() {
   return (
     <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden p-6 max-w-6xl mx-auto space-y-6" data-testid="board-page">
       <div className="flex items-center gap-3">
-        <Kanban className="size-7 text-primary" />
+        <Kanban className="size-7 text-muted-foreground" />
         <div>
-          <h1 className="text-2xl font-semibold">Agent Board</h1>
+          {/* h2, not h1: the titlebar already renders this route's single h1. */}
+          <h2 className="text-2xl font-semibold">Agent Board</h2>
           <p className="text-sm text-muted-foreground">
             Durable multi-agent work surface — launch a team, track every agent on the board
           </p>
@@ -159,7 +160,7 @@ export function BoardPage() {
       {/* Team launcher */}
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-3">
         <div className="flex items-center gap-2">
-          <Rocket className="size-4 text-primary" />
+          <Rocket className="size-4 text-muted-foreground" />
           <h2 className="text-sm font-medium text-foreground">Launch a team</h2>
           <span className="text-2xs text-muted-foreground/60 ml-auto">
             one agent per goal line — runs in parallel, cards advance as they finish
@@ -201,7 +202,7 @@ export function BoardPage() {
       {active.length > 0 ? (
         <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-2">
           <div className="flex items-center gap-2">
-            <Bot className="size-4 text-primary" />
+            <Bot className="size-4 text-muted-foreground" />
             <h2 className="text-sm font-medium text-foreground">Working now</h2>
             <span className="rounded-full bg-primary/15 px-2 py-0.5 text-2xs text-primary">{active.length}</span>
           </div>

@@ -28,7 +28,7 @@ import { BrainBackupsCard } from './BrainBackupsCard';
 import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowUp, ChevronLeft, ChevronRight, Download, MoreHorizontal, Pencil, RefreshCw, Search, Trash2, UserRoundCog } from 'lucide-react';
+import { ArchiveRestore, ArrowUp, ChevronLeft, ChevronRight, Download, MoreHorizontal, Pencil, RefreshCw, Search, Trash2, UserRoundCog } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
@@ -121,7 +121,6 @@ interface ProjectList {
  * distinguish two backend tables they never see. The stores are still what a
  * row IS (the kind chip says so) — they are just no longer the navigation. */
 const PAGE_TITLE = 'Memory';
-const PAGE_BLURB = 'Everything August has learned about you and your projects.';
 
 /** The Global memory group lists every browsable store at once. */
 const GLOBAL_STORES = ['facts', 'memory', 'heuristics'];
@@ -319,6 +318,13 @@ interface FlatEntry {
   expired: boolean;
   legacy: boolean;
   source: string;
+  /** `facts.status === 'retired'` — consolidation parked the row and BOTH
+   *  recall lanes filter it out, so it is NOT in the model's context even
+   *  when its kind is `profile`. The row keeps rendering here (this is the
+   *  human door) with a badge and a Restore action; without the flag the
+   *  profile explainer's "always in context" claim was false for exactly
+   *  these rows. */
+  retired: boolean;
 }
 
 const UNIFIED_FETCH = 200;
@@ -572,6 +578,22 @@ export function MemorySection({ active }: { active: { id: string } }) {
     },
     onError: (e: Error) => toast.error(e.message || 'Update failed'),
   });
+  /** Un-retire a consolidation-parked fact. Deliberately the row PATCH, not
+   *  the manage upsert door: an upsert re-encodes the value, clobbers source
+   *  to 'user' and nulls expires_at, and a restore must change exactly one
+   *  thing — status. */
+  const restoreMut = useMutation({
+    mutationFn: (p: { store: string; id: string }) =>
+      api.patch<{ row?: Row }>(
+        `/api/brain/stores/${encodeURIComponent(p.store)}/${encodeURIComponent(p.id)}`,
+        { status: 'active' },
+      ),
+    onSuccess: () => {
+      invalidate();
+      toast.success('Entry restored — it is recalled again');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Restore failed'),
+  });
   const consolidateMut = useMutation({
     mutationFn: () => api.post<{ ok: boolean; summary?: Record<string, unknown> }>('/api/brain/consolidation/run', {}),
     onSuccess: () => {
@@ -608,6 +630,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
           expired: isExpired(row),
           legacy: !!m?.legacy,
           source: m?.source?.(row) ?? '',
+          retired: str(row.status) === 'retired',
         });
       }
     }
@@ -625,11 +648,17 @@ export function MemorySection({ active }: { active: { id: string } }) {
       note: 0,
       expiring: 0,
     };
+    // The explainer's claim is about what the model SEES. Retired profile
+    // rows are parked by consolidation and both recall lanes filter on
+    // status, so they count toward the chip but not toward "always in
+    // context" — claiming them was the bug.
+    let activeProfile = 0;
     for (const e of flatEntries) {
       counts[e.kind] += 1;
       if (e.expiring) counts.expiring += 1;
+      if (e.kind === 'profile' && !e.retired) activeProfile += 1;
     }
-    return counts;
+    return { ...counts, activeProfile };
   }, [flatEntries]);
 
   const filteredEntries = useMemo(() => {
@@ -821,8 +850,12 @@ export function MemorySection({ active }: { active: { id: string } }) {
       ) : (
         <>
       <div className="pb-1">
-        <h1 className="text-[1.375rem] font-semibold tracking-tight text-foreground">{PAGE_TITLE}</h1>
-        <p className="mt-1 text-[0.8125rem] text-muted-foreground">{PAGE_BLURB}</p>
+        {/* h2, not h1: ChatTitlebar already renders the page's single h1 as
+            "Settings · Memory" on every /settings route. A second h1 here
+            meant the screen had two page titles, so heading navigation
+            offered neither as "the" title. */}
+        <h2 className="text-[1.375rem] font-semibold tracking-tight text-foreground">{PAGE_TITLE}</h2>
+        
       </div>
 
       {/* Global memory opens as its own pane, exactly like a project does: the
@@ -838,57 +871,20 @@ export function MemorySection({ active }: { active: { id: string } }) {
       )}
 
       <div className="space-y-5 pt-4">
-      {/* The behavior gates are settings, not browse controls: they render
-          in EVERY pane, including Global. They used to disappear the moment
-          the global pane opened, and the layout test pinned that (2026-10-03). */}
-      <MemoryGroup testId="memory-group-behavior" title="Memory behavior">
-        {/* Model-memory toggles: one line each, separated by rules. */}
-        <div className="divide-y divide-white/[0.06]">
-        <SettingsToggle
-          checked={Boolean(cfg?.modelMemoryRead ?? true)}
-          onCheckedChange={(next) => configMut.mutate({ modelMemoryRead: next })}
-          label="Model can read memories on demand"
-          description="Offers the memory lookup tools (brain_query / list_facts) and loads the memory index — one line per fact with its recall hook — at the start of every session."
-          disabled={configQ.isLoading || configMut.isPending}
-          data-testid="memory-model-read-toggle"
-        />
-        <SettingsToggle
-          checked={Boolean(cfg?.memoryAutoInject ?? false)}
-          onCheckedChange={(next) => configMut.mutate({ memoryAutoInject: next })}
-          label="Auto-inject relevant memories each turn"
-          description="Off (recommended): the model sees the memory index at session start and pulls full facts when it calls them. On: a block of facts relevant to the latest turn is additionally added to every message."
-          disabled={configQ.isLoading || configMut.isPending}
-          data-testid="memory-auto-inject-toggle"
-        />
-        <SettingsToggle
-          checked={Boolean(cfg?.modelMemoryWrites)}
-          onCheckedChange={(next) => configMut.mutate({ modelMemoryWrites: next })}
-          label="Model can save memories"
-          description="Lets August persist durable facts it learns while you chat (the remember tool)."
-          disabled={configQ.isLoading || configMut.isPending}
-          data-testid="memory-model-writes-toggle"
-        />
-        <SettingsToggle
-          checked={Boolean(cfg?.memoryReview)}
-          onCheckedChange={(next) => configMut.mutate({ memoryReview: next })}
-          label="Learn from finished conversations"
-          description="Off (recommended): August only saves what you or the model ask it to. On: once a day it reads the most recent conversation and keeps a stated preference, a lasting fact about you, or a procedure that took more than one attempt. Anything else it has seen is dropped. Costs one model call per pass, and every memory it writes is one you can retire here."
-          disabled={configQ.isLoading || configMut.isPending}
-          data-testid="memory-review-toggle"
-        />
-        <SettingsToggle
-          checked={Boolean(cfg?.memorySensitiveTopics)}
-          onCheckedChange={(next) => configMut.mutate({ memorySensitiveTopics: next })}
-          label="Include sensitive topics in memory"
-          description="Allow saving health, ID numbers, minors, or beliefs. Off by default."
-          disabled={configQ.isLoading || configMut.isPending}
-          data-testid="memory-sensitive-toggle"
-        />
-      </div>
-      </MemoryGroup>
 
-      <BrainBackupsCard />
-
+      {/* The browse comes FIRST, above the behaviour toggles.
+          *
+          * This page used to open with ~1,600 characters of toggle prose — five
+          * switches, each with a paragraph explaining what it does — and not one
+          * stored memory. The list was one click deep behind an "All global
+          * memories" row, so the page whose entire job is to show what August
+          * remembers showed nothing about it.
+          *
+          * The reference makes the list the page: a search field, the entries,
+          * and nothing else competing for the first screen. The toggles are still
+          * on this page and still one scroll away, so the 2026-10-03 ruling that
+          * the gates render in EVERY pane is kept — they now sit below the content
+          * they govern instead of above it. */}
       <MemoryGroup
         testId="memory-group-global"
         title="Global memory"
@@ -996,6 +992,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
                 void workspacesQ.refetch();
               }}
               title="Refresh"
+              aria-label="Refresh memory stores"
               className="rounded-lg border border-border/60 bg-card/60 p-1.5 text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
             >
               <RefreshCw className={cn('size-3', (unifiedQa.isFetching || unifiedQb.isFetching) && 'animate-spin')} />
@@ -1064,10 +1061,12 @@ export function MemorySection({ active }: { active: { id: string } }) {
 
               {/* The profile lane would otherwise be an unexplained chip: these
                   facts ride along on every turn instead of being recalled by
-                  keyword, so a row in it costs context continuously. */}
-              {kindCounts.profile > 0 && (
+                  keyword, so a row in it costs context continuously. Counted
+                  over ACTIVE rows only — a retired row rides nowhere. */}
+              {kindCounts.activeProfile > 0 && (
                 <p className="text-[0.65625rem] text-muted-foreground/70" data-testid="memory-profile-explainer">
-                  profile · always in the model’s context on every turn, not recalled by keyword.
+                  profile · {kindCounts.activeProfile === 1 ? 'row is' : 'rows are'} always in the model’s context on every turn, not recalled by keyword.
+                  Retired rows below are parked and recalled by nothing until restored.
                   Use a row’s ⋯ menu to add or remove entries.
                 </p>
               )}
@@ -1087,8 +1086,15 @@ export function MemorySection({ active }: { active: { id: string } }) {
                       : 'Nothing stored here yet.'}
                 </p>
               ) : (
-                <div className="divide-y divide-white/[0.04]" data-testid="memory-flat-list">
-                  {filteredEntries.slice(0, unifiedShown).map((e) => (
+                <>
+                {(() => {
+                  const shown = filteredEntries.slice(0, unifiedShown);
+
+                  /* One row renderer, used by both the grouped and the flat
+                     branch. Written twice the first time, which is how the two
+                     lists drift apart — the grouped one silently loses the lane
+                     toggle or the export action. */
+                  const row = (e: FlatEntry) => (
                     <FlatEntryRow
                       key={`${e.store}:${e.id}`}
                       entry={e}
@@ -1108,7 +1114,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
                         const m = STORE_META[e.store];
                         if (m?.editable) {
                           const draft: Record<string, string> = {};
-                          for (const f of m.editable) draft[f] = str(e.row[toCamel(f)]);
+                          for (const fld of m.editable) draft[fld] = str(e.row[toCamel(fld)]);
                           setEditDraft(draft);
                           setEditing(true);
                         }
@@ -1134,8 +1140,48 @@ export function MemorySection({ active }: { active: { id: string } }) {
                           kind: e.kind === 'profile' ? 'fact' : 'profile',
                         })
                       }
+                      canRestore={e.retired}
+                      restoreBusy={
+                        restoreMut.isPending &&
+                        restoreMut.variables?.store === e.store &&
+                        restoreMut.variables?.id === e.id
+                      }
+                      onRestore={() => restoreMut.mutate({ store: e.store, id: e.id })}
                     />
-                  ))}
+                  );
+
+                  /* The `all` view stays flat. When nothing is filtered the
+                     grouping is still worth it — it is the reference’s shape —
+                     but a live search is a different job: you want the matches,
+                     not the taxonomy, so grouping is dropped once `all` is not the
+                     active filter. */
+                  if (kindFilter !== 'all') {
+                    const byKind = new Map<string, FlatEntry[]>();
+                    for (const e of shown) {
+                      const list = byKind.get(e.kind) ?? [];
+                      list.push(e);
+                      byKind.set(e.kind, list);
+                    }
+                    return (
+                      <div data-testid="memory-flat-list">
+                        {KIND_ORDER.filter((k) => byKind.has(k)).map((k) => (
+                          <section key={k} data-testid={`memory-group-${k}`}>
+                            <h3 className="flex items-baseline gap-2 pb-1 pt-3 text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55 first:pt-0">
+                              {KIND_META[k].label}
+                              <span className="text-2xs font-normal normal-case tracking-normal text-muted-foreground/60">
+                                {byKind.get(k)?.length}
+                              </span>
+                            </h3>
+                            <div className="divide-y divide-white/[0.04]">
+                              {byKind.get(k)!.map(row)}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    );
+                  }
+                  return <div className="divide-y divide-white/[0.04]" data-testid="memory-flat-list">{shown.map(row)}</div>;
+                })()}
                   {filteredEntries.length > unifiedShown && (
                     <button
                       type="button"
@@ -1146,7 +1192,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
                       +{filteredEntries.length - unifiedShown} more
                     </button>
                   )}
-                </div>
+                </>
               )}
 
               {/* C-5: server-side pager past the 200-row cap. */}
@@ -1194,6 +1240,52 @@ export function MemorySection({ active }: { active: { id: string } }) {
             </>
           )}
       </MemoryGroup>
+      {/* The behavior gates are settings, not browse controls: they render
+          in EVERY pane, including Global. They used to disappear the moment
+          the global pane opened, and the layout test pinned that (2026-10-03). */}
+      <MemoryGroup testId="memory-group-behavior" title="Memory behavior">
+        {/* Model-memory toggles: one line each, separated by rules. */}
+        <div className="divide-y divide-white/[0.06]">
+        <SettingsToggle
+          checked={Boolean(cfg?.modelMemoryRead ?? true)}
+          onCheckedChange={(next) => configMut.mutate({ modelMemoryRead: next })}
+          label="Model can read memories on demand"
+          disabled={configQ.isLoading || configMut.isPending}
+          data-testid="memory-model-read-toggle"
+        />
+        <SettingsToggle
+          checked={Boolean(cfg?.memoryAutoInject ?? false)}
+          onCheckedChange={(next) => configMut.mutate({ memoryAutoInject: next })}
+          label="Auto-inject relevant memories each turn"
+          disabled={configQ.isLoading || configMut.isPending}
+          data-testid="memory-auto-inject-toggle"
+        />
+        <SettingsToggle
+          checked={Boolean(cfg?.modelMemoryWrites)}
+          onCheckedChange={(next) => configMut.mutate({ modelMemoryWrites: next })}
+          label="Model can save memories"
+          disabled={configQ.isLoading || configMut.isPending}
+          data-testid="memory-model-writes-toggle"
+        />
+        <SettingsToggle
+          checked={Boolean(cfg?.memoryReview)}
+          onCheckedChange={(next) => configMut.mutate({ memoryReview: next })}
+          label="Learn from finished conversations (off by default)"
+          disabled={configQ.isLoading || configMut.isPending}
+          data-testid="memory-review-toggle"
+        />
+        <SettingsToggle
+          checked={Boolean(cfg?.memorySensitiveTopics)}
+          onCheckedChange={(next) => configMut.mutate({ memorySensitiveTopics: next })}
+          label="Include sensitive topics in memory (off by default)"
+          disabled={configQ.isLoading || configMut.isPending}
+          data-testid="memory-sensitive-toggle"
+        />
+      </div>
+      </MemoryGroup>
+
+      <BrainBackupsCard />
+
 
       {/* One line per project that has a memory folder; the row opens that
           project's pane. */}
@@ -1712,12 +1804,15 @@ function FlatEntryRow({
   checked,
   laneLabel,
   laneBusy,
+  canRestore,
+  restoreBusy,
   onCheck,
   onView,
   onEdit,
   onDelete,
   onExport,
   onToggleLane,
+  onRestore,
 }: {
   entry: FlatEntry;
   checked: boolean;
@@ -1725,12 +1820,16 @@ function FlatEntryRow({
    *  column (only `facts` rows do — see KIND_EDITABLE_STORE). */
   laneLabel: string | null;
   laneBusy: boolean;
+  /** Retired facts offer Restore — the one action a parked row needs. */
+  canRestore: boolean;
+  restoreBusy: boolean;
   onCheck: (v: boolean) => void;
   onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onExport: () => void;
   onToggleLane: () => void;
+  onRestore: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const meta = STORE_META[entry.store];
@@ -1754,24 +1853,36 @@ function FlatEntryRow({
         aria-label={`Select ${entry.title}`}
         data-testid="memory-bulk-check"
       />
-      <span
-        className={cn(
-          'w-14 shrink-0 rounded-md border px-1 py-0.5 text-center text-2xs font-medium uppercase tracking-wide',
-          kind.className,
-        )}
-        data-testid="memory-kind-label"
-      >
-        {kind.label}
-      </span>
+      {/* The KIND BADGE is gone from the row. It was a 56px coloured chip
+          repeated on every single line, and the reference has no per-row kind
+          marker at all — it uses kind as a GROUP HEADER, so the same fact is
+          labelled once by the section it sits in rather than stamped on every
+          row. `data-kind` stays on the row so the grouping below can read it
+          and the existing selectors keep working.
+          The literal quotation marks around the title are gone for the same
+          reason: quoting every line made each memory read as a verbatim blob
+          quoted out of a transcript, which is what a machine key looks like,
+          not what a thing you asked August to remember looks like. */}
       <button
         type="button"
         onClick={onView}
-        className="min-w-0 flex-1 text-left"
+        className="flex min-w-0 flex-1 items-baseline gap-3 text-left"
         title={entry.summary || entry.title}
       >
-        <span className="block truncate text-[0.78125rem] text-foreground/90">
-          “{entry.title}”
+        <span className="min-w-0 shrink-0 basis-2/5 truncate text-[0.78125rem] text-foreground/90">
+          {entry.title}
         </span>
+        {/* Only when it says something the name does not. `summary` and `title`
+            are the same string for a short fact (both come from the fact body),
+            so an unconditional second column would print the same words twice
+            on most rows. A long fact is where they differ: the backend caps the
+            derived title at 60 chars (`derive_fact_title`), so this column is
+            the part that was being cut off and hidden behind a tooltip. */}
+        {entry.summary && entry.summary !== entry.title && (
+          <span className="hidden min-w-0 flex-1 truncate text-[0.71875rem] text-muted-foreground/75 sm:block">
+            {entry.summary}
+          </span>
+        )}
       </button>
       {/* C-2: source badge — imported:<provider> and remember/user visible. */}
       {entry.source && (
@@ -1785,6 +1896,15 @@ function FlatEntryRow({
       {entry.legacy && (
         <span className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1 py-0.5 text-[0.53125rem] font-medium uppercase text-warning-fg">
           legacy
+        </span>
+      )}
+      {entry.retired && (
+        <span
+          className="shrink-0 rounded border border-border/50 bg-muted/30 px-1 py-0.5 text-[0.53125rem] font-medium uppercase text-muted-foreground"
+          title="Parked by consolidation — no recall lane carries it. Restore from the ⋯ menu."
+          data-testid="memory-retired-badge"
+        >
+          retired
         </span>
       )}
       {entry.expired ? (
@@ -1848,6 +1968,12 @@ function FlatEntryRow({
               setMenuOpen(false);
               onExport();
             }}
+            canRestore={canRestore}
+            restoreBusy={restoreBusy}
+            onRestore={() => {
+              setMenuOpen(false);
+              onRestore();
+            }}
             onClose={() => setMenuOpen(false)}
           />
         )}
@@ -1861,11 +1987,14 @@ function RowMenu({
   canDelete,
   laneLabel,
   laneBusy,
+  canRestore,
+  restoreBusy,
   onToggleLane,
   onView,
   onEdit,
   onDelete,
   onExport,
+  onRestore,
   onClose,
 }: {
   canEdit: boolean;
@@ -1873,11 +2002,14 @@ function RowMenu({
   /** Profile-lane action label, or null to hide the row (no `kind` column). */
   laneLabel: string | null;
   laneBusy: boolean;
+  canRestore: boolean;
+  restoreBusy: boolean;
   onToggleLane: () => void;
   onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onExport: () => void;
+  onRestore: () => void;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -1928,6 +2060,20 @@ function RowMenu({
           data-testid="memory-row-toggle-lane"
         >
           <UserRoundCog className="size-3" /> {laneBusy ? 'Saving…' : laneLabel}
+        </button>
+      )}
+      {/* Un-retire: consolidation parked this row and both recall lanes
+          filter on status, so nothing but this action brings it back. */}
+      {canRestore && (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={onRestore}
+          disabled={restoreBusy}
+          className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-success transition disabled:opacity-40"
+          data-testid="memory-row-restore"
+        >
+          <ArchiveRestore className="size-3" /> {restoreBusy ? 'Restoring…' : 'Restore'}
         </button>
       )}
       <button type="button" role="menuitem" onClick={onExport} className={item}>
@@ -2186,22 +2332,54 @@ function DetailView({
           </div>
         </div>
       ) : (
-        <div className="space-y-3">
-          {/* A plain fact's title IS its text, so repeating it under itself is
-              an echo, not a body. Show the prose only where it adds something,
-              and as a hairline-separated passage rather than another box. */}
-          {(summary !== title || details) && (
-            <div className="border-t border-white/[0.06] pt-3">
-              {summary !== title && <Markdown content={summary || '_No content_'} />}
-              {details && <Markdown content={details} />}
+        /* Three LABELLED fields, the reference's shape:
+         *   Last updated / Summary / Details.
+         * It used to render the body as an unlabelled markdown block followed by
+         * a run-on line — `source: remember · confidence: 1.0 · created: … ·
+         * updated: …` — where four different facts of about the same importance
+         * shared one undifferentiated sentence. Labelling them is what makes a
+         * memory legible at a glance instead of merely present.
+         *
+         * `Summary` is skipped when it is the same string as the title (a plain
+         * fact's title IS its text), because printing it twice under a heading
+         * that already says it is an echo, not information. */
+        <div className="space-y-4">
+          {updated && (
+            <div data-testid="memory-detail-updated">
+              <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">
+                Last updated
+              </p>
+              <p className="mt-0.5 text-[0.8125rem] text-foreground/90">{updated}</p>
             </div>
           )}
+
+          {summary && summary !== title && (
+            <div data-testid="memory-detail-summary">
+              <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">
+                Summary
+              </p>
+              <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-foreground/90">
+                {summary}
+              </p>
+            </div>
+          )}
+
+          {details && (
+            <div data-testid="memory-detail-details">
+              <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">
+                Details
+              </p>
+              <div className="mt-0.5">
+                <Markdown content={details} />
+              </div>
+            </div>
+          )}
+
           <p className="text-2xs text-muted-foreground/80">
             {[
               source ? `source: ${source}` : '',
               confidence ? `confidence: ${confidence}` : '',
               created ? `created: ${created}` : '',
-              updated ? `updated: ${updated}` : '',
             ]
               .filter(Boolean)
               .join('  ·  ') || 'No provenance recorded.'}

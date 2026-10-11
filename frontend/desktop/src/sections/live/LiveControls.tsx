@@ -1,20 +1,16 @@
-import { MicOff, Mic, PhoneOff, MessageSquare, ToggleLeft, ToggleRight } from 'lucide-react';
+import { MicOff, Mic, PhoneOff, MessageSquare } from 'lucide-react';
 
 interface LiveControlsProps {
   isMuted: boolean;
-  continuousMode: boolean;
   onToggleMute: () => void;
   onEnd: () => void;
-  onToggleContinuous: () => void;
   onSwitchToChat: () => void;
 }
 
 export function LiveControls({
   isMuted,
-  continuousMode,
   onToggleMute,
   onEnd,
-  onToggleContinuous,
   onSwitchToChat,
 }: LiveControlsProps) {
   return (
@@ -25,25 +21,12 @@ export function LiveControls({
       <button
         type="button"
         onClick={onToggleMute}
-        aria-label={isMuted ? 'Unmute' : 'Mute'}
+        aria-pressed={isMuted}
+        aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
         className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted"
       >
         {isMuted ? <MicOff className="size-3" /> : <Mic className="size-3" />}
         <span>{isMuted ? 'Unmute' : 'Mute'}</span>
-      </button>
-
-      <button
-        type="button"
-        onClick={onToggleContinuous}
-        aria-label="Toggle push-to-talk / continuous"
-        className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted"
-      >
-        {continuousMode ? (
-          <ToggleRight className="size-3" />
-        ) : (
-          <ToggleLeft className="size-3" />
-        )}
-        <span>{continuousMode ? 'Continuous' : 'Push-to-talk'}</span>
       </button>
 
       <button

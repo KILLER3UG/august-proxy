@@ -48,6 +48,11 @@
        h-10 utility claimed to own this and disagreed by 5.6px. */
     --shell-titlebar-h: 44px;
     --shell-drawer-header-h: 48px;
+    --shell-inset-x: clamp(1rem, 3vw, 2rem);
+    --font-ui: 15px;
+    --font-chat: 16px;
+    --font-input: 16px;
+    --font-code: 14px;
 
     /* Sunken chrome — wells that sit BELOW the page (terminal, file preview,
      * bottom dock). One value replaces the old #181818/#171717/#111 hexes. */
@@ -59,6 +64,12 @@
     --dt-hairline-strong: #d9d9d5;
     /* "Paper" role — the schematic canvas and other drawing surfaces. */
     --dt-paper: #fdfdfb;
+    /* Schematic ink on the paper canvas: symbol bodies, wires, the live tint.
+       Light values are the original hardcoded hexes, so the artifact renderer
+       and the editor stay in agreement. */
+    --dt-symbol-stroke: #334155;
+    --dt-symbol-wire: #475569;
+    --dt-symbol-current: #2563eb;
     /* A barely-there glow/wash used behind boot and empty states. */
     --dt-wash: rgb(0 0 0 / 0.03);
     /* Scrollbar thumb. Three rules used to paint it rgba(255,255,255,.1) and
@@ -188,6 +199,12 @@
     --dt-overlay-scrim: rgb(0 0 0 / 0.55);
     --dt-hairline-strong: #3d3d3d;
     --dt-paper: #161618;
+    /* Dark-paper schematic ink. The light slate values (#334155/#475569)
+       measured 1.78:1 / 2.39:1 here and the label fill 1.01:1 — darker than
+       the canvas. Slate-300/400 and blue-400 clear 4.5:1 against #161618. */
+    --dt-symbol-stroke: #cbd5e1;
+    --dt-symbol-wire: #94a3b8;
+    --dt-symbol-current: #60a5fa;
     --dt-wash: rgb(255 255 255 / 0.04);
     /* Dim grey on charcoal — reads as a groove, not a white bar. */
     --dt-scrollbar: rgb(150 150 158 / 0.22);
@@ -259,13 +276,19 @@
   body {
     color: var(--dt-foreground);
     font-family: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    font-size: 0.9375rem;
+    font-size: var(--font-ui);
     line-height: 1.6;
     letter-spacing: -0.011em;
     font-feature-settings: 'cv11', 'ss01', 'ss03';
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
+
+  .august-chat-column .august-message-list { font-size: var(--font-chat); }
+  .august-chat-column pre,
+  .august-chat-column code,
+  .font-mono { font-size: var(--font-code); }
+  .august-composer textarea { font-size: max(16px, var(--font-input)) !important; }
 
   h1 { font-size: 1.375rem;  line-height: 1.25; letter-spacing: -0.022em; font-weight: 600; }
   h2 { font-size: 1.125rem;  line-height: 1.3;  letter-spacing: -0.018em; font-weight: 600; }

@@ -23,6 +23,7 @@ import {
   saveSessionsToStorage,
 } from './sessions/storage';
 import { isSessionIdTombstoned, tombstoneSessionId } from './sessions/tombstone';
+import { legacyMessagesStorageKey, messagesStorageKey } from '@/sections/chat/message-storage';
 import type { Folder, Session, SessionStatus } from './sessions/types';
 
 export type { Session, SessionStatus, Folder } from './sessions/types';
@@ -204,7 +205,19 @@ export function getOrCreateEmptySession(
       ...existing,
       folderId: folderId ?? existing.folderId ?? null,
       workspacePath: workspacePath ?? existing.workspacePath ?? null,
-      startedAt: new Date().toISOString(),
+      /* `startedAt` is NO LONGER re-stamped to now.
+       *
+       * Re-using a blank chat stamped it with the current time, and the rail
+       * sorts newest-first — so every "+ New chat" press (and every visit to
+       * `/`, which mints a session) pushed a permanently EMPTY row to the top of
+       * the list, permanently outranking every real conversation. Measured on
+       * the live profile: 17 rows titled `New chat`, all with `messageCount: 0`,
+       * and three of them created seconds apart by a single audit run.
+       *
+       * Bumping was cosmetic ("it feels like new") and it cost the user their
+       * history ordering. The row already moves to the top of the list because
+       * `bumped` is prepended below — which is what the bump actually needed —
+       * so `startedAt` is left as it was and the list keeps meaning. */
       title: isPlaceholderTitle(existing.title)
         ? (title ?? defaultSessionTitle())
         : existing.title,
@@ -378,7 +391,8 @@ export function removeSessionLocally(id: string): boolean {
   saveSessionsToStorage(updated);
   for (const lid of dropIds) {
     try {
-      localStorage.removeItem(`chat_messages_${lid}`);
+      localStorage.removeItem(messagesStorageKey(lid)!);
+      localStorage.removeItem(legacyMessagesStorageKey(lid)!);
       localStorage.removeItem(`august_composer_draft_${lid}`);
     } catch {
       /* ignore */
@@ -466,7 +480,8 @@ export function deleteUncategorizedSessions(options?: {
   saveSessionsToStorage(updated);
   for (const id of removeIds) {
     try {
-      localStorage.removeItem(`chat_messages_${id}`);
+      localStorage.removeItem(messagesStorageKey(id)!);
+      localStorage.removeItem(legacyMessagesStorageKey(id)!);
       localStorage.removeItem(`august_composer_draft_${id}`);
     } catch {
       /* ignore */
@@ -579,10 +594,12 @@ export function clearAllSessions(includeArchived: boolean = true) {
 
   // Clear all localStorage chat histories
   toDelete.forEach((s) => {
-    localStorage.removeItem(`chat_messages_${s.id}`);
+    localStorage.removeItem(messagesStorageKey(s.id)!);
+    localStorage.removeItem(legacyMessagesStorageKey(s.id)!);
     localStorage.removeItem(`august_composer_draft_${s.id}`);
     if (s.workbenchSessionId) {
-      localStorage.removeItem(`chat_messages_${s.workbenchSessionId}`);
+      localStorage.removeItem(messagesStorageKey(s.workbenchSessionId)!);
+      localStorage.removeItem(legacyMessagesStorageKey(s.workbenchSessionId)!);
       localStorage.removeItem(`august_composer_draft_${s.workbenchSessionId}`);
     }
   });

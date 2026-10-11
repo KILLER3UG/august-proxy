@@ -18,8 +18,7 @@ export type UiAction =
   | 'export_conversation'
   | 'export_conversation_pdf'
   | 'copy_conversation'
-  | 'stop_chat'
-  | 'open_model_picker';
+  | 'stop_chat';
 
 export interface UiActionEvent {
   id?: string;
@@ -88,7 +87,6 @@ const CHAT_SCOPED_ACTIONS: ReadonlySet<UiAction> = new Set<UiAction>([
   'export_conversation',
   'export_conversation_pdf',
   'copy_conversation',
-  'open_model_picker',
 ]);
 
 let chatSurfaceClaims = 0;

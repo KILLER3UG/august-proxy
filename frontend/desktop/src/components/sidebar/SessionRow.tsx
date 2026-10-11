@@ -13,7 +13,7 @@ import {
   Trash2,
   Archive,
 } from "lucide-react";
-import { cn, timeAgo, absoluteDate } from "@/lib/utils";
+import { cn, timeAgo } from "@/lib/utils";
 import { sessionRow, hoverScale } from "@/lib/motion";
 import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
 import {
@@ -27,6 +27,7 @@ import {
   useLiveActivityStore,
 } from "@/store/liveActivity";
 import { modelDisplayParts } from "@/sections/chat/ChatThread";
+
 
 export interface SessionRowProps {
   session: Session;
@@ -270,7 +271,7 @@ function SessionRowInner({
   }
 
   const hasStatus = status && status !== "idle";
-
+  
   /* ── Preview payload: everything below is already on `session` / props ── */
   const previewStatusWord =
     needsHandoff > 0 ? "Needs handoff" : STATUS_WORD[status ?? "idle"];
@@ -493,9 +494,14 @@ function SessionRowInner({
           if (e.key === "Escape") hidePreview();
         }}
         aria-describedby={previewPos ? previewId : undefined}
-        className="relative w-full text-left px-2.5 py-1.5 flex flex-col gap-0.5 pr-8 min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+        className="relative w-full text-left px-2 py-0.5 flex flex-col gap-0 pr-7 min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
       >
-        <div className="flex items-center gap-2 min-w-0">
+        {/* Line 1 is the title ALONE. It used to share this line with the
+            status dot, a folder glyph, the token delta and the timestamp,
+            and on a narrow sidebar that truncated the one thing the row is
+            for ("Friendly g" + "+12.3k / −98" + "5d ago"). Haze splits it
+            the same way: title on top, quiet metadata beneath. */}
+        <div className="flex items-center gap-1.5 min-w-0">
           {hasStatus ? (
             <span
               className={cn(
@@ -507,10 +513,27 @@ function SessionRowInner({
                 status === "error" && "bg-danger",
               )}
             />
-          ) : active ? (
-            <span className="inline-block size-1.5 rounded-full bg-sidebar-foreground shrink-0" />
           ) : (
-            <span className="inline-block size-1.5 rounded-full border border-sidebar-foreground/35 shrink-0" />
+            /* The hollow circle bullet, on EVERY row including the selected
+             * one. Measured off the Claude reference at 2.4x: the bullet is
+             * identical on selected and unselected rows — selection is carried
+             * by the row's lighter fill alone, so changing the bullet on
+             * selection is redundant signal.
+             *
+             * Two things were wrong before:
+             * 1. `bg-sidebar-foreground` has NO css rule anywhere (only
+             *    `--dt-sidebar-foreground` is defined), so the SELECTED row's
+             *    bullet computed to fully transparent — no bullet at all.
+             * 2. `border-sidebar-foreground/35` rendered the same `--dt-border`
+             *    as a full-strength border, because a `!important`
+             *    `border-color` rule in base.css was overriding the opacity
+             *    modifier. That rule is now fixed.
+             * `border-tier-2` is a muted token that resolves on both themes. */
+            <span
+              className="inline-block size-[7px] rounded-full border border-foreground/25
+                         group-hover:border-foreground/40 transition-colors shrink-0"
+              data-testid="session-row-bullet"
+            />
           )}
           {session.workspacePath && (
             <FolderIcon className="size-3 text-tier-3 shrink-0" />
@@ -529,30 +552,39 @@ function SessionRowInner({
               className="w-full"
             />
           </div>
-          {/* DeepSeek parity: a pending human interaction REPLACES the
-              timestamp with its own warning label (R4 §3: "pending
-              interactions replace the timestamp with a warning dot +
-              label"). The date returns the moment nothing is pending. */}
-          {needsHandoff > 0 ? (
-            <span
-              className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-warning/15 px-1 text-2xs font-medium text-warning-fg"
-              title={`${needsHandoff} workstream${needsHandoff === 1 ? '' : 's'} need${needsHandoff === 1 ? 's' : ''} a handoff`}
-              data-testid="session-row-needs-handoff"
-            >
-              <span className="size-1.5 rounded-full bg-warning" aria-hidden />
-              Needs handoff
-            </span>
-          ) : session.startedAt ? (
-            <span
-              className="shrink-0 text-xs tabular-nums text-tier-2 transition-colors group-hover:text-tier-1"
-              title={absoluteDate(session.startedAt)}
-              data-testid="session-row-date"
-            >
-              {timeAgo(session.startedAt)}
-            </span>
-          ) : null}
-
         </div>
+
+        {/* Line 2 — REMOVED.
+
+            This was "the Haze row signature": relative time on the left, token
+            delta hard right. Measured against the Claude reference at 2.4x, its
+            chat rows are a SINGLE line — hollow circle bullet, then the title,
+            with no second line at all: no timestamp, no `+29.0k / −386`. Haze
+            does carry the delta, but the two references disagree and the Claude
+            layout is the one this redesign is being measured against.
+
+            The delta also cost a per-row subscription (`useSessionTokenDelta`)
+            and a second rendered line per row, to surface a number the composer
+            footer now carries in aggregate.
+
+            `hasTokenDelta`/`delta` stay defined: the hover preview and the
+            pending-handoff warning still read them. */}
+
+        {/* DeepSeek parity: a pending human interaction REPLACES the
+            timestamp with its own warning label — R4 §3, "pending
+            interactions replace the timestamp". It sits on its own line here
+            so the title line never competes with an amber pill. */}
+        {needsHandoff > 0 ? (
+          <span
+            className="ml-3.5 inline-flex w-fit items-center gap-1 rounded-sm bg-warning/15 px-1 text-2xs font-medium text-warning-fg"
+            title={`${needsHandoff} workstream${needsHandoff === 1 ? '' : 's'} need${needsHandoff === 1 ? 's' : ''} a handoff`}
+            data-testid="session-row-needs-handoff"
+          >
+            <span className="size-1.5 rounded-full bg-warning" aria-hidden />
+            Needs handoff
+          </span>
+        ) : null}
+
         <AnimatePresence>
           {(status === "working" || status === "streaming") && (
             <motion.div
@@ -618,7 +650,7 @@ function SessionRowInner({
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "absolute right-1 top-1/2 -translate-y-1/2 z-40 flex items-center gap-px opacity-100 transition-opacity focus-within:opacity-100",
+          "absolute right-1 top-1/2 -translate-y-1/2 z-40 flex items-center gap-px opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100",
         )}
       >
         <motion.button

@@ -91,7 +91,7 @@ describe('RightDrawerFileSection fullscreen preview', () => {
     expect(overlay?.querySelector('img')).toBeTruthy();
   });
 
-  it('renders HTML documents LIVE with a preview/source toggle', () => {
+  it('renders HTML in a fully sandboxed static preview with a source toggle', () => {
     setup({
       name: 'embeddings-explainer.html',
       size: '6 KB',
@@ -100,11 +100,14 @@ describe('RightDrawerFileSection fullscreen preview', () => {
         '<!doctype html><html><head><style>body{color:#fff}</style></head>' +
         '<body><canvas id="c"></canvas><script>let x=1;</script></body></html>',
     });
-    // Live iframe by default (sandboxed, scripts allowed)…
-    const live = document.querySelector(
+    // HTML preview remains readable while scripts and other active content
+    // stay disabled inside the untrusted attachment.
+    const preview = document.querySelector<HTMLIFrameElement>(
       '[data-testid="file-preview-html-live"] iframe[sandbox]',
     );
-    expect(live).toBeTruthy();
+    expect(preview).toBeTruthy();
+    expect(preview?.getAttribute('sandbox')).toBe('');
+    expect(preview?.title).toBe('HTML preview of embeddings-explainer.html');
     // …with a Source toggle showing code instead.
     fireEvent.click(document.querySelector('[data-testid="html-preview-tab-source"]')!);
     expect(screen.getByText(/<!doctype html>/i)).toBeTruthy();

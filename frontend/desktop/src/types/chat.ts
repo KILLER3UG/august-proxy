@@ -235,6 +235,17 @@ export interface ChatMessage {
     duration?: number;
     result?: string;
   };
+  /** The tool-call id this standalone `role:'tool'` row answers.
+   *
+   *  This is the ONLY link between a tool row and the `toolCall` block on the
+   *  parent assistant message — the row's `tool` payload carries `name`, `result`
+   *  and `status` but no id, and an Anthropic tool_result has no `name` either.
+   *  `mapRemoteMessages` copies it through on restore and `persistMessages`
+   *  writes it into the localStorage cache, which is what lets
+   *  `dropDuplicatedToolRows` merge the outcome into the right block and drop
+   *  the row on a warm reload. Without it the merge keyed on a field the
+   *  persisted message never had and silently did nothing. */
+  toolUseId?: string;
   tools?: Array<{
     name: string;
     context?: string;

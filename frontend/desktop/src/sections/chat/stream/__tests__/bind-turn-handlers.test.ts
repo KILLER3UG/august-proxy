@@ -18,6 +18,7 @@ vi.mock('../append-block-event', () => ({ appendBlockEvent: vi.fn() }));
 
 import { bindTurnStreamHandlers } from '../bind-turn-handlers';
 import { useSessionStreamStore } from '../session-stream-store';
+import { messagesStorageKey } from '../../message-storage';
 
 const UI_ID = 'sess_stream_persist';
 
@@ -47,15 +48,15 @@ describe('bindTurnStreamHandlers', () => {
 
       // The factory persists its placeholder immediately; clear it so the
       // assertion isolates the throttled live update path.
-      localStorage.removeItem(`chat_messages_${UI_ID}`);
+      localStorage.removeItem(messagesStorageKey(UI_ID)!);
       handlers.onText({ content: 'streamed text' });
       await vi.advanceTimersByTimeAsync(32);
-      expect(localStorage.getItem(`chat_messages_${UI_ID}`)).toBeNull();
+      expect(localStorage.getItem(messagesStorageKey(UI_ID)!)).toBeNull();
 
       await vi.advanceTimersByTimeAsync(1_000);
 
       expect(
-        JSON.parse(localStorage.getItem(`chat_messages_${UI_ID}`) ?? '[]'),
+        JSON.parse(localStorage.getItem(messagesStorageKey(UI_ID)!) ?? '[]'),
       ).toEqual([expect.objectContaining({ id: 'a1', content: 'streamed text' })]);
     } finally {
       vi.useRealTimers();
@@ -78,10 +79,10 @@ describe('bindTurnStreamHandlers', () => {
           [UI_ID]: { ...state, history: { status: 'loading' } },
         },
       });
-      localStorage.removeItem(`chat_messages_${UI_ID}`);
+      localStorage.removeItem(messagesStorageKey(UI_ID)!);
       bundle.handlers.onText({ content: 'do not snapshot yet' });
       await vi.advanceTimersByTimeAsync(1_032);
-      expect(localStorage.getItem(`chat_messages_${UI_ID}`)).toBeNull();
+      expect(localStorage.getItem(messagesStorageKey(UI_ID)!)).toBeNull();
     } finally {
       vi.useRealTimers();
     }

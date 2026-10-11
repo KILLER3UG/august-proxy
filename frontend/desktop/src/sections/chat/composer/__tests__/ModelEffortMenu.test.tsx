@@ -43,7 +43,6 @@ function setup(selected: ModelItem | null = MODELS[2], list: ModelItem[] = MODEL
   return render(
     <QueryClientProvider client={qc}>
       <ModelEffortMenu
-        models={list}
         visibleModels={list}
         loading={false}
         selected={selected}
@@ -144,6 +143,25 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     expect(within(providerGroup('KiloCode')).getByText('Ox Alpha')).toBeTruthy();
   });
 
+  it('keeps matching results expanded and prevents collapse while searching', () => {
+    setup();
+    openModelsPane();
+    const header = document.querySelector('[data-testid="provider-header-KiloCode"]') as HTMLButtonElement;
+    fireEvent.click(header);
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.change(screen.getByPlaceholderText('Search models'), { target: { value: 'ox alpha' } });
+    expect(modelRow('KiloCode', 'ox-alpha')).toBeTruthy();
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    expect(header.disabled).toBe(true);
+    fireEvent.click(header);
+    expect(modelRow('KiloCode', 'ox-alpha')).toBeTruthy();
+
+    // The user's collapsed state is restored when the focused search view ends.
+    fireEvent.change(screen.getByPlaceholderText('Search models'), { target: { value: '' } });
+    expect(within(providerGroup('KiloCode')).queryByText('Ox Alpha')).toBeNull();
+  });
+
   it('Manage models sits at the bottom of the provider pane', () => {
     setup();
     openModelsPane();
@@ -162,7 +180,6 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     render(
       <QueryClientProvider client={qc}>
         <ModelEffortMenu
-          models={MODELS}
           visibleModels={MODELS}
           loading={false}
           selected={MODELS[2]}
@@ -342,7 +359,6 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     render(
       <QueryClientProvider client={qc}>
         <ModelEffortMenu
-          models={MODELS}
           visibleModels={MODELS}
           loading={false}
           selected={MODELS[2]}
@@ -368,7 +384,6 @@ describe('ModelEffortMenu (provider-pane picker)', () => {
     render(
       <QueryClientProvider client={qc}>
         <ModelEffortMenu
-          models={MODELS}
           visibleModels={MODELS}
           loading={false}
           selected={MODELS[2]}

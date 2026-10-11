@@ -15,12 +15,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   BookOpen,
+  Check,
   ChevronLeft,
   FolderTree,
   Info,
   Loader2,
   Pencil,
   Plus,
+  Power,
   Save,
   Search,
   Trash2,
@@ -899,7 +901,7 @@ export function SkillsSection() {
                 />
               </FormField>
             )}
-            <FormField label="Description" hint="One sentence, ≤ 60 chars — this is what makes the skill trigger.">
+            <FormField label="Description" hint="What it does and when to use it — this is what makes the skill trigger, so name the situations and phrases a request would contain.">
               <input
                 type="text"
                 value={form.description}
@@ -1131,6 +1133,10 @@ function SkillCard({
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => {
+        // The checkbox and enable button are native keyboard controls nested
+        // in the clickable card. Let Space/Enter reach their own behavior;
+        // only the card itself treats those keys as "open details".
+        if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onOpen();
@@ -1171,14 +1177,21 @@ function SkillCard({
               </span>
             )}
           </span>
-          <span className="mt-0.5 line-clamp-2 block text-[0.71875rem] text-muted-foreground/75">
+          <span className="mt-0.5 line-clamp-1 block text-[0.71875rem] text-muted-foreground/75">
             {skill.description || 'No description'}
           </span>
         </div>
+        {/* Icon-only, not a bordered "On" pill. The reference card is a calm tile with
+            a check at the right; twenty outlined buttons in a grid was the
+            loudest thing on the page and said nothing. The CONTROL stays in
+            both states — disabling from the grid is a real capability the tests
+            guard — it just stops shouting when the skill is already on. The
+            disabled state still shows the amber "Disabled" pill above, so the
+            state is never carried by an icon alone. */}
         <Button
           type="button"
-          variant="outline"
-          size="sm"
+          variant="ghost"
+          size="icon-sm"
           onClick={(e) => {
             e.stopPropagation();
             onToggleEnabled();
@@ -1189,11 +1202,15 @@ function SkillCard({
           className={cn(
             'shrink-0',
             enabled
-              ? 'border-white/[0.08] text-muted-foreground/70'
-              : 'border-warning/30 text-warning-fg',
+              ? 'text-muted-foreground/35 hover:text-muted-foreground'
+              : 'text-warning-fg hover:bg-warning/10',
           )}
         >
-          {enabled ? 'On' : 'Off'}
+          {enabled ? (
+            <Check className="size-4" aria-hidden />
+          ) : (
+            <Power className="size-4" aria-hidden />
+          )}
         </Button>
       </div>
       <div className="flex items-center justify-between pl-5 text-2xs text-muted-foreground/50">

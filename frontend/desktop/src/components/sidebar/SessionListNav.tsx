@@ -2,14 +2,25 @@
 
 import { motion } from "framer-motion";
 import {
-  FileText,
+  ChevronDown,
+  Bot,
+  GraduationCap,
+  Kanban,
+  FolderOpen,
   PanelLeft,
   Plus,
-  Settings,
 } from "lucide-react";
-import { addRightDrawerSection } from "@/components/shell/RightDrawerState";
+import { addWorkspace, setCurrentWorkspace, useWorkspacesStore } from "@/store/workspaces";
+import { openFolderViaTauri } from "@/api/folder";
+import { toast } from "sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { t } from "@/lib/motion";
-import { cn } from "@/lib/utils";
+
 
 export interface SessionListNavProps {
   onNew: () => void;
@@ -36,6 +47,12 @@ const plusIconMotion = {
   tap: { scale: 0.9, rotate: 90, transition: t.fast },
 };
 
+const PRIMARY_DESTINATIONS = [
+  { to: '/automations', label: 'Automations', Icon: Bot },
+  { to: '/board', label: 'Board', Icon: Kanban },
+  { to: '/learning', label: 'Learning', Icon: GraduationCap },
+] as const;
+
 
 /** Top of the session sidebar: collapse control + new chat + destination dock. */
 export function SessionListNav({
@@ -45,7 +62,18 @@ export function SessionListNav({
   activePath = '',
   workspaceName,
 }: SessionListNavProps) {
+  const workspaces = useWorkspacesStore((s) => s.workspaces);
+  const currentWorkspaceId = useWorkspacesStore((s) => s.currentWorkspaceId);
+  const selectedWorkspace = workspaces.find((w) => w.id === currentWorkspaceId);
   const brandLabel = workspaceName?.trim() || 'August';
+  const addWorkspaceFromPicker = async () => {
+    try {
+      const path = await openFolderViaTauri();
+      if (path.path) addWorkspace(path.path);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not open a workspace folder.');
+    }
+  };
 
   return (
     <div className="august-sidebar-nav flex flex-col shrink-0">
@@ -73,52 +101,78 @@ export function SessionListNav({
         </button>
       </div>
 
-      {/* Primary + New button */}
+      <div className="px-2 pt-2 pb-1">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-sidebar-foreground/80 transition hover:bg-sidebar-accent/50"
+              aria-label="Switch workspace"
+              data-testid="workspace-switcher"
+            >
+              <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">{selectedWorkspace?.name ?? brandLabel}</span>
+              <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64">
+            {workspaces.length === 0 ? (
+              <DropdownMenuItem disabled>No workspaces added yet</DropdownMenuItem>
+            ) : workspaces.map((workspace) => (
+              <DropdownMenuItem
+                key={workspace.id}
+                onSelect={() => setCurrentWorkspace(workspace.id)}
+                className="flex items-center gap-2"
+              >
+                <FolderOpen className="size-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                {workspace.id === currentWorkspaceId ? <span aria-label="Current workspace">✓</span> : null}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuItem onSelect={() => void addWorkspaceFromPicker()}>
+              <Plus className="mr-2 size-3.5" /> Add workspace…
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* New chat — a ROW, not a primary CTA. It was a filled pill with a
+          border and a shadow sitting above three quiet nav rows, which made it
+          read as the app's main action and pushed every chat below the fold.
+          Claude, Haze and KiloCode all draw it as one more nav row; the only
+          thing that makes it primary is the + glyph. */}
       <div className="p-2 pb-1">
         <motion.button
           type="button"
           onClick={onNew}
-          className="w-full flex items-center gap-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] px-3 py-1.5 text-left text-[0.8125rem] font-medium text-sidebar-foreground transition-colors shadow-sm"
+          className="w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors text-sidebar-foreground/85 hover:text-sidebar-foreground hover:bg-sidebar-accent/40"
           initial="rest"
           whileHover="hover"
           whileTap="tap"
           variants={rowMotion}
         >
           <motion.span className="inline-flex shrink-0 opacity-80" variants={plusIconMotion}>
-            <Plus className="size-3" />
+            <Plus className="size-3.5" />
           </motion.span>
           <span>New chat</span>
         </motion.button>
       </div>
 
-      {/* Chat-first sidebar. Deep dive against the four references: Hermes
-          keeps FOUR durable pages in chrome (Chat/Skills/Messaging/
-          Artifacts) and routes the rest through ⌘K; DeepSeek's sidebar
-          carries brand + New Session + workspaces + a BOTTOM-pinned
-          Settings seat; Claude keeps New Chat + history + an account
-          footer; only ChatGPT lists many rows, and those are consumer
-          content (Library/Sora/GPTs) rather than tool surfaces. So the
-          sidebar keeps exactly what belongs to a conversation — Artifacts
-          (mirrored by the composer + titlebar triggers). Automations,
-          Runs, Board, Live, History and Learning live in the ⌘K palette's
-          Tools group, exactly like Hermes' launcher-only pattern, and
-          Customize (Settings) is bottom-pinned above the account row. */}
+      {/* Keep the primary work destinations visible; the full route set remains
+          available from the command palette. Artifacts live in the right drawer. */}
       <div className="px-2 space-y-0.5 pb-1" role="navigation" aria-label="Workspace">
-        <button
-          type="button"
-          onClick={() => {
-            // Open the section itself, the way ComposerToolbar does. The
-            // `august:open-right-sidebar` event only reveals a panel whose
-            // store is already open, so dispatching it with nothing in the
-            // drawer is reverted by ChatLayout's sync effect — a dead button.
-            addRightDrawerSection('artifacts');
-          }}
-          className="w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[0.78125rem] text-sidebar-foreground/70 hover:bg-white/[0.04] hover:text-sidebar-foreground transition-colors"
-        >
-          <FileText className="size-3 text-muted-foreground shrink-0" />
-          <span>Artifacts</span>
-        </button>
-
+        {PRIMARY_DESTINATIONS.map(({ to, label, Icon }) => (
+          <button
+            key={to}
+            type="button"
+            onClick={() => onNavigate(to)}
+            aria-current={activePath === to ? 'page' : undefined}
+            className={`w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${activePath === to ? 'bg-sidebar-accent/70 text-sidebar-foreground' : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground'}`}
+          >
+            <Icon className="size-3.5 shrink-0" />
+            <span>{label}</span>
+          </button>
+        ))}
       </div>
     </div>
   );

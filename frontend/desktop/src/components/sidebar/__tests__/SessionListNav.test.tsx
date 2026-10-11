@@ -1,7 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { SECTION_NAV_ITEMS } from '@/routes';
 
 /* The review-inbox count used to ride the sidebar's Learning row; it now
  * rides the command palette's Tools item. The api module stays mocked so
@@ -12,7 +11,6 @@ vi.mock('@/api/client', () => ({
 
 import { api } from '@/api/client';
 import { SessionListNav } from '../SessionListNav';
-import { useRightDrawerStore } from '@/components/shell/RightDrawerState';
 
 const getMock = vi.mocked(api.get);
 
@@ -47,59 +45,27 @@ describe('SessionListNav', () => {
     expect(screen.getByRole('button', { name: 'Hide sidebar' }).classList.contains('shrink-0')).toBe(true);
   });
 
-  it('is chat-first: tool destinations live in the palette, not the sidebar', () => {
-    // Reference contract, verified in the Stage 1 research:
-    //   Hermes  — four durable pages in chrome (Chat/Skills/Messaging/
-    //             Artifacts); Settings, Command Center, Profiles and the
-    //             rest are overlay cards reachable from ⌘K.
-    //   DeepSeek— brand + New Session + workspaces seat + a BOTTOM-pinned
-    //             Settings seat; sections arrive as panel-list entries.
-    //   Claude  — New Chat + history + an account footer.
-    //   ChatGPT — many rows, but consumer content (Library/Sora/GPTs).
-    // August's six rows duplicated the ⌘K palette's Tools group 1:1 (same
-    // SECTION_NAV_ITEMS source), so the sidebar keeps conversation chrome:
-    // New chat + Artifacts (also in the composer and titlebar).
+  it('surfaces the primary destinations and workspace switcher without duplicating Artifacts', () => {
     renderNav();
-    expect(SECTION_NAV_ITEMS.filter((i) => i.to !== '/').length).toBeGreaterThanOrEqual(5);
-    for (const item of SECTION_NAV_ITEMS) {
-      if (item.to === '/') continue;
-      expect(
-        screen.queryByTestId(`sidebar-nav-${item.to.replace(/^\//, '')}`),
-        `${item.to} should not be a sidebar row`,
-      ).toBeNull();
-      expect(
-        screen.queryByRole('button', { name: item.label }),
-        `${item.label} should not be a sidebar row`,
-      ).toBeNull();
-    }
-    // What stays is chat-adjacent.
-    expect(screen.getByRole('button', { name: 'Artifacts' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Automations' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Board' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Learning' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /New chat/ })).toBeTruthy();
-    // And no Customize row here either — Settings is bottom-pinned in
-    // SessionList's footer (DeepSeek's seat), below the session list.
+    expect(screen.getByTestId('workspace-switcher')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Artifacts' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Customize' })).toBeNull();
   });
 
-  it('the Artifacts row opens the artifacts section instead of a no-op event', () => {
-    // Regression: it dispatched `august:open-right-sidebar`, which only
-    // reveals a panel the drawer store already has open — ChatLayout's sync
-    // effect reverted it, so the button did nothing at all.
-    useRightDrawerStore.setState({ open: false, sections: [] });
-    renderNav();
+  it('navigates to a primary destination', () => {
+    const onNavigate = vi.fn();
+    renderNav({ onNavigate });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Artifacts' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Board' }));
 
-    const state = useRightDrawerStore.getState();
-    expect(state.open).toBe(true);
-    expect(state.sections).toContain('artifacts');
-    expect(state.activeSection).toBe('artifacts');
+    expect(onNavigate).toHaveBeenCalledWith('/board');
   });
 
-  it('has no row for a destination that does not exist', () => {
-    // There is no `/projects` route: the old "Projects" row pointed at
-    // `/board`, whose page is titled "Board", so the label could never be
-    // true. ChatGPT's Projects is consumer content; August's workspaces
-    // live in the session folders.
+  it('keeps the full routes outside the visible primary rows', () => {
     renderNav();
     expect(screen.queryByRole('button', { name: 'Projects' })).toBeNull();
   });

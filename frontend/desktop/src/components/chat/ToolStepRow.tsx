@@ -8,7 +8,7 @@
  */
 
 import { Children, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { AlertCircle, Check, ChevronDown, ChevronRight, Loader2, Pencil, X } from 'lucide-react';
+import { AlertCircle, Check, ChevronDown, Loader2, Pencil, X } from 'lucide-react';
 import { cn, fmtElapsed } from '@/lib/utils';
 import {
   Task,
@@ -43,9 +43,10 @@ function TaskItemRows({
   const bucket = classifyTool(tool.name);
   const rows: ReactNode[] = [];
 
-  // Per-file progress used to render here AND in ToolCallItemBody — the
-  // timeline passed hideProgress so files were not listed twice. The body
-  // is now the single owner; this renders the edit-class rows only.
+  // Per-file progress used to render here AND in ToolCallItemBody, so the
+  // timeline passed a suppression flag to keep files from being listed twice.
+  // The flag is gone and `ToolCallItemBody` is the single owner of progress
+  // entries; this renders the edit-class rows only.
 
   if (bucket === 'edit') {
     // File edit — pencil, short change description, filename pill, diff stat.
@@ -361,10 +362,17 @@ export function ToolStepRow({
                 aria-hidden
               />
             ) : (
-              <ChevronRight
-                className="size-3 text-muted-foreground/60 transition-colors"
-                aria-hidden
-              />
+              /* No chevron at all when the row cannot expand.
+               *
+               * The else-branch used to render a `ChevronRight`, i.e. a
+               * disclosure affordance for content that cannot be disclosed.
+               * Measured: 30 of 30 tool rows in a real transcript carried one,
+               * because `canExpand` is false for any settled plain-tool row with
+               * no error/diff/searchHits (`minimalLocked`). The output IS in the
+               * payload — `tool.result` on every row — and is persisted; it is
+               * simply not reachable from here. The reference shows a plain row
+               * with no glyph for a step that has nothing to reveal. */
+              null
             )}
           </button>
         </TaskTrigger>

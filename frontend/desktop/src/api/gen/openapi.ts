@@ -6028,6 +6028,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/usage/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Sessions Usage
+         * @description Get input/output token totals for a SET of sessions, in one query.
+         *
+         *     The sidebar renders a token delta on every visible chat row. This is the
+         *     batch behind it: `get_session_usage` fetches up to 500 per-event rows and
+         *     sweeps the pricing table per session, so calling it once per row turned a
+         *     list render into N round trips. Only the four aggregate fields the delta
+         *     needs are returned — cost and the event list stay on `/session`.
+         */
+        get: operations["get_sessions_usage_api_usage_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/usage/stats": {
         parameters: {
             query?: never;
@@ -6758,9 +6784,10 @@ export interface paths {
          * @description Create a new workbench session.
          *
          *     An empty ``workspacePath`` is a supported state, not a stand-in for the OS
-         *     home directory: a folderless chat has no project, so reads resolve anywhere
-         *     and writes land in the system temp area (see
-         *     ``app.services.sandbox.paths.bind_path``).
+         *     home directory: a folderless chat has no project, so reads are scoped to the
+         *     user's home directory by default, while writes land in the system
+         *     temp area. Settings → Computer access can add roots or enable whole-computer
+         *     access (see ``app.services.sandbox.paths.bind_path``).
          */
         post: operations["createSessionDirect_api_workbench_session_post"];
         delete?: never;
@@ -8948,7 +8975,7 @@ export interface components {
             category: string;
             /**
              * Description
-             * @description One-sentence description, ≤ 60 chars.
+             * @description What the skill does and when to use it (≤ 500 chars). This is the trigger — a future agent sees only this text before loading the skill.
              */
             description: string;
             /**
@@ -19423,6 +19450,40 @@ export interface operations {
             query: {
                 /** @description Session ID */
                 id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sessions_usage_api_usage_sessions_get: {
+        parameters: {
+            query: {
+                /** @description Comma-separated session IDs */
+                ids: string;
             };
             header?: never;
             path?: never;

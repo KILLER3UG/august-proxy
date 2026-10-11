@@ -69,10 +69,12 @@ describe('CircuitSchematicEditor', () => {
     render(<CircuitSchematicEditor sessionId="s1" netlistPath="rc.cir" />);
     await waitFor(() => expect(screen.getByTestId('schematic-canvas')).toBeInTheDocument());
     const toggle = screen.getByTestId('schematic-flow-toggle');
-    const before = screen.getByTestId('schematic-canvas').querySelectorAll('circle').length;
+    // The flow markers are arrowheads (`path` + rotate), not circles: a circle
+    // has no orientation, so current direction was invisible before.
+    const before = screen.queryAllByTestId('schematic-current-arrow').length;
     fireEvent.click(toggle);
     await waitFor(() => {
-      const after = screen.getByTestId('schematic-canvas').querySelectorAll('circle').length;
+      const after = screen.getAllByTestId('schematic-current-arrow').length;
       expect(after).toBeGreaterThan(before);
     });
   });

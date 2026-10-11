@@ -9,7 +9,7 @@ import { listBots } from '@/api/api-client';
 import { useNeedsHandoffStore } from './needs-handoff-store';
 import { PromptDialog } from '@/components/overlays/PromptDialog';
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import { ArrowDownToLine, ChevronUp, Search, X, AlertCircle } from "lucide-react";
+import { ChevronUp, Search, X, AlertCircle } from "lucide-react";
 import { openConversationSearch } from "@/store/conversation-search";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { openFolderViaTauri, folderNameFromPath } from "@/api/folder";
@@ -58,6 +58,9 @@ import {
 import { WhatsNewModal } from "@/components/overlays/WhatsNewModal";
 import { NotificationsPanel } from "@/components/overlays/NotificationsPanel";
 import { SwitchAccountModal } from "@/components/overlays/SwitchAccountModal";
+import { toggleBottomTerminal } from '@/components/shell/RightDrawerState';
+import { usageApi } from '@/api/usage';
+import { SessionUsageProvider, NO_DELTAS } from './session-usage';
 
 const SESSIONS_KEY = "august-pinned-sessions";
 const STORAGE = (() => {
@@ -122,12 +125,6 @@ function DateGroupHeader({ label, count }: { label: string; count: number }) {
   );
 }
 
-/** Pin affordances that actually exist in <SessionRow>: `onContextMenu` toggles
- *  the pin, and the three-dots menu has Pin/Unpin Chat. There is NO shift-click
- *  handler and no drag order in this sidebar, so the empty state must not
- *  promise either (the reference app's "Shift-click · drag to reorder" line was
- *  copied as a SHAPE, not as its text). */
-const PIN_HINT = "Right-click a chat to pin it · or use its three-dots menu";
 
 /** Stable shape of the callbacks passed into every <SessionRow>. */
 interface SessionRowHandlers {
@@ -151,7 +148,7 @@ interface Props {
 
 export function SessionList({
   activeId,
-  collapsed: _collapsed,
+  
   onToggleCollapsed,
   onSelect,
   onNew,
@@ -162,7 +159,11 @@ export function SessionList({
   // Hermes (R1 §3): "Bot Mode lives in the left sidebar as a TAB next to
   // your conversations — a Sessions | Bots tab strip — rather than a second
   // pane stacked below the session list." Persisted per install.
-  const [railTab, setRailTab] = useState<'sessions' | 'bots'>(() =>
+  // Read-only now: the tab strip that owned `setRailTab` is gone. `railTab`
+  // still gates the body (`bots` roster vs session list), and the persisted
+  // key is honoured so an install that last sat on Bots keeps landing there.
+  // The `terminal` variant is dropped — that tab never switched the rail.
+  const [railTab] = useState<'sessions' | 'bots'>(() =>
     localStorage.getItem('august-sidebar-tab') === 'bots' ? 'bots' : 'sessions',
   );
   // DeepSeek (R4 §3): "sort by Last updated (remembers choice)". August has
@@ -171,7 +172,6 @@ export function SessionList({
     localStorage.getItem('august-sidebar-sort') === 'name' ? 'name' : 'updated',
   );
   const botsQuery = useQuery({ queryKey: ['bots'], queryFn: listBots });
-  const botCount = botsQuery.data?.bots?.length ?? 0;
   const [sidebarWidth, setSidebarWidth] = useState(256);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -444,8 +444,17 @@ export function SessionList({
   /** Date headers only make sense when rows are ordered by date. Under
    *  `sortBy === 'name'` the list is alphabetical, so a "Today" heading over
    *  alphabetically-adjacent rows would describe nothing. Grouping is gated on
-   *  this rather than adding a second toggle the user has to keep in step. */
-  const groupDates = sortBy === 'updated';
+   *  this rather than adding a second toggle the user has to keep in step.
+   *
+   *  OFF by default even so. Measured on a real 41-chat profile: the headers
+   *  cost ten full rows (TODAY 2 / THURSDAY, OCT 8 1 / …) to label eight
+   *  sessions, and they repeat the relative time the row already shows on its
+   *  own line. None of the four references group a chat list by date — Claude
+   *  and Haze show none, KiloCode nests sessions under a project instead. The
+   *  rows still sort by recency; only the labels are gone. Flip
+   *  `august-sidebar-date-groups` to '1' to get them back. */
+  const groupDates =
+    sortBy === 'updated' && localStorage.getItem('august-sidebar-date-groups') === '1';
 
   const togglePin = useCallback((id: string) => {
     const next = new Set(latest.current.pinnedIds);
@@ -621,7 +630,52 @@ export function SessionList({
     return { byFolder, unfiled };
   }, [searching, others]);
 
+  /* ── Batched token deltas (Haze row signature) ────────────────────────
+   * Every visible chat row shows `+input / −output`. Asking
+   * `usageApi.session(id)` per row meant one request per row, each dragging
+   * back a 500-event list the row never reads — a list render fanning out
+   * over the network. This asks for every id ONCE, in the same capped shape
+   * the JSX below mounts, so a 2,000-chat history still sends a bounded list.
+   * Collapsed folders and a collapsed Tasks pool are excluded because those
+   * rows are not on screen to show a delta. */
+  const usageBatchIds = useMemo(() => {
+    const ids: string[] = [];
+    const seen = new Set<string>();
+    const add = (s: Session) => {
+      // Usage is recorded against the workbench/SoT id, the same form the
+      // status bar and composer chip read (see StatusBar).
+      const id = s.workbenchSessionId || s.id;
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      ids.push(id);
+    };
+    for (const s of visiblePinned) add(s);
+    for (const folder of folders) {
+      const pool = othersByFolder.get(folder.id);
+      if (!pool?.length) continue;
+      if (folder.isCollapsed && !searching) continue;
+      for (const s of capped(pool)) add(s);
+    }
+    if (!uncategorizedCollapsed || searching) {
+      for (const s of capped(unfiledSessions)) add(s);
+    }
+    return ids;
+  }, [visiblePinned, folders, othersByFolder, unfiledSessions, uncategorizedCollapsed, searching]);
+
+  // Keyed on the joined ids so the query is shared by every row and only
+  // re-runs when the SET of visible chats changes — not on each reorder.
+  const usageBatchKey = usageBatchIds.join(',');
+  const usageBySession = useQuery({
+    queryKey: ['usage', 'sessions', usageBatchKey],
+    queryFn: () => usageApi.sessions(usageBatchKey ? usageBatchKey.split(',') : []),
+    enabled: usageBatchKey.length > 0,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+    retry: false,
+  });
+
   return (
+    <SessionUsageProvider value={usageBySession.data?.results ?? NO_DELTAS}>
     <div ref={rootRef} className="august-session-list flex h-full text-sm relative select-none bg-sidebar">
       <input
         ref={dirInputRef}
@@ -648,71 +702,29 @@ export function SessionList({
             is a sibling of the tablist, not a child of it: a `role="tablist"`
             may only contain `role="tab"`, and axe fails the route critically
             when anything else sits inside — which this button did. */}
-        <div className="flex items-center gap-1 px-1.5 pt-1.5">
-          <div className="flex items-center gap-1" role="tablist" aria-label="Sidebar">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={railTab === 'sessions'}
-            onClick={() => {
-              setRailTab('sessions');
-              localStorage.setItem('august-sidebar-tab', 'sessions');
-            }}
-            className={cn(
-              'rounded-md px-2 py-1 text-xs font-medium transition-colors',
-              railTab === 'sessions'
-                ? 'bg-white/[0.08] text-sidebar-foreground'
-                : 'text-sidebar-foreground/60 hover:bg-white/[0.04] hover:text-sidebar-foreground',
-            )}
-            data-testid="sidebar-tab-sessions"
-          >
-            Sessions
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={railTab === 'bots'}
-            onClick={() => {
-              setRailTab('bots');
-              localStorage.setItem('august-sidebar-tab', 'bots');
-            }}
-            className={cn(
-              'flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors',
-              railTab === 'bots'
-                ? 'bg-white/[0.08] text-sidebar-foreground'
-                : 'text-sidebar-foreground/60 hover:bg-white/[0.04] hover:text-sidebar-foreground',
-            )}
-            data-testid="sidebar-tab-bots"
-          >
-            Bots
-            {botCount > 0 ? (
-              <span className="rounded-sm bg-white/[0.08] px-1 text-2xs tabular-nums text-sidebar-foreground/70">
-                {botCount}
-              </span>
-            ) : null}
-          </button>
-          </div>
-          {railTab === 'sessions' ? (
-            <button
-              type="button"
-              onClick={() => {
-                const next = sortBy === 'updated' ? 'name' : 'updated';
-                setSortBy(next);
-                localStorage.setItem('august-sidebar-sort', next);
-              }}
-              className="ml-auto rounded-md px-1.5 py-1 text-2xs text-sidebar-foreground/50 transition-colors hover:bg-white/[0.04] hover:text-sidebar-foreground"
-              aria-label={`Sort sessions by ${sortBy === 'updated' ? 'name' : 'date started'}`}
-              data-testid="sidebar-sort-toggle"
-            >
-              {sortBy === 'updated' ? 'Recent · by date' : 'Name'}
-            </button>
-          ) : null}
-        </div>
+        {/* The `Sessions | Terminal | Bots` tab strip is REMOVED.
+
+            * None of the four references has a rail tab strip. Claude has
+            `+ New / Projects / Artifacts / Customize` and straight into the
+            session list; only KiloCode has tabs, and the capture file
+            explicitly exempts KiloCode from the selection rule.
+
+            * It was not cosmetic either:
+            * - `Terminal` never switched the rail (`{railTab !== 'bots' ?
+            *   (entire session list) : null}` gated only bots), so it opened a
+            *   BOTTOM DOCK in the main column and left Sessions showing.
+            * - Every click threw an uncaught xterm `TypeError` on
+            *   `Viewport._innerRefresh` and surfaced a red error toast.
+            * - `Bots 2` printed the same number twice on one screen (tab badge
+            *   + roster header), from the same `['bots']` query.
+            *
+            * The terminal is still reachable via the Workbench drawer, which
+            * is its only other entry point; the bot roster likewise. */}
 
         {/* Session search — filters titles across Pinned / folders / task */}
-        <div className="px-1.5 pt-1.5">
+        <div className="px-1.5 pt-1">
           <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-tier-3 pointer-events-none" />
+            <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 size-3 text-tier-3 pointer-events-none" />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -721,7 +733,7 @@ export function SessionList({
               }}
               placeholder="Search sessions or ids…"
               aria-label="Search sessions"
-              className="w-full rounded-md bg-white/[0.04] border border-sidebar-border/50 pl-7 pr-7 py-1 text-xs text-tier-1 placeholder:text-tier-3 outline-none focus:border-sidebar-ring/70 transition-colors"
+              className="w-full rounded-md bg-white/[0.04] border border-sidebar-border/50 pl-6 pr-6 py-0.5 text-xs text-tier-1 placeholder:text-tier-3 outline-none focus:border-sidebar-ring/70 transition-colors"
             />
             {searchQuery && (
               <button
@@ -737,7 +749,7 @@ export function SessionList({
         </div>
 
         {/* Scrollable sessions area — denser, drawer-only simplicity */}
-        {railTab === 'sessions' ? (
+        {railTab !== 'bots' ? (
         <div className="flex-1 overflow-y-auto px-1.5 pb-2 space-y-2">
           {searching && searchMatchCount === 0 && (
             <div className="py-4 text-center">
@@ -786,18 +798,18 @@ export function SessionList({
               ))}
             </div>
           )}
-          {/* Rendered even when nothing is pinned: <Section> only shows its
-              `empty` line for this title, and the old length>0 guard meant the
-              pinned empty state was ABSENT — so the one place that could teach
-              the pin gesture taught nothing. */}
+          {/* Pinned renders only when it has something in it. It used to render
+              always — header, count, and a two-line essay — which spent ~60px
+              of the sidebar above the first real chat to explain a gesture that
+              is right there on every row. Haze has no Pinned group at all;
+              Claude only shows the heading once something is pinned. An active
+              search that filtered pinned rows away still gets its line, because
+              then the missing rows ARE the state. */}
+          {(visiblePinned.length > 0 || (searching && pinned.length > 0)) && (
           <Section
             title="Pinned"
             count={visiblePinned.length}
-            empty={
-              searching && pinned.length > 0
-                ? "No pinned chat matches this search"
-                : PIN_HINT
-            }
+            empty={searching ? 'No pinned chat matches' : undefined}
           >
             <ShownOfTotal shown={visiblePinned.length} total={pinned.length} />
             <LayoutGroup id="pinned-sessions">
@@ -816,10 +828,16 @@ export function SessionList({
               </AnimatePresence>
             </LayoutGroup>
           </Section>
+          )}
 
           <Section
             title="Chats and tasks"
             count={searching ? shownOthers : others.length}
+            onToggleSort={() => {
+              const next = sortBy === 'updated' ? 'name' : 'updated';
+              setSortBy(next);
+              localStorage.setItem('august-sidebar-sort', next);
+            }}
             onNewFolder={handleCreateFolder}
             onUploadFolder={(e) => { void handleFolderUploadClick(e); }}
           >
@@ -889,14 +907,11 @@ export function SessionList({
                                 />
                               )))}
                         </AnimatePresence>
-                        {folderSessions.length === 0 && !searching && (
-                          // Teaches the affordance that is actually on this
-                          // header (FolderHeader's `+` → onNewInFolder(folder.id))
-                          // instead of just announcing the emptiness.
-                          <p className="py-1 text-2xs italic text-muted-foreground/40 pl-1.5" data-testid="empty-folder-hint">
-                            Empty · press + on this folder’s row to start a chat here
-                          </p>
-                        )}
+                        {/* No prose where a list is empty. Both headers carry
+                            a `+` that starts a chat right there, and each row’s own
+                            kebab does the rest — an italic sentence explaining it
+                            added a line of noise per folder on a profile with many
+                            of them, and no reference has one. */}
                       </div>
                     )}
                   </div>
@@ -960,14 +975,11 @@ export function SessionList({
                                 />
                               )))}
                         </AnimatePresence>
-                        {unfiledSessions.length === 0 && !searching && (
-                          // Same rule as the folder line above: name the gesture
-                          // that exists (UncategorizedHeader's `+` starts an
-                          // unfiled chat; the row's right-click pins it).
-                          <p className="py-1 text-2xs italic text-muted-foreground/40 pl-1.5" data-testid="empty-tasks-hint">
-                            No tasks yet · press + above to start one, or + at the top for a new chat
-                          </p>
-                        )}
+                        {/* No prose where a list is empty. Both headers carry
+                            a `+` that starts a chat right there, and each row’s own
+                            kebab does the rest — an italic sentence explaining it
+                            added a line of noise per folder on a profile with many
+                            of them, and no reference has one. */}
                       </div>
                     )}
                   </div>
@@ -1009,8 +1021,8 @@ export function SessionList({
         {/* Bottom: user identity row — Claude-style username + avatar icon
             that opens the selection list (profile / settings / notifications /
             what's-new / account). Falls back to Guest when signed out. */}
-        <div className="px-2 pb-2 pt-1.5 border-t border-sidebar-border/40 flex items-center justify-between">
-          <div className="flex-1 min-w-0 mr-1">
+        <div className="px-2 pb-2 pt-1.5 border-t border-sidebar-border/40">
+          <div className="min-w-0">
             <UserDropdown
               selectedStatus={dropdownUser.status}
               onStatusChange={(status) => {
@@ -1057,20 +1069,6 @@ export function SessionList({
               }
             />
           </div>
-          <button
-            type="button"
-            onClick={() => openSettingsSection("app-updates")}
-            className={cn(
-              "size-7 shrink-0 rounded-md flex items-center justify-center transition-colors",
-              updateAvailable
-                ? "text-success-fg hover:bg-success/15"
-                : "text-muted-foreground/60 hover:text-sidebar-foreground hover:bg-white/[0.05]",
-            )}
-            title={updateAvailable ? `Update available: v${updateAvailable.version}` : "Check for updates"}
-            aria-label="Check for updates"
-          >
-            <ArrowDownToLine className="size-3" />
-          </button>
         </div>
       </div>
 
@@ -1112,5 +1110,6 @@ export function SessionList({
         onCancel={() => setFolderPrompt(null)}
       />
     </div>
+    </SessionUsageProvider>
   );
 }

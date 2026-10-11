@@ -231,8 +231,9 @@ export function ComputerAccessSettings() {
             <div>
               <div className="font-medium">Allowlist (recommended)</div>
               <div className="text-xs text-muted-foreground">
-                August may only read/write files inside the project working directory,
-                August data dir, tmp, and the roots listed below.
+                File tools can access the selected project and the roots listed
+                below. Without a project, reads stay inside your home folder and
+                writes stay in the system temp folder.
               </div>
             </div>
           </label>
@@ -265,7 +266,8 @@ export function ComputerAccessSettings() {
           <ul className="space-y-1">
             {roots.length === 0 && (
               <li className="text-xs text-muted-foreground italic">
-                No custom roots configured. Project cwd, August data dir, and tmp are always allowed.
+                No extra roots configured. The selected project remains available;
+                folderless chats can read your home folder and write to system temp.
               </li>
             )}
             {roots.map(r => (

@@ -56,6 +56,10 @@ const STRUCTURED_FIELDS = [
   'thinkingDuration',
   'tools',
   'tool',
+  // The link between a standalone tool row and its assistant `toolCall` block.
+  // It has to survive into the persisted cache or the warm-reload merge below
+  // has no key to join on.
+  'toolUseId',
   'attachments',
   'todos',
   'usage',
@@ -122,18 +126,131 @@ function looksLikeJsonPayload(content: string): boolean {
 }
 
 export function mapRemoteMessages(remote: unknown[]): ChatMessage[] {
+  /* Since migration 047 a turn's tool activity lives in the ASSISTANT
+   * message's `blocks` — that is what `AssistantBlockTimeline` renders, under
+   * the collapsed "Task completed · N steps" header, with the real tool names.
+   *
+   * The transcript also still contains the pre-047 shape: one standalone
+   * `role:'tool'` row per result, carrying its own `tool` payload. Those are
+   * the SAME tool, so rendering both showed every call twice.
+   *
+   * But the two halves are NOT redundant — they carry DISJOINT payloads, and
+   * dropping the row on its own destroys data. Measured on
+   * `wb_20260905_022058_f49228`:
+   *
+   *     assistant toolCall blocks : 30   status 'running', result EMPTY on 30/30
+   *     standalone tool rows      : 30   status 'done',    result on 30/30
+   *                                          26,195 characters of tool output
+   *
+   * The backend states the contract itself: `_tool_use_block` in
+   * `memory_store/transcript_blocks.py` documents that "status stays 'running'
+   * until a tool-result message fills the result in (same by-id merge the live
+   * reducer does)". The live reducer performs that merge; this restore path
+   * did not, so a restored transcript had 30 permanently-spinning, empty tool
+   * rows — and the duplicate bubble was the only place the output survived.
+   *
+   * So: MERGE each tool row into the assistant block carrying the same id,
+   * then drop the row. Same rule as the live reducer, one rendering surface,
+   * and no tool left stuck at 'running'.
+   *
+   * A legacy transcript whose assistant messages carry no blocks keeps its tool
+   * rows — there the row is the only rendering. */
+  const toolResultById = new Map<string, Record<string, unknown>>();
+  for (const raw of remote) {
+    if (!raw || typeof raw !== 'object') continue;
+    const r = raw as Record<string, unknown>;
+    if (String(r.role ?? '') !== 'tool') continue;
+    const tool = r.tool as Record<string, unknown> | undefined;
+    if (!tool) continue;
+    const id =
+      typeof tool.id === 'string' && tool.id
+        ? tool.id
+        : typeof r.toolUseId === 'string'
+          ? r.toolUseId
+          : '';
+    // Keep the SOURCE ROW alongside the payload: the drop is decided by which
+    // row object the merge actually consumed, not by re-deriving its id.
+    if (id) toolResultById.set(id, { ...tool, row: r });
+  }
+
+  /* Which tool ids an assistant block already renders. Only a row whose id is
+   * in HERE is dropped — a legacy transcript with no assistant blocks keeps
+   * every tool row, because there the row is the only rendering. Keying the
+   * drop on "this row happens to carry a tool payload" instead would delete
+   * the entire legacy shape. */
+  const renderedToolIds = new Set<string>();
+  /* Rows CONSUMED by the merge, tracked by object identity. The merge keys on
+   * `tool.id ?? toolUseId` but the drop used to key on `toolUseId` alone, so a
+   * row whose id lives only inside its `tool` payload was MERGED-then-DROPPED
+   * under a different key — and a row carrying only snake_case `tool_use_id`
+   * matched neither, so the drop fired with no merge at all. Two shapes, both
+   * silently lossy. Dropping only the row objects the merge actually consumed
+   * removes the whole class. */
+  const consumedRows = new Set<object>();
+  for (const raw of remote) {
+    if (!raw || typeof raw !== 'object') continue;
+    const r = raw as Record<string, unknown>;
+    if (String(r.role ?? '') !== 'assistant' || !Array.isArray(r.blocks)) continue;
+    for (const b of r.blocks as Record<string, unknown>[]) {
+      if (!b || typeof b !== 'object' || b.type !== 'toolCall') continue;
+      const t = b.tool as { id?: unknown } | undefined;
+      const id = typeof t?.id === 'string' && t.id ? t.id : typeof b.id === 'string' ? b.id : '';
+      if (id) renderedToolIds.add(id);
+    }
+  }
+
   const out: ChatMessage[] = [];
   for (const raw of remote) {
     if (!raw || typeof raw !== 'object') continue;
     const r = raw as Record<string, unknown>;
     const role = String(r.role ?? 'user');
-    let content = r.content;
+    // Fold the result into its assistant block, then let the row fall away.
+    let row = r;
+    if (role === 'assistant' && Array.isArray(r.blocks)) {
+      const merged = (r.blocks as Record<string, unknown>[]).map((b) => {
+        if (!b || typeof b !== 'object' || b.type !== 'toolCall') return b;
+        const t = b.tool as Record<string, unknown> | undefined;
+        const id =
+          typeof t?.id === 'string' && t.id ? t.id : typeof b.id === 'string' ? b.id : '';
+        const result = id ? toolResultById.get(id) : undefined;
+        if (!result) return b;
+        consumedRows.add(result.row as object);
+        // The block carries the NAME (from the assistant's tool_use) and the
+        // row carries the OUTCOME. Keep the name, take status/tone/result/
+        // summary from the row — that is the merge the live reducer does.
+        return {
+          ...b,
+          tool: {
+            ...t,
+            ...result,
+            id: id,
+            // `??` does not catch `''`, and an Anthropic tool row's name IS `''`
+            // — so `t?.name ?? result.name` kept the empty string and the merged
+            // block still rendered "Executing Tool" even though the block's own
+            // name was present. Fall through on empty, not just nullish.
+            name: t?.name || result.name || '',
+            status: result.status || t?.status || 'done',
+          },
+        };
+      });
+      row = { ...r, blocks: merged };
+    }
+    /* Drop ONLY a row whose payload was folded into an assistant block.
+     *
+     * The previous guard re-derived the id (`row.toolUseId ?? tool_use_id`) and
+     * asked `renderedToolIds`, which could disagree with the key the merge
+     * actually used (`tool.id ?? toolUseId`). Two shapes lost data that way:
+     * a row whose id lived only inside `tool.id`, and a row carrying only
+     * snake_case `tool_use_id` — the drop fired with no merge at all.
+     * `consumedRows` is populated by the merge itself, so it cannot disagree. */
+    if (role === 'tool' && consumedRows.has(raw as object)) continue;
+    let content = row.content;
     if (content && typeof content === 'object') {
       const c = content as Record<string, unknown>;
       content = typeof c.content === 'string' ? c.content : JSON.stringify(c);
     }
-    const blocks = readBlocks(r);
-    const structured = readStructured(r);
+    const blocks = readBlocks(row);
+    const structured = readStructured(row);
     let text = typeof content === 'string' ? content : String(content ?? '');
     // A tool result stored before 047 is a JSON envelope in `content`; with
     // structured blocks present the rendered text is the honest fallback.
@@ -146,12 +263,12 @@ export function mapRemoteMessages(remote: unknown[]): ChatMessage[] {
     if (!text.trim() && !blocks && !structured.tool) continue;
     const isToolRow = role === 'tool';
     out.push({
-      id: restoredId(r, out.length),
+      id: restoredId(row, out.length),
       // Keep the tool role only when a tool payload rides along —
       // MessageBubble renders role:'tool' through ToolCallCard, which needs it.
       role: isToolRow && structured.tool ? 'tool' : isToolRow ? 'assistant' : role,
       content: text,
-      timestamp: String(r.createdAt ?? r.created_at ?? new Date().toISOString()),
+      timestamp: String(row.createdAt ?? row.created_at ?? new Date().toISOString()),
       remote: true,
       ...structured,
       ...(blocks ? { blocks } : {}),
@@ -168,7 +285,9 @@ function timestamp(value: string): number {
 /** SQLite message IDs differ from queue IDs. Match each queued bubble at
  * most once, in order, and never collapse an older identical user prompt.
  * Keep the queue identity so a replayed SSE event still deduplicates. */
-function reconcileHistory(remote: ChatMessage[], injected: ChatMessage[]): ChatMessage[] {
+/** Exported for tests: it is pure, and the merge rule below is load-bearing
+ * enough that it should be pinned directly rather than only through a fetch. */
+export function reconcileHistory(remote: ChatMessage[], injected: ChatMessage[]): ChatMessage[] {
   const merged = [...remote];
   const used = new Set<number>();
   for (const message of injected) {
@@ -183,6 +302,24 @@ function reconcileHistory(remote: ChatMessage[], injected: ChatMessage[]): ChatM
     if (index >= 0) {
       merged[index] = message;
       used.add(index);
+    } else if (message.remote) {
+      /* A previously-RESTORED message the server no longer returns: drop it.
+       *
+       * This branch used to push it unconditionally, which made the client's
+       * transcript unable to ever shrink. It is the other half of the
+       * duplicated-tool-row bug: `mapRemoteMessages` correctly stopped mapping
+       * the standalone tool rows (the assistant's blocks already render them),
+       * but the cached copy in localStorage still had all 30, and this re-added
+       * every one of them on every load — so fixing the mapping alone changed
+       * nothing on screen. Measured: `chat_messages_<session>` was 141 KB and
+       * the ten `Executing Tool` bubbles survived the fix exactly.
+       *
+       * `remote: true` is set by `mapRemoteMessages` and only there, so it is
+       * the precise marker for "came from the server once" as opposed to
+       * "authored here and not yet persisted". A local message the server has
+       * not caught up with still falls through to the push below, which is the
+       * case this branch must not break. */
+      continue;
     } else {
       used.add(merged.length);
       merged.push(message);

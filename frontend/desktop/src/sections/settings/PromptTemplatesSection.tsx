@@ -77,7 +77,7 @@ export function PromptTemplatesSection() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium">Prompt Templates</h3>
+        <h2 className="text-lg font-medium">Prompt Templates</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Save reusable prompt templates. Use {'{{variableName}}'} for placeholders.
         </p>

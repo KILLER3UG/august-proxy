@@ -223,3 +223,76 @@ class TestOQ1RetireSurface:
             assert r.status_code == 200
             # The export no longer carries the retired store key.
             assert 'autoMemories' not in r.json().get('entries', {})
+
+
+class TestRestoreRetired:
+    """The un-retire door: the Memory UI's row PATCH whitelists `status` so a
+    human can bring a parked row back. Without it the docstring's promise —
+    "approve → status 'retired', REVERSIBLE" — had no surface to reverse on:
+    the upsert door exists but silently nulls expires_at and clobbers source,
+    so a restore through it damaged the row it was reviving."""
+
+    def test_row_patch_restores_a_retired_fact(self, store):
+        from app.services.memory_conn import conn
+        from app.services.memory_store import brain as brain_mod
+
+        store.save_fact(
+            'user:restore-me', {'fact': 'prefers morning runs'},
+            kind='preference', title='Morning runs',
+        )
+        conn().execute(
+            "UPDATE facts SET status = 'retired' WHERE fact_key = 'user:restore-me'"
+        )
+        conn().commit()
+
+        row_id = conn().execute(
+            "SELECT id FROM facts WHERE fact_key = 'user:restore-me'"
+        ).fetchone()['id']
+        result = brain_mod.brain_update_row('facts', str(row_id), {'status': 'active'})
+        assert result['ok'] is True
+        status = conn().execute(
+            "SELECT status FROM facts WHERE fact_key = 'user:restore-me'"
+        ).fetchone()['status']
+        assert status == 'active'
+
+    def test_restored_fact_is_visible_to_recall_again(self, store):
+        from app.services.memory_conn import conn
+        from app.services.memory_store import brain as brain_mod
+
+        store.save_fact('user:recall-me', {'fact': 'drinks espresso'}, title='Espresso')
+        conn().execute("UPDATE facts SET status = 'retired' WHERE fact_key = 'user:recall-me'")
+        conn().commit()
+        # Retired: the visibility clause every non-ranked facts read applies
+        # filters the row out.
+        from app.services.memory_store.rest import _visibility_where
+        where, _params = _visibility_where('global')
+        found = conn().execute(
+            f"SELECT fact_key FROM facts WHERE fact_key = 'user:recall-me' AND {where}"
+        ).fetchall()
+        assert found == []
+
+        row_id = conn().execute(
+            "SELECT id FROM facts WHERE fact_key = 'user:recall-me'"
+        ).fetchone()['id']
+        assert brain_mod.brain_update_row('facts', str(row_id), {'status': 'active'})['ok']
+        found = conn().execute(
+            f"SELECT fact_key FROM facts WHERE fact_key = 'user:recall-me' AND {where}"
+        ).fetchall()
+        assert len(found) == 1
+
+    def test_status_patch_never_parks_a_row(self, store):
+        """The settings door only LIFTS retirement; it refuses to impose it —
+        consolidation's proposal flow stays the only writer of 'retired'."""
+        from app.services.memory_conn import conn
+        from app.services.memory_store import brain as brain_mod
+
+        store.save_fact('user:no-retire', {'fact': 'keeps its status'}, title='Keep')
+        row_id = conn().execute(
+            "SELECT id FROM facts WHERE fact_key = 'user:no-retire'"
+        ).fetchone()['id']
+        result = brain_mod.brain_update_row('facts', str(row_id), {'status': 'retired'})
+        assert result['ok'] is False
+        status = conn().execute(
+            "SELECT status FROM facts WHERE fact_key = 'user:no-retire'"
+        ).fetchone()['status']
+        assert status != 'retired'

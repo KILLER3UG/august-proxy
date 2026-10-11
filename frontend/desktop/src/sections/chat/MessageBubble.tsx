@@ -63,8 +63,7 @@ function MessageBubbleInner({
   /**
    * External trigger to open this row's editor. Bumped by the turn-end
    * "Edit prompt" action; `useEffect`ed into `startEdit()` below. A nonce
-   * rather than a boolean so repeat presses re-open. This mirrors the
-   * `openSignal` pattern `ModelEffortMenu` uses to be opened from outside.
+   * rather than a boolean so repeat presses re-open.
    */
   editPromptSignal?: { index: number; nonce: number } | null;
   /** Fork the conversation from this message into a new chat. */
@@ -388,14 +387,21 @@ function MessageBubbleInner({
           onCompare={onCompare}
         />
       )}
-      {/* Always-visible age stamp, not hover-revealed: a timestamp is
-          detail the user *pulls*, and the reference shows it without a
-          pointer interaction. Fed by the shared ticker in the message pane
-          so it ages despite this row being memoised. Sits outside the
-          isUser ternary so both roles read identically. */}
-      {!streaming && message.timestamp ? (
-        <MessageTimestamp timestamp={message.timestamp} className="self-start mt-0.5" />
-      ) : null}
+      {/* REMOVED: the standalone age stamp that rendered below the actions row on
+          EVERY message, user bubbles included.
+
+          Two reasons, both from the reference:
+          1. It sits on the same row as the action buttons in the reference,
+             as the last item — not 26px below them on a row of its own. That
+             stamp now lives inside `AssistantMessageActions`.
+          2. The reference draws NO timestamp on a user message; its only time
+             marker is the single one at the end of the assistant's action row.
+             `UserMessageBubble.tsx:109-118` already documented that reasoning
+             and this render contradicted it, so one exchange showed `9m ago`
+             twice, twenty pixels apart, for the same moment.
+
+          Fed by the shared ticker in the message pane so it ages despite the
+          row being memoised. */}
       {!isUser && reanswerOpen && models && onReanswerWithModel ? (
         <div className="relative self-start mt-1" data-testid="reanswer-model-list">
           <div className="absolute left-0 top-0 z-20 w-60 max-h-56 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg">
