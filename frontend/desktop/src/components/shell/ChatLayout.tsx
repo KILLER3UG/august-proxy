@@ -592,7 +592,15 @@ export function ChatLayout() {
 
   return (
     <div ref={shell.ref} className="august-shell h-full min-h-0 flex flex-col overflow-hidden bg-background text-foreground">
-      <div className="august-shell-body flex-1 flex min-h-0 overflow-hidden">
+      {/* INERT while the settings dialog is open. `aria-modal` names the
+          modality; `inert` is what actually enforces it for pointer, focus
+          and assistive tech — §4.4 recorded the gap ("aria-modal without
+          inert"). The dialog renders OUTSIDE this subtree (sibling below), so
+          it stays live, and any portal a section opens (dropdowns, palettes
+          go to document.body) escapes the inert ancestor too. The dialog's
+          own transparent backdrop remains the click-away target: an inerted
+          background never receives the click in the first place. */}
+      <div className="august-shell-body flex-1 flex min-h-0 overflow-hidden" inert={isSettings || undefined}>
         {shell.sidebarOverlays && !collapsed && (
           <div
             className="absolute inset-0 z-30 bg-scrim"
@@ -680,14 +688,6 @@ export function ChatLayout() {
                 )}
               </>
             </ErrorBoundary>
-            {isSettings && (
-              <Routes>
-                <Route path="/settings" element={SETTINGS_PAGE_ELEMENT}>
-                  <Route index element={null} />
-                  <Route path=":section" element={null} />
-                </Route>
-              </Routes>
-            )}
           </div>
 
           {/* JetBrains-style terminal strip docked under the whole main
@@ -704,6 +704,17 @@ export function ChatLayout() {
               it. `StatusBar` itself is left on disk but no longer rendered here. */}
         </div>
       </div>
+      {/* The settings dialog is a SIBLING of the inerted shell-body — inside
+          it, `inert` would disable the dialog itself. Still fixed-positioned
+          (z-50), so DOM order has no visual effect. */}
+      {isSettings && (
+        <Routes>
+          <Route path="/settings" element={SETTINGS_PAGE_ELEMENT}>
+            <Route index element={null} />
+            <Route path=":section" element={null} />
+          </Route>
+        </Routes>
+      )}
       <ConfirmDialog
         open={confirmState.open}
         title={confirmState.title}

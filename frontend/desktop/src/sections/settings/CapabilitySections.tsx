@@ -129,9 +129,9 @@ export function SubagentsSection() {
 
   return (
     <div className="px-8 py-6 max-w-2xl">
-      <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
+      <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
         <Users className="size-6 text-primary" /> Subagents
-      </h1>
+      </h2>
       <p className="mt-1 text-sm text-muted-foreground">
         How the model delegates work to parallel sub-agents (spawn_subagents).
       </p>
@@ -231,9 +231,9 @@ export function PluginsSection() {
 
   return (
     <div className="px-8 py-6 max-w-2xl">
-      <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
+      <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
         <Layers className="size-6 text-primary" /> Plugins
-      </h1>
+      </h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Everything that extends the agent: MCP servers, skills, and integrations.
       </p>
@@ -334,9 +334,9 @@ export function BrowserUseSection() {
 
   return (
     <div className="px-8 py-6 max-w-2xl">
-      <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
+      <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
         <Globe className="size-6 text-primary" /> Browser Use
-      </h1>
+      </h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Browser automation, web search, and page reading tools the agent can use.
       </p>

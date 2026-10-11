@@ -148,7 +148,7 @@ export function ComputerAccessSettings() {
   return (
     <div className="px-8 py-12 max-w-3xl space-y-10">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Computer Access</h1>
+        <h2 className="text-2xl font-semibold tracking-tight">Computer Access</h2>
         <p className="mt-2 text-sm text-muted-foreground">
           Controls which directories August may read, write, or modify, and which
           desktop applications August may control through the host computer agent.

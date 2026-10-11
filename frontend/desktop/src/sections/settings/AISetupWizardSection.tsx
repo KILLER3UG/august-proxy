@@ -173,7 +173,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
       <div className="flex items-center gap-3">
         <Wand2 className="size-6 text-primary" />
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">AI Setup</h1>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">AI Setup</h2>
           <p className="text-sm text-muted-foreground">
             {active.description} You can always change these later in Settings.
           </p>

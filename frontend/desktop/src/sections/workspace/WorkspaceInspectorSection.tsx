@@ -12,7 +12,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { useConversationInspector } from '@/sections/settings/useConversationInspector';
-import { SettingsTabs } from '@/components/settings/SettingsTabs';
+import { settingsTabPanelId, SettingsTabs } from '@/components/settings/SettingsTabs';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { WorkspaceStatCard } from '@/components/workspace/WorkspaceStatCard';
@@ -91,9 +91,15 @@ export function WorkspaceInspectorSection() {
           { key: 'thinking', label: 'Thinking', icon: Brain },
         ]}
         label="Inspector views"
+        panelIdPrefix="inspector"
       />
 
-      <div className="flex gap-4 min-h-[400px]">
+      <div
+        className="flex gap-4 min-h-[400px]"
+        role="tabpanel"
+        id={settingsTabPanelId('inspector', tab) ?? undefined}
+        aria-labelledby={`inspector-tab-${tab}`}
+      >
         {/* Left rail: request list */}
         <aside className="w-72 shrink-0 rounded-xl border border-white/[0.06] bg-card/60 overflow-hidden flex flex-col">
           <div className="p-2 border-b border-white/[0.06]">

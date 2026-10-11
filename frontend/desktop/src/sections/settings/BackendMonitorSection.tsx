@@ -227,10 +227,10 @@ export function BackendMonitorSection() {
         <div className="px-8 py-10 max-w-7xl space-y-6">
             <header className="flex items-start justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+                    <h2 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
                         <Radio className="size-5 text-primary" />
                         Backend Monitor
-                    </h1>
+                    </h2>
                     <p className="mt-2 text-sm text-muted-foreground max-w-2xl">
                         Live stream of proxy calls, memory operations, scheduler ticks, and tool events emitted by the August backend.
                         Events arrive over WebSocket; the most recent 500 entries are backfilled on connect.

@@ -157,7 +157,7 @@ export function FeatureFlowSection() {
       <header className="space-y-2">
         <div className="flex items-center gap-2">
           <GitBranch className="size-5 text-primary" />
-          <h1 className="text-2xl font-semibold tracking-tight">Feature Flow</h1>
+          <h2 className="text-2xl font-semibold tracking-tight">Feature Flow</h2>
         </div>
         <p className="text-sm text-muted-foreground max-w-2xl">
           Live office-floor view of backend departments — tools workshop, gateway lobby, proxy floor,

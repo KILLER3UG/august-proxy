@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { LineChart, History, Image, Shield, Activity, type LucideIcon } from 'lucide-react';
-import { SettingsTabs } from '@/components/settings/SettingsTabs';
+import { settingsTabPanelId, SettingsTabs } from '@/components/settings/SettingsTabs';
 import { ObservabilityOverview } from './ObservabilityOverview';
 import { AuditTimeline } from './AuditTimeline';
 import { RollbackHistory } from './RollbackHistory';
@@ -38,7 +38,7 @@ export function ObservabilitySection() {
     return (
         <div className="px-8 py-10 max-w-6xl space-y-6">
             <header>
-                <h1 className="text-2xl font-semibold tracking-tight">Observability</h1>
+                <h2 className="text-2xl font-semibold tracking-tight">Observability</h2>
                 <p className="mt-2 text-sm text-muted-foreground">
                     Audit, rollbacks, observations, and request logs. Token usage is on Usage &amp; Limits.
                 </p>
@@ -57,11 +57,14 @@ export function ObservabilitySection() {
                     value={subtab}
                     onChange={(id) => setSubtab(id as SubtabId)}
                     label="Observability views"
+                    panelIdPrefix="observability"
                 />
 
                 <div
                     className="min-w-0 flex-1"
                     role="tabpanel"
+                    id={settingsTabPanelId('observability', subtab) ?? undefined}
+                    aria-labelledby={`observability-tab-${subtab}`}
                     aria-label={SUBTABS.find((t) => t.id === subtab)?.description}
                 >
                     {subtab === 'overview' && <ObservabilityOverview onNavigate={setSubtab} />}

@@ -70,7 +70,7 @@ export function HealthSimulatorSection() {
       <div className="flex items-center gap-3">
         <Stethoscope className="size-6 text-primary" />
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Provider Health Simulator</h1>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">Provider Health Simulator</h2>
           <p className="text-sm text-muted-foreground">
             Preflight a provider + model the way August would actually use it — before you rely on it in chat.
           </p>

@@ -69,7 +69,7 @@ export function UpdateSection() {
         <div className="grid size-16 place-items-center rounded-2xl border border-white/10 bg-white/[0.04]">
           <Asterisk className="size-7 text-primary" />
         </div>
-        <h1 className="mt-3 text-xl font-semibold tracking-tight text-foreground">August</h1>
+        <h2 className="mt-3 text-xl font-semibold tracking-tight text-foreground">August</h2>
         <p className="text-sm text-muted-foreground">Version {currentVersion}</p>
       </div>
 

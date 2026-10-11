@@ -336,7 +336,7 @@ function Header({
   return (
     <header className="flex items-end justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Integrations</h1>
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Integrations</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Services and MCP extensions for August. Add only what you need — email and calendar are separate.
         </p>

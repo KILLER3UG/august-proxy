@@ -181,7 +181,7 @@ export function SystemHealthSection() {
   return (
     <div className="px-8 py-6 space-y-4 h-full flex flex-col overflow-auto">
       <header className="shrink-0">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">System &amp; Health</h1>
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">System &amp; Health</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Gateway uptime, RAM, and endpoints.{' '}
           <Link to="/settings/health-simulator" className="text-foreground/90 underline-offset-2 hover:underline">

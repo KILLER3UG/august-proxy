@@ -177,7 +177,7 @@ export function PrivacySection() {
       <div className="flex items-center gap-3">
         <Database className="size-6 text-primary" />
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Data &amp; Privacy</h1>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">Data &amp; Privacy</h2>
           <p className="text-sm text-muted-foreground">
             Everything August stores stays on this device — inspect it, export it, or erase it.
           </p>

@@ -75,7 +75,7 @@ function tab(name: string) {
 describe('ObservabilitySection', () => {
     it('renders the page header and default Overview subtab', () => {
         renderObs();
-        expect(screen.getByRole('heading', { name: /observability/i, level: 1 })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: /observability/i, level: 2 })).toBeInTheDocument();
         expect(screen.getByRole('tablist')).toBeInTheDocument();
         for (const label of ['Overview', 'Audit', 'Rollback', 'Observations']) {
             expect(tab(label)).toBeInTheDocument();

@@ -59,7 +59,7 @@ export function IntegrationDetail({ item, onBack, onRemove }: IntegrationDetailP
           <IntegrationLogo logo={item.logo} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <h1 className="text-xl font-semibold tracking-tight text-foreground">{item.name}</h1>
+              <h2 className="text-xl font-semibold tracking-tight text-foreground">{item.name}</h2>
               {item.verified && <BadgeCheck className="size-4 text-muted-foreground" />}
               {item.isNew && (
                 <span className="ml-1 rounded text-2xs font-medium text-danger-fg">New</span>

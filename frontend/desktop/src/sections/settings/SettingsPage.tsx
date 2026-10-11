@@ -226,7 +226,7 @@ function SectionHeader({ active }: { active: SettingsSection }) {
   if (!HEADERLESS_SECTION_IDS.has(active.id)) return null;
   return (
     <div className="mx-auto w-full max-w-5xl px-8 pt-6 pb-3">
-      <h1 className="text-[1.375rem] font-semibold tracking-tight text-foreground">{active.label}</h1>
+      <h2 className="text-[1.375rem] font-semibold tracking-tight text-foreground">{active.label}</h2>
       <p className="mt-1 text-[0.8125rem] text-muted-foreground max-w-xl">{active.description}</p>
     </div>
   );

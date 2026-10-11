@@ -412,10 +412,10 @@ export function HarnessImprovementsSection() {
     <div className="px-8 py-6 space-y-5 h-full flex flex-col overflow-hidden">
       <header className="shrink-0 flex items-end justify-between gap-4">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
+          <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
             <HeartPulse className="size-6 text-primary" />
             Review Inbox
-          </h1>
+          </h2>
           <p data-testid="inbox-header-note" className="mt-1 max-w-xl text-sm text-muted-foreground">
             Everything August wants a human to decide: harness improvement proposals
             (self-improvement, distiller drafts, cross-project promotions) and memory

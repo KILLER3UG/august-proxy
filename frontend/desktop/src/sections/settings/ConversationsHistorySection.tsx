@@ -7,7 +7,7 @@ export function ConversationsHistorySection() {
   return (
     <div className="px-8 py-6 space-y-8 h-full overflow-auto">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Conversations</h1>
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Conversations</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Recent history and archived sessions in one place.
         </p>

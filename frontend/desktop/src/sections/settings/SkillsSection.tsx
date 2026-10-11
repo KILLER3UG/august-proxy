@@ -33,7 +33,7 @@ import { api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { QueryErrorState } from '@/components/QueryErrorState';
-import { SettingsTabs } from '@/components/settings/SettingsTabs';
+import { settingsTabPanelId, SettingsTabs } from '@/components/settings/SettingsTabs';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
 import { LearningPanel } from '@/sections/settings/LearningPanel';
 import { SkillPacksPanel } from '@/sections/settings/SkillPacksPanel';
@@ -464,7 +464,7 @@ export function SkillsSection() {
             </button>
           )}
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-semibold tracking-tight text-foreground">{headerLabel}</h1>
+            <h2 className="truncate text-xl font-semibold tracking-tight text-foreground">{headerLabel}</h2>
             {mode === 'list' && (
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {listFailed
@@ -651,6 +651,7 @@ export function SkillsSection() {
                 onChange={(k) => setScopeTab(k as SkillScopeKey | 'all')}
                 orientation="horizontal"
                 label="Skill scope"
+                panelIdPrefix="skill-scope"
                 items={[
                   { key: 'all', label: 'All', count: skills.length },
                   ...SKILL_SCOPE_GROUPS.map(({ key, label }) => ({
@@ -660,6 +661,11 @@ export function SkillsSection() {
                   })),
                 ]}
               />
+              <div
+                role="tabpanel"
+                id={settingsTabPanelId('skill-scope', scopeTab) ?? undefined}
+                aria-labelledby={`skill-scope-tab-${scopeTab}`}
+              >
               {(() => {
                 const shown =
                   scopeTab === 'all'
@@ -703,6 +709,7 @@ export function SkillsSection() {
                   </>
                 );
               })()}
+              </div>
             </div>
           )}
         </div>

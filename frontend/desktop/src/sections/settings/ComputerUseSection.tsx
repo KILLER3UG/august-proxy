@@ -33,9 +33,9 @@ export function ComputerUseSection() {
   return (
     <div className="px-8 py-6 space-y-6 h-full flex flex-col overflow-auto">
       <header className="shrink-0">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">
           Computer Use
-        </h1>
+        </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Desktop automation with SOM overlay, cross-platform support, and safe approval workflows.
         </p>

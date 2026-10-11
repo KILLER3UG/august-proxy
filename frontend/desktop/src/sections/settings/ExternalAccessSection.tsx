@@ -174,7 +174,7 @@ export function ExternalAccessSection() {
   return (
     <div className="mx-auto w-full max-w-3xl px-8 py-12 space-y-10">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">API Access</h1>
+        <h2 className="text-2xl font-semibold tracking-tight">API Access</h2>
         <p className="mt-2 text-sm text-muted-foreground">
           Open or close the proxy gateway for external clients. When open, apps
           like Claude Code, Cursor, OpenAI SDKs, and the{' '}

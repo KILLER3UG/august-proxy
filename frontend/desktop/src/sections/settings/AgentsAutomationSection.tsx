@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Bot, CalendarClock, TerminalSquare } from 'lucide-react';
-import { SettingsTabs } from '@/components/settings/SettingsTabs';
+import { settingsTabPanelId, SettingsTabs } from '@/components/settings/SettingsTabs';
 import { Agents } from '@/sections/agents/Agents';
 import { Automations } from '@/sections/automations/Automations';
 import { Terminal } from '@/sections/terminal/Terminal';
@@ -43,7 +43,7 @@ export function AgentsAutomationSection() {
   return (
     <div className="px-8 py-6 space-y-4 h-full flex flex-col">
       <header className="shrink-0">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Agents &amp; Automation</h1>
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Agents &amp; Automation</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Manage agents and their permissions, schedule automations, and review terminal approvals.
         </p>
@@ -57,8 +57,14 @@ export function AgentsAutomationSection() {
             onChange={onChange}
             items={[...TABS]}
             label="Agents & automation views"
+            panelIdPrefix="agents-automation"
           />
-          <div className="min-w-0 flex-1">
+          <div
+            className="min-w-0 flex-1"
+            role="tabpanel"
+            id={settingsTabPanelId('agents-automation', activeTab) ?? undefined}
+            aria-labelledby={`agents-automation-tab-${activeTab}`}
+          >
             {activeTab === 'agents' && <Agents />}
             {activeTab === 'automations' && <Automations />}
             {activeTab === 'terminal' && <Terminal />}

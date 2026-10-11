@@ -178,9 +178,9 @@ export function TurnLimitsSection() {
 
   return (
     <div className="px-8 py-6 max-w-2xl">
-      <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
+      <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
         <Gauge className="size-6 text-primary" /> Turn Limits
-      </h1>
+      </h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Optional bounds on a single turn. All of these are off by default — a limit that ends
         your work early is your call, not the default.
