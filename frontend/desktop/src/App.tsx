@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { ChatLayout } from '@/components/shell/ChatLayout';
-import { ALL_ROUTES, SECTION_ROUTES, SETTINGS_PAGE_ELEMENT } from '@/routes';
+import { ALL_ROUTES, SECTION_ROUTES } from '@/routes';
 import { CommandPalette } from '@/components/overlays/CommandPalette';
 import { ShortcutsModal } from '@/components/overlays/ShortcutsModal';
 import { ConversationSearchModal } from '@/components/overlays/ConversationSearchModal';
@@ -100,9 +100,13 @@ export default function App() {
             {SECTION_ROUTES.map((route) => (
               <Route key={route.path} path={route.path} element={route.element} />
             ))}
-            {/* Single parent keeps SettingsPage mounted across tab changes.
-                Child routes only update :section via useParams — no shell remount. */}
-            <Route path="/settings" element={SETTINGS_PAGE_ELEMENT}>
+            {/* Single parent keeps the settings match stable across tab
+                changes. The element is null ON PURPOSE: ChatLayout renders
+                the settings dialog from its own <Routes> (background-location
+                split — the chat stays live behind the dialog), so anything
+                mounted here via the layout's never-rendered <Outlet> would
+                be dead code. */}
+            <Route path="/settings" element={null}>
               <Route index element={null} />
               <Route path=":section" element={null} />
             </Route>

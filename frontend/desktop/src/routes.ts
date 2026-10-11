@@ -198,6 +198,16 @@ export const ALL_ROUTES: readonly SectionRoute[] = [
   ...DEV_ROUTES,
 ];
 
+/** Chat surfaces that keep rendering BEHIND the settings dialog. ChatLayout
+ *  mounts these against the BACKGROUND location while /settings/* is open, so
+ *  the dialog floats over a live app instead of a route swap that unmounts
+ *  the chat. App.tsx's tree still declares everything for matching and deep
+ *  links; this list is the background half of that split. */
+export const CHAT_SURFACE_ROUTES: readonly SectionRoute[] = [
+  ...SECTION_ROUTES,
+  ...DEV_ROUTES,
+];
+
 export const SECTION_NAV_ITEMS: readonly NavItem[] = SECTION_ROUTES.filter((route) => route.nav).map((route) => ({
   to: route.path,
   label: route.label,

@@ -5,12 +5,13 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useShellWidth } from '@/hooks/useShellWidth';
-import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, toggleFolderCollapse, ensureFolderForWorkspacePath, resolveActiveSession } from "@/store/sessions";
 import { startRealtimeBridge } from "@/realtime/bridge";
 import { addWorkspace, useWorkspacesStore } from "@/store/workspaces";
+import { CHAT_SURFACE_ROUTES, SETTINGS_PAGE_ELEMENT } from "@/routes";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
@@ -550,10 +551,40 @@ export function ChatLayout() {
     };
   }, []);
 
-  // Settings is a FULL-SCREEN page (not a modal). When the path is
-  // /settings/*, render the SettingsPage full-width with the chat
-  // thread + right drawer hidden. The session sidebar stays visible.
+  // Settings is a DIALOG over a live app, not a page that replaces it.
+  // While /settings/* is open, the chat surface keeps rendering against the
+  // BACKGROUND location — where the user actually was — so streams keep
+  // running, scroll survives, and ✕/Escape restores instantly. The dialog
+  // renders from the real location via its own <Routes> below.
   const isSettings = location.pathname.startsWith("/settings");
+  const backgroundRef = useRef<{ pathname: string; search: string } | null>(null);
+  if (isSettings && backgroundRef.current === null) {
+    // Cold boot straight onto a settings deep link: the last non-settings
+    // path of this tab, else the chat root. (Pointing at `/` can mint a
+    // blank session — the same thing a cold boot at `/` does; the ghost
+    // sweep cleans those if they are never used.)
+    try {
+      const saved = sessionStorage.getItem("pre-settings-path");
+      if (saved) {
+        const url = new URL(saved, "http://localhost");
+        backgroundRef.current = { pathname: url.pathname, search: url.search };
+      }
+    } catch {
+      /* ignore */
+    }
+    backgroundRef.current = backgroundRef.current ?? { pathname: "/", search: "" };
+  }
+  useEffect(() => {
+    if (!isSettings) {
+      backgroundRef.current = { pathname: location.pathname, search: location.search };
+      try {
+        sessionStorage.setItem("pre-settings-path", location.pathname + location.search);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [isSettings, location.pathname, location.search]);
+  const background = backgroundRef.current ?? { pathname: "/", search: "" };
 
   // Responsive tiers are container queries on the shell (styles/chat.css).
   // The scrims are real DOM so click-outside works and Escape has a target.
@@ -562,28 +593,23 @@ export function ChatLayout() {
   return (
     <div ref={shell.ref} className="august-shell h-full min-h-0 flex flex-col overflow-hidden bg-background text-foreground">
       <div className="august-shell-body flex-1 flex min-h-0 overflow-hidden">
-        {!isSettings && shell.sidebarOverlays && !collapsed && (
+        {shell.sidebarOverlays && !collapsed && (
           <div
             className="absolute inset-0 z-30 bg-scrim"
             onClick={() => setCollapsed(true)}
             aria-hidden
           />
         )}
-        {!isSettings && (
-          <SessionSidebar
-            activeId={active?.id}
-            collapsed={collapsed}
-            onToggleCollapsed={() => setCollapsed((c) => !c)}
-            onNew={() => handleNewSession()}
-            onNewInFolder={(folderId) => handleNewSession(folderId)}
-            onNavigate={(path) => {
-              if (path.startsWith("settings") || path.startsWith("/settings")) {
-                sessionStorage.setItem("pre-settings-path", location.pathname);
-              }
-              void navigate(path.startsWith("/") ? path : `/${path}`);
-            }}
-          />
-        )}
+        <SessionSidebar
+          activeId={active?.id}
+          collapsed={collapsed}
+          onToggleCollapsed={() => setCollapsed((c) => !c)}
+          onNew={() => handleNewSession()}
+          onNewInFolder={(folderId) => handleNewSession(folderId)}
+          onNavigate={(path) => {
+            void navigate(path.startsWith("/") ? path : `/${path}`);
+          }}
+        />
 
         <div className="august-main-column flex-1 flex flex-col min-w-0">
           <ChatTitlebar
@@ -602,20 +628,17 @@ export function ChatLayout() {
                 aria-hidden
               />
             )}
-            {/* Settings takes the full width (its own internal layout).
-                Do NOT key Outlet on location.pathname here — that remounted
-                the entire SettingsPage (shell + content) on every tab switch
-                and felt like a full page reload. Tab transitions live inside
-                SettingsPage content only. */}
-            {isSettings ? (
-              <div className="flex-1 min-w-0 h-full">
-                <Outlet />
-              </div>
-            ) : (
-              /* Keyed by route: a render throw in one chat shows a
-                 recoverable card here (sidebar stays alive), and navigating
-                 to another session remounts the boundary and clears it. */
-              <ErrorBoundary key={location.pathname}>
+            {/* The chat surface renders against the background location while
+                settings is open, so the dialog floats over a LIVE app (the
+                reference: "the chat is dimmed behind it" — backdrop tint
+                removed in §11.6, the app simply stays put). App.tsx still
+                declares the full route tree for matching and deep links;
+                ChatLayout renders the matched elements itself:
+                  • background <Routes> — every non-settings surface;
+                  • overlay <Routes> — /settings, against the real location.
+                The motion key uses the background pathname on settings paths
+                so crossing into/out of settings does not remount the chat. */}
+            <ErrorBoundary key={isSettings ? background.pathname : location.pathname}>
               <>
                 {/* Full-width chat column — scroll container spans the full
                     chat-area width so the thumb sits at the chat-area edge.
@@ -627,19 +650,23 @@ export function ChatLayout() {
                 <div className="august-chat-column flex-1 flex min-w-0 h-full">
                   <AnimatePresence mode="wait" initial={false}>
                     <motion.div
-                      key={location.pathname}
+                      key={isSettings ? background.pathname : location.pathname}
                       initial={{ opacity: 0, y: 6 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -4 }}
                       transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                       className="h-full min-w-0 flex-1"
                     >
-                      <Outlet />
+                      <Routes location={isSettings ? background : undefined}>
+                        {CHAT_SURFACE_ROUTES.map((route) => (
+                          <Route key={route.path} path={route.path} element={route.element} />
+                        ))}
+                      </Routes>
                     </motion.div>
                   </AnimatePresence>
                 </div>
 
-                {!isSettings && active && (
+                {active && (
                   <RightDrawer
                     open={showRightSidebar}
                     sessionId={active.id}
@@ -652,13 +679,20 @@ export function ChatLayout() {
                   />
                 )}
               </>
-              </ErrorBoundary>
+            </ErrorBoundary>
+            {isSettings && (
+              <Routes>
+                <Route path="/settings" element={SETTINGS_PAGE_ELEMENT}>
+                  <Route index element={null} />
+                  <Route path=":section" element={null} />
+                </Route>
+              </Routes>
             )}
           </div>
 
           {/* JetBrains-style terminal strip docked under the whole main
               column (chat + right panel). */}
-          {rightDrawer.bottomTerminal && !isSettings && (
+          {rightDrawer.bottomTerminal && (
             <BottomTerminalDock onClose={() => toggleBottomTerminal(false)} />
           )}
           {/* The full-width status bar (`qwen3.8-flash · medium  + 219.9k − 15.2k`)
