@@ -361,8 +361,8 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
     if ptype not in _RETIRE_TYPES:
         return {'ok': False, 'error': f'proposal {proposal_id} is not a memory retirement'}
     status = 'approved' if approve else 'rejected'
-    decide_proposal(proposal_id, status, decidedBy=decidedBy)
     if not approve:
+        decide_proposal(proposal_id, status, decidedBy=decidedBy)
         return {'ok': True, 'decision': status, 'retired': False}
     raw = prop.get('content')
     try:
@@ -371,13 +371,49 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
         data = {}
     key = str(data.get('key') or data.get('fact_key') or '') if isinstance(data, dict) else ''
     if not key:
-        return {'ok': True, 'decision': status, 'retired': False, 'error': 'proposal missing key'}
+        decide_proposal(proposal_id, 'rejected', decidedBy=decidedBy)
+        return {'ok': True, 'decision': 'rejected', 'retired': False, 'error': 'proposal missing key'}
+    # A proposal is a snapshot, not a standing instruction. It can sit in the
+    # inbox while the user quotes or edits the fact, so apply only if it still
+    # has the evidence that produced this proposal. The UPDATE repeats every
+    # condition atomically; a stale approval is closed as rejected and the
+    # next consolidation pass can file a fresh proposal if it still qualifies.
+    raw_kind = str(data.get('kind') or ('preference' if ptype == 'retire-preference' else ''))
+    if raw_kind not in _RETIRE_WINDOWS:
+        decide_proposal(proposal_id, 'rejected', decidedBy=decidedBy)
+        return {
+            'ok': True,
+            'decision': 'rejected',
+            'retired': False,
+            'error': 'proposal has an unknown fact kind',
+        }
+    try:
+        days = int(float(str(data.get('days', 45 if raw_kind == PROFILE_FACT_KIND else 180))))
+    except (TypeError, ValueError):
+        days = 45 if raw_kind == PROFILE_FACT_KIND else 180
+    days = max(1, min(3650, days))
+    last_touch = str(data.get('lastTouch') or '')
     conn = _conn()
     cur = conn.execute(
-        "UPDATE facts SET status = 'retired', updated_at = datetime('now') WHERE fact_key = ?",
-        (key,),
+        "UPDATE facts SET status = 'retired', updated_at = datetime('now') "
+        "WHERE fact_key = ? AND kind = ? AND (status IS NULL OR status = 'active') "
+        'AND COALESCE(use_count, 0) = 0 '
+        "AND julianday('now') - julianday(COALESCE(NULLIF(last_used_at, ''), "
+        "NULLIF(updated_at, ''), created_at)) > ? "
+        "AND (? = '' OR COALESCE(NULLIF(last_used_at, ''), NULLIF(updated_at, ''), created_at) = ?)",
+        (key, raw_kind, days, last_touch, last_touch),
     )
     brain_commit(conn)
+    if not cur.rowcount:
+        decide_proposal(proposal_id, 'rejected', decidedBy=decidedBy)
+        return {
+            'ok': True,
+            'decision': 'rejected',
+            'retired': False,
+            'key': key,
+            'error': 'memory changed after this proposal was filed; it was closed without retiring the fact',
+        }
+    decide_proposal(proposal_id, status, decidedBy=decidedBy)
     try:
         from app.services.memory_store.fact_retrieval import invalidate_fact_index
 
@@ -1031,7 +1067,10 @@ def _skill_retire_candidates() -> list[dict[str, Any]]:
         lifts = skill_lift(_SKILL_RETIRE_DAYS)
     except Exception:
         logger.debug('skill retire: lift read failed', exc_info=True)
-        lifts = {}
+        # Missing evidence is not evidence of zero lift. Fail closed when the
+        # measurement read itself failed; a genuine empty result still means
+        # no measured lift and is handled below.
+        return []
     cutoff = datetime.now(timezone.utc).timestamp() - _SKILL_RETIRE_DAYS * 86400
     out: list[dict[str, Any]] = []
     for s in rows:
@@ -1178,7 +1217,7 @@ def _skill_archive_candidates(days: int) -> list[dict[str, Any]]:
         lifts = skill_lift(days)
     except Exception:
         logger.debug('skill archive: lift read failed', exc_info=True)
-        lifts = {}
+        return []
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
     out: list[dict[str, Any]] = []
     for s in rows:

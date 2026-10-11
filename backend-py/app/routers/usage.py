@@ -32,6 +32,26 @@ def get_session_usage(id: str = Query(..., description="Session ID")) -> dict[st
     return memory_store.get_usage(id)
 
 
+@router.get("/sessions")
+def get_sessions_usage(
+    ids: str = Query(
+        ...,
+        description="Comma-separated session IDs",
+        max_length=8000,
+    ),
+) -> dict[str, Any]:
+    """Get input/output token totals for a SET of sessions, in one query.
+
+    The sidebar renders a token delta on every visible chat row. This is the
+    batch behind it: `get_session_usage` fetches up to 500 per-event rows and
+    sweeps the pricing table per session, so calling it once per row turned a
+    list render into N round trips. Only the four aggregate fields the delta
+    needs are returned — cost and the event list stay on `/session`.
+    """
+    requested = [part for part in ids.split(",") if part.strip()]
+    return {"results": memory_store.get_usage_batch(requested)}
+
+
 @router.get("/stats")
 def get_usage_stats(range: str = Query("30d")) -> dict[str, Any]:
     """Get real summary statistics for the specified time range."""

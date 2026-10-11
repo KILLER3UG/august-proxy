@@ -2869,7 +2869,7 @@
             "type": "string"
           },
           "description": {
-            "description": "One-sentence description, ≤ 60 chars.",
+            "description": "What the skill does and when to use it (≤ 500 chars). This is the trigger — a future agent sees only this text before loading the skill.",
             "title": "Description",
             "type": "string"
           },
@@ -16433,6 +16433,54 @@
         ]
       }
     },
+    "/api/usage/sessions": {
+      "get": {
+        "description": "Get input/output token totals for a SET of sessions, in one query.\n\nThe sidebar renders a token delta on every visible chat row. This is the\nbatch behind it: `get_session_usage` fetches up to 500 per-event rows and\nsweeps the pricing table per session, so calling it once per row turned a\nlist render into N round trips. Only the four aggregate fields the delta\nneeds are returned — cost and the event list stay on `/session`.",
+        "operationId": "get_sessions_usage_api_usage_sessions_get",
+        "parameters": [
+          {
+            "description": "Comma-separated session IDs",
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "description": "Comma-separated session IDs",
+              "maxLength": 8000,
+              "title": "Ids",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Sessions Usage Api Usage Sessions Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Sessions Usage",
+        "tags": [
+          "usage"
+        ]
+      }
+    },
     "/api/usage/stats": {
       "get": {
         "description": "Get real summary statistics for the specified time range.",
@@ -17349,7 +17397,7 @@
         "summary": "Getsessionbyquery"
       },
       "post": {
-        "description": "Create a new workbench session.\n\nAn empty ``workspacePath`` is a supported state, not a stand-in for the OS\nhome directory: a folderless chat has no project, so reads resolve anywhere\nand writes land in the system temp area (see\n``app.services.sandbox.paths.bind_path``).",
+        "description": "Create a new workbench session.\n\nAn empty ``workspacePath`` is a supported state, not a stand-in for the OS\nhome directory: a folderless chat has no project, so reads are scoped to the\nuser's home directory by default, while writes land in the system\ntemp area. Settings → Computer access can add roots or enable whole-computer\naccess (see ``app.services.sandbox.paths.bind_path``).",
         "operationId": "createSessionDirect_api_workbench_session_post",
         "responses": {
           "200": {

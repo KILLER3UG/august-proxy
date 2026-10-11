@@ -4,6 +4,10 @@ description: VHDL/Verilog lint, simulate, and verify with GHDL/Icarus/cocotb; co
 category: engineering
 version: 1.0.0
 platforms: [linux, macos, windows]
+metadata:
+  hermes:
+    tags: [vhdl, verilog, ghdl, quartus, fpga, testbench, hdl]
+    related_skills: [circuit-sim]
 ---
 
 # HDL + FPGA workbench

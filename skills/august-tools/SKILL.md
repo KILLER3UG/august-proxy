@@ -4,6 +4,10 @@ description: "Tool-use rules the schemas don't state: hash-rejection recovery, e
 category: harness
 version: 1.1.0
 platforms: [linux, macos, windows]
+metadata:
+  hermes:
+    tags: [tool-use, shell, edit, batch, web]
+    related_skills: [august-harness]
 ---
 
 # August Tools — Usage Rules

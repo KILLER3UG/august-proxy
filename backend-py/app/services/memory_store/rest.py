@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import cast
 
 from app.json_narrowing import as_int, as_str
@@ -531,6 +532,62 @@ def list_usage(*, limit: int = 200) -> list[dict[str, object]]:
         (lim,),
     ).fetchall()
     return [_row_as_wire(r) for r in rows]
+
+
+#: Most session ids one batched sidebar read will ask about. The sidebar caps
+#: what it renders before calling (GROUP_RENDER_CAP per group), so this is a
+#: backstop against an unbounded `IN (...)` rather than the normal size — and it
+#: stays well under SQLite's default 999 bound-parameter ceiling.
+MAX_USAGE_BATCH_IDS = 250
+
+
+def get_usage_batch(sessionIds: Sequence[str]) -> dict[str, dict[str, object]]:
+    """Input/output token totals for MANY sessions in ONE grouped query.
+
+    The sidebar renders a ``+input / -output`` delta on every visible chat row.
+    Asking :func:`get_usage` per row cost one HTTP request per row AND, behind
+    each one, a 500-row per-event fetch plus a per-event pricing sweep — the
+    list's own render was driving all of it. This is the single ``GROUP BY
+    session_id`` that replaces the N.
+
+    Keyed by the id the caller ASKED FOR, not a resolved one, so the caller can
+    index the result directly. Ids with no usage rows are simply absent (an
+    absent row and a zero row mean the same thing to a delta readout, and
+    emitting zeros for every unseen id would grow the payload for no fact).
+    """
+    ids: list[str] = []
+    seen: set[str] = set()
+    for raw in sessionIds:
+        sid = (raw or '').strip()
+        if not sid or sid in seen:
+            continue
+        seen.add(sid)
+        ids.append(sid)
+        if len(ids) >= MAX_USAGE_BATCH_IDS:
+            break
+    if not ids:
+        return {}
+    conn = _conn()
+    placeholders = ','.join('?' * len(ids))
+    rows = conn.execute(
+        'SELECT session_id, COALESCE(SUM(input_tokens), 0) AS total_input, '
+        'COALESCE(SUM(output_tokens), 0) AS total_output, COUNT(*) AS event_count '
+        f'FROM usage_events WHERE session_id IN ({placeholders}) GROUP BY session_id',
+        tuple(ids),
+    ).fetchall()
+    out: dict[str, dict[str, object]] = {}
+    for r in rows:
+        key = as_str(r['session_id'], '')
+        total_in = as_int(r['total_input'], 0)
+        total_out = as_int(r['total_output'], 0)
+        out[key] = {
+            'sessionId': key,
+            'totalEvents': as_int(r['event_count'], 0),
+            'totalInputTokens': total_in,
+            'totalOutputTokens': total_out,
+            'totalTokens': total_in + total_out,
+        }
+    return out
 
 
 def get_usage(sessionId: str) -> dict[str, object]:

@@ -17,7 +17,13 @@ router = APIRouter(prefix='/api/skills')
 
 class SkillCreate(CamelModel):
     name: str = Field(..., description='Lowercase, dotted/hyphenated skill name.')
-    description: str = Field(..., description='One-sentence description, ≤ 60 chars.')
+    description: str = Field(
+        ...,
+        description=(
+            'What the skill does and when to use it (≤ 500 chars). This is the '
+            'trigger — a future agent sees only this text before loading the skill.'
+        ),
+    )
     body: str = Field(..., description='SKILL.md body markdown.')
     trigger: str = ''
     category: str = 'uncategorized'

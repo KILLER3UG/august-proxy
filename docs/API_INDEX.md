@@ -5,7 +5,7 @@
 
 # API Index — every route
 
-414 routes across 341 paths,
+415 routes across 342 paths,
 grouped by family. **This file is generated.** For the prose that explains what
 these are for and when to reach for them, read
 [`API_REFERENCE.md`](./API_REFERENCE.md) — it covers the families that matter in
@@ -457,7 +457,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/security` | Get Security |
 | `PUT` | `/api/security` | Put Security |
 
-## Observability & logs (21)
+## Observability & logs (22)
 
 | Method | Path | Summary |
 | --- | --- | --- |
@@ -481,6 +481,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/usage/by-model` | Get per-model token breakdown and percentage share. |
 | `GET` | `/api/usage/heatmap` | Get daily token activity for the heatmap grid. |
 | `GET` | `/api/usage/session` | Get aggregated usage for a specific session. |
+| `GET` | `/api/usage/sessions` | Get input/output token totals for a SET of sessions, in one query. |
 | `GET` | `/api/usage/stats` | Get real summary statistics for the specified time range. |
 
 ## Desktop automation (5)
@@ -533,4 +534,4 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 
 ---
 
-Generated from `docs/api/openapi.json` (414 operations).
+Generated from `docs/api/openapi.json` (415 operations).

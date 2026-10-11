@@ -8,11 +8,11 @@ that stored them — nothing read them to make a decision. A user who
 restricted computer access to two project folders was told they had, while
 every file tool still did exactly what it liked.
 
-These tests pin that the setting is now enforced, and — just as important —
-that NOT configuring it changes nothing for anyone who never opened the
-setting. The stored default is `allowlist` + `[]`; read literally that would
-deny every file operation on a fresh install, so an empty list has to mean
-"not configured" rather than "nothing permitted".
+These tests pin that the setting is enforced and that the default empty
+allowlist remains useful without granting folderless sessions unrestricted
+computer access. Folderless reads use the user's home directory; writes stay
+confined to the system temp directory. Explicit roots and the whole-computer
+setting can widen that scope.
 """
 
 from __future__ import annotations
@@ -51,8 +51,8 @@ def _set_security(monkeypatch):
     return _apply
 
 
-class TestUnconfiguredIsUnchanged:
-    """The regression that would brick every existing user."""
+class TestUnconfiguredAllowlist:
+    """The default stays useful while a folderless session gets a safe root."""
 
     def test_an_empty_allowlist_does_not_block_the_workspace(self, ws, _set_security):
         _set_security('allowlist', [])
@@ -60,8 +60,8 @@ class TestUnconfiguredIsUnchanged:
         assert err is None
         assert path is not None
 
-    def test_the_stored_default_shape_also_does_not_block(self, ws, _set_security):
-        """Exactly what a user who never touched the setting has on disk."""
+    def test_the_stored_default_shape_does_not_block_a_selected_workspace(self, ws, _set_security):
+        """A workspace the user selected remains implicitly available."""
         _set_security('allowlist', [])
         assert bind_path(str(ws / 'deep' / 'b.txt'), str(ws))[1] is None
 
@@ -91,6 +91,18 @@ class TestConfiguredAllowlistIsEnforced:
         path, err = bind_path(str(ws / 'in_ws.txt'), str(ws))
         assert err is None
         assert path is not None
+
+    def test_a_custom_allowed_root_is_available_from_a_project_session(
+        self, ws, tmp_path, _set_security
+    ):
+        shared = tmp_path / 'shared'
+        shared.mkdir()
+        _set_security('allowlist', [str(shared)])
+
+        path, err = bind_path(str(shared / 'reference.txt'), str(ws))
+
+        assert err is None
+        assert path == (shared / 'reference.txt').resolve()
 
     def test_scope_root_means_no_gate_at_all(self, tmp_path, _set_security):
         _set_security('root', [str(tmp_path)])
@@ -186,11 +198,9 @@ class TestTheFileListerUsesTheSameGate:
         assert 'readme.md' in resp.text
 
 
-class TestFolderlessSessionReadsTheMachine:
-    """A chat with no folder bound reads MORE of the machine than one anchored
-    at the home directory, so the old default did the opposite of what it looked
-    like: `workspacePath = ~` contained every path under it, which is a gate,
-    not a starting point. Home is therefore refused as a workspace."""
+class TestFolderlessSessionReadsHomeByDefault:
+    """A folderless chat can use common personal files without opening every
+    path on the machine. Extra roots and whole-computer access are explicit."""
 
     def test_the_home_directory_is_refused_as_a_workspace(self):
         from pathlib import Path
@@ -213,20 +223,39 @@ class TestFolderlessSessionReadsTheMachine:
         session = WorkbenchSession(id='wb_x', workspacePath=str(Path.home()))
         assert session.toDict()['workspacePath'] == ''
 
-    def test_binding_home_blocks_reads_that_no_folder_allows(self, tmp_path, _set_security):
-        """The consequence, measured rather than argued: the same read outside
-        the bound directory is refused with a workspace and permitted without
-        one. A stand-in home keeps this off the real one — on Windows the
-        genuine home contains the whole temp tree, which would prove nothing."""
+    def test_unbound_reads_stay_in_home_without_configured_roots(
+        self, tmp_path, monkeypatch, _set_security
+    ):
+        from pathlib import Path
+
         _set_security('allowlist', [])
         home = tmp_path / 'home'
         home.mkdir()
-        elsewhere = tmp_path / 'elsewhere'
+        elsewhere = tmp_path / 'outside-home'
         elsewhere.mkdir()
-        note = elsewhere / 'notes.txt'
-        note.write_text('hello', encoding='utf-8')
+        monkeypatch.setattr(Path, 'home', lambda: home)
 
-        assert bind_path(str(note), str(home))[0] is None
-        path, err = bind_path(str(note), None)
+        path, err = bind_path(str(home / 'notes.txt'), None)
         assert err is None
-        assert path == note.resolve()
+        assert path == (home / 'notes.txt').resolve()
+        denied, message = bind_path(str(elsewhere / 'private.txt'), None)
+        assert denied is None
+        assert message is not None and 'allowed roots' in message
+
+    def test_folderless_temp_writes_remain_available_outside_home(
+        self, tmp_path, monkeypatch, _set_security
+    ):
+        import tempfile
+        from pathlib import Path
+
+        _set_security('allowlist', [])
+        home = tmp_path / 'home'
+        temp = tmp_path / 'system-temp'
+        home.mkdir()
+        temp.mkdir()
+        monkeypatch.setattr(Path, 'home', lambda: home)
+        monkeypatch.setattr(tempfile, 'gettempdir', lambda: str(temp))
+
+        path, err = bind_path(str(temp / 'scratch.txt'), None, for_write=True)
+        assert err is None
+        assert path == (temp / 'scratch.txt').resolve()

@@ -2,6 +2,11 @@
 name: charts
 description: Render chart PNGs from data with render_chart.
 category: artifacts
+version: 1.0.0
+platforms: [linux, macos, windows]
+metadata:
+  hermes:
+    tags: [chart, png, plot, artifact, render_chart]
 ---
 
 # Rendering charts

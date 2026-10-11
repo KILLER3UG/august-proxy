@@ -160,7 +160,16 @@ the bar the verdict becomes a memory lesson instead of a padded skill — the
 padding is what used to let a one-sentence rule ship with every heading present.
 `amend_trigger` carries no body, so it must ship the target's current body
 through: normalizing the empty one wrote placeholders over a real skill on
-approval.
+approval. **The skill format is the Claude/Hermes merge and
+`docs/SKILL_AUTHORING.md` is its spec**: the `description` (≤
+`_DESCRIPTIONMax` chars) is the TRIGGER — it names the capability, the
+situations, and when NOT to fire, because a future agent sees only name +
+description before loading; the body's canonical sections are Title, When to
+Use, When NOT to Use, Prerequisites, How to Run, Quick Reference, Procedure,
+Output format, Examples, Pitfalls, Verification, Reference files, with
+bundled (hand-written) skills passing through the normalizer untouched. The
+frontmatter parser also reads the nested Hermes `metadata.hermes` block, and
+unknown keys round-trip through every patch.
 
 **Memory survives independently of recall** — `app/services/brain_backup.py`
 takes online copies through SQLite's backup API (read-only handle, no write lock

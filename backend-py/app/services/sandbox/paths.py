@@ -101,8 +101,14 @@ def is_within_app_logs(path: Path) -> bool:
     return root is not None and is_within_root(path, root)
 
 
-def _allowlist_denied(resolved: Path, root: Path | None) -> str | None:
-    """Enforce the user's "Computer access" allowlist, when they set one.
+def _allowlist_denied(
+    resolved: Path,
+    root: Path | None,
+    *,
+    for_write: bool = False,
+    allow_unconfigured: bool = True,
+) -> str | None:
+    """Enforce the user's Computer access scope, including a safe default.
 
     `security.filesystemScope` / `security.allowedRoots` are written and read
     back by the Settings UI (ComputerAccessSettings) and enforced NOWHERE —
@@ -119,35 +125,55 @@ def _allowlist_denied(resolved: Path, root: Path | None) -> str | None:
       * scope `allowlist` with a NON-EMPTY list — the real gate: the resolved
         path must sit inside one of those roots, or inside the session's own
         workspace.
-      * scope `allowlist` with an EMPTY list — treated as NOT CONFIGURED, and
-        no gate applies.
+      * scope `allowlist` with an EMPTY list — an unbound session is limited
+        to the user's home directory for reads. A session with a selected
+        workspace keeps that workspace, and folderless writes retain their
+        separate temp-directory gate.
 
-    That last one is deliberate and is the whole reason this is safe to
-        land. The stored default is `allowlist` + `[]`, so reading it
-        literally would deny every file operation for every user who never
-        opened the setting — the feature is opt-in in practice, and the empty
-        list is "not set up yet", not "nothing is permitted". Only a
-        configured list restricts anything.
+    The implicit home root preserves useful folderless file access without
+    making a fresh install's default allowlist equivalent to unrestricted
+    computer access. Users can add other roots or explicitly select the whole
+    computer in Settings.
 
     The session workspace stays implicitly allowed. It is where the user
         pointed this conversation, and an allowlist that excluded it would
         contradict that rather than express it.
     """
-    try:
-        from app.json_narrowing import as_dict, as_list, as_str
-        from app.services.config_service import getConfig
-    except Exception:
-        return None
+    from app.json_narrowing import as_dict, as_list, as_str
+    from app.services.config_service import getConfig
+
     try:
         cfg = getConfig()
         sec = as_dict((cfg or {}).get('security')) if cfg is not None else {}
     except Exception:
-        return None
+        # A settings-read failure must not turn the default allowlist into
+        # unrestricted access. Treat it like an unconfigured allowlist below.
+        sec = {}
     if as_str(sec.get('filesystemScope') or 'allowlist') == 'root':
         return None
     configured = [str(r).strip() for r in as_list(sec.get('allowedRoots')) if str(r).strip()]
     if not configured:
-        return None
+        if root is not None:
+            if is_within_root(resolved, root) or allow_unconfigured:
+                return None
+            configured = [str(root)]
+        else:
+            if for_write:
+                # bind_path has already confined folderless writes to the system
+                # temp directory. Keep that explicit exception even on platforms
+                # where temp lives outside the user's home directory (for example
+                # /tmp on Linux).
+                import tempfile
+
+                implicit_roots = [Path(tempfile.gettempdir())]
+            else:
+                implicit_roots = [Path.home()]
+            if any(is_within_root(resolved, candidate) for candidate in implicit_roots):
+                return None
+            configured = [
+                str(candidate.expanduser().resolve(strict=False))
+                for candidate in implicit_roots
+            ]
     if root is not None and is_within_root(resolved, root):
         return None
     for entry in configured:
@@ -159,7 +185,8 @@ def _allowlist_denied(resolved: Path, root: Path | None) -> str | None:
     return (
         f'Error: Sandbox blocked access outside your allowed roots. '
         f'path={resolved} allowedRoots={configured}. '
-        f'Add the folder under Settings → Computer access, or switch the scope to the whole computer.'
+        'Add the folder under Settings → Computer access, or switch the scope '
+        'to the whole computer.'
     )
 
 
@@ -170,10 +197,9 @@ def normalize_session_workspace(raw: object) -> str:
     is folderless, not anchored at ``~``, and the rest of the app already treats
     home as a non-project root (memory workspace enumeration in
     ``routers/august.py`` and auto-project memory in
-    ``tool_registrations/session_tools.py`` both skip it). Keeping home out of
-    ``workspacePath`` is also what makes a folderless chat able to read the
-    machine: a bound workspace CONTAINS everything under it, so anchoring at
-    home narrowed the reachable set instead of opening it.
+    ``tool_registrations/session_tools.py`` both skip it). Folderless file reads
+    use home as an implicit default root inside ``bind_path``; explicitly adding
+    roots or switching to whole-computer access can widen that scope.
     """
     text = str(raw or '').strip()
     if not text:
@@ -230,7 +256,7 @@ def bind_path(path: str, workspace: str | None, *, for_write: bool = False) -> t
                 )
         # With no workspace there is nothing to be implicitly allowed, so the
         # user's allowlist — if they configured one — is the only gate left.
-        denied = _allowlist_denied(resolved, None)
+        denied = _allowlist_denied(resolved, None, for_write=for_write)
         return (None, denied) if denied else (resolved, None)
 
     if not is_within_root(resolved, root):
@@ -246,6 +272,13 @@ def bind_path(path: str, workspace: str | None, *, for_write: bool = False) -> t
         # allowlist is trying to prevent.
         if not for_write and is_within_app_logs(resolved):
             return resolved, _allowlist_denied(resolved, root)
+        # Explicit allowedRoots supplement the selected project. An empty list
+        # does not, so only a root that is genuinely present in the configured
+        # allowlist can escape this workspace boundary.
+        if _allowlist_denied(
+            resolved, root, for_write=for_write, allow_unconfigured=False
+        ) is None:
+            return resolved, None
         action = 'write' if for_write else 'access'
         return None, (
             f'Error: Sandbox blocked {action} outside workspace. '

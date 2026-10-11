@@ -401,9 +401,15 @@ compress thresholds used by the web search / web fetch managed tools.
 
 | Field | Meaning |
 |-------|---------|
-| `security.allowedRoots` | Roots host/desktop tools may touch |
-| `security.filesystemScope` | `allowlist` vs unrestricted |
+| `security.allowedRoots` | Additional filesystem roots available to file tools alongside a selected project workspace |
+| `security.filesystemScope` | `allowlist` keeps access scoped; `root` enables whole-computer access |
 | `browserAllowlist` | Domains browser tools may open; empty = unrestricted |
+
+With `allowlist`, a folderless chat can read within the user's home directory
+and write within the system temp directory by default. A chat with a selected
+project stays scoped to that workspace, and `allowedRoots` adds other permitted
+locations. Whole-computer access requires explicitly setting `filesystemScope`
+to `root`.
 
 Also editable via `GET/PUT /api/security`.
 

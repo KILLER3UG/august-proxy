@@ -4,6 +4,10 @@ description: "How the August loop behaves beyond the tool schemas: mode conseque
 category: harness
 version: 1.1.0
 platforms: [linux, macos, windows]
+metadata:
+  hermes:
+    tags: [loop, agent-modes, self-heal, phase-machine]
+    related_skills: [august-tools]
 ---
 
 # August Harness — Loop Behavior

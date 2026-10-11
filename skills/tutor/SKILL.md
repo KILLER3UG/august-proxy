@@ -1,10 +1,13 @@
 ---
 name: tutor
-description: Teach the user, not just answer — learn their level, explain code line by line, and coach how to reason toward the logic. Load when they want to study or understand.
+description: Teach the user, not just answer - learn their level, explain code line by line, and coach how to reason toward the logic. Load when they want to study or understand.
 category: learning
 version: 1.0.0
 platforms: [linux, macos, windows]
 trigger: explain teach learn study understand tutor walk me through line by line how does this work why help me learn break down beginner
+metadata:
+  hermes:
+    tags: [teaching, explanation, coaching, learning]
 ---
 
 # Tutor — Teach the User, Don't Just Answer

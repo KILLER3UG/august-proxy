@@ -12,6 +12,7 @@
 | [**API_REFERENCE.md**](API_REFERENCE.md) | Integrators | HTTP endpoints, request/response shapes, SSE events |
 | [**DEVELOPER_GUIDE.md**](DEVELOPER_GUIDE.md) | Contributors | Dev setup, tests, conventions, extending the codebase |
 | [**TROUBLESHOOTING.md**](TROUBLESHOOTING.md) | All users | Common issues and fixes |
+| [**SKILL_AUTHORING.md**](SKILL_AUTHORING.md) | Agents / contributors | How skills are structured: SKILL.md frontmatter, canonical body sections, the description-as-trigger rule, the learning pipeline |
 | [**GAPS_AND_BUGS.md**](GAPS_AND_BUGS.md) | Maintainers | Closed ledger + the open/deferred list |
 | [**CHANGELOG.md**](../CHANGELOG.md) | Everyone | Release history (root file) |
 | [**settings-audit.md**](settings-audit.md) | UI contributors | **Superseded** 2026-08-28 Settings IA — registry is SoT |

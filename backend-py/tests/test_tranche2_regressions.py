@@ -565,15 +565,33 @@ def test_the_dead_silent_stats_facility_is_removed():
 
 
 def test_no_module_referenced_the_removed_names():
-    import subprocess
+    """No dangling references to the four removed names.
 
-    out = subprocess.run(
-        ['grep', '-rn', '--include=*.py', '--exclude=test_tranche2_regressions.py', '-E',
-         r'get_proxy_silent_stats|_bump_silent|_execute_tool_batch|_is_tool_parallel_safe',
-         'app/', 'tests/'],
-        capture_output=True, text=True,
+    This shelled out to GNU `grep -rn --include=*.py -E ...`, which does not
+    exist on Windows: the test raised `FileNotFoundError` on every developer
+    machine there rather than reporting a dangling reference, so it was
+    measuring the platform. The equivalent scan in Python runs everywhere and
+    cannot silently match a different set than intended.
+    """
+    import re
+    from pathlib import Path
+
+    pattern = re.compile(
+        r'get_proxy_silent_stats|_bump_silent|_execute_tool_batch|_is_tool_parallel_safe',
     )
-    assert not out.stdout.strip(), f'dangling references:\n{out.stdout}'
+    here = Path(__file__).resolve().parent
+    backend = here.parent
+    hits: list[str] = []
+    for folder in ('app', 'tests'):
+        for path in sorted((backend / folder).rglob('*.py')):
+            if path.name == Path(__file__).name:
+                continue
+            for lineno, line in enumerate(
+                path.read_text(encoding='utf-8', errors='replace').splitlines(), 1,
+            ):
+                if pattern.search(line):
+                    hits.append(f'{path.relative_to(backend)}:{lineno}: {line.strip()}')
+    assert not hits, 'dangling references:\n' + '\n'.join(hits)
 
 
 # --------------------------------------------------------------------------

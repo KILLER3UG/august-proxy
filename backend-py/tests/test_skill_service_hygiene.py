@@ -170,6 +170,53 @@ def test_parse_frontmatter_strips_surrounding_quotes(freshSkillState):
     assert fm2['description'] == 'say "hello" aloud'
 
 
+def test_parse_frontmatter_reads_hermes_metadata_block(freshSkillState):
+    """The Hermes frontmatter shape — a nested `metadata:` block — parses into
+    nested dicts with leaf values kept as raw strings (a bracketed list is the
+    same literal-string contract `platforms:` has always used)."""
+    fm = skill_service._parse_frontmatter_block(
+        'name: circuit-sim\n'
+        'description: "Simulate circuits."\n'
+        'version: 1.2.0\n'
+        'platforms: [linux, macos]\n'
+        'metadata:\n'
+        '  hermes:\n'
+        '    tags: [simulation, ngspice]\n'
+        '    related_skills: [hdl-fpga]\n'
+    )
+    assert fm['platforms'] == '[linux, macos]'
+    meta = fm['metadata']
+    assert isinstance(meta, dict)
+    hermes = meta['hermes']
+    assert isinstance(hermes, dict)
+    assert hermes['tags'] == '[simulation, ngspice]'
+    assert hermes['related_skills'] == '[hdl-fpga]'
+
+
+def test_metadata_block_round_trips_through_render(freshSkillState):
+    """Parse → render must be byte-identical for the metadata block: an unknown
+    key that does not survive a patch is data loss, and this is the first
+    nested one."""
+    block = (
+        'name: circuit-sim\n'
+        'description: "Simulate circuits."\n'
+        'version: 1.2.0\n'
+        'platforms: [linux, macos]\n'
+        'metadata:\n'
+        '  hermes:\n'
+        '    tags: [simulation, ngspice]\n'
+        '    related_skills: [hdl-fpga]\n'
+    )
+    rendered = skill_service._renderSkillMd(skill_service._parse_frontmatter_block(block), 'body\n')
+    # `_renderSkillMd` reorders known keys first; the nested block keeps its
+    # own key order and indentation.
+    assert 'metadata:\n  hermes:\n    tags: [simulation, ngspice]\n    related_skills: [hdl-fpga]\n' in rendered
+    reparsed = skill_service._parse_frontmatter_block(
+        rendered.split('---\n')[1].rsplit('---', 1)[0]
+    )
+    assert reparsed['metadata'] == {'hermes': {'tags': '[simulation, ngspice]', 'related_skills': '[hdl-fpga]'}}
+
+
 def test_bundled_skills_no_literal_quotes_in_descriptions(freshSkillState):
     # Live-bug regression: the two
     # bundled quoted frontmatters must parse clean.

@@ -318,6 +318,45 @@ def test_approving_a_retire_proposal_sets_the_status(skills):
     assert next(s for s in skill_service.list_all() if s['name'] == 'lc-approve')['status'] == 'retired'
 
 
+def test_retire_approval_does_not_apply_after_a_new_skill_use(skills):
+    from datetime import datetime, timezone
+
+    from app.services.harness_self_improve import decide_proposal, list_proposals
+    from app.services.memory_store import consolidation
+
+    name = 'lc-used-after-proposal'
+    _writeAgentSkill(name, body='still useful')
+    consolidation._skill_retire_pass()
+    row = next(p for p in list_proposals() if p['kind'] == 'retire')
+    usage = skill_service.usage_sidecar_path(name)
+    usage.parent.mkdir(parents=True, exist_ok=True)
+    usage.write_text(
+        '{"count": 1, "lastUsed": "%s"}' % datetime.now(timezone.utc).isoformat(),
+        'utf-8',
+    )
+
+    decided = decide_proposal(row['id'], 'approve')
+
+    assert decided['status'] == 'apply_failed'
+    assert decided['applyResult']['ok'] is False
+    assert 'no longer meets the retirement evidence' in decided['applyResult']['error']
+    current = next(s for s in skill_service.list_all() if s['name'] == name)
+    assert skill_service.skill_status(current['status']) == 'active'
+
+
+def test_retire_candidate_measurement_failure_fails_closed(skills, monkeypatch):
+    from app.services import turn_outcomes
+    from app.services.memory_store import consolidation
+
+    _writeAgentSkill('lc-lift-unavailable')
+
+    def unavailable(days=30):
+        raise RuntimeError('measurement store unavailable')
+
+    monkeypatch.setattr(turn_outcomes, 'skill_lift', unavailable)
+    assert consolidation._skill_retire_candidates() == []
+
+
 def test_retire_is_appliable_but_never_automatic(skills):
     from app.services import harness_self_improve as hsi
 

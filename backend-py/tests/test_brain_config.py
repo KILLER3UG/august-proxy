@@ -145,6 +145,28 @@ async def testGetReflectsPersistedOverrides(client, isolatedData, monkeypatch):
     assert body['defaults']['maxAgentDepth'] == 4
 
 
+def test_memory_retirement_rename_preserves_legacy_user_settings():
+    from app.services import brain_config_service
+
+    legacy = brain_config_service._snakeToCamel(
+        {'preference_retire_enabled': False, 'preference_retire_days': 73}
+    )
+    assert legacy['memoryRetireEnabled'] is False
+    assert legacy['memoryRetireDays'] == 73
+
+    # If both forms are present, the new setting is authoritative.
+    current = brain_config_service._snakeToCamel(
+        {
+            'preference_retire_enabled': False,
+            'memory_retire_enabled': True,
+            'preference_retire_days': 73,
+            'memory_retire_days': 120,
+        }
+    )
+    assert current['memoryRetireEnabled'] is True
+    assert current['memoryRetireDays'] == 120
+
+
 @pytest.mark.asyncio
 async def testPutMergesAndAudits(client, isolatedData):
     """Valid patch merges into cognitive.orchestrator + writes an audit row."""

@@ -80,6 +80,9 @@ _JUDGE_SYSTEM = (
     ' "intro": "<2-3 sentences>", "when_to_use": ["<situation>"],'
     ' "when_not_to_use": ["<situation>"], "prerequisites": ["<tool/file/state>"],'
     ' "steps": [{"do": "<what to do>", "command": "<the exact call, or empty>"}],'
+    ' "output_format": "<what a good result looks like — template or field list>",'
+    ' "examples": [{"input": "<the request>", "output": "<the good reply>"}],'
+    ' "reference_files": [{"file": "<path under the skill dir>", "when": "<situation that opens it>"}],'
     ' "pitfalls": [{"seen": "<failure that happened here>", "instead": "<what worked>"}],'
     ' "verification": ["<what proves it worked>"],'
     ' "body_markdown": "<whole body, only if you must override the structure>",'
@@ -99,8 +102,12 @@ _JUDGE_SYSTEM = (
     '- name: lowercase letters, digits and hyphens, max 64 chars.\n'
     '- title: a short human title for the body\'s first line — `name` is the id,'
     ' the title is what a reader sees.\n'
-    '- description: ONE sentence, max 60 characters, ending with a period. Name'
-    ' the capability, not the implementation. Do not restate the name. No'
+    '- description: ONE paragraph, max 500 characters. It does TWO jobs: what'
+    ' the skill does, and WHEN to use it — name the concrete situations and'
+    ' the words a user would actually type, plus when NOT to use it. It is the'
+    ' only text a future agent sees before loading the skill, so a trigger the'
+    ' description omits is a trigger the skill never fires on. Name the'
+    ' capability, not the implementation. Do not restate the name. No'
     ' marketing words (powerful, seamless, robust, advanced, intuitive).\n'
     '- intro: 2-3 sentences — what the skill does, what it does NOT do, and'
     ' whether anything has to be installed or configured first.\n'
@@ -111,6 +118,14 @@ _JUDGE_SYSTEM = (
     ' calls in the evidence — a flag, path or argument you cannot see there must'
     ' not appear. Leave `command` empty when the step is a judgement rather than'
     ' a call.\n'
+    '- output_format: the exact shape of a good result — a template or field'
+    ' list. Fill it when the output must look the same every time; leave it out'
+    ' when the work is exploratory.\n'
+    '- examples: one or two input/output pairs a reader can pattern-match, drawn'
+    ' from THIS episode. Never invent a pair.\n'
+    '- reference_files: ONLY paths that actually exist in the skill folder'
+    ' (`references/`, `scripts/`, `templates/`) — inventing a path ships a'
+    ' dead link the model will try to read.\n'
     '- pitfalls: each one is a failure that happened in THIS episode plus the'
     ' change that fixed it. "Be careful" is not a pitfall.\n'
     '- verification: what to look at to know the skill worked.\n'
@@ -225,6 +240,9 @@ class _CreateSkillVerdict(_VerdictBase):
     when_not_to_use: Any = None
     prerequisites: Any = None
     steps: Any = None
+    output_format: Any = None
+    examples: Any = None
+    reference_files: Any = None
     pitfalls: Any = None
     verification: Any = None
     keywords: Any = None
@@ -269,6 +287,9 @@ _DRAFT_FIELDS = (
     'when_not_to_use',
     'prerequisites',
     'steps',
+    'output_format',
+    'examples',
+    'reference_files',
     'pitfalls',
     'verification',
     'keywords',

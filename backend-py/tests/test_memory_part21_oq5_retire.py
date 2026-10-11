@@ -145,6 +145,32 @@ class TestPreferenceRetire:
         prow = conn().execute('SELECT status FROM proposals WHERE id = ?', (pid,)).fetchone()
         assert str(prow['status']) == 'approved'
 
+    def test_approval_closes_a_proposal_if_the_fact_was_used_after_filing(self, store):
+        from app.services.memory_conn import conn
+        from app.services.memory_store import consolidation, touch_fact_usage
+
+        store.save_fact('user:changed', {'fact': 'prefers a changed value'}, kind='preference', title='Changed')
+        _backdate('user:changed', 300)
+        consolidation._retire_stale_memories()
+        pid = int(
+            conn().execute(
+                "SELECT id FROM proposals WHERE proposal_type = 'retire-fact' "
+                "AND status = 'pending' ORDER BY id DESC LIMIT 1"
+            ).fetchone()['id']
+        )
+
+        touch_fact_usage(['user:changed'])
+        result = consolidation.apply_retire_decision(pid, approve=True)
+
+        assert result['ok'] is True
+        assert result['retired'] is False
+        assert result['decision'] == 'rejected'
+        assert 'changed after this proposal' in result['error']
+        fact = conn().execute("SELECT status FROM facts WHERE fact_key = 'user:changed'").fetchone()
+        proposal = conn().execute('SELECT status FROM proposals WHERE id = ?', (pid,)).fetchone()
+        assert str(fact['status']) == 'active'
+        assert str(proposal['status']) == 'rejected'
+
     def test_reject_keeps_fact(self, store):
         from app.services.memory_conn import conn
         from app.services.memory_store import consolidation

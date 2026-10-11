@@ -165,7 +165,7 @@ def test_a_shipped_skill_long_description_does_not_block_an_edit(isolatedData):
         patchSkill,
     )
 
-    longDesc = 'A deliberately verbose description that is well past the sixty character cap.'
+    longDesc = 'A deliberately verbose description that is well past the old sixty character cap.'
     # createSkill enforces the cap, so author the over-long file the way the
     # shipped skills are: written directly, then edited through the door.
     d = _agentSkillsDir() / 'longworded'
@@ -179,9 +179,11 @@ def test_a_shipped_skill_long_description_does_not_block_an_edit(isolatedData):
     patchSkill('longworded', description=longDesc, body='rewritten body')
     assert 'rewritten body' in str(get('longworded').get('instructions', ''))
 
-    # But authoring a NEW over-long description is still refused.
+    # But authoring a NEW over-long description is still refused. The cap is
+    # 500 now (Claude-standard: the description carries the triggers), so the
+    # refusal has to be probed past THAT boundary, not the old 60.
     try:
-        patchSkill('longworded', description='x' * 200, body='b')
+        patchSkill('longworded', description='x' * 600, body='b')
     except SkillValidationError as exc:
         assert 'exceeds' in str(exc)
     else:

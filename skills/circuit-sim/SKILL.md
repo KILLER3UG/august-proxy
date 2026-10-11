@@ -2,6 +2,12 @@
 name: circuit-sim
 description: Search real parts and simulate SPICE circuits (ngspice); firmware-in-the-loop, HDL, FPGA, and KiCad flows under /circuit mode.
 category: engineering
+version: 1.0.0
+platforms: [linux, macos, windows]
+metadata:
+  hermes:
+    tags: [spice, ngspice, kicad, circuit, electronics, simulation]
+    related_skills: [hdl-fpga]
 ---
 
 # Circuit lookup + simulation

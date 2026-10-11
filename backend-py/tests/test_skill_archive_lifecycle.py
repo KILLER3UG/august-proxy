@@ -200,6 +200,50 @@ class TestTheApplier:
         assert 'not retired' in out['error']
         assert (skills / name / 'SKILL.md').is_file()
 
+    def test_approval_does_not_archive_a_skill_used_after_the_proposal(self, skills, monkeypatch):
+        name = 'arc-used-after-proposal'
+        _writeSkill(name, retired=True)
+        _backdate(skills / name / 'SKILL.md', 90)
+        assert _run(monkeypatch) == 1
+        row = next(p for p in hsi.list_proposals() if p['kind'] == 'archive')
+        _recordUse(name, days_ago=1)
+
+        decided = hsi.decide_proposal(row['id'], 'approve')
+
+        assert decided['status'] == 'apply_failed'
+        assert decided['applyResult']['ok'] is False
+        assert 'no longer meets the archive evidence' in decided['applyResult']['error']
+        assert (skills / name / 'SKILL.md').is_file()
+
+    def test_approval_does_not_archive_a_skill_edited_after_the_proposal(self, skills, monkeypatch):
+        name = 'arc-edited-after-proposal'
+        _writeSkill(name, retired=True)
+        skill_file = skills / name / 'SKILL.md'
+        _backdate(skill_file, 90)
+        assert _run(monkeypatch) == 1
+        row = next(p for p in hsi.list_proposals() if p['kind'] == 'archive')
+        skill_file.write_text(skill_file.read_text('utf-8') + '\nA newer note.\n', 'utf-8')
+
+        decided = hsi.decide_proposal(row['id'], 'approve')
+
+        assert decided['status'] == 'apply_failed'
+        assert 'no longer meets the archive evidence' in decided['applyResult']['error']
+        assert skill_file.is_file()
+
+    def test_archive_candidate_read_failure_fails_closed(self, skills, monkeypatch):
+        from app.services import turn_outcomes
+        from app.services.memory_store import consolidation
+
+        name = 'arc-lift-unavailable'
+        _writeSkill(name, retired=True)
+        _backdate(skills / name / 'SKILL.md', 90)
+
+        def unavailable(days=60):
+            raise RuntimeError('measurement store unavailable')
+
+        monkeypatch.setattr(turn_outcomes, 'skill_lift', unavailable)
+        assert consolidation._skill_archive_candidates(60) == []
+
     def test_a_name_outside_the_agent_root_is_refused(self, skills):
         name = 'arc-bundled'
         bundled = skill_service.SKILLS_DIR / name

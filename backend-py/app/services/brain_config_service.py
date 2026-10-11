@@ -480,6 +480,16 @@ def _snakeToCamel(snakeCfg: dict[str, object]) -> BrainConfigDict:
         if camelKey is None:
             continue
         cast(dict, out)[camelKey] = value
+    # The 2026-10-10 retirement expansion replaced the preference-only knobs
+    # with memory-wide names. Preserve existing installs' explicit opt-outs
+    # and custom windows until the next config save migrates them naturally.
+    legacyAliases = {
+        'preference_retire_enabled': ('memory_retire_enabled', 'memoryRetireEnabled'),
+        'preference_retire_days': ('memory_retire_days', 'memoryRetireDays'),
+    }
+    for legacy, (currentSnake, currentCamel) in legacyAliases.items():
+        if currentSnake not in snakeCfg and legacy in snakeCfg:
+            cast(dict, out)[currentCamel] = snakeCfg[legacy]
     return out
 
 

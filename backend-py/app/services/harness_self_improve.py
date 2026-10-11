@@ -823,11 +823,20 @@ def _apply_skill_retire(row: dict[str, Any]) -> dict[str, Any]:
     if not name:
         return {'ok': False, 'error': 'retire proposals need payload.name'}
     try:
+        from app.services.memory_store.consolidation import _skill_retire_candidates
         from app.services.skill_service import _agentSkillsDir, _validateName, setStatus
 
         _validateName(name)
         if not (_agentSkillsDir() / name / 'SKILL.md').is_file():
             return {'ok': False, 'error': f'skill {name!r} not found in agent skills'}
+        if not any(candidate.get('name') == name for candidate in _skill_retire_candidates()):
+            return {
+                'ok': False,
+                'error': (
+                    f'skill {name!r} no longer meets the retirement evidence; '
+                    'it was not changed'
+                ),
+            }
         setStatus(
             name,
             'retired',
@@ -874,6 +883,7 @@ def _apply_skill_archive(row: dict[str, Any]) -> dict[str, Any]:
     if not name:
         return {'ok': False, 'error': 'archive proposals need payload.name'}
     try:
+        from app.services.memory_store.consolidation import _skill_archive_candidates
         from app.services.skill_service import (
             _agentSkillDir,
             _agentSkillsDir,
@@ -898,6 +908,19 @@ def _apply_skill_archive(row: dict[str, Any]) -> dict[str, Any]:
                 'error': (
                     f'skill {name!r} is {current!r}, not retired — the retire '
                     'proposal comes first, and a live skill is not archivable'
+                ),
+            }
+        try:
+            days = int(float(str(payload.get('days', 60))))
+        except (TypeError, ValueError):
+            days = 60
+        days = max(1, min(3650, days))
+        if not any(candidate.get('name') == name for candidate in _skill_archive_candidates(days)):
+            return {
+                'ok': False,
+                'error': (
+                    f'skill {name!r} no longer meets the archive evidence; '
+                    'it was not moved'
                 ),
             }
         trashId, _entry = _trashDir(agent_dir, name, scope='agent', restore_to=_agentSkillsDir())

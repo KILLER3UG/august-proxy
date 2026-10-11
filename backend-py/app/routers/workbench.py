@@ -365,9 +365,10 @@ async def createSessionDirect(request: Request):
     """Create a new workbench session.
 
     An empty ``workspacePath`` is a supported state, not a stand-in for the OS
-    home directory: a folderless chat has no project, so reads resolve anywhere
-    and writes land in the system temp area (see
-    ``app.services.sandbox.paths.bind_path``).
+    home directory: a folderless chat has no project, so reads are scoped to the
+    user's home directory by default, while writes land in the system
+    temp area. Settings → Computer access can add roots or enable whole-computer
+    access (see ``app.services.sandbox.paths.bind_path``).
     """
     body = await request.json() if request.headers.get('content-type') else {}
     session = wb.createWorkbenchSession(

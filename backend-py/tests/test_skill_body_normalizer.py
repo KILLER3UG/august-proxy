@@ -6,9 +6,21 @@ rewritten so they carry the canonical sections in the order:
 
   # <the skill's own title>   (its H1, or the humanised name)
   When to Use
+  When NOT to Use
+  Prerequisites
   How to Run
+  Quick Reference
+  Procedure
+  Output format
+  Examples
   Pitfalls
   Verification
+  Reference files
+
+The section set follows the Claude/Anthropic authoring standard (the description
+is the trigger; Output format, Examples and Reference files carry progressive
+detail) with the Hermes substance bar — When to Use / Procedure / Pitfalls /
+Verification — as the four sections a draft cannot ship without.
 
 Bundled (hand-written) skills pass through untouched so a human author can
 keep whatever prose they shipped.
@@ -30,7 +42,9 @@ from app.services.skill_service import (
 )
 
 # A draft that clears the substance bar: two steps, a pitfall that happened, a
-# way to prove it. This is the shape the distiller is now asked for.
+# way to prove it. This is the shape the distiller is now asked for — the
+# Claude-standard sections (Output format, Examples, Reference files) are here
+# too, since a learned skill should show its shape, not just describe it.
 SKILL_DRAFT = {
     'title': 'ngspice batch simulation',
     'intro': ['Runs a netlist headlessly.', 'It does not flash hardware.'],
@@ -40,6 +54,13 @@ SKILL_DRAFT = {
     'steps': [
         {'do': 'Run in batch mode', 'command': 'ngspice -b netlist.cir'},
         {'do': 'Read the print table from the receipt'},
+    ],
+    'output_format': ['Report the table as a markdown row per node.'],
+    'examples': [
+        {'input': 'simulate this rc filter', 'output': 'row per node plus the -3dB point'},
+    ],
+    'reference_files': [
+        {'file': 'references/spice-dialects.md', 'when': 'the netlist uses a nonstandard directive'},
     ],
     'pitfalls': [{'seen': 'ngspice opened the GUI and hung', 'instead': 'pass -b'}],
     'verification': ['the receipt has a numeric row'],
@@ -174,7 +195,20 @@ def test_parse_body_sections_groups_unknown_headings_under_previous_section():
 
 
 def test_normalizer_section_keys_match_declared_order():
-    expected = ['Title', 'When to Use', 'Prerequisites', 'How to Run', 'Quick Reference', 'Procedure', 'Pitfalls', 'Verification']
+    expected = [
+        'Title',
+        'When to Use',
+        'When NOT to Use',
+        'Prerequisites',
+        'How to Run',
+        'Quick Reference',
+        'Procedure',
+        'Output format',
+        'Examples',
+        'Pitfalls',
+        'Verification',
+        'Reference files',
+    ]
     assert _BODY_SECTION_KEYS == expected
 
 
@@ -183,20 +217,46 @@ def test_normalizer_section_keys_match_declared_order():
 
 def test_render_skill_body_puts_every_authored_section_in_order():
     out = renderSkillBody('ngspice-batch-sim', 'Run netlists headlessly.', SKILL_DRAFT)
-    order = ['# ngspice batch simulation', '## When to Use', '## Prerequisites', '## How to Run',
-             '## Procedure', '## Pitfalls', '## Verification']
+    order = [
+        '# ngspice batch simulation',
+        '## When to Use',
+        '## When NOT to Use',
+        '## Prerequisites',
+        '## How to Run',
+        '## Procedure',
+        '## Output format',
+        '## Examples',
+        '## Pitfalls',
+        '## Verification',
+        '## Reference files',
+    ]
     positions = [out.index(head) for head in order]
     assert positions == sorted(positions)
     # The command survives verbatim, and the pitfall carries what fixed it.
     assert 'ngspice -b netlist.cir' in out
     assert 'Instead: pass -b' in out
-    assert 'Do not use it when:' in out
+    # when-NOT is its own section now, not a sub-list of When to Use.
+    assert 'Do not use it when:' not in out
+    # The Claude-standard sections carry their authored content verbatim.
+    assert 'markdown row per node' in out
+    assert 'Input: simulate this rc filter' in out
+    assert 'Output: row per node plus the -3dB point' in out
+    assert '`references/spice-dialects.md` — read when the netlist uses' in out
     assert bodySubstance('ngspice-batch-sim', 'Run netlists headlessly.', out) == ''
 
 
 def test_render_skill_body_omits_what_was_not_authored_instead_of_padding_it():
     out = renderSkillBody('a-rule', 'Always pass -b.', {'intro': ['Always pass -b.']})
-    for sec in ('When to Use', 'Prerequisites', 'Procedure', 'Pitfalls', 'Verification'):
+    for sec in (
+        'When to Use',
+        'Prerequisites',
+        'Procedure',
+        'Output format',
+        'Examples',
+        'Reference files',
+        'Pitfalls',
+        'Verification',
+    ):
         assert f'## {sec}' not in out
     assert 'Always pass -b.' in out
 
@@ -209,6 +269,53 @@ def test_render_skill_body_survives_the_normalizer_unchanged():
         rendered, name='ngspice-batch-sim', description='Run netlists headlessly.', is_learned=True
     )
     assert again.strip() == rendered.strip()
+
+
+def test_new_sections_alias_casual_headings():
+    """A casual heading lands on its canonical name — including the three
+    Claude-standard sections and the split when-NOT list."""
+    body = (
+        'when to use\n- x\n'
+        'when not to use this\n- y\n'
+        '## Steps\n- a\n- b\n'
+        '## Output\n- template\n'
+        '## Example\n- pair\n'
+        '## References\n- references/api.md\n'
+        '## Common mistakes\n- z\n'
+        '## Verify\n- check the receipt\n'
+    )
+    out = _ensure_canonical_body(body, name='aliased', description='d', is_learned=True)
+    for sec in (
+        '## When to Use',
+        '## When NOT to Use',
+        '## Procedure',
+        '## Output format',
+        '## Examples',
+        '## Reference files',
+        '## Pitfalls',
+        '## Verification',
+    ):
+        assert sec in out
+    # The aliased heading is rewritten, never kept alongside the canonical.
+    assert '## Example\n' not in out
+    assert '## References\n' not in out
+    assert '## Output\n' not in out
+
+
+def test_when_not_to_use_survives_a_second_normalization():
+    """The split sections must be a normalizer fixed point too — a skill whose
+    when-NOT list silently re-merged into When to Use would drift on every
+    approved patch."""
+    rendered = renderSkillBody('ngspice-batch-sim', 'Run netlists headlessly.', SKILL_DRAFT)
+    once = _ensure_canonical_body(
+        rendered, name='ngspice-batch-sim', description='Run netlists headlessly.', is_learned=True
+    )
+    twice = _ensure_canonical_body(
+        once, name='ngspice-batch-sim', description='Run netlists headlessly.', is_learned=True
+    )
+    assert once.strip() == twice.strip()
+    assert once.count('## When NOT to Use') == 1
+    assert 'the user wants an FPGA build' in once
 
 
 def test_body_substance_refuses_a_rule_wearing_skill_headings():

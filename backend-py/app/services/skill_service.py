@@ -208,7 +208,15 @@ def _bust_catalogue_cache() -> None:
     _cat_cache.clear()
 
 
-_DESCRIPTIONMax = 60
+# The description is the ONLY text a future agent sees before loading a skill,
+# so it carries both the capability and the triggers — the Claude/Anthropic
+# authoring standard's whole point. The old 60-char cap could hold one sentence
+# and nothing else, which is why every shipped skill bypassed it through
+# `allow_long` and the validator was fictional for its own content (gap
+# analysis B5). 500 chars is room for "what it does + when to use it + when not
+# to", bounded because the skills index packs whole entries against a byte
+# budget and this string rides the BM25 corpus verbatim.
+_DESCRIPTIONMax = 500
 _MARKETINGWords = [
     'revolutionary',
     'cutting-edge',
@@ -228,18 +236,27 @@ _MARKETINGWords = [
 _BODYSectionOrder = [
     'Title',
     'When to Use',
+    'When NOT to Use',
     'Prerequisites',
     'How to Run',
     'Quick Reference',
     'Procedure',
+    'Output format',
+    'Examples',
     'Pitfalls',
     'Verification',
+    'Reference files',
 ]
 # Public alias for tests.
 _BODY_SECTION_KEYS = _BODYSectionOrder
 # Sections that MUST be present (in this order) for agent-authored / learned
 # skills. Bundled (hand-written) skills keep their existing prose — only
 # `created_by: agent` / `created_by: harness-proposal` skills are normalized.
+# The four are the substance bar `bodySubstance` checks: a skill without a
+# situation, a two-step procedure, an observed pitfall or a verification is a
+# rule wearing a skill's headings. The newer sections (Output format, Examples,
+# Reference files) are strongly recommended but not bar-raising — a procedure
+# skill with no output template is still a procedure.
 _REQUIRED_BODY_SECTIONS = ('When to Use', 'How to Run', 'Pitfalls', 'Verification')
 # Explicit markdown heading only (must start with `#`). The body may also
 # use a "Section:" line at column 0; the parser checks that variant in a
@@ -248,12 +265,16 @@ _BODY_HEADING_RE = re.compile(r'^(#{1,6})\s+(.+?)\s*$', re.MULTILINE)
 _SECTION_TO_LEVEL: dict[str, int] = {
     'Title': 1,
     'When to Use': 2,
+    'When NOT to Use': 2,
     'Prerequisites': 2,
     'How to Run': 2,
     'Quick Reference': 2,
     'Procedure': 2,
+    'Output format': 2,
+    'Examples': 2,
     'Pitfalls': 2,
     'Verification': 2,
+    'Reference files': 2,
 }
 _SECTION_ALIASES: dict[str, str] = {
     # Common casual headings the harness / agent might use → canonical name.
@@ -263,6 +284,9 @@ _SECTION_ALIASES: dict[str, str] = {
     'when to use this': 'When to Use',
     'when to use': 'When to Use',
     'usage': 'When to Use',
+    'when not to use this': 'When NOT to Use',
+    'when not to use': 'When NOT to Use',
+    'do not use when': 'When NOT to Use',
     'prereqs': 'Prerequisites',
     'requirements': 'Prerequisites',
     'how to run this': 'How to Run',
@@ -270,12 +294,20 @@ _SECTION_ALIASES: dict[str, str] = {
     'instructions': 'Procedure',
     'steps': 'Procedure',
     'process': 'Procedure',
+    'output format': 'Output format',
+    'output': 'Output format',
+    'format': 'Output format',
+    'examples': 'Examples',
+    'example': 'Examples',
     'common mistakes': 'Pitfalls',
     'gotchas': 'Pitfalls',
     'caveats': 'Pitfalls',
     'verify': 'Verification',
     'how to verify': 'Verification',
     'check': 'Verification',
+    'reference files': 'Reference files',
+    'references': 'Reference files',
+    'files': 'Reference files',
 }
 
 
@@ -296,13 +328,18 @@ def _validateName(name: str) -> None:
 def _validateDescription(description: str, *, allow_long: bool = False) -> None:
     """Reject a description that would bloat the BM25 index.
 
+    The cap is deliberately generous (Claude-standard: the description is the
+    trigger, so it names the capability AND the situations that should fire it),
+    but finite — the skills index packs whole entries against a byte budget
+    and this string rides the BM25 corpus verbatim.
+
     ``allow_long`` is for a patch that is NOT changing the description: the UI
     prefills the form from the stored value and resubmits it, so every shipped
-    skill whose description was authored before the cap (5 of the 6 bundled
-    ones run 126–168 chars) became unsaveable — Settings → Edit → Save always
-    failed, even to change only the body. Truncating the durable text would
-    lose the operator's words; rejecting it just blocks the edit. The cap still
-    applies to every description the writer actually changes.
+    skill whose description was authored before the cap became unsaveable —
+    Settings → Edit → Save always failed, even to change only the body.
+    Truncating the durable text would lose the operator's words; rejecting it
+    just blocks the edit. The cap still applies to every description the
+    writer actually changes.
     """
     if not description:
         raise SkillValidationError('Skill description is required.')
@@ -336,7 +373,7 @@ def _parseSkill(path: Path) -> Optional[dict[str, object]]:
         'description': frontmatter.get('description', ''),
         'trigger': frontmatter.get('trigger', ''),
         'category': frontmatter.get('category', 'uncategorized'),
-        'enabled': frontmatter.get('disabled', 'false').lower() != 'true',
+        'enabled': str(frontmatter.get('disabled', 'false')).lower() != 'true',
         'created_by': frontmatter.get('created_by', ''),
         # Lifecycle label (audit P2#13), surfaced RAW. `status:` is a shared
         # key — the curator report already has its own vocabulary (stale /
@@ -356,21 +393,63 @@ def _parseSkill(path: Path) -> Optional[dict[str, object]]:
     }
 
 
-def _parse_frontmatter_block(block: str) -> dict[str, str]:
+def _frontmatterScalar(raw: str) -> str:
+    """Strip one matching quote pair (Part 16 Phase C)."""
+    val = raw.strip()
+    if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+        val = val[1:-1]
+    return val
+
+
+def _parse_frontmatter_block(block: str) -> dict[str, object]:
     """Parse ``key: value`` frontmatter lines, preserving insertion order.
 
     Part 16 Phase C quote-strip: ``_skill_frontmatter`` and the bundled
     august-harness/august-tools SKILL.md files write quoted values — a
     matching surrounding quote pair is stripped so literal quotes never
-    ride into the skills index / prompts."""
-    frontmatter: dict[str, str] = {}
-    for line in block.split('\n'):
-        if ':' in line:
-            key, __, val = line.partition(':')
-            val = val.strip()
-            if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
-                val = val[1:-1]
-            frontmatter[key.strip()] = val
+    ride into the skills index / prompts.
+
+    Nested blocks (the Hermes ``metadata:`` shape) are supported to any depth:
+
+        metadata:
+          hermes:
+            tags: [simulation, ngspice]
+
+    Land in the returned dict as nested dicts with their leaf values kept as
+    raw strings — ``platforms: [linux, macos]`` has always round-tripped as
+    the literal string ``[linux, macos]``, and a nested list is the same
+    contract one level down. Lists stay strings rather than becoming parsed
+    arrays so a write reproduces the file byte-for-byte: an unknown key must
+    survive a patch untouched, which a coerced value could not promise.
+    """
+    frontmatter: dict[str, object] = {}
+    # (indent, dict) stack; root is the whole frontmatter block.
+    stack: list[tuple[int, dict[str, object]]] = [(-1, frontmatter)]
+    for raw in block.split('\n'):
+        if not raw.strip() or raw.lstrip().startswith('#'):
+            continue
+        indent = len(raw) - len(raw.lstrip(' \t'))
+        line = raw.strip()
+        if ':' not in line:
+            continue
+        key, __, val = line.partition(':')
+        key = key.strip()
+        if not key:
+            continue
+        # Dedent to this line's owner before writing.
+        while len(stack) > 1 and indent <= stack[-1][0]:
+            stack.pop()
+        parent = stack[-1][1] if len(stack) > 1 else frontmatter
+        val = val.strip()
+        if val:
+            parent[key] = _frontmatterScalar(val)
+        else:
+            # A key with no value opens a nested block — unless the next line
+            # is not indented, in which case it is an empty scalar (the old
+            # parser kept `key:` as '' and the writer dropped it).
+            child: dict[str, object] = {}
+            parent[key] = child
+            stack.append((indent, child))
     return frontmatter
 
 
@@ -839,6 +918,8 @@ def _placeholder_for(section: str, name: str, description: str) -> str:
     desc = (description or '').strip()
     if section == 'When to Use':
         return f'- {desc or f"Trigger `{name}` when the situation calls for it."}'
+    if section == 'When NOT to Use':
+        return '- _Nothing excluded — name the cases this skill should NOT fire on._'
     if section == 'Prerequisites':
         return '- _None — fill in any tools, files, or state this skill needs._'
     if section == 'How to Run':
@@ -847,12 +928,22 @@ def _placeholder_for(section: str, name: str, description: str) -> str:
             '2. Follow the procedure below, batching independent calls.\n'
             '3. Run the verification step before reporting success.'
         )
+    if section == 'Output format':
+        return '_No shape required yet — when a result must look the same every time, give the exact template here._'
+    if section == 'Examples':
+        return '- _No example yet — add one Input/Output pair a reader can pattern-match._'
     if section == 'Pitfalls':
         return '- _None recorded yet — add a row the first time a call misfires._'
     if section == 'Verification':
         return (
             f'- Confirm `{name}` produced the expected artefact or side-effect.\n'
             '- Re-run a single dry call if the user asks for proof.'
+        )
+    if section == 'Reference files':
+        return (
+            '- _None — put long reference material under `references/`, executable\n'
+            '  helpers under `scripts/`, and templates under `templates/`; list each\n'
+            '  file here with the situation that should open it._'
         )
     return '_No content yet._'
 
@@ -937,13 +1028,15 @@ def renderSkillBody(name: str, description: str, draft: dict[str, object]) -> st
 
     use = _draftList(field('when_to_use'))
     notUse = _draftList(field('when_not_to_use'))
-    if use or notUse:
-        lines = [f'- {item}' for item in use]
-        if notUse:
-            # A blank line before the second list: without it markdown treats
-            # the bullets as a lazy continuation of the sentence above.
-            lines.extend(['', 'Do not use it when:', '', *(f'- {item}' for item in notUse)])
-        blocks.append('## When to Use\n\n' + '\n'.join(lines))
+    # The when-NOT list is its own section, not a sub-list of When to Use: the
+    # normalizer orders sections by name, and a reader deciding "does this
+    # apply to me" should hit both lists at the same level.
+    if use:
+        blocks.append('## When to Use\n\n' + '\n'.join(f'- {item}' for item in use))
+    if notUse:
+        blocks.append(
+            '## When NOT to Use\n\n' + '\n'.join(f'- {item}' for item in notUse)
+        )
 
     prereq = _draftList(field('prerequisites'))
     if prereq:
@@ -969,6 +1062,28 @@ def renderSkillBody(name: str, description: str, draft: dict[str, object]) -> st
             lines.append(line)
         blocks.append('## Procedure\n\n' + '\n'.join(lines))
 
+    # Claude-standard additions: what a good result looks like, and a pair a
+    # reader can pattern-match. Rendered only when the judge actually supplied
+    # them — `renderSkillBody` omits rather than pads, and the substance bar
+    # deliberately does not require either. Emission order matches
+    # `_BODYSectionOrder` exactly, or the normalizer would reorder the body on
+    # approval and the rendered skill would not be the skill on disk.
+    outputFormat = _draftList(field('output_format'))
+    if outputFormat:
+        blocks.append('## Output format\n\n' + '\n'.join(outputFormat))
+
+    examples = _draftPairs(field('examples'), ('input', 'output'))
+    if examples:
+        lines = []
+        for index, (inp, out) in enumerate(examples, start=1):
+            lines.append(f'**Example {index}:**')
+            if inp:
+                lines.append(f'Input: {inp}')
+            if out:
+                lines.append(f'Output: {out}')
+            lines.append('')
+        blocks.append('## Examples\n\n' + '\n'.join(lines).rstrip())
+
     pits = _draftPairs(field('pitfalls'), ('seen', 'instead'))
     if pits:
         lines = []
@@ -982,6 +1097,16 @@ def renderSkillBody(name: str, description: str, draft: dict[str, object]) -> st
     verify = _draftList(field('verification'))
     if verify:
         blocks.append('## Verification\n\n' + '\n'.join(f'- {v}' for v in verify))
+
+    referenceFiles = _draftPairs(field('reference_files'), ('file', 'when'))
+    if referenceFiles:
+        lines = []
+        for path, when in referenceFiles:
+            line = f'- `{path}`'
+            if when:
+                line += f' — read when {when}'
+            lines.append(line)
+        blocks.append('## Reference files\n\n' + '\n'.join(lines))
 
     return '\n\n'.join(blocks) + '\n'
 
@@ -1023,19 +1148,38 @@ def bodySubstance(name: str, description: str, body: str) -> str:
 # ── Authoring (create / patch / delete) — restored 0.17.0 ─────────────────
 
 
-def _renderSkillMd(frontmatter: dict[str, str], body: str) -> str:
+def _renderSkillMd(frontmatter: dict[str, object], body: str) -> str:
     """Render SKILL.md. Known keys keep a stable canonical order; any other
-    keys round-trip after them (M6 item 3 — unknown frontmatter survives)."""
-    lines = ['---']
+    keys round-trip after them (M6 item 3 — unknown frontmatter survives).
+
+    A dict value renders as a nested block (the Hermes ``metadata:`` shape),
+    indented under its key. Leaf values are written as the strings the parser
+    produced — including bracketed lists like ``[linux, macos]`` — so a
+    parse→render round-trip is byte-identical for anything the normalizer
+    does not rewrite.
+    """
+    lines: list[str] = ['---']
     written: set[str] = set()
+
+    def _emit(key: str, val: object, depth: int) -> None:
+        pad = '  ' * depth
+        if isinstance(val, dict):
+            if not val:
+                return
+            lines.append(f'{pad}{key}:')
+            for sub_key, sub_val in val.items():
+                _emit(sub_key, sub_val, depth + 1)
+        elif val:
+            lines.append(f'{pad}{key}: {val}')
+
     for key in ('name', 'description', 'trigger', 'category', 'created_by', 'status', 'keywords', 'disabled'):
         val = frontmatter.get(key)
         if val:
             lines.append(f'{key}: {val}')
             written.add(key)
     for key, val in frontmatter.items():
-        if key not in written and val:
-            lines.append(f'{key}: {val}')
+        if key not in written:
+            _emit(key, val, 0)
     lines.append('---')
     lines.append('')
     lines.append(body.strip())
@@ -1267,7 +1411,7 @@ def createSkill(
     resolved = parse_keywords(list(keywords or []))
     if not resolved and keyword_expansion_enabled():
         resolved = expand_keywords_best_effort(name, description, normalized, trigger)
-    frontmatter = {
+    frontmatter: dict[str, object] = {
         'name': name,
         'description': description.strip(),
         'trigger': trigger.strip(),

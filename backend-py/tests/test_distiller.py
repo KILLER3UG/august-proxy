@@ -354,7 +354,10 @@ class TestSkillActions:
         assert label == 'proposal-filed', label
         row = json.loads(list(noProposals.glob('prop_*.json'))[0].read_text('utf-8'))
         desc = row['payload']['description']
-        assert len(desc) <= 60
+        # 130 chars fits the Claude-scale cap verbatim — the old 60-char cap
+        # would have truncated a description that names the capability and the
+        # trigger, which is the whole reason the cap exists (gap analysis B5).
+        assert len(desc) <= 500
         from app.services.skill_service import _validateDescription
 
         _validateDescription(desc)  # would raise on an unapprovable draft
@@ -414,7 +417,10 @@ class TestSkillActions:
         assert '# ngspice batch simulation' in text
         assert 'ngspice -b a.cir' in text
         assert 'Instead: always pass -b' in text
-        assert 'Do not use it when:' in text
+        # when-NOT is its own section now — a reader comparing the two lists
+        # hits them at the same level.
+        assert '## When NOT to Use' in text
+        assert 'the user wants an FPGA build' in text
         # And nothing the normalizer invented.
         for boilerplate in ('_None recorded yet', 'No content yet', 'fill in any tools'):
             assert boilerplate not in text, boilerplate
@@ -661,19 +667,46 @@ class TestFitDescription:
             '',
         )
 
-    def test_a_long_one_is_cut_at_a_clause_with_exactly_one_period(self):
+    def test_a_pushy_description_fits_the_claude_cap(self):
+        """The cap exists to hold the capability AND the triggers — the old
+        60-char one-sentence rule is exactly what made every shipped skill
+        bypass the validator (gap analysis B5)."""
+        desc = (
+            'Recover from a Quartus compile failure. Use when the user asks '
+            'about a failed build, timing closure, or the fitter report; do '
+            'not use for an FPGA bitstream flash.'
+        )
+        from app.services.skill_service import _DESCRIPTIONMax
+
+        assert len(desc) <= _DESCRIPTIONMax
+        fitted, problem = sd._fitDescription(desc)
+        assert (fitted, problem) == (desc, '')
+
+    def test_an_over_cap_one_is_cut_at_a_clause_with_exactly_one_period(self):
+        """Over the cap, length is a drafting accident: cut at the last clause
+        boundary that fits, one period, whatever the separator was."""
         long = (
             'Recover from a Quartus compile failure, by re-running the report, '
-            'and reading the slack table back.'
+            'and reading the slack table back. '
+            'The fitter occasionally reports a stale constraint set after an '
+            'edit, which surfaces as an unexplained negative slack that no '
+            'recompile clears until the constraint file is touched, so this '
+            'skill covers the recovery path end to end including the '
+            'verification step that proves the slack is real rather than a '
+            'stale artefact of the previous run, which matters because a '
+            'stale artefact looks exactly like a genuine timing violation '
+            'and the two send you down opposite remediation paths, one of '
+            'which wastes an entire afternoon of compile time.'
         )
+        assert len(long) > 500
         fitted, problem = sd._fitDescription(long)
         assert problem == ''
-        assert len(fitted) <= 60
+        assert len(fitted) <= 500
         assert fitted.endswith('.')
         assert not fitted.endswith('..')
-        # The comma clause wins over a bare word boundary: the separator list is
-        # tried sentence-end, clause, then space.
-        assert fitted == 'Recover from a Quartus compile failure.'
+        # The clause separator wins over a bare word boundary.
+        assert 'Recover from a Quartus compile failure' in fitted
+        assert 'stale artefact' not in fitted
 
     def test_a_marketing_claim_is_reported_not_rewritten(self):
         """Length is a typo; a banned word is a claim. Rewriting the operator's
