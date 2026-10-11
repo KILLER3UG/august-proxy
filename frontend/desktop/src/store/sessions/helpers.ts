@@ -217,6 +217,48 @@ export function sessionIsEmpty(s: Session): boolean {
   return true;
 }
 
+/** One launch-time sweep: drop the ghost "New chat" rows the pre-fix reuse
+ *  loop stacked on top of real history (17 measured on the live profile —
+ *  every "+ New chat" press re-stamped an EMPTY row to the top of the list).
+ *
+ *  `startedAt` is no longer re-stamped (sessions.ts), so no NEW ghosts appear;
+ *  this removes the residue. It is deliberately narrow — every condition must
+ *  hold, and any doubt keeps the row:
+ *  - placeholder title only ("New chat" / "New Session" / "Chat 2026-…"),
+ *  - empty by `sessionIsEmpty` (messageCount AND both storage key
+ *    generations, so a legacy-key transcript can never be swept as a ghost),
+ *  - no workbench link (a linked row is server-backed even when it looks
+ *    empty — reconcile owns it),
+ *  - not archived, not in a folder,
+ *  - older than 24h, so the reuse pool `findReusableEmptySession` maintains
+ *    (a deliberate fresh blank per scope) is never swept out from under it.
+ *  An unparseable `startedAt` keeps the row: unprovable age, no deletion. */
+export function pruneGhostSessions(
+  sessions: Session[],
+  opts: { now: number; maxAgeMs?: number },
+): { kept: Session[]; removed: Session[] } {
+  const maxAgeMs = opts.maxAgeMs ?? 24 * 60 * 60 * 1000;
+  const kept: Session[] = [];
+  const removed: Session[] = [];
+  for (const s of sessions) {
+    if (
+      !s.isArchived &&
+      !s.folderId &&
+      !s.workbenchSessionId &&
+      isPlaceholderTitle(s.title) &&
+      sessionIsEmpty(s)
+    ) {
+      const started = Date.parse(s.startedAt || '');
+      if (Number.isFinite(started) && opts.now - started > maxAgeMs) {
+        removed.push(s);
+        continue;
+      }
+    }
+    kept.push(s);
+  }
+  return { kept, removed };
+}
+
 /**
  * Normalise a filesystem path for consistent comparison.
  * Replaces backslashes with forward slashes and strips trailing slashes.

@@ -13,6 +13,7 @@ import {
   makeSessionId,
   normalizePath,
   pathsMatch,
+  pruneGhostSessions,
   sessionIsEmpty,
 } from './sessions/helpers';
 import { reconcileSessionsFromBackend as reconcileSessionsFromBackendImpl } from './sessions/reconcile';
@@ -45,11 +46,33 @@ interface SessionsState {
   sessionStates: Record<string, SessionStatus>;
 }
 
-export const useSessionsStore = create<SessionsState>(() => ({
-  sessions: loadSessions(),
-  folders: loadFolders(),
-  sessionStates: {},
-}));
+export const useSessionsStore = create<SessionsState>(() => {
+  /* Launch-time ghost sweep — see pruneGhostSessions. Only rows with no
+   * transcript under either key generation, no server link, no folder, a
+   * placeholder title, and a day of age are removed; the pruned list is
+   * what the store (and the next save) carries. */
+  const { kept: sessions, removed } = pruneGhostSessions(loadSessions(), {
+    now: Date.now(),
+  });
+  if (removed.length > 0 && typeof localStorage !== 'undefined') {
+    saveSessionsToStorage(sessions);
+    for (const ghost of removed) {
+      try {
+        localStorage.removeItem(`august_composer_draft_${ghost.id}`);
+      } catch {
+        /* ignore */
+      }
+    }
+    console.info(
+      `[sessions] swept ${removed.length} empty placeholder chat(s) stacked up by the pre-fix "New chat" reuse loop`,
+    );
+  }
+  return {
+    sessions,
+    folders: loadFolders(),
+    sessionStates: {},
+  };
+});
 
 /** Nanostores-shaped shims for imperative get/set callers and tests. */
 export const $sessions = {
