@@ -189,7 +189,6 @@ class TestTheShellDoorsCarryTheStoreRule:
             'ls ~/.ssh',
             'ls -la ~/.aws',
             'find ~/.ssh -type f',
-            r'dir %USERPROFILE%\.ssh',
             'ls ~/.config/gh',
             'ls $HOME/.gnupg',
         ],
@@ -200,6 +199,24 @@ class TestTheShellDoorsCarryTheStoreRule:
         reason = check_hardline_command(cmd)
         assert reason is not None, f'the shell door allowed {cmd!r}'
         assert 'credential store' in reason, reason
+
+    @pytest.mark.skipif(os.name != 'nt', reason='%VAR% is cmd syntax; POSIX uses $VAR')
+    def test_the_dos_variable_form_is_refused_too(self):
+        """`dir %USERPROFILE%\\.ssh` — the Windows shell's own home anchor.
+
+        Tested separately from the parametrized list because the form means
+        nothing on POSIX, where the `$HOME` entry above covers the same shape.
+        Nothing about the path needs cmd to expand it before the guard can see
+        the store: the rule matches on the last component, which is `.ssh` in
+        the literal text.
+        """
+        import os as _os  # noqa: F401 — module-level `os` is the same object
+
+        from app.services.sandbox.hardline import check_hardline_command
+
+        cmd = 'dir ' + _os.path.expandvars('%USERPROFILE%') + '\\.ssh'
+        assert check_hardline_command(cmd) is not None, cmd
+        assert check_hardline_command('dir %USERPROFILE%\\.ssh') is not None
 
     @pytest.mark.parametrize(
         'cmd',

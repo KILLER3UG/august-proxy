@@ -4,6 +4,8 @@ import asyncio
 
 from app.services.tool_registrations import file_tools
 
+NUL = chr(0)
+
 # ── rg exit codes ──────────────────────────────────────────────────────
 
 
@@ -31,7 +33,12 @@ async def test_rg_no_matches_exit_1_returns_fast_no_matches(monkeypatch, tmp_pat
 
 
 async def test_rg_exit_0_returns_capped_results(monkeypatch, tmp_path):
-    lines = '\n'.join(f'file.py:{i}:match {i}' for i in range(150))
+    # `file.py\0<i>:match <i>` — the NUL between the path and `lineno:content` is
+    # what rg emits because `_searchFiles` asks for `--null`. A colon is legal
+    # inside a path, so a colon-framed line is exactly what let the result filter
+    # hand the guard a truncated path (`./run` out of `./run:1/id_rsa`) and approve
+    # it; the fake has to be the frame the real binary produces.
+    lines = '\n'.join(f'file.py:{NUL}{i}:match {i}' for i in range(150))
     _patchRg(monkeypatch, 0, stdout=lines.encode())
     result = await file_tools._searchFiles('match', str(tmp_path))
     assert '... and 50 more results' in result
@@ -116,7 +123,12 @@ async def test_search_files_forwards_filters_to_rg(monkeypatch, tmp_path):
 
 
 async def test_search_files_max_results_caps_output(monkeypatch, tmp_path):
-    lines = '\n'.join(f'file.py:{i}:match {i}' for i in range(150))
+    # `file.py\0<i>:match <i>` — the NUL between the path and `lineno:content` is
+    # what rg emits because `_searchFiles` asks for `--null`. A colon is legal
+    # inside a path, so a colon-framed line is exactly what let the result filter
+    # hand the guard a truncated path (`./run` out of `./run:1/id_rsa`) and approve
+    # it; the fake has to be the frame the real binary produces.
+    lines = '\n'.join(f'file.py:{NUL}{i}:match {i}' for i in range(150))
     _patchRg(monkeypatch, 0, stdout=lines.encode())
     result = await file_tools._searchFiles('match', str(tmp_path), maxResults=10)
     assert '... and 140 more results' in result
