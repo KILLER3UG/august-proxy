@@ -10,8 +10,7 @@
  * active section component remounts so it can refetch live data. */
 
 import React, { useEffect, useRef } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   resolveLegacyTab,
@@ -98,10 +97,18 @@ const SETTINGS_QUERY_DOMAINS = new Set([
 
 export function SettingsPage() {
   const params = useParams<{ section?: string }>();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const rawSection = params.section;
+  // Measured in the running app, not inferred: with the dialog mounted by
+  // ChatLayout's NESTED `<Routes>`, `params.section` kept the value the panel
+  // first mounted while `location.pathname` moved correctly — so the rail
+  // changed the URL and never changed the section. Read the path first and fall
+  // back to the param for mounts that rewrite it (bare `/settings`, tests that
+  // render this page under their own route).
+  const rawSection =
+    location.pathname.match(/^\/settings\/([^/?#]+)/)?.[1] ?? params.section;
   const landingSectionId = useLandingSectionId();
   // Hub IA: rawSection can be a category id (e.g. "models") or a legacy section/category.
   const mappedRaw = rawSection ? (LEGACY_HUB_MAP[rawSection] ?? rawSection) : rawSection;
@@ -182,25 +189,27 @@ export function SettingsPage() {
       sections={implementedSections}
       active={activeId}
     >
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div
-          key={activeId}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-          transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-          className="h-full min-h-0"
-        >
-          <div className="min-h-0">
-            <SectionHeader active={active} />
-            {SectionComponent ? (
-              <React.Suspense fallback={<SettingsSectionLoader />}>
-                <SectionComponent active={active} />
-              </React.Suspense>
-            ) : null}
-          </div>
-        </motion.div>
-      </AnimatePresence>
+      {/* The 150 ms cross-fade was an `AnimatePresence mode="wait"` around a
+          keyed motion.div. `mode="wait"` mounts the incoming section only after
+          the outgoing one reports its exit as COMPLETE — and in the settings
+          DIALOG mount (ChatLayout's descendant `<Routes>`, under `inert`ed
+          shell siblings) that callback never fired, so the panel kept the first
+          section it mounted while the URL and `activeId` moved correctly.
+          Measured in the running app: click Skills from General and the DOM still
+          holds General with no loader and opacity 1, at 700 ms and at 3.2 s.
+          The key stays — it is what remounts the section so it refetches on
+          entry — the presence gate goes. A section that swaps without fading is
+          a smaller loss than one that never swaps. */}
+      <div key={activeId} className="h-full min-h-0">
+        <div className="min-h-0">
+          <SectionHeader active={active} />
+          {SectionComponent ? (
+            <React.Suspense fallback={<SettingsSectionLoader />}>
+              <SectionComponent active={active} />
+            </React.Suspense>
+          ) : null}
+        </div>
+      </div>
     </WorkspaceShell>
   );
 }

@@ -16,15 +16,18 @@
 const FENCE_OPEN = /^\s{0,3}(`{3,}|~{3,})(.*)$/;
 const FENCE_CLOSE = /^\s{0,3}(`+|~+)\s*$/;
 
-/** A setext h1 underline (`Title` + a line of `=`). Only the `=` form is
- *  touched: its heading level is 1, which is what must not appear in the
- *  dialog. A `-` underline is already level 2, and rewriting those would risk
- *  colliding with thematic breaks (`---`) and list markers for no gain. */
-const SETEXT_H1 = /^\s{0,3}=+\s*$/;
+/** A setext h1 underline (`Title` + a line of `=`), including the blockquote
+ *  form where the `>` rides on the underline too. Only `=` is touched: that form
+ *  is level 1, which is what must not appear in the dialog. A `-` underline is
+ *  already level 2, and rewriting it would collide with thematic breaks (`---`). */
+const SETEXT_H1 = /^\s{0,3}(>\s*)?=+\s*$/;
 
-/** Blocks whose first line is not a paragraph, so a following `=====` is not a
- *  setext underline for it. */
-const NOT_PARAGRAPH = /^\s{0,3}(#{1,6}\s|>|[-*+]\s|\d+[.)]\s|`{3,}|~{3,})/;
+/** The block that owns a setext paragraph. The list-item and blockquote forms
+ *  put the heading INSIDE the block (`- Title` + indented `=====` → `<li><h1>`),
+ *  so excluding them — the first version did, to dodge thematic breaks — left
+ *  real level-1 headings in the dialog. Captured so the marker can be re-emitted
+ *  in front of the ATX form instead of dissolving the list or quote. */
+const BLOCK_PREFIX = /^(\s*(?:[-*+]\s+|\d+[.)]\s+)?)(>\s?)?(.*)$/;
 
 /**
  * Shift every heading one level down (`# T` → `## T`), capped at h6, skipping
@@ -65,11 +68,17 @@ export function demoteMarkdownHeadings(src: string): string {
       }
     }
 
-    // Setext h1: fold the pair into one ATX h2 and drop the underline.
+    // Setext h1: fold the pair into one ATX h2 and drop the underline. Covers
+    // the plain, list-item and blockquote forms, re-emitting whichever marker
+    // opened the line so the surrounding structure survives. A blockquote needs
+    // its `>` on BOTH lines — `> Title` + a bare `===` is not a heading owner.
     if (SETEXT_H1.test(line) && out.length > 0) {
-      const prev = out[out.length - 1];
-      if (prev.trim() && !NOT_PARAGRAPH.test(prev)) {
-        out[out.length - 1] = `## ${prev.trim()}`;
+      const owned = BLOCK_PREFIX.exec(out[out.length - 1]);
+      const marker = owned ? `${owned[1] ?? ''}${owned[2] ?? ''}` : '';
+      const text = owned ? (owned[3] ?? '') : '';
+      const quoted = marker.startsWith('>');
+      if (text.trim() && !/^[#`~]/.test(text) && quoted === /^\s*>/.test(line)) {
+        out[out.length - 1] = `${marker}## ${text.trim()}`;
         continue;
       }
     }

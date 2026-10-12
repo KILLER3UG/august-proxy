@@ -722,6 +722,28 @@ def test_a_short_call_on_a_wider_block_invents_no_net_from_the_name():
     assert 'gain=10' not in x1.nodes
 
 
+def test_the_called_block_is_the_last_param_free_token_not_a_known_name():
+    """Locating `X`'s block by asking "is this token a subckt defined here" is
+    the wrong predicate: with `ADC` defined outside the deck (a `.lib`) and a
+    NODE named `VREF` that matches a block that IS defined here, the search
+    stopped at the node and truncated the call again. SPICE puts the name after
+    the nodes, so the name is simply the last token that is not a `k=v` param."""
+    deck = """* lib-called
+.subckt VREF p n
+Rv p n 1k
+.ends
+X1 ain aout vref ADC
+R1 vref 0 10k
+V1 ain 0 1
+.end
+"""
+    x1 = next(e for e in schematic.parse_elements(deck) if e.ref == 'X1')
+    assert x1.nodes == ['ain', 'aout', 'vref'], x1
+    graph = schematic.build_graph(deck, {'components': {}})
+    wired = {w.nodes[0] for w in graph['wires']}
+    assert 'vref' in wired, f'the node that matches a block name lost its wire: {sorted(wired)}'
+
+
 def test_the_switch_class_carries_its_control_nets_and_coupling_draws_no_part():
     """Two named classes the pin work still got wrong. `Sxxx N+ N- NC+ NC- MODEL`
     is a FOUR-net device — sliced to two, the control pair joined nothing, and

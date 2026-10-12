@@ -334,9 +334,34 @@ describe('demoteMarkdownHeadings — an authored document inside a dialog', () =
     // A `-` underline is already level 2 and is left alone — rewriting it would
     // collide with thematic breaks (`---`) for no a11y gain.
     expect(demoteMarkdownHeadings('Sub\n---\n')).toBe('Sub\n---\n');
-    // Not a setext underline after a list, quote, or inside a fence.
-    expect(demoteMarkdownHeadings('- item\n===\n')).toBe('- item\n===\n');
-    expect(demoteMarkdownHeadings('```\nTitle\n===\n```')).toBe('```\nTitle\n===\n```');
+  });
+
+  it('folds setext h1 inside a list item or blockquote, keeping the block', () => {
+    /* The first version excluded list and quote owners to avoid rewriting a
+     * thematic break — but `- Title` + `  ===` and `> Title` + `> ===` are both
+     * setext h1s in marked, so the dialog still received an h1. The marker has
+     * to be re-emitted in front of the ATX form or the item/quote is destroyed. */
+    const listed = demoteMarkdownHeadings('- Release Notes\n  ==============\n- other item');
+    expect(listed).toContain('- ## Release Notes');
+    expect(listed).toContain('- other item');
+
+    const quoted = demoteMarkdownHeadings('> Release Notes\n> ==============\n> more');
+    expect(quoted).toContain('> ## Release Notes');
+
+    // A `>` underline under a plain paragraph is not a heading owner, and a
+    // bare `===` line under a blockquote must not be pulled out of it.
+    expect(demoteMarkdownHeadings('Title\n> ===\n')).toBe('Title\n> ===\n');
+
+    // Rendered through the app's own parser: no h1 survives any of the three.
+    for (const doc of [
+      'Release Notes\n=============',
+      '- Release Notes\n  ==============',
+      '> Release Notes\n> ==============',
+    ]) {
+      const { container } = render(<Markdown content={doc} demoteHeadings />);
+      expect(container.querySelector('h1')).toBeNull();
+      expect(container.querySelector('h2')?.textContent).toContain('Release Notes');
+    }
   });
 
   it('renders the shifted document when the flag is set', () => {

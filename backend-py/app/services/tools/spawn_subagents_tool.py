@@ -103,7 +103,8 @@ def _expire_stale_proposals(now: float | None = None) -> int:
 
         conn = _conn()
         rows = conn.execute(
-            "SELECT id, content FROM proposals WHERE status = 'pending'"
+            "SELECT id, content FROM proposals WHERE status = 'pending' "
+            "AND proposal_type = 'subagent_breakdown'"
         ).fetchall()
         for r in rows:
             try:
@@ -298,7 +299,8 @@ def _mark_proposal_decided(proposal_id: str, status: str) -> None:
 
         conn = _conn()
         rows = conn.execute(
-            "SELECT id, content FROM proposals WHERE status = 'pending'"
+            "SELECT id, content FROM proposals WHERE status = 'pending' "
+            "AND proposal_type = 'subagent_breakdown'"
         ).fetchall()
         for r in rows:
             try:

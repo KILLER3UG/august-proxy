@@ -11,7 +11,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, toggleFolderCollapse, ensureFolderForWorkspacePath, resolveActiveSession } from "@/store/sessions";
 import { startRealtimeBridge } from "@/realtime/bridge";
 import { addWorkspace, useWorkspacesStore } from "@/store/workspaces";
-import { CHAT_SURFACE_ROUTES, SETTINGS_PAGE_ELEMENT } from "@/routes";
+import { CHAT_SURFACE_ROUTES, SettingsPageRoute } from "@/routes";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
@@ -712,13 +712,21 @@ export function ChatLayout() {
       </div>
       {/* The settings dialog is a SIBLING of the inerted shell-body — inside
           it, `inert` would disable the dialog itself. Still fixed-positioned
-          (z-50), so DOM order has no visual effect. */}
+          (z-50), so DOM order has no visual effect.
+
+          TWO flat routes, and a FRESH element on each. Both were needed, and the
+          dialog shipped broken on both: `SettingsPage` reads its section from
+          `useParams().section`, a parent element never sees a param matched by
+          its CHILD route (so the child must not be the only place `:section`
+          lives), and a hoisted module-level element object is referentially
+          identical every render, so React bails out of re-rendering the subtree
+          it mounts. The visible failure was the rail: the URL moved to
+          /settings/appearance while the panel stayed on General — caught driving
+          the real app, invisible to every test that mounts SettingsPage directly. */}
       {isSettings && (
         <Routes>
-          <Route path="/settings" element={SETTINGS_PAGE_ELEMENT}>
-            <Route index element={null} />
-            <Route path=":section" element={null} />
-          </Route>
+          <Route path="/settings" element={<SettingsPageRoute />} />
+          <Route path="/settings/:section" element={<SettingsPageRoute />} />
         </Routes>
       )}
       <ConfirmDialog

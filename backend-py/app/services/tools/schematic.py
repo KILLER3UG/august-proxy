@@ -137,10 +137,13 @@ _ELEMENT_KINDS = {
 # while the linter only reads the first two to report a value.
 # W (current-controlled) stays 2: its third token names a voltmeter, not a net.
 # KNOWN LIMIT, stated rather than left to be rediscovered: letters outside this
-# table are sliced to two nodes, so an `.lib`-defined `X` (no `.subckt` in this
-# deck to count pins from) and the 4-terminal E/G/F behavioural and MESFET forms
-# lose their extra nets at PARSE time — before the pin guarantee below ever sees
-# them. `pin_offsets` already handles any count the parser produces.
+# table are sliced to two nodes, so their extra nets are lost at PARSE time —
+# before the pin guarantee below can see them. Named in full, because each one is
+# the same false-open-circuit the Q/J/M/B/S entries fix: `.lib`-defined `X` (no
+# `.subckt` in this deck to count pins from), the 4-terminal E/G/F behavioural and
+# MESFET forms, `T` (lossy transmission line, 4 nodes) and `A` (analyst-behaviour
+# subckt, variable nodes). Widening this means widening the linter's copy too;
+# `pin_offsets` already handles any count the parser produces.
 _NODE_COUNT = {'Q': 3, 'J': 3, 'M': 3, 'B': 4, 'S': 4}
 
 # Not drawable: `Kxxx L1 L2 0.9` declares mutual coupling BETWEEN two inductors.
@@ -161,30 +164,11 @@ class Element:
     params: str = ''      # raw tail after the value (model name etc.)
 
 
-def _subckt_pin_counts(deck_text: str) -> dict[str, int]:
-    """`SUBCKTNAME` → how many pins it declares, from the deck's own
-    ``.subckt`` lines. An `X` instance's node count is not static (a 4-pin
-    opamp block is as legal as a 2-pin one), and slicing it to 2 hid every
-    node past the second — the net existed on the block but never got a pin or
-    a wire. Names defined outside this deck (`.lib`) are absent here, and the
-    caller keeps the 2-node default for those."""
-    counts: dict[str, int] = {}
-    for raw in deck_text.splitlines():
-        s = raw.strip()
-        if not s.lower().startswith('.subckt'):
-            continue
-        toks = s.split()
-        if len(toks) >= 3:
-            counts[toks[1].upper()] = len(toks) - 2
-    return counts
-
-
 def parse_elements(deck_text: str) -> list[Element]:
     """Extract (ref, kind, nodes, value) per element line, skipping
     comments, dot-cards, ``.control`` and ``.subckt`` bodies and
     continuations — the same rules ``circuit_tools._parse_components`` /
     ``lint_netlist`` apply."""
-    subckt_pins = _subckt_pin_counts(deck_text)
     out: list[Element] = []
     in_control = False
     in_subckt = False
@@ -220,22 +204,22 @@ def parse_elements(deck_text: str) -> list[Element]:
         kind = _ELEMENT_KINDS.get(letter.upper(), 'part')
         n = _NODE_COUNT.get(letter.upper(), 2)
         if letter.upper() == 'X':
-            # The block's own pin count wins. Find its name scanning from the
-            # RIGHT, skipping `k=v` params: a node may legitimately be named
-            # like another subckt (`X1 ain aout VREF ADC`), and a left-to-right
-            # scan stopped at that node, truncated the call, and dropped the
-            # VREF pin — the same silence this file exists to remove. The slice
-            # is clamped to the declared pin count so a short call cannot invent
-            # a net from the name itself, and a block defined in a `.lib` stays
-            # at the 2-node default because nothing here can count its pins.
+            # SPICE puts the called block's name immediately after its nodes, so
+            # the name is the LAST non-`k=v` token on the line — NOT "the last
+            # token that happens to name a block defined in this deck". The
+            # second predicate truncated `X1 ain aout vref ADC` at the node
+            # called `vref` whenever `ADC` came from a `.lib`, which is the same
+            # dropped-net silence this file exists to remove.
+            # Everything before the name is a node, so the pin count is the
+            # name's own index — which also means a `.lib` block (no `.subckt`
+            # here to count) still gets every node it was given, and a short
+            # call cannot pull the name into the node list. A deck that hands a
+            # block MORE nodes than it declares is invalid; the linter's job.
             for i in range(len(toks) - 1, 1, -1):
-                tok = toks[i].strip('[]')
-                if '=' in tok:
+                if '=' in toks[i]:
                     continue
-                declared = subckt_pins.get(tok.upper())
-                if declared:
-                    n = min(i, declared)
-                    break
+                n = i
+                break
         nodes = [t.strip('[]') for t in toks[:n]]
         tail = toks[n:]
         value = ''
@@ -426,7 +410,9 @@ def build_graph(deck_text: str, layout: dict[str, Any]) -> dict[str, Any]:
                       row=float(p.get('row', 0)), rot=int(p.get('rot', 0)))
         )
     # Wires: route each shared net as a horizontal bus with vertical stubs.
-    # Explicit wireRoutes in the sidecar (keyed "ref:node") win.
+    # Explicit wireRoutes in the sidecar win; they are keyed by NET (the node
+    # name), which is also what `circuit_tools` writes — an older comment here
+    # said "ref:node", which no writer or reader does.
     net_pins: dict[str, list[tuple[str, int, tuple[float, float]]]] = {}
     for comp in components:
         # zip, not an index loop with a `break`: pin_offsets guarantees one pin

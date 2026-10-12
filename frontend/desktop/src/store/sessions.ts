@@ -447,7 +447,13 @@ export function removeSessionLocally(id: string): boolean {
     try {
       localStorage.removeItem(messagesStorageKey(lid)!);
       localStorage.removeItem(legacyMessagesStorageKey(lid)!);
-      clearComposerDraft(lid);
+      /* A row removed locally can come back — reconcile re-adds it from the
+       * server, and this function is what a pushed `session.deleted` calls. So
+       * the same rule as the sweep and the merge holds here: clear the blank
+       * residue, never the words. The explicit user-confirmed deletes below
+       * (deleteSession, deleteUncategorizedSessions, clearAllSessions) discard
+       * the chat on purpose and clear the draft with it. */
+      if (!loadComposerDraft(lid).trim()) clearComposerDraft(lid);
     } catch {
       /* ignore */
     }

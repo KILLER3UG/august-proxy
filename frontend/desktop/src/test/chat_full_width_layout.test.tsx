@@ -30,6 +30,11 @@ describe('ChatLayout full-width chat column', () => {
     // position is lost — which is the pre-dialog behavior this replaced.
     expect(src).toMatch(/<Routes location=\{isSettings \? background : undefined\}>/);
     expect(src).toMatch(/CHAT_SURFACE_ROUTES/);
-    expect(src).toMatch(/SETTINGS_PAGE_ELEMENT/);
+    expect(src).toMatch(/<SettingsPageRoute \/>/);
+    // The dialog's route element must be created per render AND read its param
+    // at the matched level: a hoisted module-level element is the same object
+    // every time, so React skips re-rendering it and the panel keeps whatever
+    // section was mounted first while only the URL moves.
+    expect(src).not.toMatch(/SETTINGS_PAGE_ELEMENT/);
   });
 });

@@ -662,9 +662,14 @@ export function SessionList({
     return ids;
   }, [visiblePinned, folders, othersByFolder, unfiledSessions, uncategorizedCollapsed, searching]);
 
-  // Keyed on the joined ids so the query is shared by every row and only
-  // re-runs when the SET of visible chats changes — not on each reorder.
-  const usageBatchKey = usageBatchIds.join(',');
+  // Keyed on the SORTED ids. The comment here used to claim the key was
+  // set-based while `join(',')` kept the render order — so every re-sort by
+  // startedAt or title re-ran the batch for the same set of chats.
+  // The list is also capped twice over: `capped()` per group for what is
+  // rendered, and `usageApi.sessions` bounds the request by id COUNT and by
+  // encoded LENGTH. A chat past either bound simply shows no delta, which is
+  // the intended degradation of a decorative readout.
+  const usageBatchKey = [...usageBatchIds].sort().join(',');
   const usageBySession = useQuery({
     queryKey: ['usage', 'sessions', usageBatchKey],
     queryFn: () => usageApi.sessions(usageBatchKey ? usageBatchKey.split(',') : []),

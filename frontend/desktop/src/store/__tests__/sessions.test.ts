@@ -16,6 +16,7 @@ import {
   dedupeSessions,
   preferSessionRow,
   updateSessionWorkbenchMetadata,
+  removeSessionLocally,
   reconcileSessionsFromBackend,
   type Session,
 } from '../sessions';
@@ -514,6 +515,37 @@ describe('reconcileSessionsFromBackend — keep drafts, stable ids', () => {
  * as a route in its own right — SSE creates that row with the wb id AS its id,
  * and ConversationSearchModal navigates to a raw `hit.sessionId` — so a draft
  * keyed on the dropped id can be the text the user is typing right now. */
+/* A row can also disappear because the SERVER says so: `realtime/bridge.ts`
+ * calls `removeSessionLocally` on a pushed `session.deleted`. That is not the
+ * user discarding a chat, and reconcile can bring the row back, so the same
+ * rule as the sweep and the merge holds — blank residue goes, words stay. The
+ * explicit user-confirmed deletes (deleteSession / clearAllSessions /
+ * deleteUncategorizedSessions) discard the draft with the chat, on purpose. */
+describe('removeSessionLocally — draft storage on a server-pushed delete', () => {
+  const draftKey = (id: string) => `august_composer_draft_${id}`;
+
+  beforeEach(() => {
+    localStorage.clear();
+    $sessions.set([]);
+  });
+
+  it('keeps unsent words and clears a blank residue', () => {
+    const mk = (id: string): Session => ({
+      id, title: 'A', startedAt: new Date().toISOString(), messageCount: 0,
+      lastMessage: '', provider: '', model: '', isArchived: false,
+      folderId: null, workspacePath: null,
+    });
+    $sessions.set([mk('sess_keep'), mk('sess_blank')]);
+    localStorage.setItem(draftKey('sess_keep'), 'half-written message');
+    localStorage.setItem(draftKey('sess_blank'), '');
+
+    expect(removeSessionLocally('sess_keep')).toBe(true);
+    expect(removeSessionLocally('sess_blank')).toBe(true);
+    expect(localStorage.getItem(draftKey('sess_keep'))).toBe('half-written message');
+    expect(localStorage.getItem(draftKey('sess_blank'))).toBeNull();
+  });
+});
+
 describe('updateSessionWorkbenchMetadata — draft storage on merge', () => {
   const draftKey = (id: string) => `august_composer_draft_${id}`;
   const row = (over: Partial<Session>): Session =>

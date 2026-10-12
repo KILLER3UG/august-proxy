@@ -151,16 +151,22 @@ export const SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_SECTIONS.filter((s
   path: `/settings/${section.id}`,
 }));
 
-/* One shared element is mounted for both /settings and /settings/:section.
- * ChatLayout renders it as a DIALOG over the background-location chat (see
- * ChatLayout's background/overlay <Routes> split); App.tsx declares the
- * route for matching and deep links with a null element. Section content
- * remounts inside SettingsPage so each tab refetches live data on entry. */
-export const SETTINGS_PAGE_ELEMENT: ReactNode = React.createElement(
-  Lazy,
-  null,
-  React.createElement(SettingsPage),
-);
+/* One shared route renders for both /settings and /settings/:section.
+ * ChatLayout mounts it as a DIALOG over the background-location chat (see
+ * ChatLayout's background/overlay <Routes> split); App.tsx declares the paths
+ * with a null element for matching and deep links. Section content remounts
+ * inside SettingsPage so each tab refetches live data on entry.
+ *
+ * A COMPONENT, not a module-level element on purpose. A hoisted
+ * `React.createElement(...)` constant is the SAME object on every render, and
+ * React bails out of re-rendering a subtree whose element is referentially
+ * identical — so the dialog kept the URL (`/settings/appearance`) while
+ * `useParams().section` inside it was never re-read and the panel stayed on the
+ * first section. Creating the element per render costs nothing (the lazy chunk
+ * is cached) and is what makes the rail actually switch panels. */
+export function SettingsPageRoute(): ReactNode {
+  return React.createElement(Lazy, null, React.createElement(SettingsPage));
+}
 
 /* Dev-only design token inspector — tree-shaken out of production. */
 const DEV_ROUTES: readonly SectionRoute[] = import.meta.env.DEV
