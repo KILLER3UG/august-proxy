@@ -91,7 +91,13 @@ describe('the drafted skill in the inbox', () => {
   it('renders the body as markdown, not as escaped JSON', async () => {
     await openDetail('the flow hung on a GUI window');
     const pane = await screen.findByTestId('proposal-drafted-body');
-    expect(pane.querySelector('h1')?.textContent).toContain('ngspice batch simulation');
+    // The drafted body is a whole document that begins `# Title`, but it is
+    // rendered as CONTENT inside the settings dialog — whose titlebar owns the
+    // only h1. `demoteHeadings` shifts it, so the dialog's heading tree stays
+    // ordered for a screen reader (§4.4) while the SKILL.md on disk keeps its
+    // own level.
+    expect(pane.querySelector('h1')).toBeNull();
+    expect(pane.querySelector('h2')?.textContent).toContain('ngspice batch simulation');
     expect(pane.textContent).toContain('Read the print table from the receipt');
     expect(pane.textContent).toContain('Instead: pass -b');
     // No literal newline escapes leak into the rendered document.

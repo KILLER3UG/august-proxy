@@ -126,7 +126,7 @@ export function UpdateSection() {
                * headings + bullets, and the shared renderer is the one owner
                * for that (it also sanitizes raw HTML/links). */
               <div className="mt-2 max-h-32 overflow-y-auto rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
-                <Markdown content={available.body} />
+                <Markdown content={available.body} demoteHeadings />
               </div>
             )}
 

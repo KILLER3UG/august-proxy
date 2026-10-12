@@ -567,7 +567,7 @@ export function HarnessImprovementsSection() {
                   className="mt-1 max-h-96 overflow-y-auto rounded-lg border border-border/40 bg-muted/20 px-3 py-2"
                   data-testid="proposal-drafted-body"
                 >
-                  <Markdown content={draftedBody} />
+                  <Markdown content={draftedBody} demoteHeadings />
                 </div>
               </div>
             )}

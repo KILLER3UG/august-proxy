@@ -205,11 +205,10 @@ export function SettingsPage() {
   );
 }
 
-/** Compact page header for sections that don't render their own h1
- *  (the models tree children, previously titled by the removed wrapper).
- *  Sections WITH their own h1 (SystemHealth) would double up — so this
- *  header only renders when the section component is one of the known
- *  header-less ones. */
+/** Compact header for sections that render no heading of their own (the
+ *  models tree children, previously titled by the removed wrapper). Every
+ *  settings section title is an h2 now (the a11y sweep), so this header —
+ *  like the sections' own — anchors at level 2. */
 const HEADERLESS_SECTION_IDS = new Set([
   'model-providers',
   'model-catalog',

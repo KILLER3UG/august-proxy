@@ -54,7 +54,7 @@ export function WorkspaceInspectorSection() {
     <div className="px-8 py-6 space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Inspector</h1>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">Inspector</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Read a request as a conversation, inspect raw bodies, or view the model&apos;s thinking.
           </p>

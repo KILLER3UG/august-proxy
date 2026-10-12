@@ -109,7 +109,7 @@ export function WorkspaceUsageSection() {
     <div className="px-8 py-6 space-y-6 max-w-5xl mx-auto pb-24 relative">
       {/* Title Header with App usage pill badge */}
       <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Usage stats</h1>
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">Usage stats</h2>
         <span className="rounded-full border border-white/[0.1] bg-white/[0.05] px-3 py-0.5 text-xs font-medium text-muted-foreground/80">
           App usage
         </span>

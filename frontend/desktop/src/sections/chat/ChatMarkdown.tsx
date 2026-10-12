@@ -554,12 +554,17 @@ export function Markdown({
   content,
   variant = 'default',
   live = false,
+  demoteHeadings = false,
 }: {
   content: string;
   /** Assistant body may use a quieter serif; code/pre stay monospace via CSS. */
   variant?: 'default' | 'assistant';
   /** When true (active stream), skip highlight.js so code DOM isn't rewritten every flush. */
   live?: boolean;
+  /** Render an authored document INSIDE a container that already owns the h1
+   *  (the settings dialog). Shifts ATX headings down a level; see
+   *  demoteMarkdownHeadings. */
+  demoteHeadings?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const prevLive = useRef(live);
@@ -580,13 +585,14 @@ export function Markdown({
 
   const html = useMemo(() => {
     if (!content) return '';
+    const source = demoteHeadings ? demoteMarkdownHeadings(content) : content;
     if (live) {
       // A.1: incremental live render. Complete blocks are cached; only the
       // still-growing tail block re-parses each flush (see renderLiveBlock),
       // and only the bytes that arrived since the last flush are re-scanned
       // for block boundaries (see splitLiveBlocksIncremental). The settle
       // pass (live=false) below produces the exact full parse.
-      const stabilized = stabilizeLiveTables(content);
+      const stabilized = stabilizeLiveTables(source);
       const { complete, tail, state } = splitLiveBlocksIncremental(stabilized, splitState.current);
       splitState.current = state;
       const parts: { __html: string }[] = complete.map(renderLiveBlock);
@@ -595,10 +601,10 @@ export function Markdown({
     }
     // During a live stream, hold back an incomplete trailing table row so the
     // table never paints half-formed rows with cut borders.
-    const processed = convertLatexToUnicode(content);
+    const processed = convertLatexToUnicode(source);
     const res = marked.parse(processed, { async: false });
     return res;
-  }, [content, live]);
+  }, [content, live, demoteHeadings]);
 
   const liveBlocks = live && typeof html !== 'string' ? (html as { __html: string }[]) : null;
 
@@ -653,6 +659,32 @@ export function Markdown({
         )}
     </div>
   );
+}
+
+/** Shift every ATX heading one level down (`# Title` → `## Title`), capped at
+ *  h6, and never inside a fenced code block.
+ *
+ *  A drafted skill body, a memory file and a release note are each a whole
+ *  document that legitimately starts at `#` — but the settings dialog renders
+ *  them as CONTENT under a titlebar that owns the only h1. A level-1 heading
+ *  inside the dialog is the exact §4.4 defect the section sweep closed for
+ *  hand-written JSX, re-introduced through markdown. Code fences are skipped so
+ *  a shell comment (`# run ngspice -b deck.cir`) is not rewritten. Setext form
+ *  (`Title` + `=====`) is not shifted: the authoring spec emits ATX only.
+ */
+export function demoteMarkdownHeadings(src: string): string {
+  let inFence = false;
+  return src
+    .split('\n')
+    .map((line) => {
+      if (/^\s{0,3}(```|~~~)/.test(line)) {
+        inFence = !inFence;
+        return line;
+      }
+      if (inFence) return line;
+      return line.replace(/^(\s{0,3})(#{1,5})(?=\s)/, (_all, ws: string, hashes: string) => `${ws}${hashes}#`);
+    })
+    .join('\n');
 }
 
 // eslint-disable-next-line react-refresh/only-export-components

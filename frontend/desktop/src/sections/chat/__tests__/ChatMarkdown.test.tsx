@@ -1,7 +1,7 @@
 import { render } from '@testing-library/react';
 import katex from 'katex';
 import { describe, it, expect, vi } from 'vitest';
-import { Markdown } from '../ChatMarkdown';
+import { Markdown, demoteMarkdownHeadings } from '../ChatMarkdown';
 
 describe('ChatMarkdown Component', () => {
   it('does not paint an incomplete trailing table row while streaming (live=true)', () => {
@@ -287,5 +287,34 @@ $$\nu_{${nonce}} = 1$$`} live={true} />,
     expect(spy.mock.calls.length).toBeGreaterThan(coldCalls);
 
     spy.mockRestore();
+  });
+});
+
+describe('demoteMarkdownHeadings — an authored document inside a dialog', () => {
+  it('shifts ATX headings one level and stops at h6', () => {
+    expect(demoteMarkdownHeadings('# Title')).toBe('## Title');
+    expect(demoteMarkdownHeadings('## Section\n### Sub')).toBe('### Section\n#### Sub');
+    expect(demoteMarkdownHeadings('###### Deepest')).toBe('###### Deepest');
+    // Up to three leading spaces is still a heading; a `#` with no space isn't.
+    expect(demoteMarkdownHeadings('   # Indented')).toBe('   ## Indented');
+    expect(demoteMarkdownHeadings('#Title')).toBe('#Title');
+  });
+
+  it('never rewrites a line inside a code fence', () => {
+    const deck = ['# Run', '', '```bash', '# the comment line, not a heading', 'ngspice -b rc.cir', '```'].join('\n');
+    const out = demoteMarkdownHeadings(deck);
+    expect(out.split('\n')[0]).toBe('## Run');
+    expect(out).toContain('# the comment line, not a heading');
+    expect(out).not.toContain('## the comment line');
+  });
+
+  it('renders the shifted document when the flag is set', () => {
+    const { container } = render(<Markdown content={'# Title\nbody'} demoteHeadings />);
+    expect(container.querySelector('h1')).toBeNull();
+    expect(container.querySelector('h2')?.textContent).toContain('Title');
+    // …and without the flag the document keeps its own level (chat side, where
+    // a message IS the top of its own tree).
+    const plain = render(<Markdown content={'# Title\nbody'} />);
+    expect(plain.container.querySelector('h1')?.textContent).toContain('Title');
   });
 });

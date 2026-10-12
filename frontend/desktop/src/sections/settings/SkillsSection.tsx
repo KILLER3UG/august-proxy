@@ -873,7 +873,7 @@ export function SkillsSection() {
                 <h3 className="mb-2 text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55">
                   Instructions
                 </h3>
-                <Markdown content={selected.instructions || '_No instructions body._'} />
+                <Markdown content={selected.instructions || '_No instructions body._'} demoteHeadings />
               </section>
 
               {/* Audit #13: what this file used to say. Read-only, and it is

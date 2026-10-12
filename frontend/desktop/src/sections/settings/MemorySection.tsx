@@ -1711,7 +1711,7 @@ function ProjectFilePane({
           className="markdown-content text-[0.8125rem] leading-relaxed text-foreground/90"
           data-testid="memory-file-text"
         >
-          <Markdown content={fileQ.data.text ?? ''} />
+          <Markdown content={fileQ.data.text ?? ''} demoteHeadings />
         </div>
       )}
     </div>
@@ -2370,7 +2370,7 @@ function DetailView({
                 Details
               </p>
               <div className="mt-0.5">
-                <Markdown content={details} />
+                <Markdown content={details} demoteHeadings />
               </div>
             </div>
           )}
