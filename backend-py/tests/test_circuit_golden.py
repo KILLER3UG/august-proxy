@@ -1033,8 +1033,19 @@ end rtl;
         pins={'A': 'PIN_23', 'B': 'PIN_25', 'Y': 'PIN_99'},
         workspace=str(tmp_path)))
     log_tail = r.get('logTail', '')
-    if not r.get('ok') and 'Specified license file does not exist.' in log_tail:
-        pytest.skip('Quartus is installed but no usable license is available')
+    # No usable license is an ENVIRONMENT fact and the test says so by skipping.
+    # Quartus 18.1 reports it as 'Specified license is not valid for this
+    # machine.' where older builds said 'Specified license file does not exist.',
+    # and only the second string was matched here — so a machine without a
+    # license failed the suite instead of standing down, which reads as a broken
+    # FPGA flow. Skipping is honest only because it names what went unverified.
+    _no_license = (
+        'Specified license file does not exist.',
+        'Specified license is not valid for this machine',
+        'Error (292028)',
+    )
+    if not r.get('ok') and any(m in log_tail for m in _no_license):
+        pytest.skip('Quartus is installed but no usable license is available — golden compile unverified')
     assert r.get('ok') is True, log_tail or r
     fit = r['fit']
     assert fit['status'].startswith('Successful')
