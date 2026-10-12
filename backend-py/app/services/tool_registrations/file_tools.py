@@ -941,7 +941,16 @@ async def _listDirectory(path: str) -> str:
                 return cached
     except Exception:
         pass
-    dirPath, err = bind_path(path, _workspace(), for_write=False)
+    from app.services.sandbox.paths import listable_entry, listable_root
+
+    # The agent's own directory lister, and the fourth door asked for the same
+    # answer the HTTP file tree gives. It used to call `bind_path` and `iterdir`
+    # the result, which passes `~/.ssh` for a folderless session (home is an
+    # implicit READ root) because the credential-store rule lives in
+    # `is_credential_directory`, not in `bind_path` — so the tool printed every
+    # key name and size the two web doors refuse to name. Measured before the
+    # change: `file id_ed25519 … 20 bytes`.
+    dirPath, err = listable_root(path, _workspace())
     if err or dirPath is None:
         return err or f'Error: Invalid path: {path}'
     if not dirPath.exists():
@@ -951,6 +960,10 @@ async def _listDirectory(path: str) -> str:
     try:
         entries = []
         for entry in sorted(dirPath.iterdir()):
+            # Per child, not just per root: listing the parent of a store must
+            # not name the store inside it.
+            if not listable_entry(str(entry)):
+                continue
             entryType = 'dir' if entry.is_dir() else 'file'
             size = entry.stat().st_size if entry.is_file() else 0
             entries.append(f'{entryType:4s} {entry.name:50s} {size:>10,} bytes')
@@ -1056,7 +1069,15 @@ async def _searchFiles(
     ws = _workspace()
     if path in ('', '.', None):
         path = ws or '.'
-    searchPath, err = bind_path(str(path), ws, for_write=False)
+    from app.services.sandbox.paths import listable_entry, listable_root
+
+    # The fifth door. `rg` is handed the resolved root and walks it itself, so
+    # the per-file hardline guard that would refuse `~/.ssh/id_rsa` never runs on
+    # that walk — the search never has to name the directory to leak it. Measured
+    # before the change: `search_files("PRIVATE KEY MATERIAL", path="~/.ssh")`
+    # returned `...\.ssh\id_ed25519:1:PRIVATE KEY MATERIAL`, which is the file's
+    # CONTENT, not just its name.
+    searchPath, err = listable_root(str(path), ws)
     if err or searchPath is None:
         return err or f'Error: Invalid path: {path}'
     if not searchPath.exists():
@@ -1095,6 +1116,11 @@ async def _searchFiles(
         if proc.returncode == 0:
             output = stdout.decode('utf-8', errors='replace')
             lines = [ln for ln in output.split('\n') if ln.strip()]
+            # Results are filtered on the PATH each line reports, so a store
+            # under a legitimate root cannot answer a query either. Checked on
+            # the path text rather than the filename: an rg line is
+            # `path:lineno:text`, and the path is what the guard is about.
+            lines = [ln for ln in lines if listable_entry(_rgLinePath(ln) or '')]
             total = len(lines)
             if total > cap:
                 lines = lines[:cap]
@@ -1103,6 +1129,18 @@ async def _searchFiles(
         return await _pySearchFiles(query, searchPath, glob=glob, type=type, cap=cap)
     except Exception:
         return await _pySearchFiles(query, searchPath, glob=glob, type=type, cap=cap)
+
+
+def _rgLinePath(line: str) -> 'str | None':
+    """The path portion of an `rg` output line (`path:lineno:text`).
+
+    Windows drive letters contain a colon, so the split is anchored on the
+    trailing `:digits:` rather than on the first colon — splitting on the first
+    colon returned `C` as the path for every absolute Windows result, which made
+    the guard check a single letter and pass it.
+    """
+    m = re.search(r'^(.*?):(\d+):', line)
+    return m.group(1) if m else None
 
 
 def _pySearchFilesSync(
@@ -1123,6 +1161,7 @@ def _pySearchFilesSync(
     results: list[str] = []
     filesScanned = 0
     needle = query.lower()
+    from app.services.sandbox.paths import listable_entry
     typeSuffix = ('.' + str(type).lstrip('.').lower()) if type else None
     isCancelled = getattr(cancelEvent, 'is_set', None)
     try:
@@ -1136,8 +1175,15 @@ def _pySearchFilesSync(
                 continue
             # Prune heavy/VCS dirs (rglob can't skip descent, so filter parts);
             # hidden dirs (.git, .venv, caches) are skipped by the dot check.
+            # The dot check happens to cover `.ssh`, and that is the problem: it
+            # is a NAME rule, not the credential rule, so a store the guard knows
+            # about by path (`.config/gh`, a directory renamed out of the dot
+            # convention) walks straight past it. Ask the same question the other
+            # four doors ask.
             parts = filePath.relative_to(searchPath).parts[:-1]
             if any((p.startswith('.') or p in _SEARCH_SKIP_DIRS for p in parts)):
+                continue
+            if not listable_entry(str(filePath)):
                 continue
             if typeSuffix and filePath.suffix.lower() != typeSuffix:
                 continue

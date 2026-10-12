@@ -488,6 +488,76 @@ class TestRetireDecisionIsDecidedOnce:
         c.execute("DELETE FROM facts WHERE fact_key = 'user:neighbour'")
         c.commit()
 
+    def test_a_failure_in_the_corrective_branch_leaves_no_open_savepoint(self, store, monkeypatch):
+        """The guard covers the whole unit, not just its first two statements.
+
+        The stale-evidence branch writes a SECOND claim (correcting our own
+        'approved' to 'rejected') and then RELEASEs. When only the claim plus the
+        fact UPDATE were inside the try, an error there escaped the handler with
+        `retire_decision` still open on the thread-local handle — and the next
+        unrelated `brain_commit` on that thread landed the spent 'approved' claim
+        over a fact that was never retired. That is the one state the whole
+        claim-before-write design says cannot exist, reached through the branch
+        written to prevent it.
+        """
+        import sqlite3
+
+        from app.services.memory_conn import conn as real_conn
+        from app.services.memory_store import consolidation, save_fact
+
+        store.save_fact('user:branch', {'fact': 'prefers something durable'}, kind='preference', title='Pref')
+        _backdate('user:branch', 300)
+        consolidation._retire_stale_memories()
+        pid = int(real_conn().execute(
+            "SELECT id FROM proposals WHERE proposal_type = 'retire-fact' "
+            "AND status = 'pending' ORDER BY id DESC LIMIT 1"
+        ).fetchone()['id'])
+        # Make the evidence stale so the flow takes the corrective branch, and
+        # make that branch's second claim raise.
+        from app.services.memory_store import touch_fact_usage
+
+        touch_fact_usage(['user:branch'])
+
+        calls = {'n': 0}
+        # `apply_retire_decision` imports the claim inside its own body, so the
+        # name to patch is the package attribute it reads at call time.
+        import app.services.memory_store as ms
+
+        real_claim = ms.claim_proposal_decision
+
+        def claim_then_boom(conn, proposal_id, status, decidedBy='', from_status='pending'):
+            calls['n'] += 1
+            if calls['n'] == 2:
+                raise sqlite3.OperationalError('second claim failed (simulated)')
+            return real_claim(conn, proposal_id, status, decidedBy, from_status)
+
+        monkeypatch.setattr(ms, 'claim_proposal_decision', claim_then_boom)
+        res = consolidation.apply_retire_decision(pid, approve=True)
+        monkeypatch.undo()
+
+        assert res['ok'] is False, res
+        assert 'simulated' in str(res['error'])
+        assert not real_conn().in_transaction, (
+            'the savepoint was left open — the next unrelated commit on this '
+            'thread would land the spent claim'
+        )
+        # Nothing of this decision survives to be committed by someone else.
+        status = str(real_conn().execute(
+            'SELECT status FROM proposals WHERE id = ?', (pid,)
+        ).fetchone()['status'])
+        assert status == 'pending', f'the failed branch left the proposal {status!r}'
+        # And an unrelated write on the same handle is not carrying our debris.
+        real_conn().execute(
+            "INSERT INTO facts (fact_key, fact_value, kind, title) "
+            "VALUES ('user:unrelated', '\"x\"', 'general', 'Unrelated')"
+        )
+        real_conn().commit()
+        assert str(real_conn().execute(
+            'SELECT status FROM proposals WHERE id = ?', (pid,)
+        ).fetchone()['status']) == 'pending', 'an unrelated commit published the retire claim'
+        real_conn().execute("DELETE FROM facts WHERE fact_key = 'user:unrelated'")
+        real_conn().commit()
+
     def test_a_stale_approval_closes_as_rejected_with_the_fact_recalled(self, store):
         """The one transition that is still allowed from a claim: correcting
         OUR OWN un-committed claim when the evidence turns out stale. Both

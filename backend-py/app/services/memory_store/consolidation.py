@@ -419,8 +419,17 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
     # the last COMMIT while telling the caller only this decision failed, so the
     # unrelated work vanishes silently. The savepoint bounds the undo to the
     # claim + UPDATE this function owns.
+    #
+    # EVERY statement of this unit is inside the try. The first version guarded
+    # only the claim and the fact UPDATE, so a failure in the corrective claim
+    # (the stale-evidence branch) or in the RELEASE left `retire_decision` open
+    # on the handle and let the exception escape — and the next unrelated
+    # `brain_commit` on that thread then persisted the spent 'approved' claim
+    # over a fact that was never retired, the exact state this function claims
+    # is impossible.
     sp = 'retire_decision'
     conn.execute(f'SAVEPOINT {sp}')
+    result: dict[str, Any]
     try:
         if not claim_proposal_decision(conn, proposal_id, 'approved', decidedBy):
             conn.execute(f'ROLLBACK TO SAVEPOINT {sp}')
@@ -435,6 +444,27 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
             "AND (? = '' OR COALESCE(NULLIF(last_used_at, ''), NULLIF(updated_at, ''), created_at) = ?)",
             (key, raw_kind, days, last_touch, last_touch),
         )
+        if not cur.rowcount:
+            # Evidence no longer holds. We own the claim, so correct it inside
+            # the same transaction: the proposal closes as rejected, the fact
+            # survives recalled, and one COMMIT makes that pair the only state a
+            # crash can leave behind.
+            claim_proposal_decision(
+                conn, proposal_id, 'rejected', decidedBy, from_status='approved',
+            )
+            conn.execute(f'RELEASE SAVEPOINT {sp}')
+            brain_commit(conn)
+            result = {
+                'ok': True,
+                'decision': 'rejected',
+                'retired': False,
+                'key': key,
+                'error': 'memory changed after this proposal was filed; it was closed without retiring the fact',
+            }
+        else:
+            conn.execute(f'RELEASE SAVEPOINT {sp}')
+            brain_commit(conn)
+            result = {'ok': True, 'decision': 'approved', 'retired': True, 'key': key}
     except Exception as exc:
         # The claim is already on this connection. Without an undo an
         # uncommitted 'approved' survives on the thread-local handle and the
@@ -448,32 +478,13 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
         except Exception:
             logger.debug('retire savepoint undo failed', exc_info=True)
         return {'ok': False, 'error': f'apply_retire_decision({proposal_id}): {exc}'}
-    if not cur.rowcount:
-        # Evidence no longer holds. We own the claim, so correct it inside the
-        # same transaction: the proposal closes as rejected, the fact survives
-        # recalled, and one COMMIT makes that pair the only state a crash can
-        # leave behind.
-        claim_proposal_decision(
-            conn, proposal_id, 'rejected', decidedBy, from_status='approved',
-        )
-        conn.execute(f'RELEASE SAVEPOINT {sp}')
-        brain_commit(conn)
-        return {
-            'ok': True,
-            'decision': 'rejected',
-            'retired': False,
-            'key': key,
-            'error': 'memory changed after this proposal was filed; it was closed without retiring the fact',
-        }
-    conn.execute(f'RELEASE SAVEPOINT {sp}')
-    brain_commit(conn)
     try:
         from app.services.memory_store.fact_retrieval import invalidate_fact_index
 
         invalidate_fact_index()
     except Exception:
         pass
-    return {'ok': True, 'decision': 'approved', 'retired': bool(cur.rowcount), 'key': key}
+    return result
 
 
 def _load_active_facts() -> list[dict[str, Any]]:
