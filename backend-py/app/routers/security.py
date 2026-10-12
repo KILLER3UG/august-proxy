@@ -206,8 +206,7 @@ async def workspace_files(path: str = Query('.', alias='path')):
     be scoped to a session workspace that may not exist yet. Containment
     therefore comes from the hardline guard and the user's allowlist.
     """
-    from app.services.sandbox.hardline import is_credential_directory
-    from app.services.sandbox.paths import bind_path
+    from app.services.sandbox.paths import listable_entry, listable_root
 
     # Check the RESOLVED path: the guard normalises `.`, a trailing separator
     # and a trailing space, so asking it about the raw query string let
@@ -217,16 +216,10 @@ async def workspace_files(path: str = Query('.', alias='path')):
     # probe and again for the real root, with identical arguments — so the
     # "TOCTOU" it appeared to have was an illusion, created by binding twice
     # rather than by anything changing underneath.
-    root, denial = bind_path(path, None, for_write=False)
-    probe = str(root) if root is not None else path
-    if is_credential_directory(probe):
-        # The read guard deliberately allows one non-secret member of `.ssh`
-        # (authorized_keys), so it cannot catch the directory itself — but
-        # enumerating the store is the entire secret set in one response.
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=403, detail='Refused: credential store is not listable')
-
+    #
+    # The probe now lives inside `listable_root`, because the @-mention picker
+    # is the same capability and must not be able to fall behind this door.
+    root, denial = listable_root(path, None)
     if denial or root is None:
         from fastapi import HTTPException
 
@@ -254,10 +247,10 @@ async def workspace_files(path: str = Query('.', alias='path')):
         # when the guard would allow the PARENT it sits in. Gating the request
         # path is not enough on its own: a cloned repo can carry a key at its
         # root, and the tree view would hand back its name and size. The guard
-        # is asked per entry, so the rule lives in exactly one place.
-        from app.services.sandbox.hardline import check_hardline_path, is_credential_directory
-
-        if is_credential_directory(str(entry)) or check_hardline_path(str(entry), for_write=False):
+        # is asked per entry, so the rule lives in exactly one place — and that
+        # place is shared with the @-mention picker, which recurses and so can
+        # walk straight into a store the root guard waved past.
+        if not listable_entry(str(entry)):
             continue
         try:
             files.append(

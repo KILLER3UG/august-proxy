@@ -660,14 +660,25 @@ async def workspaceFiles(sessionId: str = '', path: str = '', q: str = '', limit
     import os
     from pathlib import Path
 
+    from fastapi import HTTPException
+
+    from app.services.sandbox.paths import listable_entry, listable_root
+
     try:
-        if path:
-            root: Path | None = Path(path).expanduser()
-        else:
-            session = wb.getWorkbenchSession(sessionId) if sessionId else None
-            ws = as_str(getattr(session, 'workspacePath', '') or '') if session else ''
-            root = Path(ws).expanduser() if ws else None
-        if root is None or not root.is_dir():
+        # The mention picker is a directory listing, so it gets the SAME guard
+        # as `/api/workspace/files` — the same functions, `listable_root` and
+        # `listable_entry`, not a copy of them. It used to `expanduser()`
+        # whatever the query gave it and walk that, so the two doors answered
+        # 403 and 200 for one `~/.ssh`.
+        session = wb.getWorkbenchSession(sessionId) if sessionId else None
+        ws = as_str(getattr(session, 'workspacePath', '') or '') if session else ''
+        target = Path(path).expanduser() if path else (Path(ws).expanduser() if ws else None)
+        if target is None:
+            return {'results': []}
+        root, denial = listable_root(str(target), None if path else (ws or None))
+        if denial or root is None:
+            raise HTTPException(status_code=403, detail=denial or 'Path not permitted')
+        if not root.is_dir():
             return {'results': []}
         query = (q or '').strip().lower()
         results: list[str] = []
@@ -680,7 +691,9 @@ async def workspaceFiles(sessionId: str = '', path: str = '', q: str = '', limit
             dirnames[:] = [
                 d
                 for d in dirnames
-                if d.lower() not in ('.git', 'node_modules', 'dist', 'build', '.venv', '__pycache__')
+                if d.lower()
+                not in ('.git', 'node_modules', 'dist', 'build', '.venv', '__pycache__')
+                and listable_entry(os.path.join(dirpath, d))
             ]
             _JUNK_PREFIXES = ('ntuser.dat', 'ntuser.log', 'usrclass.dat')
             _JUNK_EXACT = ('thumbs.db', 'desktop.ini')
@@ -690,6 +703,8 @@ async def workspaceFiles(sessionId: str = '', path: str = '', q: str = '', limit
                 lname = name.lower()
                 if lname in _JUNK_EXACT or any(lname.startswith(p) for p in _JUNK_PREFIXES):
                     continue
+                if not listable_entry(os.path.join(dirpath, name)):
+                    continue
                 rel = os.path.relpath(os.path.join(dirpath, name), root).replace('\\', '/')
                 if query and query not in rel.lower():
                     continue
@@ -697,6 +712,12 @@ async def workspaceFiles(sessionId: str = '', path: str = '', q: str = '', limit
                 if len(results) >= max(1, min(limit, 200)):
                     return {'results': results}
         return {'results': results}
+    except HTTPException:
+        # The blanket catch below is for a listing that fails for boring reasons
+        # (a workspace that vanished mid-mention). A 403 is not one of them:
+        # swallowing it here would turn a refusal back into a 200, which is the
+        # exact asymmetry this guard replaced.
+        raise
     except Exception:
         return {'results': []}
 

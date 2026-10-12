@@ -199,6 +199,106 @@ class TestTheFileListerUsesTheSameGate:
         assert 'readme.md' in resp.text
 
 
+LIST_DOORS = pytest.mark.parametrize(
+    'door',
+    [
+        pytest.param('/api/workspace/files', id='tree'),
+        pytest.param('/api/workbench/workspace/files', id='mention-picker'),
+    ],
+)
+
+
+class TestBothListingDoorsShareOneGate:
+    """Two routes list directories, so two routes could disagree.
+
+    `/api/workbench/workspace/files` (the composer @-mention picker) took the
+    `path` query, `expanduser()`ed it and walked it with no containment at all,
+    while `/api/workspace/files` had been given the hardline + allowlist guard.
+    Same request, different verdict: 200 against 403 for one `~/.ssh`. They now
+    call one pair of functions (`sandbox.paths.listable_root` for the root,
+    `listable_entry` for each child), and a parametrized test over BOTH URLs is
+    what keeps them from drifting apart again — a single-door test is exactly
+    what let the divergence survive the first round of fixes.
+    """
+
+    @LIST_DOORS
+    @pytest.mark.asyncio
+    async def test_a_credential_directory_is_refused_by_both(self, door, client, tmp_path):
+        ssh = tmp_path / '.ssh'
+        ssh.mkdir()
+        (ssh / 'id_rsa').write_text('PRIVATE', encoding='utf-8')
+
+        resp = await client.get(door, params={'path': str(ssh)})
+        assert resp.status_code == 403, f'{door} -> {resp.status_code} {resp.text}'
+        assert 'id_rsa' not in resp.text
+
+    @LIST_DOORS
+    @pytest.mark.asyncio
+    async def test_a_refusal_reports_a_refusal(self, door, client, tmp_path):
+        """The picker swallows exceptions to keep typing responsive.
+
+        That blanket catch used to eat its own 403 and answer 200 with an empty
+        list, so a refusal was indistinguishable from "no matches" — and the
+        asymmetry this class exists to prevent looked fixed while still being
+        open. A denial must still reach the caller as a denial.
+        """
+        ssh = tmp_path / '.ssh'
+        ssh.mkdir()
+
+        resp = await client.get(door, params={'path': str(ssh)})
+        assert resp.status_code == 403, f'{door} -> {resp.status_code} {resp.text}'
+
+    @LIST_DOORS
+    @pytest.mark.asyncio
+    async def test_a_store_inside_an_allowed_parent_is_not_named(self, door, client, tmp_path):
+        """Asking for a listable parent must not reveal the store inside it."""
+        home = tmp_path / 'home'
+        (home / '.aws').mkdir(parents=True)
+        (home / '.aws' / 'credentials').write_text('KEY', encoding='utf-8')
+        (home / 'notes.md').write_text('# hi', encoding='utf-8')
+
+        resp = await client.get(door, params={'path': str(home)})
+        assert resp.status_code == 200, f'{door} -> {resp.status_code} {resp.text}'
+        assert 'notes.md' in resp.text
+        assert '.aws' not in resp.text
+        assert 'credentials' not in resp.text
+
+    @LIST_DOORS
+    @pytest.mark.asyncio
+    async def test_a_recursion_only_leak_is_still_closed(self, door, client, tmp_path):
+        """A secret below the requested root must not be named either.
+
+        Only the picker recurses, so this is where "we share the root guard" is
+        not enough on its own: the per-entry rule has to be shared too. The
+        tree door answers 200 with the store filtered out of its single level;
+        the picker must not walk into it at depth 2.
+        """
+        proj = tmp_path / 'proj'
+        (proj / 'src').mkdir(parents=True)
+        (proj / 'src' / 'main.py').write_text('print()', encoding='utf-8')
+        (proj / '.aws').mkdir()
+        (proj / '.aws' / 'credentials').write_text('KEY', encoding='utf-8')
+
+        resp = await client.get(door, params={'path': str(proj)})
+        assert resp.status_code == 200, f'{door} -> {resp.status_code} {resp.text}'
+        assert '.aws' not in resp.text
+        assert 'credentials' not in resp.text
+
+    @LIST_DOORS
+    @pytest.mark.asyncio
+    async def test_an_ordinary_directory_lists_in_both(self, door, client, tmp_path):
+        good = tmp_path / 'ordinary'
+        good.mkdir()
+        # Top level, because the tree door lists one level and the picker
+        # recurses — a nested file would pass one door and fail the other for
+        # reasons that have nothing to do with the gate under test.
+        (good / 'readme.md').write_text('# hi', encoding='utf-8')
+
+        resp = await client.get(door, params={'path': str(good)})
+        assert resp.status_code == 200, f'{door} -> {resp.status_code} {resp.text}'
+        assert 'readme.md' in resp.text
+
+
 class TestFolderlessSessionReadsHomeByDefault:
     """A folderless chat can use common personal files without opening every
     path on the machine. Extra roots and whole-computer access are explicit."""

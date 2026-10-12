@@ -200,6 +200,52 @@ def _allowlist_denied(
     )
 
 
+def listable_root(path: str, workspace: str | None = None) -> tuple[Path | None, str | None]:
+    """The one guard a directory-LISTING door runs, shared by every such door.
+
+    `/api/workspace/files` (the file tree) and `/api/workbench/workspace/files`
+    (the composer's @-mention search) are the same capability with different
+    URLs, and they had different policies: the first binds through `bind_path`
+    and refuses a credential store, the second called `Path(path).expanduser()`
+    and walked whatever it was given. Same target, one 403 and one 200 —
+    measured. A listing cannot leak file CONTENTS, but names and sizes of `~/.ssh`
+    ARE the secret set, which is exactly why the read guard treats the directory
+    itself as off-limits.
+
+    Returns `(root, denial)`; `denial` is a user-facing string when the caller
+    must refuse. Keeping this in one function is the point: two doors, one rule,
+    so the next listing endpoint cannot forget half of it.
+    """
+    from app.services.sandbox.hardline import is_credential_directory
+
+    root, denial = bind_path(path, workspace, for_write=False)
+    if denial or root is None:
+        return None, denial or 'Path not permitted'
+    if is_credential_directory(str(root)):
+        return None, 'Refused: credential store is not listable'
+    return root, None
+
+
+def listable_entry(path: str) -> bool:
+    """May this path be NAMED inside someone else's listing?
+
+    The per-child half of the same rule. Gating only the requested root leaves a
+    recursive lister free to walk INTO a store: `home/` is listable, so walking
+    `home/.aws` handed back `.aws/credentials` — the root guard passed and the
+    secret still shipped, because nothing asked about the entries. A cloned repo
+    can carry `id_rsa` at its root the same way.
+
+    Both listing doors call this, for the same reason they both call
+    `listable_root`: the rule is one rule, and two copies of it are two chances
+    to forget half.
+    """
+    from app.services.sandbox.hardline import check_hardline_path, is_credential_directory
+
+    if is_credential_directory(path):
+        return False
+    return check_hardline_path(path, for_write=False) is None
+
+
 def normalize_session_workspace(raw: object) -> str:
     """The workspace a session may bind, or ``''`` when it binds none.
 
