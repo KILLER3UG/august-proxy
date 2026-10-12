@@ -1092,3 +1092,55 @@ def test_k_coupling_and_semicolon_notes_are_not_devices():
     )
     assert not ct.lint_netlist(deck), ct.lint_netlist(deck)
     assert {e.ref for e in schematic.parse_elements(deck)} == {'V1', 'L1', 'L2'}
+
+
+def test_an_orphaned_continuation_is_not_a_device_card():
+    """A `+` line with nothing to attach to is a fragment, not a component.
+
+    `logical_lines` correctly keeps such a line on its own (nothing should vanish
+    silently), but `device_cards` then has to call it what it is. It did not, and
+    `read_netlist` — which takes the first whitespace token as a refdes, the way
+    SPICE does — reported a part named `+` with a node called `R1`, while the real
+    R1 was gone. The user's component list gained a component that exists in no
+    circuit and lost one that does.
+    """
+    from app.services.tools import circuit_tools as ct
+    from app.services.tools.netlist_text import device_cards
+
+    deck = 'demo\n* note\n+ R1 1 0 1k\nV1 1 0 5\n.end\n'
+    cards = device_cards(deck)
+    assert not any(c.startswith('+') for c in cards), cards
+    assert cards == ['V1 1 0 5'], cards
+
+    f = ct._find_element_span  # touched only to prove nothing else depends on it
+    assert f is not None
+    drawn = {e.ref for e in schematic.parse_elements(deck)}
+    assert '+' not in drawn and drawn == {'V1'}, drawn
+
+
+def test_the_linter_counts_the_same_nets_the_drawing_draws():
+    """`lint_netlist` kept its own node slicing after the readers converged.
+
+    `parts[1:-1]` was a guess at "drop the model name": it put a resistor's VALUE
+    in the node map (`R1 out n2 1k` counted `1k` as a net) and, with a zero-ohm
+    part — `R1 a b 0`, which ngspice rejects — counted `0`, so the deck reported a
+    ground the circuit does not have. The node map exists only to answer "is there
+    a ground", which makes a phantom `0` the one answer it must never invent.
+    """
+    from app.services.tools import circuit_tools as ct
+
+    # No node 0 anywhere: the ground warning must fire.
+    warn = ct.lint_netlist('* d\nV1 a b DC 9\nR1 a b 0\nR2 b c 1k\n.end\n')
+    assert any('ground' in w.lower() for w in warn), (
+        f'a phantom ground silenced the check: {warn}'
+    )
+    # A parameterised resistor is valid; it must not be read as a bad value and
+    # its `tc=` must not be counted as a net.
+    clean = ct.lint_netlist(
+        '* d\nV1 in 0 DC 10\nR1 in out 1k tc=0,0.002\nR2 out 0 1k\n.end\n'
+    )
+    assert clean == [], clean
+    # A source keeps the keyword BEFORE its value, which is why "the last token"
+    # and "the first token after the nodes" are both wrong rules.
+    kw = ct.lint_netlist('* d\nV1 in 0 DC 9\nR1 in out 4k7\nR2 out 0 1k\n.end\n')
+    assert not any('does not parse' in w for w in kw), kw

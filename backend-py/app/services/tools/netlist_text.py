@@ -9,7 +9,6 @@ reasoning that put `listable_root` in `sandbox.paths`.
 from __future__ import annotations
 
 _CONTROL_CARDS = ('.control', '.c')
-_ENDC_CARDS = ('.endc', '.endc control', 'endc')
 
 
 def logical_lines(deck_text: str) -> list[str]:
@@ -104,6 +103,15 @@ def device_cards(deck_text: str, *, skip_title: bool = True) -> list[str]:
             in_control = True
             continue
         if s.startswith(('*', ';', '.')):
+            continue
+        if s.startswith('+'):
+            # An orphaned continuation: `logical_lines` keeps a `+` line on its own
+            # when nothing owns it (after a comment, after a blank, or as the first
+            # content in the file). It is not a card — it is a fragment of one. The
+            # first cut of this function let it through, and `read_netlist`, which
+            # takes the first whitespace token as a refdes like the rest of SPICE
+            # does, reported a part called `+` with node `R1`: the real R1 vanished
+            # and an invented component appeared in the user's component list.
             continue
         if skip_title and i == 0:
             # The title card. `logical_lines` keeps it at index 0 exactly so this

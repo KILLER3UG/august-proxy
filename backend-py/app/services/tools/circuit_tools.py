@@ -1037,35 +1037,52 @@ def lint_netlist(text: str) -> list[str]:
         ref = parts[0]
         prefix = ref[0].upper()
         need = _sch.min_node_count(prefix, parts[1:])
-        nodes = parts[1:-1] if len(parts) > need else parts[1:]
+        # ONE arity rule, from the module the drawing uses. This used to be
+        # `parts[1:-1] if len(parts) > need else parts[1:]`, which is a guess at
+        # "drop the model name": it counted a resistor's VALUE as a net
+        # (`R1 out n2 1k tc=0,0.002` put `1k` in the node map) and, worse, put the
+        # MODEL name in it for the 4-terminal cards. The node map feeds the
+        # "no ground" check, so a phantom `0` (`R1 a b 0` — a zero-ohm part, which
+        # ngspice rejects) reported a ground the circuit does not have.
+        nodes = parts[1 : 1 + _sch.node_count(prefix, parts[1:])]
         for nd in nodes:
             node_counts[nd] = node_counts.get(nd, 0) + 1
         if prefix in ('V', 'I'):
             saw_source = True
         # Value sanity
         if len(parts) >= 3 and prefix in ('R', 'C', 'L', 'V', 'I'):
-            val = parse_spice_value(parts[-1])
+            # The value is a token AFTER the node list that is not a `k=v` model
+            # parameter. `parts[-1]` was the old guess and it is wrong in the other
+            # direction for the other common shape: `R1 out n2 1k tc=0,0.002` told
+            # the user their 1k resistor "does not parse as a SPICE number", a
+            # false error on a deck that simulates, on the one surface whose job is
+            # to catch real ones. Taking the LAST non-parameter token keeps both:
+            # `V1 in 0 DC 9` has its keyword BEFORE the value, and a trailing `tc=`
+            # is not a value at all.
+            _positional = [t for t in parts[1 + need :] if '=' not in t]
+            valueTok = _positional[-1] if _positional else parts[-1]
+            val = parse_spice_value(valueTok)
             if val is None:
                 warnings.append(
-                    f'{ref}: value {parts[-1]!r} does not parse as a SPICE '
+                    f'{ref}: value {valueTok!r} does not parse as a SPICE '
                     'number (use e.g. 4.7k, 100u, 22n).'
                 )
             elif val <= 0 and prefix in ('R', 'C', 'L'):
                 warnings.append(f'{ref}: {prefix} value must be positive.')
             elif prefix == 'R' and 0 < val < 1:
                 warnings.append(
-                    f'{ref}: resistance {parts[-1]} parses to {val} Ω — did '
+                    f'{ref}: resistance {valueTok} parses to {val} Ω — did '
                     'you mean Meg? In SPICE "M" is milli, "Meg" is mega '
                     '(KiCad manual: Assigning models).'
                 )
             elif prefix == 'C' and val >= 1:
                 warnings.append(
-                    f'{ref}: capacitance {parts[-1]} parses to {val} F — '
+                    f'{ref}: capacitance {valueTok} parses to {val} F — '
                     'likely a missing u/n/p suffix.'
                 )
-            if val is not None and is_kicad_infix(parts[-1]):
+            if val is not None and is_kicad_infix(valueTok):
                 warnings.append(
-                    f'{ref}: value {parts[-1]!r} is KiCad infix — normalized '
+                    f'{ref}: value {valueTok!r} is KiCad infix — normalized '
                     f'to {val:g}; prefer plain SPICE form (e.g. 4.7k) in '
                     'decks. Note: infix M means mega, m means milli.'
                 )
