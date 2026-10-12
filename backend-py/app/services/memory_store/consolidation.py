@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import re
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -22,6 +23,7 @@ from app.json_narrowing import as_int, as_str
 from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 from app.services.memory_conn import db_path as _db_path
+from app.services.memory_conn import poison
 from app.services.memory_store.rest import PROFILE_FACT_KIND
 
 logger = logging.getLogger('august.consolidation')
@@ -427,7 +429,11 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
     # `brain_commit` on that thread then persisted the spent 'approved' claim
     # over a fact that was never retired, the exact state this function claims
     # is impossible.
-    sp = 'retire_decision'
+    # A unique name, not a constant. `SAVEPOINT x` with an existing `x` shadows
+    # the outer one and `RELEASE x` then pops the INNER one, so two units sharing
+    # a name on one handle undo each other's boundaries. Nothing nests a retire
+    # today; the collision is one refactor away and is silent when it happens.
+    sp = f'retire_decision_{uuid.uuid4().hex}'
     conn.execute(f'SAVEPOINT {sp}')
     result: dict[str, Any]
     try:
@@ -507,6 +513,30 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
                         're-read the proposal before deciding again'
                     ),
                 }
+            # A transaction is still open and the unit inside it is still
+            # uncommitted, so `ok: False` alone is a lie by omission: it says
+            # "nothing changed", and nothing HAS changed — on disk. On this
+            # thread-local handle the spent 'approved' claim is pending, and the
+            # next unrelated `brain_commit` on the same thread publishes it. The
+            # only thing that makes "nothing changed" true is taking the unit out
+            # of the transaction before that commit runs, which is what
+            # `memory_conn.poison` arranges: the undo moves to the commit path,
+            # where it cannot be skipped.
+            #
+            # The verdict is `unknown`, not `False`, for the caller: a retry of a
+            # decision whose fate is unknown turns the spent claim into a second,
+            # different write, so the row — not this response — has to be re-read
+            # before anything is decided again.
+            poison(conn, sp)
+            return {
+                'ok': False,
+                'decision': 'unknown',
+                'retired': None,
+                'pending': True,
+                'key': key,
+                'error': f'apply_retire_decision({proposal_id}): {exc}; the unit was taken out of '
+                'this thread\'s pending transaction and will not be committed',
+            }
         return {'ok': False, 'error': f'apply_retire_decision({proposal_id}): {exc}'}
     try:
         from app.services.memory_store.fact_retrieval import invalidate_fact_index

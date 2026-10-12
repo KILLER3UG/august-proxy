@@ -16,6 +16,8 @@ and the memory UI no longer surface it.
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 
@@ -671,3 +673,217 @@ class TestRetireCommitFailure:
         # failure is reported inside `error`, not as `ok: False`.
         assert str(res['decision']) == 'approved', res
         assert res['retired'] is True, res
+
+
+class _UndoRefuses:
+    """A connection that delegates everything and refuses only the undo.
+
+    `sqlite3.Connection` will not let a test replace `execute` on the instance,
+    and the double failure this has to reproduce — COMMIT raises AND the
+    savepoint rollback raises — is exactly the state where the unit is still
+    pending on the thread-local handle. Every other call goes to the real
+    connection, including `commit()` and `rollback()`, so the object under test
+    behaves like the handle it stands in for.
+    """
+
+    def __init__(self, inner):
+        self._inner = inner
+        # Names this wrapper was asked to undo, so a test can see which savepoint
+        # each unit took out.
+        self.undoNames: list = []
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def execute(self, sql, *args, **kwargs):
+        head = ' '.join(sql.split()[:2]).upper()
+        if head in ('ROLLBACK TO', 'RELEASE SAVE'):
+            self.undoNames.append(sql.split()[-1])
+            raise sqlite3.OperationalError('undo refused (simulated)')
+        return self._inner.execute(sql, *args, **kwargs)
+
+
+class _NothingUndoes(_UndoRefuses):
+    """…and the last resort fails too: no savepoint, no transaction rollback."""
+
+    def rollback(self):
+        raise sqlite3.OperationalError('rollback refused (simulated)')
+
+
+class TestAPoisonedUnitCannotLandLater:
+    """When the undo itself fails, the unit must not ride into the next commit.
+
+    `apply_retire_decision` reports `ok: False`, and `ok: False` means "nothing
+    changed" to the caller — which is true on disk and false on the handle: the
+    spent 'approved' claim and the fact UPDATE are still uncommitted, and the
+    NEXT unrelated `brain_commit` on this thread publishes them. Measured before
+    the fix: both failures injected, then one unrelated INSERT and commit, and
+    the durable database came back with `proposals.status = 'approved'` over a
+    fact that was never retired — a decision that can never be re-decided
+    because the claim is spent.
+
+    So the undo moves to the one place that runs before every durable write.
+    """
+
+    def _file(self, store, key: str) -> int:
+        from app.services.memory_conn import conn
+
+        store.save_fact(key, {'fact': 'prefers something durable'}, kind='preference', title='Pref')
+        _backdate(key, 300)
+        from app.services.memory_store import consolidation
+
+        consolidation._retire_stale_memories()
+        return int(
+            conn().execute(
+                "SELECT id FROM proposals WHERE proposal_type = 'retire-fact' "
+                "AND status = 'pending' ORDER BY id DESC LIMIT 1"
+            ).fetchone()['id']
+        )
+
+    def _durable(self, brainFile: str) -> sqlite3.Connection:
+        """A separate handle: the thread-local one sees its OWN uncommitted rows."""
+        c = sqlite3.connect(brainFile, timeout=10)
+        c.row_factory = sqlite3.Row
+        return c
+
+    def test_the_report_says_pending_and_the_handle_is_marked(self, store, monkeypatch):
+        import app.services.memory_conn as mc
+        from app.services.memory_store import consolidation
+
+        pid = self._file(store, 'user:doublefail')
+        fake = _UndoRefuses(mc.conn())
+        monkeypatch.setattr(consolidation, '_conn', lambda: fake)
+
+        def boom(_conn):
+            raise sqlite3.OperationalError('database is locked (simulated)')
+
+        monkeypatch.setattr(consolidation, 'brain_commit', boom)
+        res = consolidation.apply_retire_decision(pid, approve=True)
+        # Read the path BEFORE the undo: `isolatedData` patches the environment on
+        # this same monkeypatch instance, so `monkeypatch.undo()` takes the data
+        # directory away with it, and anything that resolves a path afterwards
+        # trips the live-data-dir guard.
+        brainFile = str(mc.db_path())
+        monkeypatch.undo()
+
+        assert res['ok'] is False, res
+        # `unknown`, not `rejected`/`approved`: a retry of a decision whose fate
+        # is unknown turns the spent claim into a second, different write.
+        assert str(res.get('decision')) == 'unknown', res
+        assert res.get('pending') is True, res
+        assert getattr(mc._local, 'poison_conn', None) is fake
+        name = str(getattr(mc._local, 'poison_savepoint', '') or '')
+        assert name.startswith('retire_decision_'), name
+
+        # And the mark is not decorative: the next unrelated commit on this
+        # handle runs the undo first, so the decision never lands.
+        fake.execute(
+            "INSERT INTO facts (fact_key, fact_value, kind, title) "
+            "VALUES ('user:doublefail_neighbour', '\"x\"', 'general', 'Neighbour')"
+        )
+        mc.commit(fake)
+        fresh = self._durable(brainFile)
+        try:
+            assert str(fresh.execute(
+                "SELECT status FROM proposals WHERE id = ?", (pid,)
+            ).fetchone()['status']) == 'pending', 'a failed decision became durable'
+            assert str(fresh.execute(
+                "SELECT status FROM facts WHERE fact_key = 'user:doublefail'"
+            ).fetchone()['status']) == 'active', 'the fact was retired by a failed decision'
+            # The savepoint could not be rolled back, so the fallback dropped the
+            # whole open transaction — the neighbour with it. Uncommitted work is
+            # already not durable; a decision that was never applied is not
+            # something the next writer gets to publish by accident.
+            assert not fresh.execute(
+                "SELECT 1 FROM facts WHERE fact_key = 'user:doublefail_neighbour'"
+            ).fetchone()
+        finally:
+            fresh.close()
+
+    def test_each_unit_names_its_own_savepoint(self, store, monkeypatch):
+        """Two retires cannot share one savepoint name.
+
+        `SAVEPOINT x` with an `x` already open shadows it, and `RELEASE x` then
+        pops the INNER one — so a constant name means a second unit undoes the
+        first one's boundary instead of its own. Nothing nests a retire today;
+        the collision is one refactor away, silent when it happens, and the only
+        thing that prevents it is the name being per-call.
+        """
+        import app.services.memory_conn as mc
+        from app.services.memory_store import consolidation
+
+        pids = [self._file(store, f'user:nest{i}') for i in range(2)]
+        fake = _UndoRefuses(mc.conn())
+        monkeypatch.setattr(consolidation, '_conn', lambda: fake)
+
+        def boom(_conn):
+            raise sqlite3.OperationalError('database is locked (simulated)')
+
+        monkeypatch.setattr(consolidation, 'brain_commit', boom)
+        for pid in pids:
+            res = consolidation.apply_retire_decision(pid, approve=True)
+            assert res.get('pending') is True, res
+            # Each refusal clears its own marker before the next unit takes one,
+            # so a stale name cannot be handed to a later commit.
+            mc._local.poison_savepoint = None
+            mc._local.poison_conn = None
+        monkeypatch.undo()
+        assert len(set(fake.undoNames)) == 2, f'both units named {fake.undoNames}'
+
+    def test_the_undo_is_bounded_when_the_savepoint_still_exists(self, store):
+        """The fallback above is the exception, not the rule.
+
+        With a live savepoint the poison takes out only its own unit and leaves
+        a stranger's uncommitted write on the same handle alone — which is the
+        whole reason the unit is a savepoint rather than a bare rollback.
+        """
+        import app.services.memory_conn as mc
+
+        c = mc.conn()
+        key = 'user:poison_bounded'
+        # The stranger is written FIRST, outside the savepoint: the point of the
+        # savepoint is that the undo cannot reach it, and an insert inside the
+        # unit is the unit.
+        c.execute(
+            "INSERT INTO facts (fact_key, fact_value, kind, title) "
+            "VALUES ('user:poison_neighbour', '\"y\"', 'general', 'Neighbour')"
+        )
+        c.execute('SAVEPOINT poison_unit')
+        c.execute(
+            "INSERT INTO facts (fact_key, fact_value, kind, title) VALUES (?, '\"x\"', 'general', 'Poison')",
+            (key,),
+        )
+        mc.poison(c, 'poison_unit')
+        # The unit is visible to its own handle before the commit…
+        assert c.execute('SELECT 1 FROM facts WHERE fact_key = ?', (key,)).fetchone()
+        mc.commit(c)
+        assert not c.execute('SELECT 1 FROM facts WHERE fact_key = ?', (key,)).fetchone(), (
+            'the poisoned unit survived its own commit'
+        )
+        assert c.execute("SELECT 1 FROM facts WHERE fact_key = 'user:poison_neighbour'").fetchone(), (
+            'the undo reached outside its savepoint and took a stranger with it'
+        )
+        assert getattr(mc._local, 'poison_savepoint', None) in (None, ''), 'the mark was not cleared'
+        c.execute("DELETE FROM facts WHERE fact_key = 'user:poison_neighbour'")
+        mc.commit(c)
+
+    def test_a_poison_that_cannot_be_cleared_refuses_the_commit(self, store):
+        """Neither undo running is not the same as nothing pending.
+
+        Committing in that state is how the decision lands, so `commit` raises
+        instead: a write that fails loudly is recoverable, a memory retired under
+        a proposal that reported failure is not.
+        """
+        import app.services.memory_conn as mc
+
+        fake = _NothingUndoes(mc.conn())
+        mc.poison(fake, 'poison_stuck')
+        try:
+            with pytest.raises(RuntimeError):
+                mc.commit(fake)
+        finally:
+            # The marker survives a refusal: dropping it is what would let the
+            # NEXT commit publish the unit.
+            assert str(getattr(mc._local, 'poison_savepoint', '') or '') == 'poison_stuck'
+            mc._local.poison_savepoint = None
+            mc._local.poison_conn = None

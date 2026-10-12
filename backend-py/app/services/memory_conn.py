@@ -210,12 +210,63 @@ def commit(c: sqlite3.Connection) -> None:
     A ``conftest`` conformance test (``test_brain_commits_are_routed``) fails
     when a direct ``.commit()`` reappears on a brain connection, because the
     guarantee is only as good as its completeness.
+
+    Commits also honour :func:`poison`: a unit a writer could not undo is undone
+    here, BEFORE this commit, or it lands as part of whatever unrelated write
+    happens to come next.
     """
+    undo_poison(c)
     try:
         c.commit()
     finally:
         note_commit()
         drainPendingCheckpoint(c)
+
+
+def poison(c: sqlite3.Connection, savepoint: str) -> None:
+    """Mark an un-undoable unit on THIS thread's handle.
+
+    A writer takes a SAVEPOINT so its undo cannot reach a stranger's uncommitted
+    work. When both the savepoint rollback and the connection raise, the unit is
+    still pending on the thread-local handle, and SQLite has no way to leave a
+    transaction open while excluding one savepoint from the next COMMIT: the
+    write that follows it on this thread publishes the decision nobody applied.
+    Recording the savepoint here moves that undo to the one place that runs
+    before every durable write — :func:`commit`.
+    """
+    _local.poison_conn = c
+    _local.poison_savepoint = savepoint
+
+
+def undo_poison(c: sqlite3.Connection) -> None:
+    """Roll back a poisoned unit before this commit is allowed to land it.
+
+    Raises when the unit can be neither rolled back nor the transaction cleared:
+    the alternative is committing a half-applied decision, and a write that
+    fails loudly is recoverable while a memory retired under a proposal that
+    reported failure is not.
+    """
+    name = getattr(_local, 'poison_savepoint', None)
+    if not name or getattr(_local, 'poison_conn', None) is not c:
+        return
+    try:
+        c.execute(f'ROLLBACK TO SAVEPOINT {name}')
+        c.execute(f'RELEASE SAVEPOINT {name}')
+    except Exception:
+        # The savepoint is gone or the handle will not take it. The only
+        # remaining way to be sure the unit cannot land is to drop the whole
+        # open transaction — losing whatever else this thread had staged but
+        # never committed. That loss is bounded and ordinary: uncommitted work
+        # is already not durable, and a killed desktop app loses it on every
+        # quit. The decision that was never applied is not.
+        logger.warning('poison savepoint undo failed; rolling the transaction back', exc_info=True)
+        try:
+            c.rollback()
+        except Exception:
+            logger.error('brain handle is poisoned and could not be cleared', exc_info=True)
+            raise RuntimeError('refused to commit: an un-undoable write unit is pending on this connection') from None
+    _local.poison_savepoint = None
+    _local.poison_conn = None
 
 
 def note_commit() -> None:
