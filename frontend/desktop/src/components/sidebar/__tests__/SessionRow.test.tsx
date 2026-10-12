@@ -74,7 +74,7 @@ describe('SessionRow has no second metadata line', () => {
   };
 
   it('renders one line for a chat that has been used', () => {
-    renderRow(makeSession(), { wb_123: delta(1234, 567) });
+    renderRow(makeSession(), { 'wb_123': delta(1234, 567) });
     metaAbsent();
   });
 
@@ -84,7 +84,7 @@ describe('SessionRow has no second metadata line', () => {
   });
 
   it('renders one line when totals are recorded as zero', () => {
-    renderRow(makeSession(), { wb_123: delta(0, 0) });
+    renderRow(makeSession(), { 'wb_123': delta(0, 0) });
     metaAbsent();
   });
 

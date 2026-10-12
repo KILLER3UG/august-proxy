@@ -48,7 +48,7 @@ async function renderList(n: number): Promise<HTMLElement> {
   const { container } = render(
     <VirtualizedMessageList
       messages={messages(n)}
-      scrollParentRef={{ current: parent } as never}
+      scrollParentRef={{ current: parent }}
       renderMessage={(m) => <div data-testid={`row-${m.id}`}>{m.content}</div>}
     />,
   );

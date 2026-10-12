@@ -568,7 +568,7 @@ def list_usage(*, limit: int = 200) -> list[dict[str, object]]:
 MAX_USAGE_BATCH_IDS = 250
 
 
-def get_usage_batch(sessionIds: Sequence[str]) -> dict[str, dict[str, object]]:
+def get_usage_batch(session_ids: Sequence[str]) -> dict[str, dict[str, object]]:
     """Input/output token totals for MANY sessions in ONE grouped query.
 
     The sidebar renders a ``+input / -output`` delta on every visible chat row.
@@ -584,7 +584,7 @@ def get_usage_batch(sessionIds: Sequence[str]) -> dict[str, dict[str, object]]:
     """
     ids: list[str] = []
     seen: set[str] = set()
-    for raw in sessionIds:
+    for raw in session_ids:
         sid = (raw or '').strip()
         if not sid or sid in seen:
             continue

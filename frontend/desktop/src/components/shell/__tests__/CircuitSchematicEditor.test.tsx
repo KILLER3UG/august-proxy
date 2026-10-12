@@ -91,7 +91,7 @@ describe('CircuitSchematicEditor', () => {
  * the backend emitted their third and fourth pins, so the live canvas and the
  * exported artifact showed different circuits. */
 describe('CircuitSchematicEditor — FET families draw from their own pins', () => {
-  const pin = (x: number, y: number) => ({ 0: x, 1: y }) as { 0: number; 1: number };
+  const pin = (x: number, y: number) => ({ 0: x, 1: y });
   const fetGraph = {
     components: [
       {

@@ -243,7 +243,7 @@ export function mapRemoteMessages(remote: unknown[]): ChatMessage[] {
      * a row whose id lived only inside `tool.id`, and a row carrying only
      * snake_case `tool_use_id` — the drop fired with no merge at all.
      * `consumedRows` is populated by the merge itself, so it cannot disagree. */
-    if (role === 'tool' && consumedRows.has(raw as object)) continue;
+    if (role === 'tool' && consumedRows.has(raw)) continue;
     let content = row.content;
     if (content && typeof content === 'object') {
       const c = content as Record<string, unknown>;

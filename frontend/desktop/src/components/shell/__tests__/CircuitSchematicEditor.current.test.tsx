@@ -307,7 +307,7 @@ describe('CircuitSchematicEditor — current flow is directional', () => {
           value: i === 0 ? '5' : c.value,
           nodes: i === 0 ? ['in', '0'] : c.nodes,
         })),
-      } as unknown as typeof divider;
+      };
       readSchematic.mockResolvedValue(g);
       const { unmount } = render(<CircuitSchematicEditor sessionId="s1" netlistPath="rc.cir" />);
       await screen.findByTestId('schematic-canvas');
