@@ -206,7 +206,7 @@ async def workspace_files(path: str = Query('.', alias='path')):
     be scoped to a session workspace that may not exist yet. Containment
     therefore comes from the hardline guard and the user's allowlist.
     """
-    from app.services.sandbox.paths import listable_entry, listable_root
+    from app.services.sandbox.paths import listable_child, listable_entry, listable_root
 
     # Check the RESOLVED path: the guard normalises `.`, a trailing separator
     # and a trailing space, so asking it about the raw query string let
@@ -250,7 +250,13 @@ async def workspace_files(path: str = Query('.', alias='path')):
         # is asked per entry, so the rule lives in exactly one place — and that
         # place is shared with the @-mention picker, which recurses and so can
         # walk straight into a store the root guard waved past.
-        if not listable_entry(str(entry)):
+        if entry.is_dir():
+            if not listable_entry(str(entry)):
+                continue
+        elif not listable_child(str(entry.parent), entry.name):
+            # The root this entry lives in already passed `listable_root`, so the
+            # file's own risk is its name. Resolving per entry here would be the
+            # @-mention picker's cost paid on a one-level list.
             continue
         try:
             files.append(

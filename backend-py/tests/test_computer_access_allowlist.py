@@ -286,6 +286,28 @@ class TestBothListingDoorsShareOneGate:
 
     @LIST_DOORS
     @pytest.mark.asyncio
+    async def test_a_key_lying_at_a_project_root_is_not_named(self, door, client, tmp_path):
+        """The file-side rule, on its own.
+
+        Files are judged by name (`listable_child`) rather than by re-resolving
+        their directory, because the picker walks a workspace on every keystroke
+        and the resolve is what made that slow. This is the case that proves the
+        cheaper rule still catches what matters: the store is not involved at all
+        — a cloned repo with `id_rsa` in its root is an ordinary listable
+        directory holding one file the read guard refuses to open.
+        """
+        proj = tmp_path / 'repo'
+        proj.mkdir()
+        (proj / 'id_rsa').write_text('PRIVATE KEY MATERIAL', encoding='utf-8')
+        (proj / 'app.py').write_text('print()', encoding='utf-8')
+
+        resp = await client.get(door, params={'path': str(proj)})
+        assert resp.status_code == 200, f'{door} -> {resp.status_code} {resp.text}'
+        assert 'app.py' in resp.text, f'{door} hid the ordinary file: {resp.text}'
+        assert 'id_rsa' not in resp.text, f'{door} named a private key: {resp.text}'
+
+    @LIST_DOORS
+    @pytest.mark.asyncio
     async def test_an_ordinary_directory_lists_in_both(self, door, client, tmp_path):
         good = tmp_path / 'ordinary'
         good.mkdir()

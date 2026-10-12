@@ -941,7 +941,11 @@ async def _listDirectory(path: str) -> str:
                 return cached
     except Exception:
         pass
-    from app.services.sandbox.paths import listable_entry, listable_root
+    from app.services.sandbox.paths import (
+        listable_child,
+        listable_entry,
+        listable_root,
+    )
 
     # The agent's own directory lister, and the fourth door asked for the same
     # answer the HTTP file tree gives. It used to call `bind_path` and `iterdir`
@@ -962,7 +966,12 @@ async def _listDirectory(path: str) -> str:
         for entry in sorted(dirPath.iterdir()):
             # Per child, not just per root: listing the parent of a store must
             # not name the store inside it.
-            if not listable_entry(str(entry)):
+            if entry.is_dir():
+                if not listable_entry(str(entry)):
+                    continue
+            elif not listable_child(str(entry.parent), entry.name):
+                # Name rule for a file, full rule for a directory — the parent was
+                # cleared by `listable_root` before this loop started.
                 continue
             entryType = 'dir' if entry.is_dir() else 'file'
             size = entry.stat().st_size if entry.is_file() else 0
@@ -1069,7 +1078,7 @@ async def _searchFiles(
     ws = _workspace()
     if path in ('', '.', None):
         path = ws or '.'
-    from app.services.sandbox.paths import listable_entry, listable_root
+    from app.services.sandbox.paths import listable_root
 
     # The fifth door. `rg` is handed the resolved root and walks it itself, so
     # the per-file hardline guard that would refuse `~/.ssh/id_rsa` never runs on
@@ -1120,7 +1129,7 @@ async def _searchFiles(
             # under a legitimate root cannot answer a query either. Checked on
             # the path text rather than the filename: an rg line is
             # `path:lineno:text`, and the path is what the guard is about.
-            lines = [ln for ln in lines if listable_entry(_rgLinePath(ln) or '')]
+            lines = [ln for ln in lines if _lineIsListable(_rgLinePath(ln))]
             total = len(lines)
             if total > cap:
                 lines = lines[:cap]
@@ -1129,6 +1138,21 @@ async def _searchFiles(
         return await _pySearchFiles(query, searchPath, glob=glob, type=type, cap=cap)
     except Exception:
         return await _pySearchFiles(query, searchPath, glob=glob, type=type, cap=cap)
+
+
+def _lineIsListable(path: 'str | None') -> bool:
+    """Keep an `rg` result line only if the file it names may be named at all.
+
+    The search root was cleared by `listable_root`, so the ancestor question is
+    already answered and this is the name rule — which is why it does not call the
+    directory-side guard that resolves.
+    """
+    from app.services.sandbox.paths import listable_child
+
+    if not path:
+        return False
+    p = Path(path)
+    return listable_child(str(p.parent), p.name)
 
 
 def _rgLinePath(line: str) -> 'str | None':
@@ -1161,7 +1185,7 @@ def _pySearchFilesSync(
     results: list[str] = []
     filesScanned = 0
     needle = query.lower()
-    from app.services.sandbox.paths import listable_entry
+    from app.services.sandbox.paths import listable_child
     typeSuffix = ('.' + str(type).lstrip('.').lower()) if type else None
     isCancelled = getattr(cancelEvent, 'is_set', None)
     try:
@@ -1183,7 +1207,7 @@ def _pySearchFilesSync(
             parts = filePath.relative_to(searchPath).parts[:-1]
             if any((p.startswith('.') or p in _SEARCH_SKIP_DIRS for p in parts)):
                 continue
-            if not listable_entry(str(filePath)):
+            if not listable_child(str(filePath.parent), filePath.name):
                 continue
             if typeSuffix and filePath.suffix.lower() != typeSuffix:
                 continue

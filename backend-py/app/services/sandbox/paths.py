@@ -227,23 +227,49 @@ def listable_root(path: str, workspace: str | None = None) -> tuple[Path | None,
 
 
 def listable_entry(path: str) -> bool:
-    """May this path be NAMED inside someone else's listing?
+    """May this DIRECTORY be named in a listing, and walked into?
 
     The per-child half of the same rule. Gating only the requested root leaves a
     recursive lister free to walk INTO a store: `home/` is listable, so walking
     `home/.aws` handed back `.aws/credentials` — the root guard passed and the
-    secret still shipped, because nothing asked about the entries. A cloned repo
-    can carry `id_rsa` at its root the same way.
+    secret still shipped, because nothing asked about the entries.
 
     Both listing doors call this, for the same reason they both call
     `listable_root`: the rule is one rule, and two copies of it are two chances
     to forget half.
+
+    This one resolves, and resolving is ~90µs — right for a directory (a tree has
+    tens of them, and the trailing-dot / trailing-space form must be normalised
+    before the name is judged, which is the exact bypass the first version of the
+    guard shipped with). It is the wrong shape for a FILE inside a directory this
+    function has already cleared; see `listable_child`.
     """
     from app.services.sandbox.hardline import check_hardline_path, is_credential_directory
 
     if is_credential_directory(path):
         return False
     return check_hardline_path(path, for_write=False) is None
+
+
+def listable_child(dirpath: str, name: str) -> bool:
+    """May this FILE be named, given its directory was already cleared?
+
+    The store rule is about the DIRECTORY (`is_credential_directory` refuses
+    `.aws` and its whole subtree), so once a lister has refused to enter every
+    ancestor, the file's own risk is its NAME: `id_rsa`, `credentials`,
+    `.google_workspace_mcp` token files. Those are the hardline patterns, which
+    are string matching — ~6µs against ~90µs for the resolve the directory needs.
+
+    Not a weaker rule, a rule placed where it applies: a file can only be reached
+    through a directory this module already said yes to, so the resolve would be
+    re-deriving an answer the caller has. The @-mention picker walks a workspace on
+    every keystroke of the search box, and at ~110µs an entry a 3,000-file folder
+    cost a third of a second per press — which is why this split exists rather
+    than a per-file `listable_entry`.
+    """
+    from app.services.sandbox.hardline import check_hardline_path
+
+    return check_hardline_path(f'{dirpath}{os.sep}{name}', for_write=False) is None
 
 
 def normalize_session_workspace(raw: object) -> str:

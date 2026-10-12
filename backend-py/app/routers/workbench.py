@@ -662,7 +662,7 @@ async def workspaceFiles(sessionId: str = '', path: str = '', q: str = '', limit
 
     from fastapi import HTTPException
 
-    from app.services.sandbox.paths import listable_entry, listable_root
+    from app.services.sandbox.paths import listable_child, listable_entry, listable_root
 
     try:
         # The mention picker is a directory listing, so it gets the SAME guard
@@ -703,7 +703,11 @@ async def workspaceFiles(sessionId: str = '', path: str = '', q: str = '', limit
                 lname = name.lower()
                 if lname in _JUNK_EXACT or any(lname.startswith(p) for p in _JUNK_PREFIXES):
                     continue
-                if not listable_entry(os.path.join(dirpath, name)):
+                # The directory this file sits in was cleared by `listable_entry`
+                # in the `dirnames` filter above, so the file's own risk is its
+                # name — and the name rule is `listable_child`, not a second
+                # resolve per file.
+                if not listable_child(dirpath, name):
                     continue
                 rel = os.path.relpath(os.path.join(dirpath, name), root).replace('\\', '/')
                 if query and query not in rel.lower():
