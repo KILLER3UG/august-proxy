@@ -267,6 +267,33 @@ exist — corrected Part 25 Phase 7.1.)
   is still readable — but it is finite, because the paged branch reads the file
   twice (text, then raw bytes for the `fileHash` the edit gate needs). Both
   numbers are guarded by `npm run check:docs`.
+- **Listing doors** — a credential store is **unlistable**, and that one rule is
+  asked at seven doors today: `security.py::workspace_files` (the route the composer's
+  @-mention picker and the session list call), `workbench.py::workspaceFiles`,
+  `file_tools._listDirectory`, `file_tools._searchFiles` (its root **and** every
+  result line), `file_tools._pySearchFilesSync` (the no-`rg` fallback), the
+  code-mode `list_files` in `workbench/code_runner.py`, and
+  `workbench/module_context._describe_directory`. Each calls
+  `sandbox.paths.listable_root` (a directory that is or lives inside a store) then
+  `listable_entry` / `listable_child` per entry — `is_credential_directory` matches
+  **any whole path component**, so `~/.ssh/keys` is refused, not just `~/.ssh`.
+  The file rule is name matching without a resolve, and it is safe **only** because
+  every lister clears its directory first; `tests/test_tool_listing_doors.py` pins
+  that boundary with a directory link, so a door that lists files without clearing
+  its directory fails there rather than in review. An eighth door is how the seventh
+  was found — do not add one, call the two helpers.
+- **Shell doors and the `.ssh` asymmetry** — `check_hardline_command` refuses a store
+  path only for a command that **enumerates** (`_ENUMERATING_COMMANDS`), because
+  `.ssh` is deliberately readable at one *named* non-secret member
+  (`authorized_keys`, `config`, `known_hosts`) while its contents may never be
+  walked. Globbing (`~/.ssh/*`) and copying a subtree out (`cp -r ~/.ssh/keys /tmp`)
+  are already refused by the read/write patterns, not by the store rule — measured,
+  and the tests name which rule holds. `backend-py/app/services/workbench/code_runner.py`
+  carries a **port** of this guard rendered into every code run (it cannot import
+  `app`); a new table or predicate in `sandbox/hardline.py` must be injected there
+  too, and `tests/test_code_runner_hardline.py` fails on the drift. The port must
+  probe the **resolved** path like `bind_path` does, or a workspace link into a
+  store reads the token.
 - **Gate participation** — every sandbox / permission / URL guard is an inline
   `if toolName in (...)` prologue at one call site, so an **alias or aggregate
   entry point is unguarded by default**. `bulk` routes `operation=<x>` to the
