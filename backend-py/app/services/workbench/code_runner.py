@@ -218,19 +218,27 @@ def _bind_write(path):
 
 
 def read_file(path):
-    _reason = _hardline_check_path(path, for_write=False)
+    # Bind FIRST, then ask the guard about the path the read actually lands on.
+    # `sandbox.paths.bind_path` does exactly this for the typed file tools
+    # (`check_hardline_path(str(resolved))`), and the port judged the raw string
+    # instead: a workspace entry that resolves into a store — a junction or
+    # symlink to `.aws`, the directory form Windows allows without privileges —
+    # read the token file while the same call through the `read_file` tool was
+    # refused. The name on the typed path is not the file that gets opened.
+    _resolved = _bind(path)
+    _reason = _hardline_check_path(str(_resolved), for_write=False)
     if _reason:
         raise PermissionError(_reason)
-    return _bind(path).read_text(encoding='utf-8', errors='replace')
+    return _resolved.read_text(encoding='utf-8', errors='replace')
 
 
 def write_file(path, content):
     if _SANDBOX_READ_ONLY:
         raise PermissionError('read-only sandbox blocks write_file')
-    _reason = _hardline_check_path(path, for_write=True)
+    p = _bind_write(path)
+    _reason = _hardline_check_path(str(p), for_write=True)
     if _reason:
         raise PermissionError(_reason)
-    p = _bind_write(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(str(content), encoding='utf-8')
     return 'ok'
@@ -402,10 +410,14 @@ _CREDENTIAL_READ_RE = _re.compile(__READ_PATTERN__, _re.IGNORECASE)
 _WRITE_VERB_RE = _re.compile(__WRITE_VERB__, _re.IGNORECASE)
 _ENV_TEMPLATE_RE = _re.compile(__ENV_TEMPLATE__, _re.IGNORECASE)
 _READER_CMDS = frozenset(__READERS__)
-# The credential-store directory sets, injected from `sandbox.hardline` — see
+# The credential-store directory sets, August's own secret files and the
+# enumerating verbs, all injected from `sandbox.hardline` — see
 # `_hardline_is_credential_store` for why they are here at all.
 _CRED_DIRS = tuple(__CRED_DIRS__)
 _STORE_DIRS = tuple(__STORE_DIRS__)
+_AUGUST_SECRETS = tuple(__AUGUST_SECRETS__)
+_ENUM_CMDS = frozenset(__ENUM_CMDS__)
+_AUGUST_SECRETS = tuple(__AUGUST_SECRETS__)
 _MUTATING_FLAG_RES = {
     _cmd: tuple(_re.compile(_p, _re.IGNORECASE) for _p in _flags)
     for _cmd, _flags in __MUTATING_FLAGS__.items()
@@ -427,12 +439,23 @@ def _hardline_store_reason(token):
     and `.config/gh/hosts.yml` are exactly the names no pattern list guesses, which
     is why the original matches on the directory. `test_read_path_parity` caught
     the gap when the corpus grew these paths.
+
+    The second half of the original is `_august_secret_files()` — August's own
+    `config.json`, which holds `serviceConnections.github.token` and a Google
+    `accessToken`. It was ported as a directory table and this call site only ever
+    read the directory half, so code mode could `read_file(<dataDir>/config.json)`
+    while every typed door refused the same path. The rule is the DATA DIRECTORY,
+    never the filename: `config.json` is ordinary in any project tree.
     """
-    _p = '/' + _hardline_canonical(str(token)).strip('"\\' + "'").strip('/') + '/'
+    _raw = str(token).strip('"\\' + "'")
+    _canon = _hardline_canonical(_raw)
+    _p = '/' + _canon.strip('/') + '/'
     _p = _p.lower()
     for _store in _STORE_DIRS:
         if '/' + _store + '/' in _p:
             return _store
+    if _canon.lower() in _AUGUST_SECRETS:
+        return "August's own credential store"
     return None
 
 
@@ -448,19 +471,18 @@ def _hardline_is_credential_store(token):
       * `_CREDENTIAL_STORES` (`.aws`, `.docker`, `.config/gh`, …) — unlistable
         ROOT **and subtree**, via `_hardline_store_reason`.
 
-    Matching is on whole path components, padded, so `.aws-sdk` is not `.aws`. The
-    tables are injected from the module that owns them: a store added there is
-    honoured here without a second copy being remembered.
-
-    One deliberate difference: the original resolves the path first, because
-    `.ssh/`, `.ssh/.` and `.ssh ` are three spellings of one directory. A trailing
-    separator is stripped here and `list_files` hands this the already-resolved
-    path from `_bind`.
+    The directory half matches on WHOLE components too, not on the last one. The
+    first port took the last segment and called the missing `resolve()` a
+    deliberate difference, because `list_files` hands it an already-resolved path
+    — but `run_command` hands it the model's raw tokens, and `<home>/.ssh/.` is the
+    same directory as `<home>/.ssh` with a segment the old rule judged instead of
+    the directory it named. Any component of the path being a store is the store,
+    which is also what the directory rule now says on the original side.
     """
     if _hardline_store_reason(token):
         return True
     _segs = [s for s in _hardline_canonical(str(token)).strip('"\\' + "'").lower().split('/') if s]
-    return bool(_segs) and _segs[-1] in _CRED_DIRS
+    return any(_seg in _CRED_DIRS for _seg in _segs)
 
 
 def _hardline_is_write_intent(command):
@@ -487,10 +509,32 @@ def _hardline_is_write_intent(command):
     return False
 
 
+def _hardline_enumerates(command):
+    """Port of hardline._enumerates_a_directory: is some segment's verb a listing?
+
+    The store-directory rule is a LISTING rule, and `is_credential_directory` now
+    matches a store's whole subtree. Asked of every token of every command it
+    refuses `cat ~/.ssh/authorized_keys`, which is the one member the read rule
+    deliberately keeps — so the gate belongs on the verbs that enumerate, exactly
+    as it does on the side this mirrors.
+    """
+    for _seg in _re.split(r'[;&|]{1,2}', command):
+        _toks = [t.strip('"\'').strip() for t in _re.split(r'\s+', _seg) if t.strip()]
+        if not _toks:
+            continue
+        _first = _toks[0].split('/')[-1].split('\\')[-1].lower()
+        if _first in ('sudo', 'xargs', 'env', 'command', 'time', 'nice') and len(_toks) > 1:
+            _first = _toks[1].split('/')[-1].split('\\')[-1].lower()
+        if _first in _ENUM_CMDS:
+            return True
+    return False
+
+
 def _hardline_check_command(command):
     if not command or not command.strip():
         return None
     _write = _hardline_is_write_intent(command)
+    _lists = _hardline_enumerates(command)
     for _raw in _re.split(r'\s+', command):
         _tok = _hardline_canonical(_raw).strip('"\'')
         _lower = _tok.lower()
@@ -501,7 +545,7 @@ def _hardline_check_command(command):
         _store = _hardline_store_reason(_tok)
         if _store:
             return 'hardline protected ' + _store + ' in command: ' + _raw
-        if _hardline_is_credential_store(_tok):
+        if _lists and _hardline_is_credential_store(_tok):
             return 'hardline credential store in command: ' + _raw
     return None
 
@@ -518,8 +562,7 @@ def _hardline_check_path(path, for_write):
     _store = _hardline_store_reason(str(path))
     if _store:
         return 'hardline protected ' + _store + ': ' + str(path)
-    # A credential DIRECTORY (`.ssh`) is refused by the LISTING doors, not here. A
-    # credential DIRECTORY is refused by the LISTING doors (`listable_root`,
+    # A credential DIRECTORY is refused by the LISTING doors (`listable_root`,
     # `list_files` below), while a named non-secret member of `.ssh` stays
     # readable — `read_file('~/.ssh/authorized_keys')` is a considered decision
     # the file-tool tests pin. Putting the rule in the path check here would make
@@ -589,6 +632,8 @@ def build_runner_source(
         .replace('__READERS__', repr(sorted(_hardline._READER_COMMANDS)))
         .replace('__CRED_DIRS__', repr(sorted(_hardline._CREDENTIAL_DIRECTORIES)))
         .replace('__STORE_DIRS__', repr(sorted(_hardline._CREDENTIAL_STORES)))
+        .replace('__AUGUST_SECRETS__', repr(sorted(_hardline._august_secret_files())))
+        .replace('__ENUM_CMDS__', repr(sorted(_hardline._ENUMERATING_COMMANDS)))
         .replace(
             '__MUTATING_FLAGS__',
             repr({k: tuple(p.pattern for p in v) for k, v in _hardline._MUTATING_FLAG_PATTERNS.items()}),

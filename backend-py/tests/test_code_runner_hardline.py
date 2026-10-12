@@ -47,6 +47,19 @@ _COMMAND_CORPUS = [
     'find ~/.ssh -type f',
     'ls ~/.config/gh',
     'ls $HOME/.gnupg',
+    # The store's SUBTREE, and its dot-segment spellings. The port took the LAST
+    # component and documented the missing `resolve()` as a deliberate difference
+    # on the grounds that `list_files` hands it an already-resolved path — but
+    # `run_command` hands it the model's raw tokens, so `<home>/.ssh/.` was one
+    # directory judged two ways.
+    'ls ~/.ssh/keys',
+    'ls ~/.ssh/.',
+    'ls ~/.ssh/keys/.',
+    'tree ~/.ssh/keys',
+    # A named FILE inside the store is the read rule's business, not the listing
+    # rule's. Asked of every token, the subtree rule refuses
+    # `cat ~/.ssh/authorized_keys` — the exception `.ssh` deliberately keeps.
+    'cat ~/.ssh/keys/vault.kdbx',
     # Look-alikes must stay allowed: the rule is a whole path component, and a
     # guard that cries wolf gets worked around.
     'ls .aws-sdk',
@@ -202,3 +215,101 @@ def test_code_mode_result_variable_capture():
         os.environ.update(saved2)
     assert 'hi' in buf2.getvalue()
     assert '[result]' not in buf2.getvalue()
+
+
+def test_a_link_into_a_store_does_not_reach_the_token() -> None:
+    """The guard asks about the path the read LANDS ON, not the name typed.
+
+    `read_file` probed the raw argument and then resolved it, while
+    `sandbox.paths.bind_path` — what the typed file tools use — resolves first
+    and asks second. A workspace entry that resolves into a credential store was
+    therefore readable through code mode and refused through the tool.
+
+    Directory links are made with `mklink /J` semantics on Windows (a junction,
+    which needs no privilege) and `os.symlink` elsewhere. If neither is
+    available, the test says so rather than passing quietly: the gap it covers
+    is real on the platforms that can make one.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    root = Path(tempfile.mkdtemp(prefix='august-link-'))
+    store = root / '.aws'
+    (store / 'sso' / 'cache').mkdir(parents=True)
+    secret = store / 'sso' / 'cache' / 'abc.json'
+    secret.write_text('{"accessToken": "TOK"}', encoding='utf-8')
+    link = root / 'workspace-entry'
+
+    made = None
+    if os.name == 'nt':
+        try:
+            import _winapi
+
+            _winapi.CreateJunction(str(store), str(link))
+            made = 'junction'
+        except (ImportError, OSError) as exc:
+            made = f'nt attempt failed: {exc}'
+    else:
+        try:
+            os.symlink(str(store), str(link))
+            made = 'symlink'
+        except OSError as exc:
+            made = f'posix attempt failed: {exc}'
+    if made not in ('junction', 'symlink'):
+        shutil.rmtree(root, ignore_errors=True)
+        pytest.skip(f'no unprivileged directory link on this host ({made})')
+
+    source = code_runner.build_runner_source(user_block='', workspace_path=str(root))
+    ns: dict = {}
+    saved = dict(os.environ)
+    try:
+        exec(compile(source, '<code_runner_link>', 'exec'), ns)  # noqa: S102
+        with pytest.raises(PermissionError):
+            ns['read_file']('workspace-entry/sso/cache/abc.json')
+        # Control: the same call on an ordinary file in the same workspace works.
+        (root / 'notes.txt').write_text('ordinary', encoding='utf-8')
+        assert ns['read_file']('notes.txt') == 'ordinary'
+        # And the listing door, which already resolved, refuses the link too.
+        with pytest.raises(PermissionError):
+            ns['list_files']('workspace-entry')
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_the_ports_third_table_is_the_one_that_names_augusts_own_tokens() -> None:
+    """`_august_secret_files()` is a THIRD hardline table, and the port copied two.
+
+    `config.json` in the data directory holds `serviceConnections.github.token`
+    and a Google `accessToken`. Its name is far too common to block machine-wide,
+    so the rule is the DATA DIRECTORY — which is a runtime path, not a pattern,
+    and the guard template injected the pattern tables and not this one. The typed
+    doors refused `<dataDir>/config.json` while code mode read it, on the surface
+    whose entire job is running commands.
+
+    The corpus is a static list and this path is not, so the injected tuple is
+    compared with the module's own and each entry is judged by both sides. Built
+    here rather than from the module-scoped `guardNs`: the data directory moves
+    between tests, and a guard rendered against a stale one would compare the
+    wrong path against itself.
+    """
+    guard = _execGuard()
+    secrets = hardline._august_secret_files()
+    # A vacuous pass is the failure mode here: with no dataDir resolvable both
+    # sides answer "allowed" and the test proves nothing about the rule.
+    assert secrets, 'no dataDir resolvable — this test would prove nothing'
+    assert set(guard['_AUGUST_SECRETS']) == set(secrets), (
+        f'the port was handed {guard["_AUGUST_SECRETS"]}, the module says {secrets}'
+    )
+    for path in secrets:
+        assert hardline.check_hardline_path(path, for_write=False) is not None, path
+        assert guard['_hardline_check_path'](path, for_write=False) is not None, (
+            f'code mode read {path} while every typed door refused it'
+        )
+        assert hardline.check_hardline_command(f'cat {path}') is not None, path
+        assert guard['_hardline_check_command'](f'cat {path}') is not None, path
+    # Control: the same filename in an ordinary project tree stays readable.
+    assert hardline.check_hardline_path('C:/proj/config.json', for_write=False) is None
+    assert guard['_hardline_check_path']('C:/proj/config.json', for_write=False) is None
