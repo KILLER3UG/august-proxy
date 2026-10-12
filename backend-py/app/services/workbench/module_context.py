@@ -19,8 +19,9 @@ Three rules it exists to enforce:
   much. A truncated roster that reads like a complete one is worse than no
   roster (ZCode's `GetWorkflowRunRoster` makes the same call with
   ``truncated: true``).
-* **Contained.** Paths resolve through the same ``bind_path`` the file tools
-  use, so this can no more leave the workspace than ``read_file`` can.
+* **Contained.** Paths resolve through the same ``listable_root`` the file
+  listings use, so this can no more leave the workspace than ``read_file`` can,
+  and no more into a credential store than the composer's @-mention picker.
 """
 
 from __future__ import annotations
@@ -370,9 +371,24 @@ def _describe_directory(root: Path, target: Path) -> tuple[str, bool]:
         entries = sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
     except OSError as exc:
         return f'Cannot read directory: {exc}', False
+    from app.services.sandbox.paths import listable_child, listable_entry
+
+    # The same two rules every other lister applies. This route binds the root
+    # with `bind_path` and then named whatever `iterdir` returned, so it was the
+    # one door that walked into a store and printed a secret's filename — and a
+    # store two levels down was still reached, because nothing asked about the
+    # entries on the way. `id_rsa` and `credentials/` in a project root are the
+    # shapes a real repo carries.
+    dirs = [
+        e
+        for e in entries
+        if e.is_dir()
+        and e.name not in _SKIP_DIRS
+        and not e.name.startswith('.')
+        and listable_entry(str(e))
+    ]
+    files = [e for e in entries if e.is_file() and listable_child(str(target), e.name)]
     lines: list[str] = []
-    dirs = [e for e in entries if e.is_dir() and e.name not in _SKIP_DIRS and not e.name.startswith('.')]
-    files = [e for e in entries if e.is_file()]
     for d in dirs[:_MAX_DIR_ENTRIES]:
         lines.append(f'{d.name}/')
     truncated = len(dirs) > _MAX_DIR_ENTRIES
@@ -404,9 +420,13 @@ def build_module_context(
     root = Path(workspace).expanduser()
     if not root.is_dir():
         return f'Error: workspace {root} is not a directory.'
-    from app.services.execution_world import bind_path
+    from app.services.sandbox.paths import listable_root
 
-    bound, error = bind_path(path, str(root), for_write=False)
+    # `listable_root` is `bind_path` plus the credential-store rule, and this was
+    # the one listing surface that called only the first half — so the door that
+    # decides what a directory may be named was open here while four others were
+    # shut. See `_describe_directory` for the per-entry half.
+    bound, error = listable_root(path, str(root))
     if error:
         return f'Error: {error}'
     target = Path(str(bound))

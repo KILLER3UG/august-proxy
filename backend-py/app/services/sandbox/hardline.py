@@ -175,7 +175,8 @@ def _secret_store_reason(path: str) -> str | None:
 
 
 def is_credential_directory(path: str) -> bool:
-    """True when `path` IS a credential store, so its contents must not be listed.
+    """True when `path` IS a credential store or lives inside one, so listing
+    its contents is refused.
 
     Takes the name from the RESOLVED path, not from a string split. The first
     version stripped a trailing `/` and took the last segment, which a caller
@@ -184,20 +185,29 @@ def is_credential_directory(path: str) -> bool:
     caller resolves before asking, so a `.` segment is already gone by then —
     and asking on the resolved form is the only form that cannot be dressed
     up with a trailing dot, slash or space.
+
+    The match is on EVERY component, not the last one, and that is the
+    difference between this predicate and the read rule. Taking only the last
+    component made a directory *inside* the store a legal root, so
+    `~/.ssh/keys` — a folder people keep their identities in — listed its
+    entries through all four doors while `~/.ssh` itself was refused. Listing
+    is the thing this governs: enumerating any level of the store walks out the
+    secret set. Reading a NAMED, non-secret member of `.ssh` (`config`,
+    `authorized_keys`) stays allowed, which is why `.ssh` is not in
+    `_CREDENTIAL_STORES` — that table refuses reads as well.
     """
     try:
         resolved = Path(path).resolve()
     except OSError:
         resolved = None
-    if resolved is None:
-        name = _canonical(path).rstrip('/').rsplit('/', 1)[-1].lower()
-        return name in _CREDENTIAL_DIRECTORIES
-    if resolved.name.lower() in _CREDENTIAL_DIRECTORIES:
+    canonical = _canonical(str(resolved)) if resolved is not None else _canonical(path)
+    lowered = {part.lower() for part in canonical.split('/') if part}
+    if lowered.intersection(_CREDENTIAL_DIRECTORIES):
         return True
     # A token store is unlistable root AND subtree: enumerating
     # `.google_workspace_mcp` prints every connected account, and the directory
     # below it is the tokens themselves.
-    return _credential_store(_canonical(str(resolved))) is not None
+    return _credential_store(canonical) is not None
 
 # Explicit mutating markers (in-place edits, deletes, copies, network fetch).
 _WRITE_VERB_PATTERN = re.compile(
@@ -319,9 +329,9 @@ def _expand_token(token: str) -> str:
     """The path the shell would actually reach, as far as this process can tell.
 
     `~` is expanded by the shell, not by Python, and `%VAR%` is expanded by cmd.
-    Resolving what can be resolved is enough: the store rule looks at the LAST
-    segment, and `~/.ssh`, `%USERPROFILE%\\.ssh` and `C:\\Users\\x\\.ssh` all end in
-    `.ssh` whether or not the anchor in front of them was real.
+    Expanding what can be expanded is enough: the store rule looks at whole path
+    components, and `~/.ssh`, `%USERPROFILE%\\.ssh` and `C:\\Users\\x\\.ssh` all
+    contain a `.ssh` component whether or not the anchor in front of them was real.
     """
     t = token.strip('"\'')
     if t.startswith('~'):
@@ -330,6 +340,44 @@ def _expand_token(token: str) -> str:
         except (OSError, RuntimeError):
             pass
     return t
+
+
+# The commands whose job is to ENUMERATE a directory. The store rule is about
+# listing — `is_credential_directory` refuses a store root and its subtree, so
+# `ls ~/.ssh/keys` cannot walk out the names of everything in it — and a shell
+# lists with these. A file reader is a different operation: `head -5
+# ~/.ssh/authorized_keys` names ONE file, which is the deliberate exception
+# `.ssh` keeps (the file-tool tests pin it), and it enumerates nothing.
+#
+# Existence cannot be the discriminator: a test corpus and a CI home directory
+# both name paths that are not there, and a rule that only bites when the
+# directory exists is a rule that silently switches itself off on a fresh
+# install. The verb is known from the command line itself.
+_ENUMERATING_COMMANDS = frozenset(
+    {
+        'ls', 'dir', 'lld', 'eza', 'exa', 'lsd', 'tree', 'find', 'fd', 'du',
+        'stat', 'lsattr', 'ncdu',
+    }
+)
+
+
+def _enumerates_a_directory(command: str) -> bool:
+    """Does some segment of this command list a directory?
+
+    Wrappers are looked through the same way `_segment_is_write` does it, so
+    `sudo ls ~/.ssh` and `xargs -0 ls` are judged on the verb they run, not on
+    the word that starts the line.
+    """
+    for segment in re.split(r'[;&|]{1,2}', command):
+        toks = [t.strip('"\'').strip() for t in re.split(r'\s+', segment) if t.strip()]
+        if not toks:
+            continue
+        first = toks[0].split('/')[-1].split('\\')[-1].lower()
+        if first in ('sudo', 'xargs', 'env', 'command', 'time', 'nice') and len(toks) > 1:
+            first = toks[1].split('/')[-1].split('\\')[-1].lower()
+        if first in _ENUMERATING_COMMANDS:
+            return True
+    return False
 
 
 def check_hardline_command(command: str) -> str | None:
@@ -342,16 +390,28 @@ def check_hardline_command(command: str) -> str | None:
     which is a file inside the store, not the store. So a shell command enumerated
     the whole directory, names and sizes, through a door the file tools had been
     closed on. Same class, same reason, one predicate shared: `is_credential_directory`.
+
+    The predicate is asked only of a command that ENUMERATES (see
+    `_enumerates_a_directory`), because the two halves of the `.ssh` decision are
+    different operations: a directory under the store is the secret set, and a
+    named file inside it is the one member the read rule keeps. Asking the
+    directory rule of every token made `cat ~/.ssh/authorized_keys` a refusal —
+    which is the exception the file-tool tests pin, deleted by a listing fix.
     """
     if not command or not command.strip():
         return None
     write_intent = _is_write_intent(command)
+    enumerates = _enumerates_a_directory(command)
     for raw_tok in _tokenize(command):
         tok = _canonical(raw_tok)
         store = _secret_store_reason(tok)
         if store:
             return f'hardline protected {store} in command: {raw_tok}'
-        if _looks_like_path(raw_tok) and is_credential_directory(_expand_token(raw_tok)):
+        if (
+            enumerates
+            and _looks_like_path(raw_tok)
+            and is_credential_directory(_expand_token(raw_tok))
+        ):
             return f'hardline credential store in command: {raw_tok}'
         if write_intent and _PROTECTED_WRITE_PATTERN.search(tok) and not _is_env_template(tok):
             return f'hardline protected path in command: {raw_tok}'

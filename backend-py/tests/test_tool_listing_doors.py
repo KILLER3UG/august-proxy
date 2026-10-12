@@ -255,3 +255,172 @@ class TestTheShellDoorsCarryTheStoreRule:
 
         assert check_hardline_command('cat ~/.ssh/authorized_keys') is None
         assert check_hardline_command('cat ~/.ssh/config') is None
+
+
+class TestAStoreSubtreeIsStillTheStore:
+    """A directory INSIDE a credential store is the store.
+
+    `is_credential_directory` judged the LAST component of the resolved path, so
+    `~/.ssh` was refused and `~/.ssh/keys` — the folder people keep their
+    identities in — was a legal root for every listing door. The names it hands
+    back are the secret set; only the standard ones (`id_*`, `*.pem`) are caught
+    by the file-name patterns, and a directory rule that works only for the
+    conventional spellings is a rule that works until someone names a file.
+
+    Measured before the fix, on this machine, through all four doors:
+    `GET /api/workspace/files?path=<home>\.ssh\keys` returned
+    `['vault.kdbx', 'vpn-key']`, and so did the workbench twin, `list_directory`,
+    and `listable_root` itself (`denial=None`).
+    """
+
+    def test_the_predicate_matches_any_component(self, store_root):
+        from app.services.sandbox.hardline import is_credential_directory
+
+        keys = store_root / '.ssh' / 'keys'
+        keys.mkdir(parents=True)
+        (keys / 'vault.kdbx').write_text('x', encoding='utf-8')
+        assert is_credential_directory(str(keys)), 'a directory under the store was listable'
+        # …and the store itself, at any depth below it.
+        assert is_credential_directory(str(store_root / '.aws' / 'sso' / 'cache'))
+
+    def test_a_component_is_matched_whole_not_as_a_prefix(self, store_root):
+        """`.ssh-sdk`, `ssh` and `my.ssh` are not `.ssh`.
+
+        The widened rule reads every component of the path, so a substring match
+        would refuse an ordinary project directory named like a store — the
+        false-positive shape that makes a guard get turned off.
+        """
+        from app.services.sandbox.hardline import is_credential_directory
+
+        for name in ('.ssh-sdk', 'ssh', 'my.ssh', 'aws', 'dockers'):
+            d = store_root / name
+            d.mkdir()
+            (d / 'a.py').write_text('x = 1', encoding='utf-8')
+            assert not is_credential_directory(str(d)), f'{name} was refused as a store'
+
+    def test_the_tool_door_refuses_the_subtree(self, store_root):
+        from app.services.sandbox.paths import listable_entry, listable_root
+        from app.services.tool_registrations.file_tools import _listDirectory
+
+        keys = store_root / '.ssh' / 'keys'
+        keys.mkdir(parents=True)
+        (keys / 'vault.kdbx').write_text('x', encoding='utf-8')
+        root, denial = listable_root(str(keys))
+        assert denial is not None and root is None, f'listable_root accepted {keys}'
+        assert not listable_entry(str(keys)), 'the per-entry rule walked into the subtree'
+        out = asyncio.run(_listDirectory(str(keys)))
+        assert 'vault.kdbx' not in out, f'the subtree was listed: {out!r}'
+
+    def test_listing_the_store_parent_does_not_name_the_subtree(self, store_root):
+        """Walking the parent must not hand back `.ssh/keys` either.
+
+        `listable_entry` runs on the directory entries of a walk, so a rule that
+        only knows the store's own name lets one component slip through.
+        """
+        from app.services.tool_registrations.file_tools import _listDirectory
+
+        keys = store_root / '.ssh' / 'keys'
+        keys.mkdir(parents=True)
+        (keys / 'vault.kdbx').write_text('x', encoding='utf-8')
+        out = asyncio.run(_listDirectory(str(store_root / '.ssh')))
+        assert 'keys' not in out, f'the store named its own subtree: {out!r}'
+
+    def test_an_enumerating_shell_command_cannot_reach_the_subtree(self, store_root):
+        from app.services.sandbox.hardline import check_hardline_command
+
+        keys = str(store_root / '.ssh' / 'keys')
+        assert check_hardline_command(f'ls {keys}') is not None
+        assert check_hardline_command(f'ls -la {keys}/') is not None
+        assert check_hardline_command(f'find {keys} -type f') is not None
+
+    def test_a_reader_of_one_named_file_is_still_allowed(self, store_root):
+        """The asymmetry the listing rule must not swallow.
+
+        `is_credential_directory` is the LISTING predicate; a command token has no
+        such guarantee, and asking it of every token made
+        `cat ~/.ssh/authorized_keys` a refusal. The gate therefore rides the
+        verbs that enumerate, which is the same distinction the store table and
+        the `_CREDENTIAL_DIRECTORIES` table already draw.
+        """
+        from app.services.sandbox.hardline import check_hardline_command
+
+        keys = str(store_root / '.ssh' / 'keys')
+        # A native (Windows) path separator must not be the way past the door.
+        assert check_hardline_command(f'cat {keys}{os.sep}vault.kdbx') is None, 'a named file became a store'
+        assert check_hardline_command(f'head -5 {keys}/vault.kdbx') is None
+
+
+class TestModuleContextIsAListingDoor:
+    """The seventh door: `build_module_context` named whatever `iterdir` gave it.
+
+    It bound the root with `bind_path` — the workspace half of `listable_root` —
+    and never asked the store question, so it had the root bug and the entry bug
+    together. A folderless session reads machine-wide by design, and a repo that
+    keeps `credentials/` or an `id_rsa` beside its source is not hypothetical:
+    those are the shapes a real checkout carries, which is exactly why the file
+    tree route got `listable_child` for its entries.
+    """
+
+    def test_a_store_subtree_is_not_a_module_root(self, store_root):
+        """The half only `listable_root` closes.
+
+        `bind_path` already refuses a `_CREDENTIAL_STORES` root through
+        `_secret_store_reason`, so `.aws` was never the gap here — `.ssh` is, and
+        it is refused by `is_credential_directory` alone. A caller that binds
+        without that predicate accepts `~/.ssh/keys` and describes it.
+        """
+        from app.services.workbench.module_context import build_module_context
+
+        keys = store_root / '.ssh' / 'keys'
+        keys.mkdir(parents=True)
+        (keys / 'vault.kdbx').write_text('x', encoding='utf-8')
+        (keys / 'vpn-key').write_text('x', encoding='utf-8')
+        out = build_module_context(str(store_root), str(keys))
+        assert 'Entries' not in out, f'the subtree was described: {out!r}'
+        assert 'vault.kdbx' not in out and 'vpn-key' not in out, out
+
+    def test_a_store_root_is_refused_before_the_listing_runs(self, store_root):
+        """Control — the `.aws` half of the same question was already shut.
+
+        Pinned so a future edit that drops `bind_path` out of `listable_root`
+        shows up as a failure here rather than as a silent narrowing.
+        """
+        from app.services.workbench.module_context import build_module_context
+
+        aws = store_root / '.aws'
+        aws.mkdir()
+        (aws / 'sso').mkdir()
+        (aws / 'sso' / 'cache').mkdir()
+        (aws / 'sso' / 'cache' / '8f2a.json').write_text('{"accessToken":"t"}', encoding='utf-8')
+        out = build_module_context(str(store_root), str(aws))
+        assert 'Error' in out, f'the store was described: {out!r}'
+        assert '8f2a.json' not in out
+
+    def test_a_secret_named_in_a_workspace_listing_is_dropped(self, store_root):
+        from app.services.workbench.module_context import build_module_context
+
+        (store_root / 'app.py').write_text('x = 1', encoding='utf-8')
+        (store_root / 'id_rsa').write_text('PRIVATE KEY MATERIAL', encoding='utf-8')
+        creds = store_root / 'credentials'
+        creds.mkdir()
+        out = build_module_context(str(store_root), '.')
+        assert 'app.py' in out, f'the ordinary listing broke: {out!r}'
+        assert 'id_rsa' not in out, f'the key was named by the module context: {out!r}'
+        assert 'credentials/' not in out, f'the store directory was named: {out!r}'
+
+    def test_the_store_directory_was_named_in_the_listing_counts(self, store_root):
+        """The header a directory listing prints must not count what it refused.
+
+        `Entries (N dirs, M files)` was built from the unfiltered lists, so even
+        with the entries gone the count told the reader a hidden directory was
+        there.
+        """
+        from app.services.workbench.module_context import build_module_context
+
+        (store_root / 'ok.py').write_text('x = 1', encoding='utf-8')
+        (store_root / 'credentials').mkdir()
+        (store_root / 'a' / 'b' / 'c').mkdir(parents=True)
+        out = build_module_context(str(store_root), '.')
+        assert 'credentials' not in out, f'the refused directory was named: {out!r}'
+        head = out.split('Entries')[1].split('\n')[0] if 'Entries' in out else ''
+        assert '1 dirs' in head, f'the dir count still includes the refused store: {head!r}'

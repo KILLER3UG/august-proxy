@@ -254,11 +254,12 @@ def listable_entry(path: str) -> bool:
 def listable_child(dirpath: str, name: str) -> bool:
     """May this FILE be named, given its directory was already cleared?
 
-    The store rule is about the DIRECTORY (`is_credential_directory` refuses
-    `.aws` and its whole subtree), so once a lister has refused to enter every
-    ancestor, the file's own risk is its NAME: `id_rsa`, `credentials`,
-    `.google_workspace_mcp` token files. Those are the hardline patterns, which
-    are string matching — ~6µs against ~90µs for the resolve the directory needs.
+    The store rule is about the DIRECTORY (`is_credential_directory` refuses every
+    credential directory at any depth, root and subtree), so once a lister has
+    refused to enter every ancestor, the file's own risk is its NAME: `id_rsa`,
+    `credentials`, `.google_workspace_mcp` token files. Those are the hardline
+    patterns, which are string matching — ~6µs against ~90µs for the resolve the
+    directory needs.
 
     Not a weaker rule, a rule placed where it applies: a file can only be reached
     through a directory this module already said yes to, so the resolve would be
