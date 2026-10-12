@@ -24,7 +24,10 @@ export function HistoryPage() {
   async function requestDelete(session: Session) {
     const ok = await confirmStyled({
       title: 'Delete this conversation?',
-      message: `"${session.title || 'Untitled chat'}" and its ${session.messageCount ?? 0} message(s) will be removed. This cannot be undone.`,
+      // "and its N message(s)" used to be the whole promise while the delete also
+      // dropped whatever the composer still held unsent — the one thing in the
+      // row that is not a message.
+      message: `"${session.title || 'Untitled chat'}", its ${session.messageCount ?? 0} message(s) and anything still unsent in its composer will be removed. This cannot be undone.`,
       confirmLabel: 'Delete',
       variant: 'destructive',
     });

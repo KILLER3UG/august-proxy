@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
 import katex from 'katex';
-import { describe, it, expect, vi } from 'vitest';
+import { Marked } from 'marked';
+import { describe, expect, it, vi } from 'vitest';
 import { Markdown } from '../ChatMarkdown';
 import { demoteMarkdownHeadings } from '@/lib/markdownHeadings';
 
@@ -336,7 +337,143 @@ describe('demoteMarkdownHeadings — an authored document inside a dialog', () =
     expect(demoteMarkdownHeadings('Sub\n---\n')).toBe('Sub\n---\n');
   });
 
-  it('folds setext h1 inside a list item or blockquote, keeping the block', () => {
+  it('leaves no h1 in any block-ownership shape, measured through marked', () => {
+    /* The whole point of the pass is "an authored document cannot put a level-1
+     * heading in the dialog", and the only authority on which lines ARE headings
+     * is the renderer the dialog uses. Each doc below was run through `marked`
+     * with no demotion and produced an <h1>; the shapes are not a guess at
+     * CommonMark, they are what the app actually renders.
+     *
+     * The list-content-column forms (`- a` above an indented `# T`) are the ones
+     * a bare-line pattern can never see: the heading is not indented as far as
+     * CommonMark is concerned, because a list item strips its content column
+     * first. Tab separators after a marker are the same story on the other side —
+     * the tab rule was fixed for the indent and left open for the marker.
+     */
+    const docs = [
+      '# Title',
+      '   # Indented title',
+      '> # Quoted title',
+      '>\t# Quoted title with a tab',
+      '- # Bulleted title',
+      '-\t# Bulleted title with a tab',
+      '1. # Numbered title',
+      '1.\t# Numbered title with a tab',
+      '> - # Quoted bulleted title',
+      '- a\n    # Title at the list content column',
+      '  - a\n      # Title in a nested list',
+      '-   a\n      # Title after a wide marker',
+      '- a\n\n    # Title after a blank line',
+      'one\ntwo\n===',
+      '- Title\n  more\n  ===',
+      '> one\n> two\n> ===',
+      'Title\n=====',
+      '- Release Notes\n  ==============',
+      '> Release Notes\n> ==============',
+    ];
+    // A fresh `Marked`, not the `marked` singleton: `ChatMarkdown` configures the
+    // shared instance with its own renderer (the `markdown-content` wrapper), so
+    // a control written against the singleton depends on which test ran first.
+    // The thread renderer also batches its blocks per flush, so a synchronous
+    // `querySelector('h1') === null` could pass simply because nothing had
+    // painted — a green check measuring an empty DOM.
+    const probe = new Marked();
+    const html = (src: string) => String(probe.parse(src, { async: false }));
+    for (const doc of docs) {
+      expect(html(demoteMarkdownHeadings(doc))).not.toMatch(/<h1[\s>]/);
+      // The control: every doc here IS an h1 with no demotion. Without it the
+      // corpus could rot into shapes that were never headings, and the test would
+      // keep passing while the guard stopped guarding.
+      expect(html(doc)).toMatch(/<h1[\s>]/);
+    }
+    // And the prop is wired to the surface. A single-block document is used here
+    // on purpose: a multi-block one is flushed per frame by the thread renderer,
+    // so a synchronous DOM assertion would be measuring a timer rather than the
+    // guard. The parser checks above cover the multi-block shapes.
+    const { container } = render(<Markdown content="- # Release Notes" demoteHeadings />);
+    expect(container.querySelector('h1')).toBeNull();
+    expect(container.querySelector('h2')?.textContent).toContain('Release Notes');
+  });
+
+  it('does not invent a heading out of indented code or a hashtag', () => {
+    /* The other direction: a shape that is NOT a heading in marked must not be
+     * rewritten, or the dialog shows text the file does not contain. */
+    const notHeadings = [
+      '\t# Tab-indented code',
+      '    # Top-level indented code',
+      '#hashtag',
+      '####### seven is not a heading',
+      '> a\n    # four spaces past a quote is code',
+      'one\ntwo\n\n===',
+      // `>` + SPACE + TAB: the tab starts at column 2 and advances to the next
+      // 4-column stop, so the content is 4 columns deep — indented code inside
+      // the quote. `>\t# T` (tab immediately after the marker) IS an h1, and both
+      // forms are in the corpus so the tab rule stays pinned on both sides.
+      '> \t# Not a heading',
+    ];
+    for (const doc of notHeadings) {
+      expect(demoteMarkdownHeadings(doc)).toBe(doc);
+    }
+  });
+
+  it('folds a setext h1 under a multi-line paragraph into one h2', () => {
+    // `one` / `two` / `===` is ONE h1 whose text is "one" + a soft break + "two".
+    // Rewriting only the line nearest the underline left `one` as a stray
+    // paragraph of its own, which moved text across a block boundary — a
+    // different bug from the one being fixed, and still wrong.
+    const out = demoteMarkdownHeadings('one\ntwo\n===');
+    expect(out).toBe('## one\ntwo');
+    // Judged with an isolated parser rather than the component: the thread
+    // renderer flushes a multi-block document per frame, so a DOM assertion here
+    // depends on timers another test in this file may own.
+    const html = String(new Marked().parse(out, { async: false }));
+    expect(html).not.toMatch(/<h1[\s>]/);
+    // The heading carries the first line and the rest of the paragraph follows
+    // it. marked soft-joins a setext paragraph into one heading's text; the
+    // demoter does not reproduce that join and should not try — what it guarantees
+    // is that no level 1 reaches the dialog and that no word is dropped, invented
+    // or reordered.
+    expect(html).toContain('<h2>one</h2>');
+    expect(html).toContain('two');
+  });
+
+  it('shifts an ATX heading owned by a list item or blockquote', () => {
+    /* The setext forms got this treatment after an audit; the ATX forms did not,
+     * because the pattern only ever looked at the bare line. CommonMark strips a
+     * list item's content column, so `- # Title` renders <li><h1> and `> # Title`
+     * renders <blockquote><h1> — both reached the dialog at level 1. The owning
+     * marker has to be kept, or the list/quote is destroyed by the rewrite. */
+    expect(demoteMarkdownHeadings('- # Release Notes')).toBe('- ## Release Notes');
+    expect(demoteMarkdownHeadings('> # Release Notes')).toBe('> ## Release Notes');
+    expect(demoteMarkdownHeadings('1. # Release Notes')).toBe('1. ## Release Notes');
+    expect(demoteMarkdownHeadings('> - # Release Notes')).toBe('> - ## Release Notes');
+    // The neighbours are untouched.
+    expect(demoteMarkdownHeadings('- plain item')).toBe('- plain item');
+    expect(demoteMarkdownHeadings('> quoted prose')).toBe('> quoted prose');
+
+    // Rendered, not just rewritten: this is the only form of the check that
+    // could have caught the original bug.
+    for (const doc of ['- # Release Notes', '> # Release Notes', '1. # Release Notes']) {
+      const { container } = render(<Markdown content={doc} demoteHeadings />);
+      expect(container.querySelector('h1')).toBeNull();
+      expect(container.querySelector('h2')?.textContent).toContain('Release Notes');
+    }
+  });
+
+  it('leaves a tab-indented line alone — a tab is four columns, not one', () => {
+    /* CommonMark measures indentation in spaces and expands a tab to the next
+     * 4-column stop, so `\t# Title` is indented CODE and `\t```` is not a fence
+     * opener. Counting a tab as one of the allowed 0-3 characters made both read
+     * as markup: a tab-indented Makefile recipe was rewritten to `## comment`,
+     * corrupting text the dialog then displayed differently from the file. */
+    expect(demoteMarkdownHeadings('\t# Tab indented')).toBe('\t# Tab indented');
+    expect(demoteMarkdownHeadings('\t\t# Deeper')).toBe('\t\t# Deeper');
+    // The real heading two lines later still shifts, so the tab case is not
+    // silently disabling the pass.
+    expect(demoteMarkdownHeadings('\t# Tab indented\n\n# Real')).toBe('\t# Tab indented\n\n## Real');
+  });
+
+  it('folds a setext h1 inside a list item or blockquote, keeping the block', () => {
     /* The first version excluded list and quote owners to avoid rewriting a
      * thematic break — but `- Title` + `  ===` and `> Title` + `> ===` are both
      * setext h1s in marked, so the dialog still received an h1. The marker has

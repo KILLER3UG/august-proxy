@@ -10,8 +10,18 @@ describe('AUG working indicator visibility', () => {
     expect(src).toMatch(/streaming\s*(&&|\?)/);
     expect(src).toMatch(/WorkingIndicator/);
     expect(src).toMatch(/aug-working-indicator/);
-    // Must sit outside VirtualizedMessageList footer so message enter anims can't hide it
-    expect(src).toMatch(/Anchored above the composer|anchored above the composer/i);
+    // Must sit outside VirtualizedMessageList footer so message enter anims can't
+    // hide it. Asserted on the markup, not on the sentence in the comment: the
+    // earlier version of this line checked that a comment existed, which dies on a
+    // reword and survives deleting the indicator it describes — a gate on a label.
+    const slot = /data-testid="aug-working-indicator"/.exec(src);
+    expect(slot, 'the indicator slot is gone').not.toBeNull();
+    const around = src.slice(Math.max(0, slot!.index - 700), slot!.index + 260);
+    // Driven by `streaming` and hidden when it is not.
+    expect(around).toMatch(/streaming \?[\s\S]{0,160}aria-hidden=\{!streaming\}/);
+    expect(around).toMatch(/data-testid="aug-working-indicator"[\s\S]{0,80}<WorkingIndicator/);
+    // Not handed to the virtualized list as its footer.
+    expect(src).not.toMatch(/footer=\{[^}]*aug-working-indicator/s);
   });
 
   it('AUG indicator is decoupled from isLast (no `isLast && streaming` gate)', () => {

@@ -133,6 +133,13 @@ function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom:
           ) : (
             <div className="flex-1 overflow-y-auto px-6 py-5 chat-scroll select-text">
               <div className="markdown-content max-w-none">
+                {/* Deliberately NOT `demoteHeadings`, unlike the settings dialog
+                    and the drafted-skill preview. This pane is the file: the user
+                    opened it to read it, the adjacent toggle shows its raw text
+                    with `# Title` on line one, and a shifted heading here would
+                    make the render disagree with the source it is next to. The
+                    demotion rule exists for authored documents shown as content
+                    *under* another surface, and this surface is the document. */}
                 <Markdown content={file.content ?? ''} />
               </div>
             </div>

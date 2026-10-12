@@ -150,14 +150,25 @@ export function createSession(
  *
  *  Blank drafts are the residue `persistComposerDraft` leaves when a composer is
  *  emptied without ever removing the key; words are the user's and are never
- *  deleted by a merge. `kept` is the surviving list — a dropped id that some
- *  surviving row still names as its workbench handle is skipped outright. */
+ *  deleted by a merge. The blank check IS the protection — a dropped row's
+ *  workbench handle is usually the surviving row's handle by then (that is what
+ *  the merge did), so skipping on that identity instead would leave every
+ *  residue key behind, which is what an earlier version of this comment claimed
+ *  the code did and the code never did.
+ *
+ *  Both id forms are checked and cleared, because the composer keys on the id the
+ *  ROUTE carries and a row is addressable by either (`/c/sess_*` and `/c/wb_*`
+ *  both resolve through `resolveActiveSession`). Looking only at `s.id` left the
+ *  `wb_`-keyed residue in storage forever under a key no row owns. */
 function clearBlankDraftsFor(dropped: Session[], kept: Session[]): void {
   const keptIds = new Set(kept.map((s) => s.id));
   for (const s of dropped) {
     if (keptIds.has(s.id)) continue;
-    if (loadComposerDraft(s.id).trim()) continue;
-    clearComposerDraft(s.id);
+    const keys = [s.id, s.workbenchSessionId].filter((k): k is string => !!k);
+    // One non-blank draft anywhere means the row still holds text someone meant
+    // to finish: neither key is touched.
+    if (keys.some((k) => loadComposerDraft(k).trim())) continue;
+    for (const k of keys) clearComposerDraft(k);
   }
 }
 
@@ -414,11 +425,31 @@ function stopSessionStreams(ids: string[], backendStopIds: string[] = []): void 
 
 /**
  * Drop a session from the sidebar immediately (no network).
- * Used by optimistic UI deletes and real-time ``session_deleted`` SSE events
- * from the model’s delete_session tool.
+ *
+ * Two callers with two different contracts, and the draft rule follows the
+ * caller, not the function:
+ *  - `realtime/bridge.ts` on a pushed `session.deleted`, and any optimistic
+ *    local drop that reconcile may undo — the row disappearing was not the
+ *    user's act, so blank residue goes and unsent words stay.
+ *  - `deleteSession`, behind a "Delete chat?" confirmation, passes
+ *    `discardDraft`. The chat and everything in it are what the user agreed to
+ *    remove, and `purgeBackendSession` means the row cannot come back — a draft
+ *    kept for it is a key nothing can ever load again. The two bulk wipes
+ *    (`deleteUncategorizedSessions`, `clearAllSessions`) already discard; this
+ *    is the path that used to claim it did and did not.
+ *
+ * Keys left behind by the single deletes that shipped before `discardDraft` are
+ * not swept at launch. A launch sweep has to guess whether an id it does not
+ * recognise is gone or merely not loaded yet, and the failure mode of guessing
+ * wrong is the user's unsent words — which the ghost sweep rule exists to
+ * protect. Dead keys cost bytes; a wrong reap is unrecoverable.
  * @returns true if a row was removed
  */
-export function removeSessionLocally(id: string): boolean {
+export function removeSessionLocally(
+  id: string,
+  opts?: { discardDraft?: boolean },
+): boolean {
+  const discardDraft = opts?.discardDraft === true;
   if (!id) return false;
   const sessions = useSessionsStore.getState().sessions;
   const sess = sessions.find((s) => s.id === id || s.workbenchSessionId === id);
@@ -451,9 +482,10 @@ export function removeSessionLocally(id: string): boolean {
        * server, and this function is what a pushed `session.deleted` calls. So
        * the same rule as the sweep and the merge holds here: clear the blank
        * residue, never the words. The explicit user-confirmed deletes below
-       * (deleteSession, deleteUncategorizedSessions, clearAllSessions) discard
-       * the chat on purpose and clear the draft with it. */
-      if (!loadComposerDraft(lid).trim()) clearComposerDraft(lid);
+       * (deleteSession, deleteUncategorizedSessions, clearAllSessions) pass
+       * `discardDraft`, because the chat those words belong to is what the user
+       * agreed to throw away. */
+      if (discardDraft || !loadComposerDraft(lid).trim()) clearComposerDraft(lid);
     } catch {
       /* ignore */
     }
@@ -496,7 +528,9 @@ export function deleteSession(id: string) {
     localIds,
     sess?.workbenchSessionId ? [sess.workbenchSessionId] : [],
   );
-  removeSessionLocally(id);
+  // The user confirmed this delete, so the draft goes with the chat — see
+  // removeSessionLocally for why the pushed-delete path keeps the words.
+  removeSessionLocally(id, { discardDraft: true });
   // Fire-and-forget — never await on the UI path
   void purgeBackendSession(localIds);
 }

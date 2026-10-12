@@ -157,13 +157,15 @@ export const SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_SECTIONS.filter((s
  * with a null element for matching and deep links. Section content remounts
  * inside SettingsPage so each tab refetches live data on entry.
  *
- * A COMPONENT, not a module-level element on purpose. A hoisted
- * `React.createElement(...)` constant is the SAME object on every render, and
- * React bails out of re-rendering a subtree whose element is referentially
- * identical — so the dialog kept the URL (`/settings/appearance`) while
- * `useParams().section` inside it was never re-read and the panel stayed on the
- * first section. Creating the element per render costs nothing (the lazy chunk
- * is cached) and is what makes the rail actually switch panels. */
+ * The rail-not-switching defect this used to blame on React is not real. A
+ * hoisted `React.createElement(...)` element IS referentially identical across
+ * renders, and the claim was that React therefore bails out of re-rendering it —
+ * measured in `test/settingsRouteElement.test.tsx`: the subtree re-renders and
+ * `useParams().section` updates, exactly as it does through this component. What
+ * actually froze the panel was the `AnimatePresence mode="wait"` that used to
+ * wrap the section body (removed; see SettingsPage's comment). This stays a
+ * component because a component is what a route element is, not because a
+ * constant would have broken. */
 export function SettingsPageRoute(): ReactNode {
   return React.createElement(Lazy, null, React.createElement(SettingsPage));
 }

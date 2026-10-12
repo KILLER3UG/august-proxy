@@ -70,7 +70,13 @@ export function Archive() {
   const handleDeletePermanently = async (id: string) => {
     const ok = await confirmStyled({
       title: 'Delete this session?',
-      message: 'This permanently deletes the session and its history. This action is irreversible.',
+      // The composer's unsent words live in the same local store as the
+      // transcript, and `deleteSession` clears them with it — so the dialog says
+      // so. A confirmation that under-describes what it removes is not a
+      // confirmation.
+      message:
+        'This permanently deletes the session, its history and anything still ' +
+        'unsent in its composer. This action is irreversible.',
       confirmLabel: 'Delete',
       variant: 'destructive',
     });

@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useShellWidth } from '@/hooks/useShellWidth';
 import { Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, toggleFolderCollapse, ensureFolderForWorkspacePath, resolveActiveSession } from "@/store/sessions";
 import { startRealtimeBridge } from "@/realtime/bridge";
@@ -558,7 +558,12 @@ export function ChatLayout() {
   // BACKGROUND location — where the user actually was — so streams keep
   // running, scroll survives, and ✕/Escape restores instantly. The dialog
   // renders from the real location via its own <Routes> below.
-  const isSettings = location.pathname.startsWith("/settings");
+  // The matcher is case-INSENSITIVE (React Router lowercases before matching,
+  // `caseSensitive` is off for every route here) and this prefix test was not,
+  // so `/Settings/general` matched a route, failed this check, and the overlay
+  // <Routes> never mounted — a blank main column with no dialog and no error.
+  // Same URL, two verdicts, one of them silent.
+  const isSettings = location.pathname.toLowerCase().startsWith("/settings");
   const backgroundRef = useRef<{ pathname: string; search: string } | null>(null);
   if (isSettings && backgroundRef.current === null) {
     // Cold boot straight onto a settings deep link: the last non-settings
@@ -662,22 +667,29 @@ export function ChatLayout() {
                     overlay per Part 15.4, but at dock widths the column
                     reserves its space so nothing renders underneath it. */}
                 <div className="august-chat-column flex-1 flex min-w-0 h-full">
-                  <AnimatePresence mode="wait" initial={false}>
-                    <motion.div
-                      key={isSettings ? background.pathname : location.pathname}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -4 }}
-                      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-                      className="h-full min-w-0 flex-1"
-                    >
-                      <Routes location={isSettings ? background : undefined}>
-                        {CHAT_SURFACE_ROUTES.map((route) => (
-                          <Route key={route.path} path={route.path} element={route.element} />
-                        ))}
-                      </Routes>
-                    </motion.div>
-                  </AnimatePresence>
+                  {/* No `AnimatePresence mode="wait"` around this keyed surface.
+                      That gate mounts the incoming page only after the outgoing
+                      one reports its exit as complete, and its failure mode is
+                      the P1 the settings dialog shipped with: the URL changes,
+                      the old surface stays on screen. Here the surface is the
+                      chat itself, so a stalled exit would mean clicking a session
+                      keeps showing the previous one. What is lost is a 160 ms
+                      exit fade; the enter fade below is what a route swap is
+                      actually supposed to look like, and it needs no presence
+                      gate — `initial`/`animate` run on mount. */}
+                  <motion.div
+                    key={isSettings ? background.pathname : location.pathname}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                    className="h-full min-w-0 flex-1"
+                  >
+                    <Routes location={isSettings ? background : undefined}>
+                      {CHAT_SURFACE_ROUTES.map((route) => (
+                        <Route key={route.path} path={route.path} element={route.element} />
+                      ))}
+                    </Routes>
+                  </motion.div>
                 </div>
 
                 {active && (
@@ -714,13 +726,17 @@ export function ChatLayout() {
           it, `inert` would disable the dialog itself. Still fixed-positioned
           (z-50), so DOM order has no visual effect.
 
-          TWO flat routes, and a FRESH element on each. Both were needed, and the
-          dialog shipped broken on both: `SettingsPage` reads its section from
-          `useParams().section`, a parent element never sees a param matched by
-          its CHILD route (so the child must not be the only place `:section`
-          lives), and a hoisted module-level element object is referentially
-          identical every render, so React bails out of re-rendering the subtree
-          it mounts. The visible failure was the rail: the URL moved to
+          TWO FLAT ROUTES, one element per path. The shape is NOT what fixed the
+          rail. test/settingsRouteElement.test.tsx measures the two explanations
+          that used to be written here and both are false: a parent element DOES
+          see a param matched by its child route, and a hoisted module-level
+          element does NOT stop React re-rendering the subtree. What actually
+          froze the panel was the presence gate inside SettingsPage
+          (`AnimatePresence mode="wait"`), which has since come out. The flat
+          routes stay because one route per path is the simpler thing to reason
+          about, not because nesting was broken.
+
+          The visible failure, for the record: the URL moved to
           /settings/appearance while the panel stayed on General — caught driving
           the real app, invisible to every test that mounts SettingsPage directly. */}
       {isSettings && (

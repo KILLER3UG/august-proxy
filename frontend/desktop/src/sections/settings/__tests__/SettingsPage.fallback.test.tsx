@@ -69,4 +69,37 @@ describe('SettingsPage — unimplemented route fallback', () => {
     });
     expect(screen.queryByTestId('settings-section-indexing')).toBeNull();
   });
+
+  it('resolves a deep link whose casing does not match the section id', async () => {
+    /* React Router matches paths case-INSENSITIVELY, and the section chain
+     * (`LEGACY_HUB_MAP` → `isHubId` → `resolveLegacyTab` → `getSection`) was
+     * exact-case. `/Settings/Appearance` therefore reached this page, matched no
+     * section, landed on General, and rewrote the URL to match — the deep link
+     * the user pasted was gone with no indication it had ever been read. */
+    renderPage('/settings/Appearance');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('settings-page-shell')).toHaveAttribute(
+        'data-active',
+        'appearance',
+      );
+    });
+  });
+
+  it('resolves a legacy ?tab= link whatever its casing', async () => {
+    render(
+      <MemoryRouter initialEntries={['/settings?tab=Appearance']}>
+        <Routes>
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings/:section" element={<SettingsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('settings-page-shell')).toHaveAttribute(
+        'data-active',
+        'appearance',
+      );
+    });
+  });
 });

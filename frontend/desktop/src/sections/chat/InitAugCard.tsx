@@ -139,7 +139,12 @@ export function InitAugCard({ draft, existing, workspacePath, sessionId, onClose
         </div>
       ) : (
         <div className="mb-3 max-h-72 overflow-auto rounded border border-zinc-800 bg-black/30 p-3">
-          <Markdown content={currentDraft} />
+          {/* A model-drafted SKILL.md / memory file, and the first line of one is
+              an authored `# Title`. This is content inside a chat message, so it
+              gets the same one-level shift the settings dialog applies — a level-1
+              heading here is the §4.4 defect arriving through markdown instead of
+              JSX. */}
+          <Markdown content={currentDraft} demoteHeadings />
         </div>
       )}
 

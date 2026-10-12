@@ -107,8 +107,16 @@ export function SettingsPage() {
   // changed the URL and never changed the section. Read the path first and fall
   // back to the param for mounts that rewrite it (bare `/settings`, tests that
   // render this page under their own route).
-  const rawSection =
-    location.pathname.match(/^\/settings\/([^/?#]+)/)?.[1] ?? params.section;
+  // The router matched this page case-INSENSITIVELY (`/Settings/Appearance`
+  // reaches it), so every lookup below has to be too — an id keyed on the raw
+  // casing fell through `LEGACY_HUB_MAP`, `isHubId`, `resolveLegacyTab` and
+  // `getSection` all at once, landed on General, and then rewrote the URL to
+  // match. The user's deep link was silently gone with nothing to show it had
+  // been read at all. Section ids are lowercase by construction, so normalising
+  // here loses nothing and covers the whole chain.
+  const rawSection = (
+    location.pathname.match(/^\/settings\/([^/?#]+)/i)?.[1] ?? params.section
+  )?.toLowerCase();
   const landingSectionId = useLandingSectionId();
   // Hub IA: rawSection can be a category id (e.g. "models") or a legacy section/category.
   const mappedRaw = rawSection ? (LEGACY_HUB_MAP[rawSection] ?? rawSection) : rawSection;
@@ -150,7 +158,7 @@ export function SettingsPage() {
     const qs = carried ? `?${carried}` : '';
 
     if (!rawSection && tabQuery) {
-      const id = resolveLegacyTab(tabQuery);
+      const id = resolveLegacyTab(tabQuery.toLowerCase());
       void navigate(`/settings/${id}${qs}`, { replace: true });
       return;
     }

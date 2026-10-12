@@ -17,6 +17,7 @@ import {
   preferSessionRow,
   updateSessionWorkbenchMetadata,
   removeSessionLocally,
+  deleteSession,
   reconcileSessionsFromBackend,
   type Session,
 } from '../sessions';
@@ -520,9 +521,13 @@ describe('reconcileSessionsFromBackend — keep drafts, stable ids', () => {
  * user discarding a chat, and reconcile can bring the row back, so the same
  * rule as the sweep and the merge holds — blank residue goes, words stay. The
  * explicit user-confirmed deletes (deleteSession / clearAllSessions /
- * deleteUncategorizedSessions) discard the draft with the chat, on purpose. */
-describe('removeSessionLocally — draft storage on a server-pushed delete', () => {
+ * deleteUncategorizedSessions) discard the draft with the chat, on purpose. */describe('removeSessionLocally — draft storage on a server-pushed delete', () => {
   const draftKey = (id: string) => `august_composer_draft_${id}`;
+  const mk = (id: string): Session => ({
+    id, title: 'A', startedAt: new Date().toISOString(), messageCount: 0,
+    lastMessage: '', provider: '', model: '', isArchived: false,
+    folderId: null, workspacePath: null,
+  });
 
   beforeEach(() => {
     localStorage.clear();
@@ -530,11 +535,6 @@ describe('removeSessionLocally — draft storage on a server-pushed delete', () 
   });
 
   it('keeps unsent words and clears a blank residue', () => {
-    const mk = (id: string): Session => ({
-      id, title: 'A', startedAt: new Date().toISOString(), messageCount: 0,
-      lastMessage: '', provider: '', model: '', isArchived: false,
-      folderId: null, workspacePath: null,
-    });
     $sessions.set([mk('sess_keep'), mk('sess_blank')]);
     localStorage.setItem(draftKey('sess_keep'), 'half-written message');
     localStorage.setItem(draftKey('sess_blank'), '');
@@ -543,6 +543,30 @@ describe('removeSessionLocally — draft storage on a server-pushed delete', () 
     expect(removeSessionLocally('sess_blank')).toBe(true);
     expect(localStorage.getItem(draftKey('sess_keep'))).toBe('half-written message');
     expect(localStorage.getItem(draftKey('sess_blank'))).toBeNull();
+  });
+
+  it('discardDraft takes the words with the row', () => {
+    /* The rule is per CALLER, not per function. A pushed `session.deleted` can
+     * be undone by reconcile, so the words stay; `deleteSession` sits behind a
+     * "Delete chat?" confirmation and purges the backend row, so the draft has
+     * no owner left and must not survive as an unloadable key. The two bulk
+     * wipes already did this — this is the path whose comment claimed it and
+     * whose code did not. */
+    $sessions.set([mk('sess_confirmed')]);
+    localStorage.setItem(draftKey('sess_confirmed'), 'half-written message');
+
+    expect(removeSessionLocally('sess_confirmed', { discardDraft: true })).toBe(true);
+    expect(localStorage.getItem(draftKey('sess_confirmed'))).toBeNull();
+  });
+
+  it('the user-confirmed delete path discards the draft', () => {
+    $sessions.set([mk('sess_ui')]);
+    localStorage.setItem(draftKey('sess_ui'), 'words the user chose to delete');
+
+    deleteSession('sess_ui');
+
+    expect(localStorage.getItem(draftKey('sess_ui'))).toBeNull();
+    expect($sessions.get().map((s) => s.id)).not.toContain('sess_ui');
   });
 });
 
@@ -596,5 +620,34 @@ describe('updateSessionWorkbenchMetadata — draft storage on merge', () => {
 
     expect($sessions.get()).toHaveLength(1);
     expect(localStorage.getItem(draftKey('sess_A'))).toBe('still typing in the surviving chat');
+  });
+
+  it('reaps the blank residue under EITHER id form', () => {
+    /* The composer keys the draft on whatever id the ROUTE carries, and a row is
+     * addressable as `/c/sess_*` and `/c/wb_*` alike. The merge clear looked only
+     * at `s.id`, so a blank draft written while the user sat on the `wb_` route
+     * stayed forever under a key no row owns — the residue the sweep exists to
+     * remove, arriving by the other door. */
+    $sessions.set([
+      row({ id: 'sess_A' }),
+      row({ id: 'wb_GONE', workbenchSessionId: 'wb_GONE', title: 'New chat', messageCount: 0 }),
+    ]);
+    localStorage.setItem(draftKey('wb_GONE'), '');
+
+    updateSessionWorkbenchMetadata('sess_A', { workbenchSessionId: 'wb_GONE' });
+
+    expect(localStorage.getItem(draftKey('wb_GONE'))).toBeNull();
+  });
+
+  it('keeps words that live under the dropped row’s workbench handle', () => {
+    $sessions.set([
+      row({ id: 'sess_B' }),
+      row({ id: 'wb_LIVE', workbenchSessionId: 'wb_LIVE', title: 'New chat', messageCount: 0 }),
+    ]);
+    localStorage.setItem(draftKey('wb_LIVE'), 'half-written, other route');
+
+    updateSessionWorkbenchMetadata('sess_B', { workbenchSessionId: 'wb_LIVE' });
+
+    expect(localStorage.getItem(draftKey('wb_LIVE'))).toBe('half-written, other route');
   });
 });

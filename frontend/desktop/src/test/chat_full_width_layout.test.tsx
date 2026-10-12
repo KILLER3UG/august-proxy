@@ -1,40 +1,37 @@
-import { describe, it, expect } from 'vitest';
+/** The chat column must stay uncapped, and settings must be an overlay.
+ *
+ *  This file used to grep `ChatLayout.tsx` for the shapes that made both true,
+ *  which had two problems: the scan looked at the 800 characters BEFORE the
+ *  `august-chat-column` anchor while the cap it forbids sits AFTER it, in the
+ *  same class attribute — so re-adding `max-w-3xl` kept the test green; and the
+ *  assertions were strings, so they died on a reformat and survived a behavior
+ *  change. What is left here is the one property a source scan can actually
+ *  establish (the class list of the element carrying the hook class), and the
+ *  route/overlay behaviour moved to `settingsRouteElement.test.tsx`, which
+ *  renders the shapes instead of reading the text that describes them.
+ */
+
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
 
 describe('ChatLayout full-width chat column', () => {
   const path = resolve(__dirname, '../components/shell/ChatLayout.tsx');
   const src = readFileSync(path, 'utf8');
 
-  it('chat column does not cap with max-w-3xl on its outermost wrapper', () => {
-    // The outermost chat column should not have max-w-3xl (it's removed so the
-    // scroll container can span the full chat-area width). The wrapper is the
-    // div carrying the `august-chat-column` hook class that --august-drawer-w
-    // keys on, so the guard anchors there rather than on how the routes are
-    // mounted inside it.
-    const idx = src.indexOf('august-chat-column');
-    expect(idx).toBeGreaterThan(0);
-    const before = src.slice(Math.max(0, idx - 800), idx);
-    // The max-w-3xl cap should NOT appear in the wrapper just before the chat
-    // column — any hit means the outermost wrapper is capped again.
-    expect(before).not.toMatch(/max-w-3xl/);
-    // The chat column must no longer use justify-center to center a max-width box.
-    expect(before).not.toMatch(/justify-center/);
-  });
-
-  it('settings is an overlay over a background-location chat, not an Outlet swap', () => {
-    // The chat surface keeps rendering while /settings/* is open: the chat
-    // <Routes> carries the BACKGROUND location (where the user was), and the
-    // settings dialog renders from a separate <Routes> against the real one.
-    // A plain `<Outlet/>` swap here unmounts ChatThread — streams die, scroll
-    // position is lost — which is the pre-dialog behavior this replaced.
-    expect(src).toMatch(/<Routes location=\{isSettings \? background : undefined\}>/);
-    expect(src).toMatch(/CHAT_SURFACE_ROUTES/);
-    expect(src).toMatch(/<SettingsPageRoute \/>/);
-    // The dialog's route element must be created per render AND read its param
-    // at the matched level: a hoisted module-level element is the same object
-    // every time, so React skips re-rendering it and the panel keeps whatever
-    // section was mounted first while only the URL moves.
-    expect(src).not.toMatch(/SETTINGS_PAGE_ELEMENT/);
+  it('the chat column element carries no width cap in its own class list', () => {
+    // The element is the hook for `--august-drawer-w` (see chat.css), so the
+    // guard anchors on the class attribute that names it and reads THE WHOLE
+    // attribute — the earlier version sliced the text before the anchor, which
+    // is where the cap could never be.
+    const m = /className="([^"]*august-chat-column[^"]*)"/.exec(src);
+    expect(m, 'no element carries the august-chat-column hook class').not.toBeNull();
+    const classes = m![1].split(/\s+/);
+    const capped = classes.filter((c) => /^(max-w-|justify-center)/.test(c));
+    expect(capped).toEqual([]);
+    // The scroll container spans the chat area; the readable max-width is applied
+    // inside ChatThread, not on this wrapper.
+    expect(classes).toContain('flex-1');
   });
 });
