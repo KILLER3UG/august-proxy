@@ -115,8 +115,8 @@ def test_reader_mutating_flags_blocked():
     assert check_hardline_command('sed --in-place "s/x/y/" .env') is not None
     assert check_hardline_command("awk -i inplace '{print $1}' .env") is not None
     assert check_hardline_command('find . -name .env -delete') is not None
-    assert check_hardline_command('find . -name .env -exec rm {} \;') is not None
-    assert check_hardline_command('find ~/.ssh -type f -execdir shred {} \;') is not None
+    assert check_hardline_command('find . -name .env -exec rm {} \\;') is not None
+    assert check_hardline_command('find ~/.ssh -type f -execdir shred {} \\;') is not None
     assert check_hardline_command('sort -o .env < other.txt') is not None
 
 

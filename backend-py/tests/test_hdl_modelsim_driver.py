@@ -1,4 +1,4 @@
-"""ModelSim driver for ``hdl_lint`` / ``hdl_simulate`` + GHDL resolver hardening.
+r"""ModelSim driver for ``hdl_lint`` / ``hdl_simulate`` + GHDL resolver hardening.
 
 The EDA environment report (2026-08-31) found ModelSim-Altera installed at
 ``C:\intelFPGA\18.1\modelsim_ase\`` but unused: ``hdl_tools`` drove GHDL
