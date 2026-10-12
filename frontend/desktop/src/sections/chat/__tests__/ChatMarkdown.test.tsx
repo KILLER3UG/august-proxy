@@ -413,27 +413,65 @@ describe('demoteMarkdownHeadings — an authored document inside a dialog', () =
       '> > > > > # Five levels of quote',
       '- - - - - # Five levels of bullet',
       '- a\n    # Title at the list content column',
+      '- a\n  # T at a two-column item',
+      '-     a\n  # T at a five-space bullet column',
+      '- a\n\t# Tab continuation reaching the item column',
+      '>  # Two spaces after a quote marker',
       '- ```\n  # a shell comment\n  ```\n\n# H',
       '- ~~~\n  # comment\n  ~~~\n\n# H',
       '- a\n    ```bash\n    # c\n    ```\n- b\n\n# Real',
+      /* An unclosable fence inside a list item: the opener is four backticks and
+       * the only closer is three, so CommonMark never matches it. `marked` ends
+       * the fence at the list boundary instead, which makes the trailing `# Real`
+       * a top-level h1. A tracker that records how many item columns were open
+       * BEFORE the fence's own line ships the item — and so the fence — one column
+       * short, and swallows the rest of the document. */
+      '- ````\n  # c\n  ```\n\n# Real',
       'one\ntwo\n===',
       '- Title\n  more\n  ===',
       '> one\n> two\n> ===',
       '- Release Notes\n  ==============',
       '> Release Notes\n> ==============',
       '- a\n- b\n  ===',
+      /* The ownership loop has a depth cap, and a cap that stops short ships the
+       * h1 it was counting: thirteen nested quotes is a document someone wrote,
+       * and the demoter saw a heading it could not reach. */
+      '> > > > > > > > > > > > > # Thirteen deep quote',
+      // And one deeper than any cap someone might pick: the walk is bounded by
+      // the line, so nesting that long is still a heading it has to reach.
+      `${'> '.repeat(40)}# Forty deep quote`,
+      /* The HTML-block rule ends at the blank line, and a heading after it is a
+       * heading again — an extent that ran past the boundary would skip this one
+       * and ship the level 1. */
+      '<div>\nTitle\n\n# After the blank line',
     ];
     const notHeadings = [
       'Title\n> quote\n===',
       'Some para\n---\n===',
       'A\n* * *\n===',
       '<div>\nTitle\n</div>\n===',
+      /* An HTML block runs to the next blank line and `marked` passes all of it
+       * through raw: no heading, no paragraph, no setext. Only flagging the
+       * OPENING line left the lines under it parsed as markdown, so a real `#`
+       * inside a `<div>` was rewritten to `##` — text the dialog shows
+       * differently from the file, in a block that was never a heading. */
+      '<div>\n# Title\n</div>',
       '\t# Tab-indented code',
       '    # Indented code',
       '#hashtag',
       '> a\n    # four spaces past a quote is code',
-      'one\ntwo\n\n===',
+      /* A list item strips its CONTENT COLUMN, not its whole left margin. Four
+       * columns past that column is still indented code, inside the item — a
+       * strip-to-end-of-lead made every continuation look flush at column 0 and
+       * rewrote code samples the reader can see. The five-space bullet is the
+       * other half of the same rule: past four separator characters the run stops
+       * being separation and becomes the item's own indentation, so the content
+       * column is marker+1 and `      # T` sits four deep. */
+      '- a\n      # six spaces is code inside a two-column item',
+      '  - a\n        # four past a nested column',
+      '-     a\n      # T',
       '> \t# space then tab is code',
+      'one\ntwo\n\n===',
     ];
 
     // A fresh `Marked`: ChatMarkdown configures the singleton with its own

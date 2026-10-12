@@ -26,21 +26,21 @@
  *  and a tab-indented ``` are indented CODE, not a heading and not a fence.
  *  Counting a tab as one character of the allowed 0-3 made both look like markup
  *  — a tab-indented Makefile recipe (`\t# comment`) was rewritten to `##`,
- *  corrupting text the dialog then showed differently from the file. */
-const FENCE_MARKER = /^(`{3,}|~{3,})(.*)$/;
+ *  corrupting text the dialog then showed differently from the file.
+ *
+ *  The tail is `[^\r]*`, not `.`: on a CRLF document `.` cannot cross the `\r`
+ *  and `$` has no before-terminator case in JS, so a fence line ending in `\r`
+ *  matched NOTHING and no fence opened or closed at all. The same document with
+ *  LF endings behaved correctly — which is the worst shape a bug can have,
+ *  because the memory files this runs on come off a Windows disk. */
+const FENCE_MARKER = /^(`{3,}|~{3,})([^\r]*)$/;
 
 /** A setext h1 underline (`Title` + a line of `=`). Only `=` is touched: that
  *  form is level 1, which is what must not appear in the dialog. A `-` underline
  *  is already level 2, and rewriting it would collide with thematic breaks
  *  (`---`). Tested on the line's REMAINDER, after its block indent is stripped,
  *  which is what lets a nested item's `    =====` count. */
-const SETEXT_H1 = /^ {0,3}=+\s*$/;
-
-/** A list bullet or ordered marker — the only markers that open a CONTENT
- *  COLUMN. A blockquote does not: `> a` above an indented `    # T` is a
- *  paragraph in `marked`, so treating a quote as owning a column would promote
- *  indented code into a heading and rewrite it. */
-const LIST_MARKER = /^ {0,3}(?:[-*+][ \t]+|\d+[.)][ \t]+)/;
+const SETEXT_H1 = /^ {0,3}=+[ \t\r]*$/;
 
 /** One block marker that can own the line a heading sits on.
  *
@@ -49,7 +49,13 @@ const LIST_MARKER = /^ {0,3}(?:[-*+][ \t]+|\d+[.)][ \t]+)/;
  *  stop and lands past the three that a heading may have. So the quote takes at
  *  most ONE separator character: widening it to `[ \t]*` swallowed the space AND
  *  the tab and rewrote a code sample. List markers take a run, because a list's
- *  content column is measured past the run (`-   item` starts at column 4). */
+ *  content column is measured past the run (`-   item` starts at column 4).
+ *
+ *  The run is INSIDE this match (`[-*+][ \t]+`), which is why `splitBlock` reads
+ *  it off the end of the match rather than from what follows it. A blockquote is
+ *  the marker that owns NO content column: `> a` above an indented `    # T` is a
+ *  paragraph in `marked`, so giving quotes a column would promote indented code
+ *  into a heading and rewrite it. */
 const OWNING_MARKER = /^ {0,3}(?:>[ \t]?|[-*+][ \t]+|\d+[.)][ \t]+)/;
 
 /** The heading itself, once the owning markers are gone: 1-6 `#` then a space, a
@@ -57,9 +63,28 @@ const OWNING_MARKER = /^ {0,3}(?:>[ \t]?|[-*+][ \t]+|\d+[.)][ \t]+)/;
  *  neither may be touched. */
 const ATX_HEADING = /^(#{1,6})([ \t]|$)/;
 
-/** Leading SPACES of a line — never a tab; see `FENCE_OPEN`. */
-function indentOf(line: string): number {
-  return /^ */.exec(line)![0].length;
+/** An HTML block's opening tag. Everything until the next blank line is raw
+ *  passthrough in `marked` — no heading, no paragraph — so both the demotion and
+ *  the setext fold have to stand down for its whole extent. Treating only the
+ *  opening line as the block made `<div>\nTitle\n</div>\n===` fold into
+ *  `<div>\n## Title`, deleting a visible line. */
+const HTML_BLOCK_OPEN = /^ {0,3}<[a-zA-Z/!/][^>]*>?\s*$/;
+
+/** The column a line's first non-space character sits at, with tabs advanced to
+ *  the next 4-column stop.
+ *
+ *  Counting characters instead of columns made a tab-indented continuation of an
+ *  open list item (`- a` above `\t# T`) look like top-level indented code, so the
+ *  heading inside the item was skipped and shipped to the dialog at level 1 —
+ *  while the spaces-only form of the same document demoted correctly. */
+function columnOf(line: string): number {
+  let col = 0;
+  for (const ch of line) {
+    if (ch === ' ') col += 1;
+    else if (ch === '\t') col += 4 - (col % 4);
+    else break;
+  }
+  return col;
 }
 
 /** Where a line's block structure ends and its content begins.
@@ -70,12 +95,12 @@ function indentOf(line: string): number {
  *  is left. Testing only the bare line missed every one of them and the dialog
  *  kept the level 1.
  *
- *  `stack` holds the content columns of the open list items, outermost last-
- *  nearest. A continuation line owns no marker, so it is stripped by column count
- *  — that is what makes `    # T` under `- a` a heading instead of code. A
- *  blockquote owns no column: `> a` above an indented `    # T` is a paragraph in
- *  `marked`, so giving quotes a content column would promote indented code into
- *  a heading and rewrite it.
+ *  `stack` holds the content columns of the open list items, innermost last. A
+ *  continuation line owns no marker, so it is stripped by column COUNT — and only
+ *  up to that column: `      # T` under `- a` sits four past the item's content
+ *  column and is indented CODE inside the item, which a strip-to-end-of-lead
+ *  turned into a heading and rewrote. Only markers that own a column (see
+ *  OWNING_MARKER) can open one.
  */
 function splitBlock(
   line: string,
@@ -86,27 +111,49 @@ function splitBlock(
   const opened: number[] = [];
 
   const col = stack[stack.length - 1];
-  if (col !== undefined && col > 0 && indentOf(line) >= col) {
-    prefix = line.slice(0, col);
-    at = col;
+  if (col !== undefined && col > 0 && columnOf(line) >= col) {
+    // Consume the lead up to the item's content column, by COLUMN and not by
+    // character index: a continuation that reaches it with a tab (`- a` above
+    // `\t# T`) is the same h1 in marked as the one that reaches it with spaces.
+    // Anything past the column stays in `rest`, where the three-space heading
+    // allowance is what rejects the code case.
+    let used = 0;
+    let c = 0;
+    while (c < col && (line[used] === ' ' || line[used] === '\t')) {
+      c += line[used] === ' ' ? 1 : 4 - (c % 4);
+      used += 1;
+    }
+    prefix = line.slice(0, used);
+    at = used;
   }
 
-  // Four levels is a ceiling someone would hit by accident, not by writing a
-  // document: `> > > > > # T` and a fifth-nested bullet are both a real h1 in
-  // marked, and a cap that stops short ships it to the dialog. The loop cannot
-  // run away — each iteration consumes at least two characters of the line.
-  for (let depth = 0; depth < 12; depth += 1) {
+  // Bounded by the LINE, not by a nesting limit: every iteration consumes at
+  // least the marker character, so the walk cannot run away. A fixed depth cap
+  // terminates just as surely and additionally ships an h1 — a thirteen-deep
+  // quoted heading reached the dialog at level 1 while the cap was twelve, and
+  // the documents that arrive here are model-written.
+  for (let guard = line.length; guard > 0; guard -= 1) {
     const tail = line.slice(at);
     const m = OWNING_MARKER.exec(tail);
     if (!m) break;
-    // A marker separates itself from its content with spaces or a tab, and the
-    // content column is the whole run (`-   item` starts at column 4). ONLY a
-    // list marker opens one: a blockquote has no content column, so an indented
-    // line under `> a` stays the indented code `marked` says it is.
-    const pad = /^ +/.exec(tail.slice(m[0].length))?.[0].length ?? 0;
-    prefix += m[0] + ' '.repeat(pad);
-    at += m[0].length + pad;
-    if (LIST_MARKER.test(tail)) opened.push(at);
+    const marker = m[0];
+    const isQuote = /^ *>/.test(marker);
+    // A quote's separator is already exactly one character wide (see
+    // OWNING_MARKER); a second one is content, and `> \t# T` — space then TAB —
+    // is indented code. Stripping the run that followed made the demoter rewrite
+    // it to `>  ## T`.
+    const run = isQuote ? '' : (/[ \t]+$/.exec(marker)?.[0] ?? '');
+    const core = marker.length - run.length;
+    // Past four characters of separator, CommonMark stops counting it as
+    // separation and treats the excess as the item's own indentation, so the
+    // content column is marker+1. That is why `-     a` (five) above `      # T`
+    // (six) is indented CODE inside the item and not a heading. The run lives
+    // inside the match, so measuring it from what FOLLOWS the match found nothing
+    // and every multi-space bullet got a content column of its own width.
+    const pad = /^ {5,}$/.test(run) ? 1 : run.length;
+    prefix += marker.slice(0, core + pad);
+    at += core + pad;
+    if (!isQuote) opened.push(at);
   }
 
   return { prefix, rest: line.slice(at), opened };
@@ -168,9 +215,13 @@ function demoteAtx(rest: string): string | null {
  * shipped to the dialog as an h1.
  */
 export function demoteMarkdownHeadings(src: string): string {
-  const lines = src.split('\n');
+  // CRLF first. A `\r` at the end of a line is invisible to every rule below
+  // that anchors on `$`, so a document off a Windows disk silently opted out of
+  // the fence tracking — same bytes, same parser, different verdict by line
+  // ending. Memory files and drafted skills are read off NTFS.
+  const lines = src.replace(/\r\n?/g, '\n').split('\n');
   const out: string[] = [];
-  let fence: { char: '`' | '~'; len: number } | null = null;
+  let fence: { char: '`' | '~'; len: number; stack: number } | null = null;
   // Content columns of the list items open as of the previous line. A blank line
   // does not close them (`- a`, blank, `    # T` is still an h1 in that item),
   // but it does close a setext paragraph — which is `paraStart`.
@@ -179,8 +230,35 @@ export function demoteMarkdownHeadings(src: string): string {
   // a setext underline can only fold back over its own paragraph — see markerSig.
   let paraStart = -1;
   let paraSig: 'quote' | 'item' | 'break' | 'other' | 'plain' | 'none' = 'none';
+  // Inside an HTML block, nothing is a heading and nothing is a paragraph until
+  // the next blank line: `marked` passes raw HTML through. Only the OPENING line
+  // being flagged is not enough — `<div>\nTitle\n</div>\n===` folded to
+  // `<div>\n## Title`, deleting a line the reader can see.
+  let inHtml = false;
 
   for (const line of lines) {
+    // Dedent first, once, at the top. Every decision below — is the fence still
+    // inside its item, which block owns this line — asks about the open list
+    // columns, so the pop cannot live after them: a fence's own closer is
+    // deliberately indented less than the content it closes, and popping later
+    // means the tracker never notices it has left the item. A blank line is
+    // exempt; see the paragraph rule below.
+    const indent = columnOf(line);
+    if (line.trim()) {
+      while (stack.length && indent < stack[stack.length - 1]) stack.pop();
+    }
+
+    if (HTML_BLOCK_OPEN.test(line)) {
+      inHtml = true;
+      out.push(line);
+      paraStart = -1;
+      continue;
+    }
+    if (inHtml) {
+      if (!line.trim()) inHtml = false;
+      out.push(line);
+      continue;
+    }
     // Fences are tested on the line's REMAINDER, not its left margin: a fence
     // opened inside a list item sits at the item's content column, which is past
     // the 0-3 an unindented fence may have. Ignoring that read the opening fence
@@ -188,7 +266,33 @@ export function demoteMarkdownHeadings(src: string): string {
     // the dialog), and the CLOSING fence as a new opener — which then swallowed
     // every heading after the block, so `# H` reached the dialog at level 1. Same
     // document, two verdicts, and on CRLF input only one of them happened.
-    const probe = FENCE_MARKER.exec(splitBlock(line, stack).rest.replace(/^ {0,3}/, ''));
+    const blk = splitBlock(line, stack);
+    // Commit the columns this line opens BEFORE the fence tracker reads the stack:
+    // a fence that opens on a list-marker line (`- ```` `) is open INSIDE that
+    // item, and recording `fence.stack` from the pre-line stack made the item one
+    // column shallower than it is. Every early `continue` below then skipped the
+    // `opened` push entirely, so the item never existed and the 4-backtick fence
+    // was never closed by the list ending — it swallowed the rest of the document
+    // and shipped the trailing `# Real` to the dialog at level 1.
+    if (blk.opened.length) stack = [...stack, ...blk.opened];
+    const probe = FENCE_MARKER.exec(blk.rest.replace(/^ {0,3}/, ''));
+    if (fence) {
+      // A fence opened INSIDE a list item ends when the item ends. marked closes
+      // it at the block boundary even when the closer is too short to match
+      // (`- ```` opened, closed by a 3-backtick line), while a tracker that only
+      // ever listens for a length-matching closer stays open past the list and
+      // swallows every heading after it — the same failure the fence tracker
+      // exists to prevent, arriving from the other side. `fence.stack` is how
+      // many list columns were open when it started, so the stack falling below
+      // that count means we have left the item the fence was written inside.
+      if (line.trim() && stack.length < fence.stack) {
+        fence = null;
+      } else if (!probe || probe[1][0] !== fence.char) {
+        // Inside a fence, nothing else is markup: the line goes out as it came.
+        out.push(line);
+        continue;
+      }
+    }
     if (probe && (!fence || probe[1][0] === fence.char)) {
       const marker = probe[1];
       const char = marker[0] as '`' | '~';
@@ -198,33 +302,26 @@ export function demoteMarkdownHeadings(src: string): string {
       );
       const opens: boolean = !fence && marker.length >= 3 && !(char === '`' && info.includes('`'));
       if (closes || opens) {
-        fence = opens ? { char, len: marker.length } : null;
+        fence = opens ? { char, len: marker.length, stack: stack.length } : null;
         out.push(line);
         paraStart = -1;
         continue;
       }
     }
 
-    if (fence) {
-      // Inside a fence nothing is markup: the line goes out exactly as it came.
-      out.push(line);
-      continue;
-    }
-
     if (!line.trim()) {
       // A blank line closes a setext PARAGRAPH (`- a`, blank, `  ===` is two
       // paragraphs in marked) but NOT a list item: `- a`, blank, `    # T` is
-      // still an h1 inside that item. So the dedent pop happens after this
-      // branch, not before — a blank line's zero indent would otherwise close
-      // every open item and the heading below would read as top-level code.
+      // still an h1 inside that item. That is why the dedent pop at the top of the
+      // loop is guarded on non-blank lines — a blank line's zero column would
+      // otherwise close every open item and turn the heading under it into
+      // top-level code.
       out.push(line);
       paraStart = -1;
       continue;
     }
-    const indent = indentOf(line);
-    while (stack.length && indent < stack[stack.length - 1]) stack.pop();
 
-    const { prefix, rest, opened } = splitBlock(line, stack);
+    const { prefix, rest } = blk;
     // Where this line's own paragraph began, for the setext fold below.
     const para = paraStart === -1 ? out.length : paraStart;
 
@@ -266,7 +363,6 @@ export function demoteMarkdownHeadings(src: string): string {
       paraStart = out.length - 1;
       paraSig = sig;
     }
-    stack = [...stack, ...opened];
   }
 
   return out.join('\n');
