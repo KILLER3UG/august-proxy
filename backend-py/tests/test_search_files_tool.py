@@ -33,12 +33,13 @@ async def test_rg_no_matches_exit_1_returns_fast_no_matches(monkeypatch, tmp_pat
 
 
 async def test_rg_exit_0_returns_capped_results(monkeypatch, tmp_path):
-    # `file.py\0<i>:match <i>` — the NUL between the path and `lineno:content` is
-    # what rg emits because `_searchFiles` asks for `--null`. A colon is legal
-    # inside a path, so a colon-framed line is exactly what let the result filter
-    # hand the guard a truncated path (`./run` out of `./run:1/id_rsa`) and approve
-    # it; the fake has to be the frame the real binary produces.
-    lines = '\n'.join(f'file.py:{NUL}{i}:match {i}' for i in range(150))
+    # The frame rg actually emits: the NUL goes WHERE the colon after the path
+    # was, so a line is `<path>\0<lineno>:<content>` — measured against ripgrep
+    # 15.0.4 with `--null` on this machine. A colon is legal inside a path, and
+    # guessing on it is what let the result filter hand the guard a truncated
+    # path (`./run` out of `./run:1/id_rsa`) and approve it, so the fake has to
+    # carry the frame the binary carries.
+    lines = '\n'.join(f'file.py{NUL}{i}:match {i}' for i in range(150))
     _patchRg(monkeypatch, 0, stdout=lines.encode())
     result = await file_tools._searchFiles('match', str(tmp_path))
     assert '... and 50 more results' in result
@@ -123,12 +124,13 @@ async def test_search_files_forwards_filters_to_rg(monkeypatch, tmp_path):
 
 
 async def test_search_files_max_results_caps_output(monkeypatch, tmp_path):
-    # `file.py\0<i>:match <i>` — the NUL between the path and `lineno:content` is
-    # what rg emits because `_searchFiles` asks for `--null`. A colon is legal
-    # inside a path, so a colon-framed line is exactly what let the result filter
-    # hand the guard a truncated path (`./run` out of `./run:1/id_rsa`) and approve
-    # it; the fake has to be the frame the real binary produces.
-    lines = '\n'.join(f'file.py:{NUL}{i}:match {i}' for i in range(150))
+    # The frame rg actually emits: the NUL goes WHERE the colon after the path
+    # was, so a line is `<path>\0<lineno>:<content>` — measured against ripgrep
+    # 15.0.4 with `--null` on this machine. A colon is legal inside a path, and
+    # guessing on it is what let the result filter hand the guard a truncated
+    # path (`./run` out of `./run:1/id_rsa`) and approve it, so the fake has to
+    # carry the frame the binary carries.
+    lines = '\n'.join(f'file.py{NUL}{i}:match {i}' for i in range(150))
     _patchRg(monkeypatch, 0, stdout=lines.encode())
     result = await file_tools._searchFiles('match', str(tmp_path), maxResults=10)
     assert '... and 140 more results' in result
@@ -144,3 +146,48 @@ def test_fallback_glob_and_type_filters(tmp_path):
 
     byType = file_tools._pySearchFilesSync('needle', tmp_path, type='txt')
     assert 'b.txt' in byType and 'a.py' not in byType
+
+
+async def test_an_unframeable_line_is_refused_out_loud(monkeypatch, tmp_path):
+    """A line the filter cannot attribute to a file is REPORTED, not renamed "no matches".
+
+    `_rgLineIsListable` already fails closed — the previous shape guessed the path
+    by splitting on the first `:digits:`, so `./run:1/id_rsa:1:SECRET` was judged
+    as `./run` (a path that is nothing) and the whole line, secret path and content
+    included, went back to the model. Failing closed was right; reporting it as
+    `No matches found.` was not. That sentence tells a model the repository is
+    empty, and a model that believes the search found nothing stops searching — the
+    one outcome a guard must never manufacture is a false negative about content
+    that exists.
+    """
+    colon_framed = './run:1/id_rsa:1:SECRET_VALUE'
+    _patchRg(monkeypatch, 0, stdout=colon_framed.encode())
+    result = await file_tools._searchFiles('SECRET_VALUE', str(tmp_path))
+    assert 'SECRET_VALUE' not in result, result
+    assert 'Withheld' in result, result
+    assert 'did not come up empty' in result, result
+
+
+def test_the_frame_is_where_the_path_ends():
+    """The unit half of the same rule: NUL frames, a colon does not."""
+    kept, withheld, unframed = file_tools._filterRgLines([
+        f'src/app.py{NUL}12:match here',
+        './run:1/id_rsa:1:SECRET_VALUE',
+        'binary noise with no frame at all',
+        '',
+    ])
+    assert kept == [f'src/app.py{NUL}12:match here'], kept
+    # Two unframeable lines (the colon guess and the bare text), and the empty
+    # entry is not counted at all — it is not a result.
+    assert unframed == 2, (kept, withheld, unframed)
+    assert withheld == 0, (kept, withheld, unframed)
+
+
+def test_a_store_hit_is_counted_as_withheld_not_as_absent(tmp_path):
+    """The guard refuses a path it recognises; the tool says so, in its own words."""
+    line = f'{tmp_path / ".aws" / "credentials"}{NUL}3:aws_secret_access_key=SECRET'
+    kept, withheld, unframed = file_tools._filterRgLines([line])
+    assert kept == [] and withheld == 1 and unframed == 0, (kept, withheld, unframed)
+    note = file_tools._withheldNote(withheld, unframed)
+    assert 'protected path' in note, note
+    assert 'refused' in note, note

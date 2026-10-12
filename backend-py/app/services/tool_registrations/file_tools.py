@@ -1134,15 +1134,54 @@ async def _searchFiles(
             # under a legitimate root cannot answer a query either. Checked on
             # the path text rather than the filename: an rg line is
             # `path:lineno:text`, and the path is what the guard is about.
-            lines = [ln for ln in lines if _rgLineIsListable(ln)]
-            total = len(lines)
+            kept, withheld, unframed = _filterRgLines(lines)
+            total = len(kept)
             if total > cap:
-                lines = lines[:cap]
-                lines.append(f'... and {total - cap} more results')
-            return '\n'.join(lines) if lines else 'No matches found.'
+                kept = kept[:cap]
+                kept.append(f'... and {total - cap} more results')
+            note = _withheldNote(withheld, unframed)
+            if not kept:
+                return note or 'No matches found.'
+            return '\n'.join(kept) + (('\n' + note) if note else '')
         return await _pySearchFiles(query, searchPath, glob=glob, type=type, cap=cap)
     except Exception:
         return await _pySearchFiles(query, searchPath, glob=glob, type=type, cap=cap)
+
+
+def _filterRgLines(lines: list[str]) -> tuple[list[str], int, int]:
+    """(kept, withheld-by-rule, unframeable) for an `rg` result block.
+
+    The split matters for what the tool says next. A line whose path the guard
+    refuses was FOUND and is being protected; a line with no NUL frame is one that
+    cannot be attributed to any file at all. Both are dropped, and neither may come
+    back as `No matches found.` — that reports a refusal as an empty repository, and
+    a model that believes the search found nothing stops searching.
+    """
+    kept: list[str] = []
+    withheld = 0
+    unframed = 0
+    for ln in lines:
+        if not ln.strip():
+            continue
+        if chr(0) not in ln:
+            unframed += 1
+            continue
+        if _rgLineIsListable(ln):
+            kept.append(ln)
+        else:
+            withheld += 1
+    return kept, withheld, unframed
+
+
+def _withheldNote(withheld: int, unframed: int) -> str:
+    parts = []
+    if withheld:
+        parts.append(f'{withheld} match(es) in a protected path')
+    if unframed:
+        parts.append(f'{unframed} match line(s) rg did not frame with a path')
+    if not parts:
+        return ''
+    return 'Withheld: ' + '; '.join(parts) + '. The search refused; it did not come up empty.'
 
 
 def _rgLineIsListable(line: str) -> bool:
