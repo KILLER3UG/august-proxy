@@ -38,6 +38,19 @@ _COMMAND_CORPUS = [
     'ls -la',
     'grep -r secret .',
     'cat .ssh/config',
+    # A credential STORE named as a directory, not as a key file. The name
+    # patterns never matched `.ssh` itself, so `ls ~/.ssh` was allowed by this
+    # door while every file door refused the same path — and code mode is the
+    # surface whose whole purpose is running commands.
+    'ls ~/.ssh',
+    'ls -la ~/.aws',
+    'find ~/.ssh -type f',
+    'ls ~/.config/gh',
+    'ls $HOME/.gnupg',
+    # Look-alikes must stay allowed: the rule is a whole path component, and a
+    # guard that cries wolf gets worked around.
+    'ls .aws-sdk',
+    'ls src/.ssh_helpers',
     'echo ok',
     'cd /tmp && ls',
     'python -c "print(42)"',
@@ -52,6 +65,21 @@ _READ_PATH_CORPUS = [
     '/workspace/.env',  # allowed (reads of .env stay allowed by design)
     '/workspace/src/main.py',  # allowed
     '/workspace/notes.txt',  # allowed
+    # The store rule, with the same asymmetry the file doors carry: the
+    # DIRECTORY is unlistable, a named non-secret member of `.ssh` is readable,
+    # and the `_CREDENTIAL_STORES` set is refused root AND subtree.
+    # `.ssh` as a DIRECTORY is refused by the LISTING doors, not by the path
+    # guard, and both sides agree on that: `authorized_keys` is readable by name.
+    '/Users/me/.ssh',  # allowed here, refused by list_files/listable_root
+    '/Users/me/.ssh/',  # allowed here, refused by list_files/listable_root
+    '/Users/me/.aws',  # blocked
+    '/Users/me/.aws/sso/cache/abc.json',  # blocked: store subtree
+    '/Users/me/.docker/config.json',  # blocked: store subtree
+    '/home/u/.config/gh/hosts.yml',  # blocked: two-component store
+    '/Users/me/.ssh/config',  # allowed by design (named non-secret member)
+    '/Users/me/.ssh/authorized_keys',  # allowed by design
+    '/workspace/.aws-sdk/app.py',  # allowed: not `.aws`
+    '/workspace/.ssh_helpers/x',  # allowed
 ]
 
 _WRITE_PATH_CORPUS = [

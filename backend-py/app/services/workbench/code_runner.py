@@ -256,7 +256,21 @@ def list_files(path='.'):
     if _reason:
         raise PermissionError(_reason)
     p = _bind(path)
-    return '\\n'.join(str(x.relative_to(p)) for x in sorted(p.rglob('*'))[:200])
+    # The listing door: the root itself, then every child. This is `listable_root`
+    # + `listable_entry` in file-tool form.
+    if _hardline_is_credential_store(str(p)):
+        raise PermissionError('hardline credential store is not listable: ' + str(path))
+    # Per child as well as per root: asking for the home directory names a
+    # directory that IS listable and CONTAINS the stores, and rglob walks into
+    # them. The root check alone would list every entry under .ssh, .aws, .docker.
+    _keep = []
+    for x in sorted(p.rglob('*')):
+        if len(_keep) >= 200:
+            break
+        if _hardline_is_credential_store(str(x)):
+            continue
+        _keep.append(str(x.relative_to(p)))
+    return '\\n'.join(_keep)
 
 
 # ---- T13 tool bridge -----------------------------------------------------
@@ -388,6 +402,10 @@ _CREDENTIAL_READ_RE = _re.compile(__READ_PATTERN__, _re.IGNORECASE)
 _WRITE_VERB_RE = _re.compile(__WRITE_VERB__, _re.IGNORECASE)
 _ENV_TEMPLATE_RE = _re.compile(__ENV_TEMPLATE__, _re.IGNORECASE)
 _READER_CMDS = frozenset(__READERS__)
+# The credential-store directory sets, injected from `sandbox.hardline` — see
+# `_hardline_is_credential_store` for why they are here at all.
+_CRED_DIRS = tuple(__CRED_DIRS__)
+_STORE_DIRS = tuple(__STORE_DIRS__)
 _MUTATING_FLAG_RES = {
     _cmd: tuple(_re.compile(_p, _re.IGNORECASE) for _p in _flags)
     for _cmd, _flags in __MUTATING_FLAGS__.items()
@@ -396,6 +414,53 @@ _MUTATING_FLAG_RES = {
 
 def _hardline_canonical(text):
     return text.replace('\\', '/')
+
+
+def _hardline_store_reason(token):
+    """Port of hardline._secret_store_reason: the store a path lives in or IS.
+
+    This is the `_CREDENTIAL_STORES` half — root AND subtree — and the code-mode
+    door never had it: it copied the write, credential-name and reader-command
+    patterns out of `hardline` and not the store rule at all, so
+    `read_file('~/.aws/credentials')` and `cat ~/.docker/config.json` were judged
+    only by whether the FILENAME happened to match. `.aws/sso/cache/<hash>.json`
+    and `.config/gh/hosts.yml` are exactly the names no pattern list guesses, which
+    is why the original matches on the directory. `test_read_path_parity` caught
+    the gap when the corpus grew these paths.
+    """
+    _p = '/' + _hardline_canonical(str(token)).strip('"\\' + "'").strip('/') + '/'
+    _p = _p.lower()
+    for _store in _STORE_DIRS:
+        if '/' + _store + '/' in _p:
+            return _store
+    return None
+
+
+def _hardline_is_credential_store(token):
+    """Port of hardline.is_credential_directory for the LISTING doors.
+
+    The two tables mean different things and the port keeps that difference,
+    because collapsing them would be stricter than the doors it mirrors:
+
+      * `_CREDENTIAL_DIRECTORIES` (`.ssh`) — the DIRECTORY is unlistable. A named
+        non-secret member (`~/.ssh/config`, `authorized_keys`) stays readable,
+        which is a considered decision the file-tool tests pin.
+      * `_CREDENTIAL_STORES` (`.aws`, `.docker`, `.config/gh`, …) — unlistable
+        ROOT **and subtree**, via `_hardline_store_reason`.
+
+    Matching is on whole path components, padded, so `.aws-sdk` is not `.aws`. The
+    tables are injected from the module that owns them: a store added there is
+    honoured here without a second copy being remembered.
+
+    One deliberate difference: the original resolves the path first, because
+    `.ssh/`, `.ssh/.` and `.ssh ` are three spellings of one directory. A trailing
+    separator is stripped here and `list_files` hands this the already-resolved
+    path from `_bind`.
+    """
+    if _hardline_store_reason(token):
+        return True
+    _segs = [s for s in _hardline_canonical(str(token)).strip('"\\' + "'").lower().split('/') if s]
+    return bool(_segs) and _segs[-1] in _CRED_DIRS
 
 
 def _hardline_is_write_intent(command):
@@ -433,6 +498,11 @@ def _hardline_check_command(command):
             return 'hardline protected path in command: ' + _raw
         if not _write and _CREDENTIAL_READ_RE.search(_tok):
             return 'hardline credential read blocked: ' + _raw
+        _store = _hardline_store_reason(_tok)
+        if _store:
+            return 'hardline protected ' + _store + ' in command: ' + _raw
+        if _hardline_is_credential_store(_tok):
+            return 'hardline credential store in command: ' + _raw
     return None
 
 
@@ -445,6 +515,16 @@ def _hardline_check_path(path, for_write):
         return 'hardline protected path: ' + str(path)
     if not for_write and _CREDENTIAL_READ_RE.search(_canon):
         return 'hardline credential read blocked: ' + str(path)
+    _store = _hardline_store_reason(str(path))
+    if _store:
+        return 'hardline protected ' + _store + ': ' + str(path)
+    # A credential DIRECTORY (`.ssh`) is refused by the LISTING doors, not here. A
+    # credential DIRECTORY is refused by the LISTING doors (`listable_root`,
+    # `list_files` below), while a named non-secret member of `.ssh` stays
+    # readable — `read_file('~/.ssh/authorized_keys')` is a considered decision
+    # the file-tool tests pin. Putting the rule in the path check here would make
+    # code mode stricter than the doors it mirrors, and `test_read_path_parity`
+    # is what caught that.
     return None
 '''
 
@@ -507,6 +587,8 @@ def build_runner_source(
         .replace('__WRITE_VERB__', repr(_hardline._WRITE_VERB_PATTERN.pattern))
         .replace('__ENV_TEMPLATE__', repr(_hardline._ENV_TEMPLATE_SUFFIX.pattern))
         .replace('__READERS__', repr(sorted(_hardline._READER_COMMANDS)))
+        .replace('__CRED_DIRS__', repr(sorted(_hardline._CREDENTIAL_DIRECTORIES)))
+        .replace('__STORE_DIRS__', repr(sorted(_hardline._CREDENTIAL_STORES)))
         .replace(
             '__MUTATING_FLAGS__',
             repr({k: tuple(p.pattern for p in v) for k, v in _hardline._MUTATING_FLAG_PATTERNS.items()}),

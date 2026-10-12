@@ -1100,7 +1100,12 @@ async def _searchFiles(
     try:
         from app.lib.async_subprocess import SubprocessAborted, communicate_or_kill
 
-        rgArgs = ['rg', '-n', '--max-count', '5', '-i']
+        # `--null` frames the path with a NUL instead of a colon: an rg line is
+        # `path:lineno:text`, and a directory named `work:1` or `run:10:13:56` makes
+        # the first `:digits:` sit INSIDE the path, so splitting on it asks the guard
+        # about a prefix that exists nowhere — which passes, and returns the secret
+        # path and the matching line. With NUL the frame is unambiguous.
+        rgArgs = ['rg', '-n', '--null', '--max-count', '5', '-i']
         if glob:
             rgArgs += ['-g', str(glob)]
         if type:
@@ -1129,7 +1134,7 @@ async def _searchFiles(
             # under a legitimate root cannot answer a query either. Checked on
             # the path text rather than the filename: an rg line is
             # `path:lineno:text`, and the path is what the guard is about.
-            lines = [ln for ln in lines if _lineIsListable(_rgLinePath(ln))]
+            lines = [ln for ln in lines if _rgLineIsListable(ln)]
             total = len(lines)
             if total > cap:
                 lines = lines[:cap]
@@ -1140,31 +1145,29 @@ async def _searchFiles(
         return await _pySearchFiles(query, searchPath, glob=glob, type=type, cap=cap)
 
 
-def _lineIsListable(path: 'str | None') -> bool:
+def _rgLineIsListable(line: str) -> bool:
     """Keep an `rg` result line only if the file it names may be named at all.
 
-    The search root was cleared by `listable_root`, so the ancestor question is
-    already answered and this is the name rule — which is why it does not call the
-    directory-side guard that resolves.
-    """
-    from app.services.sandbox.paths import listable_child
+    Fails CLOSED on a line it cannot frame: the previous shape guessed the path
+    by splitting on the first `:digits:`, so `repo/work:1/id_rsa:1:SECRET` was
+    judged as `repo/work` — a path that is nothing — and the whole line, secret
+    path and content included, went back to the model. Ask for the path in
+    rg's NUL framing, and when the frame is not there (an rg that predates
+    `--null`, a `--no-filename` shape, a truncated read) drop the line instead of
+    asking the guard about a guess.
 
-    if not path:
+    Results are filtered with the FULL rule (`listable_entry`, which resolves)
+    rather than the picker's cheap name rule: rg descends the tree itself, so no
+    ancestor was ever cleared here, and this runs on at most `cap` lines, not on
+    every file in the workspace.
+    """
+    from app.services.sandbox.paths import listable_entry
+
+    sep = chr(0)
+    path = line.split(sep, 1)[0].strip()
+    if not path or sep not in line:
         return False
-    p = Path(path)
-    return listable_child(str(p.parent), p.name)
-
-
-def _rgLinePath(line: str) -> 'str | None':
-    """The path portion of an `rg` output line (`path:lineno:text`).
-
-    Windows drive letters contain a colon, so the split is anchored on the
-    trailing `:digits:` rather than on the first colon — splitting on the first
-    colon returned `C` as the path for every absolute Windows result, which made
-    the guard check a single letter and pass it.
-    """
-    m = re.search(r'^(.*?):(\d+):', line)
-    return m.group(1) if m else None
+    return listable_entry(path)
 
 
 def _pySearchFilesSync(

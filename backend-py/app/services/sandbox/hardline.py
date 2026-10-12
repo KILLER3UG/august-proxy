@@ -301,8 +301,48 @@ def _is_env_template(token: str) -> bool:
     return bool(_ENV_TEMPLATE_SUFFIX.search(_canonical(token)))
 
 
+def _looks_like_path(token: str) -> bool:
+    """Could this shell token be a path the shell will open?
+
+    A command line is full of things that are not paths — `-la`, `2>&1`, `out.txt`,
+    a search pattern — and asking `Path.resolve()` about each one both costs time
+    and invents denials for words. A path carries a separator, a home anchor or a
+    Windows drive; a bare argument does not.
+    """
+    t = token.strip('"\'')
+    if not t or t.startswith('-'):
+        return False
+    return '/' in t or '\\\\' in t or t.startswith('~') or bool(re.match(r'^[A-Za-z]:', t)) or '%' in t
+
+
+def _expand_token(token: str) -> str:
+    """The path the shell would actually reach, as far as this process can tell.
+
+    `~` is expanded by the shell, not by Python, and `%VAR%` is expanded by cmd.
+    Resolving what can be resolved is enough: the store rule looks at the LAST
+    segment, and `~/.ssh`, `%USERPROFILE%\\.ssh` and `C:\\Users\\x\\.ssh` all end in
+    `.ssh` whether or not the anchor in front of them was real.
+    """
+    t = token.strip('"\'')
+    if t.startswith('~'):
+        try:
+            t = str(Path(t).expanduser())
+        except (OSError, RuntimeError):
+            pass
+    return t
+
+
 def check_hardline_command(command: str) -> str | None:
-    """Return a denial reason if ``command`` touches a hardline path, else None."""
+    """Return a denial reason if ``command`` touches a hardline path, else None.
+
+    The store rule runs on the token the SHELL would follow, not on the string the
+    model typed. `ls ~/.ssh` matched nothing here: `.ssh` is a
+    `_CREDENTIAL_DIRECTORY` — refused by `is_credential_directory`, which the two
+    file-listing doors call — and the name patterns cover `id_rsa` and friends,
+    which is a file inside the store, not the store. So a shell command enumerated
+    the whole directory, names and sizes, through a door the file tools had been
+    closed on. Same class, same reason, one predicate shared: `is_credential_directory`.
+    """
     if not command or not command.strip():
         return None
     write_intent = _is_write_intent(command)
@@ -311,6 +351,8 @@ def check_hardline_command(command: str) -> str | None:
         store = _secret_store_reason(tok)
         if store:
             return f'hardline protected {store} in command: {raw_tok}'
+        if _looks_like_path(raw_tok) and is_credential_directory(_expand_token(raw_tok)):
+            return f'hardline credential store in command: {raw_tok}'
         if write_intent and _PROTECTED_WRITE_PATTERN.search(tok) and not _is_env_template(tok):
             return f'hardline protected path in command: {raw_tok}'
         if not write_intent and _CREDENTIAL_READ_PATTERN.search(tok):
