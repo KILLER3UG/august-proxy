@@ -145,33 +145,6 @@ export function createSession(
   return newSess;
 }
 
-/** Clear the composer-draft storage of rows that were just dropped from the
- *  list, and ONLY when the draft is blank.
- *
- *  Blank drafts are the residue `persistComposerDraft` leaves when a composer is
- *  emptied without ever removing the key; words are the user's and are never
- *  deleted by a merge. The blank check IS the protection — a dropped row's
- *  workbench handle is usually the surviving row's handle by then (that is what
- *  the merge did), so skipping on that identity instead would leave every
- *  residue key behind, which is what an earlier version of this comment claimed
- *  the code did and the code never did.
- *
- *  Both id forms are checked and cleared, because the composer keys on the id the
- *  ROUTE carries and a row is addressable by either (`/c/sess_*` and `/c/wb_*`
- *  both resolve through `resolveActiveSession`). Looking only at `s.id` left the
- *  `wb_`-keyed residue in storage forever under a key no row owns. */
-function clearBlankDraftsFor(dropped: Session[], kept: Session[]): void {
-  const keptIds = new Set(kept.map((s) => s.id));
-  for (const s of dropped) {
-    if (keptIds.has(s.id)) continue;
-    const keys = [s.id, s.workbenchSessionId].filter((k): k is string => !!k);
-    // One non-blank draft anywhere means the row still holds text someone meant
-    // to finish: neither key is touched.
-    if (keys.some((k) => loadComposerDraft(k).trim())) continue;
-    for (const k of keys) clearComposerDraft(k);
-  }
-}
-
 /** One-shot heal for corrupt localStorage pairs (sess_* + wb_* duplicates). */
 export function healDuplicateSessions(): void {
   const current = useSessionsStore.getState().sessions;
@@ -186,10 +159,8 @@ export function healDuplicateSessions(): void {
       );
     if (same) return;
   }
-  clearBlankDraftsFor(
-    current.filter((s) => !healed.some((h) => h.id === s.id)),
-    healed,
-  );
+  // The residue clear happens inside `dedupeSessions`, which both this heal and
+  // the SSE/reconcile paths go through.
   useSessionsStore.setState({ sessions: healed });
   saveSessionsToStorage(healed);
 }
@@ -345,15 +316,13 @@ export function updateSessionWorkbenchMetadata(
   });
   // SSE may have already inserted a standalone wb_* row for the same
   // workbench session — collapse so the sidebar never shows two entries.
+  // `dedupeSessions` also reaps the blank composer-draft residue the dropped row
+  // leaves behind: it keeps the local id and inherits the dropped `wb_*` id as
+  // the survivor's workbench handle, while `/c/wb_X` is a reachable route in its
+  // own right, so the key that goes stale is whichever one the composer was not
+  // writing to. Only a BLANK draft is ever cleared — words stay, as they do in
+  // the launch sweep, because text the user typed is theirs until they delete it.
   const deduped = dedupeSessions(updated);
-  // A row collapsing away leaves its draft key behind, and only a BLANK one may
-  // be cleared. `dedupeSessions` keeps the local id and inherits the dropped
-  // `wb_*` id as the survivor's workbench handle, while `/c/wb_X` is a reachable
-  // route in its own right (SSE creates that row with the wb id AS its id, and
-  // ConversationSearchModal navigates to a raw `hit.sessionId`) — so the text
-  // keyed on the dropped id can be words the user is typing now. Deleting them
-  // here would be the same defect the launch sweep was fixed for.
-  clearBlankDraftsFor(updated, deduped);
   useSessionsStore.setState({ sessions: deduped });
   saveSessionsToStorage(deduped);
 }

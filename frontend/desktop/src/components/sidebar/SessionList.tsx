@@ -277,11 +277,17 @@ export function SessionList({
   const latest = useRef({ onSelect, onNavigate, activeId, sessions, pinnedIds });
   latest.current = { onSelect, onNavigate, activeId, sessions, pinnedIds };
 
-  /** Confirm + delete with exit animation (store remove drives AnimatePresence). */
+  /** Confirm + delete; the row leaves the list as soon as the store drops it. */
   const confirmDeleteSession = useCallback(async (s: Session) => {
     const ok = await confirmStyled({
       title: "Delete chat?",
-      message: "This permanently deletes the chat. This cannot be undone.",
+      // HistoryPage and Archive name the composer; this is the third way a chat
+      // is deleted and it goes through the same `deleteSession`, which discards
+      // whatever is still unsent in that composer along with the transcript.
+      // A confirmation that under-describes what it removes is not one.
+      message:
+        "This permanently deletes the chat, its history and anything still " +
+        "unsent in its composer. This cannot be undone.",
       confirmLabel: "Delete",
       variant: "destructive",
     });
@@ -502,7 +508,9 @@ export function SessionList({
     if (!unfiled.length) return;
     const ok = await confirmStyled({
       title: "Delete all tasks?",
-      message: `Permanently delete all ${unfiled.length} chat${unfiled.length === 1 ? "" : "s"} in Tasks?`,
+      // `deleteUncategorizedSessions` clears each chat's composer draft along
+      // with its transcript, so the count has to cover the unsent words too.
+      message: `Permanently delete all ${unfiled.length} chat${unfiled.length === 1 ? "" : "s"} in Tasks, with their history and anything still unsent in their composers?`,
       confirmLabel: "Delete",
       variant: "destructive",
     });

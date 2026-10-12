@@ -67,10 +67,16 @@ export function ChatTitlebar({
    * Settings all wore a stale chat title (and Tauri inherits this label as
    * the OS window title). Session titles stay only on chat routes. */
   const barTitle = useMemo(() => {
+    /* React Router matches case-INSENSITIVELY, and this comparison was not, so
+     * `/Settings/general` opened the dialog correctly while the bar — and the OS
+     * window title Tauri inherits from it — read "Settings" for General and
+     * "August" for any other section. Section ids are lowercase by construction,
+     * so lowercasing the segment loses no real case. */
     const path = location.pathname;
-    if (path === "/" || path.startsWith("/c/")) return session?.title ?? "New chat";
-    if (path.startsWith("/settings")) {
-      const section = path.split("/")[2];
+    const lowered = path.toLowerCase();
+    if (path === "/" || lowered.startsWith("/c/")) return session?.title ?? "New chat";
+    if (lowered.startsWith("/settings")) {
+      const section = path.split("/")[2]?.toLowerCase();
       if (!section) return "Settings";
       const hit = SETTINGS_SECTIONS.find((s) => s.id === section);
       return hit ? `Settings · ${hit.label}` : "Settings";

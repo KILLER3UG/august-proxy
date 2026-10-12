@@ -15,17 +15,19 @@
  * are pinned in `sections/chat/__tests__/ChatMarkdown.test.tsx`.
  */
 
-/** Fence markers: three or more of one character, and a backtick fence may not
- *  carry a backtick in its info string (CommonMark).
+/** A fence marker: three or more of one character, tested on the line's
+ *  REMAINDER after the block's own indentation is stripped — see the loop for
+ *  why the left margin is not the measurement. A backtick fence may not carry a
+ *  backtick in its info string, and a closing fence must be the same character
+ *  and at least as long as the opener, both per CommonMark.
  *
- *  The indent is SPACES ONLY, and that is the CommonMark rule rather than a
+ *  Indentation is SPACES ONLY, and that is the CommonMark rule rather than a
  *  simplification: a tab advances to the next 4-column tab stop, so `\t# Title`
  *  and a tab-indented ``` are indented CODE, not a heading and not a fence.
  *  Counting a tab as one character of the allowed 0-3 made both look like markup
  *  — a tab-indented Makefile recipe (`\t# comment`) was rewritten to `##`,
  *  corrupting text the dialog then showed differently from the file. */
-const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
-const FENCE_CLOSE = /^ {0,3}(`+|~+)\s*$/;
+const FENCE_MARKER = /^(`{3,}|~{3,})(.*)$/;
 
 /** A setext h1 underline (`Title` + a line of `=`). Only `=` is touched: that
  *  form is level 1, which is what must not appear in the dialog. A `-` underline
@@ -89,7 +91,11 @@ function splitBlock(
     at = col;
   }
 
-  for (let depth = 0; depth < 4; depth += 1) {
+  // Four levels is a ceiling someone would hit by accident, not by writing a
+  // document: `> > > > > # T` and a fifth-nested bullet are both a real h1 in
+  // marked, and a cap that stops short ships it to the dialog. The loop cannot
+  // run away — each iteration consumes at least two characters of the line.
+  for (let depth = 0; depth < 12; depth += 1) {
     const tail = line.slice(at);
     const m = OWNING_MARKER.exec(tail);
     if (!m) break;
@@ -104,6 +110,37 @@ function splitBlock(
   }
 
   return { prefix, rest: line.slice(at), opened };
+}
+
+/** What kind of block a line opens, for the paragraph run a setext fold may span.
+ *
+ *  A setext underline belongs to one paragraph, so the fold has to know where the
+ *  current paragraph began. "Starts a block" is not one question with one answer:
+ *
+ *    * a new LIST ITEM is a new block — `- a` / `- b` / `  ===` underlines `b`
+ *      only, and marked renders the first item as plain text;
+ *    * a `>` line continues the blockquote it is already in — `> one` / `> two` /
+ *      `> ===` is ONE h1 reading "one\\ntwo";
+ *    * an unmarked, indented line continues the open item — `- Title` / `  more` /
+ *      `  ===` underlines the whole paragraph;
+ *    * a thematic break, raw HTML, a table row, an ATX heading or a fence is not
+ *      paragraph text at all, so nothing may fold across or onto it.
+ *
+ *  Getting this wrong is worse than the bug it fixes: the first cut folded
+ *  `Title` / `> quote` / `===` into `## Title` and DELETED the `===` paragraph,
+ *  and `A` / `* * *` / `===` lost two lines, on inputs that have no h1 in marked
+ *  and must come back untouched.
+ */
+function markerSig(line: string): 'quote' | 'item' | 'break' | 'other' | 'plain' {
+  // A thematic break may carry spaces between its run characters (`* * *`), and
+  // CommonMark allows one to three of leading indentation. Without the spaced
+  // form here, `* * *` read as a bullet — which is what `A` / `* * *` / `===`
+  // became `A` / `* * ## *`: a heading injected INTO a horizontal rule.
+  if (/^ {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(line)) return 'break';
+  if (/^ {0,3}(?:<|\||#|`|~)/.test(line)) return 'other';
+  if (/^ {0,3}>/.test(line)) return 'quote';
+  if (/^ {0,3}(?:[-*+]\s|\d+[.)]\s)/.test(line)) return 'item';
+  return 'plain';
 }
 
 /** Demote one line's ATX heading, whatever block owns it. Null means "not a
@@ -138,30 +175,40 @@ export function demoteMarkdownHeadings(src: string): string {
   // does not close them (`- a`, blank, `    # T` is still an h1 in that item),
   // but it does close a setext paragraph — which is `paraStart`.
   let stack: number[] = [];
+  // Where the CURRENT paragraph starts (index into `out`) and what opened it, so
+  // a setext underline can only fold back over its own paragraph — see markerSig.
   let paraStart = -1;
+  let paraSig: 'quote' | 'item' | 'break' | 'other' | 'plain' | 'none' = 'none';
 
   for (const line of lines) {
-    if (fence) {
-      const close = FENCE_CLOSE.exec(line);
-      if (close && close[1][0] === fence.char && close[1].length >= fence.len) {
-        fence = null;
-      }
-      out.push(line);
-      paraStart = -1;
-      continue;
-    }
-
-    const open = FENCE_OPEN.exec(line);
-    if (open) {
-      const marker = open[1];
+    // Fences are tested on the line's REMAINDER, not its left margin: a fence
+    // opened inside a list item sits at the item's content column, which is past
+    // the 0-3 an unindented fence may have. Ignoring that read the opening fence
+    // as prose, the `# comment` under it as a heading (a code sample rewritten in
+    // the dialog), and the CLOSING fence as a new opener — which then swallowed
+    // every heading after the block, so `# H` reached the dialog at level 1. Same
+    // document, two verdicts, and on CRLF input only one of them happened.
+    const probe = FENCE_MARKER.exec(splitBlock(line, stack).rest.replace(/^ {0,3}/, ''));
+    if (probe && (!fence || probe[1][0] === fence.char)) {
+      const marker = probe[1];
       const char = marker[0] as '`' | '~';
-      const info = open[2] ?? '';
-      if (!(char === '`' && info.includes('`'))) {
-        fence = { char, len: marker.length };
+      const info = probe[2] ?? '';
+      const closes: boolean = Boolean(
+        fence && char === fence.char && marker.length >= fence.len && !info.trim(),
+      );
+      const opens: boolean = !fence && marker.length >= 3 && !(char === '`' && info.includes('`'));
+      if (closes || opens) {
+        fence = opens ? { char, len: marker.length } : null;
         out.push(line);
         paraStart = -1;
         continue;
       }
+    }
+
+    if (fence) {
+      // Inside a fence nothing is markup: the line goes out exactly as it came.
+      out.push(line);
+      continue;
     }
 
     if (!line.trim()) {
@@ -178,8 +225,6 @@ export function demoteMarkdownHeadings(src: string): string {
     while (stack.length && indent < stack[stack.length - 1]) stack.pop();
 
     const { prefix, rest, opened } = splitBlock(line, stack);
-    const restIndent = /^ {0,3}/.exec(rest)?.[0] ?? '';
-    const content = rest.slice(restIndent.length);
     // Where this line's own paragraph began, for the setext fold below.
     const para = paraStart === -1 ? out.length : paraStart;
 
@@ -207,10 +252,21 @@ export function demoteMarkdownHeadings(src: string): string {
 
     const demoted = demoteAtx(rest);
     out.push(demoted === null ? line : `${prefix}${demoted}`);
-    // A paragraph is a run of plain lines; a heading, a fence-ish line or a blank
-    // ends it, and an h1 can only sit under a plain run.
-    paraStart = demoted === null && !/^[#`~]/.test(content) ? para : -1;
-    stack = [...stack, ...opened].slice(-4);
+    const sig = markerSig(line);
+    if (demoted !== null || sig === 'other' || sig === 'break') {
+      // Not paragraph text: a heading, a thematic break, raw HTML, a table row.
+      paraStart = -1;
+      paraSig = 'none';
+    } else if (paraStart === -1) {
+      paraStart = out.length - 1;
+      paraSig = sig;
+    } else if (sig === 'item' || (sig === 'quote' && paraSig !== 'quote')) {
+      // A new list item, or a quote that opens where none was open: a fresh
+      // paragraph, and the fold may not reach back over it.
+      paraStart = out.length - 1;
+      paraSig = sig;
+    }
+    stack = [...stack, ...opened];
   }
 
   return out.join('\n');

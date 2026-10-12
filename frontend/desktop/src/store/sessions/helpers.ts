@@ -4,7 +4,12 @@
  * "does it hold unsent words" are questions about the cached keys, not the row. */
 
 import type { Session } from './types';
-import { legacyMessagesStorageKey, loadComposerDraft, messagesStorageKey } from '@/sections/chat/message-storage';
+import {
+  clearComposerDraft,
+  legacyMessagesStorageKey,
+  loadComposerDraft,
+  messagesStorageKey,
+} from '@/sections/chat/message-storage';
 
 /** Human-readable session id with local date/time, e.g.
  *  session_20260715_143052_a1b2. Legacy sessions keep their `sess_*` ids —
@@ -179,11 +184,41 @@ export function dedupeSessions(sessions: Session[]): Session[] {
     order.push(key);
   }
 
-  return order.map((k) => byKey.get(k)!).filter(Boolean);
+  const kept = order.map((k) => byKey.get(k)!).filter(Boolean);
+  /* Collapsing a row leaves its composer-draft key behind, and this function has
+   * five callers — the SSE bridge (twice), the 60s reconcile, the launch heal and
+   * the metadata merge. `store/sessions.ts` cleared the residue in two of them,
+   * which is the same rule enforced two-fifths of the time: a blank draft under a
+   * dropped id survived in storage forever and, because the sweep keeps any row
+   * whose draft is non-blank, a later `persistComposerDraft` of real text under
+   * that same key would resurrect a ghost row. Clearing here, once, is the
+   * difference between a rule and a habit.
+   *
+   * Words are never deleted: `clearBlankDrafts` drops only a blank/whitespace
+   * draft, and skips any key a surviving row still answers to. */
+  clearBlankDrafts(sessions, kept);
+  return kept;
 }
 
-/** True when the session has no real conversation content yet. */
-export function sessionIsEmpty(s: Session): boolean {
+/** Blank-only draft cleanup for the rows a collapse dropped, BOTH key forms.
+ *
+ *  The blank check IS the protection. A dropped row's workbench handle is usually
+ *  the SURVIVING row's handle by then — that is precisely what the merge did — so
+ *  skipping on that identity would leave every residue key behind, which is what
+ *  an earlier comment claimed this code did and it never did. One non-blank draft
+ *  under either key and neither is touched.
+ */
+export function clearBlankDrafts(dropped: Session[], kept: Session[]): void {
+  const byId = new Set(kept.map((s) => s.id));
+  for (const s of dropped) {
+    if (byId.has(s.id)) continue;
+    const keys = [s.id, s.workbenchSessionId].filter((k): k is string => !!k);
+    if (keys.some((k) => loadComposerDraft(k).trim())) continue;
+    for (const k of keys) clearComposerDraft(k);
+  }
+}
+
+/** True when the session has no real conversation content yet. */export function sessionIsEmpty(s: Session): boolean {
   if (s.isArchived) return false;
   if ((s.messageCount ?? 0) > 0) return false;
   for (const id of [s.id, s.workbenchSessionId].filter(Boolean) as string[]) {

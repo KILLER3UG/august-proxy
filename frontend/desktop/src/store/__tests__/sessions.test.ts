@@ -385,6 +385,38 @@ describe('dedupeSessions — sess_* + wb_* pairs', () => {
     expect(out[0].messageCount).toBe(2);
   });
 
+  it('reaps the blank composer-draft residue a collapse leaves behind', () => {
+    /* The rule lives in `dedupeSessions`, not in the callers, because it has
+     * five of them — the SSE bridge (twice), the 60s reconcile, the launch heal
+     * and the metadata merge — and only two ever cleared the residue. A blank
+     * draft left under a dropped id is not inert storage: the ghost sweep keeps
+     * any row whose draft is non-blank, so the first time that key is reused the
+     * collapsed row can come back. Words are never deleted, which is the other
+     * half of this test. */
+    const draft = (id: string) => `august_composer_draft_${id}`;
+    localStorage.clear();
+    localStorage.setItem(draft('wb_residue'), '   ');
+    localStorage.setItem(draft('wb_words'), 'mid-sentence, not sent yet');
+    try {
+      const kept = dedupeSessions([
+        base({ id: 'sess_A', title: 'A', workbenchSessionId: 'wb_residue', messageCount: 2 }),
+        base({ id: 'wb_residue', title: 'New chat' }),
+      ]);
+      expect(kept.map((s) => s.id)).toEqual(['sess_A']);
+      expect(localStorage.getItem(draft('wb_residue'))).toBeNull();
+
+      const kept2 = dedupeSessions([
+        base({ id: 'sess_B', title: 'B', workbenchSessionId: 'wb_words', messageCount: 2 }),
+        base({ id: 'wb_words', title: 'New chat' }),
+      ]);
+      expect(kept2).toHaveLength(1);
+      expect(localStorage.getItem(draft('wb_words'))).toBe('mid-sentence, not sent yet');
+    } finally {
+      localStorage.removeItem(draft('wb_residue'));
+      localStorage.removeItem(draft('wb_words'));
+    }
+  });
+
   it('preferSessionRow keeps sess_* id', () => {
     const a = base({ id: 'wb_x', title: 'New Session', workbenchSessionId: 'wb_x' });
     const b = base({ id: 'sess_y', title: 'Hello world', workbenchSessionId: 'wb_x' });

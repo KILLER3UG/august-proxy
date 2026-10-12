@@ -41,7 +41,11 @@ export function Archive() {
   const handleClearAll = async () => {
     const ok = await confirmStyled({
       title: 'Clear all sessions?',
-      message: 'This wipes your conversation history and cannot be undone.',
+      // `clearAllSessions` removes the composer drafts with the rows, so the
+      // promise names them. "Conversation history" alone reads as transcripts.
+      message:
+        'This wipes your conversation history and anything still unsent in a ' +
+        'composer, and cannot be undone.',
       confirmLabel: 'Delete sessions',
       variant: 'destructive',
     });

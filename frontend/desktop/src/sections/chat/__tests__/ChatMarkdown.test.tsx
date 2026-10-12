@@ -395,6 +395,67 @@ describe('demoteMarkdownHeadings — an authored document inside a dialog', () =
     expect(container.querySelector('h2')?.textContent).toContain('Release Notes');
   });
 
+  it('demotes every h1 shape marked produces, and leaves every other byte alone', () => {
+    /* The two-directional form of this test is the point. An earlier fix chased
+     * h1s with a block-blind line scanner and, in doing so, rewrote text that was
+     * never a heading: `* * *` became a bullet and took a `##` inside a horizontal
+     * rule, `Title` / `> quote` / `===` deleted a paragraph, and a fence opened
+     * inside a list item turned its own closing ``` into a new opener — which then
+     * swallowed every heading after the block. Each case below was run through
+     * `marked` FIRST to record which group it belongs to.
+     *
+     * A h1 in group A must disappear; group B must come back byte-identical.
+     */
+    const h1Shapes = [
+      '# H1',
+      '- # Bulleted',
+      '1. # Numbered',
+      '> > > > > # Five levels of quote',
+      '- - - - - # Five levels of bullet',
+      '- a\n    # Title at the list content column',
+      '- ```\n  # a shell comment\n  ```\n\n# H',
+      '- ~~~\n  # comment\n  ~~~\n\n# H',
+      '- a\n    ```bash\n    # c\n    ```\n- b\n\n# Real',
+      'one\ntwo\n===',
+      '- Title\n  more\n  ===',
+      '> one\n> two\n> ===',
+      '- Release Notes\n  ==============',
+      '> Release Notes\n> ==============',
+      '- a\n- b\n  ===',
+    ];
+    const notHeadings = [
+      'Title\n> quote\n===',
+      'Some para\n---\n===',
+      'A\n* * *\n===',
+      '<div>\nTitle\n</div>\n===',
+      '\t# Tab-indented code',
+      '    # Indented code',
+      '#hashtag',
+      '> a\n    # four spaces past a quote is code',
+      'one\ntwo\n\n===',
+      '> \t# space then tab is code',
+    ];
+
+    // A fresh `Marked`: ChatMarkdown configures the singleton with its own
+    // renderer, so a control asserted against it depends on test order.
+    const probe = new Marked();
+    const html = (s: string) => String(probe.parse(s, { async: false }));
+    const words = (s: string) => (s.match(/[A-Za-z]{2,}/g) ?? []).sort().join(',');
+
+    for (const doc of h1Shapes) {
+      expect(html(doc), `not an h1 in marked, misfiled: ${doc}`).toMatch(/<h1[\s>]/);
+      const out = demoteMarkdownHeadings(doc);
+      expect(html(out), `an h1 survived: ${doc} => ${out}`).not.toMatch(/<h1[\s>]/);
+      // The level may change and a line may move, but no word may vanish.
+      expect(words(out), `text lost: ${doc} => ${out}`).toBe(words(doc));
+    }
+
+    for (const doc of notHeadings) {
+      expect(html(doc)).not.toMatch(/<h1[\s>]/);
+      expect(demoteMarkdownHeadings(doc), `rewrote a non-heading: ${doc}`).toBe(doc);
+    }
+  });
+
   it('does not invent a heading out of indented code or a hashtag', () => {
     /* The other direction: a shape that is NOT a heading in marked must not be
      * rewritten, or the dialog shows text the file does not contain. */
