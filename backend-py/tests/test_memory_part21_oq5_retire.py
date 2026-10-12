@@ -577,3 +577,97 @@ class TestRetireDecisionIsDecidedOnce:
         # And the corrected row is still closed: it cannot be re-opened.
         assert consolidation.apply_retire_decision(pid, approve=True)['ok'] is False
 
+
+
+class TestRetireCommitFailure:
+    """A commit that fails must not leave the unit pending on the shared handle.
+
+    The undo is a SAVEPOINT, and a savepoint can only be rolled back to while it
+    still exists — so RELEASE has to come AFTER the commit. The first version
+    released first, which meant a busy database left the spent 'approved' claim
+    uncommitted on the thread-local connection with no way left to undo it, and
+    the next unrelated write on that thread published it: a fact never retired,
+    a proposal that can never be decided again.
+    """
+
+    def _file(self, store, key: str) -> int:
+        from app.services.memory_conn import conn
+
+        store.save_fact(key, {'fact': 'prefers something durable'}, kind='preference', title='Pref')
+        _backdate(key, 300)
+        from app.services.memory_store import consolidation
+
+        consolidation._retire_stale_memories()
+        return int(
+            conn().execute(
+                "SELECT id FROM proposals WHERE proposal_type = 'retire-fact' "
+                "AND status = 'pending' ORDER BY id DESC LIMIT 1"
+            ).fetchone()['id']
+        )
+
+    def test_a_failing_commit_undoes_the_unit_and_stays_undone(self, store, monkeypatch):
+        import sqlite3
+
+        from app.services.memory_conn import conn as real_conn
+        from app.services.memory_store import consolidation
+
+        pid = self._file(store, 'user:commitfail')
+        c = real_conn()
+        c.execute(
+            "INSERT INTO facts (fact_key, fact_value, kind, title) "
+            "VALUES ('user:commitfail_neighbour', '\"x\"', 'general', 'Neighbour')"
+        )
+
+        def boom(_conn):
+            raise sqlite3.OperationalError('database is locked (simulated)')
+
+        monkeypatch.setattr(consolidation, 'brain_commit', boom)
+        res = consolidation.apply_retire_decision(pid, approve=True)
+        monkeypatch.undo()
+
+        assert res['ok'] is False, res
+        # The transaction stays open — it is holding the NEIGHBOUR write above,
+        # which is the whole reason a plain `conn.rollback()` was wrong here. What
+        # must be gone is this unit's work, not the transaction.
+        # Nothing of the failed decision survives to be committed later...
+        assert str(c.execute('SELECT status FROM proposals WHERE id = ?', (pid,)).fetchone()['status']) == 'pending'
+        assert str(c.execute(
+            "SELECT status FROM facts WHERE fact_key = 'user:commitfail'").fetchone()['status']) == 'active'
+        # ...and the unrelated write on the same handle is still there, pending.
+        assert c.execute("SELECT 1 FROM facts WHERE fact_key = 'user:commitfail_neighbour'").fetchone()
+        c.execute("DELETE FROM facts WHERE fact_key = 'user:commitfail_neighbour'")
+        c.commit()
+        # The proposal is decidable once the real cause is gone.
+        again = consolidation.apply_retire_decision(pid, approve=True)
+        assert again['ok'] is True and again['retired'] is True
+
+    def test_a_failure_after_the_commit_reports_applied_not_failed(self, store, monkeypatch):
+        """Anything raised past a successful COMMIT is an accounting failure.
+
+        `ok: False` there invites the caller to retry a decision that already
+        landed, and the spent claim turns that retry into a second, different
+        write — a reject against an approval. So the report follows the one
+        signal that cannot lie about durability, the open transaction, and the
+        test drives it by making the step after the commit explode.
+        """
+        from app.services.memory_conn import conn as real_conn
+        from app.services.memory_store import consolidation
+
+        pid = self._file(store, 'user:aftercommit')
+
+        def boom_after_commit(_conn):
+            # Everything up to here is already durable; the index invalidation
+            # that follows is what fails.
+            raise RuntimeError('post-commit step exploded')
+
+        import app.services.memory_store.fact_retrieval as fr
+
+        monkeypatch.setattr(fr, 'invalidate_fact_index', boom_after_commit)
+        res = consolidation.apply_retire_decision(pid, approve=True)
+        monkeypatch.undo()
+
+        assert real_conn().execute('SELECT status FROM proposals WHERE id = ?', (pid,)).fetchone()['status'] == 'approved'
+        # The decision landed, so the caller is told it landed — the post-commit
+        # failure is reported inside `error`, not as `ok: False`.
+        assert str(res['decision']) == 'approved', res
+        assert res['retired'] is True, res

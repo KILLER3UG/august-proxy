@@ -452,8 +452,6 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
             claim_proposal_decision(
                 conn, proposal_id, 'rejected', decidedBy, from_status='approved',
             )
-            conn.execute(f'RELEASE SAVEPOINT {sp}')
-            brain_commit(conn)
             result = {
                 'ok': True,
                 'decision': 'rejected',
@@ -462,9 +460,17 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
                 'error': 'memory changed after this proposal was filed; it was closed without retiring the fact',
             }
         else:
-            conn.execute(f'RELEASE SAVEPOINT {sp}')
-            brain_commit(conn)
             result = {'ok': True, 'decision': 'approved', 'retired': True, 'key': key}
+        # COMMIT, and no RELEASE before it. Releasing first pops the savepoint
+        # while the writes are still uncommitted, so a commit that then fails
+        # (a busy database is the ordinary cause) has nothing left to undo: the
+        # spent 'approved' claim stays pending on the thread-local handle for the
+        # NEXT unrelated commit to publish, which is the exact state the
+        # claim-before-write design exists to make impossible. Committing is
+        # enough on its own — a COMMIT deactivates every savepoint in the
+        # transaction — and it leaves the savepoint in place for the handler below
+        # to roll back to if the commit itself raises.
+        brain_commit(conn)
     except Exception as exc:
         # The claim is already on this connection. Without an undo an
         # uncommitted 'approved' survives on the thread-local handle and the
@@ -472,11 +478,35 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
         # approved over a fact that was never retired, and it can never be
         # re-decided because the claim is spent. So this unit is rolled back
         # with the statement that failed, and nothing outside it is.
+        undone = True
         try:
             conn.execute(f'ROLLBACK TO SAVEPOINT {sp}')
             conn.execute(f'RELEASE SAVEPOINT {sp}')
         except Exception:
+            undone = False
             logger.debug('retire savepoint undo failed', exc_info=True)
+        if not undone:
+            # The undo could not run, so decide what to report from the one signal
+            # that cannot lie about durability: is this connection still holding
+            # an open transaction? Reading the proposal row would not answer it —
+            # the same handle sees its OWN uncommitted 'approved', so the row says
+            # "decided" whether or not anything is durable, and reporting a landed
+            # decision that is merely pending invites a retry that lands twice.
+            if not conn.in_transaction:
+                # No transaction open means the COMMIT took, and the savepoint is
+                # gone because committing is what ends every savepoint in a
+                # transaction. So the decision IS durable; only the accounting
+                # after it failed.
+                return {
+                    'ok': True,
+                    'decision': 'unknown',
+                    'retired': None,
+                    'key': key,
+                    'error': (
+                        f'the decision was applied but the step after its commit failed ({exc}); '
+                        're-read the proposal before deciding again'
+                    ),
+                }
         return {'ok': False, 'error': f'apply_retire_decision({proposal_id}): {exc}'}
     try:
         from app.services.memory_store.fact_retrieval import invalidate_fact_index
