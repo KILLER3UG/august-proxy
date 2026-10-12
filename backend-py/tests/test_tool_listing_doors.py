@@ -380,6 +380,57 @@ class TestAStoreSubtreeIsStillTheStore:
         assert check_hardline_command(f'head -5 {keys}/vault.kdbx') is None
 
 
+    def test_a_link_that_looks_ordinary_stops_at_the_directory_rule(self, store_root):
+        """Why the file rule may skip the resolve and the directory rule may not.
+
+        `listable_child` is name matching only, so a directory link (a junction
+        on Windows, which needs no privilege, or a symlink elsewhere) with an
+        innocent name points at a store. Measured here: the CHILD rule lets that
+        name through, and every door that could reach the entries under it asks
+        the DIRECTORY rule first — which resolves — so the listing never arrives.
+        This is the guarantee `listable_child`'s comment claims; if a future door
+        lists files without clearing its directory, this is what rots.
+        """
+        import os as _os
+        import shutil
+
+        from app.services.sandbox.paths import listable_child, listable_entry
+
+        store = store_root / '.aws'
+        (store / 'sso' / 'cache').mkdir(parents=True)
+        (store / 'sso' / 'cache' / 'abc.json').write_text('{"accessToken":"T"}', encoding='utf-8')
+        link = store_root / 'build-cache'
+        made = False
+        try:
+            if _os.name == 'nt':
+                import _winapi
+
+                _winapi.CreateJunction(str(store), str(link))
+            else:
+                _os.symlink(str(store), str(link))
+            made = True
+        except (OSError, ImportError):
+            pass
+        if not made:
+            pytest.skip('no unprivileged directory link on this host')
+        try:
+            assert not listable_entry(str(link)), 'the directory rule did not resolve the link'
+            assert listable_child(str(store_root), link.name), (
+                'the file rule now resolves too — the split is no longer a performance trade-off'
+            )
+            # And the read door, which resolves at `bind_path`, refuses the target.
+            from app.services.sandbox.paths import bind_path
+
+            resolved, denial = bind_path(str(link / 'sso' / 'cache' / 'abc.json'), str(store_root), for_write=False)
+            assert denial is not None and resolved is None, 'a linked token file was readable'
+        finally:
+            if _os.name == 'nt':
+                link.rmdir()
+            else:
+                _os.unlink(str(link))
+            shutil.rmtree(str(store), ignore_errors=True)
+
+
 class TestModuleContextIsAListingDoor:
     """The seventh door: `build_module_context` named whatever `iterdir` gave it.
 
