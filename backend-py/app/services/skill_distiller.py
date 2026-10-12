@@ -75,7 +75,7 @@ _JUDGE_SYSTEM = (
     'amend_trigger|amend_body", "reason": "<short>",'
     ' "summary": "<one-line fact>", "category": "project|reference|feedback|general",'
     ' "title": "<short title>", "expires_days": <int>,'
-    ' "name": "<skill-name>", "description": "<one sentence, max 60 chars>",'
+    ' "name": "<skill-name>", "description": "<what the skill does and when to use it — capability, situations, when NOT to fire; max 500 chars>",'
     ' "trigger": "<trigger phrase>", "keywords": ["<word>"],'
     ' "intro": "<2-3 sentences>", "when_to_use": ["<situation>"],'
     ' "when_not_to_use": ["<situation>"], "prerequisites": ["<tool/file/state>"],'
@@ -310,7 +310,7 @@ def _fitDescription(raw: str) -> tuple[str, str]:
     """``(usable description, problem)`` — problem is '' when there is none.
 
     ``_apply_skill_write`` re-validates the description at APPROVAL time, so a
-    drafted one over the 60-char authoring cap filed a proposal that was
+    drafted one over the 500-char authoring cap filed a proposal that was
     unapprovable by construction: the human clicked Approve and got an error.
     Length is a drafting accident and is repairable at a clause boundary. A
     banned marketing word is a CLAIM, not a typo, so it is reported rather than
