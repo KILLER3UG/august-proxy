@@ -225,3 +225,99 @@ class TestGateConformance:
             'a guard set is probably gutted'
         )
         assert unclaimed, 'expected some genuinely read-only tools to claim no gate'
+
+
+
+class TestEveryShellSpawnSiteIsGatedOrExempt:
+    """Every place this backend starts a shell either runs the hardline list or
+    is exempted by name, with the reason written down.
+
+    Round-7 finding #10 was `/api/terminal/command`: the route called
+    `_dangerousReason` (an approval prompt) and `soft_preflight` (a workspace
+    fence that only runs when the cwd is a recognised workspace), and
+    `check_hardline_command` — which the workbench shell DOES call, at the
+    `backends/__init__.py` funnel — was never in its path. `cat
+    ~/.aws/credentials` over local HTTP returned the file. The tool-level
+    conformance above could not see it: the entry point is a router, not a
+    registered tool.
+
+    So this scan walks the source for the spawn sites themselves. It is a
+    discovery surface: a new `create_subprocess_shell` / `shell=True` /
+    `os.system` fails until it is gated or reasoned about, and an exemption that
+    no longer spawns a shell fails too, so the table cannot accumulate shelter.
+    """
+
+    SPAWN_PATTERNS = ('create_subprocess_shell', 'shell=True', 'os.system(')
+    GATE_MARKERS = ('check_hardline_command', '_hardline_check_command')
+
+    # Exempt means "this spawn is not reachable by a model-supplied command
+    # string", for the reason given. Two of these are the sandbox backends
+    # themselves, which every caller reaches through the funnel that DOES run
+    # the list; three are the hook engine, which runs commands a human wrote in
+    # a workspace file that a human then had to trust (pinned below).
+    EXEMPT = {
+        'app/services/sandbox/backends/fallback.py':
+            'the soft runner; callers reach it through backends/__init__, which runs the list',
+        'app/services/sandbox/backends/windows.py':
+            'backend executor; same funnel as fallback.py',
+        'app/routers/hooks.py':
+            'runs user-authored hook commands, not model-supplied ones',
+        'app/services/hooks/user_hooks.py':
+            'runs user-authored hook commands, not model-supplied ones',
+        'app/services/hooks/sensitive_code.py':
+            'static scan of hook source; executes nothing',
+    }
+
+    def _spawnFiles(self) -> dict[str, str]:
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        out: dict[str, str] = {}
+        for path in sorted(root.glob('app/**/*.py')):
+            text = path.read_text(encoding='utf-8', errors='replace')
+            if any(p in text for p in self.SPAWN_PATTERNS):
+                out[path.relative_to(root).as_posix()] = text
+        return out
+
+    def test_the_scan_finds_the_sites_that_exist(self):
+        """A floor, because a scan that finds nothing passes every other check.
+
+        Seven files start a shell today. If this collapses to a couple, the
+        pattern list or the walk broke — and `test_no_spawn_site_...` below would
+        go green by simply seeing nothing.
+        """
+        found = self._spawnFiles()
+        assert len(found) >= 6, f'only {sorted(found)} — the discovery itself broke'
+        for must in (
+            'app/services/workbench/terminal_service.py',
+            'app/services/workbench/code_runner.py',
+        ):
+            assert must in found, f'{must} starts a shell and the scan missed it'
+
+    def test_no_spawn_site_is_both_ungated_and_unexempted(self):
+        found = self._spawnFiles()
+        offenders = []
+        for rel, text in found.items():
+            if any(m in text for m in self.GATE_MARKERS):
+                continue
+            if rel not in self.EXEMPT:
+                offenders.append(f'{rel} spawns a shell, runs no hardline gate, is not exempted')
+        assert not offenders, '; '.join(offenders)
+
+    def test_no_exemption_is_left_over(self):
+        found = self._spawnFiles()
+        stale = sorted(set(self.EXEMPT) - set(found))
+        assert not stale, f'exempted files that no longer spawn a shell: {stale} — drop the shelter'
+
+    def test_the_hook_engine_still_requires_an_explicit_trust_decision(self):
+        """The hooks exemption is only true while a workspace must be trusted.
+
+        If that door goes, a workspace file an agent can write becomes a command
+        an executor runs, and `user_hooks` belongs on the gated side — not here.
+        """
+        from app.services.hooks import user_hooks
+
+        assert hasattr(user_hooks, 'trust_workspace'), (
+            'the hook trust door is gone — hooks are no longer an exemption'
+        )
+        assert hasattr(user_hooks, 'revoke_workspace')

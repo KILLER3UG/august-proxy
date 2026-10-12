@@ -260,3 +260,69 @@ def test_soft_preflight_viewer_reads_app_logs(tmp_path: Path, monkeypatch: pytes
     assert soft_preflight(f'type "{logFile}" > "{logs / "out.txt"}"', policy)
     # Other outside paths are unaffected.
     assert soft_preflight(f'type "{Path.home() / "secrets.txt"}"', policy)
+
+
+class TestTheTerminalSurfaceCarriesTheHardlineList:
+    """`/api/terminal/command` ran a shell with no hardline check at all.
+
+    The workbench shell refuses `cat ~/.aws/credentials` through
+    `run_with_best_backend`; the terminal route asked only `_dangerousReason`
+    (which `ls ~/.ssh` is not in) and `soft_preflight`, and the latter runs only
+    when `_terminal_workspace_root` recognises the cwd — an unrelated directory
+    means no gate whatsoever. It is also `approved: true` from the UI, which
+    skips the approval prompt entirely. Same machine, same shell, one door shut
+    and one open.
+
+    The refusal is asserted on the SUBPROCESS, not on the response string: a gate
+    that runs after `create_subprocess_shell` has fired has already leaked, and
+    reporting the leak in JSON is not a refusal.
+    """
+
+    @staticmethod
+    def _fakeShell(monkeypatch):
+        import app.lib.async_subprocess as asub
+        from app.services.workbench import terminal_service as ts
+
+        calls: list = []
+
+        async def fake_subprocess_shell(command, **kwargs):
+            calls.append(command)
+            return type('P', (), {'returncode': 0})()
+
+        async def fake_communicate(proc, **kw):
+            return b'ran\n', b''
+
+        monkeypatch.setattr(ts.asyncio, 'create_subprocess_shell', fake_subprocess_shell)
+        monkeypatch.setattr(asub, 'communicate_or_kill', fake_communicate)
+        return calls
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'cmd',
+        [
+            'cat ~/.aws/credentials',
+            'ls ~/.ssh',
+            'ls -la ~/.ssh/keys',
+            'head -5 ~/.ssh/id_ed25519',
+            'cat ~/.config/gh/hosts.yml',
+        ],
+    )
+    async def test_a_hardline_command_never_reaches_the_shell(self, monkeypatch, cmd):
+        from app.services.workbench import terminal_service as ts
+
+        calls = self._fakeShell(monkeypatch)
+        # `approved: True` is load-bearing: an approval must not buy its way past
+        # the hardline list, which is what makes the list a hardline.
+        out = await ts.submitTerminalCommand({'command': cmd, 'approved': True})
+        assert out.get('status') == 'error', out
+        assert 'Blocked' in str(out.get('error') or ''), out
+        assert calls == [], f'the shell executed a hardline command: {calls}'
+
+    @pytest.mark.asyncio
+    async def test_an_ordinary_command_still_runs(self, monkeypatch):
+        """Control — a gate that refuses everything is not this gate."""
+        from app.services.workbench import terminal_service as ts
+
+        calls = self._fakeShell(monkeypatch)
+        out = await ts.submitTerminalCommand({'command': 'pwd', 'approved': True})
+        assert calls == ['pwd'], out

@@ -657,6 +657,32 @@ async def submitTerminalCommand(params: dict[str, object]) -> dict[str, object]:
                 cwd = ws
         except Exception:
             pass
+    # The hardline list runs BEFORE the approval prompt and outside the
+    # workspace-scoped soft sandbox below. This route is a shell the UI and the
+    # preview sessions drive over local HTTP, and neither gate it does have
+    # reaches a credential store: `soft_preflight` only runs when
+    # `_terminal_workspace_root` recognises `cwd` (an unrelated directory ⇒ no
+    # gate at all), and what it checks is escaping a workspace, not the
+    # machine's stores. The workbench shell refuses the same string through the
+    # `backends/__init__.py` funnel, so one execution surface was shut and one
+    # open.
+    #
+    # Not a `try/except: pass` around the import or the call: swallowing there
+    # turns the gate into a no-op and reports nothing. A hardline refusal is also
+    # deliberately NOT offerable for approval — that is what makes the list a
+    # hardline rather than a warning.
+    #
+    # This reaches the Terminal panel's run box as well as the machine-driven
+    # callers, because the route cannot tell them apart. Recorded as a cost, not
+    # overlooked: these paths are already refused for the agent in every mode,
+    # including Full access, so a human who means to read their own key can read
+    # it in an OS terminal. Narrowing this later needs a caller identity the
+    # request does not carry today.
+    from app.services.sandbox.hardline import check_hardline_command
+
+    hardline = check_hardline_command(command)
+    if hardline:
+        return {'status': 'error', 'command': command, 'error': f'Blocked: {hardline}'}
     if not approved:
         danger = _dangerousReason(command)
         if danger:
