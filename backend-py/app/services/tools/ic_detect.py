@@ -109,6 +109,7 @@ from app.services.tools.circuit_tools import (
     _resolve_deck_path,
     parse_spice_value,
 )
+from app.services.tools.netlist_text import device_cards
 
 # ── Public knobs ───────────────────────────────────────────────────────────
 
@@ -989,32 +990,20 @@ def _is_gnd(node: str) -> bool:
 
 
 def _deck_lines(deck_text: str) -> dict[str, list[str]]:
-    """``REF -> tokens of its element line``.
+    """``REF -> tokens of its element line``, continuations joined.
 
-    Comments, dot-cards, ``.control`` and ``.subckt`` bodies are skipped for the
-    same reason ``parse_elements`` skips them: they are not top-level parts.
+    Line selection is `netlist_text.device_cards`, the same rule the drawing, the
+    listing, the overview and the linter use — see its docstring for what it
+    excludes and why. This map is what names a block in the IC report, so a card
+    that lost its tail token here named the wrong part.
     """
     out: dict[str, list[str]] = {}
-    in_control = False
-    in_subckt = False
-    for raw in deck_text.splitlines():
-        s = raw.strip()
-        low = s.lower()
-        if low.startswith('.control'):
-            in_control = True
-            continue
-        if low.startswith('.endc'):
-            in_control = False
-            continue
-        if low.startswith('.subckt'):
-            in_subckt = True
-            continue
-        if low.startswith('.ends'):
-            in_subckt = False
-            continue
-        if in_control or in_subckt or not s or s.startswith(('*', '+', '.', ';')):
-            continue
-        toks = s.split('$')[0].split()
+    # The fifth copy of "which lines are cards", and it had the same two holes as
+    # the four that were folded into `device_cards`: it skipped `+` lines, so a
+    # wrapped card lost its tail tokens here even though the model was reading
+    # this map to name the block, and it re-implemented the control/subckt walk.
+    for line in device_cards(deck_text):
+        toks = line.split('$')[0].split()
         if len(toks) < 2 or not re.match(r'^[A-Za-z]\w*$', toks[0]):
             continue
         out.setdefault(toks[0].upper(), toks)

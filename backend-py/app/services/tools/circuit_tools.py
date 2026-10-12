@@ -553,12 +553,10 @@ def read_netlist(path: str, workspace: str = '') -> dict[str, object]:
     # so the listing showed a different set of terminals than the schematic drew
     # for the identical deck.
     from app.services.tools import schematic as _sch
-    from app.services.tools.netlist_text import logical_lines
+    from app.services.tools.netlist_text import device_cards
 
-    for line in logical_lines(content):
-        if not line or line.startswith('*') or line.startswith('.'):
-            continue
-        parts = line.split()
+    for line in device_cards(content):
+        parts = line.split('$')[0].split()
         if len(parts) >= 2:
             need = _sch.node_count(parts[0][0], parts[1:])
             nodes = parts[1:1 + need]
@@ -1022,34 +1020,23 @@ def lint_netlist(text: str) -> list[str]:
     # 3-node MOSFET — which ngspice rejects outright — passed this check and the
     # user met the error at simulation time instead.
     from app.services.tools import schematic as _sch
-    from app.services.tools.netlist_text import logical_lines
+    from app.services.tools.netlist_text import device_cards
 
     saw_source = False
-    in_control = False
-    for line in logical_lines(text):
-        if not line:
-            continue
-        if in_control:
-            # Inside `.control`, these are simulator commands, not device cards.
-            # `op` and `print v(out)` were linted as an O-device and a P-device
-            # with no nodes, so every deck that ran an analysis got two
-            # invented warnings — and `circuit_simulate` echoes `lint` on
-            # success, so a correct circuit reported problems with itself.
-            if line.split()[0].lower() in ('.endc', 'endc'):
-                in_control = False
-            continue
-        if line.startswith(('*', '+')):
-            continue
-        if line.startswith('.'):
-            if line.split()[0].lower() in ('.control', '.c'):
-                in_control = True
-            continue
+    # `device_cards` owns the question "which lines are cards": comments, the
+    # title line, dot-cards, `.control` commands and `.subckt` private parts are
+    # all excluded there, for every reader, instead of four times four ways.
+    # `op` and `print v(out)` used to be linted as an O-device and a P-device with
+    # no nodes, so every deck that ran an analysis reported problems with itself.
+    for line in device_cards(text):
         # Inline comment strip (SPICE $ terminator).
         line = line.split('$')[0].strip()
         parts = line.split()
+        if not parts:
+            continue
         ref = parts[0]
         prefix = ref[0].upper()
-        need = _sch.min_node_count(prefix)
+        need = _sch.min_node_count(prefix, parts[1:])
         nodes = parts[1:-1] if len(parts) > need else parts[1:]
         for nd in nodes:
             node_counts[nd] = node_counts.get(nd, 0) + 1
@@ -2538,21 +2525,11 @@ def _parse_components(deck_text: str) -> list[_DeckElement]:
     Continuations come from `netlist_text.logical_lines` for the same reason.
     """
     from app.services.tools import schematic as _sch
-    from app.services.tools.netlist_text import logical_lines
+    from app.services.tools.netlist_text import device_cards
 
     out: list[_DeckElement] = []
-    in_control = False
-    for s in logical_lines(deck_text):
-        low = s.lower()
-        if low.startswith('.control'):
-            in_control = True
-            continue
-        if low.startswith('.endc'):
-            in_control = False
-            continue
-        if in_control or not s or s.startswith(('*', '+', '.')):
-            continue
-        m = _ELEMENT_LINE_RE.match(s)
+    for s in device_cards(deck_text):
+        m = _ELEMENT_LINE_RE.match(s.split('$')[0].strip())
         if not m:
             continue
         letter, ref_suffix, rest = m.groups()
@@ -2561,11 +2538,6 @@ def _parse_components(deck_text: str) -> list[_DeckElement]:
             continue
         kind = _ELEMENT_KINDS.get(letter.upper(), 'part')
         node_count = _sch.node_count(letter, toks)
-        # A subckt instance's pin count is its own card, and `node_count` does
-        # not guess it; this view is not the drawing, so take the documented two
-        # rather than pulling the block name in as a net.
-        if letter.upper() == 'X':
-            node_count = 2
         nodes = [t.strip('[]') for t in toks[:node_count]]
         value = ''
         for t in toks[node_count:]:

@@ -35,9 +35,83 @@ OWNED = 'subagent_breakdown'
 FOREIGN = 'retire-fact'
 
 
+_EXECUTE_METHODS = ('execute', 'executemany', 'executescript')
+
+
+def _statement_sql(node: ast.Call) -> str | None:
+    """The SQL of a call argument, f-strings included.
+
+    `ast.literal_eval` raises on a JoinedStr, and the obvious response — skip it —
+    is how a guard like this goes blind: write one statement with an f-string and
+    it disappears from the scan while remaining a real query against the shared
+    table. So the literal parts of the f-string are concatenated instead, which is
+    enough to see the table name and the `proposal_type` predicate (both are
+    static text; only the VALUES interpolate)."""
+    arg = node.args[0]
+    if isinstance(arg, ast.JoinedStr):
+        return ''.join(
+            v.value if isinstance(v, ast.Constant) and isinstance(v.value, str) else '{…}'
+            for v in arg.values
+        )
+    try:
+        value = ast.literal_eval(arg)
+    except (ValueError, TypeError):
+        return None
+    return value if isinstance(value, str) else None
+
+
+def _unscoped_statements(src: str) -> list[str]:
+    """Statements in `src` that address `proposals` without naming a type.
+
+    Exempt: a write addressed by integer primary key. That is safe only because
+    the SELECT which produced the id was itself type-scoped, which the scan also
+    checks — every statement in the chain has to hold the rule, not just the one
+    that looks dangerous.
+    """
+    tree = ast.parse(src)
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        fn = node.func
+        if not (isinstance(fn, ast.Attribute) and fn.attr in _EXECUTE_METHODS):
+            continue
+        sql = _statement_sql(node)
+        if not sql or 'proposals' not in sql:
+            continue
+        if 'proposal_type' in sql:
+            continue
+        if 'WHERE id = ?' in sql and sql.lstrip().upper().startswith('UPDATE'):
+            continue
+        offenders.append(f'line {node.lineno}: {sql[:70]}')
+    return offenders
+
+
+def _scanned_statement_count(src: str) -> int:
+    """How many `proposals` statements the scan sees at all.
+
+    A guard that silently finds nothing is a guard that passes. The floor is what
+    makes a blind scan loud: change how the SQL is written (an f-string, a helper
+    that builds the string, `executemany`) in a way the scan cannot see, and this
+    count drops instead of the suite going quietly green.
+    """
+    tree = ast.parse(src)
+    n = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        fn = node.func
+        if not (isinstance(fn, ast.Attribute) and fn.attr in _EXECUTE_METHODS):
+            continue
+        sql = _statement_sql(node)
+        if sql and 'proposals' in sql:
+            n += 1
+    return n
+
+
 def _proposal_statements() -> list[tuple[str, str]]:
-    """`(sql, source-of-the-whole-call)` for every `.execute()` in the module
-    whose literal SQL names the shared `proposals` table.
+    """`(sql, source-of-the-whole-call)` for every statement in the module that
+    names the shared `proposals` table.
 
     The second half is what a test needs when the type travels as a bound
     parameter rather than a literal in the string.
@@ -46,19 +120,15 @@ def _proposal_statements() -> list[tuple[str, str]]:
     tree = ast.parse(src)
     out: list[tuple[str, str]] = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
+        if not isinstance(node, ast.Call) or not node.args:
             continue
         fn = node.func
-        if not (isinstance(fn, ast.Attribute) and fn.attr == 'execute') or not node.args:
+        if not (isinstance(fn, ast.Attribute) and fn.attr in _EXECUTE_METHODS):
             continue
-        try:
-            sql = ast.literal_eval(node.args[0])
-        except ValueError:
-            continue  # f-string: the interpolated value cannot name a table
-        if not isinstance(sql, str) or 'proposals' not in sql:
+        sql = _statement_sql(node)
+        if not sql or 'proposals' not in sql:
             continue
-        source = ast.get_source_segment(src, node) or sql
-        out.append((sql, source))
+        out.append((sql, ast.get_source_segment(src, node) or sql))
     return out
 
 
@@ -110,12 +180,44 @@ class TestEveryProposalStatementNamesItsType:
     """
 
     def test_all_proposals_statements_are_type_scoped(self):
-        offenders = [
-            sql[:70]
-            for sql, _source in _proposal_statements()
-            if 'proposal_type' not in sql and not _is_pk_addressed(sql)
-        ]
+        src = inspect.getsource(spawn)
+        assert _scanned_statement_count(src) >= 6, (
+            f'the scan sees only {_scanned_statement_count(src)} statements; it found '
+            '6 when this was written, so a rewrite of how the SQL is built has just '
+            'blinded the guard rather than fixed it'
+        )
+        offenders = _unscoped_statements(src)
         assert not offenders, 'unscoped statements:\n' + '\n'.join(offenders)
+
+    def test_the_scan_itself_catches_each_way_of_writing_a_statement(self):
+        """A guard nobody has seen fail is a guess.
+
+        The first version of this file skipped anything `ast.literal_eval` could
+        not read — which meant an f-string query against the shared table was not
+        flagged, and neither was `executemany`. Each shape below is a statement
+        that MUST be reported; the last two are the exemptions that are genuinely
+        safe, so the guard cannot be quietly widened into uselessness either.
+        """
+        shapes = {
+            'plain': "c.execute('SELECT * FROM proposals WHERE status = ?')",
+            'f-string': "c.execute(f'SELECT * FROM proposals WHERE id IN ({ids})')",
+            'executemany': "c.executemany('DELETE FROM proposals WHERE id = ?', rows)",
+            'implicit concat': "c.execute(\n    'SELECT * FROM proposals '\n    'WHERE status = ?'\n)",
+        }
+        for name, code in shapes.items():
+            found = _unscoped_statements(code)
+            assert found, f'the scan missed the {name} shape'
+
+        scoped = _unscoped_statements(
+            "c.execute('SELECT * FROM proposals WHERE proposal_type = ?')"
+        )
+        assert scoped == [], scoped
+        pk = _unscoped_statements(
+            "c.execute('UPDATE proposals SET status = ? WHERE id = ?', (s, rid))"
+        )
+        assert pk == [], pk
+        other_table = _unscoped_statements("c.execute('SELECT * FROM facts WHERE kind = ?')")
+        assert other_table == [], other_table
 
     def test_the_type_predicate_is_the_one_this_module_owns(self):
         """Not just "some filter" — the filter must be the owned type.

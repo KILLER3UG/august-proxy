@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from app.services.sandbox.paths import bind_path
-from app.services.tools.netlist_text import logical_lines
+from app.services.tools.netlist_text import device_cards
 
 # ── Grid ───────────────────────────────────────────────────────────────────
 
@@ -170,6 +170,22 @@ def node_count(letter: str, toks: list[str]) -> int:
       a net named `V=(...)` or drops a real one.
     """
     up = letter.upper()
+    if up == 'X':
+        # SPICE puts the called block's name immediately after its nodes, so the
+        # name is the LAST non-`k=v` token on the line — NOT "the last token that
+        # happens to name a block defined in this deck". The second predicate
+        # truncated `X1 ain aout vref ADC` at the node called `vref` whenever
+        # `ADC` came from a `.lib`, which is a dropped net, i.e. the same silence
+        # this function exists to remove. Everything before the name is a node, so
+        # the pin count is the name's own index — which also means a `.lib` block
+        # (no `.subckt` here to count from) still gets every node it was given,
+        # and a short call cannot pull the name into the node list. A deck that
+        # hands a block MORE nodes than it declares is invalid; the linter's job.
+        for i in range(len(toks) - 1, 1, -1):
+            if '=' in toks[i]:
+                continue
+            return i
+        return 2
     if up == 'B' and any(t.split('=', 1)[0].upper() in ('V', 'I') for t in toks):
         return 2
     if up in _FET_LETTERS:
@@ -193,14 +209,29 @@ def node_count(letter: str, toks: list[str]) -> int:
 # deck, which is how `M: 3` survived while ngspice rejected every 3-node card it
 # was handed. They call here now.
 _MIN_NODE_COUNT = {
-    'R': 2, 'C': 2, 'L': 2, 'D': 2, 'V': 2, 'I': 2, 'K': 2,
+    'R': 2, 'C': 2, 'L': 2, 'D': 2, 'V': 2, 'I': 2,
     'Q': 3, 'J': 3, 'M': 4, 'B': 3, 'S': 4, 'W': 2, 'X': 0,
 }
 
 
-def min_node_count(letter: str) -> int:
-    """The declared floor for a device letter — see `_MIN_NODE_COUNT`."""
-    return _MIN_NODE_COUNT.get(letter.upper(), 2)
+def min_node_count(letter: str, toks: 'list[str] | None' = None) -> int:
+    """The declared floor for a device letter — see `_MIN_NODE_COUNT`.
+
+    `toks` is optional but not decorative: `B` is two devices, and the floor for
+    XSPICE's behavioural source is 2, not the MESFET's 3. Without the card here,
+    `lint_netlist` told the user `B1 x y V=1` "needs 3 nodes; line has 2" on a
+    legal XSPICE source — a false error on a deck that simulates, which is the
+    exact class of noise this pass set out to remove.
+    """
+    up = letter.upper()
+    if up == 'B' and toks and any(t.split('=', 1)[0].upper() in ('V', 'I') for t in toks):
+        return 2
+    # `K` declares mutual coupling between two inductors: its tokens are refdes,
+    # not nets, and it is not drawable at all (`_NON_ELEMENT_LETTERS`). Giving it a
+    # floor made the linter demand nodes from a line that has no terminals.
+    if up in _NON_ELEMENT_LETTERS:
+        return 0
+    return _MIN_NODE_COUNT.get(up, 2)
 
 
 # Not drawable: `Kxxx L1 L2 0.9` declares mutual coupling BETWEEN two inductors.
@@ -233,28 +264,13 @@ def parse_elements(deck_text: str) -> list[Element]:
     disagreed and nothing reported it.
     """
     out: list[Element] = []
-    in_control = False
-    in_subckt = False
-    for s in logical_lines(deck_text):
-        low = s.lower()
-        if low.startswith('.control'):
-            in_control = True
-            continue
-        if low.startswith('.endc'):
-            in_control = False
-            continue
-        # A subckt's private nodes (i, n1, o …) are not part of the top-level
-        # circuit; the X instance already stands for the whole block. Emitting
-        # its body drew the same subcircuit twice, as free-floating parts.
-        if low.startswith('.subckt'):
-            in_subckt = True
-            continue
-        if low.startswith('.ends'):
-            in_subckt = False
-            continue
-        if in_control or in_subckt or not s or s.startswith(('*', '+', '.')):
-            continue
-        m = _ELEMENT_LINE_RE.match(s)
+    # `device_cards` owns the line selection — comments, the title card,
+    # dot-cards, `.control` commands and `.subckt` private parts are all out, for
+    # every reader at once. The subckt rule matters twice over: a block's private
+    # nodes (`i`, `n1`, `o`) are not part of the top-level circuit, and emitting
+    # its body drew the same subcircuit a second time as free-floating parts.
+    for s in device_cards(deck_text):
+        m = _ELEMENT_LINE_RE.match(s.split('$')[0].strip())
         if not m:
             continue
         letter, ref_suffix, rest = m.groups()
@@ -265,23 +281,6 @@ def parse_elements(deck_text: str) -> list[Element]:
             continue
         kind = _ELEMENT_KINDS.get(letter.upper(), 'part')
         n = node_count(letter, toks)
-        if letter.upper() == 'X':
-            # SPICE puts the called block's name immediately after its nodes, so
-            # the name is the LAST non-`k=v` token on the line — NOT "the last
-            # token that happens to name a block defined in this deck". The
-            # second predicate truncated `X1 ain aout vref ADC` at the node
-            # called `vref` whenever `ADC` came from a `.lib`, which is the same
-            # dropped-net silence this file exists to remove.
-            # Everything before the name is a node, so the pin count is the
-            # name's own index — which also means a `.lib` block (no `.subckt`
-            # here to count) still gets every node it was given, and a short
-            # call cannot pull the name into the node list. A deck that hands a
-            # block MORE nodes than it declares is invalid; the linter's job.
-            for i in range(len(toks) - 1, 1, -1):
-                if '=' in toks[i]:
-                    continue
-                n = i
-                break
         nodes = [t.strip('[]') for t in toks[:n]]
         tail = toks[n:]
         value = ''

@@ -64,3 +64,50 @@ def logical_lines(deck_text: str) -> list[str]:
         else:
             owner = current
     return out
+
+
+def device_cards(deck_text: str, *, skip_title: bool = True) -> list[str]:
+    """The lines of a deck that are DEVICE CARDS — one rule, every reader.
+
+    Four functions each decided independently which lines to look at, and every
+    one got a different answer: `.subckt` private parts were counted as
+    top-level components (`R2` inside a filter block appeared in the component
+    list next to the real parts), `.control` commands were read as devices
+    (`print v(out)` became a P-device with no nodes), the SPICE title line — which
+    ngspice never parses as an element — became an `M` MOSFET when a deck began
+    `My demo circuit`, and a `;` comment was a card. Each of those invents a part
+    that is in no circuit, in a view the user reads as the circuit.
+
+    Continuations are joined first (see `logical_lines`), so a card wrapped over
+    two physical lines arrives here as the one card ngspice runs.
+    """
+    out: list[str] = []
+    in_control = False
+    in_subckt = False
+    for i, s in enumerate(logical_lines(deck_text)):
+        if not s:
+            continue
+        low = s.lower()
+        first = low.split(maxsplit=1)[0] if low else ''
+        if in_control:
+            if first in ('.endc', 'endc'):
+                in_control = False
+            continue
+        if in_subckt:
+            if first == '.ends':
+                in_subckt = False
+            continue
+        if first == '.subckt':
+            in_subckt = True
+            continue
+        if first in _CONTROL_CARDS:
+            in_control = True
+            continue
+        if s.startswith(('*', ';', '.')):
+            continue
+        if skip_title and i == 0:
+            # The title card. `logical_lines` keeps it at index 0 exactly so this
+            # test is the same one `_find_element_span` already makes.
+            continue
+        out.append(s)
+    return out

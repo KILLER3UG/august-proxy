@@ -938,8 +938,14 @@ def test_voltage_color_ramp_blue_to_red():
 
 
 def test_svg_overlay_annotates_voltages_and_currents():
+    # A title line, because ngspice never parses line 0 as an element — measured
+    # on the bundled binary: `V1 1 0 12` as the first line reports
+    # `Circuit: v1 1 0 12` and solves V(1)=0, i.e. the source is swallowed as the
+    # title. `create_netlist` enforces that header for the same reason, and the
+    # readers now agree with the simulator instead of drawing a part that the
+    # circuit does not contain.
     comps = circuit_tools._parse_components(
-        'V1 1 0 12\nR1 1 2 10k\nR2 2 0 4k\n.end'
+        '* overlay deck\nV1 1 0 12\nR1 1 2 10k\nR2 2 0 4k\n.end'
     )
     svg = circuit_tools._svg_overlay(
         comps, {'1': 12.0, '2': 3.428571}, {'v1': -0.000857142}, 'test'

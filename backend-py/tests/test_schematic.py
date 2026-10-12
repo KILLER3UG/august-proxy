@@ -931,7 +931,9 @@ def test_control_block_lines_are_not_merged_into_each_other():
     deck = (
         '* ctrl\nV1 a 0 5\nR1 a 0 1k\n.control\nop\nprint v(a)\n+\n   more\n.endc\n.end\n'
     )
-    lines = schematic.logical_lines(deck)
+    from app.services.tools.netlist_text import logical_lines
+
+    lines = logical_lines(deck)
     assert any(ln.startswith('print v(a)') for ln in lines)
     assert not any('print v(a) more' in ln for ln in lines), lines
     # The deck still parses the two cards it should.
@@ -992,3 +994,101 @@ def test_the_three_card_readers_agree_on_a_deck():
     assert short_els['M1'].nodes == ['d', 'g', 's'], (
         f"the drawing invented a net out of the model name: {short_els['M1'].nodes}"
     )
+
+
+def test_which_lines_are_cards_is_now_one_rule_for_every_reader(tmp_path):
+    """Four readers, four answers — until `netlist_text.device_cards` owned it.
+
+    Each consumer used to decide for itself which lines of a deck are device
+    cards, and every one got a different piece wrong: `read_netlist` counted a
+    `.subckt`'s private `R2` and a `.control` `print` command as top-level parts,
+    the title line — which ngspice never parses as an element — became an `M`
+    MOSFET on a deck opening `My demo circuit`, and a `;` comment was a card. Each
+    of those invents a component that exists in no circuit, in a view the user
+    reads as the circuit.
+    """
+    from app.services.tools import circuit_tools as ct
+
+    deck = (
+        'My demo circuit\n'
+        '; a note comment\n'
+        '* a star comment\n'
+        '.model mm nmos level=1\n'
+        'V1 in 0 5\n'
+        'Rload out 0 1k\n'
+        '.subckt FILTER a b c d\n'
+        'Rghost a b 10\n'
+        '.ends\n'
+        'X1 in out vref FILTER\n'
+        '.control\n'
+        'op\n'
+        'print v(out)\n'
+        '.endc\n'
+        '.end\n'
+    )
+    refs = {e.ref for e in schematic.parse_elements(deck)}
+    assert refs == {'V1', 'Rload', 'X1'}, refs
+    assert 'Rghost' not in refs, 'the subckt body was drawn as a top-level part'
+    assert not any(r.lower().startswith(('pr', 'op', 'my')) for r in refs), refs
+
+    deck_file = tmp_path / 'demo.cir'
+    deck_file.write_text(deck, encoding='utf-8')
+    listed = {c['name'] for c in ct.read_netlist(str(deck_file), str(tmp_path))['components']}
+    assert listed == {'V1', 'Rload', 'X1'}, listed
+    overview = {c.ref for c in ct._parse_components(deck)}
+    assert overview == {'V1', 'Rload', 'X1'}, overview
+    assert not ct.lint_netlist(deck), ct.lint_netlist(deck)
+
+
+def test_the_x_instance_pin_count_is_the_same_number_everywhere():
+    """`X1 ain aout vref ADC` has three nets and a block name. The drawing counted
+    the name's index (3); the listing and the overview sliced 2, so the same
+    instance showed a different terminal set depending on which surface looked at
+    it — and the value field of the listing became `c`, a net."""
+    from app.services.tools import circuit_tools as ct
+
+    deck = (
+        '* x cards\n'
+        '.subckt ADC ain aout vref\n'
+        'R1 ain aout 1k\n'
+        '.ends\n'
+        'V1 vref 0 5\n'
+        'X1 ain aout vref ADC\n'
+        '.end\n'
+    )
+    drawn = {e.ref: e.nodes for e in schematic.parse_elements(deck)}
+    overview = {c.ref: c.nodes for c in ct._parse_components(deck)}
+    assert drawn['X1'] == ['ain', 'aout', 'vref'], drawn['X1']
+    assert overview['X1'] == drawn['X1'], f'overview disagrees: {overview["X1"]}'
+
+
+def test_a_behavioural_b_card_is_not_told_it_needs_three_nodes():
+    """`min_node_count` is a floor, and the floor for XSPICE's behavioural source
+    is 2 — the same letter's MESFET floor is 3. Reading the floor off the letter
+    alone had the linter demand a third node from a legal `B1 x y V=1`."""
+    from app.services.tools import circuit_tools as ct
+
+    assert schematic.min_node_count('B', ['x', 'y', 'V=1']) == 2
+    assert schematic.min_node_count('B', ['d', 'g', 's', 'bm']) == 3
+    deck = '* bsrc\nV1 x 0 5\nB1 y 0 V=(x*2)\nR1 y 0 1k\n.end\n'
+    assert not ct.lint_netlist(deck), ct.lint_netlist(deck)
+
+
+def test_k_coupling_and_semicolon_notes_are_not_devices():
+    """`K1 L1 L2 0.9` names two inductors, not two nets. With a node floor on `K`
+    the linter demanded nodes from a line that has no terminals, and a `;` note
+    (a comment form SPICE accepts) was parsed as a `;`-device."""
+    from app.services.tools import circuit_tools as ct
+
+    assert schematic.min_node_count('K') == 0
+    deck = (
+        '* coupled\n'
+        '; keep this note\n'
+        'V1 a 0 5\n'
+        'L1 a b 1u\n'
+        'L2 b 0 1u\n'
+        'K1 L1 L2 0.9\n'
+        '.end\n'
+    )
+    assert not ct.lint_netlist(deck), ct.lint_netlist(deck)
+    assert {e.ref for e in schematic.parse_elements(deck)} == {'V1', 'L1', 'L2'}
