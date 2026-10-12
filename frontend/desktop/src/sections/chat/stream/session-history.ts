@@ -159,7 +159,7 @@ export function mapRemoteMessages(remote: unknown[]): ChatMessage[] {
   for (const raw of remote) {
     if (!raw || typeof raw !== 'object') continue;
     const r = raw as Record<string, unknown>;
-    if (String(r.role ?? '') !== 'tool') continue;
+    if (typeof r.role !== 'string' || r.role !== 'tool') continue;
     const tool = r.tool as Record<string, unknown> | undefined;
     if (!tool) continue;
     const id =
@@ -190,7 +190,7 @@ export function mapRemoteMessages(remote: unknown[]): ChatMessage[] {
   for (const raw of remote) {
     if (!raw || typeof raw !== 'object') continue;
     const r = raw as Record<string, unknown>;
-    if (String(r.role ?? '') !== 'assistant' || !Array.isArray(r.blocks)) continue;
+    if (typeof r.role !== 'string' || r.role !== 'assistant' || !Array.isArray(r.blocks)) continue;
     for (const b of r.blocks as Record<string, unknown>[]) {
       if (!b || typeof b !== 'object' || b.type !== 'toolCall') continue;
       const t = b.tool as { id?: unknown } | undefined;
@@ -268,7 +268,13 @@ export function mapRemoteMessages(remote: unknown[]): ChatMessage[] {
       // MessageBubble renders role:'tool' through ToolCallCard, which needs it.
       role: isToolRow && structured.tool ? 'tool' : isToolRow ? 'assistant' : role,
       content: text,
-      timestamp: String(row.createdAt ?? row.created_at ?? new Date().toISOString()),
+      // Either spelling may carry the stamp, but only a string IS one: `String()`
+      // over an unknown prints `[object Object]` straight into the message list's
+      // time column, so the pick narrows the type instead of coercing it.
+      timestamp:
+        [row.createdAt, row.created_at].find(
+          (v): v is string => typeof v === 'string' && v.length > 0,
+        ) ?? new Date().toISOString(),
       remote: true,
       ...structured,
       ...(blocks ? { blocks } : {}),

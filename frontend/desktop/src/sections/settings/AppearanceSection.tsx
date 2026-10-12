@@ -135,7 +135,6 @@ export function AppearanceSection({ active }: { active?: SettingsSection }) {
                     the reference draws `label ....... [13 px]` and the native
                     control renders OS chrome in the middle of a themed pane. */}
                 <ValuePill
-                  label={label}
                   ariaLabel={`${label} font size`}
                   value={fontSizes[key]}
                   options={values.map((size) => ({ value: size, label: `${size} px` }))}

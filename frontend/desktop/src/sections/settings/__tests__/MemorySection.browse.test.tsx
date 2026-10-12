@@ -64,6 +64,8 @@ const FACT_ROWS = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // api.get is awaited by the section, so the fake must answer with a Promise —
+  // `async` here is the contract, not a stray await.
   getMock.mockImplementation(async (url: string) => {
     if (url.startsWith('/api/brain/stores/facts')) {
       return { store: 'facts', rows: FACT_ROWS, total: FACT_ROWS.length, limit: 200, offset: 0 };

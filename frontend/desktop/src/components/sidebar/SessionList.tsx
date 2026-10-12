@@ -58,7 +58,6 @@ import {
 import { WhatsNewModal } from "@/components/overlays/WhatsNewModal";
 import { NotificationsPanel } from "@/components/overlays/NotificationsPanel";
 import { SwitchAccountModal } from "@/components/overlays/SwitchAccountModal";
-import { toggleBottomTerminal } from '@/components/shell/RightDrawerState';
 import { usageApi } from '@/api/usage';
 import { SessionUsageProvider, NO_DELTAS } from './session-usage';
 

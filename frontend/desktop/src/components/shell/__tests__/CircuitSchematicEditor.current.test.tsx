@@ -73,8 +73,8 @@ const editSchematic = vi.fn();
 
 vi.mock('@/api/circuit', () => ({
   circuitApi: {
-    readSchematic: (...args: unknown[]) => readSchematic(...args),
-    editSchematic: (...args: unknown[]) => editSchematic(...args),
+    readSchematic: (...args: unknown[]): Promise<unknown> => readSchematic(...args),
+    editSchematic: (...args: unknown[]): Promise<unknown> => editSchematic(...args),
   },
 }));
 
@@ -86,7 +86,7 @@ async function renderEditor(g = divider) {
 
 describe('CircuitSchematicEditor — current flow is directional', () => {
   beforeEach(() => {
-    editSchematic.mockReset().mockImplementation(async () => divider);
+    editSchematic.mockReset().mockImplementation(() => divider);
   });
 
   it('draws arrowheads, not anonymous dots, when flow is on', async () => {

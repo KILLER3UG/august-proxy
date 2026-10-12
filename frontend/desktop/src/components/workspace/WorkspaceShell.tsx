@@ -4,7 +4,7 @@
 /* the Settings overlay route. The previous `/workspace/*` routes were     */
 /* retired when Settings absorbed the panel.                                   */
 
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { useSettingsFieldLink } from '@/hooks/useSettingsFieldLink';
 import {
@@ -159,13 +159,13 @@ export function WorkspaceShell({
     return railRowCount;
   }, [railRowCount, filtered, isFiltering]);
 
-  const closeToWorkspace = () => {
+  const closeToWorkspace = useCallback(() => {
     // Return to the exact chat the user came from (saved when navigating into
     // /settings), not always "/".
     const back = sessionStorage.getItem('pre-settings-path');
     void navigate(back && back !== location.pathname ? back : '/');
     sessionStorage.removeItem('pre-settings-path');
-  };
+  }, [navigate, location.pathname]);
 
   // Escape closes the panel the way it does in Claude — the surface is
   // transient, so it should leave the way a dialog does.
@@ -178,7 +178,7 @@ export function WorkspaceShell({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [location.pathname, location.search]);
+  }, [location.pathname, location.search, closeToWorkspace, trapRef]);
 
   return (
     /* Settings is a panel floating over the workspace rather than a page that

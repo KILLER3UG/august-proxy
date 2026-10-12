@@ -25,6 +25,7 @@ export interface SettingsTabItem {
 /** The tabpanel id for a tab — the single place the tab↔panel id contract
  *  lives, so `aria-controls` here and `id` on the consumer's panel cannot
  *  drift. Returns null without a prefix (no panel wiring for that tablist). */
+// eslint-disable-next-line react-refresh/only-export-components
 export function settingsTabPanelId(prefix: string | undefined, key: string): string | null {
   return prefix ? `${prefix}-panel-${key}` : null;
 }

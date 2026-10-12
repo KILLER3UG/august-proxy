@@ -29,14 +29,11 @@ export interface ValuePillOption<T extends string | number> {
 }
 
 export function ValuePill<T extends string | number>({
-  label,
   ariaLabel,
   value,
   options,
   onChange,
 }: {
-  /** Visible row label to the left of the pill (owned by the caller). */
-  label: string;
   /** Accessible name for the trigger — "Interface font size". */
   ariaLabel: string;
   value: T;

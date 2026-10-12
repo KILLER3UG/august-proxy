@@ -66,7 +66,7 @@ describe('ComposerWorkspaceChips', () => {
     );
   });
 
-  it('shows the bound folder name, and no branch chip', async () => {
+  it('shows the bound folder name, and no branch chip', () => {
     setup();
     expect(screen.getByTestId('composer-folder-chip').textContent).toContain('august-proxy');
     // One home for the branch (the status bar), not two. This row renders the

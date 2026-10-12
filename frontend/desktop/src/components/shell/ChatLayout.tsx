@@ -614,8 +614,12 @@ export function ChatLayout() {
           activeId={active?.id}
           collapsed={collapsed}
           onToggleCollapsed={() => setCollapsed((c) => !c)}
-          onNew={() => handleNewSession()}
-          onNewInFolder={(folderId) => handleNewSession(folderId)}
+          onNew={() => {
+            void handleNewSession();
+          }}
+          onNewInFolder={(folderId) => {
+            void handleNewSession(folderId);
+          }}
           onNavigate={(path) => {
             void navigate(path.startsWith("/") ? path : `/${path}`);
           }}

@@ -672,6 +672,7 @@ export function Markdown({
  *  a shell comment (`# run ngspice -b deck.cir`) is not rewritten. Setext form
  *  (`Title` + `=====`) is not shifted: the authoring spec emits ATX only.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function demoteMarkdownHeadings(src: string): string {
   let inFence = false;
   return src
