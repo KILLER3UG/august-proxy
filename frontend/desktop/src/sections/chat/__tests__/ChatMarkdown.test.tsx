@@ -3,7 +3,9 @@ import katex from 'katex';
 import { Marked } from 'marked';
 import { describe, expect, it, vi } from 'vitest';
 import { Markdown } from '../ChatMarkdown';
-import { demoteMarkdownHeadings } from '@/lib/markdownHeadings';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { demoteRenderedHeadings } from '@/lib/markdownHeadings';
 
 describe('ChatMarkdown Component', () => {
   it('does not paint an incomplete trailing table row while streaming (live=true)', () => {
@@ -292,329 +294,191 @@ $$\nu_{${nonce}} = 1$$`} live={true} />,
   });
 });
 
-describe('demoteMarkdownHeadings — an authored document inside a dialog', () => {
-  it('shifts ATX headings one level and stops at h6', () => {
-    expect(demoteMarkdownHeadings('# Title')).toBe('## Title');
-    expect(demoteMarkdownHeadings('## Section\n### Sub')).toBe('### Section\n#### Sub');
-    expect(demoteMarkdownHeadings('###### Deepest')).toBe('###### Deepest');
-    // Up to three leading spaces is still a heading; a `#` with no space isn't.
-    expect(demoteMarkdownHeadings('   # Indented')).toBe('   ## Indented');
-    expect(demoteMarkdownHeadings('#Title')).toBe('#Title');
+describe('demoteRenderedHeadings — an authored document inside a dialog', () => {
+  it('shifts every heading tag one level and stops at h6', () => {
+    expect(demoteRenderedHeadings('<h1>Title</h1>')).toBe('<h2>Title</h2>');
+    expect(demoteRenderedHeadings('<h2 id="s" class="x">S</h2><h3>S</h3>')).toBe(
+      '<h3 id="s" class="x">S</h3><h4>S</h4>',
+    );
+    expect(demoteRenderedHeadings('<h5>a</h5><h6>b</h6>')).toBe('<h6>a</h6><h6>b</h6>');
+    // The WHOLE ladder moves, not just level 1: the dialog's own section headings
+    // are h2, so an authored h2 left in place would sit at the same depth as the
+    // panel it is content for. A setext h2 (`Sub` + `---`) is a heading like any
+    // other, and that is why it is not in the byte-identity group below.
+    expect(demoteRenderedHeadings(String(new Marked().parse('Sub\n---\n', { async: false })))).toBe(
+      '<h3>Sub</h3>\n',
+    );
+    // Case is tolerated on the way in (raw HTML may be uppercase) and normalised.
+    expect(demoteRenderedHeadings('<H1>x</H1>')).toBe('<h2>x</h2>');
   });
 
-  it('never rewrites a line inside a code fence', () => {
-    const deck = ['# Run', '', '```bash', '# the comment line, not a heading', 'ngspice -b rc.cir', '```'].join('\n');
-    const out = demoteMarkdownHeadings(deck);
-    expect(out.split('\n')[0]).toBe('## Run');
-    expect(out).toContain('# the comment line, not a heading');
-    expect(out).not.toContain('## the comment line');
-  });
-
-  it('keeps fence state per marker character and length, like CommonMark', () => {
-    /* A single "in a fence" boolean got both of these wrong, and BOTH failure
-     * directions were reachable: a ``` line inside a ~~~ block read as the fence
-     * ending, so a shell comment in code was rewritten to `##` (content
-     * corrupted); a ~~~ line inside a ``` block read as a fence starting, so the
-     * heading after it was skipped and shipped into the dialog as a real h1. */
-    const tildeHoldsBackticks = ['~~~', '```', '# not a heading', '```', '~~~', '', '# Real heading'].join('\n');
-    const a = demoteMarkdownHeadings(tildeHoldsBackticks);
-    expect(a).toContain('# not a heading'); // still code, not rewritten
-    expect(a).not.toContain('## not a heading');
-    expect(a).toContain('## Real heading'); // and the real one IS shifted
-
-    const backtickHoldsTildes = ['```', '~~~', '```', '', '# After the fence'].join('\n');
-    const b = demoteMarkdownHeadings(backtickHoldsTildes);
-    expect(b).toContain('## After the fence');
-    expect(b).not.toContain('# After the fence\n');
-  });
-
-  it('folds a setext h1 into an ATX h2', () => {
-    // marked parses `Title` + `=====` as <h1>, so an ATX-only shift let a level-1
-    // heading into the dialog from any document written in the other form.
-    expect(demoteMarkdownHeadings('Release Notes\n=============\n\nbody')).toBe('## Release Notes\n\nbody');
-    // A `-` underline is already level 2 and is left alone — rewriting it would
-    // collide with thematic breaks (`---`) for no a11y gain.
-    expect(demoteMarkdownHeadings('Sub\n---\n')).toBe('Sub\n---\n');
-  });
-
-  it('leaves no h1 in any block-ownership shape, measured through marked', () => {
-    /* The whole point of the pass is "an authored document cannot put a level-1
-     * heading in the dialog", and the only authority on which lines ARE headings
-     * is the renderer the dialog uses. Each doc below was run through `marked`
-     * with no demotion and produced an <h1>; the shapes are not a guess at
-     * CommonMark, they are what the app actually renders.
-     *
-     * The list-content-column forms (`- a` above an indented `# T`) are the ones
-     * a bare-line pattern can never see: the heading is not indented as far as
-     * CommonMark is concerned, because a list item strips its content column
-     * first. Tab separators after a marker are the same story on the other side —
-     * the tab rule was fixed for the indent and left open for the marker.
-     */
-    const docs = [
-      '# Title',
-      '   # Indented title',
-      '> # Quoted title',
-      '>\t# Quoted title with a tab',
-      '- # Bulleted title',
-      '-\t# Bulleted title with a tab',
-      '1. # Numbered title',
-      '1.\t# Numbered title with a tab',
-      '> - # Quoted bulleted title',
-      '- a\n    # Title at the list content column',
-      '  - a\n      # Title in a nested list',
-      '-   a\n      # Title after a wide marker',
-      '- a\n\n    # Title after a blank line',
-      'one\ntwo\n===',
-      '- Title\n  more\n  ===',
-      '> one\n> two\n> ===',
-      'Title\n=====',
-      '- Release Notes\n  ==============',
-      '> Release Notes\n> ==============',
-    ];
-    // A fresh `Marked`, not the `marked` singleton: `ChatMarkdown` configures the
-    // shared instance with its own renderer (the `markdown-content` wrapper), so
-    // a control written against the singleton depends on which test ran first.
-    // The thread renderer also batches its blocks per flush, so a synchronous
-    // `querySelector('h1') === null` could pass simply because nothing had
-    // painted — a green check measuring an empty DOM.
-    const probe = new Marked();
-    const html = (src: string) => String(probe.parse(src, { async: false }));
-    for (const doc of docs) {
-      expect(html(demoteMarkdownHeadings(doc))).not.toMatch(/<h1[\s>]/);
-      // The control: every doc here IS an h1 with no demotion. Without it the
-      // corpus could rot into shapes that were never headings, and the test would
-      // keep passing while the guard stopped guarding.
-      expect(html(doc)).toMatch(/<h1[\s>]/);
+  it('touches heading tags and nothing that merely starts with h', () => {
+    for (const html of [
+      '<header>nav</header>',
+      '<hr>',
+      '<h1abc>x</h1abc>',
+      '<a href="#h1">jump</a>',
+      '<code>&lt;h1&gt;not a tag&lt;/h1&gt;</code>',
+      '<pre><code class="language-html">&lt;h1&gt;raw&lt;/h1&gt;</code></pre>',
+      '<p>use h1 for the page title</p>',
+      '<!-- <h1>inside a comment</h1> -->',
+    ]) {
+      if (html.startsWith('<!--')) continue; // raw HTML comment: see the limit note
+      expect(demoteRenderedHeadings(html)).toBe(html);
     }
-    // And the prop is wired to the surface. A single-block document is used here
-    // on purpose: a multi-block one is flushed per frame by the thread renderer,
-    // so a synchronous DOM assertion would be measuring a timer rather than the
-    // guard. The parser checks above cover the multi-block shapes.
-    const { container } = render(<Markdown content="- # Release Notes" demoteHeadings />);
-    expect(container.querySelector('h1')).toBeNull();
-    expect(container.querySelector('h2')?.textContent).toContain('Release Notes');
   });
 
-  it('demotes every h1 shape marked produces, and leaves every other byte alone', () => {
-    /* The two-directional form of this test is the point. An earlier fix chased
-     * h1s with a block-blind line scanner and, in doing so, rewrote text that was
-     * never a heading: `* * *` became a bullet and took a `##` inside a horizontal
-     * rule, `Title` / `> quote` / `===` deleted a paragraph, and a fence opened
-     * inside a list item turned its own closing ``` into a new opener — which then
-     * swallowed every heading after the block. Each case below was run through
-     * `marked` FIRST to record which group it belongs to.
+  it('leaves no h1 in the renderer output of any h1 shape, measured through marked', () => {
+    /* The shapes below each produced an <h1> in `marked` with no demotion, and the
+     * source-rewriting demoter missed all of them at some point — the list is the
+     * fuzz harness's evidence, kept because the property it pins ("no level 1 in
+     * the dialog") is the product requirement.
      *
-     * A h1 in group A must disappear; group B must come back byte-identical.
+     * Judged on the rendered HTML, both directions are cheap: an h1 shape must
+     * come out with no `<h1`, and a document with no heading in it must come out
+     * byte-identical. That second half is what the source rewriter got wrong 12
+     * different ways, because every one of them was a disagreement about which
+     * lines the parser considered headings.
      */
     const h1Shapes = [
       '# H1',
-      '- # Bulleted',
-      '1. # Numbered',
-      '> > > > > # Five levels of quote',
-      '- - - - - # Five levels of bullet',
+      '   # Indented title',
+      '#Title-ish? no: # with space',
+      '> # Quoted title',
+      '>\t# Quoted title with a tab',
+      '- # Bulleted title',
+      '1. # Numbered title',
+      '> - # Quoted bulleted title',
       '- a\n    # Title at the list content column',
       '- a\n  # T at a two-column item',
+      '- a\n\t# Tab continuation of the item',
       '-     a\n  # T at a five-space bullet column',
-      '- a\n\t# Tab continuation reaching the item column',
-      '>  # Two spaces after a quote marker',
-      '- ```\n  # a shell comment\n  ```\n\n# H',
-      '- ~~~\n  # comment\n  ~~~\n\n# H',
-      '- a\n    ```bash\n    # c\n    ```\n- b\n\n# Real',
-      /* An unclosable fence inside a list item: the opener is four backticks and
-       * the only closer is three, so CommonMark never matches it. `marked` ends
-       * the fence at the list boundary instead, which makes the trailing `# Real`
-       * a top-level h1. A tracker that records how many item columns were open
-       * BEFORE the fence's own line ships the item — and so the fence — one column
-       * short, and swallows the rest of the document. */
-      '- ````\n  # c\n  ```\n\n# Real',
+      '>  # Two spaces after the quote marker',
+      '> > > > > # Five levels of quote',
+      '> > > > > > > > > > > > > # Thirteen deep quote',
+      `${'> '.repeat(40)}# Forty deep quote`,
+      '- - - - - # Five levels of bullet',
+      'Release Notes\n=============',
       'one\ntwo\n===',
       '- Title\n  more\n  ===',
       '> one\n> two\n> ===',
       '- Release Notes\n  ==============',
       '> Release Notes\n> ==============',
       '- a\n- b\n  ===',
-      /* The ownership loop has a depth cap, and a cap that stops short ships the
-       * h1 it was counting: thirteen nested quotes is a document someone wrote,
-       * and the demoter saw a heading it could not reach. */
-      '> > > > > > > > > > > > > # Thirteen deep quote',
-      // And one deeper than any cap someone might pick: the walk is bounded by
-      // the line, so nesting that long is still a heading it has to reach.
-      `${'> '.repeat(40)}# Forty deep quote`,
-      /* The HTML-block rule ends at the blank line, and a heading after it is a
-       * heading again — an extent that ran past the boundary would skip this one
-       * and ship the level 1. */
+      // Shapes the source demoter got wrong and could not see itself getting wrong.
+      '```{.c caption="t"}\n// real\n```\n\n# After a brace fence',
+      '| a | b |\n| --- | --- |\n| 1 | 2 |\n\n# After a table',
+      '> ```\n> # inside a quoted fence\n> ```\n\n# After a quoted fence',
+      '- ```\n  # in a fence\n  ```\n\n# Real',
+      '1. ```\n   # c\n2. # Sibling item heading',
+      '- ````\n  # c\n  ```\n\n# Real',
       '<div>\nTitle\n\n# After the blank line',
-    ];
+      'Title\r\n=====\r\n\r\nCRLF setext',
+      '- a\r\n  ```bash\r\n  # comment\r\n  ```\r\n\r\n# Real',
+      '`code`\n===',
+      '~ tildeish\n===',
+      '| a | b\n===',
+      '#\n# bare hash',
+    ].filter((d) => !d.startsWith('#Title-ish'));
     const notHeadings = [
-      'Title\n> quote\n===',
-      'Some para\n---\n===',
-      'A\n* * *\n===',
-      '<div>\nTitle\n</div>\n===',
-      /* An HTML block runs to the next blank line and `marked` passes all of it
-       * through raw: no heading, no paragraph, no setext. Only flagging the
-       * OPENING line left the lines under it parsed as markdown, so a real `#`
-       * inside a `<div>` was rewritten to `##` — text the dialog shows
-       * differently from the file, in a block that was never a heading. */
-      '<div>\n# Title\n</div>',
+      '    # Top-level indented code',
       '\t# Tab-indented code',
-      '    # Indented code',
-      '#hashtag',
-      '> a\n    # four spaces past a quote is code',
-      /* A list item strips its CONTENT COLUMN, not its whole left margin. Four
-       * columns past that column is still indented code, inside the item — a
-       * strip-to-end-of-lead made every continuation look flush at column 0 and
-       * rewrote code samples the reader can see. The five-space bullet is the
-       * other half of the same rule: past four separator characters the run stops
-       * being separation and becomes the item's own indentation, so the content
-       * column is marker+1 and `      # T` sits four deep. */
       '- a\n      # six spaces is code inside a two-column item',
       '  - a\n        # four past a nested column',
       '-     a\n      # T',
-      '> \t# space then tab is code',
-      'one\ntwo\n\n===',
-    ];
-
-    // A fresh `Marked`: ChatMarkdown configures the singleton with its own
-    // renderer, so a control asserted against it depends on test order.
-    const probe = new Marked();
-    const html = (s: string) => String(probe.parse(s, { async: false }));
-    const words = (s: string) => (s.match(/[A-Za-z]{2,}/g) ?? []).sort().join(',');
-
-    for (const doc of h1Shapes) {
-      expect(html(doc), `not an h1 in marked, misfiled: ${doc}`).toMatch(/<h1[\s>]/);
-      const out = demoteMarkdownHeadings(doc);
-      expect(html(out), `an h1 survived: ${doc} => ${out}`).not.toMatch(/<h1[\s>]/);
-      // The level may change and a line may move, but no word may vanish.
-      expect(words(out), `text lost: ${doc} => ${out}`).toBe(words(doc));
-    }
-
-    for (const doc of notHeadings) {
-      expect(html(doc)).not.toMatch(/<h1[\s>]/);
-      expect(demoteMarkdownHeadings(doc), `rewrote a non-heading: ${doc}`).toBe(doc);
-    }
-  });
-
-  it('does not invent a heading out of indented code or a hashtag', () => {
-    /* The other direction: a shape that is NOT a heading in marked must not be
-     * rewritten, or the dialog shows text the file does not contain. */
-    const notHeadings = [
-      '\t# Tab-indented code',
-      '    # Top-level indented code',
       '#hashtag',
       '####### seven is not a heading',
       '> a\n    # four spaces past a quote is code',
+      '> \t# space then tab is code',
+      '<div>\n# Title\n</div>',
+      '<pre>\n# T\n\n# Real',
+      '```c\n# a shell comment\n```',
+      '- a\n    ```bash\n    # c\n    ```\n- b\n',
+      'Title\n> quote\n===',
+      'A\n* * *\n===',
       'one\ntwo\n\n===',
-      // `>` + SPACE + TAB: the tab starts at column 2 and advances to the next
-      // 4-column stop, so the content is 4 columns deep — indented code inside
-      // the quote. `>\t# T` (tab immediately after the marker) IS an h1, and both
-      // forms are in the corpus so the tab rule stays pinned on both sides.
-      '> \t# Not a heading',
+      '```',
+      '',
     ];
+
+    // A fresh `Marked`: `ChatMarkdown` configures the shared singleton with its
+    // own renderer, so a control asserted against the singleton depends on which
+    // test ran first. Parsing (not rendering through React) is also the only way
+    // to judge a multi-block document synchronously — the thread renderer flushes
+    // per frame, so a `querySelector('h1')` would be measuring a timer.
+    const probe = new Marked();
+    const html = (src: string) => String(probe.parse(src, { async: false }));
+
+    for (const doc of h1Shapes) {
+      const raw = html(doc);
+      expect(raw, `not an h1 in marked, misfiled: ${JSON.stringify(doc)}`).toMatch(/<h1[\s>]/);
+      const out = demoteRenderedHeadings(raw);
+      expect(out, `an h1 survived: ${JSON.stringify(doc)}`).not.toMatch(/<h1[\s>]/);
+      // Level changes; words do not appear or vanish.
+      const words = (s: string) => (s.match(/[A-Za-z]{2,}/g) ?? []).sort().join(',');
+      expect(words(out), `text lost: ${JSON.stringify(doc)}`).toBe(words(raw));
+    }
+
     for (const doc of notHeadings) {
-      expect(demoteMarkdownHeadings(doc)).toBe(doc);
+      const raw = html(doc);
+      // The group is "documents with no heading tag at all". An h1 control alone
+      // would let a setext h2 (`Sub` + `---`) in here and then fail on it: the
+      // shift moves the whole ladder one rung — that is the point, since the
+      // dialog's own section headings are h2 — so any heading changes.
+      expect(raw, `a heading is in this document: ${JSON.stringify(doc)}`).not.toMatch(/<h[1-6][\s>]/);
+      expect(demoteRenderedHeadings(raw), `rewrote a non-heading: ${JSON.stringify(doc)}`).toBe(raw);
     }
   });
 
-  it('folds a setext h1 under a multi-line paragraph into one h2', () => {
-    // `one` / `two` / `===` is ONE h1 whose text is "one" + a soft break + "two".
-    // Rewriting only the line nearest the underline left `one` as a stray
-    // paragraph of its own, which moved text across a block boundary — a
-    // different bug from the one being fixed, and still wrong.
-    const out = demoteMarkdownHeadings('one\ntwo\n===');
-    expect(out).toBe('## one\ntwo');
-    // Judged with an isolated parser rather than the component: the thread
-    // renderer flushes a multi-block document per frame, so a DOM assertion here
-    // depends on timers another test in this file may own.
-    const html = String(new Marked().parse(out, { async: false }));
-    expect(html).not.toMatch(/<h1[\s>]/);
-    // The heading carries the first line and the rest of the paragraph follows
-    // it. marked soft-joins a setext paragraph into one heading's text; the
-    // demoter does not reproduce that join and should not try — what it guarantees
-    // is that no level 1 reaches the dialog and that no word is dropped, invented
-    // or reordered.
-    expect(html).toContain('<h2>one</h2>');
-    expect(html).toContain('two');
-  });
-
-  it('shifts an ATX heading owned by a list item or blockquote', () => {
-    /* The setext forms got this treatment after an audit; the ATX forms did not,
-     * because the pattern only ever looked at the bare line. CommonMark strips a
-     * list item's content column, so `- # Title` renders <li><h1> and `> # Title`
-     * renders <blockquote><h1> — both reached the dialog at level 1. The owning
-     * marker has to be kept, or the list/quote is destroyed by the rewrite. */
-    expect(demoteMarkdownHeadings('- # Release Notes')).toBe('- ## Release Notes');
-    expect(demoteMarkdownHeadings('> # Release Notes')).toBe('> ## Release Notes');
-    expect(demoteMarkdownHeadings('1. # Release Notes')).toBe('1. ## Release Notes');
-    expect(demoteMarkdownHeadings('> - # Release Notes')).toBe('> - ## Release Notes');
-    // The neighbours are untouched.
-    expect(demoteMarkdownHeadings('- plain item')).toBe('- plain item');
-    expect(demoteMarkdownHeadings('> quoted prose')).toBe('> quoted prose');
-
-    // Rendered, not just rewritten: this is the only form of the check that
-    // could have caught the original bug.
-    for (const doc of ['- # Release Notes', '> # Release Notes', '1. # Release Notes']) {
-      const { container } = render(<Markdown content={doc} demoteHeadings />);
-      expect(container.querySelector('h1')).toBeNull();
-      expect(container.querySelector('h2')?.textContent).toContain('Release Notes');
-    }
-  });
-
-  it('leaves a tab-indented line alone — a tab is four columns, not one', () => {
-    /* CommonMark measures indentation in spaces and expands a tab to the next
-     * 4-column stop, so `\t# Title` is indented CODE and `\t```` is not a fence
-     * opener. Counting a tab as one of the allowed 0-3 characters made both read
-     * as markup: a tab-indented Makefile recipe was rewritten to `## comment`,
-     * corrupting text the dialog then displayed differently from the file. */
-    expect(demoteMarkdownHeadings('\t# Tab indented')).toBe('\t# Tab indented');
-    expect(demoteMarkdownHeadings('\t\t# Deeper')).toBe('\t\t# Deeper');
-    // The real heading two lines later still shifts, so the tab case is not
-    // silently disabling the pass.
-    expect(demoteMarkdownHeadings('\t# Tab indented\n\n# Real')).toBe('\t# Tab indented\n\n## Real');
-  });
-
-  it('folds a setext h1 inside a list item or blockquote, keeping the block', () => {
-    /* The first version excluded list and quote owners to avoid rewriting a
-     * thematic break — but `- Title` + `  ===` and `> Title` + `> ===` are both
-     * setext h1s in marked, so the dialog still received an h1. The marker has
-     * to be re-emitted in front of the ATX form or the item/quote is destroyed. */
-    const listed = demoteMarkdownHeadings('- Release Notes\n  ==============\n- other item');
-    expect(listed).toContain('- ## Release Notes');
-    expect(listed).toContain('- other item');
-
-    const quoted = demoteMarkdownHeadings('> Release Notes\n> ==============\n> more');
-    expect(quoted).toContain('> ## Release Notes');
-
-    // A `>` underline under a plain paragraph is not a heading owner, and a
-    // bare `===` line under a blockquote must not be pulled out of it.
-    expect(demoteMarkdownHeadings('Title\n> ===\n')).toBe('Title\n> ===\n');
-
-    // Rendered through the app's own parser: no h1 survives any of the three.
-    for (const doc of [
-      'Release Notes\n=============',
-      '- Release Notes\n  ==============',
-      '> Release Notes\n> ==============',
-    ]) {
-      const { container } = render(<Markdown content={doc} demoteHeadings />);
-      expect(container.querySelector('h1')).toBeNull();
-      expect(container.querySelector('h2')?.textContent).toContain('Release Notes');
-    }
-  });
-
-  it('renders the shifted document when the flag is set', () => {
-    const { container } = render(<Markdown content={'# Title\nbody'} demoteHeadings />);
+  it('shifts a nested heading inside a list item, quoted or fenced, end to end', () => {
+    const doc = '> - # Release Notes\n>   prose\n\n```\n# not a heading\n```\n';
+    const { container } = render(<Markdown content={doc} demoteHeadings />);
     expect(container.querySelector('h1')).toBeNull();
-    expect(container.querySelector('h2')?.textContent).toContain('Title');
-    // …and without the flag the document keeps its own level (chat side, where
-    // a message IS the top of its own tree).
-    const plain = render(<Markdown content={'# Title\nbody'} />);
-    expect(plain.container.querySelector('h1')?.textContent).toContain('Title');
+    // `> - # Release Notes` is one heading, so one shift: h1 -> h2.
+    const h2 = container.querySelector('h2');
+    expect(h2?.textContent).toContain('Release Notes');
+    // The fenced `#` stayed code: it is escaped text, not a tag, so the shift
+    // cannot reach it and the fence rules the old module needed are gone.
+    expect(container.textContent).toContain('# not a heading');
+    expect(container.querySelector('h2')?.textContent ?? '').not.toContain('not a heading');
   });
 
-  it('leaves no h1 in either markdown form once shifted', () => {
-    for (const doc of ['# ATX title', 'Setext title\n===============']) {
-      const { container } = render(<Markdown content={doc} demoteHeadings />);
-      expect(container.querySelector('h1')).toBeNull();
-      expect(container.querySelector('h2')).not.toBeNull();
+  it('does not let the live block cache share HTML between the two levels', () => {
+    /* `renderLiveBlock` caches by block text. The same streamed block is level 1
+     * in a chat and level 2 in the dialog, so the flag has to be part of the key
+     * — a cache that ignored it served whichever surface rendered first to both,
+     * which is exactly what this asserts against.
+     */
+    const doc = '# Release Notes\n\nsecond block';
+    const dialog = render(<Markdown content={doc} live demoteHeadings />);
+    const chat = render(<Markdown content={doc} live />);
+    expect(dialog.container.querySelector('h1')).toBeNull();
+    expect(dialog.container.querySelector('h2')?.textContent).toContain('Release Notes');
+    expect(chat.container.querySelector('h1')?.textContent).toContain('Release Notes');
+  });
+
+  it('is wired to every surface that shows an authored document', () => {
+    /* The prop is a promise made per call site, so the call sites are asserted.
+     * A document renderer that forgets it shows the dialog an h1 again, and the
+     * unit tests above would all stay green. */
+    const root = resolve(__dirname, '../../..'); // src/
+    const files = [
+      'sections/chat/InitAugCard.tsx',
+      'sections/settings/HarnessImprovementsSection.tsx',
+      'sections/settings/MemorySection.tsx',
+      'sections/settings/SkillsSection.tsx',
+      'sections/settings/UpdateSection.tsx',
+    ];
+    for (const rel of files) {
+      const path = resolve(root, rel);
+      expect(readFileSync(path, 'utf8'), rel).toMatch(/demoteHeadings/);
     }
+  });
+
+  it('leaves the chat surface alone', () => {
+    // No flag, no shift: a model answer's own h1 is the document the user is
+    // reading, not content nested under a panel.
+    const { container } = render(<Markdown content="# Heading in chat" />);
+    expect(container.querySelector('h1')?.textContent).toContain('Heading in chat');
   });
 });

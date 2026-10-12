@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { marked, type Tokens } from 'marked';
 import katex from 'katex';
 import { highlightCode } from '@/lib/code-highlight';
-import { demoteMarkdownHeadings } from '@/lib/markdownHeadings';
+import { demoteRenderedHeadings } from '@/lib/markdownHeadings';
 import { safeExternalHref } from '@/lib/safe-href';
 
 const COPY_PLACEHOLDER_ATTR = 'data-copy-placeholder';
@@ -410,17 +410,27 @@ const LIVE_BLOCK_HTML_CACHE = new SizedCache<string, { __html: string }>(
   (k, v) => k.length + v.__html.length,
 );
 
-function renderLiveBlock(block: string): { __html: string } {
-  const cached = LIVE_BLOCK_HTML_CACHE.get(block);
+/** One `marked` parse, LaTeX-stabilised. Shared by the cached live path and the
+ *  settle/preview path so the two cannot drift on options or on the math pass. */
+function parseMarkdownSource(src: string): string {
+  return marked.parse(convertLatexToUnicode(src), { async: false });
+}
+
+function renderLiveBlock(block: string, demote: boolean): { __html: string } {
+  // The flag belongs in the cache KEY and not only in the render: the same
+  // streamed block is level 1 in chat and one level down in the settings dialog,
+  // and a cache that ignored that served one surface's HTML to the other.
+  const key = `${demote ? 'd' : 'c'}\u0000${block}`;
+  const cached = LIVE_BLOCK_HTML_CACHE.get(key);
   if (cached !== undefined) return cached;
   liveMarkdownParse = true;
   let html: string;
   try {
-    html = marked.parse(convertLatexToUnicode(block), { async: false });
+    html = parseMarkdownSource(block);
   } finally {
     liveMarkdownParse = false;
   }
-  return LIVE_BLOCK_HTML_CACHE.set(block, { __html: html });
+  return LIVE_BLOCK_HTML_CACHE.set(key, { __html: demote ? demoteRenderedHeadings(html) : html });
 }
 
 /**
@@ -563,8 +573,10 @@ export function Markdown({
   live?: boolean;
   /** Render an authored document as CONTENT inside a container (the settings
    *  dialog) whose section headings are all h2, so a level-1 heading in the
-   *  body would be the only h1 in that subtree. Shifts headings down a level —
-   *  fences included; see `@/lib/markdownHeadings`. */
+   *  body would be the only h1 in that subtree. Shifts the RENDERED headings
+   *  down a level, after `marked` has decided what they are; see
+   *  `@/lib/markdownHeadings` for why that is the only place the decision can
+   *  live. */
   demoteHeadings?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -586,25 +598,25 @@ export function Markdown({
 
   const html = useMemo(() => {
     if (!content) return '';
-    const source = demoteHeadings ? demoteMarkdownHeadings(content) : content;
     if (live) {
       // A.1: incremental live render. Complete blocks are cached; only the
       // still-growing tail block re-parses each flush (see renderLiveBlock),
       // and only the bytes that arrived since the last flush are re-scanned
       // for block boundaries (see splitLiveBlocksIncremental). The settle
       // pass (live=false) below produces the exact full parse.
-      const stabilized = stabilizeLiveTables(source);
+      const stabilized = stabilizeLiveTables(content);
       const { complete, tail, state } = splitLiveBlocksIncremental(stabilized, splitState.current);
       splitState.current = state;
-      const parts: { __html: string }[] = complete.map(renderLiveBlock);
-      if (tail) parts.push(renderLiveBlock(tail));
+      const parts: { __html: string }[] = complete.map((block) => renderLiveBlock(block, demoteHeadings));
+      if (tail) parts.push(renderLiveBlock(tail, demoteHeadings));
       return parts;
     }
     // During a live stream, hold back an incomplete trailing table row so the
     // table never paints half-formed rows with cut borders.
-    const processed = convertLatexToUnicode(source);
-    const res = marked.parse(processed, { async: false });
-    return res;
+    const parsed = parseMarkdownSource(content);
+    // Shifted AFTER the parse, so `marked` is the only thing that ever decided
+    // which lines are headings — see `@/lib/markdownHeadings`.
+    return demoteHeadings ? demoteRenderedHeadings(parsed) : parsed;
   }, [content, live, demoteHeadings]);
 
   const liveBlocks = live && typeof html !== 'string' ? (html as { __html: string }[]) : null;
