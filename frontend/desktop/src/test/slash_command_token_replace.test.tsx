@@ -22,8 +22,14 @@ describe('Slash command token replacement + keyboard nav', () => {
   it('Enter key selects highlighted command or sends when dropdown is closed', () => {
     const path = resolve(__dirname, '../sections/chat/composer/useComposerPopovers.ts');
     const src = readFileSync(path, 'utf8');
-    expect(src).toMatch(/Enter/);
+    // The word "Enter" appears in prose, comments and other handlers, so
+    // `/Enter/` passed on a file with no command-selection branch at all. Assert
+    // the comparison and the branch it gates: Enter with the dropdown open takes
+    // the highlighted row, and Shift+Enter must not.
+    expect(src).toMatch(/e\.key === 'Enter' && !e\.shiftKey && visible\.length > 0/);
     expect(src).toMatch(/highlightedCommandIndex/);
+    // IME composition guard: Enter during composition is not a commit.
+    expect(src).toMatch(/e\.key === 'Enter'[\s\S]{0,80}isComposing/);
   });
 
   it('ArrowUp/ArrowDown navigates highlightedCommandIndex', () => {

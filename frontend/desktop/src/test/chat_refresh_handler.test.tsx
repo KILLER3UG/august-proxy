@@ -6,8 +6,13 @@ describe('ChatThread refresh handler', () => {
   it('refetch handler refreshes the provider catalog', () => {
     const path = resolve(__dirname, '../sections/chat/ChatThread.tsx');
     const src = readFileSync(path, 'utf8');
-    expect(src).toMatch(/refreshProviderCatalog/);
-    expect(src).toMatch(/handleRefreshModels/);
+    // Presence of each name proved nothing: the import alone satisfied both, so
+    // the handler could stop calling the catalog and the model picker could stop
+    // calling the handler and this stayed green. Assert the two links that carry
+    // the behaviour — the handler awaiting the catalog refresh, and the picker's
+    // refresh action wired to the handler.
+    expect(src).toMatch(/const\s+handleRefreshModels\s*=\s*useCallback[\s\S]{0,160}await\s+refreshProviderCatalog\(/);
+    expect(src).toMatch(/onRefreshModels=\{\(\)\s*=>\s*\{[\s\S]{0,60}handleRefreshModels\(\)/);
   });
 
   it('invalidates provider-availability queries on refresh', () => {

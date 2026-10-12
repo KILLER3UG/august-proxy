@@ -173,7 +173,13 @@ describe('ChatThread: queue pill rendering and queue badge', () => {
       resolve(__dirname, '../sections/chat/ChatThreadComposer.tsx'),
       'utf8',
     );
-    expect(composerSrc).toMatch(/QueuePills/);
+    // Rendered, not merely named: `QueuePills` appears in the import line, so the
+    // old assertion passed on a file that imported the component and never drew it.
+    // Stated limit of a source scan: this proves the JSX is written with a session
+    // prop, not that some future condition does not dead-code it — nothing here
+    // renders the composer (it needs the session store, query client and stream
+    // context), so that residual is the app check's job, not this file's.
+    expect(composerSrc).toMatch(/<QueuePills[\s\S]{0,200}sessionId/);
     const pillsSrc = readFileSync(
       resolve(__dirname, '../sections/chat/QueuePills.tsx'),
       'utf8',

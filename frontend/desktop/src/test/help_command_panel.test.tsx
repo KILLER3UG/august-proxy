@@ -11,9 +11,15 @@ describe('/help in-thread panel (registry-based)', () => {
     // assertion tracks the trimmed core set instead of a removed /help entry.
     const src = readSrc('../api/voice/builtins.ts');
     expect(src).toMatch(/category:\s*['"]core['"]/);
-    expect(src).toMatch(/description:/);
     expect(src).toMatch(/slashCommand:\s*['"]\/compact['"]/);
     expect(src).toMatch(/slashCommand:\s*['"]\/goal['"]/);
+    // `/description:/` matched the type declaration, so the panel would still
+    // pass with every entry's description removed. Every registered command that
+    // the /help card lists must carry a non-empty description string.
+    const entries = src.match(/slashCommand:\s*'\/[a-z-]+',[\s\S]{0,120}?category:\s*'core',\s*description:\s*'([^']+)'/g) ?? [];
+    expect(entries.length).toBeGreaterThanOrEqual(2);
+    const withoutDesc = (src.match(/slashCommand:\s*'\/[a-z-]+'/g) ?? []).length - entries.length;
+    expect(withoutDesc, `${withoutDesc} registered command(s) have no description`).toBeLessThanOrEqual(2);
   });
 
   it('/help panel renders from the registry (not commands-data.ts)', () => {
