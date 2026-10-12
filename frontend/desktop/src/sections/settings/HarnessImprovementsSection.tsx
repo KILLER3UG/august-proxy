@@ -298,11 +298,23 @@ export function HarnessImprovementsSection() {
       // no dismiss/reopen vocabulary — send only what it understands. It
       // also reports failure as HTTP 200 + {ok:false} (api.request only
       // throws on non-2xx), so inspect the envelope explicitly.
-      const res = await api.post<{ ok?: boolean; error?: string }>(
+      const res = await api.post<{
+        ok?: boolean;
+        error?: string;
+        userMessage?: string;
+        pending?: boolean;
+        decision?: string;
+      }>(
         `/api/august/memory/proposals/${encodeURIComponent(row.id.slice('mem:'.length))}/decide`,
         { decision: decision === 'approve' ? 'approve' : 'reject' },
       );
-      if (!res?.ok) throw new Error(res?.error ?? 'memory decision failed');
+      // `userMessage` first, and deliberately not `error`: the failure the
+      // backend can report is a decision whose writes were queued for undo, and
+      // its operator string carries the python function name and the SQLite
+      // condition. That belongs in a log; this panel shows a sentence the user
+      // can act on, which is also the true one — nothing was applied, the
+      // proposal is still pending, so trying again is safe.
+      if (!res?.ok) throw new Error(res?.userMessage ?? res?.error ?? 'memory decision failed');
       return;
     }
     await api.post(`/api/harness/proposals/${encodeURIComponent(row.id)}/decide`, {

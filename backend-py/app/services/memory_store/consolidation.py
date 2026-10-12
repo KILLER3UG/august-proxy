@@ -435,12 +435,36 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
     # today; the collision is one refactor away and is silent when it happens.
     sp = f'retire_decision_{uuid.uuid4().hex}'
     conn.execute(f'SAVEPOINT {sp}')
-    result: dict[str, Any]
+    # Empty until the unit has actually written something: an exception before
+    # this is assigned has nothing to undo, and the handler below runs on every
+    # path out of the try.
+    repairs: list[tuple[str, tuple]] = []
     try:
         if not claim_proposal_decision(conn, proposal_id, 'approved', decidedBy):
             conn.execute(f'ROLLBACK TO SAVEPOINT {sp}')
             conn.execute(f'RELEASE SAVEPOINT {sp}')
             return {'ok': False, 'error': f'proposal {proposal_id} was already decided; nothing changed'}
+        # Read what the retirement is about to overwrite, so the unit can be
+        # undone by NAME rather than by rolling a transaction back. `updated_at`
+        # is part of the evidence the proposal was filed on — the retirement
+        # window is computed from it — so restoring the status alone would leave
+        # the fact looking freshly touched and change which future proposal it
+        # earns.
+        before = conn.execute('SELECT status, updated_at FROM facts WHERE fact_key = ?', (key,)).fetchone()
+        prior_status = before[0] if before is not None else None
+        prior_updated = before[1] if before is not None else None
+        repairs = [
+            (
+                "UPDATE proposals SET status = 'pending', decided_at = NULL, decided_by = NULL "
+                "WHERE id = ? AND status = 'approved'",
+                (proposal_id,),
+            ),
+            (
+                "UPDATE facts SET status = ?, updated_at = ? "
+                "WHERE fact_key = ? AND status = 'retired'",
+                (prior_status, prior_updated, key),
+            ),
+        ]
         cur = conn.execute(
             "UPDATE facts SET status = 'retired', updated_at = datetime('now') "
             "WHERE fact_key = ? AND kind = ? AND (status IS NULL OR status = 'active') "
@@ -489,6 +513,9 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
             conn.execute(f'ROLLBACK TO SAVEPOINT {sp}')
             conn.execute(f'RELEASE SAVEPOINT {sp}')
         except Exception:
+            # The savepoint is gone (the COMMIT took, or the handle refused) — the
+            # unit cannot be undone as a transaction boundary. It can still be
+            # undone by name, which is what `repairs` is for.
             undone = False
             logger.debug('retire savepoint undo failed', exc_info=True)
         if not undone:
@@ -517,25 +544,23 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
             # uncommitted, so `ok: False` alone is a lie by omission: it says
             # "nothing changed", and nothing HAS changed — on disk. On this
             # thread-local handle the spent 'approved' claim is pending, and the
-            # next unrelated `brain_commit` on the same thread publishes it. The
-            # only thing that makes "nothing changed" true is taking the unit out
-            # of the transaction before that commit runs, which is what
-            # `memory_conn.poison` arranges: the undo moves to the commit path,
-            # where it cannot be skipped.
-            #
-            # The verdict is `unknown`, not `False`, for the caller: a retry of a
-            # decision whose fate is unknown turns the spent claim into a second,
-            # different write, so the row — not this response — has to be re-read
-            # before anything is decided again.
-            poison(conn, sp)
+            # next unrelated `brain_commit` on the same thread publishes it. What
+            # makes "nothing changed" true is taking the unit out of the
+            # transaction before that commit runs, and it is done with the row
+            # writes this unit replaced (`repairs`) rather than with a rollback:
+            # `ROLLBACK TO <sp>` would also discard anything else this thread has
+            # staged since the savepoint, which is how a failed retirement came to
+            # delete a user's unrelated saved fact while `commit()` reported
+            # success.
+            poison(repairs)
             return {
                 'ok': False,
                 'decision': 'unknown',
                 'retired': None,
                 'pending': True,
                 'key': key,
-                'error': f'apply_retire_decision({proposal_id}): {exc}; the unit was taken out of '
-                'this thread\'s pending transaction and will not be committed',
+                'error': f'apply_retire_decision({proposal_id}): {exc}; the decision was not '
+                'applied and its partial writes have been queued for undo on this thread',
             }
         return {'ok': False, 'error': f'apply_retire_decision({proposal_id}): {exc}'}
     try:

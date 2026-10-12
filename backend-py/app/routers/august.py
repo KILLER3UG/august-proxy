@@ -937,7 +937,29 @@ async def decide_memory_proposal(proposal_id: int, body: ProposalDecideBody):
     decision = (body.decision or '').strip().lower()
     if decision not in ('approve', 'reject'):
         return {'ok': False, 'error': "decision must be 'approve' or 'reject'"}
-    return consolidation.apply_retire_decision(proposal_id, approve=decision == 'approve')
+    result = consolidation.apply_retire_decision(proposal_id, approve=decision == 'approve')
+    if not result.get('ok'):
+        # `error` is the operator's string: it names the function that raised and
+        # carries the SQLite condition, which is what a log line is for and what a
+        # settings panel must not show. The unit it describes is restored before
+        # anything else can publish it (`memory_conn.poison`), so the user-facing
+        # sentence can promise the one thing that is true: nothing was applied and
+        # the proposal is still open. `api.post` is a bare JSON post here, so this
+        # route is the only place the distinction could be made — a sibling caller
+        # that surfaced `error` would be tested against this line.
+        from app.json_narrowing import as_str
+
+        raw = as_str(result.get('error'), 'The memory decision failed.')
+        pending = bool(result.get('pending')) or str(result.get('decision') or '') == 'unknown'
+        return {
+            **result,
+            'userMessage': (
+                'This decision could not be saved. The proposal is still pending, so you can try again.'
+                if pending
+                else raw or 'The memory decision failed.'
+            ),
+        }
+    return result
 
 
 @router.post('/tools/manage')

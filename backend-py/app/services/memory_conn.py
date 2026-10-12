@@ -207,7 +207,8 @@ def commit(c: sqlite3.Connection) -> None:
     facts/messages/episodes/consolidation writes were outside the guarantee
     while the docstring claimed otherwise.
 
-    A ``conftest`` conformance test (``test_brain_commits_are_routed``) fails
+    A conformance test (``tests/test_brain_commit_routing.py``,
+    ``test_the_brain_writer_set_is_discovered_not_hardcoded``) fails
     when a direct ``.commit()`` reappears on a brain connection, because the
     guarantee is only as good as its completeness.
 
@@ -223,50 +224,55 @@ def commit(c: sqlite3.Connection) -> None:
         drainPendingCheckpoint(c)
 
 
-def poison(c: sqlite3.Connection, savepoint: str) -> None:
-    """Mark an un-undoable unit on THIS thread's handle.
+def poison(repairs: 'list[tuple[str, tuple]]') -> None:
+    """Queue the compensating writes that undo a unit this thread could not roll back.
 
     A writer takes a SAVEPOINT so its undo cannot reach a stranger's uncommitted
-    work. When both the savepoint rollback and the connection raise, the unit is
-    still pending on the thread-local handle, and SQLite has no way to leave a
-    transaction open while excluding one savepoint from the next COMMIT: the
-    write that follows it on this thread publishes the decision nobody applied.
-    Recording the savepoint here moves that undo to the one place that runs
-    before every durable write — :func:`commit`.
+    work. When both the commit and that rollback raise, the unit is still pending
+    on the thread-local handle, and SQLite cannot leave a transaction open while
+    excluding one savepoint from the next COMMIT — so the write that follows it on
+    this thread publishes a decision nobody applied. Recording the unit's own row
+    writes here moves the undo to the one place that runs before every durable
+    write: :func:`commit`.
+
+    Repairs are row-scoped UPDATEs, not a rollback, and that is the whole point.
+    A `ROLLBACK TO <sp>` discards EVERYTHING written after the savepoint, which
+    includes whatever this thread staged in the meantime — measured: poison, an
+    unrelated `save_fact`, one commit, and the user's fact vanished while `commit`
+    returned success. An idempotent UPDATE on the unit's own rows cannot do that.
+
+    The list APPENDS. A second poison while one is pending must not replace it,
+    or the first unit's spent claim lands — the state this exists to prevent.
     """
-    _local.poison_conn = c
-    _local.poison_savepoint = savepoint
+    pending = getattr(_local, 'poison_repairs', None) or []
+    _local.poison_repairs = [*pending, *repairs]
+
+
+def pending_poison_count() -> int:
+    """How many repairs are waiting on this thread. For tests and diagnostics."""
+    return len(getattr(_local, 'poison_repairs', None) or [])
 
 
 def undo_poison(c: sqlite3.Connection) -> None:
-    """Roll back a poisoned unit before this commit is allowed to land it.
+    """Apply the pending repairs before this commit is allowed to land anything.
 
-    Raises when the unit can be neither rolled back nor the transaction cleared:
-    the alternative is committing a half-applied decision, and a write that
-    fails loudly is recoverable while a memory retired under a proposal that
-    reported failure is not.
+    Raises when a repair cannot be written: the alternative is committing a
+    half-applied decision, and a write that fails loudly is recoverable while a
+    memory retired under a proposal that reported failure is not. The queue stays
+    marked either way, so the next commit tries again rather than publishing.
     """
-    name = getattr(_local, 'poison_savepoint', None)
-    if not name or getattr(_local, 'poison_conn', None) is not c:
+    repairs = getattr(_local, 'poison_repairs', None)
+    if not repairs:
         return
     try:
-        c.execute(f'ROLLBACK TO SAVEPOINT {name}')
-        c.execute(f'RELEASE SAVEPOINT {name}')
+        for sql, params in repairs:
+            c.execute(sql, params)
     except Exception:
-        # The savepoint is gone or the handle will not take it. The only
-        # remaining way to be sure the unit cannot land is to drop the whole
-        # open transaction — losing whatever else this thread had staged but
-        # never committed. That loss is bounded and ordinary: uncommitted work
-        # is already not durable, and a killed desktop app loses it on every
-        # quit. The decision that was never applied is not.
-        logger.warning('poison savepoint undo failed; rolling the transaction back', exc_info=True)
-        try:
-            c.rollback()
-        except Exception:
-            logger.error('brain handle is poisoned and could not be cleared', exc_info=True)
-            raise RuntimeError('refused to commit: an un-undoable write unit is pending on this connection') from None
-    _local.poison_savepoint = None
-    _local.poison_conn = None
+        logger.error('pending memory repair could not be applied; refusing the commit', exc_info=True)
+        raise RuntimeError(
+            'refused to commit: an un-undoable write unit is pending on this connection'
+        ) from None
+    _local.poison_repairs = None
 
 
 def note_commit() -> None:
@@ -344,5 +350,9 @@ def close() -> None:
         except Exception:
             pass
         _local.conn = None
+    # Closing the handle discards its open transaction, so a poisoned unit cannot
+    # outlive it — and a repair queued onto the NEXT connection would be writing
+    # inside someone else's transaction. Clear it with the handle.
+    _local.poison_repairs = None
     with _LIVE_LOCK:
         _LIVE.pop(threading.get_ident(), None)
