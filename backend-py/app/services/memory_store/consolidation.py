@@ -411,26 +411,42 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
     # returns False with the fact left alone. Claiming last (what this used to
     # do) left a window where the retire landed and the stamp did not, which
     # reads back as a retired fact under a 'rejected' label.
-    if not claim_proposal_decision(conn, proposal_id, 'approved', decidedBy):
-        return {'ok': False, 'error': f'proposal {proposal_id} was already decided; nothing changed'}
+    #
+    # A SAVEPOINT, not a bare `conn.rollback()`. `_conn()` is the thread-local
+    # handle, and anything else this thread has written but not committed shares
+    # the transaction with the claim — a fact saved moments earlier by the same
+    # tool loop, a KV row, a transcript block. `rollback()` un-does all of it to
+    # the last COMMIT while telling the caller only this decision failed, so the
+    # unrelated work vanishes silently. The savepoint bounds the undo to the
+    # claim + UPDATE this function owns.
+    sp = 'retire_decision'
+    conn.execute(f'SAVEPOINT {sp}')
     try:
+        if not claim_proposal_decision(conn, proposal_id, 'approved', decidedBy):
+            conn.execute(f'ROLLBACK TO SAVEPOINT {sp}')
+            conn.execute(f'RELEASE SAVEPOINT {sp}')
+            return {'ok': False, 'error': f'proposal {proposal_id} was already decided; nothing changed'}
         cur = conn.execute(
-        "UPDATE facts SET status = 'retired', updated_at = datetime('now') "
-        "WHERE fact_key = ? AND kind = ? AND (status IS NULL OR status = 'active') "
-        'AND COALESCE(use_count, 0) = 0 '
-        "AND julianday('now') - julianday(COALESCE(NULLIF(last_used_at, ''), "
-        "NULLIF(updated_at, ''), created_at)) > ? "
-        "AND (? = '' OR COALESCE(NULLIF(last_used_at, ''), NULLIF(updated_at, ''), created_at) = ?)",
-        (key, raw_kind, days, last_touch, last_touch),
-    )
+            "UPDATE facts SET status = 'retired', updated_at = datetime('now') "
+            "WHERE fact_key = ? AND kind = ? AND (status IS NULL OR status = 'active') "
+            'AND COALESCE(use_count, 0) = 0 '
+            "AND julianday('now') - julianday(COALESCE(NULLIF(last_used_at, ''), "
+            "NULLIF(updated_at, ''), created_at)) > ? "
+            "AND (? = '' OR COALESCE(NULLIF(last_used_at, ''), NULLIF(updated_at, ''), created_at) = ?)",
+            (key, raw_kind, days, last_touch, last_touch),
+        )
     except Exception as exc:
-        # The claim is already on this connection. Without a rollback an
+        # The claim is already on this connection. Without an undo an
         # uncommitted 'approved' survives on the thread-local handle and the
         # NEXT unrelated write on this thread lands it — a proposal stamped
         # approved over a fact that was never retired, and it can never be
-        # re-decided because the claim is spent. Roll the claim back with the
-        # statement that failed.
-        conn.rollback()
+        # re-decided because the claim is spent. So this unit is rolled back
+        # with the statement that failed, and nothing outside it is.
+        try:
+            conn.execute(f'ROLLBACK TO SAVEPOINT {sp}')
+            conn.execute(f'RELEASE SAVEPOINT {sp}')
+        except Exception:
+            logger.debug('retire savepoint undo failed', exc_info=True)
         return {'ok': False, 'error': f'apply_retire_decision({proposal_id}): {exc}'}
     if not cur.rowcount:
         # Evidence no longer holds. We own the claim, so correct it inside the
@@ -440,6 +456,7 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
         claim_proposal_decision(
             conn, proposal_id, 'rejected', decidedBy, from_status='approved',
         )
+        conn.execute(f'RELEASE SAVEPOINT {sp}')
         brain_commit(conn)
         return {
             'ok': True,
@@ -448,6 +465,7 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
             'key': key,
             'error': 'memory changed after this proposal was filed; it was closed without retiring the fact',
         }
+    conn.execute(f'RELEASE SAVEPOINT {sp}')
     brain_commit(conn)
     try:
         from app.services.memory_store.fact_retrieval import invalidate_fact_index

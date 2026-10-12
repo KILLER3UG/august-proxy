@@ -546,18 +546,21 @@ def read_netlist(path: str, workspace: str = '') -> dict[str, object]:
         raise ValueError(f'File not found: {path}')
     content = src.read_text(encoding='utf-8', errors='replace')
     components = []
-    # Minimum node count per device-class letter (same table lint uses);
-    # nodes are the tokens after the refdes up to that count, anything
-    # beyond is the value field.
-    min_nodes = {'R': 2, 'C': 2, 'L': 2, 'D': 2, 'V': 2, 'I': 2,
-                 'Q': 3, 'J': 3, 'M': 3, 'B': 4}
-    for raw in content.splitlines():
-        line = raw.strip()
+    # Node arity comes from `schematic.node_count`, the same rule the drawing
+    # uses — measured against the bundled ngspice. This used to be a local copy
+    # ('M': 3, 'B': 4) that disagreed with it: MOSFET needs the bulk (ngspice
+    # rejects a 3-node card outright) and the MESFET's model name is not a net,
+    # so the listing showed a different set of terminals than the schematic drew
+    # for the identical deck.
+    from app.services.tools import schematic as _sch
+    from app.services.tools.netlist_text import logical_lines
+
+    for line in logical_lines(content):
         if not line or line.startswith('*') or line.startswith('.'):
             continue
         parts = line.split()
         if len(parts) >= 2:
-            need = min_nodes.get(parts[0][0].upper(), 2)
+            need = _sch.node_count(parts[0][0], parts[1:])
             nodes = parts[1:1 + need]
             value = parts[1 + need] if len(parts) > 1 + need else ''
             components.append(
@@ -1014,12 +1017,16 @@ def lint_netlist(text: str) -> list[str]:
     """
     warnings: list[str] = []
     node_counts: dict[str, int] = {}
-    min_nodes = {'R': 2, 'C': 2, 'L': 2, 'D': 2, 'V': 2, 'I': 2,
-                 'Q': 3, 'J': 3, 'M': 3, 'B': 4, 'X': 0}
+    # The floor comes from `schematic.min_node_count`, the same module that
+    # reads the card for the drawing. The local copy here said `M: 3`, so a
+    # 3-node MOSFET — which ngspice rejects outright — passed this check and the
+    # user met the error at simulation time instead.
+    from app.services.tools import schematic as _sch
+    from app.services.tools.netlist_text import logical_lines
+
     saw_source = False
     in_control = False
-    for raw in text.splitlines():
-        line = raw.strip()
+    for line in logical_lines(text):
         if not line:
             continue
         if in_control:
@@ -1042,7 +1049,7 @@ def lint_netlist(text: str) -> list[str]:
         parts = line.split()
         ref = parts[0]
         prefix = ref[0].upper()
-        need = min_nodes.get(prefix, 2)
+        need = _sch.min_node_count(prefix)
         nodes = parts[1:-1] if len(parts) > need else parts[1:]
         for nd in nodes:
             node_counts[nd] = node_counts.get(nd, 0) + 1
@@ -2523,15 +2530,19 @@ class _DeckElement:
 def _parse_components(deck_text: str) -> list[_DeckElement]:
     """Extract (ref, nodes, value) per element line from the deck.
 
-    Skips comments, dot-cards, .control blocks and continuation lines —
-    the same rules lint_netlist applies. The value token is the first
-    token after the nodes that parses as a SPICE number/param expr; it is
-    purely cosmetic (shown on the diagram), not used for math.
+    Skips comments, dot-cards and `.control` blocks. Node arity comes from
+    `schematic.node_count` — the measured rule — because this is the third copy
+    of that decision and the copies had to agree: this one sliced a transistor to
+    4, so on the ordinary `Q1 c b e Qmod` it drew a terminal called `Qmod`, a net
+    that exists in no circuit, while the schematic for the same deck showed three.
+    Continuations come from `netlist_text.logical_lines` for the same reason.
     """
+    from app.services.tools import schematic as _sch
+    from app.services.tools.netlist_text import logical_lines
+
     out: list[_DeckElement] = []
     in_control = False
-    for ln in deck_text.splitlines():
-        s = ln.strip()
+    for s in logical_lines(deck_text):
         low = s.lower()
         if low.startswith('.control'):
             in_control = True
@@ -2549,7 +2560,12 @@ def _parse_components(deck_text: str) -> list[_DeckElement]:
         if len(toks) < 2:
             continue
         kind = _ELEMENT_KINDS.get(letter.upper(), 'part')
-        node_count = 4 if kind == 'transistor' else 2
+        node_count = _sch.node_count(letter, toks)
+        # A subckt instance's pin count is its own card, and `node_count` does
+        # not guess it; this view is not the drawing, so take the documented two
+        # rather than pulling the block name in as a net.
+        if letter.upper() == 'X':
+            node_count = 2
         nodes = [t.strip('[]') for t in toks[:node_count]]
         value = ''
         for t in toks[node_count:]:

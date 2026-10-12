@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from app.services.sandbox.paths import bind_path
+from app.services.tools.netlist_text import logical_lines
 
 # ── Grid ───────────────────────────────────────────────────────────────────
 
@@ -129,22 +130,78 @@ _ELEMENT_KINDS = {
     'J': 'jfet', 'B': 'mesfet',
     'X': 'subckt', 'S': 'switch', 'W': 'switch', 'K': 'coupled',
 }
-# Node count per device class. `S` is the voltage-controlled switch
-# `Sxxx N+ N- NC+ NC- MODEL`: four nets, two switched and two control. The
-# linter's copy (``circuit_tools._ELEMENT_KINDS``) still slices switches to two,
-# so these tables are NOT identical — the extra pair here exists because a
-# dropped net is a wire the schematic will never show, which is a drawing bug,
-# while the linter only reads the first two to report a value.
-# W (current-controlled) stays 2: its third token names a voltmeter, not a net.
+# Node count per device letter, for the classes whose cards have a FIXED arity.
+# `S` is the voltage-controlled switch `Sxxx NC+ NC- N+ N- MODEL`: four nets, two
+# switched and two control, so a two-node slice loses a wire the schematic will
+# never show. W (current-controlled) stays 2: its third token names an ammeter,
+# not a net. The FET family (Q/J/M/B) is NOT here, because their arity is a
+# property of the card, not of the letter — see `node_count`.
+#
 # KNOWN LIMIT, stated rather than left to be rediscovered: letters outside this
-# table are sliced to two nodes, so their extra nets are lost at PARSE time —
-# before the pin guarantee below can see them. Named in full, because each one is
-# the same false-open-circuit the Q/J/M/B/S entries fix: `.lib`-defined `X` (no
-# `.subckt` in this deck to count pins from), the 4-terminal E/G/F behavioural and
-# MESFET forms, `T` (lossy transmission line, 4 nodes) and `A` (analyst-behaviour
-# subckt, variable nodes). Widening this means widening the linter's copy too;
-# `pin_offsets` already handles any count the parser produces.
-_NODE_COUNT = {'Q': 3, 'J': 3, 'M': 3, 'B': 4, 'S': 4}
+# table and outside `node_count`'s FET family are sliced to two nodes, so their
+# extra nets are lost at PARSE time — before the pin guarantee in `pin_offsets`
+# can see them. Named in full, because each one is the same false-open-circuit
+# the Q/J/M/B/S entries fix: the 4-terminal behavioural E/G/F, `T` (lossy
+# transmission line, 4 nodes) and `A` (analyst-behaviour subckt, variable nodes).
+# `pin_offsets` already handles any count the parser produces, so widening these
+# is a table change, not a drawing change.
+_NODE_COUNT = {'S': 4, 'W': 2}
+
+# The FET family: `[nodes] MODEL`, with the substrate/bulk terminal optional in
+# SPICE and mandatory in others, so the count comes from the card.
+_FET_LETTERS = frozenset({'Q', 'J', 'M', 'B'})
+
+
+def node_count(letter: str, toks: list[str]) -> int:
+    """How many leading tokens of this card are NETS.
+
+    Three rules the old per-letter table could not express, each of which was a
+    silently missing wire (or a phantom net invented from a name):
+
+    * `Mxxx D G S B MODEL` — ngspice's MOSFET takes the bulk. Slicing 3 dropped
+      it and left the bulk net undrawn; the deck's own part help says
+      `M1 drain gate source source <part>`, so the parser disagreed with it.
+    * `Qxxx C B E [SUB] MODEL` and `Jxxx D G S [B] MODEL` — 3 or 4 nodes
+      depending on the card. The model name is the last bare token (parameters
+      ride as `k=v`), so the node count is that token's index.
+    * `Bxxx` is TWO devices: ngspice's MESFET (`B d g s MODEL`, 3 nets) and
+      XSPICE's behavioural source (`B N+ N- V={...}`, 2 nets). They are told
+      apart by the expression parameter on the card, and guessing wrong invents
+      a net named `V=(...)` or drops a real one.
+    """
+    up = letter.upper()
+    if up == 'B' and any(t.split('=', 1)[0].upper() in ('V', 'I') for t in toks):
+        return 2
+    if up in _FET_LETTERS:
+        for i in range(len(toks) - 1, 0, -1):
+            if '=' not in toks[i]:
+                return max(2, min(i, 4))
+        return 2
+    if up == 'S':
+        # A short switch card is not a VCSWS; taking 4 from a 3-token line would
+        # name the model as a net.
+        return _NODE_COUNT['S'] if len(toks) >= 5 else 2
+    return _NODE_COUNT.get(up, 2)
+
+# The FEWEST nets a card of this letter must name, as opposed to `node_count`'s
+# reading of the card it was given. A linter needs the former: derive the minimum
+# from the card and a 3-node MOSFET answers "3", so the check that exists to
+# catch the short card can never fire.
+#
+# Three copies of this decision lived in three modules (`read_netlist`,
+# `_parse_components`, `lint_netlist`) with three different answers for the same
+# deck, which is how `M: 3` survived while ngspice rejected every 3-node card it
+# was handed. They call here now.
+_MIN_NODE_COUNT = {
+    'R': 2, 'C': 2, 'L': 2, 'D': 2, 'V': 2, 'I': 2, 'K': 2,
+    'Q': 3, 'J': 3, 'M': 4, 'B': 3, 'S': 4, 'W': 2, 'X': 0,
+}
+
+
+def min_node_count(letter: str) -> int:
+    """The declared floor for a device letter — see `_MIN_NODE_COUNT`."""
+    return _MIN_NODE_COUNT.get(letter.upper(), 2)
+
 
 # Not drawable: `Kxxx L1 L2 0.9` declares mutual coupling BETWEEN two inductors.
 # Its tokens are refdes, not nets, so treating it as an element invented two nets
@@ -166,14 +223,19 @@ class Element:
 
 def parse_elements(deck_text: str) -> list[Element]:
     """Extract (ref, kind, nodes, value) per element line, skipping
-    comments, dot-cards, ``.control`` and ``.subckt`` bodies and
-    continuations — the same rules ``circuit_tools._parse_components`` /
-    ``lint_netlist`` apply."""
+    comments, dot-cards, ``.control`` and ``.subckt`` bodies — the same rules
+    ``circuit_tools._parse_components`` / ``lint_netlist`` apply.
+
+    Continuations are joined first (``netlist_text.logical_lines``): a card split
+    across ``+`` lines used to lose everything after the first line, and the end
+    of a device card is where the model name and the bulk/substrate net live.
+    ngspice still ran the deck correctly, so the circuit and its drawing
+    disagreed and nothing reported it.
+    """
     out: list[Element] = []
     in_control = False
     in_subckt = False
-    for raw in deck_text.splitlines():
-        s = raw.strip()
+    for s in logical_lines(deck_text):
         low = s.lower()
         if low.startswith('.control'):
             in_control = True
@@ -202,7 +264,7 @@ def parse_elements(deck_text: str) -> list[Element]:
         if letter.upper() in _NON_ELEMENT_LETTERS:
             continue
         kind = _ELEMENT_KINDS.get(letter.upper(), 'part')
-        n = _NODE_COUNT.get(letter.upper(), 2)
+        n = node_count(letter, toks)
         if letter.upper() == 'X':
             # SPICE puts the called block's name immediately after its nodes, so
             # the name is the LAST non-`k=v` token on the line — NOT "the last
@@ -232,7 +294,15 @@ def parse_elements(deck_text: str) -> list[Element]:
                 params = ' '.join(tail[tail.index(t) + 1:])
                 break
         out.append(Element(ref=letter.upper() + ref_suffix, kind=kind,
-                           nodes=nodes, value=value, params=params))
+                           nodes=nodes, value=value,
+                           # No numeric value on the card means the whole tail is
+                           # the model/parameter list — `M1 d g s b mm`, `X1 a b
+                           # BLOCK`. It used to be dropped, while `params`
+                           # documents itself as "model name etc." and
+                           # `ic_detect._components` reads that field as its
+                           # fallback tail, so a FET lost the only token naming
+                           # what it is.
+                           params=params or ' '.join(tail)))
     return out
 
 

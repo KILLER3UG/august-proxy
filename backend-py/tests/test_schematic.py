@@ -799,3 +799,196 @@ def test_the_fet_family_gets_the_tall_row_spacing():
     ):
         wide = spread(kind, nodes)
         assert wide > narrow, f'{kind} spaced like a 2-terminal part: {wide} vs {narrow}'
+
+
+# ── Card arity, measured against the ngspice the app ships ───────────────
+# Each rule below was checked by running the bundled `ngspice_con.exe` on the
+# card form and reading its verdict, so the table records what the simulator
+# accepts rather than what a reference elsewhere says. `ACCEPTED` / `ERROR:`
+# in the comments are those results.
+
+
+def test_mosfet_bulk_node_is_not_dropped():
+    """`M1 d g s b mm` — ngspice: 4 nodes REQUIRED (`M1 d g s mm` is rejected
+    with "could not find a valid modelname", because it reads `mm` as the bulk
+    and then looks for a model).
+
+    The table sliced MOSFET to 3, so the bulk net became the tail and the
+    schematic drew a 3-terminal part with no wire to the bulk — on a deck that
+    simulated fine. The app's own part help says
+    `M1 drain gate source source <part> (bulk tied to source)`, which is four
+    nets, so the parser disagreed with the tool's own documentation.
+    """
+    els = {e.ref: e for e in schematic.parse_elements(
+        '* m\n.model mm nmos level=1\nV1 d 0 5\nM1 d g s b mm\n.end\n'
+    )}
+    assert els['M1'].nodes == ['d', 'g', 's', 'b'], els['M1'].nodes
+    assert els['M1'].params.startswith('mm') or els['M1'].value == 'mm' or 'mm' in els['M1'].params
+
+
+def test_mesfet_model_name_is_not_a_net():
+    """`B1 d g s bm` is the 3-node MESFET (ngspice: ACCEPTED). The table said 4,
+    so the model name was sliced in as the fourth node — a net called `bm` that
+    no wire connects to, which is the false-open-circuit this file exists to
+    remove, invented rather than dropped."""
+    els = {e.ref: e for e in schematic.parse_elements(
+        '* b\n.model bm nfet\nV1 d 0 5\nB1 d g s bm\n.end\n'
+    )}
+    assert els['B1'].nodes == ['d', 'g', 's'], els['B1'].nodes
+
+
+def test_mesfet_four_terminal_card_keeps_all_four():
+    """The 4-terminal MESFET form is also accepted by ngspice, so the count has
+    to come from the card, not from the letter."""
+    els = {e.ref: e for e in schematic.parse_elements(
+        '* b4\n.model bm nfet\nV1 d 0 5\nB1 d g s x bm\n.end\n'
+    )}
+    assert els['B1'].nodes == ['d', 'g', 's', 'x'], els['B1'].nodes
+
+
+def test_behavioural_b_source_is_two_nodes_not_a_mesfet():
+    """`Bxxx` names two devices. A card carrying `V=`/`I=` is XSPICE's
+    behavioural source (`B1 out 0 V=(in*2)`), whose expression is not a net; a
+    bare trailing token is the MESFET model name. Telling them apart by that
+    parameter is what keeps `V=(in*2)` from being drawn as a third terminal."""
+    els = {e.ref: e for e in schematic.parse_elements(
+        '* bsrc\nV1 in 0 5\nB1 out 0 V=(in*2)\n.end\n'
+    )}
+    assert els['B1'].nodes == ['out', '0'], els['B1'].nodes
+
+
+def test_bjt_substrate_form_and_plain_form_both_count_from_the_card():
+    """`Q1 c b e qm` (3) and `Q1 c b e s qm` (4, substrate) are both accepted,
+    so a fixed count is wrong for one of them by construction."""
+    three = {e.ref: e for e in schematic.parse_elements(
+        '* q\n.model qm npn\nV1 c 0 5\nQ1 c b 0 qm\n.end\n'
+    )}
+    four = {e.ref: e for e in schematic.parse_elements(
+        '* q4\n.model qm npn\nV1 c 0 5\nQ1 c b e s qm\n.end\n'
+    )}
+    assert three['Q1'].nodes == ['c', 'b', '0'], three['Q1'].nodes
+    assert four['Q1'].nodes == ['c', 'b', 'e', 's'], four['Q1'].nodes
+
+
+def test_short_switch_card_does_not_swallow_its_model():
+    """`Sxxx NC+ NC- N+ N- MODEL` is four nets, and the table now says so — but
+    only when the card is long enough to have a model left over. Slicing 4 from
+    `S1 a 0 sw` would name the model as a net."""
+    full = {e.ref: e for e in schematic.parse_elements(
+        '* s\nV1 a 0 5\nV2 c 0 5\nS1 a 0 c 0 smod\n.end\n'
+    )}
+    short = {e.ref: e for e in schematic.parse_elements(
+        '* s2\nV1 a 0 5\nS1 a 0 smod\n.end\n'
+    )}
+    assert full['S1'].nodes == ['a', '0', 'c', '0'], full['S1'].nodes
+    assert short['S1'].nodes == ['a', '0'], short['S1'].nodes
+
+
+def test_jfet_is_three_nodes_and_its_model_stays_out():
+    els = {e.ref: e for e in schematic.parse_elements(
+        '* j\n.model jm njf\nV1 d 0 5\nJ1 d g s jm\n.end\n'
+    )}
+    assert els['J1'].nodes == ['d', 'g', 's'], els['J1'].nodes
+
+
+def test_continuation_line_does_not_lose_the_tail_of_a_card():
+    """A `+` line extends the PREVIOUS card; it is not a card of its own. The
+    parser skipped it outright, so every token past the break vanished — and for
+    a device card the tail is the model name and, in the 4-terminal forms, a real
+    net. ngspice ran the deck whole, so the circuit simulated while its drawing
+    was missing a wire.
+
+    This deck is the MOSFET with the bulk on the continuation: the bulk net is
+    the exact token class the old skip dropped.
+    """
+    wrapped = schematic.parse_elements(
+        '* wrapped card\n'
+        '.model mm nmos level=1\n'
+        'V1 d 0 5\n'
+        'M1 d g s\n'
+        '+ b mm\n'
+        '.end\n'
+    )
+    by_ref = {e.ref: e for e in wrapped}
+    assert by_ref['M1'].nodes == ['d', 'g', 's', 'b'], by_ref['M1'].nodes
+    # A passive split the same way keeps its value.
+    value_split = {e.ref: e for e in schematic.parse_elements(
+        '* split value\nV1 a 0 5\nR1 a 0\n+ 4.7k\n.end\n'
+    )}
+    assert value_split['R1'].value.startswith('4.7k'), value_split['R1'].value
+    # The card after a blank line must not absorb its continuation.
+    after_gap = {e.ref: e for e in schematic.parse_elements(
+        '* gap\nV1 a 0 5\nR1 a 0 1k\n\n+ 2k\nC1 b 0 3u\n.end\n'
+    )}
+    assert after_gap['C1'].nodes == ['b', '0']
+    assert '+ 2k' not in after_gap['R1'].value
+
+
+def test_control_block_lines_are_not_merged_into_each_other():
+    """`.control` bodies are simulator commands. Joining their continuations
+    into the previous line would corrupt a command ngspice runs as written, so
+    the join deliberately stops at the block boundary."""
+    deck = (
+        '* ctrl\nV1 a 0 5\nR1 a 0 1k\n.control\nop\nprint v(a)\n+\n   more\n.endc\n.end\n'
+    )
+    lines = schematic.logical_lines(deck)
+    assert any(ln.startswith('print v(a)') for ln in lines)
+    assert not any('print v(a) more' in ln for ln in lines), lines
+    # The deck still parses the two cards it should.
+    assert {e.ref for e in schematic.parse_elements(deck)} == {'V1', 'R1'}
+
+
+def test_the_three_card_readers_agree_on_a_deck():
+    """One rule, three call sites that used to have three copies of it.
+
+    `schematic.parse_elements` (the drawing), `circuit_tools._parse_components`
+    (the live overview), `circuit_tools.read_netlist` (the component listing) and
+    `circuit_tools.lint_netlist` (the pre-simulation warning) each held their own
+    node table, and they disagreed on the same text: the overview sliced `Q1 c b e
+    Qmod` to four and so invented a net called `Qmod`, the listing and the linter
+    accepted a 3-node MOSFET that ngspice rejects, and the drawing dropped the
+    bulk. A deck could pass the linter, list one thing in the UI and draw
+    another, with no check able to see the gap because each copy was tested
+    against itself.
+    """
+    from app.services.tools import circuit_tools as ct
+
+    deck = (
+        '* one of each\n'
+        '.model mm nmos level=1\n'
+        '.model qm npn\n'
+        '.model jm njf\n'
+        '.model bm nfet\n'
+        'V1 d 0 5\n'
+        'M1 d g s b mm\n'
+        'Q1 c b 0 qm\n'
+        'J1 d g s jm\n'
+        'B1 d g s bm\n'
+        '.end\n'
+    )
+    expected = {
+        'M1': ['d', 'g', 's', 'b'],
+        'Q1': ['c', 'b', '0'],
+        'J1': ['d', 'g', 's'],
+        'B1': ['d', 'g', 's'],
+    }
+    drawn = {e.ref: e.nodes for e in schematic.parse_elements(deck)}
+    for ref, nodes in expected.items():
+        assert drawn[ref] == nodes, f'the drawing sliced {ref} as {drawn[ref]}'
+
+    overview = {c.ref: c.nodes for c in ct._parse_components(deck)}
+    for ref in expected:
+        assert overview[ref] == drawn[ref], (
+            f'{ref}: overview {overview[ref]} vs drawing {drawn[ref]}'
+        )
+
+    assert not ct.lint_netlist(deck), 'the linter rejects a deck ngspice accepts'
+    short = '* short mosfet\n.model mm nmos level=1\nV1 d 0 5\nM1 d g s mm\n.end\n'
+    warns = ct.lint_netlist(short)
+    assert any('M1' in w and '4 nodes' in w for w in warns), (
+        f'the linter let a 3-node MOSFET through to the simulator: {warns}'
+    )
+    short_els = {e.ref: e for e in schematic.parse_elements(short)}
+    assert short_els['M1'].nodes == ['d', 'g', 's'], (
+        f"the drawing invented a net out of the model name: {short_els['M1'].nodes}"
+    )

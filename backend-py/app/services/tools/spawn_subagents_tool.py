@@ -142,8 +142,8 @@ def expire_proposals_for_session(session_id: str) -> int:
         conn = _conn()
         cur = conn.execute(
             "UPDATE proposals SET status = 'expired', decided_at = ? "
-            'WHERE session_id = ? AND status = ?',
-            (datetime.now(timezone.utc).isoformat(), session_id, 'pending'),
+            'WHERE session_id = ? AND status = ? AND proposal_type = ?',
+            (datetime.now(timezone.utc).isoformat(), session_id, 'pending', 'subagent_breakdown'),
         )
         brain_commit(conn)
         expired += int(cur.rowcount or 0)
@@ -207,7 +207,8 @@ def _load_proposal_from_db(proposal_id: str) -> dict[str, Any] | None:
         from app.services.memory_store import _conn
 
         rows = _conn().execute(
-            "SELECT id, session_id, content FROM proposals WHERE status = 'pending'"
+            "SELECT id, session_id, content FROM proposals "
+            "WHERE status = 'pending' AND proposal_type = 'subagent_breakdown'"
         ).fetchall()
         for r in rows:
             try:
@@ -261,7 +262,9 @@ def list_persisted_proposals() -> list[dict[str, Any]]:
         from app.services.memory_store import _conn
 
         rows = _conn().execute(
-            'SELECT id, content FROM proposals WHERE status = ? ORDER BY id DESC LIMIT 20',
+            "SELECT id, content FROM proposals "
+            "WHERE status = ? AND proposal_type = 'subagent_breakdown' "
+            'ORDER BY id DESC LIMIT 20',
             ('pending',),
         ).fetchall()
         out: list[dict[str, Any]] = []

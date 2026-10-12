@@ -436,6 +436,58 @@ class TestRetireDecisionIsDecidedOnce:
         again = consolidation.apply_retire_decision(pid, approve=True)
         assert again['ok'] is True and again['retired'] is True
 
+    def test_a_failed_retire_does_not_swallow_an_unrelated_pending_write(self, store, monkeypatch):
+        """The undo is bounded to this decision, not to the whole transaction.
+
+        `_conn()` is the thread-local handle, so whatever else that thread has
+        written and not yet committed shares the transaction with the claim:
+        a fact saved moments earlier by the same tool loop, a KV row, a
+        transcript block. The first version unwound the failure with
+        `conn.rollback()`, which drops the last COMMIT onward — so a simulated
+        disk error on the retire UPDATE silently destroyed work the caller was
+        never told about, and reported only `apply_retire_decision(...)` failed.
+        A SAVEPOINT rolls back the claim plus the UPDATE and nothing else.
+        """
+        import sqlite3
+
+        from app.services.memory_conn import conn as real_conn
+        from app.services.memory_store import consolidation
+
+        pid = self._file(store, 'user:nearby')
+
+        class _Boom:
+            def __init__(self, c):
+                self._c = c
+
+            def execute(self, sql, *a, **k):
+                if str(sql).lstrip().startswith('UPDATE facts'):
+                    raise sqlite3.OperationalError('disk I/O error (simulated)')
+                return self._c.execute(sql, *a, **k)
+
+            def __getattr__(self, name):
+                return getattr(self._c, name)
+
+        # An unrelated write, left uncommitted on the same handle on purpose —
+        # that is the state the rollback would eat.
+        c = real_conn()
+        c.execute(
+            "INSERT INTO facts (fact_key, fact_value, kind, title) "
+            "VALUES ('user:neighbour', '\"kept\"', 'general', 'Neighbour')"
+        )
+
+        monkeypatch.setattr(consolidation, '_conn', lambda: _Boom(c))
+        res = consolidation.apply_retire_decision(pid, approve=True)
+        monkeypatch.undo()
+
+        assert res['ok'] is False and 'simulated' in str(res['error'])
+        row = c.execute("SELECT fact_value FROM facts WHERE fact_key = 'user:neighbour'").fetchone()
+        assert row is not None, 'an unrelated uncommitted write was eaten by the failed decision'
+        # The neighbour write is still pending, exactly as it was left; the
+        # claim, by contrast, must be gone.
+        assert str(c.execute('SELECT status FROM proposals WHERE id = ?', (pid,)).fetchone()['status']) == 'pending'
+        c.execute("DELETE FROM facts WHERE fact_key = 'user:neighbour'")
+        c.commit()
+
     def test_a_stale_approval_closes_as_rejected_with_the_fact_recalled(self, store):
         """The one transition that is still allowed from a claim: correcting
         OUR OWN un-committed claim when the evidence turns out stale. Both
