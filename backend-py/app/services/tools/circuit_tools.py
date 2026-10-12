@@ -528,11 +528,7 @@ def create_netlist(path: str, content: str, workspace: str = '') -> dict[str, ob
     if out.suffix.lower() not in _NETLIST_EXT:
         raise ValueError(f'{path} must end with one of {" / ".join(_NETLIST_EXT)}')
     text = (content or '').strip()
-    if not text.lower().startswith('*'):
-        # ngspice treats a leading * line as the title/comment line; enforce
-        # a well-formed header instead of letting the first component line
-        # be swallowed as the title.
-        text = f'* netlist\n{text}'
+    text = _ensure_deck_title(text)
     if not re.search(r'^\.end\s*$', text, re.M | re.I):
         text += '\n.end'
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -1026,6 +1022,9 @@ def lint_netlist(text: str) -> list[str]:
     from app.services.tools import schematic as _sch
     from app.services.tools.netlist_text import card_value, device_cards
 
+    refs_seen: list[str] = []
+    models_seen: list[tuple[str, str, str]] = []
+    coupling_seen: list[tuple[str, list[str]]] = []
     saw_source = False
     # `device_cards` owns the question "which lines are cards": comments, the
     # title line, dot-cards, `.control` commands and `.subckt` private parts are
@@ -1049,6 +1048,17 @@ def lint_netlist(text: str) -> list[str]:
         # "no ground" check, so a phantom `0` (`R1 a b 0` — a zero-ohm part, which
         # ngspice rejects) reported a ground the circuit does not have.
         nodes = parts[1 : 1 + _sch.node_count(prefix, parts[1:])]
+        refs_seen.append(ref)
+        if prefix in _MODEL_CARD_PREFIXES:
+            # The class's model/block name is the token where a passive's value
+            # would be, so it comes from the same shared rule.
+            _modelTok = card_value(parts, _sch.node_count(prefix, parts[1:]))
+            if _modelTok and parse_spice_value(_modelTok) is None:
+                models_seen.append((ref, prefix, _modelTok))
+        if prefix == 'K':
+            # The coupling's two tokens are inductor REFDES, not nets — and
+            # ngspice is fatal about a name that is not in the deck.
+            coupling_seen.append((ref, [t for t in parts[1:3]]))
         for nd in nodes:
             node_counts[nd] = node_counts.get(nd, 0) + 1
         if prefix in ('V', 'I'):
@@ -1064,7 +1074,16 @@ def lint_netlist(text: str) -> list[str]:
             # DC 9`.
             valueTok = card_value(parts, _sch.node_count(prefix, parts[1:]))
             if not valueTok:
+                # ngspice WARNS and drops the part outright — `Warning: 'r1 in 0'
+                # is not a valid resistor instance line, ignored!` — so the card
+                # vanishes while the rest of the deck still runs. A part that
+                # silently disappears is the exact thing a preview lint is for.
                 warnings.append(f'{ref}: {prefix} card has no value after its nodes.')
+                continue
+            if valueTok.startswith('{') or '(' in valueTok:
+                # A `.param` expression (`{x}`, `{1k*k}`) or a waveform
+                # (`SIN(0 1 1k)`) is not a number and is not meant to be one; both
+                # run clean, and calling them broken is a false error.
                 continue
             val = parse_spice_value(valueTok)
             if val is None:
@@ -1073,7 +1092,14 @@ def lint_netlist(text: str) -> list[str]:
                     'number (use e.g. 4.7k, 100u, 22n).'
                 )
             elif val <= 0 and prefix in ('R', 'C', 'L'):
-                warnings.append(f'{ref}: {prefix} value must be positive.')
+                # Not a rejection. `R1 in 0 0` runs (rc=0) with ngspice's own
+                # `Warning: Value of resistor r1 is too small, set to
+                # 1.000000e-12`, so the message says what the engine does instead
+                # of claiming a rule it does not enforce.
+                warnings.append(
+                    f'{ref}: {prefix} value {valueTok} is zero or negative — ngspice '
+                    'substitutes a tiny value and warns; a 0-ohm part is a short.'
+                )
             elif prefix == 'R' and 0 < val < 1:
                 warnings.append(
                     f'{ref}: resistance {valueTok} parses to {val} Ω — did '
@@ -1096,6 +1122,40 @@ def lint_netlist(text: str) -> list[str]:
                 f'{ref}: {prefix}-device needs {need} nodes; line has '
                 f'{max(0, len(parts) - 2)}.'
             )
+    # Model and block resolution. Measured against the bundled ngspice 45.2: a
+    # FET whose model no `.model` declares exits 1 with `can't find model
+    # 'nosuchmodel'`, an `X` naming an undeclared block exits 1 with
+    # `unknown subckt`, and `K1 L1 L9 0.9` is a FATAL `k1: coupling to
+    # non-existent inductor l9`. All three are decidable from the deck text, so
+    # the line can be named before the run instead of met inside a failed one.
+    #
+    # The false positive this must not become: a model or a subcircuit can live in
+    # a `.lib` / `.include`, and nothing here can see inside a library. A deck that
+    # references one skips the whole check — an advisory the author cannot act on
+    # is worse than no advisory.
+    if not _LIB_REF_RE.search(text):
+        declared_models = {m.lower() for m in _MODEL_DECL_RE.findall(text)}
+        declared_subckts = {b.lower() for b in _SUBCKT_DECL_RE.findall(text)}
+        present = {r.upper() for r in refs_seen}
+        for ref, pfx, tok in models_seen:
+            if pfx == 'X':
+                if tok.lower() not in declared_subckts:
+                    warnings.append(
+                        f'{ref}: calls subckt {tok!r}, which this deck does not declare '
+                        "(ngspice: unknown subckt)."
+                    )
+            elif tok.lower() not in declared_models:
+                warnings.append(
+                    f'{ref}: model {tok!r} is not declared by any .model in this deck '
+                    '(add it, or load the library that defines it).'
+                )
+        for ref, targets in coupling_seen:
+            missing = [t for t in targets if t.upper() not in present]
+            if missing:
+                warnings.append(
+                    f'{ref}: couples to {' '.join(missing)}, which is not a part in this deck '
+                    '(ngspice treats this as fatal).'
+                )
     grounded = any(nd == '0' or nd.lower() == 'gnd' for nd in node_counts)
     if not grounded:
         warnings.append(
@@ -1110,6 +1170,13 @@ def lint_netlist(text: str) -> list[str]:
 # warn=1 rides every rung: ngspice only emits SOA over-stress lines when
 # the warn option is on, and a design that converges on the first rung
 # still deserves its safe-operating-area scan.
+# Deck facts the resolution checks need: what a card of each family binds to, and
+# what the deck declares or pulls from somewhere this process cannot read.
+_MODEL_CARD_PREFIXES = frozenset({'Q', 'J', 'M', 'D', 'B', 'X'})
+_MODEL_DECL_RE = re.compile(r'^\.model\s+([A-Za-z]\w*)', re.M | re.I)
+_SUBCKT_DECL_RE = re.compile(r'^\.subckt\s+([A-Za-z]\w*)', re.M | re.I)
+_LIB_REF_RE = re.compile(r'^\s*\.(lib|include)[^A-Za-z]', re.M | re.I)
+
 _CONVERGENCE_LADDER: tuple[dict[str, object], ...] = (
     {'warn': '1'},                                   # pass 1: defaults + SOA
     {'warn': '1', 'gmin': '1e-10'},                  # gentler gmin
@@ -1186,6 +1253,8 @@ def _deck_node_names(deck_text: str) -> set[str]:
     v(node)/i(vsrc) form the workbench advertises. Over-collection (a
     model name read as a node) is harmless — this only feeds aliases.
     """
+    from app.services.tools import schematic as _sch
+
     nodes: set[str] = set()
     in_control = False
     for ln in deck_text.splitlines():
@@ -1200,6 +1269,11 @@ def _deck_node_names(deck_text: str) -> set[str]:
         if in_control or not s or s.startswith('*') or s.startswith('.'):
             continue
         toks = s[1:].split() if s.startswith('+') else s.split()[1:]
+        if not _sch.is_element_card(s[0]):
+            # Over-collection is tolerated by design (this only feeds aliases),
+            # but a coupling line contributes two REFDES, and `v(L1)` is not a
+            # node anyone can measure.
+            continue
         for t in toks:
             if t == '0':
                 nodes.add('0')
@@ -1644,8 +1718,7 @@ async def simulate_circuit(
             deck_text = stripped
         if not deck_text:
             raise ValueError('netlist is empty.')
-        if not deck_text.lstrip().lower().startswith('*'):
-            deck_text = f'* simulation deck\n{deck_text}'
+        deck_text = _ensure_deck_title(deck_text)
         if not re.search(r'^\.end\s*$', deck_text, re.M | re.I):
             deck_text += '\n.end'
 
@@ -2039,12 +2112,20 @@ def _find_element_span(lines: list[str], ref: str) -> tuple[int, int] | None:
     it is skipped unless it is already a comment/control card.
     """
     start_at = 1 if lines and not lines[0].strip().startswith(('*', '.')) else 0
+    from app.services.tools import schematic as _sch
+
     for i in range(start_at, len(lines)):
         stripped = lines[i].strip()
         if not stripped or stripped.startswith(('*', '.', '+')):
             continue
         if stripped.split('$')[0].split()[0].lower() != ref.lower():
             continue
+        # A coupling line owns no part to bridge. Without this the name matched,
+        # `inject_fault` read `K1 L1 L2 0.9` as a two-node device and emitted
+        # `RK1_f L1 L2 1m` — a resistor between two REFDES, the same phantom-net
+        # class the readers were unified around, arriving from the write side.
+        if not _sch.is_element_card(stripped[0]):
+            return None
         end = i + 1
         while end < len(lines) and lines[end].strip().startswith('+'):
             end += 1
@@ -2054,6 +2135,8 @@ def _find_element_span(lines: list[str], ref: str) -> tuple[int, int] | None:
 
 def _element_refs(deck_text: str) -> list[str]:
     """Element reference designators in a deck (for error messages)."""
+    from app.services.tools import schematic as _sch
+
     refs: list[str] = []
     for i, raw in enumerate(deck_text.splitlines()):
         stripped = raw.strip()
@@ -2061,7 +2144,13 @@ def _element_refs(deck_text: str) -> list[str]:
             continue  # title line
         if not stripped or stripped.startswith(('*', '.', '+')):
             continue
-        refs.append(stripped.split('$')[0].split()[0])
+        ref = stripped.split('$')[0].split()[0]
+        # Same rule as the span finder: a coupling line names no element, so it
+        # must not appear in the list a "which parts are here?" error message
+        # shows the user.
+        if not _sch.is_element_card(ref[0]):
+            continue
+        refs.append(ref)
     return refs
 
 
@@ -2547,6 +2636,7 @@ def _parse_components(deck_text: str) -> list[_DeckElement]:
     Continuations come from `netlist_text.logical_lines` for the same reason.
     """
     from app.services.tools import schematic as _sch
+    from app.services.tools.netlist_text import card_value as _nt_card_value
     from app.services.tools.netlist_text import device_cards
 
     out: list[_DeckElement] = []
@@ -2568,11 +2658,10 @@ def _parse_components(deck_text: str) -> list[_DeckElement]:
         kind = _ELEMENT_KINDS.get(letter.upper(), 'part')
         node_count = _sch.node_count(letter, toks)
         nodes = [t.strip('[]') for t in toks[:node_count]]
-        value = ''
-        for t in toks[node_count:]:
-            if re.match(r'^[+-]?[\d.]+[A-Za-z]*', t) or t.startswith('{'):
-                value = t
-                break
+        # The shared rule again: this is the live overview's value, and its own
+        # "starts with a digit" test made a model-ENDING card read as an empty
+        # value while the listing beside it printed the model.
+        value = _nt_card_value([letter.upper() + ref_suffix] + toks, node_count)
         out.append(
             _DeckElement(
                 ref=letter.upper() + ref_suffix, nodes=nodes, value=value, kind=kind
@@ -3624,6 +3713,47 @@ async def search_component(query: str) -> dict[str, object]:
 
 
 # ── 3D board view ─────────────────────────────────────────────────────────
+
+
+# A line that reads as a SPICE device card: a refdes with a DIGIT in it (R1, V2,
+# X4a) and at least two tokens after. The digit is what separates `R1 in 0 5` from
+# the prose title `RC divider`, and both must be judged correctly because the
+# consequence of guessing wrong is a silently discarded line.
+_CARD_LINE_RE = re.compile(r'^[A-Za-z]\d\w*\s+\S+\s+\S+')
+
+
+def _ensure_deck_title(deck_text: str) -> str:
+    """Add a title line only when ngspice would swallow the deck's first line.
+
+    Line 0 of a SPICE deck is the title, always — ngspice never parses it as a
+    device. The old rule asked whether line 0 started with `*`, and both halves of
+    that were wrong, measured against the binary itself (`-b`, rc = the run's own):
+
+      * a deck authored as `My demo circuit` / `V1 in 0 5` / … runs fine
+        (rc=0, v(in)=5) — re-titling it pushed the title onto line 1, where it
+        became an M-device called `My`, and the run died with `could not find a
+        valid modelname` (rc=1) while `lint_netlist` said nothing;
+      * a deck whose first line is a device card loses that line silently
+        (`V1 in 0 5` first → rc=0 with v(in)=0, the source never existed), and one
+        whose first line is a dot-card fails outright (`.model mm nmos level=1`
+        first → rc=1 `can't find model 'mm'`; `.param x=1k` first → rc=1 fatal).
+
+    So the test is positional, the way the format is: a first line that CARRIES
+    content — a device card or a dot-card — needs a title above it; a `*` or `;`
+    comment and a prose title (`RC divider`, `My demo circuit`) are left exactly as
+    authored. A card is a refdes with a digit in it and at least two tokens after,
+    which is what keeps `My demo circuit` from reading as one.
+    """
+    for line in deck_text.splitlines():
+        if not line.strip():
+            continue
+        first = line.strip()
+        if first.startswith(('*', ';')):
+            return deck_text
+        if first.startswith(('.', '+')) or _CARD_LINE_RE.match(first.split('$')[0]):
+            return f'* simulation deck\n{deck_text}'
+        return deck_text
+    return deck_text
 
 
 def _board_from_netlist(content: str) -> list[dict[str, object]]:

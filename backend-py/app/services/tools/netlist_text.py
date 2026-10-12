@@ -10,6 +10,12 @@ from __future__ import annotations
 
 _CONTROL_CARDS = ('.control', '.c')
 
+# Tokens that INTRODUCE a source's value rather than being it. `V1 in 0 DC 9` is a
+# 9 V source; the SPICE keyword in front of the number is part of the card's
+# grammar, not its value. `AC` and `TRAN`/`TR` can follow, so the scan skips the
+# leading ones and stops at the first thing that is a value.
+_SOURCE_KEYWORDS = frozenset({'DC', 'AC', 'TR', 'TRAN', 'PWL', 'PULSE', 'SIN', 'EXP', 'SFFM', 'AMOD'})
+
 
 def logical_lines(deck_text: str) -> list[str]:
     """Physical lines with every ``+`` continuation folded into the line it
@@ -68,24 +74,53 @@ def logical_lines(deck_text: str) -> list[str]:
 def card_value(parts: list[str], need: int) -> str:
     """The value/model token of a device card, or '' when the card carries none.
 
-    `parts` is the whole card and `need` the node count its class declares, so
-    the tokens after the nodes are what is left. Taking the FIRST of them (what
-    the component listing did) reads the keyword as the value: `V1 in 0 DC 9` is
-    a 9 V source and the listing said `DC`. Taking the LAST token of the card
-    (what the linter did first) reads a model parameter as the value:
-    `R1 out n2 1k tc=0,0.002` is 1 kΩ and the linter told the user their
-    resistor "does not parse as a SPICE number" — a false error on a deck that
-    simulates, on the one surface whose job is to catch real ones.
+    `parts` is the whole card and `need` the node count its class declares, so the
+    tokens after the nodes are what is left. Two guesses lived here in sequence and
+    each was wrong about the shape the other got right: the FIRST token after the
+    nodes made `V1 in 0 DC 9` a source whose value was the word `DC`, and the LAST
+    token of the card made `R1 out n2 1k tc=0,0.002` a resistor whose value was a
+    temperature coefficient — the linter then told the user their 1 kΩ resistor
+    "does not parse as a SPICE number", a false error on a deck that simulates, on
+    the one surface whose job is to catch real ones.
 
-    The last token that is not `k=v` is right for both, and for the classes whose
-    tail is a MODEL rather than a number (`M1 d g s b mm`, `X1 a b BLOCK`) it
-    returns that model, which is what the listing has always shown there.
+    SPICE is positional: a class's value or model is the FIRST token after the
+    nodes and everything right of it is parameters. Two forms need more than that:
 
-    A whitespace-split card cannot name a waveform argument (`SIN(0 1 1k)` is
-    three tokens); no positional rule can fix that, and neither reader claims to.
+      * a source may introduce its value with a keyword — `V1 in 0 DC 9 AC 1 0` is
+        a 9 V source whose AC magnitude is not its value, so for V and I the
+        leading `_SOURCE_KEYWORDS` are skipped;
+      * a waveform argument is whitespace-split across its arguments (`SIN(0 1 1k`
+        `,` `1k)`), so an unbalanced `(` gathers tokens until it closes.
+
+    Measured against ngspice 45.2 (the deck, then the run): `R1 in out 1k tc=0
+    0.002` runs as 1 kΩ, `.param x=1k` + `R1 in out {x}` runs, and `DC 9 AC 1 0`
+    gives v = 9. A MODEL is what the semi-conductor classes end in (`M1 d g s b mm`,
+    `X1 a b BLOCK`) and this returns it, which is what the listing has always shown.
     """
-    positional = [t for t in parts[1 + need:] if '=' not in t]
-    return positional[-1] if positional else ''
+    if len(parts) <= 1 + need:
+        return ''
+    tail = parts[1 + need:]
+    positional = [i for i, t in enumerate(tail) if '=' not in t]
+    if not positional:
+        return ''
+    if parts[0][:1].upper() not in ('V', 'I'):
+        return tail[positional[0]]
+    for i in positional:
+        token = tail[i]
+        if token.upper() in _SOURCE_KEYWORDS:
+            continue
+        if '(' in token and not token.endswith(')'):
+            group = [token]
+            balanced = token.count('(') == token.count(')')
+            for nxt in tail[i + 1:]:
+                if balanced:
+                    break
+                group.append(nxt)
+                joined = ' '.join(group)
+                balanced = joined.count('(') == joined.count(')') and joined.endswith(')')
+            return ' '.join(group)
+        return token
+    return tail[positional[-1]]
 
 
 def device_cards(deck_text: str, *, skip_title: bool = True) -> list[str]:

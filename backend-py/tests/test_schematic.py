@@ -1233,3 +1233,157 @@ def test_the_linter_counts_the_same_nets_the_drawing_draws():
     # and "the first token after the nodes" are both wrong rules.
     kw = ct.lint_netlist('* d\nV1 in 0 DC 9\nR1 in out 4k7\nR2 out 0 1k\n.end\n')
     assert not any('does not parse' in w for w in kw), kw
+
+
+def test_the_value_rule_is_one_rule_for_the_four_readers(tmp_path):
+    """Values measured against ngspice 45.2, then asserted in all four readers.
+
+    The first shared rule took the LAST non-parameter token of the card, which is
+    wrong in the shapes SPICE actually writes:
+
+      * `R1 in out 1k tc=0 0.002` — a temperature coefficient is TWO positional
+        arguments, so the card ended in `0.002` and the linter asked whether the
+        user meant Meg, about a 1 kΩ resistor;
+      * `V1 in 0 DC 9 AC 1 0` — the value is 9 and the AC magnitude/phase ride
+        after it, so the listing reported `0`;
+      * `V1 a 0 SIN(0 1 1k)` — a waveform is one argument split into three tokens;
+      * `.param x=1k` with `R2 out 0 {x}` runs, and telling the user `{x}` "does
+        not parse as a SPICE number" is a false error on a deck that simulates.
+
+    Each deck went through the product's own simulator first: rc=0 and an
+    operating point consistent with 1 kΩ and 9 V.
+    """
+    from app.services.tools import circuit_tools as ct
+    from app.services.tools import schematic
+    from app.services.tools.netlist_text import card_value
+
+    deck = (
+        '* values\n'
+        '.param x=1k\n'
+        '.model mm nmos level=1\n'
+        'V1 in 0 DC 9 AC 1 0\n'
+        'R1 in out 1k tc=0 0.002\n'
+        'R2 out 0 {x}\n'
+        'M1 out in 0 0 mm\n'
+        '.end\n'
+    )
+    deck_file = tmp_path / 'values.cir'
+    deck_file.write_text(deck, encoding='utf-8')
+    want = {'V1': '9', 'R1': '1k', 'R2': '{x}', 'M1': 'mm'}
+    listed = {c['name']: c['value'] for c in ct.read_netlist(str(deck_file), str(tmp_path))['components']}
+    assert listed == want, f'the listing: {listed}'
+    overview = {c.ref: c.value for c in ct._parse_components(deck)}
+    assert overview == want, f'the live overview disagrees with the listing: {overview}'
+    drawn = {e.ref: e.value for e in schematic.parse_elements(deck)}
+    assert drawn == want, f'the drawing disagrees: {drawn}'
+    assert not ct.lint_netlist(deck), ct.lint_netlist(deck)
+
+    # A waveform argument is gathered back into one token.
+    assert card_value(['V1', 'a', '0', 'SIN(0', '1', '1k)'], 2) == 'SIN(0 1 1k)'
+    wave = '* wave\nV1 a 0 SIN(0 1 1k)\nR1 a 0 1k\n.end\n'
+    assert not ct.lint_netlist(wave), ct.lint_netlist(wave)
+
+
+def test_a_deck_is_handed_to_the_simulator_the_way_it_was_written():
+    """The re-title that made a bare title a device, measured end to end.
+
+    Line 0 of a SPICE deck is the title, always. August asked whether line 0
+    started with `*` and otherwise prepended its own, which pushed the author's
+    title onto line 1 — where ngspice parsed `My demo circuit` as an M-device
+    called `My` and the run died with `could not find a valid modelname` (rc=1)
+    while the pre-flight lint said nothing at all. Measured on the bundled
+    binary: the authored deck runs (rc=0, v(in)=5) and ngspice's own banner
+    prints `Circuit: my demo circuit`.
+
+    The other half is why the prepend exists, and it is kept: a deck whose first
+    line is a device card loses that line silently (`V1 in 0 5` first gave
+    v(in)=0 — the source became the title), and a dot-card on line 0 fails
+    outright (`.model mm nmos` first → rc=1 `can't find model 'mm'`;
+    `.param x=1k` first → rc=1 fatal). So the test is positional, as the format is.
+    """
+    from app.services.tools import circuit_tools as ct
+
+    for authored in (
+        'My demo circuit\nR1 in 0 1k\n.end\n',
+        '; rc divider\nR1 in 0 1k\n.end\n',
+        '* my deck\nR1 in 0 1k\n.end\n',
+        'RC divider — a name\nR1 in 0 1k\n.end\n',
+    ):
+        assert ct._ensure_deck_title(authored) == authored, 'a title line was rewritten'
+
+    for card_first in (
+        'V1 in 0 5\nR1 in 0 1k\n.end\n',
+        '.param x=1k\nR1 in 0 {x}\n.end\n',
+        '.model mm nmos level=1\nM1 d g 0 0 mm\n.end\n',
+    ):
+        assert ct._ensure_deck_title(card_first).startswith('* simulation deck'), card_first
+
+
+def test_a_reference_the_deck_cannot_resolve_is_named_before_the_run():
+    """Three fatal cases the linter used to be silent about, each measured.
+
+    `M1 d g 0 0 nosuchmodel` → rc=1 `can't find model 'nosuchmodel'`;
+    `X1 a 0 NOSUCHBLOCK` → rc=1 `unknown subckt`; `K1 L1 L9 0.9` → rc=1 FATAL
+    `k1: coupling to non-existent inductor l9`.
+
+    The escape hatch is the half that keeps this honest: a model or a block can
+    live in a `.lib` / `.include`, which this process cannot read, so a deck that
+    references a library gets NO advice rather than advice its author cannot act
+    on. The control deck below declares everything and must stay silent too —
+    an advisory that fires on a correct deck is how warnings get ignored.
+    """
+    from app.services.tools import circuit_tools as ct
+
+    assert any('nosuchmodel' in w for w in ct.lint_netlist('* a\nV1 d 0 5\nM1 d g 0 0 nosuchmodel\n.end\n'))
+    assert any('NOSUCHBLOCK' in w for w in ct.lint_netlist('* a\nV1 a 0 5\nX1 a 0 NOSUCHBLOCK\n.end\n'))
+    assert any('L9' in w for w in ct.lint_netlist('* a\nV1 a 0 5\nL1 a b 1u\nK1 L1 L9 0.9\n.end\n'))
+
+    good = (
+        '* a\n.model mm nmos level=1\n.subckt blk a b\nR1 a b 1k\n.ends blk\n'
+        'V1 d 0 5\nM1 d g 0 0 mm\nX1 d 0 blk\nL1 d 0 1u\nL2 0 g 1u\nK1 L1 L2 0.9\n.end\n'
+    )
+    assert not ct.lint_netlist(good), ct.lint_netlist(good)
+
+    with_lib = '.lib "mymodels.lib"\nV1 d 0 5\nM1 d g 0 0 nosuchmodel\n.end\n'
+    assert not any('nosuchmodel' in w for w in ct.lint_netlist(with_lib)), ct.lint_netlist(with_lib)
+
+
+def test_the_behavioural_classes_put_their_control_nets_in_the_map():
+    """`E1 out 0 in 0 2` is four nets, and two of them used to be lost at parse.
+
+    Measured: the deck runs and gives v(out)=10 for v(in)=5, so `in` and `0` are
+    real terminals. Sliced to two, the schematic drew no control wire and the
+    node map never saw `in` — the same false-open-circuit class the Q/J/M/B/S
+    entries fixed, and `pin_offsets` already renders whatever count the parser
+    produces, so widening this was a table change and not a drawing change.
+    """
+    from app.services.tools import circuit_tools as ct
+    from app.services.tools import schematic
+
+    assert schematic.node_count('E', ['out', '0', 'in', '0', '2']) == 4
+    assert schematic.node_count('G', ['out', '0', 'in', '0', '0.5']) == 4
+    deck = '* e\nV1 in 0 5\nE1 out 0 in 0 2\nR1 out 0 1k\n.control\nop\nprint v(out)\n.endc\n.end\n'
+    els = {e.ref: e for e in schematic.parse_elements(deck)}
+    assert els['E1'].nodes == ['out', '0', 'in', '0'], els['E1'].nodes
+    assert not ct.lint_netlist(deck), ct.lint_netlist(deck)
+    short = '* e\nV1 in 0 5\nE1 out 0 in 2\n.end\n'
+    assert any('E1' in w and '4 nodes' in w for w in ct.lint_netlist(short)), ct.lint_netlist(short)
+
+
+def test_inject_fault_refuses_a_coupling_line():
+    """A coupling card owns no part, so there is nothing to bridge.
+
+    `inject_fault(deck, 'K1', 'short')` matched the refdes, read `K1 L1 L2 0.9`
+    as a two-node device, and emitted `RK1_f L1 L2 1m` — a resistor between two
+    REFDES, which is the phantom-net class the readers were just unified around,
+    arriving from the write side.
+    """
+    from app.services.tools import circuit_tools as ct
+
+    deck = '* k\nV1 a 0 5\nL1 a b 1u\nL2 b 0 1u\nK1 L1 L2 0.9\n.end\n'
+    out = ct.inject_fault(deck, 'K1', 'short')
+    assert 'error' in out, out
+    assert 'RK1_f' not in str(out), out
+    # Control: the same call on a real part still works.
+    ok = ct.inject_fault(deck, 'L1', 'short')
+    assert 'RL1_f' in str(ok) and 'error' not in ok, ok

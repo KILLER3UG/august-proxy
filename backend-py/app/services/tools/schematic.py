@@ -137,15 +137,20 @@ _ELEMENT_KINDS = {
 # not a net. The FET family (Q/J/M/B) is NOT here, because their arity is a
 # property of the card, not of the letter — see `node_count`.
 #
-# KNOWN LIMIT, stated rather than left to be rediscovered: letters outside this
-# table and outside `node_count`'s FET family are sliced to two nodes, so their
-# extra nets are lost at PARSE time — before the pin guarantee in `pin_offsets`
-# can see them. Named in full, because each one is the same false-open-circuit
-# the Q/J/M/B/S entries fix: the 4-terminal behavioural E/G/F, `T` (lossy
-# transmission line, 4 nodes) and `A` (analyst-behaviour subckt, variable nodes).
-# `pin_offsets` already handles any count the parser produces, so widening these
-# is a table change, not a drawing change.
-_NODE_COUNT = {'S': 4, 'W': 2}
+# The 4-terminal classes, each measured on the bundled ngspice 45.2 rather than
+# looked up: `E1 out 0 in 0 2` runs and gives v(out)=10 for v(in)=5, so its control
+# pair `in`/`0` are NETS — sliced to two, the schematic lost both control wires and
+# the node map never saw `in`. `G` is the same shape with a transconductance value,
+# `T` is a lossy line with four terminals. F and H are NOT in this table: an
+# `F1 n1 n2 VX 2` card has two nets and then a SOURCE NAME, which is a reference,
+# not a wire.
+#
+# KNOWN LIMIT, stated rather than left to be rediscovered: `A` (analyst-behaviour
+# subckt) takes a variable node count and is still sliced to two, so its extra nets
+# are lost at PARSE time — before the pin guarantee in `pin_offsets` can see them.
+# `pin_offsets` already handles any count the parser produces, so widening it is a
+# table change once a deck that uses one can be measured.
+_NODE_COUNT = {'S': 4, 'W': 2, 'E': 4, 'G': 4, 'T': 4}
 
 # The FET family: `[nodes] MODEL`, with the substrate/bulk terminal optional in
 # SPICE and mandatory in others, so the count comes from the card.
@@ -219,6 +224,7 @@ def node_count(letter: str, toks: list[str]) -> int:
 _MIN_NODE_COUNT = {
     'R': 2, 'C': 2, 'L': 2, 'D': 2, 'V': 2, 'I': 2,
     'Q': 3, 'J': 3, 'M': 4, 'B': 3, 'S': 4, 'W': 2, 'X': 0,
+    'E': 4, 'G': 4, 'T': 4,
 }
 
 
@@ -306,15 +312,15 @@ def parse_elements(deck_text: str) -> list[Element]:
         n = node_count(letter, toks)
         nodes = [t.strip('[]') for t in toks[:n]]
         tail = toks[n:]
-        value = ''
-        params = ''
-        for t in tail:
-            if re.match(r'^[+-]?[\d.]+[A-Za-z]*', t) or t.startswith('{') or re.match(
-                r'^[+-]?[\d.]+(meg|MEG|Meg|k|K|m|u|n|p|f)', t
-            ):
-                value = t
-                params = ' '.join(tail[tail.index(t) + 1:])
-                break
+        # One value rule with the listing and the linter (`netlist_text.card_value`).
+        # This copy asked "does the token start with a digit?", so a MODEL-ENDING
+        # card (`M1 d g s b mm`, `Q1 c b e Qmod`) got no value at all while
+        # `read_netlist` showed `mm` for the same part, and `.param` and waveform
+        # forms were invisible here but flagged there.
+        from app.services.tools.netlist_text import card_value
+
+        value = card_value([letter.upper() + ref_suffix] + toks, n)
+        params = ' '.join(tail[tail.index(value) + 1:]) if value in tail else ''
         out.append(Element(ref=letter.upper() + ref_suffix, kind=kind,
                            nodes=nodes, value=value,
                            # No numeric value on the card means the whole tail is
