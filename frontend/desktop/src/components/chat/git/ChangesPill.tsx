@@ -24,7 +24,7 @@ import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { gitApi, type GitStatus } from '@/api/git';
 import { cn } from '@/lib/utils';
-import { BranchMenuBody } from '@/components/workspace/WorkspaceBranchChip';
+import { BranchMenuBody } from '@/components/workspace/BranchMenuBody';
 import { useSessionStreamStore } from '@/sections/chat/stream/session-stream-store';
 
 type RosterEntry = {

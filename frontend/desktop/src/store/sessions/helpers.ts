@@ -1,7 +1,10 @@
-/* Pure session title/id/dedupe helpers with no store side effects. */
+/* Session title/id/dedupe helpers. They never WRITE to the store — but two of
+ * them read localStorage (`sessionIsEmpty` for transcript keys,
+ * `pruneGhostSessions` for composer drafts), because "is this row empty" and
+ * "does it hold unsent words" are questions about the cached keys, not the row. */
 
 import type { Session } from './types';
-import { legacyMessagesStorageKey, messagesStorageKey } from '@/sections/chat/message-storage';
+import { legacyMessagesStorageKey, loadComposerDraft, messagesStorageKey } from '@/sections/chat/message-storage';
 
 /** Human-readable session id with local date/time, e.g.
  *  session_20260715_143052_a1b2. Legacy sessions keep their `sess_*` ids —
@@ -227,6 +230,10 @@ export function sessionIsEmpty(s: Session): boolean {
  *  - placeholder title only ("New chat" / "New Session" / "Chat 2026-…"),
  *  - empty by `sessionIsEmpty` (messageCount AND both storage key
  *    generations, so a legacy-key transcript can never be swept as a ghost),
+ *  - no unsent composer draft — typed-but-never-sent text is the one thing a
+ *    ghost row can hold that no transcript key shows, and the sweep deletes
+ *    the drafts of the rows it removes. A row carrying words is a row someone
+ *    meant to finish, so it is kept and its draft survives with it.
  *  - no workbench link (a linked row is server-backed even when it looks
  *    empty — reconcile owns it),
  *  - not archived, not in a folder,
@@ -246,7 +253,11 @@ export function pruneGhostSessions(
       !s.folderId &&
       !s.workbenchSessionId &&
       isPlaceholderTitle(s.title) &&
-      sessionIsEmpty(s)
+      sessionIsEmpty(s) &&
+      /* Whitespace-only counts as no draft: `persistComposerDraft` writes the
+       * raw string, so a row whose composer holds "\n" is blank. Keyed on
+       * `s.id`, exactly the key the store's sweep clears. */
+      !loadComposerDraft(s.id).trim()
     ) {
       const started = Date.parse(s.startedAt || '');
       if (Number.isFinite(started) && opts.now - started > maxAgeMs) {

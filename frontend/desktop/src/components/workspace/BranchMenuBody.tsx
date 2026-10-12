@@ -1,16 +1,16 @@
-/* ── WorkspaceBranchChip — current git branch + switcher ───────────── */
-/* Shown next to the open-folder control when the workspace is a git repo. */
-/* The dropdown body (search, uncommitted count, create-branch, Git Graph  */
-/* log) is exported as BranchMenuBody so the chat-side Git tools popover   */
-/* renders the exact same menu.                                            */
+/* ── BranchMenuBody — git branch switcher menu ────────────────────────── */
+/* Search, uncommitted count, create-branch and the Git Graph log, in one   */
+/* body shared by the chat-side ChangesPill and the Git tools popover so     */
+/* they render the exact same menu. The chip that wrapped it went out with   */
+/* it went out with the titlebar status bar (dead code, deleted 0.18.x); a   */
+/* branch control now has exactly one home.                                  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronDown, GitBranch, GitCommitHorizontal, Loader2, Plus, Search } from 'lucide-react';
+import { Check, GitBranch, GitCommitHorizontal, Loader2, Plus, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { gitApi } from '@/api/git';
 import { cn } from '@/lib/utils';
-import { useWorkspacesStore } from '@/store/workspaces';
 
 /** Shared dropdown body: search + branch list + create + graph log. */
 export function BranchMenuBody({
@@ -335,129 +335,6 @@ export function BranchMenuBody({
               </div>
             );
           })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function WorkspaceBranchChip({
-  sessionId,
-  repoPath,
-  className,
-  menuPlacement = 'up',
-}: {
-  sessionId: string | null | undefined;
-  /** Optional filesystem path when session workspace is not yet bound. */
-  repoPath?: string | null;
-  className?: string;
-  /** Composer sits near the bottom — open upward. Titlebar opens downward. */
-  menuPlacement?: 'up' | 'down';
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const currentWorkspace = useWorkspacesStore((s) =>
-    s.workspaces.find((w) => w.id === s.currentWorkspaceId) ?? null,
-  );
-  const resolvedPath = (repoPath || currentWorkspace?.path || '').trim() || undefined;
-  const sid = (sessionId || '').trim() || undefined;
-
-  const enabled = Boolean(sid || resolvedPath);
-
-  const branch = useQuery({
-    queryKey: ['git', 'branch', sid ?? null, resolvedPath ?? null],
-    queryFn: () => gitApi.branch(sid, resolvedPath),
-    enabled,
-    refetchInterval: 30_000,
-    retry: false,
-  });
-
-  const current = branch.data?.current;
-  const notGitRepo = Boolean(
-    !branch.isLoading &&
-      branch.data &&
-      branch.data.error &&
-      !branch.data.current &&
-      /not a git repository/i.test(branch.data.error),
-  );
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (rootRef.current?.contains(e.target as Node)) return;
-      setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  if (!enabled) return null;
-  // Hide only when we confirmed the folder is not a git work tree.
-  // Transient "session not found" / path resolution misses must not blank the chip
-  // when a concrete repoPath is available (backend falls back to it).
-  if (notGitRepo) return null;
-  if (!branch.isLoading && branch.isError && !resolvedPath) return null;
-  if (!branch.isLoading && !branch.data?.current && !branch.isFetching && branch.data?.error && !resolvedPath) {
-    return null;
-  }
-
-  const canSwitch = Boolean(sid || resolvedPath);
-
-  return (
-    <div ref={rootRef} className={cn('relative', className)}>
-      <button
-        type="button"
-        onClick={() => {
-          if (!canSwitch && !current) return;
-          setOpen((v) => !v);
-        }}
-        disabled={branch.isLoading && !current}
-        className={cn(
-          'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition',
-          'hover:bg-muted text-muted-foreground hover:text-foreground',
-          'border border-transparent hover:border-border/60',
-          open && 'bg-muted/60 text-foreground',
-        )}
-        title={current ? `Branch: ${current}` : 'Git branch'}
-        aria-expanded={open}
-        aria-haspopup="listbox"
-      >
-        <GitBranch className="size-3 shrink-0" />
-        {branch.isLoading && !current ? (
-          <Loader2 className="size-3 animate-spin shrink-0" />
-        ) : (
-          <span className="truncate max-w-[140px] font-mono">{current || '—'}</span>
-        )}
-        {canSwitch && (
-          <ChevronDown
-            className={cn('size-3 transition-transform shrink-0', open && 'rotate-180')}
-          />
-        )}
-      </button>
-
-      {open && canSwitch && (
-        <div
-          className={cn(
-            'absolute left-0 w-72 max-h-96 overflow-y-auto bg-card border border-border rounded-xl shadow-2xl p-1.5 z-50 animate-in fade-in duration-150 chat-scroll',
-            menuPlacement === 'up'
-              ? 'bottom-full mb-2 slide-in-from-bottom-2'
-              : 'top-full mt-2 slide-in-from-top-2',
-          )}
-          role="listbox"
-        >
-          <BranchMenuBody
-            sessionId={sid}
-            repoPath={resolvedPath}
-            current={current ?? null}
-            onDone={() => setOpen(false)}
-          />
         </div>
       )}
     </div>

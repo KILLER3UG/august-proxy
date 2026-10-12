@@ -4,7 +4,7 @@
 /* invalidation) and the native picker.                                     */
 /*                                                                          */
 /* The branch chip that used to sit here is GONE (spec §6.1 C6): it mounted  */
-/* the same WorkspaceBranchChip the status bar shows, so the composer had    */
+/* the same branch control the titlebar status bar showed, so the composer    */
 /* two controls reading the same fact. That test case was deleted rather than */
 /* moved — the branch now has exactly one home, and this component no longer */
 /* imports @/api/git at all.                                                 */

@@ -1,9 +1,12 @@
-/* ── ComposerWorkspaceChips — folder + branch header inside the composer ─ */
-/* ZCode parity: the message box carries its own context row — a folder    */
-/* chip that opens a picker / recent-workspace menu, and the git branch    */
-/* chip for that folder. The branch control is the same WorkspaceBranchChip */
-/* the titlebar uses; only its placement flips (the composer sits at the    */
-/* bottom, so the menu opens upward).                                      */
+/* ── ComposerWorkspaceChips — the folder row inside the composer ─────── */
+/* ZCode parity: the message box carries its own context row — a chip that  */
+/* opens a picker / recent-workspace menu for the project folder.           */
+/*                                                                          */
+/* There is deliberately NO branch control here. The titlebar status bar    */
+/* showed one and the composer showed the same component, so two controls   */
+/* read the same fact (spec §6.1 C6); the status bar is gone and the branch */
+/* has exactly one home now — the chat-side ChangesPill, which shares its   */
+/* dropdown body (BranchMenuBody) with the Git tools popover.               */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';

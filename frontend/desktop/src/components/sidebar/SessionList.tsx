@@ -643,7 +643,8 @@ export function SessionList({
     const seen = new Set<string>();
     const add = (s: Session) => {
       // Usage is recorded against the workbench/SoT id, the same form the
-      // status bar and composer chip read (see StatusBar).
+      // batched per-row token delta reads (`usageApi.sessions`). The removed
+      // status bar used to read it too; this is now the only consumer.
       const id = s.workbenchSessionId || s.id;
       if (!id || seen.has(id)) return;
       seen.add(id);

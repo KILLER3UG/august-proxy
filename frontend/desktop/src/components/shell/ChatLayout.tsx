@@ -32,10 +32,10 @@ import { toast } from "sonner";
 import type { WorkbenchSession } from "@/types/workbench";
 import type { RightDrawerSectionId } from "./RightDrawerState";
 import { dispatchFocusComposer, dispatchInsertComposerText, onUiAction } from "@/api/ui-events";
+import { loadComposerDraft } from "@/sections/chat/message-storage";
 import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { StatusBar } from './StatusBar';
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 
@@ -376,8 +376,10 @@ export function ChatLayout() {
     try {
       const sid = active?.id;
       if (sid) {
-        const draftKey = `august_composer_draft_${sid}`;
-        const draft = (localStorage.getItem(draftKey) || '').trim();
+        /* Through `loadComposerDraft`, not a local copy of the prefix: this
+         * read is what makes the "unsent draft" confirm fire, and a key drift
+         * here would silently make it always read blank. */
+        const draft = loadComposerDraft(sid).trim();
         const status =
           useSessionsStore.getState().sessionStates[sid] ||
           useSessionsStore.getState().sessionStates[active?.workbenchSessionId || ''];
@@ -701,7 +703,7 @@ export function ChatLayout() {
               token deltas it showed duplicate the per-session deltas being
               removed from the sidebar rows. The model name is now rendered by
               the composer footer beside the disclaimer, where the reference has
-              it. `StatusBar` itself is left on disk but no longer rendered here. */}
+              it. The dead `StatusBar` component was deleted with this comment. */}
         </div>
       </div>
       {/* The settings dialog is a SIBLING of the inerted shell-body — inside

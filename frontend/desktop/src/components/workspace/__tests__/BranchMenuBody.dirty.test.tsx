@@ -18,7 +18,7 @@ vi.mock('@/api/git', () => ({
   },
 }));
 
-import { BranchMenuBody } from '../WorkspaceBranchChip';
+import { BranchMenuBody } from '../BranchMenuBody';
 
 function wrapper({ children }: { children: ReactNode }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

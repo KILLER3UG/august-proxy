@@ -105,10 +105,43 @@ describe('pruneGhostSessions', () => {
     const { removed } = pruneGhostSessions([s], { now: NOW });
     expect(removed.map((x) => x.id)).toEqual(['sess_ghost_1']);
   });
+
+  it('keeps a row holding an UNSENT COMPOSER DRAFT — the sweep is never destructive', () => {
+    /* The one thing no transcript key shows: text typed into the composer and
+     * never sent. The store clears `august_composer_draft_<id>` for every row
+     * it sweeps, so without this guard a day-old blank chat holding someone's
+     * half-written message loses both the row and the words. */
+    const s = ghost();
+    localStorage.setItem(`august_composer_draft_${s.id}`, 'the thing I meant to ask');
+    const { kept, removed } = pruneGhostSessions([s], { now: NOW });
+    expect(removed).toEqual([]);
+    expect(kept.map((x) => x.id)).toEqual(['sess_ghost_1']);
+    expect(localStorage.getItem(`august_composer_draft_${s.id}`)).toBe(
+      'the thing I meant to ask',
+    );
+  });
+
+  it('still sweeps when the stored draft is blank or whitespace-only', () => {
+    /* `persistComposerDraft` writes the raw string, so an emptied composer
+     * leaves '' behind rather than removing the key. A blank draft is not
+     * content and must not keep a ghost alive forever. */
+    const blank = ghost({ id: 'sess_ghost_1' });
+    const spaces = ghost({ id: 'sess_ghost_2' });
+    localStorage.setItem(`august_composer_draft_${blank.id}`, '');
+    localStorage.setItem(`august_composer_draft_${spaces.id}`, '\n   \n');
+    const { removed } = pruneGhostSessions([blank, spaces], { now: NOW });
+    expect(removed.map((s) => s.id).sort()).toEqual(['sess_ghost_1', 'sess_ghost_2']);
+  });
 });
 
+/* Both cases import the store MODULE, which pulls the whole chat/api graph   *
+ * through vite's transform on a cold cache — measured 13.8s here, against a   *
+ * 5s default. That is test-harness cost, not boot cost, so the budget is      *
+ * raised per test rather than globally. */                                     
+const BOOT_IMPORT_MS = 30_000;
+
 describe('pruneGhostSessions — store boot integration', () => {
-  it('the sessions store boots with the pruned list and rewrites storage', async () => {
+  it('the sessions store boots with the pruned list and rewrites storage', { timeout: BOOT_IMPORT_MS }, async () => {
     // Seed BEFORE the store module loads: one ghost, one real row.
     localStorage.setItem(
       'august-sessions-list-v1',
@@ -123,5 +156,26 @@ describe('pruneGhostSessions — store boot integration', () => {
     expect(sessions.map((s) => s.id)).toEqual(['sess_real_1']);
     // The pruned list is what the next save carries.
     expect(JSON.parse(localStorage.getItem('august-sessions-list-v1')!)).toHaveLength(1);
+  });
+
+  it('boot clears draft storage only for rows it proves blank — never the words', { timeout: BOOT_IMPORT_MS }, async () => {
+    /* Pins the WIRING, not just the predicate: the store's own cleanup loop is
+     * what deletes draft keys, so a guard inside pruneGhostSessions is only
+     * safe while both read the same key. One ghost with a draft, one without. */
+    localStorage.clear();
+    const drafted = ghost({ id: 'sess_ghost_1' });
+    const blank = ghost({ id: 'sess_ghost_2' });
+    localStorage.setItem(
+      'august-sessions-list-v1',
+      JSON.stringify([drafted, blank, ghost({ id: 'sess_real_1', title: 'Real conversation' })]),
+    );
+    localStorage.setItem('august_composer_draft_sess_ghost_1', 'unsent words');
+    localStorage.setItem('august_composer_draft_sess_ghost_2', '');
+    vi.resetModules();
+    const store = await import('../sessions');
+    const ids = store.useSessionsStore.getState().sessions.map((s) => s.id);
+    expect(ids).toEqual(['sess_ghost_1', 'sess_real_1']);
+    expect(localStorage.getItem('august_composer_draft_sess_ghost_1')).toBe('unsent words');
+    expect(localStorage.getItem('august_composer_draft_sess_ghost_2')).toBeNull();
   });
 });

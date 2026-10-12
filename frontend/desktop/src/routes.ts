@@ -5,7 +5,6 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
   LayoutDashboard,
   MessageSquare,
-  Settings,
   Mic,
   Bot,
   History,
@@ -152,32 +151,16 @@ export const SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_SECTIONS.filter((s
   path: `/settings/${section.id}`,
 }));
 
-/* Settings is a FULL-SCREEN page (no modal). One shared element is
- * mounted for both /settings and /settings/:section so left-rail tab
- * switches only change the :section param — they do not remount the
- * shell or re-trigger the lazy Suspense boundary. Section content still
+/* One shared element is mounted for both /settings and /settings/:section.
+ * ChatLayout renders it as a DIALOG over the background-location chat (see
+ * ChatLayout's background/overlay <Routes> split); App.tsx declares the
+ * route for matching and deep links with a null element. Section content
  * remounts inside SettingsPage so each tab refetches live data on entry. */
 export const SETTINGS_PAGE_ELEMENT: ReactNode = React.createElement(
   Lazy,
   null,
   React.createElement(SettingsPage),
 );
-
-/** Flat route descriptors for nav / labels (actual tree is nested in App). */
-const SETTINGS_ROUTES: readonly SectionRoute[] = [
-  {
-    path: '/settings',
-    label: 'Settings',
-    Icon: Settings,
-    element: SETTINGS_PAGE_ELEMENT,
-  },
-  {
-    path: '/settings/:section',
-    label: 'Settings',
-    Icon: Settings,
-    element: SETTINGS_PAGE_ELEMENT,
-  },
-] as const;
 
 /* Dev-only design token inspector — tree-shaken out of production. */
 const DEV_ROUTES: readonly SectionRoute[] = import.meta.env.DEV
@@ -192,9 +175,13 @@ const DEV_ROUTES: readonly SectionRoute[] = import.meta.env.DEV
     ]
   : [];
 
+/** Everything App.tsx's tree mounts from a flat table: the chat surfaces and
+ *  the dev-only inspector. `/settings*` is deliberately NOT here — App.tsx
+ *  declares those paths with a null element (for matching and deep links)
+ *  while ChatLayout renders the dialog itself; a SETTINGS_ROUTES entry here
+ *  was a second, never-mounted declaration of the same paths. */
 export const ALL_ROUTES: readonly SectionRoute[] = [
   ...SECTION_ROUTES,
-  ...SETTINGS_ROUTES,
   ...DEV_ROUTES,
 ];
 

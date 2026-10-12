@@ -24,7 +24,7 @@ import {
   saveSessionsToStorage,
 } from './sessions/storage';
 import { isSessionIdTombstoned, tombstoneSessionId } from './sessions/tombstone';
-import { legacyMessagesStorageKey, messagesStorageKey } from '@/sections/chat/message-storage';
+import { clearComposerDraft, legacyMessagesStorageKey, messagesStorageKey } from '@/sections/chat/message-storage';
 import type { Folder, Session, SessionStatus } from './sessions/types';
 
 export type { Session, SessionStatus, Folder } from './sessions/types';
@@ -48,21 +48,19 @@ interface SessionsState {
 
 export const useSessionsStore = create<SessionsState>(() => {
   /* Launch-time ghost sweep — see pruneGhostSessions. Only rows with no
-   * transcript under either key generation, no server link, no folder, a
-   * placeholder title, and a day of age are removed; the pruned list is
-   * what the store (and the next save) carries. */
+   * transcript under either key generation, no unsent composer draft, no
+   * server link, no folder, a placeholder title, and a day of age are removed;
+   * the pruned list is what the store (and the next save) carries. */
   const { kept: sessions, removed } = pruneGhostSessions(loadSessions(), {
     now: Date.now(),
   });
   if (removed.length > 0 && typeof localStorage !== 'undefined') {
     saveSessionsToStorage(sessions);
-    for (const ghost of removed) {
-      try {
-        localStorage.removeItem(`august_composer_draft_${ghost.id}`);
-      } catch {
-        /* ignore */
-      }
-    }
+    /* Draft hygiene only — a swept row provably holds no words, since
+     * `pruneGhostSessions` keeps any row whose draft is non-blank. Going
+     * through `clearComposerDraft` is what keeps that proof true: the guard
+     * and this delete must be the same key, not two copies of a prefix. */
+    for (const ghost of removed) clearComposerDraft(ghost.id);
     console.info(
       `[sessions] swept ${removed.length} empty placeholder chat(s) stacked up by the pre-fix "New chat" reuse loop`,
     );
@@ -312,6 +310,13 @@ export function updateSessionWorkbenchMetadata(
   // SSE may have already inserted a standalone wb_* row for the same
   // workbench session — collapse so the sidebar never shows two entries.
   const deduped = dedupeSessions(updated);
+  // The row that collapses away takes its composer draft with it, or the words
+  // survive under an id no route renders — unreachable storage the ghost sweep
+  // (which now keeps drafted rows) would never see. Same key door as the sweep.
+  const kept = new Set(deduped.map((s) => s.id));
+  for (const dropped of updated) {
+    if (!kept.has(dropped.id)) clearComposerDraft(dropped.id);
+  }
   useSessionsStore.setState({ sessions: deduped });
   saveSessionsToStorage(deduped);
 }
@@ -416,7 +421,7 @@ export function removeSessionLocally(id: string): boolean {
     try {
       localStorage.removeItem(messagesStorageKey(lid)!);
       localStorage.removeItem(legacyMessagesStorageKey(lid)!);
-      localStorage.removeItem(`august_composer_draft_${lid}`);
+      clearComposerDraft(lid);
     } catch {
       /* ignore */
     }
@@ -505,7 +510,7 @@ export function deleteUncategorizedSessions(options?: {
     try {
       localStorage.removeItem(messagesStorageKey(id)!);
       localStorage.removeItem(legacyMessagesStorageKey(id)!);
-      localStorage.removeItem(`august_composer_draft_${id}`);
+      clearComposerDraft(id);
     } catch {
       /* ignore */
     }
@@ -619,11 +624,11 @@ export function clearAllSessions(includeArchived: boolean = true) {
   toDelete.forEach((s) => {
     localStorage.removeItem(messagesStorageKey(s.id)!);
     localStorage.removeItem(legacyMessagesStorageKey(s.id)!);
-    localStorage.removeItem(`august_composer_draft_${s.id}`);
+    clearComposerDraft(s.id);
     if (s.workbenchSessionId) {
       localStorage.removeItem(messagesStorageKey(s.workbenchSessionId)!);
       localStorage.removeItem(legacyMessagesStorageKey(s.workbenchSessionId)!);
-      localStorage.removeItem(`august_composer_draft_${s.workbenchSessionId}`);
+      clearComposerDraft(s.workbenchSessionId);
     }
   });
 
