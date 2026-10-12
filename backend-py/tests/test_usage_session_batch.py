@@ -59,6 +59,23 @@ def _seed() -> None:
     # 'sid-c' deliberately has no usage at all.
 
 
+def _seed_many(count: int) -> None:
+    """`count` sessions that DO have usage rows, one event each.
+
+    A cap test needs rows on both sides of the line — an unseeded range answers
+    `{}` whether or not the code truncated anything. Inserted as events rather
+    than through `record_usage` only because that would be 250 commits; the
+    rows are the same shape the store writes."""
+    from app.services.memory_conn import conn
+
+    conn().executemany(
+        'INSERT INTO usage_events (session_id, model, input_tokens, output_tokens) '
+        "VALUES (?, 'gpt-4o', ?, 1)",
+        [(f'cap-{i}', 10 + i) for i in range(count)],
+    )
+    conn().commit()
+
+
 class TestSessionUsageBatch:
     def test_totals_are_summed_across_every_event(self, brain):
         _seed()
@@ -98,13 +115,83 @@ class TestSessionUsageBatch:
         assert usage_api.get_sessions_usage(ids='never-existed')['results'] == {}
 
     def test_the_batch_is_capped_rather_than_unbounded(self, brain):
+        """Truncation has to be OBSERVED. The old version of this test asked
+        for 300 ids and asserted `{}` — with nothing seeded, so deleting the
+        `break` entirely still passed (300 placeholders sit under SQLite's 999
+        ceiling, and an empty result proves nothing about which ids were
+        dropped). Rows now exist on both sides of the cap."""
         from app.services.memory_store import rest
 
         # Under SQLite's default bound-parameter ceiling, or the cap itself
         # would be the thing that breaks on a long history.
         assert rest.MAX_USAGE_BATCH_IDS <= 999
-        ids = ','.join(f'sid-{i}' for i in range(rest.MAX_USAGE_BATCH_IDS + 50))
-        assert usage_api.get_sessions_usage(ids=ids)['results'] == {}
+        cap = rest.MAX_USAGE_BATCH_IDS
+        _seed_many(cap + 50)
+        ids = ','.join(f'cap-{i}' for i in range(cap + 50))
+        results = usage_api.get_sessions_usage(ids=ids)['results']
+        # The FIRST `cap` ids are answered; the ones past it are not asked for.
+        assert len(results) == cap, f'{len(results)} sessions came back for a cap of {cap}'
+        for i in range(cap):
+            assert results[f'cap-{i}']['totalInputTokens'] == 10 + i
+        for i in range(cap, cap + 50):
+            assert f'cap-{i}' not in results, f'id past the cap was queried: cap-{i}'
+
+    def test_the_cap_still_costs_one_query(self, brain, usage_queries):
+        from app.services.memory_store import rest
+
+        cap = rest.MAX_USAGE_BATCH_IDS
+        _seed_many(cap)
+        usage_queries.clear()
+        usage_api.get_sessions_usage(ids=','.join(f'cap-{i}' for i in range(cap)))
+        statements = [sql for sql in usage_queries if 'usage_events' in sql]
+        assert len(statements) == 1, f'the capped batch ran {len(statements)} queries'
+
+    def test_the_route_parses_commas_and_refuses_an_overlong_list(self, brain):
+        """The validation the direct calls bypass. `get_sessions_usage(ids=…)`
+        in a test hands the function a plain string; only the route exercises
+        `Query(max_length=8000)` and the real comma split, so an overlong list
+        — which used to be a 422 nobody had proven, or a giant `IN (...)` —
+        and the whitespace/empty-field parsing are checked at the door the
+        sidebar actually calls."""
+        from app.main import app
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        _seed()
+        r = client.get('/api/usage/sessions', params={'ids': 'sid-a, sid-a , ,sid-a'})
+        assert r.status_code == 200, r.text
+        assert set(r.json()['results']) == {'sid-a'}
+        assert r.json()['results']['sid-a']['totalInputTokens'] == 1000
+
+        too_long = ','.join(f'sid-{i}' for i in range(1200))  # >8000 chars
+        assert len(too_long) > 8000
+        refused = client.get('/api/usage/sessions', params={'ids': too_long})
+        assert refused.status_code == 422, refused.text
+
+        missing = client.get('/api/usage/sessions', params={'ids': 'never-existed'})
+        assert missing.status_code == 200 and missing.json()['results'] == {}
+
+    def test_both_doors_read_the_same_rows_however_usage_was_recorded(self, brain):
+        """`get_usage` resolves the session SoT id and the batch did not, which
+        looks like a divergence — it is only one if the resolver can answer
+        with a DIFFERENT id than it was given. It cannot: it returns the row it
+        found by that exact id, else the id unchanged. Pin that, because the
+        moment the resolver grows a real alias, the batch door silently shows
+        no delta and this test is the thing that says so."""
+        from app.services.memory_store import get_usage, record_usage, resolve_sot_session_id
+
+        _seed()
+        assert resolve_sot_session_id('sid-a') == 'sid-a'
+        assert resolve_sot_session_id('a-provisional-frontend-id') == 'a-provisional-frontend-id'
+
+        # A usage row recorded against a provisional id (no `sessions` row) is
+        # readable by that id through BOTH doors, with the same numbers.
+        record_usage('prov-9', 'gpt-4o', inputTokens=5, outputTokens=7)
+        batch = usage_api.get_sessions_usage(ids='prov-9')['results']['prov-9']
+        single = get_usage('prov-9')
+        for field in ('totalInputTokens', 'totalOutputTokens', 'totalEvents'):
+            assert batch[field] == single[field], f'{field}: {batch[field]} vs {single[field]}'
+        assert batch['sessionId'] == 'prov-9'
 
     def test_the_batch_and_the_single_session_agree(self, brain):
         """Two doors onto the same numbers must not drift: the sidebar row and

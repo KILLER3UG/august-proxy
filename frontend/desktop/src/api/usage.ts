@@ -107,8 +107,18 @@ export const usageApi = {
   session:  (sessionId: string)               => api.get<SessionUsage>(`/api/usage/session?id=${encodeURIComponent(sessionId)}`),
   /** Many sessions at once — ONE grouped query behind the sidebar's per-row
    *  delta. Ask for every id the list is about to render; never one call per
-   *  row (see `get_usage_batch`). Ids with no usage rows are absent. */
-  sessions: (sessionIds: string[])            => api.get<{ results: Record<string, SessionTokenDelta> }>(
-    `/api/usage/sessions?ids=${sessionIds.map(encodeURIComponent).join(',')}`,
-  ),
+   *  row (see `get_usage_batch`). Ids with no usage rows are absent.
+   *
+   *  Capped HERE as well as on the server, because the failure modes are not
+   *  the same shape: `rest.MAX_USAGE_BATCH_IDS` truncates the `IN (...)`, but
+   *  the route's `Query(max_length=8000)` answers a longer `ids` string with a
+   *  422 — and one 422 zeroes every row's delta, not just the tail. 250 ids of
+   *  the ~24-char `wb_…` form is ~6.3 KB, safely under that ceiling. */
+  sessions: (sessionIds: string[])            => {
+    const ids = Array.from(new Set(sessionIds.map((id) => id.trim()).filter(Boolean))).slice(0, 250);
+    if (ids.length === 0) return Promise.resolve<{ results: Record<string, SessionTokenDelta> }>({ results: {} });
+    return api.get<{ results: Record<string, SessionTokenDelta> }>(
+      `/api/usage/sessions?ids=${ids.map(encodeURIComponent).join(',')}`,
+    );
+  },
 };
