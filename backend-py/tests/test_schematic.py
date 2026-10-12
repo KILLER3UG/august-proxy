@@ -1074,13 +1074,25 @@ def test_a_behavioural_b_card_is_not_told_it_needs_three_nodes():
     assert not ct.lint_netlist(deck), ct.lint_netlist(deck)
 
 
-def test_k_coupling_and_semicolon_notes_are_not_devices():
+def test_k_coupling_and_semicolon_notes_are_not_devices(tmp_path):
     """`K1 L1 L2 0.9` names two inductors, not two nets. With a node floor on `K`
     the linter demanded nodes from a line that has no terminals, and a `;` note
-    (a comment form SPICE accepts) was parsed as a `;`-device."""
+    (a comment form SPICE accepts) was parsed as a `;`-device.
+
+    The skip has to be in EVERY reader, not just the drawing: `parse_elements`
+    had it and the other four did not, so the component listing, the live
+    overview, the board layout and the IC block map each reported a part called
+    K1 with nodes `L1`/`L2` — two refdes promoted to nets, on four surfaces that
+    the user reads as the circuit.
+    """
     from app.services.tools import circuit_tools as ct
+    from app.services.tools import ic_detect
 
     assert schematic.min_node_count('K') == 0
+    # The two halves of one rule: a card with no terminals has no leading nets
+    # to slice, or the linter puts the coupled refdes in the node map while every
+    # reader skips the part.
+    assert schematic.node_count('K', ['L1', 'L2', '0.9']) == 0
     deck = (
         '* coupled\n'
         '; keep this note\n'
@@ -1090,8 +1102,85 @@ def test_k_coupling_and_semicolon_notes_are_not_devices():
         'K1 L1 L2 0.9\n'
         '.end\n'
     )
+    deck_file = tmp_path / 'coupled.cir'
+    deck_file.write_text(deck, encoding='utf-8')
     assert not ct.lint_netlist(deck), ct.lint_netlist(deck)
     assert {e.ref for e in schematic.parse_elements(deck)} == {'V1', 'L1', 'L2'}
+    assert {c['name'] for c in ct.read_netlist(str(deck_file), str(tmp_path))['components']} == {
+        'V1',
+        'L1',
+        'L2',
+    }
+    assert {c.ref for c in ct._parse_components(deck)} == {'V1', 'L1', 'L2'}
+    assert {p['ref'] for p in ct._board_from_netlist(deck)} == {'V1', 'L1', 'L2'}
+    assert 'K1' not in ic_detect._deck_lines(deck)
+
+
+def test_the_value_each_reader_names_is_the_value_the_card_has(tmp_path):
+    """One token-selection rule, shared by the listing and the linter.
+
+    `read_netlist` took the FIRST token after the nodes, so `V1 in 0 DC 9` — a
+    9 V source, the shape every textbook deck writes — listed a value of `DC`,
+    the keyword that introduces the value. `lint_netlist` took the LAST token of
+    the card, so `R1 out n2 1k tc=0,0.002` was read as `tc=0,0.002` and told the
+    user their 1 kΩ resistor does not parse as a SPICE number: a false error on
+    a deck that simulates, on the one surface whose job is to catch real ones.
+    Each was fixed in its own direction first, which is why both are wrong again
+    until the rule is one function.
+    """
+    from app.services.tools import circuit_tools as ct
+
+    deck = (
+        '* values\n'
+        '.model mm nmos level=1\n'
+        'V1 in 0 DC 9\n'
+        'R1 out n2 1k tc=0,0.002\n'
+        'I1 n2 0 DC 2.5m\n'
+        'M1 out in 0 0 mm\n'
+        '.end\n'
+    )
+    deck_file = tmp_path / 'values.cir'
+    deck_file.write_text(deck, encoding='utf-8')
+    got = {c['name']: c['value'] for c in ct.read_netlist(str(deck_file), str(tmp_path))['components']}
+    assert got['V1'] == '9', got
+    assert got['R1'] == '1k', got
+    assert got['I1'] == '2.5m', got
+    # A MOSFET card ends in its MODEL, not a number — and that is what the
+    # listing has always shown there, so the shared rule must not "fix" it.
+    assert got['M1'] == 'mm', got
+    assert not ct.lint_netlist(deck), ct.lint_netlist(deck)
+
+    # A card with no value at all is the deck's problem, not a phantom value
+    # read off a net: `parts[-1]` made the linter call node `0` a broken number.
+    bare = '* bare\nV1 a 0 5\nR1 a 0\n.end\n'
+    warns = ct.lint_netlist(bare)
+    assert any('R1' in w and 'no value' in w for w in warns), warns
+    assert not any('value' in w and "'0'" in w for w in warns), warns
+
+
+def test_the_board_layout_reads_the_deck_the_way_the_listing_does(tmp_path):
+    """`_board_from_netlist` was the sixth copy of "which lines are cards".
+
+    Its rule was `not startswith('*', '.', '+')`, so the deck's title card —
+    which ngspice never parses as an element — became an M-type part named `My`
+    on the 3D board, and a `.subckt` body's private `R2 i o 1k` was placed as
+    though it were in the top-level circuit.
+    """
+    from app.services.tools import circuit_tools as ct
+
+    deck = (
+        'My demo circuit\n'
+        '.subckt filter i n1 o\n'
+        'R2 i n1 1k\n'
+        'C2 n1 o 100n\n'
+        '.ends filter\n'
+        'V1 in 0 DC 9\n'
+        'X1 in 0 filter\n'
+        '.end\n'
+    )
+    placed = {p['ref'] for p in ct._board_from_netlist(deck)}
+    assert placed == {'V1', 'X1'}, placed
+    assert 'My' not in placed and 'R2' not in placed
 
 
 def test_an_orphaned_continuation_is_not_a_device_card():

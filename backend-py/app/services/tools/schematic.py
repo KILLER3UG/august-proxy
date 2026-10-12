@@ -170,6 +170,14 @@ def node_count(letter: str, toks: list[str]) -> int:
       a net named `V=(...)` or drops a real one.
     """
     up = letter.upper()
+    # A coupling card has no terminals at all, so it has no leading nets to
+    # slice: its tokens are the refdes of the two inductors. `min_node_count`
+    # already answers 0 for it; the two halves of the rule have to agree or the
+    # linter puts `L1`/`L2` in the node map while every reader skips the part,
+    # and a name that is in the map but on no pin can trip the ground and
+    # single-node checks with a net no circuit contains.
+    if up in _NON_ELEMENT_LETTERS:
+        return 0
     if up == 'X':
         # SPICE puts the called block's name immediately after its nodes, so the
         # name is the LAST non-`k=v` token on the line — NOT "the last token that
@@ -243,6 +251,21 @@ def min_node_count(letter: str, toks: 'list[str] | None' = None) -> int:
 _NON_ELEMENT_LETTERS = {'K'}
 
 
+def is_element_card(letter: str) -> bool:
+    """Does a card with this device letter name something the circuit has
+    terminals for?
+
+    The predicate belongs here because `min_node_count` already returns 0 for
+    these letters: the two halves of the rule have to agree or a reader that
+    skips the card and a linter that allows it are describing different
+    circuits. Every reader that lists components calls this — the drawing, the
+    live overview, the component listing, the fault detector and the board
+    layout — because `K1 L1 L2 0.9` included is a part whose "nets" are two
+    refdes, and each view that invented them drew a wire no circuit has.
+    """
+    return str(letter)[:1].upper() not in _NON_ELEMENT_LETTERS
+
+
 @dataclass
 class Element:
     ref: str
@@ -277,7 +300,7 @@ def parse_elements(deck_text: str) -> list[Element]:
         toks = rest.split()
         if len(toks) < 2:
             continue
-        if letter.upper() in _NON_ELEMENT_LETTERS:
+        if not is_element_card(letter):
             continue
         kind = _ELEMENT_KINDS.get(letter.upper(), 'part')
         n = node_count(letter, toks)

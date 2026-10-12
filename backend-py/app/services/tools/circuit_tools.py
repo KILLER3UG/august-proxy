@@ -553,14 +553,18 @@ def read_netlist(path: str, workspace: str = '') -> dict[str, object]:
     # so the listing showed a different set of terminals than the schematic drew
     # for the identical deck.
     from app.services.tools import schematic as _sch
-    from app.services.tools.netlist_text import device_cards
+    from app.services.tools.netlist_text import card_value, device_cards
 
     for line in device_cards(content):
         parts = line.split('$')[0].split()
-        if len(parts) >= 2:
+        if len(parts) >= 2 and _sch.is_element_card(parts[0][0]):
             need = _sch.node_count(parts[0][0], parts[1:])
             nodes = parts[1:1 + need]
-            value = parts[1 + need] if len(parts) > 1 + need else ''
+            # One rule with the linter, shared through `netlist_text`. This used
+            # to take the first token after the nodes, so `V1 in 0 DC 9` — a 9 V
+            # source — listed a value of `DC`, and the user read the word that
+            # introduces the value as the value.
+            value = card_value(parts, need)
             components.append(
                 {
                     'name': parts[0],
@@ -1020,7 +1024,7 @@ def lint_netlist(text: str) -> list[str]:
     # 3-node MOSFET — which ngspice rejects outright — passed this check and the
     # user met the error at simulation time instead.
     from app.services.tools import schematic as _sch
-    from app.services.tools.netlist_text import device_cards
+    from app.services.tools.netlist_text import card_value, device_cards
 
     saw_source = False
     # `device_cards` owns the question "which lines are cards": comments, the
@@ -1051,16 +1055,17 @@ def lint_netlist(text: str) -> list[str]:
             saw_source = True
         # Value sanity
         if len(parts) >= 3 and prefix in ('R', 'C', 'L', 'V', 'I'):
-            # The value is a token AFTER the node list that is not a `k=v` model
-            # parameter. `parts[-1]` was the old guess and it is wrong in the other
-            # direction for the other common shape: `R1 out n2 1k tc=0,0.002` told
-            # the user their 1k resistor "does not parse as a SPICE number", a
-            # false error on a deck that simulates, on the one surface whose job is
-            # to catch real ones. Taking the LAST non-parameter token keeps both:
-            # `V1 in 0 DC 9` has its keyword BEFORE the value, and a trailing `tc=`
-            # is not a value at all.
-            _positional = [t for t in parts[1 + need :] if '=' not in t]
-            valueTok = _positional[-1] if _positional else parts[-1]
+            # `netlist_text.card_value` owns which token after the nodes is the
+            # value, so the listing and this linter cannot disagree about the
+            # same card — and the two guesses it replaces were each wrong in the
+            # direction that costs the user a real signal: `parts[-1`] read a
+            # trailing `tc=` as the value and reported a 1k resistor as broken,
+            # while the listing's first-token read `DC` as the value of `V1 in 0
+            # DC 9`.
+            valueTok = card_value(parts, _sch.node_count(prefix, parts[1:]))
+            if not valueTok:
+                warnings.append(f'{ref}: {prefix} card has no value after its nodes.')
+                continue
             val = parse_spice_value(valueTok)
             if val is None:
                 warnings.append(
@@ -2553,6 +2558,13 @@ def _parse_components(deck_text: str) -> list[_DeckElement]:
         toks = rest.split()
         if len(toks) < 2:
             continue
+        # The same skip the drawing makes, from the same predicate. Listing a
+        # coupling card here put `L1`/`L2` — two refdes — in the overview as the
+        # nodes of a part called K1, so the live overview showed a component and
+        # two nets that the schematic, the linter and ngspice all agree do not
+        # exist as terminals.
+        if not _sch.is_element_card(letter):
+            continue
         kind = _ELEMENT_KINDS.get(letter.upper(), 'part')
         node_count = _sch.node_count(letter, toks)
         nodes = [t.strip('[]') for t in toks[:node_count]]
@@ -3616,13 +3628,18 @@ async def search_component(query: str) -> dict[str, object]:
 
 def _board_from_netlist(content: str) -> list[dict[str, object]]:
     """Derive simple board placement from netlist components (grid layout)."""
+    from app.services.tools import schematic as _sch
+    from app.services.tools.netlist_text import device_cards
+
+    # `device_cards`, like every other reader. This one had its own line rule
+    # (`not startswith('*', '.', '+')`), which is the title bug and the subckt
+    # bug together: `My demo circuit` became an M-type part named `My` on the
+    # board, and a filter block's private `R2 i o 1k` was placed beside the real
+    # parts as though it were in the top-level circuit.
     comps = []
-    for raw in content.splitlines():
-        line = raw.strip()
-        if not line or line.startswith(('*', '.', '+')):
-            continue
-        parts = line.split()
-        if len(parts) >= 2:
+    for card in device_cards(content):
+        parts = card.split('$')[0].split()
+        if len(parts) >= 2 and _sch.is_element_card(parts[0][0]):
             comps.append({'ref': parts[0], 'type': parts[0][0].upper()})
     n = max(1, len(comps))
     cols = max(1, int(n**0.5 + 0.999))

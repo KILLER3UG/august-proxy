@@ -1006,6 +1006,12 @@ def _deck_lines(deck_text: str) -> dict[str, list[str]]:
         toks = line.split('$')[0].split()
         if len(toks) < 2 or not re.match(r'^[A-Za-z]\w*$', toks[0]):
             continue
+        # Not an element, not a block: `K1 L1 L2 0.9` names two inductor refdes,
+        # and a map used to NAME parts would report a coupling line as a part
+        # whose first node is `L1`. Same predicate the drawing and the listing
+        # skip on, so the five readers cannot disagree about this card either.
+        if not schematic.is_element_card(toks[0][0]):
+            continue
         out.setdefault(toks[0].upper(), toks)
     return out
 
