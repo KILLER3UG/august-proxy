@@ -318,6 +318,44 @@ class TestTheTerminalSurfaceCarriesTheHardlineList:
         assert 'Blocked' in str(out.get('error') or ''), out
         assert calls == [], f'the shell executed a hardline command: {calls}'
 
+
+
+    @pytest.mark.asyncio
+    async def test_a_session_launched_with_a_store_path_in_argv_is_refused(self, tmp_path):
+        """`createTerminalSession` execs a caller-named program, so argv is a command line.
+
+        The one-shot route got the hardline list and the session launch did not:
+        `command='cmd', args=['/c','type', …/.ssh/keys/id_work]` started a real
+        shell and put the key in the session buffer, while `POST /command` refused
+        the same string. Preview sessions reach this function
+        (`routers/preview.py`), so it is a machine-driven surface and not only the
+        drawer.
+
+        The refusal is asserted on the SESSION LIST as well: a gate that returns
+        an error after `pty.spawn` has fired has already run the program.
+        """
+        from app.services.workbench import terminal_service as ts
+
+        secret = str(tmp_path / 'home' / '.ssh' / 'keys' / 'id_work')
+        before = len(ts.listTerminalSessions())
+        out = await ts.createTerminalSession(
+            {'command': 'cmd', 'args': ['/c', 'type', secret], 'cwd': str(tmp_path)}
+        )
+        assert str(out.get('status') or '') == 'error', out
+        assert 'Blocked' in str(out.get('error') or ''), out
+        assert len(ts.listTerminalSessions()) == before, 'a shell was spawned anyway'
+
+    def test_a_plain_shell_launch_is_not_refused(self):
+        """Control — the gate judges the argv, not the idea of a terminal.
+
+        `bash` / `powershell` with the default args carries no path, and refusing
+        it would take the drawer's terminal away from the user.
+        """
+        from app.services.sandbox.hardline import check_hardline_command
+
+        for launch in ('powershell', 'bash -l', 'cmd /k', 'zsh -ic "ls"'):
+            assert check_hardline_command(launch) is None, launch
+
     @pytest.mark.asyncio
     async def test_an_ordinary_command_still_runs(self, monkeypatch):
         """Control — a gate that refuses everything is not this gate."""

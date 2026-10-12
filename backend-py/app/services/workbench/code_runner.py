@@ -271,11 +271,19 @@ def list_files(path='.'):
     # Per child as well as per root: asking for the home directory names a
     # directory that IS listable and CONTAINS the stores, and rglob walks into
     # them. The root check alone would list every entry under .ssh, .aws, .docker.
+    #
+    # The child needs the FILE rule too, not just the directory rule. Measured on
+    # one workspace: the typed `list_directory` hid `id_rsa` and `credentials`
+    # while this named both — `_hardline_is_credential_store` is the DIRECTORY
+    # predicate, and neither a key file nor a folder called `credentials` is a
+    # credential store. The typed door asks `check_hardline_path` of every entry,
+    # directory or file, so this does too.
     _keep = []
     for x in sorted(p.rglob('*')):
         if len(_keep) >= 200:
             break
-        if _hardline_is_credential_store(str(x)):
+        _xs = str(x)
+        if _hardline_is_credential_store(_xs) or _hardline_check_path(_xs, False):
             continue
         _keep.append(str(x.relative_to(p)))
     return '\\n'.join(_keep)
@@ -411,13 +419,19 @@ _WRITE_VERB_RE = _re.compile(__WRITE_VERB__, _re.IGNORECASE)
 _ENV_TEMPLATE_RE = _re.compile(__ENV_TEMPLATE__, _re.IGNORECASE)
 _READER_CMDS = frozenset(__READERS__)
 # The credential-store directory sets, August's own secret files and the
-# enumerating verbs, all injected from `sandbox.hardline` — see
-# `_hardline_is_credential_store` for why they are here at all.
+# enumerating / recursive-search verb tables, all injected from
+# `sandbox.hardline` — see `_hardline_is_credential_store` for why they are here
+# at all. Every one of these is a COPY-FROM-THE-MODULE injection; nothing here is
+# hand-maintained, which is the only reason the port can be trusted to agree.
 _CRED_DIRS = tuple(__CRED_DIRS__)
 _STORE_DIRS = tuple(__STORE_DIRS__)
 _AUGUST_SECRETS = tuple(__AUGUST_SECRETS__)
 _ENUM_CMDS = frozenset(__ENUM_CMDS__)
-_AUGUST_SECRETS = tuple(__AUGUST_SECRETS__)
+_REC_SEARCH = frozenset(__REC_SEARCH__)
+_REC_LONG = frozenset(__REC_LONG__)
+_REC_VALUES = frozenset(__REC_VALUES__)
+_REC_SHORT_RE = _re.compile(__REC_SHORT__)
+_SHORT_NAME_RE = _re.compile(__SHORT_NAME__)
 _MUTATING_FLAG_RES = {
     _cmd: tuple(_re.compile(_p, _re.IGNORECASE) for _p in _flags)
     for _cmd, _flags in __MUTATING_FLAGS__.items()
@@ -426,6 +440,34 @@ _MUTATING_FLAG_RES = {
 
 def _hardline_canonical(text):
     return text.replace('\\', '/')
+
+
+def _hardline_store_form(path):
+    """Port of hardline._store_match_form: expand the shell's anchors, and pay a
+    resolve only when a component has the 8.3 short-name shape.
+
+    `GOOGLE~1` IS `.google_workspace_mcp` on this volume, so matching the string
+    the model typed refused the long name and allowed the short one; `~`, `$HOME`
+    and `%USERPROFILE%` are the same class of miss. The port that does not do this
+    disagrees with the typed doors in BOTH directions, which is what the parity
+    corpus caught.
+    """
+    import os as _o
+
+    text = str(path).strip('"\\' + "'")
+    try:
+        text = _o.path.expandvars(_o.path.expanduser(text))
+    except (OSError, ValueError):
+        pass
+    canon = _hardline_canonical(text)
+    if _SHORT_NAME_RE.search(canon):
+        try:
+            from pathlib import Path as _P
+
+            canon = _hardline_canonical(str(_P(canon).resolve()))
+        except (OSError, ValueError):
+            pass
+    return canon.lower()
 
 
 def _hardline_store_reason(token):
@@ -446,15 +488,21 @@ def _hardline_store_reason(token):
     read the directory half, so code mode could `read_file(<dataDir>/config.json)`
     while every typed door refused the same path. The rule is the DATA DIRECTORY,
     never the filename: `config.json` is ordinary in any project tree.
+
+    The third half is the `.ssh` SUBTREE. Reading one NAMED member of `.ssh` is
+    the deliberate exception; a file inside a FOLDER inside the store is not, and
+    the original refuses `~/.ssh/keys/deploy_token` while this port read it.
     """
-    _raw = str(token).strip('"\\' + "'")
-    _canon = _hardline_canonical(_raw)
+    _canon = _hardline_store_form(token)
     _p = '/' + _canon.strip('/') + '/'
-    _p = _p.lower()
     for _store in _STORE_DIRS:
         if '/' + _store + '/' in _p:
             return _store
-    if _canon.lower() in _AUGUST_SECRETS:
+    _segs = [s for s in _canon.split('/') if s]
+    for _i, _seg in enumerate(_segs):
+        if _seg in _CRED_DIRS and _i + 2 < len(_segs):
+            return 'credential store ' + _seg + ' subdirectory'
+    if _canon in _AUGUST_SECRETS:
         return "August's own credential store"
     return None
 
@@ -527,6 +575,15 @@ def _hardline_enumerates(command):
             _first = _toks[1].split('/')[-1].split('\\')[-1].lower()
         if _first in _ENUM_CMDS:
             return True
+        # The grep family only walks with its recursive flag — `-r`, `-R`, the
+        # combined `-rn` / `-lR` forms, `--recursive`, and GNU's two-token
+        # `-d recurse`. Plain `grep pattern file` stays a reader.
+        if _first in _REC_SEARCH:
+            for _i, _t in enumerate(_toks[1:], start=1):
+                if _REC_SHORT_RE.match(_t) or _t in _REC_LONG:
+                    return True
+                if _t == '-d' and _i + 1 < len(_toks) and _toks[_i + 1].lower() in _REC_VALUES:
+                    return True
     return False
 
 
@@ -634,6 +691,11 @@ def build_runner_source(
         .replace('__STORE_DIRS__', repr(sorted(_hardline._CREDENTIAL_STORES)))
         .replace('__AUGUST_SECRETS__', repr(sorted(_hardline._august_secret_files())))
         .replace('__ENUM_CMDS__', repr(sorted(_hardline._ENUMERATING_COMMANDS)))
+        .replace('__REC_SEARCH__', repr(sorted(_hardline._RECURSIVE_SEARCH_COMMANDS)))
+        .replace('__REC_LONG__', repr(sorted(_hardline._RECURSIVE_LONG)))
+        .replace('__REC_VALUES__', repr(sorted(_hardline._RECURSIVE_VALUES)))
+        .replace('__REC_SHORT__', repr(_hardline._RECURSIVE_SHORT_RE.pattern))
+        .replace('__SHORT_NAME__', repr(_hardline._SHORT_NAME_RE.pattern))
         .replace(
             '__MUTATING_FLAGS__',
             repr({k: tuple(p.pattern for p in v) for k, v in _hardline._MUTATING_FLAG_PATTERNS.items()}),

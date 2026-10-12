@@ -341,6 +341,22 @@ async def createTerminalSession(params: dict[str, object] | None = None) -> dict
     cwd = as_str(params.get('cwd')) or os.getcwd()
     if not os.path.isdir(cwd):
         cwd = os.getcwd()
+    # The one-shot route got the hardline list and this launch path did not, so
+    # the gate could be stepped around by naming a program and putting the
+    # protected path in its argv: `command='cmd', args=['/c','type', …\.ssh\keys\id_work]`
+    # put the key in the session buffer while `POST /command` refused the same
+    # string. Preview sessions reach here (`routers/preview.py`), so this is a
+    # machine-driven surface, not only the drawer.
+    #
+    # Joined with the shell word, because the rules parse a command line: the
+    # launch of a bare `bash` / `powershell` has no path in it and still passes,
+    # and only an argv that names a store or a credential file is refused.
+    from app.services.sandbox.hardline import check_hardline_command
+
+    launch = ' '.join([shell, *[str(a) for a in as_list(params.get('args'))]])
+    denial = check_hardline_command(launch)
+    if denial:
+        return {'status': 'error', 'error': f'Blocked: {denial}', 'command': launch}
     # Drawer / interactive sessions: real shell without per-keystroke approval
     if 'approvedInteractive' in params or 'approved_interactive' in params:
         approved = as_bool(

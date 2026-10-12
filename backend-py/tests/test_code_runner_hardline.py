@@ -56,18 +56,30 @@ _COMMAND_CORPUS = [
     'ls ~/.ssh/.',
     'ls ~/.ssh/keys/.',
     'tree ~/.ssh/keys',
-    # A named FILE inside the store is the read rule's business, not the listing
-    # rule's. Asked of every token, the subtree rule refuses
-    # `cat ~/.ssh/authorized_keys` — the exception `.ssh` deliberately keeps.
+    # Anything BELOW a named member of `.ssh` is not the exception: the exception
+    # is one file directly in the store (`config`, `authorized_keys`), and a key
+    # inside a folder inside it has no public representative.
     'cat ~/.ssh/keys/vault.kdbx',
+    'head -5 ~/.ssh/config',
+    # A recursive search walks the store with a READER verb: `grep -rl` printed
+    # every key's name, `grep -r` printed the matching lines too. `rg`/`ag`/`ack`
+    # walk by default and need no flag.
+    'grep -rl PRIVKEY ~/.ssh/keys',
+    'grep -rn PRIVKEY ~/.ssh',
+    'grep --recursive PRIVKEY ~/.ssh/keys',
+    'grep -d recurse PRIVKEY ~/.ssh/keys',
+    'rg PRIVKEY ~/.ssh/keys',
+    # The same miss on the other side of the machine: an 8.3 short name IS the
+    # store, and string matching could not see it (`GOOGLE~1` = the Workspace MCP
+    # credential directory on this volume).
+    'cat ~/GOOGLE~1/credentials/acct.json',
+    'type %USERPROFILE%\\GOOGLE~1\\credentials\\acct.json',
     # A GLOB and a COPY reach the same subtree without a listing verb in the
-    # line. Measured, because the obvious fix was to widen the store rule again:
-    # they are already refused, and not by it — `\.ssh/[^\s]*\*` is in the
-    # credential-READ pattern (it requires a literal `*`, which is why
-    # `~/.ssh/known_hosts` stays readable), and the WRITE pattern does treat
-    # `.ssh` as a directory boundary, so `cp`/`tar`/`scp`/`rm` are refused as
-    # mutating commands. These lines pin the verdicts; the store rule gains
-    # nothing here and was not extended to cover them.
+    # line. Both were already refused before the store rule widened — the
+    # credential-READ pattern has `\.ssh/[^\s]*\*` (it needs a literal `*`, which
+    # is why `~/.ssh/known_hosts` stays readable) and the WRITE pattern treats
+    # `.ssh` as a directory boundary. Pinned here because the verdict matters and
+    # which rule holds is not obvious.
     'cat ~/.ssh/keys/*',
     'head -100 ~/.ssh/*',
     'cp -r ~/.ssh/keys /tmp/out',

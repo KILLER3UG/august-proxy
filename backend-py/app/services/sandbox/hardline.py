@@ -32,6 +32,7 @@ file access is out of scope.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -159,16 +160,73 @@ def _august_secret_files() -> tuple[str, ...]:
     return (f'{data}/config.json',)
 
 
+def _store_match_form(path: str) -> str:
+    """The form of a path the store tables are matched against.
+
+    Two spellings defeat pure string matching, both measured on this machine:
+
+      * a home anchor the guard would not otherwise see — `~`, `$HOME`, and cmd's
+        `%USERPROFILE%` are expanded by the SHELL, not by Python;
+      * an 8.3 short name. `GOOGLE~1` IS `.google_workspace_mcp` on this volume,
+        so `cat ~/GOOGLE~1/credentials/account.json` passed the rule that refuses
+        the long name, and the terminal route returned the token.
+
+    `resolve()` is the only thing that turns a short name back into a long one
+    (Windows expands it during path canonicalisation), and it costs more than a
+    string scan, so it is paid ONLY when a component actually has the 8.3 shape.
+    A path that does not exist still resolves lexically, which is what the
+    no-such-file case needs.
+    """
+    text = _canonical(os.path.expandvars(os.path.expanduser(path.strip('"\''))))
+    if _SHORT_NAME_RE.search(text):
+        try:
+            text = _canonical(str(Path(text).resolve()))
+        except (OSError, ValueError):
+            pass
+    return text.lower()
+
+
+# The 8.3 shape, with the optional short extension a FILE gets (`REPORT~1.TXT`),
+# while a directory alias is bare (`GOOGLE~1`). Requiring the component to END at
+# `~N` missed every aliased file and, worse, the real case here: the credential
+# directory's own short name sits one step above a long-named file.
+_SHORT_NAME_RE = re.compile(r'(^|/)[A-Za-z0-9._-]{1,6}~\d+(?:\.[A-Za-z0-9]{1,4})?($|/)')
+
+
+def _credential_store_subtree_reason(canonical: str) -> str | None:
+    """Why a path BELOW a named member of a `.ssh`-style store is secret.
+
+    The two tables are not interchangeable and this is the third distinction:
+    `_CREDENTIAL_STORES` refuses the whole subtree for reads and writes, while
+    `_CREDENTIAL_DIRECTORIES` (`.ssh`) deliberately keeps ONE named member
+    readable — `config`, `authorized_keys`, `known_hosts` are public or benign.
+    Matching only the last component left the exception swallowing everything:
+    `~/.ssh/keys/deploy_token` is not a named member of the store, it is a file
+    inside a folder inside the store, and it read clean while `ls` of that same
+    folder was refused. Direct members stay allowed; anything under a
+    subdirectory of the store is where private material lives and has no public
+    representative.
+    """
+    parts = [p for p in canonical.split('/') if p]
+    for i, part in enumerate(parts):
+        if part in _CREDENTIAL_DIRECTORIES and i + 2 < len(parts):
+            return f'credential store {part} subdirectory'
+    return None
+
+
 def _secret_store_reason(path: str) -> str | None:
     """Why `path` is a store the agent may neither read nor write, else None.
 
     Reads land in the conversation transcript and go upstream to the provider,
     so this is refused in every mode — the same immunity the two patterns have.
     """
-    canonical = _canonical(path).lower()
+    canonical = _store_match_form(path)
     store = _credential_store(canonical)
     if store:
         return f'credential store {store}'
+    subtree = _credential_store_subtree_reason(canonical)
+    if subtree:
+        return subtree
     if canonical in _august_secret_files():
         return "August's own credential store"
     return None
@@ -357,12 +415,27 @@ _ENUMERATING_COMMANDS = frozenset(
     {
         'ls', 'dir', 'lld', 'eza', 'exa', 'lsd', 'tree', 'find', 'fd', 'du',
         'stat', 'lsattr', 'ncdu',
+        # These searchers walk the given path BY DEFAULT, so there is no flag
+        # combination to reason about — every call is enumeration. The grep
+        # family is NOT here: it needs the flag, and refusing plain `grep
+        # pattern file.txt` would be a guard that cries wolf.
+        'rg', 'ripgrep', 'ag', 'ack', 'ack-grep', 'sift', 'ucg',
     }
 )
 
+# `grep -rl PRIVKEY ~/.ssh/keys` walked the store and printed every key's NAME
+# (`-l`), and with a matching pattern its CONTENT too — through a door that only
+# watched for `ls`. The grep family needs its recursive flag: `-r`, `-R`, the
+# combined short forms `-rn` / `-lR`, `--recursive`, and GNU's two-token
+# `-d recurse`.
+_RECURSIVE_SEARCH_COMMANDS = frozenset({'grep', 'egrep', 'fgrep', 'bzgrep', 'zgrep', 'pcregrep'})
+_RECURSIVE_SHORT_RE = re.compile(r'^-[A-Za-z]*[rR][A-Za-z]*$')
+_RECURSIVE_LONG = frozenset({'--recursive'})
+_RECURSIVE_VALUES = frozenset({'recurse', 'skip'})
+
 
 def _enumerates_a_directory(command: str) -> bool:
-    """Does some segment of this command list a directory?
+    """Does some segment of this command list or walk a directory?
 
     Wrappers are looked through the same way `_segment_is_write` does it, so
     `sudo ls ~/.ssh` and `xargs -0 ls` are judged on the verb they run, not on
@@ -377,6 +450,12 @@ def _enumerates_a_directory(command: str) -> bool:
             first = toks[1].split('/')[-1].split('\\')[-1].lower()
         if first in _ENUMERATING_COMMANDS:
             return True
+        if first in _RECURSIVE_SEARCH_COMMANDS:
+            for i, tok in enumerate(toks[1:], start=1):
+                if _RECURSIVE_SHORT_RE.match(tok) or tok in _RECURSIVE_LONG:
+                    return True
+                if tok == '-d' and i + 1 < len(toks) and toks[i + 1].lower() in _RECURSIVE_VALUES:
+                    return True
     return False
 
 

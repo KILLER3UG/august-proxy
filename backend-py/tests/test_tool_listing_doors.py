@@ -268,7 +268,7 @@ class TestAStoreSubtreeIsStillTheStore:
     conventional spellings is a rule that works until someone names a file.
 
     Measured before the fix, on this machine, through all four doors:
-    `GET /api/workspace/files?path=<home>\.ssh\keys` returned
+    `GET /api/workspace/files?path=<home>/.ssh/keys` returned
     `['vault.kdbx', 'vpn-key']`, and so did the workbench twin, `list_directory`,
     and `listable_root` itself (`denial=None`).
     """
@@ -340,7 +340,7 @@ class TestAStoreSubtreeIsStillTheStore:
         `cp -r ~/.ssh/keys /tmp` moves the subtree out without listing it. The
         instinct is to widen the store rule to the token's shape and the
         command's write intent; measured, both are already refused — the
-        credential-READ pattern has an explicit `\.ssh/[^\s]*\*` alternative (it
+        credential-READ pattern has an explicit `.ssh/` + wildcard alternative (it
         requires a literal `*`, which is exactly why `~/.ssh/known_hosts` and
         `~/.ssh/config` stay readable), and the WRITE pattern does treat `.ssh`
         as a directory boundary. Widening the store rule changed the reason
@@ -359,25 +359,39 @@ class TestAStoreSubtreeIsStillTheStore:
         ):
             reason = check_hardline_command(cmd)
             assert reason is not None, f'{cmd!r} was allowed'
-            # Named, so the next reader can tell which of the three rules is
-            # holding, and does not "fix" a gap that is already shut.
-            assert 'read blocked' in reason or 'protected path' in reason, f'{cmd!r}: {reason}'
+            # Named, so the next reader can tell which of the rules is holding, and
+            # does not "fix" a gap that is already shut. The store-subdirectory
+            # rule now catches anything below `.ssh/` before the patterns are
+            # reached, so it is one of the accepted reasons.
+            assert 'read blocked' in reason or 'protected path' in reason or 'credential store' in reason, (
+                f'{cmd!r}: {reason}'
+            )
 
-    def test_a_reader_of_one_named_file_is_still_allowed(self, store_root):
-        """The asymmetry the listing rule must not swallow.
+    def test_a_named_member_is_readable_and_a_folder_inside_the_store_is_not(self, store_root):
+        """Where the `.ssh` exception actually ends.
 
-        `is_credential_directory` is the LISTING predicate; a command token has no
-        such guarantee, and asking it of every token made
-        `cat ~/.ssh/authorized_keys` a refusal. The gate therefore rides the
-        verbs that enumerate, which is the same distinction the store table and
-        the `_CREDENTIAL_DIRECTORIES` table already draw.
+        The exception was always about ONE NAMED MEMBER of the store:
+        `authorized_keys`, `config`, `known_hosts` are public or benign and sit
+        directly in `~/.ssh`. A file inside a FOLDER inside the store is not a
+        named member of anything — `~/.ssh/keys/deploy_token` is where people keep
+        private material, its name is not in any pattern list, and it read clean
+        while `ls` of that same folder was refused. Direct members stay readable;
+        one level down inside the store, nothing is.
         """
         from app.services.sandbox.hardline import check_hardline_command
 
-        keys = str(store_root / '.ssh' / 'keys')
-        # A native (Windows) path separator must not be the way past the door.
-        assert check_hardline_command(f'cat {keys}{os.sep}vault.kdbx') is None, 'a named file became a store'
-        assert check_hardline_command(f'head -5 {keys}/vault.kdbx') is None
+        keys = store_root / '.ssh' / 'keys'
+        keys.mkdir(parents=True, exist_ok=True)
+        (keys / 'vault.kdbx').write_text('x', encoding='utf-8')
+        (store_root / '.ssh' / 'config').write_text('Host *\n', encoding='utf-8')
+        direct = str(store_root / '.ssh' / 'authorized_keys')
+        assert check_hardline_command(f'cat {direct}') is None, 'a direct member became a store'
+        assert check_hardline_command(f'head -5 {store_root / ".ssh" / "config"}') is None
+        # A native (Windows) separator must not be the way past the door either.
+        assert check_hardline_command(f'cat {keys / "vault.kdbx"}') is not None, (
+            'a file under a store subdirectory was readable'
+        )
+        assert 'subdirectory' in str(check_hardline_command(f'cat {keys / "deploy_token"}')), 'wrong rule'
 
 
     def test_a_link_that_looks_ordinary_stops_at_the_directory_rule(self, store_root):
@@ -429,6 +443,153 @@ class TestAStoreSubtreeIsStillTheStore:
             else:
                 _os.unlink(str(link))
             shutil.rmtree(str(store), ignore_errors=True)
+
+
+class TestARecursiveSearchIsAListingDoor:
+    """`grep -rl PRIVKEY ~/.ssh/keys` is enumeration wearing a reader verb.
+
+    The store rule on the shell door was gated on verbs that LIST, and that list
+    was a name list: `ls`, `tree`, `find`. A recursive grep walks the same
+    directory and prints the same names (`-l`) or their matching lines, and the
+    measurement came back `gate=None` with the key name in the output — the exact
+    leak the door exists to stop, arriving because the guard knew four verbs.
+
+    `rg`/`ag`/`ack`/`sift` walk BY DEFAULT, so they are enumerating unconditionally;
+    the grep family needs its flag, including the combined short forms and GNU's
+    two-token `-d recurse`, and plain `grep pattern notes.txt` must stay allowed —
+    a guard that refuses every grep gets worked around.
+    """
+
+    @pytest.mark.parametrize(
+        'cmd',
+        [
+            'grep -rl PRIVKEY ~/.ssh/keys',
+            'grep -rn PRIVKEY ~/.ssh/keys',
+            'grep --recursive PRIVKEY ~/.ssh/keys',
+            'grep -d recurse PRIVKEY ~/.ssh/keys',
+            'rg PRIVKEY ~/.ssh/keys',
+            'ag PRIVKEY ~/.ssh',
+            'sudo grep -r PRIVKEY ~/.ssh/keys',
+        ],
+    )
+    def test_a_walk_of_the_store_is_refused(self, cmd):
+        from app.services.sandbox.hardline import check_hardline_command
+
+        assert check_hardline_command(cmd) is not None, f'{cmd!r} was allowed'
+
+    @pytest.mark.parametrize('cmd', ['grep -n secret notes.txt', 'rg token src/', 'grep -ri todo app/'])
+    def test_an_ordinary_search_still_runs(self, cmd):
+        from app.services.sandbox.hardline import check_hardline_command
+
+        assert check_hardline_command(cmd) is None, f'{cmd!r} was refused: {check_hardline_command(cmd)}'
+
+
+class TestAHomeAnchoredOrShortNameFormIsTheSameStore:
+    """The store rule must judge the path, not the string the model typed.
+
+    Two misses measured on this machine:
+
+      * `~`, `$HOME` and cmd's `%USERPROFILE%` are expanded by the SHELL, so
+        `_secret_store_reason` — pure string matching — saw none of them;
+      * `GOOGLE~1` IS `.google_workspace_mcp` on this volume, so
+        `cat ~/GOOGLE~1/credentials/account.json` passed the rule that refuses the
+        long name, and the terminal route put the token in the transcript.
+
+    The fix expands the anchors and, only when a component has the 8.3 shape
+    (`NAME~N`), asks `Path.resolve()` to canonicalise it. `resolve()` costs an
+    order of magnitude more than a scan, and paying it per file per keystroke is
+    what `listable_child` exists to avoid — so the short-name test is the gate.
+    """
+
+    @pytest.mark.parametrize(
+        'tok',
+        ['~/.google_workspace_mcp/credentials/a.json', '$HOME/.google_workspace_mcp/credentials/a.json'],
+    )
+    def test_a_home_anchor_is_expanded_before_matching(self, tok):
+        from app.services.sandbox.hardline import _secret_store_reason
+
+        assert _secret_store_reason(tok) is not None, f'{tok!r} did not name the store'
+
+    @pytest.mark.skipif(os.name != 'nt', reason='8.3 short names are an NTFS feature')
+    def test_a_short_name_is_the_store_it_aliases(self, tmp_path):
+        import _winapi
+
+        store = tmp_path / '.google_workspace_mcp'
+        (store / 'credentials').mkdir(parents=True)
+        (store / 'credentials' / 'acct.json').write_text('{"token":"T"}', encoding='utf-8')
+        try:
+            short = _winapi.GetShortPathName(str(store))
+        except OSError as exc:  # 8.3 generation disabled on this volume
+            pytest.skip(f'no 8.3 name available on this volume: {exc}')
+        assert short != str(store), 'the volume returned the long name, so this proves nothing'
+        probe = f'{short}{os.sep}credentials{os.sep}acct.json'
+        assert os.path.exists(probe.replace('/', os.sep)), probe
+        from app.services.sandbox.hardline import _secret_store_reason
+
+        assert _secret_store_reason(probe) is not None, (
+            f'{probe!r} aliases {store!r} and the store rule did not see it'
+        )
+
+    def test_the_refusal_follows_the_resolved_form(self, tmp_path, monkeypatch):
+        """What the store rule matches is the path the OS names, not the text.
+
+        The 8.3 alias itself is NTFS's to hand out and cannot be manufactured in
+        a fixture (this volume gives no short name to a newly created directory),
+        so this drives the half that is ours: once `resolve()` has replaced the
+        short component, the refusal must follow. Measured on the real home, the
+        same call returns
+        `hardline protected credential store .google_workspace_mcp` for
+        `~/GOOGLE~1/credentials/acct.json`, where the string-only rule allowed it.
+        """
+        import pathlib
+
+        from app.services.sandbox import hardline
+
+        store = tmp_path / '.google_workspace_mcp'
+        alias = tmp_path / 'GOOGLE~1'
+
+        real_resolve = pathlib.Path.resolve
+
+        def aliased(self, *a, **kw):
+            text = str(self)
+            if str(alias) in text:
+                return pathlib.Path(text.replace(str(alias), str(store)))
+            return real_resolve(self, *a, **kw)
+
+        monkeypatch.setattr(pathlib.Path, 'resolve', aliased)
+        monkeypatch.setattr(hardline, '_august_secret_files', lambda: ())
+        reason = hardline._secret_store_reason(str(alias / 'credentials' / 'acct.json'))
+        assert reason is not None, 'the rule judged the typed string, not the path it aliases'
+        assert '.google_workspace_mcp' in reason, reason
+        # And a path with no alias in it is untouched by the substitution.
+        assert hardline._secret_store_reason(str(tmp_path / 'src' / 'app.py')) is None
+
+    def test_the_resolve_is_taken_only_for_a_short_name_shape(self, tmp_path, monkeypatch):
+        """The 8.3 branch is conditional, and the condition is what is asserted.
+
+        An unconditional `resolve()` in the store rule would put a filesystem
+        round trip inside `listable_child`, which runs per file on every keystroke
+        of the @-mention picker — the exact cost that made the file rule name
+        matching only. Measured against the real module rather than a stopwatch:
+        a timing comparison said the opposite of the truth, because resolving a
+        path that does not exist is not slower than scanning a long one.
+        """
+        import pathlib
+
+        calls: list[str] = []
+        real_resolve = pathlib.Path.resolve
+
+        def counting(self, *a, **kw):
+            calls.append(str(self))
+            return real_resolve(self, *a, **kw)
+
+        monkeypatch.setattr(pathlib.Path, 'resolve', counting)
+        from app.services.sandbox.hardline import _store_match_form
+
+        _store_match_form(str(tmp_path / 'a' / 'b' / 'c' / 'plain-name.json'))
+        assert not calls, f'a long path resolved {len(calls)} time(s)'
+        _store_match_form(str(tmp_path / 'A1B2C3~1.PYO' / 'acct.json'))
+        assert calls, 'a NAME~N component did not reach the resolve, so the alias is never canonicalised'
 
 
 class TestModuleContextIsAListingDoor:
@@ -505,3 +666,46 @@ class TestModuleContextIsAListingDoor:
         assert 'credentials' not in out, f'the refused directory was named: {out!r}'
         head = out.split('Entries')[1].split('\n')[0] if 'Entries' in out else ''
         assert '1 dirs' in head, f'the dir count still includes the refused store: {head!r}'
+
+class TestCodeModeListingMatchesTheTypedDoor:
+    """The code-mode `list_files` applied the DIRECTORY rule to children and never
+    the FILE rule, so it named what the typed tool hid.
+
+    Measured on one workspace holding `config.py`, `id_rsa` and a `credentials/`
+    folder: the typed `list_directory` returned `config.py` only, while
+    `list_files('.')` in a code run returned `config.py`, `credentials` and
+    `id_rsa`. Same machine, same rule, two answers — and code mode is the surface
+    a model drives with a script.
+    """
+
+    def _ws(self, store_root):
+        ws = store_root / 'proj'
+        ws.mkdir(exist_ok=True)
+        (ws / 'config.py').write_text('x = 1', encoding='utf-8')
+        (ws / 'id_rsa').write_text('PRIVATE KEY MATERIAL', encoding='utf-8')
+        (ws / 'credentials').mkdir(exist_ok=True)
+        (ws / 'credentials' / 'login.tsx').write_text('export const x = 1', encoding='utf-8')
+        return ws
+
+    def test_the_two_doors_name_the_same_entries(self, store_root):
+        import os as _o
+
+        from app.services.tool_registrations.file_tools import _listDirectory
+        from app.services.workbench import code_runner
+
+        ws = self._ws(store_root)
+        typed = asyncio.run(_listDirectory(str(ws)))
+        src = code_runner.build_runner_source(user_block='', workspace_path=str(ws))
+        ns: dict = {}
+        saved = dict(_o.environ)
+        try:
+            exec(compile(src, '<probe>', 'exec'), ns)  # noqa: S102
+            code = ns['list_files']('.')
+        finally:
+            _o.environ.clear()
+            _o.environ.update(saved)
+
+        assert 'id_rsa' not in code, f'code mode named the key: {code!r}'
+        assert 'credentials' not in code.split(), f'code mode named the store folder: {code!r}'
+        assert 'config.py' in code, f'code mode lost the ordinary file: {code!r}'
+        assert 'id_rsa' not in typed and 'config.py' in typed, typed
