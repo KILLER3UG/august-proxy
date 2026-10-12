@@ -12,6 +12,7 @@
 import { useCallback, type KeyboardEvent } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { settingsTabPanelId, settingsTabTriggerId } from './settingsTabIds';
 
 export interface SettingsTabItem {
   key: string;
@@ -20,14 +21,6 @@ export interface SettingsTabItem {
   description?: string;
   /** Trailing count badge (e.g. skill total). Additive — omit for none. */
   count?: number;
-}
-
-/** The tabpanel id for a tab — the single place the tab↔panel id contract
- *  lives, so `aria-controls` here and `id` on the consumer's panel cannot
- *  drift. Returns null without a prefix (no panel wiring for that tablist). */
-// eslint-disable-next-line react-refresh/only-export-components
-export function settingsTabPanelId(prefix: string | undefined, key: string): string | null {
-  return prefix ? `${prefix}-panel-${key}` : null;
 }
 
 interface SettingsTabsProps {
@@ -94,7 +87,9 @@ export function SettingsTabs({
     return {
       'data-tab-key': key,
       tabIndex: value === key ? 0 : -1,
-      ...(panelId ? { id: `${panelIdPrefix}-tab-${key}`, 'aria-controls': panelId } : {}),
+      ...(panelId && panelIdPrefix
+        ? { id: settingsTabTriggerId(panelIdPrefix, key), 'aria-controls': panelId }
+        : {}),
     };
   };
 

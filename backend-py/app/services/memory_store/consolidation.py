@@ -413,7 +413,8 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
     # reads back as a retired fact under a 'rejected' label.
     if not claim_proposal_decision(conn, proposal_id, 'approved', decidedBy):
         return {'ok': False, 'error': f'proposal {proposal_id} was already decided; nothing changed'}
-    cur = conn.execute(
+    try:
+        cur = conn.execute(
         "UPDATE facts SET status = 'retired', updated_at = datetime('now') "
         "WHERE fact_key = ? AND kind = ? AND (status IS NULL OR status = 'active') "
         'AND COALESCE(use_count, 0) = 0 '
@@ -422,6 +423,15 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
         "AND (? = '' OR COALESCE(NULLIF(last_used_at, ''), NULLIF(updated_at, ''), created_at) = ?)",
         (key, raw_kind, days, last_touch, last_touch),
     )
+    except Exception as exc:
+        # The claim is already on this connection. Without a rollback an
+        # uncommitted 'approved' survives on the thread-local handle and the
+        # NEXT unrelated write on this thread lands it — a proposal stamped
+        # approved over a fact that was never retired, and it can never be
+        # re-decided because the claim is spent. Roll the claim back with the
+        # statement that failed.
+        conn.rollback()
+        return {'ok': False, 'error': f'apply_retire_decision({proposal_id}): {exc}'}
     if not cur.rowcount:
         # Evidence no longer holds. We own the claim, so correct it inside the
         # same transaction: the proposal closes as rejected, the fact survives

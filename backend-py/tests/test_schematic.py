@@ -683,3 +683,97 @@ def test_rendered_topology_has_no_collisions(name: str, deck: str):
     for ref in refs:
         assert not _clash(title, bodies[ref]), f'{name}: title overlaps body {ref}'
         assert not _clash(title, labels[ref]), f'{name}: title overlaps label {ref}'
+
+
+def test_an_instance_node_named_like_another_subckt_does_not_truncate_the_call():
+    """`X1 ain aout VREF ADC` declares a 3-pin ADC whose third node happens to
+    be named like the `VREF` block defined in the same deck. Locating the called
+    name by scanning LEFT-to-RIGHT stopped at that node, sliced the instance to
+    two nets and dropped the VREF pin — the same silence the pin work exists to
+    remove, reintroduced by the locator itself. Scan from the right, skip `k=v`
+    params, and clamp the slice to the declared pin count."""
+    deck = (
+        '* colliding names\n'
+        '.subckt VREF p n\n'
+        'Rv p n 1k\n'
+        '.ends\n'
+        '.subckt ADC ain aout vref\n'
+        'Ca ain aout 1u\n'
+        '.ends\n'
+        'X1 ain aout VREF ADC\n'
+        'R1 VREF 0 10k\n'
+        'V1 ain 0 1\n'
+        '.end\n'
+    )
+    x1 = next(e for e in schematic.parse_elements(deck) if e.ref == 'X1')
+    assert x1.nodes == ['ain', 'aout', 'VREF'], x1
+    graph = schematic.build_graph(deck, {'components': {}})
+    assert 'VREF' in {w.nodes[0] for w in graph['wires']}, 'the ADC lost its reference pin'
+    comp = next(c for c in graph['components'] if c.ref == 'X1')
+    assert len(comp.pins()) == 3
+
+
+def test_a_short_call_on_a_wider_block_invents_no_net_from_the_name():
+    """The clamp matters: 2 supplied nodes for a 3-pin block must not pull the
+    block's own name into the node list to make the count."""
+    deck = '* short\n.subckt FOO a b c\n.ends\nX1 a b FOO gain=10\nR2 b 0 1\n.end\n'
+    x1 = next(e for e in schematic.parse_elements(deck) if e.ref == 'X1')
+    assert x1.nodes == ['a', 'b'], x1
+    assert 'gain=10' not in x1.nodes
+
+
+def test_the_switch_class_carries_its_control_nets_and_coupling_draws_no_part():
+    """Two named classes the pin work still got wrong. `Sxxx N+ N- NC+ NC- MODEL`
+    is a FOUR-net device — sliced to two, the control pair joined nothing, and
+    `Kxxx L1 L2 0.9` is mutual coupling whose tokens are REFDES: treating it as an
+    element invented two nets called L1/L2, drew a two-terminal part between them
+    and joined them with a wire that exists in no circuit. The deck line is what
+    the simulator reads, so dropping it from the drawing loses nothing."""
+    deck = (
+        '* switch + coupling\n'
+        'S1 a b c d SWMOD\n'
+        'R1 a b 1k\n'
+        'R2 c d 1k\n'
+        'K1 L1 L2 0.9\n'
+        'L1 in mid 1u\n'
+        'L2 mid out 1u\n'
+        'V1 in 0 5\n'
+        '.end\n'
+    )
+    els = schematic.parse_elements(deck)
+    s1 = next(e for e in els if e.ref == 'S1')
+    assert s1.nodes == ['a', 'b', 'c', 'd'], s1
+    assert not any(e.ref == 'K1' for e in els), 'a coupling line must not be an element'
+    graph = schematic.build_graph(deck, {'components': {}})
+    assert not any(c.ref == 'K1' for c in graph['components'])
+    assert 'L1' not in graph['nodes'] and 'L2' not in graph['nodes'], graph['nodes']
+    wired = {w.nodes[0] for w in graph['wires']}
+    assert {'a', 'b', 'c', 'd'} <= wired, f'control nets unwired: {sorted({"a","b","c","d"} - wired)}'
+    # `W` is current-controlled: its third token names a voltmeter, not a net.
+    w_line = next(e for e in schematic.parse_elements('* w\nW1 x y Vswitch WMOD\nR3 x y 1\n.end\n'))
+    assert w_line.nodes == ['x', 'y'], w_line
+
+
+def test_the_fet_family_gets_the_tall_row_spacing():
+    """Auto-layout reserves extra room for three-terminal silicon so the current
+    annotation does not print over the next part. The list was a literal pair of
+    kind names, so the two FETs added by this batch (`jfet`, `mesfet`) were
+    treated as 2-terminal and their labels collided — the same class of miss as
+    the drawing branch, in the layout instead."""
+    def spread(kind: str, nodes: list[str]) -> float:
+        els = [
+            schematic.Element(ref=f'{kind[0].upper()}{i}', kind=kind, nodes=nodes, value='M')
+            for i in (1, 2, 3)
+        ]
+        rows = [p['row'] for p in schematic.auto_layout(els).values()]
+        return max(rows) - min(rows)
+
+    narrow = spread('resistor', ['a', 'b'])
+    for kind, nodes in (
+        ('transistor', ['c', 'b', 'e']),
+        ('mosfet', ['d', 'g', 's']),
+        ('jfet', ['d', 'g', 's']),
+        ('mesfet', ['d', 'g', 's', 'b']),
+    ):
+        wide = spread(kind, nodes)
+        assert wide > narrow, f'{kind} spaced like a 2-terminal part: {wide} vs {narrow}'

@@ -7,7 +7,8 @@
 
 import { useState } from 'react';
 import { LineChart, History, Image, Shield, Activity, type LucideIcon } from 'lucide-react';
-import { settingsTabPanelId, SettingsTabs } from '@/components/settings/SettingsTabs';
+import { SettingsTabs } from '@/components/settings/SettingsTabs';
+import { settingsTabPanelId } from '@/components/settings/settingsTabIds';
 import { ObservabilityOverview } from './ObservabilityOverview';
 import { AuditTimeline } from './AuditTimeline';
 import { RollbackHistory } from './RollbackHistory';

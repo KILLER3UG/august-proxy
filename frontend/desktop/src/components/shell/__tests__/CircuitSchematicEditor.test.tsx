@@ -139,6 +139,29 @@ describe('CircuitSchematicEditor — FET families draw from their own pins', () 
     expect(svg).not.toContain('<path'); // no collector arrow on a JFET
   });
 
+  it('aims the extra leads at the body when the part is rotated', async () => {
+    /* rot=90° swaps the pin axes, so `(mid, y0)` — the midpoint the horizontal
+     * layout implies — is a PIN of a vertical part. Stubs drawn toward it aimed
+     * at another pin instead of the body, and the live canvas diverged from the
+     * artifact the backend exports. The mean of all pins is rotation-invariant. */
+    readSchematic.mockReset().mockResolvedValue({
+      ...fetGraph,
+      components: [
+        {
+          ref: 'B9', kind: 'mesfet', nodes: ['bd', 'bg', 'bs', 'bb'], value: 'Bmod',
+          col: 4, row: 4, rot: 1,
+          pins: [pin(90, 100), pin(75, 120), pin(110, 120), pin(95, 140)],
+        },
+      ],
+    });
+    render(<CircuitSchematicEditor sessionId="s1" netlistPath="amp.cir" />);
+    await waitFor(() => expect(screen.getByTestId('schematic-part-B9')).toBeInTheDocument());
+    const svg = symbolOf('B9');
+    // mean of the four pins = (92.5, 120) — the body sits there, not on a pin.
+    expect(svg).toContain('<circle cx="92.5" cy="120" r="14"');
+    expect(svg).toMatch(/<line x1="95" y1="140" x2="9[0-4]" y2="1[23][0-9]"/);
+  });
+
   it('draws a lead for the MESFET bulk pin so its wire lands on something', async () => {
     render(<CircuitSchematicEditor sessionId="s1" netlistPath="amp.cir" />);
     await waitFor(() => expect(screen.getByTestId('schematic-part-B1')).toBeInTheDocument());

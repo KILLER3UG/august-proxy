@@ -94,6 +94,11 @@ function symbolSvg(c: SchematicComponent): string {
   const { 0: x1, 1: y1 } = p1;
   const half = 8;
   const mid = (x0 + x1) / 2;
+  // Body centre for the lead stubs: the mean of ALL the pins, which is the
+  // layout origin for every kind and survives rot 90° — `(mid, y0)` is pin 0 of
+  // a vertical part, so stubs drawn toward it aimed at a pin instead of the
+  // body and diverged from the artifact the backend exports.
+  const { x: bodyCx, y: bodyCy } = pinMean(c);
   /** Leads for the pins this symbol's body does not connect to. A 3-pin `X`
    *  instance or a 5-node unknown part is generated one pin per node on the
    *  backend, and a wire that lands beside a body drawn between two pins reads
@@ -143,7 +148,7 @@ function symbolSvg(c: SchematicComponent): string {
       return `<circle cx="${mid}" cy="${y0}" r="${r}" fill="none" stroke="${STROKE}" stroke-width="2"/>${inner}${gnd}`;
     }
     case 'subckt':
-      return `<rect x="${mid - Math.abs(x1 - x0) * 0.32}" y="${y0 - 12}" width="${Math.abs(x1 - x0) * 0.64}" height="24" fill="none" stroke="${STROKE}" stroke-width="2" rx="3"/>` + extraLeads(mid, y0, 2, 10);
+      return `<rect x="${mid - Math.abs(x1 - x0) * 0.32}" y="${y0 - 12}" width="${Math.abs(x1 - x0) * 0.64}" height="24" fill="none" stroke="${STROKE}" stroke-width="2" rx="3"/>` + extraLeads(bodyCx, bodyCy, 2, 10);
     case 'transistor':
     case 'mosfet':
     case 'jfet':
@@ -193,7 +198,7 @@ function symbolSvg(c: SchematicComponent): string {
       ].join('');
     }
     default:
-      return `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="${STROKE}" stroke-width="2"/><rect x="${mid - 10}" y="${y0 - 8}" width="20" height="16" fill="none" stroke="${STROKE}" stroke-width="1.5" rx="2"/>` + extraLeads(mid, y0, 2, 10);
+      return `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="${STROKE}" stroke-width="2"/><rect x="${mid - 10}" y="${y0 - 8}" width="20" height="16" fill="none" stroke="${STROKE}" stroke-width="1.5" rx="2"/>` + extraLeads(bodyCx, bodyCy, 2, 10);
   }
 }
 

@@ -129,14 +129,27 @@ _ELEMENT_KINDS = {
     'J': 'jfet', 'B': 'mesfet',
     'X': 'subckt', 'S': 'switch', 'W': 'switch', 'K': 'coupled',
 }
-# Node count per device class (same table circuit_tools lints with).
+# Node count per device class. `S` is the voltage-controlled switch
+# `Sxxx N+ N- NC+ NC- MODEL`: four nets, two switched and two control. The
+# linter's copy (``circuit_tools._ELEMENT_KINDS``) still slices switches to two,
+# so these tables are NOT identical — the extra pair here exists because a
+# dropped net is a wire the schematic will never show, which is a drawing bug,
+# while the linter only reads the first two to report a value.
+# W (current-controlled) stays 2: its third token names a voltmeter, not a net.
 # KNOWN LIMIT, stated rather than left to be rediscovered: letters outside this
 # table are sliced to two nodes, so an `.lib`-defined `X` (no `.subckt` in this
 # deck to count pins from) and the 4-terminal E/G/F behavioural and MESFET forms
 # lose their extra nets at PARSE time — before the pin guarantee below ever sees
-# them. Widening this table means widening the linter's copy too; `pin_offsets`
-# already handles any count the parser produces.
-_NODE_COUNT = {'Q': 3, 'J': 3, 'M': 3, 'B': 4}
+# them. `pin_offsets` already handles any count the parser produces.
+_NODE_COUNT = {'Q': 3, 'J': 3, 'M': 3, 'B': 4, 'S': 4}
+
+# Not drawable: `Kxxx L1 L2 0.9` declares mutual coupling BETWEEN two inductors.
+# Its tokens are refdes, not nets, so treating it as an element invented two nets
+# named `L1`/`L2`, drew a two-terminal part between them, and joined them with a
+# wire that exists in no circuit. The coupling still reaches the simulator — the
+# line stays in the deck text, which is the source of truth — it just has no
+# symbol here.
+_NON_ELEMENT_LETTERS = {'K'}
 
 
 @dataclass
@@ -202,15 +215,26 @@ def parse_elements(deck_text: str) -> list[Element]:
         toks = rest.split()
         if len(toks) < 2:
             continue
+        if letter.upper() in _NON_ELEMENT_LETTERS:
+            continue
         kind = _ELEMENT_KINDS.get(letter.upper(), 'part')
         n = _NODE_COUNT.get(letter.upper(), 2)
         if letter.upper() == 'X':
-            # The block's own pin count wins, found by locating its name in the
-            # line: everything before the name is a node, everything after is
-            # the name plus value/params.
-            for i, tok in enumerate(toks):
-                if i >= 2 and tok.strip('[]').upper() in subckt_pins:
-                    n = i
+            # The block's own pin count wins. Find its name scanning from the
+            # RIGHT, skipping `k=v` params: a node may legitimately be named
+            # like another subckt (`X1 ain aout VREF ADC`), and a left-to-right
+            # scan stopped at that node, truncated the call, and dropped the
+            # VREF pin — the same silence this file exists to remove. The slice
+            # is clamped to the declared pin count so a short call cannot invent
+            # a net from the name itself, and a block defined in a `.lib` stays
+            # at the 2-node default because nothing here can count its pins.
+            for i in range(len(toks) - 1, 1, -1):
+                tok = toks[i].strip('[]')
+                if '=' in tok:
+                    continue
+                declared = subckt_pins.get(tok.upper())
+                if declared:
+                    n = min(i, declared)
                     break
         nodes = [t.strip('[]') for t in toks[:n]]
         tail = toks[n:]
@@ -312,7 +336,7 @@ def auto_layout(elements: list[Element]) -> dict[str, dict[str, float]]:
         for slot, ref in enumerate(refs_in_col):
             kind = by_ref[ref].kind
             # Tall parts (3-pin devices) need more room than a 2-terminal one.
-            tall = kind in ('transistor', 'mosfet')
+            tall = kind in _FET_KINDS
             layout[ref] = {
                 'col': col_index * _COL_STEP,
                 'row': (slot - (span - 1) / 2) * (_ROW_STEP + (2 if tall else 0)),

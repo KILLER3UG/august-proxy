@@ -225,7 +225,7 @@ export function GeneralSection() {
                 if (on) void OsNotifyService.ensurePermission();
               }}
               label="Notify when jobs complete"
-              description="Also available from the background task tray in the status bar."
+              description="Also available from the Jobs panel in the right drawer."
             />
           </div>
         </SettingsCard>

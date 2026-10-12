@@ -1,7 +1,8 @@
 import { render } from '@testing-library/react';
 import katex from 'katex';
 import { describe, it, expect, vi } from 'vitest';
-import { Markdown, demoteMarkdownHeadings } from '../ChatMarkdown';
+import { Markdown } from '../ChatMarkdown';
+import { demoteMarkdownHeadings } from '@/lib/markdownHeadings';
 
 describe('ChatMarkdown Component', () => {
   it('does not paint an incomplete trailing table row while streaming (live=true)', () => {
@@ -308,6 +309,36 @@ describe('demoteMarkdownHeadings — an authored document inside a dialog', () =
     expect(out).not.toContain('## the comment line');
   });
 
+  it('keeps fence state per marker character and length, like CommonMark', () => {
+    /* A single "in a fence" boolean got both of these wrong, and BOTH failure
+     * directions were reachable: a ``` line inside a ~~~ block read as the fence
+     * ending, so a shell comment in code was rewritten to `##` (content
+     * corrupted); a ~~~ line inside a ``` block read as a fence starting, so the
+     * heading after it was skipped and shipped into the dialog as a real h1. */
+    const tildeHoldsBackticks = ['~~~', '```', '# not a heading', '```', '~~~', '', '# Real heading'].join('\n');
+    const a = demoteMarkdownHeadings(tildeHoldsBackticks);
+    expect(a).toContain('# not a heading'); // still code, not rewritten
+    expect(a).not.toContain('## not a heading');
+    expect(a).toContain('## Real heading'); // and the real one IS shifted
+
+    const backtickHoldsTildes = ['```', '~~~', '```', '', '# After the fence'].join('\n');
+    const b = demoteMarkdownHeadings(backtickHoldsTildes);
+    expect(b).toContain('## After the fence');
+    expect(b).not.toContain('# After the fence\n');
+  });
+
+  it('folds a setext h1 into an ATX h2', () => {
+    // marked parses `Title` + `=====` as <h1>, so an ATX-only shift let a level-1
+    // heading into the dialog from any document written in the other form.
+    expect(demoteMarkdownHeadings('Release Notes\n=============\n\nbody')).toBe('## Release Notes\n\nbody');
+    // A `-` underline is already level 2 and is left alone — rewriting it would
+    // collide with thematic breaks (`---`) for no a11y gain.
+    expect(demoteMarkdownHeadings('Sub\n---\n')).toBe('Sub\n---\n');
+    // Not a setext underline after a list, quote, or inside a fence.
+    expect(demoteMarkdownHeadings('- item\n===\n')).toBe('- item\n===\n');
+    expect(demoteMarkdownHeadings('```\nTitle\n===\n```')).toBe('```\nTitle\n===\n```');
+  });
+
   it('renders the shifted document when the flag is set', () => {
     const { container } = render(<Markdown content={'# Title\nbody'} demoteHeadings />);
     expect(container.querySelector('h1')).toBeNull();
@@ -316,5 +347,13 @@ describe('demoteMarkdownHeadings — an authored document inside a dialog', () =
     // a message IS the top of its own tree).
     const plain = render(<Markdown content={'# Title\nbody'} />);
     expect(plain.container.querySelector('h1')?.textContent).toContain('Title');
+  });
+
+  it('leaves no h1 in either markdown form once shifted', () => {
+    for (const doc of ['# ATX title', 'Setext title\n===============']) {
+      const { container } = render(<Markdown content={doc} demoteHeadings />);
+      expect(container.querySelector('h1')).toBeNull();
+      expect(container.querySelector('h2')).not.toBeNull();
+    }
   });
 });

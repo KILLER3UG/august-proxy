@@ -506,3 +506,63 @@ describe('reconcileSessionsFromBackend — keep drafts, stable ids', () => {
     expect(unboundDrafts.length).toBe(2);
   });
 });
+
+/* The workbench-metadata merge collapses a standalone `wb_*` row into the chat
+ * that owns it (`preferSessionRow` keeps the LOCAL id and inherits the wb id as
+ * the survivor's workbench handle). The collapsed row leaves its composer-draft
+ * key behind, and this path may clear only a blank one: `/c/wb_X` is reachable
+ * as a route in its own right — SSE creates that row with the wb id AS its id,
+ * and ConversationSearchModal navigates to a raw `hit.sessionId` — so a draft
+ * keyed on the dropped id can be the text the user is typing right now. */
+describe('updateSessionWorkbenchMetadata — draft storage on merge', () => {
+  const draftKey = (id: string) => `august_composer_draft_${id}`;
+  const row = (over: Partial<Session>): Session =>
+    ({
+      id: 'sess_A',
+      title: 'A',
+      startedAt: new Date().toISOString(),
+      messageCount: 1,
+      isArchived: false,
+      folderId: null,
+      workspacePath: null,
+      ...over,
+    }) as Session;
+
+  beforeEach(() => {
+    localStorage.clear();
+    $sessions.set([]);
+  });
+
+  it('keeps the unsent words of the row that collapses away', () => {
+    $sessions.set([row({ id: 'sess_A' }), row({ id: 'wb_X', title: 'New chat', messageCount: 0 })]);
+    localStorage.setItem(draftKey('wb_X'), 'the thing I was typing');
+
+    updateSessionWorkbenchMetadata('sess_A', { workbenchSessionId: 'wb_X' });
+
+    expect(localStorage.getItem(draftKey('wb_X'))).toBe('the thing I was typing');
+    const rows = $sessions.get();
+    expect(rows.map((s) => s.id)).toEqual(['sess_A']);
+    expect(rows[0].workbenchSessionId).toBe('wb_X');
+  });
+
+  it('clears a blank draft so it cannot resurrect a ghost row', () => {
+    // `persistComposerDraft` writes '' when the composer is emptied, so a
+    // whitespace-only residue is storage the sweep would have to keep alive.
+    $sessions.set([row({ id: 'sess_A' }), row({ id: 'wb_X', title: 'New chat', messageCount: 0 })]);
+    localStorage.setItem(draftKey('wb_X'), '   ');
+
+    updateSessionWorkbenchMetadata('sess_A', { workbenchSessionId: 'wb_X' });
+
+    expect(localStorage.getItem(draftKey('wb_X'))).toBeNull();
+  });
+
+  it('never clears the draft of the row that survives', () => {
+    $sessions.set([row({ id: 'sess_A', workbenchSessionId: 'wb_X' }), row({ id: 'wb_X', title: 'New chat', messageCount: 0 })]);
+    localStorage.setItem(draftKey('sess_A'), 'still typing in the surviving chat');
+
+    updateSessionWorkbenchMetadata('wb_X', { workbenchAgentId: 'arena' });
+
+    expect($sessions.get()).toHaveLength(1);
+    expect(localStorage.getItem(draftKey('sess_A'))).toBe('still typing in the surviving chat');
+  });
+});

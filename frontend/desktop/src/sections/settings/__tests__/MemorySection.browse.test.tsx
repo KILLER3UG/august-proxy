@@ -64,9 +64,10 @@ const FACT_ROWS = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // api.get is awaited by the section, so the fake must answer with a Promise —
-  // `async` here is the contract, not a stray await.
-  getMock.mockImplementation(async (url: string) => {
+  /* api.get is awaited by the section, so the fake has to answer with a Promise.
+   * Returning one explicitly — rather than marking the selector `async` with
+   * nothing to await — is what the require-await rule was asking for. */
+  const pickBrowseResponse = (url: string): unknown => {
     if (url.startsWith('/api/brain/stores/facts')) {
       return { store: 'facts', rows: FACT_ROWS, total: FACT_ROWS.length, limit: 200, offset: 0 };
     }
@@ -96,7 +97,11 @@ beforeEach(() => {
     if (url.startsWith('/api/brain/integrity')) return { ok: true, exists: true };
     if (url.startsWith('/api/brain/backups')) return { backups: [] };
     return {};
-  });
+  };
+
+  getMock.mockImplementation(
+    (url: string): Promise<unknown> => Promise.resolve(pickBrowseResponse(url)),
+  );
 });
 
 function renderPage() {

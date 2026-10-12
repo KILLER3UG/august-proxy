@@ -393,6 +393,49 @@ class TestRetireDecisionIsDecidedOnce:
         assert str(conn().execute(
             'SELECT status FROM proposals WHERE id = ?', (pid,)).fetchone()['status']) == 'approved'
 
+    def test_a_failing_fact_write_rolls_the_claim_back(self, store, monkeypatch):
+        """The claim is written on the thread-local connection BEFORE the fact
+        UPDATE and committed with it. If the UPDATE raises, an uncommitted
+        'approved' survives on that connection — and the NEXT unrelated write on
+        the same thread lands it, leaving a proposal stamped approved over a fact
+        that was never retired and that can never be re-decided (the claim is
+        spent). The flow must roll the claim back with the statement that failed.
+        """
+        import sqlite3
+
+        from app.services.memory_conn import conn as real_conn
+        from app.services.memory_store import consolidation
+
+        pid = self._file(store, 'user:raise')
+
+        class _Boom:
+            def __init__(self, c):
+                self._c = c
+
+            def execute(self, sql, *a, **k):
+                if str(sql).lstrip().startswith('UPDATE facts'):
+                    raise sqlite3.OperationalError('disk I/O error (simulated)')
+                return self._c.execute(sql, *a, **k)
+
+            def __getattr__(self, name):
+                return getattr(self._c, name)
+
+        monkeypatch.setattr(consolidation, '_conn', lambda: _Boom(real_conn()))
+        res = consolidation.apply_retire_decision(pid, approve=True)
+        assert res['ok'] is False, res
+        assert 'simulated' in str(res['error'])
+
+        monkeypatch.undo()
+        # The proposal is decidable again — the spent claim went back with it.
+        status = real_conn().execute(
+            'SELECT status FROM proposals WHERE id = ?', (pid,)
+        ).fetchone()['status']
+        assert str(status) == 'pending', f'the failed flow left the claim landed: {status}'
+        assert str(real_conn().execute(
+            "SELECT status FROM facts WHERE fact_key = 'user:raise'").fetchone()['status']) == 'active'
+        again = consolidation.apply_retire_decision(pid, approve=True)
+        assert again['ok'] is True and again['retired'] is True
+
     def test_a_stale_approval_closes_as_rejected_with_the_fact_recalled(self, store):
         """The one transition that is still allowed from a claim: correcting
         OUR OWN un-committed claim when the evidence turns out stale. Both

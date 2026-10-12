@@ -12,7 +12,8 @@ import {
   Activity,
 } from 'lucide-react';
 import { useConversationInspector } from '@/sections/settings/useConversationInspector';
-import { settingsTabPanelId, SettingsTabs } from '@/components/settings/SettingsTabs';
+import { SettingsTabs } from '@/components/settings/SettingsTabs';
+import { settingsTabPanelId } from '@/components/settings/settingsTabIds';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { WorkspaceStatCard } from '@/components/workspace/WorkspaceStatCard';

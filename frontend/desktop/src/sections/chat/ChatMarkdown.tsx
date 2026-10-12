@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { marked, type Tokens } from 'marked';
 import katex from 'katex';
 import { highlightCode } from '@/lib/code-highlight';
+import { demoteMarkdownHeadings } from '@/lib/markdownHeadings';
 import { safeExternalHref } from '@/lib/safe-href';
 
 const COPY_PLACEHOLDER_ATTR = 'data-copy-placeholder';
@@ -112,7 +113,6 @@ function renderCode(token: Tokens.Code): string {
  * asserts the budget is actually respected, and a test against a COPY of this
  * class would keep passing after the real one was edited.
  */
-// eslint-disable-next-line react-refresh/only-export-components
 export class SizedCache<K, V> {
   private map = new Map<K, V>();
   private total = 0;
@@ -561,9 +561,10 @@ export function Markdown({
   variant?: 'default' | 'assistant';
   /** When true (active stream), skip highlight.js so code DOM isn't rewritten every flush. */
   live?: boolean;
-  /** Render an authored document INSIDE a container that already owns the h1
-   *  (the settings dialog). Shifts ATX headings down a level; see
-   *  demoteMarkdownHeadings. */
+  /** Render an authored document as CONTENT inside a container (the settings
+   *  dialog) whose section headings are all h2, so a level-1 heading in the
+   *  body would be the only h1 in that subtree. Shifts headings down a level —
+   *  fences included; see `@/lib/markdownHeadings`. */
   demoteHeadings?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -659,33 +660,6 @@ export function Markdown({
         )}
     </div>
   );
-}
-
-/** Shift every ATX heading one level down (`# Title` → `## Title`), capped at
- *  h6, and never inside a fenced code block.
- *
- *  A drafted skill body, a memory file and a release note are each a whole
- *  document that legitimately starts at `#` — but the settings dialog renders
- *  them as CONTENT under a titlebar that owns the only h1. A level-1 heading
- *  inside the dialog is the exact §4.4 defect the section sweep closed for
- *  hand-written JSX, re-introduced through markdown. Code fences are skipped so
- *  a shell comment (`# run ngspice -b deck.cir`) is not rewritten. Setext form
- *  (`Title` + `=====`) is not shifted: the authoring spec emits ATX only.
- */
-// eslint-disable-next-line react-refresh/only-export-components
-export function demoteMarkdownHeadings(src: string): string {
-  let inFence = false;
-  return src
-    .split('\n')
-    .map((line) => {
-      if (/^\s{0,3}(```|~~~)/.test(line)) {
-        inFence = !inFence;
-        return line;
-      }
-      if (inFence) return line;
-      return line.replace(/^(\s{0,3})(#{1,5})(?=\s)/, (_all, ws: string, hashes: string) => `${ws}${hashes}#`);
-    })
-    .join('\n');
 }
 
 // eslint-disable-next-line react-refresh/only-export-components

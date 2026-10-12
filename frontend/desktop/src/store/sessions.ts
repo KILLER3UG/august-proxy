@@ -24,7 +24,12 @@ import {
   saveSessionsToStorage,
 } from './sessions/storage';
 import { isSessionIdTombstoned, tombstoneSessionId } from './sessions/tombstone';
-import { clearComposerDraft, legacyMessagesStorageKey, messagesStorageKey } from '@/sections/chat/message-storage';
+import {
+  clearComposerDraft,
+  legacyMessagesStorageKey,
+  loadComposerDraft,
+  messagesStorageKey,
+} from '@/sections/chat/message-storage';
 import type { Folder, Session, SessionStatus } from './sessions/types';
 
 export type { Session, SessionStatus, Folder } from './sessions/types';
@@ -140,6 +145,22 @@ export function createSession(
   return newSess;
 }
 
+/** Clear the composer-draft storage of rows that were just dropped from the
+ *  list, and ONLY when the draft is blank.
+ *
+ *  Blank drafts are the residue `persistComposerDraft` leaves when a composer is
+ *  emptied without ever removing the key; words are the user's and are never
+ *  deleted by a merge. `kept` is the surviving list — a dropped id that some
+ *  surviving row still names as its workbench handle is skipped outright. */
+function clearBlankDraftsFor(dropped: Session[], kept: Session[]): void {
+  const keptIds = new Set(kept.map((s) => s.id));
+  for (const s of dropped) {
+    if (keptIds.has(s.id)) continue;
+    if (loadComposerDraft(s.id).trim()) continue;
+    clearComposerDraft(s.id);
+  }
+}
+
 /** One-shot heal for corrupt localStorage pairs (sess_* + wb_* duplicates). */
 export function healDuplicateSessions(): void {
   const current = useSessionsStore.getState().sessions;
@@ -154,6 +175,10 @@ export function healDuplicateSessions(): void {
       );
     if (same) return;
   }
+  clearBlankDraftsFor(
+    current.filter((s) => !healed.some((h) => h.id === s.id)),
+    healed,
+  );
   useSessionsStore.setState({ sessions: healed });
   saveSessionsToStorage(healed);
 }
@@ -310,13 +335,14 @@ export function updateSessionWorkbenchMetadata(
   // SSE may have already inserted a standalone wb_* row for the same
   // workbench session — collapse so the sidebar never shows two entries.
   const deduped = dedupeSessions(updated);
-  // The row that collapses away takes its composer draft with it, or the words
-  // survive under an id no route renders — unreachable storage the ghost sweep
-  // (which now keeps drafted rows) would never see. Same key door as the sweep.
-  const kept = new Set(deduped.map((s) => s.id));
-  for (const dropped of updated) {
-    if (!kept.has(dropped.id)) clearComposerDraft(dropped.id);
-  }
+  // A row collapsing away leaves its draft key behind, and only a BLANK one may
+  // be cleared. `dedupeSessions` keeps the local id and inherits the dropped
+  // `wb_*` id as the survivor's workbench handle, while `/c/wb_X` is a reachable
+  // route in its own right (SSE creates that row with the wb id AS its id, and
+  // ConversationSearchModal navigates to a raw `hit.sessionId`) — so the text
+  // keyed on the dropped id can be words the user is typing now. Deleting them
+  // here would be the same defect the launch sweep was fixed for.
+  clearBlankDraftsFor(updated, deduped);
   useSessionsStore.setState({ sessions: deduped });
   saveSessionsToStorage(deduped);
 }

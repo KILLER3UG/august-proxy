@@ -4,7 +4,8 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Bot, CalendarClock, TerminalSquare } from 'lucide-react';
-import { settingsTabPanelId, SettingsTabs } from '@/components/settings/SettingsTabs';
+import { SettingsTabs } from '@/components/settings/SettingsTabs';
+import { settingsTabPanelId } from '@/components/settings/settingsTabIds';
 import { Agents } from '@/sections/agents/Agents';
 import { Automations } from '@/sections/automations/Automations';
 import { Terminal } from '@/sections/terminal/Terminal';
