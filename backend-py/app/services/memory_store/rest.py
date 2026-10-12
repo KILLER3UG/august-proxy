@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Sequence
 from typing import cast
 
@@ -333,15 +334,41 @@ def list_proposals(sessionId: str, status: str = '') -> list[ProposalDict]:
     return [cast(ProposalDict, _row_as_wire(r)) for r in rows]
 
 
-def decide_proposal(proposalId: int, status: str, decidedBy: str = '') -> bool:
-    """Decide (approve/reject) a proposal."""
-    conn = _conn()
+def claim_proposal_decision(
+    conn: sqlite3.Connection,
+    proposalId: int,
+    status: str,
+    decidedBy: str = '',
+    from_status: str | None = 'pending',
+) -> bool:
+    """Move a proposal out of `from_status`, on the caller's connection, WITHOUT
+    committing.
+
+    This is the guard, not a convenience: the UPDATE matches only rows still in
+    `from_status`, so a proposal is decided once. A second approver, a retry
+    after a crash, or an approval of something already rejected, gets False and
+    changes nothing. `decide_proposal` below is the one-statement version; a
+    flow that also writes facts calls this one so the claim and the write share
+    a transaction. Pass `from_status=None` for an unconditional rewrite.
+    """
+    guard = '' if from_status is None else ' AND status = ?'
+    params: list[object] = [status, decidedBy, proposalId]
+    if from_status is not None:
+        params.append(from_status)
     cursor = conn.execute(
-        "UPDATE proposals SET status = ?, decided_at = datetime('now'), decided_by = ? WHERE id = ?",
-        (status, decidedBy, proposalId),
+        f"UPDATE proposals SET status = ?, decided_at = datetime('now'), decided_by = ? "
+        f'WHERE id = ?{guard}',
+        tuple(params),
     )
-    brain_commit(conn)
     return cursor.rowcount > 0
+
+
+def decide_proposal(proposalId: int, status: str, decidedBy: str = '') -> bool:
+    """Decide (approve/reject) a proposal. False means it was already decided."""
+    conn = _conn()
+    ok = claim_proposal_decision(conn, proposalId, status, decidedBy)
+    brain_commit(conn)
+    return ok
 
 
 def record_lifecycle(sessionId: str, eventType: str, detail: JsonValue = None) -> int:

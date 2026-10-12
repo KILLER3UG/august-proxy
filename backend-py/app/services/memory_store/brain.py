@@ -850,8 +850,25 @@ def brain_update_row(store: str, row_id: object, patch: dict[str, object]) -> di
     # Consolidation's proposal flow stays the only writer of 'retired' /
     # 'superseded' — the settings door must never park a row the model is
     # using, even if a future UI bug asks it to.
-    if resolved == 'facts' and str(patch.get('status') or '').strip() not in ('', 'active'):
-        return {'ok': False, 'error': "status may only be set to 'active' (retirement is consolidation's decision)"}
+    if resolved == 'facts' and 'status' in patch:
+        # Normalise BEFORE the check and write the normalised value, so the
+        # string tested is the string stored. Stripping only inside the guard
+        # let {'status': ' active '} through the door and into the row, where
+        # both `_visibility_where` (`status = 'active'`) and the UI badge miss
+        # it: the toast said "Entry restored — it is recalled again" while the
+        # fact stayed parked. Lowercasing closes the same hole for 'RETIRED',
+        # which now falls into the refusal instead of storing a fourth value.
+        wanted = str(patch.get('status') or '').strip().lower()
+        if wanted not in ('', 'active'):
+            return {'ok': False, 'error': "status may only be set to 'active' (retirement is consolidation's decision)"}
+        if not wanted:
+            # An empty field is "leave it alone", not "store ''" — '' is not
+            # 'active' and would hide the row the same way 'retired' does. The
+            # loop below then finds no writable field and answers as it already
+            # does for an empty patch.
+            patch = {k: v for k, v in (patch or {}).items() if k != 'status'}
+        else:
+            patch = {**patch, 'status': wanted}
     allowed = _ROW_EDIT_FIELDS.get(resolved)
     if allowed is None or resolved not in _BRAINStores:
         return {'ok': False, 'error': f"store '{store}' does not support per-entry edit"}

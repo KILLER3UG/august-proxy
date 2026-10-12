@@ -296,3 +296,119 @@ class TestRestoreRetired:
             "SELECT status FROM facts WHERE fact_key = 'user:no-retire'"
         ).fetchone()['status']
         assert status != 'retired'
+
+    def test_the_value_the_guard_tests_is_the_value_stored(self, store):
+        """The gate stripped for the check but wrote the raw patch, so
+        `{'status': ' active '}` passed the door and landed as `' active '` —
+        which `_visibility_where` (`status = 'active'`) and the UI badge both
+        miss. The user got "Entry restored — it is recalled again" over a fact
+        that stayed parked. Casing was the same hole: `'RETIRED'` used to pass
+        through as a fourth value nobody reads."""
+        from app.services.memory_conn import conn
+        from app.services.memory_store import brain as brain_mod
+        from app.services.memory_store.rest import _visibility_where
+
+        store.save_fact('user:padded', {'fact': 'prefers aisle seats'}, title='Aisle')
+        conn().execute("UPDATE facts SET status = 'retired' WHERE fact_key = 'user:padded'")
+        conn().commit()
+        row_id = conn().execute(
+            "SELECT id FROM facts WHERE fact_key = 'user:padded'").fetchone()['id']
+
+        assert brain_mod.brain_update_row('facts', str(row_id), {'status': ' active '})['ok'] is True
+        stored = conn().execute(
+            "SELECT status FROM facts WHERE fact_key = 'user:padded'").fetchone()['status']
+        assert stored == 'active', f'stored verbatim instead of normalised: {stored!r}'
+        where, _p = _visibility_where('global')
+        assert conn().execute(
+            f"SELECT fact_key FROM facts WHERE fact_key = 'user:padded' AND {where}"
+        ).fetchall(), 'a restored fact must be recallable'
+
+        # 'RETIRED' is the refused direction whether or not it is shouted.
+        refused = brain_mod.brain_update_row('facts', str(row_id), {'status': 'RETIRED'})
+        assert refused['ok'] is False
+        assert conn().execute(
+            "SELECT status FROM facts WHERE fact_key = 'user:padded'").fetchone()['status'] == 'active'
+
+    def test_a_blank_status_field_does_not_hide_the_row(self, store):
+        """`''` passed the old guard (it is in the allowed set) and would have
+        been written — and `status = ''` fails the visibility clause exactly
+        like 'retired' does, so a UI field cleared to empty would park a live
+        fact while reporting success. It now means "leave it alone"."""
+        from app.services.memory_conn import conn
+        from app.services.memory_store import brain as brain_mod
+
+        store.save_fact('user:blank', {'fact': 'prefers dark mode'}, title='Dark')
+        row_id = conn().execute(
+            "SELECT id FROM facts WHERE fact_key = 'user:blank'").fetchone()['id']
+        result = brain_mod.brain_update_row('facts', str(row_id), {'status': ''})
+        assert result['ok'] is False, result
+        stored = conn().execute(
+            "SELECT status FROM facts WHERE fact_key = 'user:blank'").fetchone()['status']
+        assert stored == 'active', f'a blank patch wrote {stored!r}'
+
+
+class TestRetireDecisionIsDecidedOnce:
+    """`apply_retire_decision` used to stamp the proposal LAST, unconditionally:
+    a decision was a rewrite, not a transition. So approving a proposal someone
+    had already rejected ran the retire UPDATE anyway, and a crash between the
+    commit and the stamp could leave a retired fact filed under 'rejected'.
+    The decision is now a claim that only fires while the row is pending."""
+
+    def _file(self, store, key: str, title: str = 'Pref') -> int:
+        from app.services.memory_conn import conn
+        from app.services.memory_store import consolidation
+
+        store.save_fact(key, {'fact': 'prefers something durable'}, kind='preference', title=title)
+        _backdate(key, 300)
+        consolidation._retire_stale_memories()
+        return int(
+            conn().execute(
+                "SELECT id FROM proposals WHERE proposal_type = 'retire-fact' "
+                "AND status = 'pending' ORDER BY id DESC LIMIT 1"
+            ).fetchone()['id']
+        )
+
+    def test_rejecting_then_approving_a_proposal_changes_nothing(self, store):
+        from app.services.memory_conn import conn
+        from app.services.memory_store import consolidation
+
+        pid = self._file(store, 'user:twice')
+        assert consolidation.apply_retire_decision(pid, approve=False)['ok'] is True
+        res = consolidation.apply_retire_decision(pid, approve=True)
+        assert res['ok'] is False, f'an already-rejected proposal was re-opened: {res}'
+        assert str(conn().execute(
+            "SELECT status FROM facts WHERE fact_key = 'user:twice'").fetchone()['status']) == 'active'
+        assert str(conn().execute(
+            'SELECT status FROM proposals WHERE id = ?', (pid,)).fetchone()['status']) == 'rejected'
+
+    def test_approving_twice_does_not_re_stamp_the_decision(self, store):
+        from app.services.memory_conn import conn
+        from app.services.memory_store import consolidation
+
+        pid = self._file(store, 'user:double')
+        first = consolidation.apply_retire_decision(pid, approve=True)
+        assert first['ok'] and first['retired']
+        second = consolidation.apply_retire_decision(pid, approve=False)
+        assert second['ok'] is False, 'a reject re-stamped an approval'
+        assert str(conn().execute(
+            'SELECT status FROM proposals WHERE id = ?', (pid,)).fetchone()['status']) == 'approved'
+
+    def test_a_stale_approval_closes_as_rejected_with_the_fact_recalled(self, store):
+        """The one transition that is still allowed from a claim: correcting
+        OUR OWN un-committed claim when the evidence turns out stale. Both
+        halves must land in the same COMMIT, so no crash leaves 'approved' over
+        an un-retired fact or 'rejected' over a retired one."""
+        from app.services.memory_conn import conn
+        from app.services.memory_store import consolidation, touch_fact_usage
+
+        pid = self._file(store, 'user:stale-claim')
+        touch_fact_usage(['user:stale-claim'])
+        res = consolidation.apply_retire_decision(pid, approve=True)
+        assert res['decision'] == 'rejected' and res['retired'] is False
+        assert str(conn().execute(
+            "SELECT status FROM facts WHERE fact_key = 'user:stale-claim'").fetchone()['status']) == 'active'
+        assert str(conn().execute(
+            'SELECT status FROM proposals WHERE id = ?', (pid,)).fetchone()['status']) == 'rejected'
+        # And the corrected row is still closed: it cannot be re-opened.
+        assert consolidation.apply_retire_decision(pid, approve=True)['ok'] is False
+

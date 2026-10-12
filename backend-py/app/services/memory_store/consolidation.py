@@ -345,14 +345,20 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
     actionable. Approve → the fact's ``status`` flips to ``'retired'`` (the
     row survives — retrieval excludes it, a later restore is a status flip);
     reject → the proposal closes, the fact stays active. Either way the
-    proposal itself is stamped via ``decide_proposal``.
+    decision is a CLAIM on the proposal row (``claim_proposal_decision``, which
+    fires only while the row is still pending): a proposal decides once, and the
+    claim and the fact write land in one commit.
 
     Both proposal types are decidable: ``retire-fact`` is what the widened scan
     files, and ``retire-preference`` is what it filed before the scan covered
     every kind — those rows may still sit in a user's inbox from an earlier
     release, and a proposal nobody can decide is a stuck one.
     """
-    from app.services.memory_store import decide_proposal, get_proposal
+    from app.services.memory_store import (
+        claim_proposal_decision,
+        decide_proposal,
+        get_proposal,
+    )
 
     prop = get_proposal(proposal_id)
     if prop is None:
@@ -360,10 +366,6 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
     ptype = str(prop.get('proposalType') or prop.get('proposal_type') or '')
     if ptype not in _RETIRE_TYPES:
         return {'ok': False, 'error': f'proposal {proposal_id} is not a memory retirement'}
-    status = 'approved' if approve else 'rejected'
-    if not approve:
-        decide_proposal(proposal_id, status, decidedBy=decidedBy)
-        return {'ok': True, 'decision': status, 'retired': False}
     raw = prop.get('content')
     try:
         data = json.loads(raw) if isinstance(raw, str) else (raw or {})
@@ -371,7 +373,8 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
         data = {}
     key = str(data.get('key') or data.get('fact_key') or '') if isinstance(data, dict) else ''
     if not key:
-        decide_proposal(proposal_id, 'rejected', decidedBy=decidedBy)
+        if not decide_proposal(proposal_id, 'rejected', decidedBy=decidedBy):
+            return {'ok': False, 'error': f'proposal {proposal_id} was already decided; nothing changed'}
         return {'ok': True, 'decision': 'rejected', 'retired': False, 'error': 'proposal missing key'}
     # A proposal is a snapshot, not a standing instruction. It can sit in the
     # inbox while the user quotes or edits the fact, so apply only if it still
@@ -380,7 +383,8 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
     # next consolidation pass can file a fresh proposal if it still qualifies.
     raw_kind = str(data.get('kind') or ('preference' if ptype == 'retire-preference' else ''))
     if raw_kind not in _RETIRE_WINDOWS:
-        decide_proposal(proposal_id, 'rejected', decidedBy=decidedBy)
+        if not decide_proposal(proposal_id, 'rejected', decidedBy=decidedBy):
+            return {'ok': False, 'error': f'proposal {proposal_id} was already decided; nothing changed'}
         return {
             'ok': True,
             'decision': 'rejected',
@@ -393,7 +397,22 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
         days = 45 if raw_kind == PROFILE_FACT_KIND else 180
     days = max(1, min(3650, days))
     last_touch = str(data.get('lastTouch') or '')
+    # `fact_key` is UNIQUE and one key has exactly one home (save_fact M-2 /
+    # Part 26 6.2), so this predicate already names one row — no scope clause
+    # is needed, and adding one would validate a state the schema refuses.
     conn = _conn()
+    if not approve:
+        if not decide_proposal(proposal_id, 'rejected', decidedBy=decidedBy):
+            return {'ok': False, 'error': f'proposal {proposal_id} was already decided; nothing changed'}
+        return {'ok': True, 'decision': 'rejected', 'retired': False}
+    # The claim IS the guard, so take it before touching the fact and never
+    # commit it separately: SQLite serialises writers, so a second approver —
+    # or an approval of a row someone already rejected — matches zero rows and
+    # returns False with the fact left alone. Claiming last (what this used to
+    # do) left a window where the retire landed and the stamp did not, which
+    # reads back as a retired fact under a 'rejected' label.
+    if not claim_proposal_decision(conn, proposal_id, 'approved', decidedBy):
+        return {'ok': False, 'error': f'proposal {proposal_id} was already decided; nothing changed'}
     cur = conn.execute(
         "UPDATE facts SET status = 'retired', updated_at = datetime('now') "
         "WHERE fact_key = ? AND kind = ? AND (status IS NULL OR status = 'active') "
@@ -403,9 +422,15 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
         "AND (? = '' OR COALESCE(NULLIF(last_used_at, ''), NULLIF(updated_at, ''), created_at) = ?)",
         (key, raw_kind, days, last_touch, last_touch),
     )
-    brain_commit(conn)
     if not cur.rowcount:
-        decide_proposal(proposal_id, 'rejected', decidedBy=decidedBy)
+        # Evidence no longer holds. We own the claim, so correct it inside the
+        # same transaction: the proposal closes as rejected, the fact survives
+        # recalled, and one COMMIT makes that pair the only state a crash can
+        # leave behind.
+        claim_proposal_decision(
+            conn, proposal_id, 'rejected', decidedBy, from_status='approved',
+        )
+        brain_commit(conn)
         return {
             'ok': True,
             'decision': 'rejected',
@@ -413,14 +438,14 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
             'key': key,
             'error': 'memory changed after this proposal was filed; it was closed without retiring the fact',
         }
-    decide_proposal(proposal_id, status, decidedBy=decidedBy)
+    brain_commit(conn)
     try:
         from app.services.memory_store.fact_retrieval import invalidate_fact_index
 
         invalidate_fact_index()
     except Exception:
         pass
-    return {'ok': True, 'decision': status, 'retired': bool(cur.rowcount), 'key': key}
+    return {'ok': True, 'decision': 'approved', 'retired': bool(cur.rowcount), 'key': key}
 
 
 def _load_active_facts() -> list[dict[str, Any]]:

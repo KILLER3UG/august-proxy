@@ -46,6 +46,7 @@ from app.services.memory_store.messages import (
 )
 from app.services.memory_store.rest import (
     PROFILE_FACT_KIND,
+    claim_proposal_decision,
     decide_proposal,
     delete_fact,
     derive_fact_title,
@@ -108,6 +109,7 @@ __all__ = [
     'get_proposal',
     'list_proposals',
     'decide_proposal',
+    'claim_proposal_decision',
     'record_lifecycle',
     'list_lifecycle',
     'record_config_audit',
