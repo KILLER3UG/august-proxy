@@ -125,10 +125,10 @@ def _allowlist_denied(
       * scope `allowlist` with a NON-EMPTY list — the real gate: the resolved
         path must sit inside one of those roots, or inside the session's own
         workspace.
-      * scope `allowlist` with an EMPTY list — an unbound session is limited
-        to the user's home directory for reads. A session with a selected
-        workspace keeps that workspace, and folderless writes retain their
-        separate temp-directory gate.
+      * scope `allowlist` with an EMPTY list — an unbound session reads inside
+        the user's home directory OR the system temp directory (the area
+        folderless writes are confined to), and writes only inside temp. A
+        session with a selected workspace keeps that workspace.
 
     The implicit home root preserves useful folderless file access without
     making a fresh install's default allowlist equivalent to unrestricted
@@ -167,7 +167,17 @@ def _allowlist_denied(
 
                 implicit_roots = [Path(tempfile.gettempdir())]
             else:
-                implicit_roots = [Path.home()]
+                # Reads allow the SAME area the write gate sends folderless work
+                # to: a session that writes a file into temp and then tries to
+                # read it back is the ordinary next step, and denying it means
+                # the app can create what it cannot look at. On Linux temp is
+                # outside `~`, so this is not a hypothetical — it is exactly why
+                # 29 tool tests failed on the ubuntu runner once the empty
+                # allowlist stopped being a no-op, while passing on Windows
+                # where temp sits under the home directory.
+                import tempfile
+
+                implicit_roots = [Path.home(), Path(tempfile.gettempdir())]
             if any(is_within_root(resolved, candidate) for candidate in implicit_roots):
                 return None
             configured = [

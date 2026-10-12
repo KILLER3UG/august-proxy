@@ -10,9 +10,10 @@ every file tool still did exactly what it liked.
 
 These tests pin that the setting is enforced and that the default empty
 allowlist remains useful without granting folderless sessions unrestricted
-computer access. Folderless reads use the user's home directory; writes stay
-confined to the system temp directory. Explicit roots and the whole-computer
-setting can widen that scope.
+computer access. Folderless reads cover the folderless AREA: the user's home
+directory plus the system temp directory that folderless writes are confined to
+(reading back what the write gate lets you create is the same policy); paths in
+neither are refused. Explicit roots and the whole-computer setting widen it.
 """
 
 from __future__ import annotations
@@ -226,6 +227,13 @@ class TestFolderlessSessionReadsHomeByDefault:
     def test_unbound_reads_stay_in_home_without_configured_roots(
         self, tmp_path, monkeypatch, _set_security
     ):
+        """An unconfigured folderless read is limited to the folderless area —
+        the user's home PLUS the system temp directory the write gate already
+        uses. The refusal case has to sit outside BOTH, so the temp root is
+        pinned to its own empty directory here; without that the fixture's
+        "outside-home" path would be inside the real `%TEMP%` and would read as
+        allowed (which is the point of the paired test below)."""
+        import tempfile
         from pathlib import Path
 
         _set_security('allowlist', [])
@@ -233,7 +241,10 @@ class TestFolderlessSessionReadsHomeByDefault:
         home.mkdir()
         elsewhere = tmp_path / 'outside-home'
         elsewhere.mkdir()
+        temp = tmp_path / 'system-temp'
+        temp.mkdir()
         monkeypatch.setattr(Path, 'home', lambda: home)
+        monkeypatch.setattr(tempfile, 'gettempdir', lambda: str(temp))
 
         path, err = bind_path(str(home / 'notes.txt'), None)
         assert err is None
@@ -259,3 +270,47 @@ class TestFolderlessSessionReadsHomeByDefault:
         path, err = bind_path(str(temp / 'scratch.txt'), None, for_write=True)
         assert err is None
         assert path == (temp / 'scratch.txt').resolve()
+
+    def test_folderless_temp_reads_are_available_outside_home(
+        self, tmp_path, monkeypatch, _set_security
+    ):
+        """The WRITE gate sends folderless work to the system temp directory, so
+        the READ gate must be able to open that same directory — a session that
+        writes a scratch file and then reads it back is the ordinary next step,
+        and refusing it means the app can create what it cannot look at.
+
+        Windows cannot see this bug: `%TEMP%` sits under the home directory, so
+        the home rule already covered it. On the ubuntu runner `/tmp` is outside
+        `$HOME`, and once the empty allowlist stopped being a no-op that is
+        exactly where 29 tool tests came back as 'Sandbox blocked access outside
+        your allowed roots' while the suite stayed green locally. Patching both
+        `Path.home` and `tempfile.gettempdir` reproduces the Linux shape on any
+        OS, which is the only reason this is now caught before a push."""
+        import tempfile
+        from pathlib import Path
+
+        _set_security('allowlist', [])
+        home = tmp_path / 'home'
+        temp = tmp_path / 'system-temp'
+        home.mkdir()
+        temp.mkdir()
+        (temp / 'scratch.txt').write_text('mine', encoding='utf-8')
+        monkeypatch.setattr(Path, 'home', lambda: home)
+        monkeypatch.setattr(tempfile, 'gettempdir', lambda: str(temp))
+
+        path, err = bind_path(str(temp / 'scratch.txt'), None)
+        assert err is None, err
+        assert path == (temp / 'scratch.txt').resolve()
+
+        # A write into temp that a read cannot follow used to be the asymmetry;
+        # both halves of the folderless area are now one policy, and the same
+        # path answers both directions.
+        again, again_err = bind_path(str(temp / 'scratch.txt'), None, for_write=True)
+        assert again_err is None and again == path
+
+        # …and the tightened default keeps its teeth: neither home nor temp.
+        elsewhere = tmp_path / 'outside-both'
+        elsewhere.mkdir()
+        refused, why = bind_path(str(elsewhere / 'private.txt'), None)
+        assert refused is None
+        assert why is not None and 'allowed roots' in why
