@@ -506,9 +506,17 @@ class TestAHomeAnchoredOrShortNameFormIsTheSameStore:
         ['~/.google_workspace_mcp/credentials/a.json', '$HOME/.google_workspace_mcp/credentials/a.json'],
     )
     def test_a_home_anchor_is_expanded_before_matching(self, tok):
-        from app.services.sandbox.hardline import _secret_store_reason
+        from app.services.sandbox.hardline import _secret_store_reason, _store_match_form
 
         assert _secret_store_reason(tok) is not None, f'{tok!r} did not name the store'
+        # And the anchor is really gone, not merely tolerated: an 8.3 component
+        # only resolves against an absolute path, so `~/GOOGLE~1/…` stays a
+        # stranger string while the tilde is still in it. Asserting the form is
+        # what makes a regression visible — the refusal alone still passes when
+        # the store name is spelled out in the token.
+        form = _store_match_form(tok)
+        assert not form.startswith('~'), form
+        assert '$home' not in form and '%' not in form, form
 
     @pytest.mark.skipif(os.name != 'nt', reason='8.3 short names are an NTFS feature')
     def test_a_short_name_is_the_store_it_aliases(self, tmp_path):
@@ -563,6 +571,34 @@ class TestAHomeAnchoredOrShortNameFormIsTheSameStore:
         assert '.google_workspace_mcp' in reason, reason
         # And a path with no alias in it is untouched by the substitution.
         assert hardline._secret_store_reason(str(tmp_path / 'src' / 'app.py')) is None
+
+    @pytest.mark.skipif(os.name != 'nt', reason='8.3 short names are an NTFS feature')
+    def test_the_alias_this_machine_actually_has_is_refused(self):
+        """End-to-end on the alias the finding was measured with, if it exists.
+
+        The fixture cannot invent a short name — this volume stopped handing one
+        to newly created directories — but the user profile here does have one for
+        `.google_workspace_mcp`, and that is the pair the token leaked through:
+        `cat ~/GOOGLE~1/credentials/account.json` was allowed while the long name
+        was refused. Skips (with the reason, not silently) where the store or its
+        alias is absent, which is every fresh machine and every CI runner.
+        """
+        import _winapi
+        from pathlib import Path
+
+        home = Path.home()
+        store = home / '.google_workspace_mcp'
+        if not store.is_dir():
+            pytest.skip(f'no {store} on this machine')
+        short = _winapi.GetShortPathName(str(store))
+        if short.lower() == str(store).lower():
+            pytest.skip(f'no 8.3 alias for {store} on this volume')
+        probe = f'~/{Path(short).name}/credentials/account.json'
+        from app.services.sandbox.hardline import _secret_store_reason, check_hardline_command
+
+        assert _secret_store_reason(probe) is not None, f'{probe!r} aliases {store} and passed'
+        assert check_hardline_command(f'cat {probe}') is not None, f'{probe!r} was allowed in a command'
+        assert check_hardline_command(f'dir {probe}') is not None, f'{probe!r} was allowed to be listed'
 
     def test_the_resolve_is_taken_only_for_a_short_name_shape(self, tmp_path, monkeypatch):
         """The 8.3 branch is conditional, and the condition is what is asserted.
