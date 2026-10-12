@@ -20,7 +20,10 @@ export interface SchematicComponent {
   col: number;
   row: number;
   rot: number;
-  /** [x, y] pairs in SVG user units, left pin then right pin. */
+  /** [x, y] pairs in SVG user units — ONE PER NODE, in netlist order. Two for
+   *  a 2-terminal part, three for Q/M/J, four for the MESFET `B` (the 4th is
+   *  the bulk). Their mean is the layout origin, which drags and labels pivot
+   *  on; a payload with FEWER pins than `nodes` is a stale backend. */
   pins: SchematicPin[];
 }
 

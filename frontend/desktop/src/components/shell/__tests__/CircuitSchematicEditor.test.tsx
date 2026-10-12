@@ -84,3 +84,73 @@ describe('CircuitSchematicEditor', () => {
     expect(container.querySelector('[data-testid="circuit-schematic-editor"]')).toBeNull();
   });
 });
+
+/* The editor must draw what the backend's static SVG draws: one pin per node,
+ * and a FET body for every FET family. `J` (3 pins) and `B` (4, the last being
+ * the bulk) used to fall through to the generic two-terminal box here even once
+ * the backend emitted their third and fourth pins, so the live canvas and the
+ * exported artifact showed different circuits. */
+describe('CircuitSchematicEditor — FET families draw from their own pins', () => {
+  const pin = (x: number, y: number) => ({ 0: x, 1: y }) as { 0: number; 1: number };
+  const fetGraph = {
+    components: [
+      {
+        ref: 'J1', kind: 'jfet', nodes: ['d', 'g', 's'], value: 'Jmod',
+        col: 0, row: 0, rot: 0,
+        pins: [pin(10, -10), pin(-20, 0), pin(10, 10)],
+      },
+      {
+        ref: 'B1', kind: 'mesfet', nodes: ['bd', 'bg', 'bs', 'bb'], value: 'Bmod',
+        col: 0, row: 6, rot: 0,
+        pins: [pin(20, 50), pin(-20, 55), pin(20, 70), pin(-20, 65)],
+      },
+    ],
+    wires: [],
+    nodes: ['d', 'g', 's'],
+    grounded: false,
+    grid: 10,
+    layoutExists: true,
+    autoLayout: false,
+  };
+
+  beforeEach(() => {
+    readSchematic.mockReset().mockResolvedValue(fetGraph);
+    editSchematic.mockReset();
+  });
+
+  /** Only the symbol group — every part also carries a transparent `<rect>`
+   *  hit-box, which is not the drawn body. */
+  const symbolOf = (ref: string) =>
+    screen.getByTestId(`schematic-part-${ref}`).querySelector('[data-testid="schematic-symbol"]')!
+      .innerHTML;
+
+  it('draws the JFET as a round-body FET, not the generic box', async () => {
+    render(<CircuitSchematicEditor sessionId="s1" netlistPath="amp.cir" />);
+    await waitFor(() => expect(screen.getByTestId('schematic-part-J1')).toBeInTheDocument());
+    const svg = symbolOf('J1');
+    expect(svg).toContain('<circle');
+    // The generic two-terminal body this kind used to fall through to is a
+    // stroked rect; a FET body is a circle.
+    expect(svg).not.toContain('<rect');
+    // A JFET gate is a Schottky contact: ONE bar. Only a MOSFET gets the
+    // second, insulated bar — otherwise the two are indistinguishable here
+    // exactly as they are in the exported SVG.
+    expect((svg.match(/<line x1="-4" y1="-7" x2="-4" y2="7"/g) ?? []).length).toBe(1);
+    expect(svg).not.toContain('<path'); // no collector arrow on a JFET
+  });
+
+  it('draws a lead for the MESFET bulk pin so its wire lands on something', async () => {
+    render(<CircuitSchematicEditor sessionId="s1" netlistPath="amp.cir" />);
+    await waitFor(() => expect(screen.getByTestId('schematic-part-B1')).toBeInTheDocument());
+    const svg = symbolOf('B1');
+    // Pins 0-2 build the symbol; pin 3 (the bulk, at -20,65) must still get a
+    // lead toward the body...
+    expect(svg).toMatch(/<line x1="-20" y1="65" x2="[-\d]+" y2="[-\d]+"/);
+    // ...and the body must sit on the mean of ALL FOUR pins — (0, 60), the
+    // layout origin — not the mean of the first three, which is off it.
+    expect(svg).toContain('<circle cx="0" cy="60" r="14"');
+    // One bar: like a JFET, a MESFET gate is not insulated.
+    expect((svg.match(/<line x1="-4" y1="53" x2="-4" y2="67"/g) ?? []).length).toBe(1);
+    expect(svg).not.toContain('x1="-8"');
+  });
+});

@@ -47,7 +47,7 @@ GRID = 10.0          # px per grid cell
 # The old 2-pin entries made build_graph drop the third node silently (the
 # `i >= len(comp_pins)` break), so no wire ever attached to an emitter or a
 # source terminal.
-PIN_OFFSETS: dict[str, tuple[tuple[int, int], ...]] = {
+PIN_OFFSETS: dict[str, tuple[tuple[float, float], ...]] = {
     'resistor': ((-2, 0), (2, 0)),
     'capacitor': ((-2, 0), (2, 0)),
     'inductor': ((-2, 0), (2, 0)),
@@ -56,10 +56,54 @@ PIN_OFFSETS: dict[str, tuple[tuple[int, int], ...]] = {
     'isource': ((-2, 0), (2, 0)),
     'transistor': ((1, -1), (-2, 0), (1, 1)),   # C, B, E
     'mosfet': ((1, -1), (-2, 0), (1, 1)),       # D, G, S
+    'jfet': ((1, -1), (-2, 0), (1, 1)),         # D, G, S
+    # Berkeley SPICE `B` is the 4-terminal MESFET: ND NG NS NB. Drain and
+    # source on the right column, gate and bulk on the left, so the mean is
+    # exactly the origin like every entry above (x: 2-2+2-2, y: -1+1-0.5+0.5).
+    'mesfet': ((2, -1), (-2, -0.5), (2, 1), (-2, 0.5)),
     'subckt': ((-2, 0), (2, 0)),
     'switch': ((-2, 0), (2, 0)),
 }
 DEFAULT_OFFSETS = ((-2, 0), (2, 0))
+
+# The three-to-plus-terminal silicon. All four draw from the FET branch of
+# `_symbol_svg`: bar + two channel leads, with the insulated second bar only
+# for `mosfet` and the emitter arrow only for `transistor` (channel polarity
+# for J/B lives on the model card, which the graph does not carry).
+_FET_KINDS = ('transistor', 'mosfet', 'jfet', 'mesfet')
+
+
+def pin_offsets(kind: str, node_count: int) -> tuple[tuple[float, float], ...]:
+    """Pin offsets for `kind`, ALWAYS with one entry per netlist node.
+
+    The table owns the shape for the classes it knows. When a part has more
+    nodes than its entry has offsets — a 5-pin `X` instance, a device letter
+    the table does not name — the extra pins are generated symmetric about the
+    origin rather than dropped: `build_graph` used to `break` at the end of the
+    pin list, so those nodes got no pin, no wire, and drew floating. Generated
+    pins are recentred because the editor pivots drags and labels on the mean
+    of the pins, and a mean off the origin skids the body.
+    """
+    offs = PIN_OFFSETS.get(kind, DEFAULT_OFFSETS)
+    if len(offs) >= max(node_count, 2):
+        # `max(…, 2)`: `_symbol_svg` draws its body between pins 0 and 1, so a
+        # one-node (malformed) element still needs the 2-pin shape.
+        return offs
+    # Left/right columns of pairs. An even count mirrors the rows about y=0;
+    # an odd count adds one pin at the bottom centre and biases the rows up by
+    # half a step so the sums cancel. Both stay in multiples of 0.5, so the
+    # mean is (0,0) exactly and not to within float noise — the pin mean is
+    # what the editor pivots on and what the tests compare against px().
+    k = node_count // 2
+    step = (k - 1) / 2 if node_count % 2 == 0 else k / 2
+    pts: list[tuple[float, float]] = []
+    for j in range(k):
+        y = float(j - step)
+        pts.append((-2.0, y))
+        pts.append((2.0, y))
+    if node_count % 2:
+        pts.append((0.0, float(k)))
+    return tuple(pts)
 
 # Layout sidecar file name for a deck: `rc.cir` -> `rc.layout.json`.
 def layout_path_for(netlist_path: Path) -> Path:
@@ -80,9 +124,18 @@ _ELEMENT_LINE_RE = re.compile(r'^([A-Za-z])(\w*)\s+(.+)$')
 _ELEMENT_KINDS = {
     'R': 'resistor', 'C': 'capacitor', 'L': 'inductor', 'V': 'voltage',
     'I': 'isource', 'D': 'diode', 'Q': 'transistor', 'M': 'mosfet',
+    # J and B were parsed for their 3/4 nodes by _NODE_COUNT but had no kind,
+    # so they rendered as anonymous 'part' with two pins and lost a wire.
+    'J': 'jfet', 'B': 'mesfet',
     'X': 'subckt', 'S': 'switch', 'W': 'switch', 'K': 'coupled',
 }
 # Node count per device class (same table circuit_tools lints with).
+# KNOWN LIMIT, stated rather than left to be rediscovered: letters outside this
+# table are sliced to two nodes, so an `.lib`-defined `X` (no `.subckt` in this
+# deck to count pins from) and the 4-terminal E/G/F behavioural and MESFET forms
+# lose their extra nets at PARSE time — before the pin guarantee below ever sees
+# them. Widening this table means widening the linter's copy too; `pin_offsets`
+# already handles any count the parser produces.
 _NODE_COUNT = {'Q': 3, 'J': 3, 'M': 3, 'B': 4}
 
 
@@ -95,11 +148,30 @@ class Element:
     params: str = ''      # raw tail after the value (model name etc.)
 
 
+def _subckt_pin_counts(deck_text: str) -> dict[str, int]:
+    """`SUBCKTNAME` → how many pins it declares, from the deck's own
+    ``.subckt`` lines. An `X` instance's node count is not static (a 4-pin
+    opamp block is as legal as a 2-pin one), and slicing it to 2 hid every
+    node past the second — the net existed on the block but never got a pin or
+    a wire. Names defined outside this deck (`.lib`) are absent here, and the
+    caller keeps the 2-node default for those."""
+    counts: dict[str, int] = {}
+    for raw in deck_text.splitlines():
+        s = raw.strip()
+        if not s.lower().startswith('.subckt'):
+            continue
+        toks = s.split()
+        if len(toks) >= 3:
+            counts[toks[1].upper()] = len(toks) - 2
+    return counts
+
+
 def parse_elements(deck_text: str) -> list[Element]:
     """Extract (ref, kind, nodes, value) per element line, skipping
     comments, dot-cards, ``.control`` and ``.subckt`` bodies and
     continuations — the same rules ``circuit_tools._parse_components`` /
     ``lint_netlist`` apply."""
+    subckt_pins = _subckt_pin_counts(deck_text)
     out: list[Element] = []
     in_control = False
     in_subckt = False
@@ -132,6 +204,14 @@ def parse_elements(deck_text: str) -> list[Element]:
             continue
         kind = _ELEMENT_KINDS.get(letter.upper(), 'part')
         n = _NODE_COUNT.get(letter.upper(), 2)
+        if letter.upper() == 'X':
+            # The block's own pin count wins, found by locating its name in the
+            # line: everything before the name is a node, everything after is
+            # the name plus value/params.
+            for i, tok in enumerate(toks):
+                if i >= 2 and tok.strip('[]').upper() in subckt_pins:
+                    n = i
+                    break
         nodes = [t.strip('[]') for t in toks[:n]]
         tail = toks[n:]
         value = ''
@@ -283,7 +363,7 @@ class Component:
         return (self.col * GRID, self.row * GRID)
 
     def pins(self) -> list[tuple[float, float]]:
-        offs = PIN_OFFSETS.get(self.kind, DEFAULT_OFFSETS)
+        offs = pin_offsets(self.kind, len(self.nodes))
         cx, cy = self.px()
         if self.rot % 2:
             # Rotate the offsets 90° about the centre: (dx, dy) -> (-dy, dx).
@@ -325,11 +405,11 @@ def build_graph(deck_text: str, layout: dict[str, Any]) -> dict[str, Any]:
     # Explicit wireRoutes in the sidecar (keyed "ref:node") win.
     net_pins: dict[str, list[tuple[str, int, tuple[float, float]]]] = {}
     for comp in components:
-        comp_pins = comp.pins()
-        for i, node in enumerate(comp.nodes):
-            if i >= len(comp_pins):
-                break
-            net_pins.setdefault(node, []).append((comp.ref, i, comp_pins[i]))
+        # zip, not an index loop with a `break`: pin_offsets guarantees one pin
+        # per node now, so a part with more nodes than the table has offsets
+        # attaches every one of its nets instead of silently losing node 3+.
+        for i, (node, pin) in enumerate(zip(comp.nodes, comp.pins())):
+            net_pins.setdefault(node, []).append((comp.ref, i, pin))
     explicit = layout.get('wireRoutes') or {}
     wires: list[Wire] = []
     for node, node_pins in net_pins.items():
@@ -428,17 +508,22 @@ def _symbol_svg(comp: Component, color: str, voltage: float | None,
                                                    comp.value, comp.params, 0, 0, 0), color, voltage, current))
                 + '</g>']
     ps = comp.pins()
-    # Round-bodied parts (sources r=11, BJT/MOSFET r=14) need the label clear of
+    # Round-bodied parts (sources r=11, the FET family r=14) need the label clear of
     # the circle; a 14px gap used to print the ref straight onto the symbol.
-    label_gap = 26 if comp.kind in ('voltage', 'isource', 'transistor', 'mosfet') else 20
-    if comp.kind in ('transistor', 'mosfet') and len(ps) >= 3:
-        # SPICE node order — Q: collector, base, emitter; M: drain, gate,
-        # source — matches the pin order, so ps[0] is the output-side terminal
-        # that used to exist only as a zero-length line while ps[2] (the
-        # emitter/source) had no pin at all and no wire could attach.
+    label_gap = 26 if comp.kind in ('voltage', 'isource') + _FET_KINDS else 20
+    if comp.kind in _FET_KINDS and len(ps) >= 3:
+        # SPICE node order — Q: collector, base, emitter; M/J: drain, gate,
+        # source; B: drain, gate, source, bulk — matches the pin order, so ps[0]
+        # is the output-side terminal that used to exist only as a zero-length
+        # line while ps[2] (the emitter/source) had no pin at all and no wire
+        # could attach.
         (xc, yc), (xb, yb), (xe, ye) = ps[0], ps[1], ps[2]
-        bcx = (xc + xb + xe) / 3
-        bcy = (yc + yb + ye) / 3
+        # The body sits on the mean of ALL its pins — which is the layout
+        # origin, and what the editor's drags and labels pivot on. Averaging
+        # only the first three left the 4-terminal MESFET's circle high of the
+        # pins the wires were routed to.
+        bcx = sum(p[0] for p in ps) / len(ps)
+        bcy = sum(p[1] for p in ps) / len(ps)
         bar_x = bcx - 4
         gate_x = bar_x - 4 if comp.kind == 'mosfet' else bar_x
         parts.append(f'<circle cx="{bcx:.0f}" cy="{bcy:.0f}" r="14" fill="none" stroke="{stroke}" stroke-width="1.5"/>')
@@ -468,6 +553,28 @@ def _symbol_svg(comp: Component, color: str, voltage: float | None,
         (x0, y0), (x1, y1) = ps[0], ps[1]
         label_x, label_y = (x0 + x1) / 2, y0 - label_gap
         cur_y = y0 + label_gap + 8
+    # Every pin the body does not already connect to still carries a net, so it
+    # gets a lead toward the body: the FET family draws pins 0-2 (so the MESFET
+    # bulk needs one), every other symbol is drawn between pins 0 and 1 (so a
+    # 3-pin `X` instance or an unrecognised 4-node letter needs one from pin 2).
+    # Without it the wire routes to a pin and stops in empty air beside a part
+    # that looks two-terminal — the same class of silence this commit fixed.
+    if comp.kind in _FET_KINDS and len(ps) >= 3:
+        lead_from, bc_x, bc_y = 3, sum(p[0] for p in ps) / len(ps), sum(p[1] for p in ps) / len(ps)
+    else:
+        (bx0, by0), (bx1, by1) = ps[0], ps[1]
+        lead_from, bc_x, bc_y = 2, (bx0 + bx1) / 2, (by0 + by1) / 2
+    for (ex, ey) in ps[lead_from:]:
+        ang = math.atan2(bc_y - ey, bc_x - ex)
+        dist = math.hypot(bc_x - ex, bc_y - ey)
+        # 14 is the FET circle's radius; the generic body is a ~10px box, so the
+        # stub stops at half the gap rather than overshooting into the symbol.
+        reach = max(6.0, dist - (14.0 if lead_from == 3 else 10.0))
+        parts.append(
+            f'<line x1="{ex:.0f}" y1="{ey:.0f}" '
+            f'x2="{ex + reach * math.cos(ang):.0f}" y2="{ey + reach * math.sin(ang):.0f}" '
+            f'stroke="{stroke}" stroke-width="1.5"/>'
+        )
     half = 8  # body half-height (capacitor plates, diode triangle)
     if comp.kind == 'resistor':
         parts.append(f'<polyline points="{_resistor_path(x0 + 4, y0, x1 - 4, y0)}" fill="none" stroke="{stroke}" stroke-width="2"/>')
@@ -509,7 +616,7 @@ def _symbol_svg(comp: Component, color: str, voltage: float | None,
         mid = (x0 + x1) / 2
         parts.append(f'<rect x="{(x0 + x1) / 2 - abs(x1 - x0) * 0.32:.0f}" y="{y0 - h / 2:.0f}" width="{abs(x1 - x0) * 0.64:.0f}" height="{h}" fill="none" stroke="{stroke}" stroke-width="2" rx="3"/>')
         _ = w, mid
-    elif comp.kind in ('transistor', 'mosfet'):
+    elif comp.kind in _FET_KINDS:
         # Already drawn from all three pins above; the generic 2-pin body
         # would draw an unrelated box over it.
         pass

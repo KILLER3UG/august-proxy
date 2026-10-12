@@ -284,7 +284,188 @@ def test_transistor_symbol_draws_three_leads_and_polarity_differs():
     # gate bar instead and no arrow.
     assert '<path' in qsvg and 'fill="#334155"' in qsvg
     assert '<path' not in msvg
-    assert msvg.count('stroke-width="1.5"') >= qsvg.count('stroke-width="1.5"')
+    # The insulated gate is a SECOND full-height bar at its own x. Counting
+    # `stroke-width="1.5"` occurrences (what this test used to do) stayed true
+    # with the gate bar deleted — a BJT has as many 1.5 strokes as a MOSFET
+    # minus one — so the bars are read as geometry now.
+    assert _vertical_bars(qsvg) == [26.0], _vertical_bars(qsvg)
+    bars = _vertical_bars(msvg)
+    assert len(bars) == 2 and bars[1] - bars[0] == 4.0, f'mosfet gate bar missing: {bars}'
+    # …and the arrow points at the EMITTER pin (40, 90), below the body
+    # centre. A direction-blind `'<path' in qsvg` accepted an arrow flipped
+    # onto the collector.
+    apex = _arrow_apex(qsvg)
+    assert apex is not None and abs(apex[0] - 40.0) < 0.6 and apex[1] > 80.0, apex
+
+
+def _vertical_bars(svg: str) -> list[float]:
+    """x of every full-height channel bar in a FET symbol (drawn bcy-7 →
+    bcy+7, so length 14 at a constant x)."""
+    found: list[float] = []
+    for ln in svg.splitlines():
+        m = re.search(
+            r'<line x1="([-\d.]+)" y1="([-\d.]+)" x2="([-\d.]+)" y2="([-\d.]+)"', ln)
+        if not m:
+            continue
+        x1, y1, x2, y2 = (float(m.group(i)) for i in range(1, 5))
+        if x1 == x2 and abs(y2 - y1) == 14:
+            found.append(x1)
+    return sorted(set(found))
+
+
+def _arrow_apex(svg: str) -> tuple[float, float] | None:
+    """The middle vertex of the filled emitter-arrow triangle — the point the
+    arrow says current flows towards."""
+    for ln in svg.splitlines():
+        if 'fill="#334155"' not in ln or '<path' not in ln:
+            continue
+        pts = re.findall(r'(-?\d+\.?\d*)\s+(-?\d+\.?\d*)', ln.split('d="')[1])
+        if len(pts) == 3:
+            return (float(pts[1][0]), float(pts[1][1]))
+    return None
+
+
+def test_every_pin_entry_averages_to_the_layout_origin():
+    """The table-wide property, asserted on the table: `_symbol_svg` and the
+    editor both pivot on the mean of a part's pins, so an entry whose offsets
+    do not average to (0,0) skids the body away from the wires routed to it.
+    Checking it per-entry is what catches a new row that passes its own part
+    test by accident — the MESFET's first version had x-mean -0.5."""
+    for kind, offs in schematic.PIN_OFFSETS.items():
+        n = len(offs)
+        assert (sum(x for x, _ in offs) / n, sum(y for _, y in offs) / n) == (0.0, 0.0), kind
+        assert len(set(offs)) == n, f'{kind} has two pins at one point: {offs}'
+    # The generator keeps the same promise for counts the table does not name.
+    for n in range(3, 9):
+        offs = schematic.pin_offsets('no_such_kind', n)
+        assert len(offs) == n
+        assert (sum(x for x, _ in offs) / n, sum(y for _, y in offs) / n) == (0.0, 0.0), n
+
+
+def test_fet_pin_order_is_asserted_as_coordinates():
+    """Three pins whose mean is the origin is not enough to prove the pins are
+    RIGHT: permuting PIN_OFFSETS to ((-2,0),(1,-1),(1,1)) keeps the count,
+    keeps the mean, and rewires base and collector. So each node's pin is
+    asserted as a coordinate — for Q, for M, and for the graph the wires use.
+
+    Offsets (1,-1), (-2,0), (1,1) at col 3 / row 8 (origin 30, 80) →
+    drain/collector upper-right, gate/base left, source/emitter lower-right.
+    """
+    for kind, nodes in (('transistor', ['c', 'b', 'e']), ('mosfet', ['d', 'g', 's']),
+                        ('jfet', ['d', 'g', 's'])):
+        comp = schematic.Component('X', kind, nodes, 'mod', '', 3, 8, 0)
+        assert comp.pins() == [(40.0, 70.0), (10.0, 80.0), (40.0, 90.0)], kind
+        origin = comp.px()
+        out_, ctrl_, src_ = comp.nodes
+        by_node = dict(zip(comp.nodes, comp.pins()))
+        assert by_node[ctrl_][0] < origin[0], 'control terminal must be on the gate side'
+        assert by_node[out_][1] < origin[1] and by_node[out_][0] > origin[0]
+        assert by_node[src_][1] > origin[1] and by_node[src_][0] > origin[0]
+
+
+def test_jfet_and_mesfet_nodes_all_get_a_wire():
+    """The failure the Q/M fix closed, still alive for the other multi-terminal
+    classes: `J1 d g s Jmod` parsed 3 nodes (schematic documents that in
+    _NODE_COUNT) but had no kind and so no third pin — the source net joined
+    nothing and drew floating. `B` is the SPICE MESFET at 4 nodes."""
+    deck = (
+        '*jfet + mesfet\n'
+        'V1 d 0 9\n'
+        'Rg g 0 100k\n'
+        'J1 d g s Jmod\n'
+        'Rs s 0 470\n'
+        'V2 bd 0 3\n'
+        'Rbg bg 0 100k\n'
+        'B1 bd bg bs bb Bmod\n'
+        'Rbs bs 0 100\n'
+        'V3 bb 0 0\n'
+        '.model Jmod JFET\n.end\n'
+    )
+    graph = schematic.build_graph(deck, {'components': {}})
+    by_ref = {c.ref: c for c in graph['components']}
+    assert [by_ref['J1'].kind, by_ref['B1'].kind] == ['jfet', 'mesfet']
+    assert len(by_ref['J1'].pins()) == 3
+    assert len(by_ref['B1'].pins()) == 4
+    # Every node of both parts shares a net with another pin, so each must
+    # appear in the emitted wires — that is the observable the break hid.
+    wire_nets = {w.nodes[0] for w in graph['wires']}
+    for node in ('d', 'g', 's', 'bd', 'bg', 'bs', 'bb'):
+        assert node in wire_nets, f'net {node} has no wire'
+    # MESFET bulk is the 4th pin and the pin mean is still the layout origin.
+    pins = by_ref['B1'].pins()
+    assert (sum(x for x, _ in pins) / 4, sum(y for _, y in pins) / 4) == by_ref['B1'].px()
+    assert len(set(pins)) == 4
+    # SPICE node order ND NG NS NB, so pin 3 is the bulk and it sits on the
+    # gate side — the terminal the old code never had.
+    b1 = schematic.Component('B1', 'mesfet', ['bd', 'bg', 'bs', 'bb'], 'Bmod', '', 3, 8, 0)
+    assert b1.pins() == [(50.0, 70.0), (10.0, 75.0), (50.0, 90.0), (10.0, 85.0)]
+    # …and the symbol draws a lead for it, instead of routing a wire to a pin
+    # that hangs in empty air beside a two-terminal-looking part.
+    bsvg = '\n'.join(schematic._symbol_svg(b1, '#334155', None, None))
+    assert 'x1="10" y1="85"' in bsvg, bsvg
+
+
+def test_more_nodes_than_the_table_generates_pins_instead_of_dropping_them():
+    """The `pin_offsets` guarantee, asserted on a kind whose table entry has
+    two offsets: an unrecognised device letter with five nodes. No node may
+    lose its pin, and the generated set must keep the editor's invariant — a
+    pin mean exactly on the layout origin, with distinct positions."""
+    comp = schematic.Component('Z1', 'part', ['a', 'b', 'c', 'd', 'e'], '', '', 3, 8, 0)
+    pins = comp.pins()
+    assert len(pins) == 5
+    assert len(set(pins)) == 5, pins
+    assert (sum(x for x, _ in pins) / 5, sum(y for _, y in pins) / 5) == comp.px()
+    # A 2-node unknown part keeps the horizontal pair, not the generator.
+    assert schematic.Component('Z2', 'part', ['a', 'b'], '', '', 3, 8, 0).pins() == [
+        (10.0, 80.0), (50.0, 80.0)]
+
+
+def test_every_generated_pin_also_gets_a_drawn_lead():
+    """Pins alone are not enough: the generic symbol is drawn between pins 0 and
+    1, so a 3-pin `X` instance or a 5-node unknown part left pin 2 (and beyond)
+    with a wire landing on nothing. `_symbol_svg` used to stub only `ps[3:]`,
+    which assumed the three-terminal FET body. Reproduced on a 3-pin subckt."""
+    three = schematic.Component('X1', 'subckt', ['a', 'b', 'c'], 'BLK', '', 3, 8, 0)
+    svg = '\n'.join(schematic._symbol_svg(three, '#334155', None, None))
+    for (px_, py_) in three.pins()[2:]:
+        assert f'x1="{px_:.0f}" y1="{py_:.0f}"' in svg, f'pin {(px_, py_)} has no lead: {svg}'
+    five = schematic.Component('Z1', 'part', ['a', 'b', 'c', 'd', 'e'], '', '', 3, 8, 0)
+    svg5 = '\n'.join(schematic._symbol_svg(five, '#334155', None, None))
+    for (px_, py_) in five.pins()[2:]:
+        assert f'x1="{px_:.0f}" y1="{py_:.0f}"' in svg5, f'pin {(px_, py_)} has no lead'
+    # A 2-terminal part draws no stubs at all — the body IS its two pins.
+    two = schematic.Component('R1', 'resistor', ['a', 'b'], '1k', '', 3, 8, 0)
+    assert '\n'.join(schematic._symbol_svg(two, '#334155', None, None)).count('stroke-width="1.5"') == 0
+
+
+def test_subckt_instance_uses_its_declared_pin_count():
+    """An `X` line's node count is whatever the `.subckt` it names declares. It
+    was sliced to 2, so a 4-pin block kept nets 3 and 4 off the graph (no pin,
+    no wire) and the sidecar drew the block as two-terminal."""
+    deck = (
+        '*amp\n'
+        'V1 vin 0 1\n'
+        'X1 vin n2 a out AMP\n'
+        'Rl a 0 1k\n'
+        'Rs n2 0 1k\n'
+        'Rf out vin 10k\n'
+        '.subckt AMP p1 p2 p3 p4\n'
+        'R1 p1 p2 1k\n'
+        '.ends\n.end\n'
+    )
+    els = schematic.parse_elements(deck)
+    x1 = next(e for e in els if e.ref == 'X1')
+    assert x1.nodes == ['vin', 'n2', 'a', 'out'], x1
+    graph = schematic.build_graph(deck, {'components': {}})
+    comp = next(c for c in graph['components'] if c.ref == 'X1')
+    assert len(comp.pins()) == 4
+    wire_nets = {w.nodes[0] for w in graph['wires']}
+    for node in ('vin', 'n2', 'a', 'out'):
+        assert node in wire_nets, f'net {node} has no wire'
+    # A block defined elsewhere (.lib) has no pin count in this deck: the
+    # 2-node default must stay rather than guessing from the token count.
+    loose = schematic.parse_elements('* no def\nX1 a b MISSING\n.end\n')
+    assert [e.nodes for e in loose if e.ref == 'X1'] == [['a', 'b']]
 
 
 def test_vertical_symbol_renders_on_its_own_pins():

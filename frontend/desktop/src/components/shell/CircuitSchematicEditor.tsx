@@ -94,6 +94,19 @@ function symbolSvg(c: SchematicComponent): string {
   const { 0: x1, 1: y1 } = p1;
   const half = 8;
   const mid = (x0 + x1) / 2;
+  /** Leads for the pins this symbol's body does not connect to. A 3-pin `X`
+   *  instance or a 5-node unknown part is generated one pin per node on the
+   *  backend, and a wire that lands beside a body drawn between two pins reads
+   *  as an unconnected net — the same silence the backend fix closed. */
+  const extraLeads = (cx: number, cy: number, from: number, bodyRadius: number) =>
+    c.pins.slice(from)
+      .map((p) => {
+        const { 0: ex, 1: ey } = p;
+        const a = Math.atan2(cy - ey, cx - ex);
+        const reach = Math.max(6, Math.hypot(cx - ex, cy - ey) - bodyRadius);
+        return `<line x1="${ex}" y1="${ey}" x2="${(ex + reach * Math.cos(a)).toFixed(0)}" y2="${(ey + reach * Math.sin(a)).toFixed(0)}" stroke="${STROKE}" stroke-width="1.5"/>`;
+      })
+      .join('');
   switch (c.kind) {
     case 'resistor':
       return `<polyline points="${resistorPath(x0 + 4, y0, x1 - 4)}" fill="none" stroke="${STROKE}" stroke-width="2"/>`;
@@ -130,9 +143,11 @@ function symbolSvg(c: SchematicComponent): string {
       return `<circle cx="${mid}" cy="${y0}" r="${r}" fill="none" stroke="${STROKE}" stroke-width="2"/>${inner}${gnd}`;
     }
     case 'subckt':
-      return `<rect x="${mid - Math.abs(x1 - x0) * 0.32}" y="${y0 - 12}" width="${Math.abs(x1 - x0) * 0.64}" height="24" fill="none" stroke="${STROKE}" stroke-width="2" rx="3"/>`;
+      return `<rect x="${mid - Math.abs(x1 - x0) * 0.32}" y="${y0 - 12}" width="${Math.abs(x1 - x0) * 0.64}" height="24" fill="none" stroke="${STROKE}" stroke-width="2" rx="3"/>` + extraLeads(mid, y0, 2, 10);
     case 'transistor':
-    case 'mosfet': {
+    case 'mosfet':
+    case 'jfet':
+    case 'mesfet': {
       if (!p2) {
         // Stale payload from a backend that still emitted 2-pin parts: draw
         // the round body so the part is at least visible where its wires land.
@@ -141,12 +156,14 @@ function symbolSvg(c: SchematicComponent): string {
       const { 0: xc, 1: yc } = p0;
       const { 0: xb, 1: yb } = p1;
       const { 0: xe, 1: ye } = p2;
-      // Body centre = mean of the three pins — the same origin the backend's
-      // symmetric offsets guarantee, so drags and the rotated group pivot
-      // exactly here.
-      const bcx = (xc + xb + xe) / 3;
-      const bcy = (yc + yb + ye) / 3;
+      // Body centre = the mean of ALL the part's pins — the same origin the
+      // backend's symmetric offsets guarantee, so drags and the rotated group
+      // pivot exactly here. Averaging only the first three put the 4-terminal
+      // MESFET's body off the bulk pin its wire routes to.
+      const { x: bcx, y: bcy } = pinMean(c);
       const barX = bcx - 4;
+      // Only a MOSFET-type gate is insulated (second bar); a JFET/MESFET gate
+      // is a Schottky contact, drawn as one bar like a BJT base.
       const gateX = c.kind === 'mosfet' ? barX - 4 : barX;
       const emitY = bcy + 4;
       const ang = Math.atan2(ye - emitY, xe - barX);
@@ -154,6 +171,11 @@ function symbolSvg(c: SchematicComponent): string {
       const hy = ye - 7 * Math.sin(ang);
       const pxp = -3 * Math.cos(ang + Math.PI / 2);
       const pyp = -3 * Math.sin(ang + Math.PI / 2);
+      // Terminals past the three this symbol is built around (the MESFET bulk,
+      // a multi-pin block's extra nodes) get a lead toward the body, exactly as
+      // the backend's static SVG draws them — otherwise a wired net ends in
+      // empty air beside a part that looks two-terminal.
+      const extras = extraLeads(bcx, bcy, 3, 14);
       return [
         `<circle cx="${bcx}" cy="${bcy}" r="14" fill="none" stroke="${STROKE}" stroke-width="1.5"/>`,
         `<line x1="${xb}" y1="${yb}" x2="${gateX}" y2="${yb}" stroke="${STROKE}" stroke-width="1.5"/>`,
@@ -167,10 +189,11 @@ function symbolSvg(c: SchematicComponent): string {
             `<line x1="${barX}" y1="${emitY}" x2="${hx.toFixed(1)}" y2="${hy.toFixed(1)}" stroke="${STROKE}" stroke-width="1.5"/>` +
             `<path d="M ${(hx + pxp).toFixed(1)} ${(hy + pyp).toFixed(1)} L ${xe} ${ye} L ${(hx - pxp).toFixed(1)} ${(hy - pyp).toFixed(1)} Z" fill="${STROKE}" stroke="none"/>`
           : `<line x1="${barX}" y1="${emitY}" x2="${xe}" y2="${ye}" stroke="${STROKE}" stroke-width="1.5"/>`,
+        extras,
       ].join('');
     }
     default:
-      return `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="${STROKE}" stroke-width="2"/><rect x="${mid - 10}" y="${y0 - 8}" width="20" height="16" fill="none" stroke="${STROKE}" stroke-width="1.5" rx="2"/>`;
+      return `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="${STROKE}" stroke-width="2"/><rect x="${mid - 10}" y="${y0 - 8}" width="20" height="16" fill="none" stroke="${STROKE}" stroke-width="1.5" rx="2"/>` + extraLeads(mid, y0, 2, 10);
   }
 }
 
