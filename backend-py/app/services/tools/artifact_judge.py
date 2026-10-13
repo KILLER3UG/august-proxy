@@ -6,7 +6,11 @@ Two primitives, wired as tools in ``tool_registrations/artifact_tools``:
   * :func:`render_pages` — a ``.pdf``/``.pptx``/``.docx``/``.xlsx`` (or an
     image) becomes PNG page images under ``<dataDir>/render-cache``.
     Documents go through headless LibreOffice (``soffice`` on PATH or the
-    common install locations); PDFs/pages render via pypdfium2.
+    common install locations); PDFs/pages render via pypdfium2. An
+    ``.html``/``.svg`` artifact is screenshotted through the SHARED browser
+    session from the Stage 1 artifact route (see :func:`render_pages_live`),
+    so the judge sees exactly what the user sees — same CSP, same origin —
+    instead of a second engine with no navigation guard.
   * :func:`judge_artifact` — renders (reusing render_pages) and asks the
     session's own vision model for a per-page ``pass/fail + issues``
     verdict against the user's request. The verdict is structured JSON the
@@ -36,8 +40,16 @@ logger = logging.getLogger(__name__)
 _DOC_EXT = ('.pptx', '.docx', '.xlsx', '.odp', '.ods', '.odt', '.ppt', '.doc', '.xls')
 _IMG_EXT = ('.png', '.jpg', '.jpeg', '.webp')
 _PDF_EXT = ('.pdf',)
+# A live artifact document: the whole point of `create_html_artifact`, and
+# the gap this module had — its output could not be judged at all.
+_HTML_EXT = ('.html', '.htm', '.svg')
 _JUDGE_PAGE_CAP = 8  # pages sent to the vision call in one pass
 _DPI_MIN, _DPI_MAX = 72, 200
+# One dedicated browser session for judging. It rides the shared engine (one
+# headless chromium, no second launch) with the navigation guard installed
+# and loopback permitted for THIS session only — the artifact route IS
+# August's own backend. Never handed to a model-facing tool.
+_JUDGE_BROWSER_SESSION = 'artifact-judge'
 
 
 def find_soffice() -> str:
@@ -143,6 +155,103 @@ def _render_pdf_pages(pdf: Path, selected: list[int], dpi: int, out_dir: Path) -
         doc.close()
 
 
+def _artifactRouteUrl(src: Path) -> str:
+    """The Stage 1 route that serves this artifact as a live document.
+
+    Not ``file://``: the judge must screenshot the document the same way the
+    user's drawer does — from the backend origin, under the route's
+    document-scoped CSP, where the artifact's inline script actually runs.
+    A judge that screenshots a laxer rendering than the user sees would pass
+    figures that are broken in the app.
+    """
+    from os import environ
+    from urllib.parse import quote
+
+    port = environ.get('AUGUST_PROXY_PORT', '8085')
+    return f'http://127.0.0.1:{port}/api/workbench/artifact/html?path={quote(str(src))}'
+
+
+async def _renderHtmlPages(src: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
+    """Screenshot an HTML/SVG artifact through the shared browser session.
+
+    A judge-local ``async_playwright().start()`` would silently drop the
+    navigation guard (``page.route`` never fires for 3xx hops; the re-check on
+    the final URL is the control that closes the redirect case). This rides
+    the existing engine instead — one chromium per session id, guard
+    installed — with loopback permitted for the judge's own session only.
+
+    Returns the render_pages shape: ``{ok, file, renderer, pageCount, rendered}``.
+    An artifact document is one page; the ``pages`` spec does not apply.
+    """
+    from app.services.browser import session_manager as browser
+
+    try:
+        session = await browser.getOrCreateSession(_JUDGE_BROWSER_SESSION, allow_loopback=True)
+    except browser.BrowserUnavailableError as exc:
+        # The clean receipt from the probe — the judge reports it instead of
+        # dying on Playwright's raw error.
+        return {'ok': False, 'error': str(exc)}
+    except Exception as exc:
+        return {'ok': False, 'error': f'browser failed to start: {exc}'}
+    page = session.page
+    if page is None:
+        return {'ok': False, 'error': 'browser session not ready'}
+
+    url = _artifactRouteUrl(src)
+    try:
+        await page.goto(url, wait_until='load', timeout=30_000)
+        if session.navBlockReason:
+            return {'ok': False, 'error': f'navigation blocked: {session.navBlockReason}'}
+        # One settle budget: an animated artifact needs a few frames to show
+        # itself, and a settle figure is still at its rest pose. 400 ms is the
+        # whole budget — this is a review pass, not a frame-accurate capture.
+        await page.wait_for_timeout(400)
+        shot = out_dir / 'page-01.png'
+        await page.screenshot(path=str(shot), full_page=False)
+    except Exception as exc:
+        return {
+            'ok': False,
+            'error': (
+                f'artifact page could not be screenshotted: {exc}. The judge needs the '
+                'backend running and a chromium browser installed '
+                '(`uv run playwright install chromium`).'
+            ),
+        }
+    return {
+        'ok': True,
+        'file': str(src),
+        'renderer': 'browser(chromium)',
+        'pageCount': 1,
+        'rendered': [str(shot)],
+    }
+
+
+async def render_pages_live(
+    path: str, workspace: str = '', pages: str = '', dpi: int = 110
+) -> dict[str, Any]:
+    """Async front door of the render pipeline.
+
+    ``.html``/``.htm``/``.svg`` go through the shared browser session from
+    the artifact route; everything else defers to the synchronous
+    :func:`render_pages` (LibreOffice/pypdfium2/image). Same return shape
+    either way, so callers do not branch on the type.
+    """
+    from app.services.sandbox.paths import bind_path
+
+    target = str(path or '').strip()
+    if not target:
+        raise ValueError('path is required (workspace document, PDF, image or HTML artifact path).')
+    bound, err = bind_path(target, workspace or None, for_write=False)
+    if err or not bound:
+        raise ValueError(f'file not found / outside allowed roots: {target}')
+    src = Path(bound)
+    ext = src.suffix.lower()
+    if ext not in _HTML_EXT:
+        return render_pages(path, workspace=workspace, pages=pages, dpi=dpi)
+    out_dir = _cache_dir(src)
+    return await _renderHtmlPages(src, out_dir, int(dpi or 110))
+
+
 def render_pages(path: str, workspace: str = '', pages: str = '', dpi: int = 110) -> dict[str, Any]:
     """Render a document to PNG page images in the app render cache.
 
@@ -187,7 +296,10 @@ def render_pages(path: str, workspace: str = '', pages: str = '', dpi: int = 110
                 ),
             }
     else:
-        raise ValueError(f'unsupported file type {ext!r} (pdf/pptx/docx/xlsx/odp/ods/odt/png/jpg/webp)')
+        raise ValueError(
+            f'unsupported file type {ext!r} '
+            '(pdf/pptx/docx/xlsx/odp/ods/odt/png/jpg/webp/html/htm/svg)'
+        )
 
     try:
         import pypdfium2  # noqa: F401
@@ -267,7 +379,10 @@ async def judge_artifact(
     req = str(request or '').strip()
     if not req:
         raise ValueError('request is required — what the user asked this artifact to be.')
-    rendered = render_pages(path, workspace=workspace, pages=pages)
+    # The async door, so an HTML/SVG artifact screenshots through the shared
+    # browser session (same CSP, same origin as the user's drawer) instead of
+    # falling through the document renderer with no pages at all.
+    rendered = await render_pages_live(path, workspace=workspace, pages=pages)
     if not rendered.get('ok'):
         return rendered
 

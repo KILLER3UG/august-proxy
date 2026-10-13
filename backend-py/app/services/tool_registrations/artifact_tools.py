@@ -114,7 +114,11 @@ async def _renderPages(path: str = '', pages: str = '', dpi: int = 110) -> str:
     try:
         from app.services.tools import artifact_judge
 
-        result = artifact_judge.render_pages(path, workspace=_workspace(), pages=pages, dpi=int(dpi or 110))
+        # The async door: an HTML/SVG artifact is screenshotted through the
+        # shared browser session; every other type renders synchronously.
+        result = await artifact_judge.render_pages_live(
+            path, workspace=_workspace(), pages=pages, dpi=int(dpi or 110)
+        )
         return json.dumps(result)
     except Exception as exc:
         return _err(exc)
