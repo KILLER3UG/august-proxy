@@ -401,6 +401,7 @@ export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps
   'tool-grants': AgentSandboxWrapper,
   'agent-board': KanbanWrapper,
   'python-sandbox': AgentSandboxWrapper,
+  'kernel-venv': AgentSandboxWrapper,
   'agent-sandbox': AgentSandboxWrapper,
   'app-updates': AppUpdatesWrapper,
   'prompt-templates': PromptTemplatesWrapper,

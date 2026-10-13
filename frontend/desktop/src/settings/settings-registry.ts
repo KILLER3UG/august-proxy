@@ -25,6 +25,7 @@ import {
   Activity,
   Gauge,
   Boxes,
+  Package,
   Blocks,
   BookOpen,
   Bot,
@@ -665,6 +666,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     legacyAliases: ['sandbox'],
   },
   {
+    id: 'kernel-venv',
+    label: 'Kernel Venv',
+    description: 'Per-workspace Python 3.13+ environment for packages the app cannot ship (manimgx).',
+    icon: Package,
+    category: 'capabilities',
+    tier: 'hidden',
+    keywords: ['venv', 'kernel', 'manimgx', 'package', 'provision', 'site-packages'],
+    legacyAliases: ['kernel'],
+  },
+  {
     id: 'computer-access',
     label: 'Desktop App Permissions',
     description: 'Filesystem scope, allowed roots, and computer-use app allowlist.',
@@ -824,6 +835,7 @@ const RAIL_PARENT: Readonly<Record<string, string>> = {
   'ui-designer': 'appearance',
   'tool-grants': 'agent-sandbox',
   'python-sandbox': 'agent-sandbox',
+  'kernel-venv': 'agent-sandbox',
   'backend-monitor': 'observability',
   'health-simulator': 'system-health',
 };

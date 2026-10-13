@@ -199,6 +199,7 @@ describe('legacy alias resolution', () => {
     ['ui-designer', 'appearance'],
     ['tool-grants', 'agent-sandbox'],
     ['python-sandbox', 'agent-sandbox'],
+    ['kernel-venv', 'agent-sandbox'],
     ['backend-monitor', 'observability'],
     ['health-simulator', 'system-health'],
   ];

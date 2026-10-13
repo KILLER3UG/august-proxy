@@ -8,6 +8,7 @@ import { SettingsSectionShell } from '@/components/settings/SettingsSectionShell
 import { AgentSandboxSection } from './AgentSandboxSection';
 import { ToolGrantsSection } from './ToolGrantsSection';
 import { PythonSandboxSection } from './PythonSandboxSection';
+import { KernelVenvSection } from './KernelVenvSection';
 
 interface AccessHubProps {
   active?: { id?: string };
@@ -23,6 +24,17 @@ export function AccessHubSection({ active }: AccessHubProps) {
         subtitle="Always-here tool grants by workspace path — list, explain, revoke."
       >
         <ToolGrantsSection />
+      </SettingsSectionShell>
+    );
+  }
+
+  if (id === 'kernel-venv') {
+    return (
+      <SettingsSectionShell
+        title="Kernel Venv"
+        subtitle="A per-workspace Python 3.13+ environment for packages the app cannot ship (manimgx and friends)."
+      >
+        <KernelVenvSection />
       </SettingsSectionShell>
     );
   }
