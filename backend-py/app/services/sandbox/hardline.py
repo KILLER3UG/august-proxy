@@ -169,6 +169,63 @@ def _credential_store(canonical: str) -> str | None:
     return None
 
 
+def _data_dir_form() -> str:
+    """The normalized data directory, or '' when it cannot be resolved.
+
+    Shared by the two rules that anchor on it. Narrow on purpose — this is a
+    security guard, and a bare `except Exception` here would hide any future
+    import breakage by quietly dropping the rule. The other patterns still run
+    either way.
+    """
+    try:
+        from app.config import settings  # lazy: app.config must not import here
+
+        return _strip_dangling_dots(_canonical(str(settings.dataDir))).lower().rstrip('/')
+    except (ImportError, AttributeError, OSError, ValueError):
+        return ''
+
+
+# Files under the data directory that decide what August RUNS. They are not
+# secret — every settings panel lists them — so they stay readable, and they are
+# not refused by NAME the way `providers.json` is: a project owning a
+# `mcp-servers.json` or an `automations.json` is ordinary, and the rule is the
+# directory, exactly as it is for `config.json`.
+#
+# `mcp-servers.json` (`tools/mcp_client.py:32`) launches a process per entry;
+# `automations.json` (`automations_store.py:33`) carries `jobType: 'shell'` with
+# its command. With `<dataDir>/hooks.json` these are the three files where a
+# write is a command injection with a persistent payload, and the data directory
+# is an allowed root for an absolute `write_file` path — which is precisely how
+# the hook file was escalable.
+_POLICY_FILE_NAMES = ('mcp-servers.json', 'automations.json')
+
+# The durable memory itself. Writing it bypasses the proposal door, the retire
+# machinery and the backup integrity check in one line, and SQLite's journal
+# variants count as the same file (`-wal`, `-shm`, and the `-journal` of a
+# rollback journal), so this is a prefix, not a name.
+#
+# `memory_conn.db_path()` is that prefix or the env override of it, so the rule
+# reads the same two sources rather than importing the service: naming the
+# default alone would miss a deployment that moved the file, and naming the env
+# alone would miss one that did not.
+_DEFAULT_BRAIN_FILE = 'august_brain.sqlite'
+_BRAIN_FILE_ENV = 'AUGUST_BRAIN_SQLITE_FILE'
+
+
+def _brain_db_prefixes() -> tuple[str, ...]:
+    """Absolute, normalized prefixes of the durable-memory database."""
+    out: list[str] = []
+    data = _data_dir_form()
+    if data:
+        out.append(f'{data}/{_DEFAULT_BRAIN_FILE}')
+    env = (os.environ.get(_BRAIN_FILE_ENV) or '').strip()
+    if env:
+        form = _strip_dangling_dots(_canonical(env)).lower()
+        if form.startswith('/') or re.match(r'^[a-z]:/', form):
+            out.append(form)
+    return tuple(dict.fromkeys(p for p in out if p))
+
+
 def _august_secret_files() -> tuple[str, ...]:
     """August's own live secret stores, by absolute path.
 
@@ -177,16 +234,62 @@ def _august_secret_files() -> tuple[str, ...]:
     so the rule is the data directory, never the filename. `providers.json`
     beside it is already blocked by name, being a key store by definition.
     """
-    try:
-        from app.config import settings  # lazy: app.config must not import here
-
-        data = _strip_dangling_dots(_canonical(str(settings.dataDir))).lower().rstrip('/')
-    except (ImportError, AttributeError, OSError, ValueError):
-        # Narrow on purpose — this is a security guard, and a bare
-        # `except Exception` here would hide any future import breakage by
-        # quietly dropping the rule. The other patterns still run either way.
+    data = _data_dir_form()
+    if not data:
         return ()
     return (f'{data}/config.json',)
+
+
+def _agent_state_reason(canonical: str) -> str | None:
+    """Why `canonical` is August's own instruction or execution state, else None.
+
+    The class is the one `hooks.json` established: a file the RUNTIME reads back
+    as policy. Two of them were measured writable by the same door.
+
+      * `<workspace>/.aug/skills/<dir>/SKILL.md` — `skill_service._skillRoots`
+        lists that directory as the project-scope layer, `list_all` takes any
+        `dir/SKILL.md` in it, and `catalogue()` — the one door every prompt
+        surface reads — renders its name and description into the NEXT turn. The
+        measured write answered 'Successfully wrote 209 bytes' with a payload
+        telling the agent to `curl -d @providers.json` somewhere else, so the
+        file was not data, it was an instruction, installed without a proposal,
+        without approval, and without the content rails in `harness_rails` that
+        the learning pipeline is held to. A `run.sh` beside it is the payload the
+        instruction points at; nothing executes it, which is why the whole layer
+        is closed rather than one filename.
+      * `<dataDir>/skills/**` and `<dataDir>/bots/<id>/skills/**` — the agent
+        layer of the same store, reachable by absolute path.
+
+    Reads stay allowed: an agent must be able to read the skill it already has.
+    The sanctioned writers (`skill_service`, `harness_self_improve`) use
+    `Path.write_text` and are not behind this door, which is the point — closing
+    the tool door leaves the pipeline route as the only one the model can take,
+    and that route has a proposal, an approval and a rail on it.
+
+    The BUNDLED layer (`<repo>/skills`) is deliberately NOT in here. That is the
+    installed application payload or a developer's checkout, editing it is
+    ordinary development work, and a human reviews it in a diff — the same reason
+    a workspace's own `AGENTS.md` stays writable and the app's state files do not.
+    """
+    parts = [p for p in canonical.split('/') if p]
+    for i in range(1, len(parts)):
+        if parts[i] == 'skills' and parts[i - 1] == '.aug':
+            return 'agent skill layer (.aug/skills)'
+    # Before the data-directory branch: `AUGUST_BRAIN_SQLITE_FILE` can move the
+    # memory anywhere on disk, and a rule that only looked inside the data
+    # directory would then protect a file that no longer exists.
+    for prefix in _brain_db_prefixes():
+        if canonical == prefix or canonical.startswith(prefix + '-') or canonical.startswith(prefix + '/'):
+            return f'August durable memory ({_DEFAULT_BRAIN_FILE})'
+    data = _data_dir_form()
+    if not data or not canonical.startswith(data + '/'):
+        return None
+    inner = [p for p in canonical[len(data) :].split('/') if p]
+    if 'skills' in inner:
+        return 'agent skill layer (data directory)'
+    if inner and inner[-1] in _POLICY_FILE_NAMES:
+        return f'August execution policy ({inner[-1]})'
+    return None
 
 
 def _store_match_form(path: str) -> str:
@@ -650,6 +753,10 @@ def check_hardline_command(command: str) -> str | None:
             return f'hardline credential store in command: {raw_tok}'
         if write_intent and _PROTECTED_WRITE_PATTERN.search(tok) and not _is_env_template(tok):
             return f'hardline protected path in command: {raw_tok}'
+        if write_intent:
+            state = _agent_state_reason(_store_match_form(raw_tok))
+            if state:
+                return f'hardline protected {state} in command: {raw_tok}'
         if not write_intent and _CREDENTIAL_READ_PATTERN.search(tok):
             return f'hardline credential read blocked: {raw_tok}'
     return None
@@ -665,6 +772,10 @@ def check_hardline_path(path: str, *, for_write: bool) -> str | None:
         return f'hardline protected {store}: {path}'
     if for_write and _PROTECTED_WRITE_PATTERN.search(canonical) and not _is_env_template(canonical):
         return f'hardline protected path: {path}'
+    if for_write:
+        state = _agent_state_reason(canonical)
+        if state:
+            return f'hardline protected {state}: {path}'
     if not for_write and _CREDENTIAL_READ_PATTERN.search(canonical):
         return f'hardline credential read blocked: {path}'
     return None

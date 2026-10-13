@@ -336,6 +336,25 @@ exist — corrected Part 25 Phase 7.1.)
   is not a secret. `tests/test_gate_participation.py` exempts the hook engine from
   the shell-spawn scan and now asserts the two doors that make the exemption true,
   so removing either fails there instead of silently re-opening this.
+- **Instruction and execution state is a write-door rule, not a proposal rule** —
+  `skill_service._skillRoots` reads `<workspace>/.aug/skills`, `<dataDir>/skills`
+  and `<dataDir>/bots/<id>/skills` as live layers, `list_all` takes any
+  `dir/SKILL.md` in them, and `catalogue()` — the one door every prompt surface
+  reads — renders the name and description into the NEXT turn. So `write_file`
+  into that layer is installing an instruction: measured at 'Successfully wrote
+  209 bytes' with a payload telling the agent to exfiltrate `providers.json`,
+  with a `run.sh` beside it, bypassing the proposal, the approval and the content
+  rails in `harness_rails` that the learning pipeline is held to. `_agent_state_reason`
+  closes the two agent layers plus `mcp-servers.json` (launches a process per
+  entry), `automations.json` (`jobType: 'shell'` with its command) and the brain
+  database itself (from `AUGUST_BRAIN_SQLITE_FILE` **or** the data-dir default —
+  naming only the default protects a file that may not exist). Reads stay
+  allowed; the sanctioned writers (`skill_service`, `harness_self_improve`) use
+  `Path.write_text` and are deliberately NOT behind the door, which is what makes
+  the proposal route the only one a model can take. The BUNDLED layer
+  (`<repo>/skills`) and a workspace's own `AGENTS.md` stay writable on purpose:
+  that is a developer's checkout, reviewed in a diff, not app state a model owns.
+  Code mode has its own `write_file`, so the port carries the rule by injection.
 - **Heading demotion postprocesses HTML** — `frontend/desktop/src/lib/
   markdownHeadings.ts` shifts `<h1>`–`<h5>` in the rendered string, after `marked`
   has decided what the headings are. It used to rewrite the markdown SOURCE, and a

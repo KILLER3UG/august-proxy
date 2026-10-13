@@ -259,6 +259,54 @@ def test_the_port_is_measured_on_its_own_verdicts_not_only_against_the_original(
     assert guardNs['_hardline_check_path']('C:/Users/u/.aws-docs/readme.md', False) is None
 
 
+def test_the_port_closes_the_same_instruction_and_execution_layers(isolatedData, tmp_path) -> None:
+    """Code mode has its own `write_file`, so the new rule must be in the port.
+
+    `isolatedData` is autouse and sets `settings.dataDir` to its tmp dir, which
+    is the anchor `build_runner_source` reads — the same way a real session gets
+    it. Reads of every one of these stay allowed: a settings panel lists them,
+    and an agent has to be able to read the skill it already has.
+    """
+    source = code_runner.build_runner_source(user_block='', workspace_path=str(tmp_path))
+    ns: dict = {}
+    saved = dict(os.environ)
+    try:
+        exec(compile(source, '<code_runner_state>', 'exec'), ns)  # noqa: S102
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+
+    data = str(isolatedData).replace(chr(92), '/').lower()
+    ws_skill = str(tmp_path / '.aug' / 'skills' / 'installed' / 'SKILL.md').replace(chr(92), '/')
+    refused = [
+        ws_skill,
+        f'{data}/skills/deploy/SKILL.md',
+        f'{data}/bots/agent1/skills/deploy/SKILL.md',
+        f'{data}/skills/deploy/run.sh',
+        f'{data}/automations.json',
+        f'{data}/mcp-servers.json',
+        f'{data}/august_brain.sqlite',
+        f'{data}/august_brain.sqlite-wal',
+        # The env-configured file, which is what the fixture actually points at:
+        # a rule naming only the default would protect a file that does not exist.
+        str(isolatedData / 'test_brain.sqlite').replace(chr(92), '/').lower(),
+    ]
+    for path in refused:
+        assert ns['_hardline_check_path'](path, True) is not None, path
+        assert ns['_hardline_check_path'](path, False) is None, path
+        assert ns['_hardline_check_command'](f'rm {path}') is not None, path
+        assert ns['_hardline_check_command'](f'cat {path}') is None, path
+    # Controls: the layer is `.aug/skills` and the data directory, not the words.
+    for ok in (
+        '/proj/skills/deploy/SKILL.md',
+        '/proj/docs/SKILL.md',
+        '/proj/src/mcp-servers.json',
+        '/proj/automations.json',
+        f'{data}/learning_state.json',
+    ):
+        assert ns['_hardline_check_path'](ok, True) is None, ok
+
+
 def test_generated_guard_blocks_credential_read(guardNs: dict) -> None:
     """The concrete attack the fix targets: a code-mode run_command that
     reads provider secrets must be refused."""

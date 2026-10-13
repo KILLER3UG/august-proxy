@@ -430,6 +430,13 @@ _READER_CMDS = frozenset(__READERS__)
 _CRED_DIRS = tuple(__CRED_DIRS__)
 _STORE_DIRS = tuple(__STORE_DIRS__)
 _SSH_PUBLIC = tuple(__SSH_PUBLIC__)
+# The data directory and the two names inside it that decide what August RUNS.
+# Injected because this file cannot import `app` — the runner is a separate
+# process, and `_august_secret_files()` is the only other consumer of the same
+# anchor on the live side.
+_DATA_DIR = __DATA_DIR__
+_POLICY_NAMES = tuple(__POLICY_NAMES__)
+_BRAIN_PREFIXES = tuple(__BRAIN_PREFIXES__)
 _AUGUST_SECRETS = tuple(__AUGUST_SECRETS__)
 _ENUM_CMDS = frozenset(__ENUM_CMDS__)
 _REC_SEARCH = frozenset(__REC_SEARCH__)
@@ -528,6 +535,37 @@ def _hardline_store_form(path):
         except (OSError, ValueError):
             pass
     return canon.lower()
+
+
+def _hardline_agent_state_reason(canon):
+    """Port of hardline._agent_state_reason: August's own instruction and
+    execution state, write-only refusal.
+
+    `.aug/skills/<dir>/SKILL.md` is a live scan root — `catalogue()` renders it
+    into the next turn — so a write there is an installed instruction, and
+    `mcp-servers.json` / `automations.json` / the brain database under the data
+    directory decide what August runs and what it remembers. Code mode reached
+    all of them with its own `write_file`, which is why the port carries the
+    rule rather than leaving it on the typed door.
+    """
+    parts = [p for p in canon.split('/') if p]
+    for _i in range(1, len(parts)):
+        if parts[_i] == 'skills' and parts[_i - 1] == '.aug':
+            return 'agent skill layer (.aug/skills)'
+    # Ahead of the data-directory branch: the env override can move the memory
+    # file outside the data directory, where a data-dir-anchored rule would not
+    # see it.
+    for _p in _BRAIN_PREFIXES:
+        if canon == _p or canon.startswith(_p + '-') or canon.startswith(_p + '/'):
+            return 'August durable memory (brain database)'
+    if not _DATA_DIR or not canon.startswith(_DATA_DIR + '/'):
+        return None
+    inner = [p for p in canon[len(_DATA_DIR):].split('/') if p]
+    if 'skills' in inner:
+        return 'agent skill layer (data directory)'
+    if inner and inner[-1] in _POLICY_NAMES:
+        return 'August execution policy (' + inner[-1] + ')'
+    return None
 
 
 def _hardline_ssh_member_reason(_canon):
@@ -676,6 +714,10 @@ def _hardline_check_command(command):
         _lower = _tok.lower()
         if _write and _PROTECTED_WRITE_RE.search(_tok) and not (_ENV_TEMPLATE_RE.search(_tok) and '.env' in _lower):
             return 'hardline protected path in command: ' + _raw
+        if _write:
+            _state = _hardline_agent_state_reason(_hardline_store_form(_tok))
+            if _state:
+                return 'hardline protected ' + _state + ' in command: ' + _raw
         if not _write and _CREDENTIAL_READ_RE.search(_tok):
             return 'hardline credential read blocked: ' + _raw
         _store = _hardline_store_reason(_tok)
@@ -693,6 +735,10 @@ def _hardline_check_path(path, for_write):
     _lower = _canon.lower()
     if for_write and _PROTECTED_WRITE_RE.search(_canon) and not (_ENV_TEMPLATE_RE.search(_canon) and '.env' in _lower):
         return 'hardline protected path: ' + str(path)
+    if for_write:
+        _state = _hardline_agent_state_reason(_hardline_store_form(str(path)))
+        if _state:
+            return 'hardline protected ' + _state + ': ' + str(path)
     if not for_write and _CREDENTIAL_READ_RE.search(_canon):
         return 'hardline credential read blocked: ' + str(path)
     _store = _hardline_store_reason(str(path))
@@ -769,6 +815,9 @@ def build_runner_source(
         .replace('__CRED_DIRS__', repr(sorted(_hardline._CREDENTIAL_DIRECTORIES)))
         .replace('__STORE_DIRS__', repr(sorted(_hardline._CREDENTIAL_STORES)))
         .replace('__SSH_PUBLIC__', repr(sorted(_hardline._SSH_PUBLIC_MEMBERS)))
+        .replace('__DATA_DIR__', repr(_hardline._data_dir_form()))
+        .replace('__POLICY_NAMES__', repr(sorted(_hardline._POLICY_FILE_NAMES)))
+        .replace('__BRAIN_PREFIXES__', repr(sorted(_hardline._brain_db_prefixes())))
         .replace('__AUGUST_SECRETS__', repr(sorted(_hardline._august_secret_files())))
         .replace('__ENUM_CMDS__', repr(sorted(_hardline._ENUMERATING_COMMANDS)))
         .replace('__REC_SEARCH__', repr(sorted(_hardline._RECURSIVE_SEARCH_COMMANDS)))
