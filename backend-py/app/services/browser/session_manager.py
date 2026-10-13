@@ -23,6 +23,7 @@ _USERAgent = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 )
 _MAXConsole = 500
+_LOOPBACK_HOSTS = frozenset({'127.0.0.1', 'localhost', '::1', '[::1]'})
 
 
 class BrowserSession:
@@ -53,18 +54,78 @@ class BrowserUnavailableError(RuntimeError):
     """Raised when Playwright/chromium is not installed."""
 
 
+_BROWSER_INSTALL_HINT = (
+    'Run `uv run playwright install chromium` — the `playwright` package '
+    'itself ships no browser binary, so an import is not a working engine.'
+)
+
+# Where `playwright install` puts the browser, per OS (honours
+# PLAYWRIGHT_BROWSERS_PATH first). Globbed, not assumed: the version suffix
+# changes whenever the pinned chromium moves.
+_BROWSER_ROOTS = (
+    '~/AppData/Local/ms-playwright',      # Windows
+    '~/.cache/ms-playwright',             # Linux
+    '~/Library/Caches/ms-playwright',     # macOS
+)
+_BROWSER_BINARIES = (
+    'chromium-*/chrome-win/chrome.exe',
+    'chromium-*/chrome-linux/chrome',
+    'chromium-*/chrome-mac/Chromium.app/Contents/MacOS/Chromium',
+    'chromium_headless_shell-*/chrome-win/headless_shell.exe',
+    'chromium_headless_shell-*/chrome-linux/headless_shell',
+    'chromium_headless_shell-*/chrome-mac/Chromium.app/Contents/MacOS/Chromium',
+)
+
+
+def _findChromiumExecutable() -> str:
+    """Playwright's installed chromium binary, '' when absent.
+
+    The ordinary failure is NOT an ImportError: playwright is a declared
+    dependency, so the package is present and only the BINARY is missing.
+    That case used to surface as Playwright's own "Executable doesn't exist"
+    out of ``launch()`` — un-wrapped, un-actionable, in every browser tool
+    and any new caller. Probing first turns it into a receipt.
+    """
+    import glob
+    import os
+
+    roots: list[str] = []
+    env_root = os.environ.get('PLAYWRIGHT_BROWSERS_PATH')
+    if env_root:
+        roots.append(env_root)
+    roots.extend(os.path.expanduser(r) for r in _BROWSER_ROOTS)
+    for root in roots:
+        for pattern in _BROWSER_BINARIES:
+            hits = sorted(glob.glob(os.path.join(root, pattern)))
+            if hits:
+                return hits[-1]
+    return ''
+
+
 async def _startEngine() -> Playwright:
     try:
         from playwright.async_api import async_playwright
     except ImportError as exc:
         raise BrowserUnavailableError(
-            'Playwright is not installed. Run `uv add playwright` then `uv run playwright install chromium`.'
+            f'Playwright is not installed. {_BROWSER_INSTALL_HINT}'
         ) from exc
+    if not _findChromiumExecutable():
+        raise BrowserUnavailableError(
+            f'Playwright is installed but its chromium browser is not. {_BROWSER_INSTALL_HINT}'
+        )
     return await async_playwright().start()
 
 
-async def getOrCreateSession(sessionId: str) -> BrowserSession:
-    """Return the browser session for ``session_id``, creating it if needed."""
+async def getOrCreateSession(sessionId: str, *, allow_loopback: bool = False) -> BrowserSession:
+    """Return the browser session for ``session_id``, creating it if needed.
+
+    ``allow_loopback`` opens the SSRF guard's loopback rule for THIS session
+    only, and exists for one caller: the artifact judge, whose page must
+    navigate August's own backend (the artifact route) to screenshot exactly
+    what the user sees. The guard stays installed — redirects are still
+    re-checked — and a judge session is never handed to a model-facing tool,
+    so the model still cannot direct a browser at loopback.
+    """
     sid = sessionId or 'default'
     existing = _sessions.get(sid)
     if existing and existing.ready:
@@ -81,10 +142,18 @@ async def getOrCreateSession(sessionId: str) -> BrowserSession:
         # No --no-sandbox: this is a user-machine browser, not a container —
         # the sandbox flag weakens the browser's own isolation for no benefit
         # on Windows (audit finding).
-        browser = await launcher.launch(
-            headless=True,
-            args=['--disable-dev-shm-usage', '--disable-gpu'],
-        )
+        try:
+            browser = await launcher.launch(
+                headless=True,
+                args=['--disable-dev-shm-usage', '--disable-gpu'],
+            )
+        except Exception as exc:
+            # A binary the probe missed (corrupt install, driver/platform
+            # mismatch) must still arrive as the catchable type the handlers
+            # know, not as Playwright's raw error.
+            raise BrowserUnavailableError(
+                f'chromium failed to launch ({exc}). {_BROWSER_INSTALL_HINT}'
+            ) from exc
         session.browser = browser
         context = await browser.new_context(
             viewport=_VIEWPORT,
@@ -105,12 +174,14 @@ async def getOrCreateSession(sessionId: str) -> BrowserSession:
                 del session.consoleLogs[: len(session.consoleLogs) - _MAXConsole]
 
         page.on('console', _onConsole)
-        await _installNavigationGuard(page, session)
+        await _installNavigationGuard(page, session, allow_loopback=allow_loopback)
         _sessions[sid] = session
         return session
 
 
-async def _installNavigationGuard(page: Page, session: BrowserSession) -> None:
+async def _installNavigationGuard(
+    page: Page, session: BrowserSession, *, allow_loopback: bool = False
+) -> None:
     """Refuse any request to a blocked address, on EVERY request.
 
     Checking the URL the model supplied is not enough, and the gap was
@@ -161,6 +232,15 @@ async def _installNavigationGuard(page: Page, session: BrowserSession) -> None:
         # data:/blob:/about: are not network fetches and have no host to
         # judge; blocking them would break rendering without adding safety.
         if urlparse(target).scheme not in ('http', 'https'):
+            await route.continue_()
+            return
+        if allow_loopback and (urlparse(target).hostname or '') in _LOOPBACK_HOSTS:
+            # The one sanctioned exception: an INTERNAL caller (the artifact
+            # judge) whose page must reach August's own backend. The SSRF rule
+            # exists to stop a MODEL-DIRECTED browser from reaching loopback;
+            # this session's page is never handed to a model-facing tool, and
+            # the redirect control below still re-checks where the browser
+            # ended up.
             await route.continue_()
             return
         reason = _checkUrlAllowlist(target)
