@@ -1368,6 +1368,18 @@ def test_the_behavioural_classes_put_their_control_nets_in_the_map():
     assert not ct.lint_netlist(deck), ct.lint_netlist(deck)
     short = '* e\nV1 in 0 5\nE1 out 0 in 2\n.end\n'
     assert any('E1' in w and '4 nodes' in w for w in ct.lint_netlist(short)), ct.lint_netlist(short)
+    # Rendered, not just sliced: a parser fix the drawing ignores would still put
+    # two leads on the symbol and leave the control pair with no wire at all. Same
+    # assertion the pin-lead test makes, driven from the deck instead of a
+    # hand-built Component.
+    graph = schematic.build_graph(
+        deck, {'grid': schematic.GRID, 'components': {}}
+    )
+    part = next(c for c in graph['components'] if c.ref == 'E1')
+    assert len(part.pins()) == 4, part.pins()
+    svg = '\n'.join(schematic._symbol_svg(part, '#334155', None, None))
+    for (px_, py_) in part.pins()[2:]:
+        assert f'x1="{px_:.0f}" y1="{py_:.0f}"' in svg, f'control pin {(px_, py_)} has no lead'
 
 
 def test_inject_fault_refuses_a_coupling_line():
