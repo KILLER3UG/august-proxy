@@ -164,3 +164,68 @@ async def testRawRefusesOutsideWorkspaceAndMissingPath(client, layout):
     assert resp.status_code == 403
     resp = await client.get('/api/workbench/files/raw')
     assert resp.status_code == 400
+
+
+# ── /api/workbench/artifact/html — live document preview (Stage 1) ─────────
+# The interactive half of the drawer: a `srcdoc` iframe inherits the shell CSP
+# (`script-src 'self'`), so an inline-script figure used to render inert. This
+# route serves the document from the backend's own origin under a
+# document-scoped CSP — same access gate as /files/read, HTML/SVG only.
+
+
+@pytest.mark.asyncio
+async def testArtifactHtmlServesDocumentScopedCsp(client, layout):
+    sid = _makeSession(str(layout['ws']))
+    target = layout['ws'] / 'report.html'
+    resp = await client.get(
+        '/api/workbench/artifact/html', params={'path': str(target), 'sessionId': sid}
+    )
+    assert resp.status_code == 200
+    assert resp.headers['content-type'].startswith('text/html')
+    csp = resp.headers['content-security-policy']
+    # Inline script is allowed HERE and only here — the shell CSP is untouched.
+    assert "default-src 'none'" in csp
+    assert "script-src 'unsafe-inline'" in csp
+    assert b'<html>' in resp.content
+
+
+@pytest.mark.asyncio
+async def testArtifactHtmlServesSvgAsAnSvgDocument(client, layout):
+    # Served as image/svg+xml on purpose: that is the parse mode an SVG's
+    # <script> runs in. text/html would parse it as foreign content and the
+    # figure would stay inert — the exact failure this route removes.
+    sid = _makeSession(str(layout['ws']))
+    svg = layout['ws'] / 'figure.svg'
+    svg.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg"><script>1</script></svg>', 'utf-8'
+    )
+    resp = await client.get(
+        '/api/workbench/artifact/html', params={'path': str(svg), 'sessionId': sid}
+    )
+    assert resp.status_code == 200
+    assert resp.headers['content-type'].startswith('image/svg+xml')
+    assert 'content-security-policy' in resp.headers
+
+
+@pytest.mark.asyncio
+async def testArtifactHtmlRefusesNonHtmlSuffix(client, layout):
+    sid = _makeSession(str(layout['ws']))
+    target = layout['temparea'] / 'scratch.txt'
+    resp = await client.get(
+        '/api/workbench/artifact/html', params={'path': str(target), 'sessionId': sid}
+    )
+    assert resp.status_code == 415
+
+
+@pytest.mark.asyncio
+async def testArtifactHtmlKeepsTheSharedAccessGate(client, layout):
+    _makeSession(str(layout['ws']))
+    resp = await client.get(
+        '/api/workbench/artifact/html',
+        params={'path': str(layout['outside'] / 'secret.txt')},
+    )
+    assert resp.status_code == 403
+    resp = await client.get(
+        '/api/workbench/artifact/html', params={'path': str(layout['ws'] / 'id_rsa')}
+    )
+    assert resp.status_code == 403

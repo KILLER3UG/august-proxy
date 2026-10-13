@@ -8,6 +8,20 @@ import { create } from 'zustand';
 export type ChatFont = 'default' | 'serif' | 'mono';
 export type VoiceSpeed = 'slow' | 'normal' | 'fast';
 
+/** How an HTML/SVG artifact renders in the right-drawer preview.
+ *
+ *  - `auto` (default): live — served from the backend's own origin under a
+ *    document-scoped CSP — only for files the SESSION produced (uploaded via
+ *    the composer's attachment door, i.e. carrying `savedPath`, or opened
+ *    from a deliverable/artifact card, i.e. `sessionAuthored`); an arbitrary
+ *    file the user opened stays a static `srcDoc` render.
+ *  - `on`: live whenever the file has a workspace path to serve.
+ *  - `off`: always the static render.
+ *
+ *  The flag keys on provenance, never on extension: an `.html` the session
+ *  wrote is a live artifact; an `.html` the user opened is a document. */
+export type LiveHtmlPreview = 'auto' | 'on' | 'off';
+
 export interface ProfilePrefs {
   /** What August should call you (distinct from the account display name). */
   callYou: string;
@@ -31,24 +45,32 @@ interface PreferencesState {
   reduceMotion: boolean;
   voice: VoicePrefs;
   notifyResponseComplete: boolean;
+  liveHtmlPreview: LiveHtmlPreview;
   setProfile: (patch: Partial<ProfilePrefs>) => void;
   setChatFont: (font: ChatFont) => void;
   setReduceMotion: (on: boolean) => void;
   setVoice: (patch: Partial<VoicePrefs>) => void;
   setNotifyResponseComplete: (on: boolean) => void;
+  setLiveHtmlPreview: (mode: LiveHtmlPreview) => void;
 }
 
 const STORAGE_KEY = 'august.preferences';
 
 const DEFAULTS: Omit<
   PreferencesState,
-  'setProfile' | 'setChatFont' | 'setReduceMotion' | 'setVoice' | 'setNotifyResponseComplete'
+  | 'setProfile'
+  | 'setChatFont'
+  | 'setReduceMotion'
+  | 'setVoice'
+  | 'setNotifyResponseComplete'
+  | 'setLiveHtmlPreview'
 > = {
   profile: { callYou: '', workDescription: '', instructions: '' },
   chatFont: 'default',
   reduceMotion: false,
   voice: { language: 'en', style: 'Neutral', speed: 'normal' },
   notifyResponseComplete: false,
+  liveHtmlPreview: 'auto',
 };
 
 function load(): typeof DEFAULTS {
@@ -64,6 +86,7 @@ function load(): typeof DEFAULTS {
       voice: { ...DEFAULTS.voice, ...(parsed.voice ?? {}) },
       notifyResponseComplete:
         parsed.notifyResponseComplete ?? DEFAULTS.notifyResponseComplete,
+      liveHtmlPreview: parsed.liveHtmlPreview ?? DEFAULTS.liveHtmlPreview,
     };
   } catch {
     return DEFAULTS;
@@ -80,6 +103,7 @@ function persist(state: PreferencesState): void {
         reduceMotion: state.reduceMotion,
         voice: state.voice,
         notifyResponseComplete: state.notifyResponseComplete,
+        liveHtmlPreview: state.liveHtmlPreview,
       }),
     );
   } catch {
@@ -123,6 +147,10 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
   },
   setNotifyResponseComplete: (on) => {
     set({ notifyResponseComplete: on });
+    persist(get());
+  },
+  setLiveHtmlPreview: (mode) => {
+    set({ liveHtmlPreview: mode });
     persist(get());
   },
 }));

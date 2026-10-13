@@ -174,6 +174,12 @@ export interface FileAttachment {
    *  POST /api/workbench/attachments. Named in the prompt so
    *  analyze_media / read_file can open the file. */
   savedPath?: string;
+  /** Provenance, not extension: the SESSION produced or touched this file —
+   *  it arrived through a deliverable/artifact card (`openFileInDrawer`), not
+   *  a drag-drop or file picker. Session-authored HTML/SVG previews LIVE by
+   *  default (served from the backend's own origin under a document-scoped
+   *  CSP); arbitrary opened files stay static renders. */
+  sessionAuthored?: boolean;
   /** Original MIME type, used by the inline file preview when available. */
   mimeType?: string;
   /** Local object-URL preview shown while reading (revoked when done/removed). */

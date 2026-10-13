@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useThemeStore, setTextSize } from '@/lib/theme';
 import type { TextSize } from '@/lib/theme';
-import { usePreferencesStore, type ChatFont, type VoiceSpeed } from '@/lib/preferences';
+import { usePreferencesStore, type ChatFont, type LiveHtmlPreview, type VoiceSpeed } from '@/lib/preferences';
 import { setOnboardingSeen, shouldShowOnboarding } from '@/components/overlays/OnboardingTour';
 import { useAccountStore } from '@/store/account';
 import { SettingsCard } from '@/components/settings/SettingsCard';
@@ -68,10 +68,12 @@ export function GeneralSection() {
   const reduceMotion = usePreferencesStore((s) => s.reduceMotion);
   const voice = usePreferencesStore((s) => s.voice);
   const notifyResponseComplete = usePreferencesStore((s) => s.notifyResponseComplete);
+  const liveHtmlPreview = usePreferencesStore((s) => s.liveHtmlPreview);
   const setChatFont = usePreferencesStore((s) => s.setChatFont);
   const setReduceMotion = usePreferencesStore((s) => s.setReduceMotion);
   const setVoice = usePreferencesStore((s) => s.setVoice);
   const setNotifyResponseComplete = usePreferencesStore((s) => s.setNotifyResponseComplete);
+  const setLiveHtmlPreview = usePreferencesStore((s) => s.setLiveHtmlPreview);
 
   const accounts = useAccountStore((s) => s.accounts);
   const activeAccountId = useAccountStore((s) => s.activeAccountId);
@@ -165,6 +167,27 @@ export function GeneralSection() {
               label="Reduce motion"
               description="Reduce animation in streaming responses and other interface elements."
             />
+
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">Live artifact previews</p>
+                <p className="text-xs text-muted-foreground">
+                  Figures and dashboards August writes run their own scripts when previewed.
+                  Files you open yourself stay static renders.
+                </p>
+              </div>
+              <select
+                value={liveHtmlPreview}
+                onChange={(e) => setLiveHtmlPreview(e.target.value as LiveHtmlPreview)}
+                className={cn(inputClass, 'w-40 shrink-0')}
+                aria-label="Live artifact previews"
+                data-testid="settings-live-html-preview"
+              >
+                <option value="auto">August's files only</option>
+                <option value="on">Every file with a path</option>
+                <option value="off">Never</option>
+              </select>
+            </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="block space-y-1.5">

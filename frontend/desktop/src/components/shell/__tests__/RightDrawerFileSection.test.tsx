@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { RightDrawerFileSection } from '../RightDrawerFileSection';
 import type { FileAttachment } from '@/types/chat';
+import { usePreferencesStore, type LiveHtmlPreview } from '@/lib/preferences';
 
 const TEXT_FILE: FileAttachment = {
   name: 'notes.txt',
@@ -9,6 +10,10 @@ const TEXT_FILE: FileAttachment = {
   type: 'text',
   content: 'hello world\nsecond line',
 };
+
+function setLivePref(mode: LiveHtmlPreview) {
+  usePreferencesStore.setState({ liveHtmlPreview: mode });
+}
 
 function setup(file: FileAttachment = TEXT_FILE) {
   return render(<RightDrawerFileSection file={file} />);
@@ -234,5 +239,140 @@ describe('RightDrawerFileSection fullscreen preview', () => {
     });
     expect(document.querySelector('[data-testid="html-preview-tab-render"]')).toBeNull();
     expect(document.querySelector('[data-testid="html-preview-tab-source"]')).toBeNull();
+  });
+});
+
+/* ── Live artifact preview (Stage 1) ───────────────────────────────────────
+ * A `srcdoc` iframe inherits the shell CSP (`script-src 'self'`), so an
+ * inline-script figure used to render inert. Session-produced files now go
+ * through GET /api/workbench/artifact/html, served from the backend's own
+ * origin under a document-scoped CSP, with `allow-scripts` and WITHOUT
+ * `allow-same-origin` (opaque origin — no parent read, no Tauri IPC). */
+
+describe('RightDrawerFileSection live artifact preview', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    setLivePref('auto');
+  });
+
+  const SESSION_HTML: FileAttachment = {
+    name: 'figure.html',
+    size: '6 KB',
+    type: 'text',
+    content:
+      '<!doctype html><html><body><script>let spin=1;</script></body></html>',
+    savedPath: 'C:/ws/.aug/attachments/sess-1/figure.html',
+  };
+
+  const OPENED_HTML: FileAttachment = {
+    name: 'report.html',
+    size: '6 KB',
+    type: 'text',
+    content:
+      '<!doctype html><html><body><script>let x=1;</script></body></html>',
+    path: 'C:/Users/me/report.html',
+  };
+
+  it('serves a session-produced HTML file from the artifact route in a script-capable sandbox', () => {
+    setup(SESSION_HTML);
+    const frame = document.querySelector<HTMLIFrameElement>(
+      '[data-testid="file-preview-html-live-iframe"]',
+    );
+    expect(frame).toBeTruthy();
+    expect(frame?.src).toContain('/api/workbench/artifact/html');
+    expect(frame?.src).toContain(encodeURIComponent(SESSION_HTML.savedPath!));
+    const sandbox = frame?.getAttribute('sandbox') ?? '';
+    expect(sandbox).toContain('allow-scripts');
+    // An opaque origin: no parent read, no Tauri IPC reach.
+    expect(sandbox).not.toContain('allow-same-origin');
+    expect(frame?.getAttribute('srcdoc')).toBeNull();
+  });
+
+  it('keeps an arbitrary opened file on the static srcDoc render by default', () => {
+    setup(OPENED_HTML);
+    expect(
+      document.querySelector('[data-testid="file-preview-html-live-iframe"]'),
+    ).toBeNull();
+    const frame = document.querySelector<HTMLIFrameElement>(
+      '[data-testid="file-preview-html-live"] iframe[sandbox]',
+    );
+    expect(frame).toBeTruthy();
+    expect(frame?.getAttribute('sandbox')).toBe('');
+    expect(frame?.getAttribute('srcdoc')).toContain('let x=1;');
+  });
+
+  it("honors the preference override: 'off' pins a session file static, 'on' opens a file with a path", () => {
+    setLivePref('off');
+    setup(SESSION_HTML);
+    expect(
+      document.querySelector('[data-testid="file-preview-html-live-iframe"]'),
+    ).toBeNull();
+    expect(
+      document.querySelector('[data-testid="file-preview-html-live"] iframe[srcdoc]'),
+    ).toBeTruthy();
+
+    setLivePref('on');
+    setup(OPENED_HTML);
+    const frame = document.querySelector<HTMLIFrameElement>(
+      '[data-testid="file-preview-html-live-iframe"]',
+    );
+    expect(frame).toBeTruthy();
+    expect(frame?.getAttribute('sandbox')).toContain('allow-scripts');
+  });
+
+  it('renders a standalone SVG as a live document too', () => {
+    setup({
+      name: 'figure.svg',
+      size: '4 KB',
+      type: 'text',
+      content: '<svg xmlns="http://www.w3.org/2000/svg"><script>turn()</script><rect/></svg>',
+      savedPath: 'C:/ws/.aug/attachments/sess-1/figure.svg',
+    });
+    const frame = document.querySelector<HTMLIFrameElement>(
+      '[data-testid="file-preview-html-live-iframe"]',
+    );
+    expect(frame).toBeTruthy();
+    expect(frame?.src).toContain('figure.svg');
+  });
+
+  it('the Source toggle still shows the raw text of a live document', () => {
+    setup(SESSION_HTML);
+    fireEvent.click(document.querySelector('[data-testid="html-preview-tab-source"]')!);
+    expect(screen.getByText(/let spin=1;/i)).toBeTruthy();
+    expect(
+      document.querySelector('[data-testid="file-preview-html-live-iframe"]'),
+    ).toBeNull();
+    fireEvent.click(document.querySelector('[data-testid="html-preview-tab-render"]')!);
+    expect(
+      document.querySelector('[data-testid="file-preview-html-live-iframe"]'),
+    ).toBeTruthy();
+  });
+
+  it('a live document with no path on disk falls back to the static render', () => {
+    // savedPath absent AND path absent (pure paste/upload) — nothing to serve.
+    setup({
+      name: 'inline.html',
+      size: '2 KB',
+      type: 'text',
+      content: '<!doctype html><html><body><script>1</script></body></html>',
+    });
+    expect(
+      document.querySelector('[data-testid="file-preview-html-live-iframe"]'),
+    ).toBeNull();
+    expect(
+      document.querySelector('[data-testid="file-preview-html-live"] iframe[srcdoc]'),
+    ).toBeTruthy();
+  });
+
+  it('a file opened from a session deliverable card previews live', () => {
+    // openFileInDrawer stamps sessionAuthored on card-opened files — this is
+    // the create_html_artifact output path, and it must animate by default.
+    setup({ ...OPENED_HTML, sessionAuthored: true });
+    const frame = document.querySelector<HTMLIFrameElement>(
+      '[data-testid="file-preview-html-live-iframe"]',
+    );
+    expect(frame).toBeTruthy();
+    expect(frame?.getAttribute('sandbox')).toContain('allow-scripts');
+    expect(frame?.src).toContain(encodeURIComponent(OPENED_HTML.path!));
   });
 });

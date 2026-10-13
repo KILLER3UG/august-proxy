@@ -16,7 +16,9 @@ import {
   X,
 } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
+import { usePreferencesStore } from '@/lib/preferences';
 import { cn } from '@/lib/utils';
+import { backendOriginSync } from '@/api/client';
 import { PdfPager } from './PdfPager';
 import { closeRightDrawer } from './RightDrawerState';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
@@ -57,6 +59,7 @@ function describePreview(file: FileAttachment): {
   isImage: boolean;
   hasText: boolean;
   isHtml: boolean;
+  isSvg: boolean;
   isMarkdown: boolean;
   isPdf: boolean;
 } {
@@ -64,6 +67,11 @@ function describePreview(file: FileAttachment): {
   const isHtml =
     hasText && /\.(html?|xhtml)$/i.test(file.name || '') &&
     /<\/html|<!doctype html|<body/i.test(file.content ?? '');
+  // A standalone SVG is a live *document* (its <script> runs) — the Anatomy
+  // figures the artifact route exists for. Only as a text-type attachment;
+  // an image-type SVG (bytes in the webview) stays an <img>, which is what
+  // a picture should be.
+  const isSvg = hasText && /\.svg$/i.test(file.name || '');
   const isMarkdown =
     hasText && /\.(md|markdown|mdown|mkdn|mdx)$/i.test(file.name || '');
   const isImage = file.type === 'image' && !!(file.dataUrl || file.previewUrl);
@@ -72,7 +80,28 @@ function describePreview(file: FileAttachment): {
   // with neither falls through to the text view.
   const isPdf =
     /\.pdf$/i.test(file.name || '') && !!(file.dataUrl || file.previewUrl);
-  return { isImage, hasText, isHtml, isMarkdown, isPdf };
+  return { isImage, hasText, isHtml, isSvg, isMarkdown, isPdf };
+}
+
+/** The artifact route that serves a live document from the backend's own
+ *  origin, or null when this file must stay a static render.
+ *
+ *  Provenance, not extension, decides: `savedPath` marks a file the session
+ *  uploaded through the composer door and `sessionAuthored` one opened from a
+ *  deliverable/artifact card (`openFileInDrawer`). The default (`auto`) goes
+ *  live only for those. A file the user dragged in or picked has only `path`
+ *  and renders statically unless the preference says otherwise. */
+function liveArtifactUrl(file: FileAttachment, pref: 'auto' | 'on' | 'off'): string | null {
+  const docPath = file.savedPath || file.path || '';
+  if (!docPath) return null;
+  const wantLive = pref === 'on' || (pref === 'auto' && (!!file.savedPath || !!file.sessionAuthored));
+  if (!wantLive) return null;
+  // backendOriginSync() is null in a plain web run (same-origin Vite proxy) —
+  // a relative URL is correct there. In Tauri it is the discovered sidecar
+  // base (http://127.0.0.1:<port>), a DIFFERENT origin from the shell, which
+  // is the whole point: the response's own CSP applies instead of the shell's.
+  const base = backendOriginSync() ?? '';
+  return `${base}/api/workbench/artifact/html?path=${encodeURIComponent(docPath)}`;
 }
 
 /** The zoom-scaled preview body — rendered identically in the drawer pane
@@ -80,11 +109,9 @@ function describePreview(file: FileAttachment): {
  *  source choice comes from the header toggle (`showSource`). */
 function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom: number; showSource: boolean }) {
   const imageSrc = file.dataUrl || file.previewUrl;
-  const { isImage, isHtml, isMarkdown, isPdf } = describePreview(file);
-  // Render HTML as a static, fully sandboxed preview. The desktop app's CSP
-  // intentionally blocks inline scripts, so advertising a live interactive
-  // preview here would promise behavior the packaged webview cannot provide.
-  const liveSrcDoc = isHtml ? file.content ?? '' : '';
+  const { isImage, isHtml, isSvg, isMarkdown, isPdf } = describePreview(file);
+  const livePref = usePreferencesStore((s) => s.liveHtmlPreview);
+  const liveUrl = (isHtml || isSvg) ? liveArtifactUrl(file, livePref) : null;
   const hasText = file.type === 'text' && typeof file.content === 'string';
   const pdfSrc = file.dataUrl || file.previewUrl;
 
@@ -113,15 +140,33 @@ function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom:
             <PdfPager src={pdfSrc} label={file.name} className="flex-1" />
           )}
         </div>
-      ) : isHtml ? (
+      ) : isHtml || isSvg ? (
         <div className="flex h-full min-h-full flex-col bg-background" data-testid="file-preview-html-live">
           {showSource ? (
             <TextPreview content={file.content ?? ''} />
+          ) : liveUrl ? (
+            // Live document: served from the backend origin under the route's
+            // own document-scoped CSP, so inline script runs HERE while the
+            // shell CSP stays `script-src 'self'`. `allow-scripts` WITHOUT
+            // `allow-same-origin` — an opaque origin cannot read the parent
+            // window or reach the Tauri IPC bridge. (The Surfer embed's
+            // `allow-same-origin` is a different case: a genuinely foreign
+            // https origin, not an opaque one — do not copy it here.)
+            <iframe
+              title={`Live preview of ${file.name}`}
+              sandbox="allow-scripts"
+              src={liveUrl}
+              className="min-h-[24rem] w-full flex-1 border-0 bg-white dark:bg-sunken"
+              data-testid="file-preview-html-live-iframe"
+            />
           ) : (
+            // Static fallback: an arbitrary file the user opened (no session
+            // provenance) renders inert — full sandbox, no script — exactly
+            // like a pasted attachment always did.
             <iframe
               title={`HTML preview of ${file.name}`}
               sandbox=""
-              srcDoc={liveSrcDoc}
+              srcDoc={file.content ?? ''}
               className="min-h-[24rem] w-full flex-1 border-0 bg-white dark:bg-sunken"
             />
           )}
@@ -173,10 +218,11 @@ function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom:
 }
 
 /** Header preview/source toggle (Eye = rendered preview, Code2 = source).
- *  Supports both HTML interactive previews and Markdown rich document rendering. */
+ *  Supports HTML/SVG live previews and Markdown rich document rendering. */
 function ViewModeToggle({
   file,
   isHtml,
+  isSvg,
   isMarkdown,
   isPdf,
   showSource,
@@ -184,13 +230,14 @@ function ViewModeToggle({
 }: {
   file: FileAttachment;
   isHtml: boolean;
+  isSvg: boolean;
   isMarkdown: boolean;
   isPdf: boolean;
   showSource: boolean;
   setShowSource: (v: boolean) => void;
 }) {
   // The Eye now targets the PDF pager too, so a PDF has a rendered view.
-  const hasRenderable = isHtml || isMarkdown || isPdf;
+  const hasRenderable = isHtml || isSvg || isMarkdown || isPdf;
   const ext = file.name.split('.').pop()?.toUpperCase() ?? '';
   // Office formats have no client-side renderer and we do not add a LibreOffice
   // dependency for them — say so plainly rather than promising a preview that
@@ -314,7 +361,7 @@ export function RightDrawerFileSection({ file, bare = false }: { file: FileAttac
   const [fullscreen, setFullscreen] = useState(false);
   // Preview-vs-source choice, lifted here so the header toggle and the
   // canvas (drawer + fullscreen) share one state.
-  const { hasText, isHtml, isMarkdown, isPdf } = describePreview(file);
+  const { hasText, isHtml, isSvg, isMarkdown, isPdf } = describePreview(file);
   const [showSource, setShowSource] = useState(false);
   useEffect(() => {
     setShowSource(false);
@@ -344,7 +391,7 @@ export function RightDrawerFileSection({ file, bare = false }: { file: FileAttac
         </span>
       )}
       {hasText && (
-        <ViewModeToggle file={file} isHtml={isHtml} isMarkdown={isMarkdown} isPdf={isPdf} showSource={showSource} setShowSource={setShowSource} />
+        <ViewModeToggle file={file} isHtml={isHtml} isSvg={isSvg} isMarkdown={isMarkdown} isPdf={isPdf} showSource={showSource} setShowSource={setShowSource} />
       )}
       {hasText && file.content && (
         <CopyFileButton content={file.content} />
@@ -420,7 +467,7 @@ export function RightDrawerFileSection({ file, bare = false }: { file: FileAttac
                 </span>
               )}
               {hasText && (
-                <ViewModeToggle file={file} isHtml={isHtml} isMarkdown={isMarkdown} isPdf={isPdf} showSource={showSource} setShowSource={setShowSource} />
+                <ViewModeToggle file={file} isHtml={isHtml} isSvg={isSvg} isMarkdown={isMarkdown} isPdf={isPdf} showSource={showSource} setShowSource={setShowSource} />
               )}
               {hasText && file.content && (
                 <CopyFileButton content={file.content} />

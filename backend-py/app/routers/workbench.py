@@ -914,6 +914,65 @@ async def readRawFile(path: str = '', sessionId: str = Query('')):
     )
 
 
+_ARTIFACT_LIVE_MIME = {
+    '.html': 'text/html; charset=utf-8',
+    '.htm': 'text/html; charset=utf-8',
+    # An SVG served as image/svg+xml is parsed as an SVG *document*, which is
+    # the only mode its <script> runs in — as text/html the same bytes parse as
+    # foreign content and the figure stays inert, the bug this route exists to fix.
+    '.svg': 'image/svg+xml',
+}
+_ARTIFACT_LIVE_EXT = frozenset(_ARTIFACT_LIVE_MIME)
+# Document-scoped, NOT the shell's. This response leaves the backend origin
+# (http://127.0.0.1:<port>), which the Tauri asset CSP does not cover, so the
+# app-wide `script-src 'self'` never applies here — inline script is allowed
+# ONLY inside an artifact document, never in the app. `default-src 'none'`
+# keeps everything else (fetch, fonts, frames) off; `style-src` and `img-src`
+# are what a self-contained figure needs.
+_ARTIFACT_CSP = (
+    "default-src 'none'; script-src 'unsafe-inline'; "
+    "style-src 'unsafe-inline'; img-src data: blob:"
+)
+
+
+@router.get('/artifact/html')
+async def readArtifactHtml(path: str = '', sessionId: str = Query('')):
+    """Live HTML/SVG artifact document — the interactive half of the drawer.
+
+    ``create_html_artifact`` output and a session's figures are HTML with
+    inline script. The drawer used to render them through ``srcDoc``, which
+    inherits the shell CSP (``script-src 'self'``): the figure painted and
+    nothing moved, with no error anywhere. Serving the document from the
+    backend's own origin puts it under THIS response's CSP instead — the shell
+    policy stays untouched.
+
+    Same access gate as /files/read + /files/raw (hardline + workspace/temp
+    roots + size cap): one path policy, reused — not a second one. Anything
+    that is not .html/.svg is refused, because a route that answers
+    ``text/html`` for arbitrary bytes is a content-confusion hole.
+    """
+    resolved, _ = await _resolve_shared_read_file(path, sessionId)
+    suffix = resolved.suffix.lower()
+    if suffix not in _ARTIFACT_LIVE_EXT:
+        raise HTTPException(
+            status_code=415,
+            detail='Only .html and .svg artifacts can be served as live documents',
+        )
+    from fastapi.responses import Response as _Response
+
+    return _Response(
+        content=resolved.read_bytes(),
+        media_type=_ARTIFACT_LIVE_MIME[suffix],
+        headers={
+            'Content-Security-Policy': _ARTIFACT_CSP,
+            # A session regenerates its artifacts — never reuse a stale one.
+            'Cache-Control': 'no-store',
+            # Do not let a plugin sniff an .svg into something else.
+            'X-Content-Type-Options': 'nosniff',
+        },
+    )
+
+
 @router.post('/chat/queue')
 async def queueMessage(request: Request):
     """Enqueue a user message for delivery to the model mid-response.

@@ -85,6 +85,12 @@ export async function openFileInDrawer(path: string, sessionId?: string): Promis
       attachment = await ChatAttachmentService.fromBackendPath(path, sessionId);
     }
     if (attachment) {
+      // Everything opened through this door came from a session deliverable
+      // (produced files / artifacts gallery), so it is session-authored by
+      // definition — the flag that lets an HTML figure preview live. A file
+      // the user drags in or picks goes through the composer instead and
+      // stays a static render.
+      attachment.sessionAuthored = true;
       openRightDrawerFile(attachment);
     } else {
       await revealInFolder(path);
