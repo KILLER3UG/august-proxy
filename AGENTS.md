@@ -294,6 +294,24 @@ exist — corrected Part 25 Phase 7.1.)
   too, and `tests/test_code_runner_hardline.py` fails on the drift. The port must
   probe the **resolved** path like `bind_path` does, or a workspace link into a
   store reads the token.
+- **Hooks are execution policy, so the write door owns them** —
+  `<dataDir>/hooks.json` loads with **no** trust decision (the trust gate in
+  `user_hooks` keys on a *workspace* origin, and the user-level file has none), and
+  the data directory is an allowed root for an absolute `write_file` path. So a
+  model could install a shell command for August to run on the next event,
+  persistently. `hooks\.json$` is in `_PROTECTED_WRITE_PATTERN` (both the
+  user-level and the `.aug/` path); reads stay allowed because a hook definition
+  is not a secret. `tests/test_gate_participation.py` exempts the hook engine from
+  the shell-spawn scan and now asserts the two doors that make the exemption true,
+  so removing either fails there instead of silently re-opening this.
+- **Heading demotion postprocesses HTML** — `frontend/desktop/src/lib/
+  markdownHeadings.ts` shifts `<h1>`–`<h5>` in the rendered string, after `marked`
+  has decided what the headings are. It used to rewrite the markdown SOURCE, and a
+  fuzz against `marked` (217,831 documents) found 12 ways that second parser
+  disagreed with the real one — h1s escaping into the dialog and non-headings being
+  rewritten in the same pass, including every CRLF document being re-ended. Do not
+  move the decision back to the source: the live block cache also keys on the
+  flag, because the same streamed block renders at two levels on two surfaces.
 - **Gate participation** — every sandbox / permission / URL guard is an inline
   `if toolName in (...)` prologue at one call site, so an **alias or aggregate
   entry point is unguarded by default**. `bulk` routes `operation=<x>` to the
