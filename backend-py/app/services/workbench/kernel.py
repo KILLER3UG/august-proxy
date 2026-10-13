@@ -619,6 +619,213 @@ def venv_python(workspace_path: str) -> str | None:
     return None
 
 
+# ── The provisioning write half ─────────────────────────────────────────────
+# Discovery (venv_python above) shipped first with nothing that ever created
+# the venv: no ensurepip, no `python -m venv` anywhere in backend-py/app. So
+# the kernel venv was a folder nothing could produce, and a package needing
+# Python >= 3.13 (manimgx and its abi3 wheel) had nowhere to go — the desktop
+# payload's own interpreter is 3.12.9 and cannot host it.
+#
+# The action below creates the venv from an interpreter >= 3.13 found on the
+# machine (or an explicit path), then pip-installs the chosen set. It runs
+# BACKEND-SIDE on an explicit user action from Settings — the network grant
+# that pip needs is that action's consent, which is a DIFFERENT thing from
+# the per-session sandboxNetwork flag (a session-level default for model
+# commands), and the grant is logged, not assumed.
+
+_MIN_INTERPRETER_VERSION = (3, 13)
+
+_INTERPRETER_CANDIDATES = (
+    'python3.13', 'python3.14', 'python3.15',
+    'python313', 'python314',
+    'python',
+)
+
+
+def _interpreter_version(executable: str) -> tuple[int, int] | None:
+    """(major, minor) for an interpreter, or None when it cannot be probed."""
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            [executable, '-c', 'import sys; print("%d.%d" % sys.version_info[:2])'],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    try:
+        major, minor = out.stdout.strip().split('.')[:2]
+        return (int(major), int(minor))
+    except ValueError:
+        return None
+
+
+def find_interpreter(min_version: tuple[int, int] = _MIN_INTERPRETER_VERSION) -> str:
+    """An interpreter >= min_version on this machine, '' when none.
+
+    Probes the common names first (a venv from `uv python install 3.13` or a
+    python.org install both land on PATH as python3.13), then Windows' `py`
+    launcher. Returns the raw executable to use, so the caller decides what
+    to do with it — this half stays pure discovery.
+    """
+    import shutil
+    import subprocess
+
+    for name in _INTERPRETER_CANDIDATES:
+        found = shutil.which(name)
+        if not found:
+            continue
+        version = _interpreter_version(found)
+        if version is not None and version >= min_version:
+            return found
+    if os.name == 'nt':
+        py = shutil.which('py')
+        if py:
+            for minor in range(min_version[1], min_version[1] + 3):
+                candidate = f'{py} -3.{minor}'
+                try:
+                    version = _interpreter_version(candidate)
+                except (OSError, subprocess.SubprocessError):
+                    version = None
+                if version is not None and version >= min_version:
+                    return candidate
+    return ''
+
+
+def kernel_venv_dir(workspace_path: str) -> str:
+    """The kernel venv root for a workspace (whether or not provisioned)."""
+    return os.path.join(workspace_path, _KERNEL_SUBDIR, 'venv')
+
+
+async def provision_kernel_venv(
+    workspace_path: str,
+    interpreter: str = '',
+    packages: tuple[str, ...] | list[str] | None = None,
+    timeout_s: int = 600,
+) -> dict[str, object]:
+    """Create ``<ws>/.aug/kernel/venv`` and pip-install the chosen set.
+
+    ``packages=None`` seeds :data:`DEFAULT_VENV_PACKAGES`. An explicit
+    ``interpreter`` wins over discovery. Returns
+    ``{ok, interpreter, version, venv, installed, log}`` or an actionable
+    error receipt — never raises for the expected failures.
+
+    The write half of the kernel venv: everything a per-user package install
+    needs, on an explicit user action from Settings, with the network it
+    implies logged as a grant rather than inherited from a session flag. The
+    blocking subprocesses run off the event loop — a venv creation plus a
+    pip install is minutes, not milliseconds.
+    """
+    import subprocess
+
+    def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+
+    ws = (workspace_path or '').strip()
+    if not ws or not os.path.isdir(ws):
+        return {'ok': False, 'error': 'a live workspace directory is required'}
+    if venv_python(ws):
+        return {
+            'ok': False,
+            'error': 'kernel venv already provisioned for this workspace',
+            'venv': kernel_venv_dir(ws),
+        }
+
+    chosen = (interpreter or '').strip()
+    if not chosen:
+        chosen = find_interpreter()
+    if not chosen:
+        return {
+            'ok': False,
+            'error': (
+                f'no Python >= {_MIN_INTERPRETER_VERSION[0]}.{_MIN_INTERPRETER_VERSION[1]} '
+                'interpreter found on this machine — install one (e.g. '
+                '`uv python install 3.13`) or pass an explicit interpreter path.'
+            ),
+        }
+    version = _interpreter_version(chosen)
+    if version is None:
+        return {'ok': False, 'error': f'could not read the version of {chosen!r}'}
+    if version < _MIN_INTERPRETER_VERSION:
+        return {
+            'ok': False,
+            'error': (
+                f'{chosen} is Python {version[0]}.{version[1]}, but the kernel venv '
+                f'needs >= {_MIN_INTERPRETER_VERSION[0]}.{_MIN_INTERPRETER_VERSION[1]}'
+            ),
+        }
+
+    venv_dir = kernel_venv_dir(ws)
+    os.makedirs(os.path.dirname(venv_dir), exist_ok=True)
+    try:
+        created = await asyncio.get_running_loop().run_in_executor(
+            None, lambda: _run([*chosen.split(), '-m', 'venv', venv_dir])
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {'ok': False, 'error': f'venv creation failed to run: {exc}'}
+    if created.returncode != 0 or not os.path.exists(venv_dir):
+        return {
+            'ok': False,
+            'error': 'venv creation failed',
+            'log': (created.stderr or created.stdout or '')[-2000:],
+        }
+
+    target = venv_python(ws)
+    if not target:
+        return {
+            'ok': False,
+            'error': 'venv was created but its interpreter was not found where discovery looks',
+            'venv': venv_dir,
+        }
+
+    wanted = list(packages) if packages is not None else list(DEFAULT_VENV_PACKAGES)
+    if not wanted:
+        # Nothing to install — a bare venv is a legitimate ask (the caller
+        # adds packages later through the same door).
+        return {
+            'ok': True,
+            'interpreter': chosen,
+            'version': f'{version[0]}.{version[1]}',
+            'venv': venv_dir,
+            'python': target,
+            'installed': [],
+        }
+    # A network grant, logged: pip reaches out because the user pressed the
+    # button, not because a session wanted network. Distinct from
+    # `sandboxNetwork`, which is the per-session default for model commands.
+    logger.info(
+        'kernel venv provisioning: workspace=%s interpreter=%s python=%d.%d '
+        'packages=%s (user-granted network for pip install)',
+        ws, chosen, version[0], version[1], wanted,
+    )
+    try:
+        installed = await asyncio.get_running_loop().run_in_executor(
+            None, lambda: _run(
+                [target, '-m', 'pip', 'install', '--disable-pip-version-check', *wanted]
+            )
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {'ok': False, 'error': f'pip install failed to run: {exc}', 'venv': venv_dir}
+    if installed.returncode != 0:
+        return {
+            'ok': False,
+            'error': 'pip install failed',
+            'log': (installed.stderr or installed.stdout or '')[-2000:],
+            'venv': venv_dir,
+        }
+    return {
+        'ok': True,
+        'interpreter': chosen,
+        'version': f'{version[0]}.{version[1]}',
+        'venv': venv_dir,
+        'python': target,
+        'installed': wanted,
+        'log': (installed.stdout or '')[-2000:],
+    }
+
+
 
 # Gated bridge dispatch (parent side of the tool bridge)
 

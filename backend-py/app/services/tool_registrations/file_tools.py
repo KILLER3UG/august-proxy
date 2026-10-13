@@ -1413,6 +1413,36 @@ def _denial_tail(reason: str) -> str:
     )
 
 
+def _isKernelVenvProgram(first_word: str) -> bool:
+    """True when a command's first word is a program inside this workspace's
+    kernel venv.
+
+    The first-word filter above is about which BINARY may run, and kernel
+    work runs as a PATH: a scene is
+    ``<ws>/.aug/kernel/venv/Scripts/python.exe scene.py`` and its CLI
+    console scripts (``manimgx``, ``pip``) live in the same Scripts/bin
+    directory — there is no ``python`` or ``manimgx`` on PATH that is that
+    install. The venv is session-owned (the user provisioned it from
+    Settings), so everything inside it is the one sanctioned exception: a
+    live venv for THIS session's workspace passes, anything outside it still
+    hits the allowlist.
+    """
+    import os
+
+    from app.services.workbench.kernel import kernel_venv_dir, venv_python
+
+    ws = _workspace()
+    if not ws:
+        return False
+    if not (venv_python(ws) or os.path.isdir(kernel_venv_dir(ws))):
+        return False
+    venv_root = os.path.normpath(kernel_venv_dir(ws)).lower().replace('\\', '/')
+    target = os.path.normpath(first_word.strip('"')).lower().replace('\\', '/')
+    if target.endswith('.exe'):
+        target = target[:-4]
+    return target.startswith(f'{venv_root}/')
+
+
 async def _runCommand(
     command: str,
     timeout: float | int | None = None,
@@ -1437,7 +1467,11 @@ async def _runCommand(
     if _network_flag and 'gh' not in allowed:
         allowed.append('gh')
     if firstWord not in allowed and (not command.startswith('./')):
-        return f"Error: Command '{firstWord}' is not in the allowed list."
+        # The one path-form exception: a program inside the kernel venv the
+        # user provisioned for this workspace (a scene runs as its full path,
+        # and the venv's console scripts live beside its interpreter).
+        if not _isKernelVenvProgram(firstWord):
+            return f"Error: Command '{firstWord}' is not in the allowed list."
     dangerous = [
         'rm -rf /',
         'rm -rf ~',

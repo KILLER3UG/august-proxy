@@ -973,6 +973,37 @@ async def readArtifactHtml(path: str = '', sessionId: str = Query('')):
     )
 
 
+@router.post('/kernel/provision')
+async def provision_kernel_venv_route(request: Request):
+    """Create the workspace kernel venv and pip-install its seed set.
+
+    An explicit user action from Settings — the only door that writes
+    ``<workspace>/.aug/kernel/venv``. The network pip needs is THIS action's
+    consent (the user pressed the button), which is a different thing from
+    the per-session ``sandboxNetwork`` flag — that one is the model-command
+    default, and inheriting it here would let a session's network toggle
+    stand in for a user's install decision. The grant is logged by
+    ``kernel.provision_kernel_venv``.
+
+    Body: { workspace? } — defaults to the calling session's workspace.
+    """
+    from app.services.workbench import kernel
+
+    body = await request.json()
+    workspace = as_str(body.get('workspace'), '').strip()
+    sessionId = as_str(body.get('sessionId'), '').strip()
+    if not workspace and sessionId:
+        session = wb.getWorkbenchSession(sessionId)
+        workspace = as_str(getattr(session, 'workspacePath', '') or '') if session else ''
+    if not workspace:
+        raise HTTPException(status_code=400, detail='workspace or sessionId is required')
+    if not Path(workspace).is_dir():
+        raise HTTPException(status_code=400, detail='workspace is not a directory')
+    interpreter = as_str(body.get('interpreter'), '').strip()
+    result = await kernel.provision_kernel_venv(workspace, interpreter=interpreter)
+    return result
+
+
 @router.post('/chat/queue')
 async def queueMessage(request: Request):
     """Enqueue a user message for delivery to the model mid-response.
