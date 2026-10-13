@@ -83,7 +83,13 @@ _PROTECTED_WRITE_PATTERN = re.compile(
 # `.ssh/` by directory" — that was simply false: it requires a literal `*` in
 # the name, so `~/.ssh/known_hosts` and `~/.ssh/config` are readable. The
 # claim was worse than the gap, because it would stop the next person
-# re-checking. Those two files are public and stay readable deliberately.
+# re-checking. Those two files are public and stay readable deliberately, and
+# so is `id_rsa.pub` — the PUBLIC half, which is the same material
+# `authorized_keys` holds, is why the `(?!\w*\.pub)` sits right after `id_`.
+# It has to be there: placed after `\w+` the engine backtracks one character
+# and matches `id_rs` in `id_rsa.pub`, and the `.pub` file is refused again.
+# The rest of `.ssh`'s direct members are refused by name in
+# `_ssh_member_reason`, which is the allow side of the same decision.
 # `providers\.json` is component-anchored for the same reason `id_\w+` is —
 # unanchored it blocked `providers.json.example`, a template file.
 #
@@ -95,7 +101,7 @@ _PROTECTED_WRITE_PATTERN = re.compile(
 # `.ssh` returns every key name and size in one response. That is
 # `is_credential_directory` below, used by the file-tree route.
 _CREDENTIAL_READ_PATTERN = re.compile(
-    r'(providers\.json$|(?:^|/)id_\w+|\.aws/credentials|\.aws/config$|'
+    r'(providers\.json$|(?:^|/)id_(?!\w*\.pub)\w+|\.aws/credentials|\.aws/config$|'
     r'(?:^|/)credentials$|\.git-credentials$|\.netrc$|\.(?:pem|key)$|'
     r'\.aws/[^\s]*\*|\.ssh/[^\s]*\*|'
     r'-----BEGIN [A-Z ]*PRIVATE KEY-----)',
@@ -107,6 +113,19 @@ _CREDENTIAL_READ_PATTERN = re.compile(
 # be folded into the read pattern; but enumerating the store is the whole
 # secret set in a single response, and no legitimate file tree shows it.
 _CREDENTIAL_DIRECTORIES = ('.ssh', '.aws', '.gnupg')
+
+# The public members of `.ssh`, named. This is the ALLOW side of the exception
+# the comment above describes, and `_ssh_member_reason` refuses everything else
+# directly in the directory: a key is a key whatever it is called, and the only
+# reason `authorized_keys` was ever readable is that it is a list of PUBLIC keys.
+# `*.pub` is the same material in OpenSSH's own naming.
+_SSH_PUBLIC_MEMBERS = (
+    'config',
+    'authorized_keys',
+    'authorized_keys2',
+    'known_hosts',
+    'known_hosts.old',
+)
 
 # Stores whose ENTIRE subtree is secret material, matched on the directory
 # rather than the filename. The two patterns above are name lists, and name
@@ -217,14 +236,41 @@ def _credential_store_subtree_reason(canonical: str) -> str | None:
     Matching only the last component left the exception swallowing everything:
     `~/.ssh/keys/deploy_token` is not a named member of the store, it is a file
     inside a folder inside the store, and it read clean while `ls` of that same
-    folder was refused. Direct members stay allowed; anything under a
-    subdirectory of the store is where private material lives and has no public
-    representative.
+    folder was refused. Anything under a subdirectory of the store is where
+    private material lives and has no public representative; the direct members
+    are judged by name in `_ssh_member_reason`.
     """
     parts = [p for p in canonical.split('/') if p]
     for i, part in enumerate(parts):
         if part in _CREDENTIAL_DIRECTORIES and i + 2 < len(parts):
             return f'credential store {part} subdirectory'
+    return None
+
+
+def _ssh_member_reason(canonical: str) -> str | None:
+    r"""Why a file DIRECTLY inside `.ssh` is secret unless it is a public member.
+
+    The `.ssh` exception has always been about named public files — `config`,
+    `authorized_keys`, `known_hosts` — and it was written as a DENY list
+    (`id_\w+` in the read pattern) instead of as the ALLOW list it describes.
+    `cat ~/.ssh/work_github` therefore read clean: a working identity key named
+    by hand is exactly what people do when they keep more than one account, and
+    OpenSSH does not require the `id_` prefix. The exception is now what it
+    always said it was — the public members are named, and anything else in the
+    directory is a key until proven otherwise.
+
+    Only a DIRECT member is judged here; a path through a subdirectory of the
+    store is the `i + 2 < len(parts)` case that
+    `_credential_store_subtree_reason` already owns.
+    """
+    parts = [p for p in canonical.split('/') if p]
+    for i, part in enumerate(parts):
+        if part != '.ssh' or i + 1 >= len(parts) or i + 2 < len(parts):
+            continue
+        member = parts[i + 1]
+        if member in _SSH_PUBLIC_MEMBERS or member.endswith('.pub'):
+            return None
+        return f'credential store .ssh member ({member}) is not a public file'
     return None
 
 
@@ -241,6 +287,9 @@ def _secret_store_reason(path: str) -> str | None:
     subtree = _credential_store_subtree_reason(canonical)
     if subtree:
         return subtree
+    member = _ssh_member_reason(canonical)
+    if member:
+        return member
     if canonical in _august_secret_files():
         return "August's own credential store"
     return None

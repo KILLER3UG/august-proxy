@@ -284,16 +284,23 @@ exist — corrected Part 25 Phase 7.1.)
   was found — do not add one, call the two helpers.
 - **Shell doors and the `.ssh` asymmetry** — `check_hardline_command` refuses a store
   path only for a command that **enumerates** (`_ENUMERATING_COMMANDS`), because
-  `.ssh` is deliberately readable at one *named* non-secret member
-  (`authorized_keys`, `config`, `known_hosts`) while its contents may never be
-  walked. Globbing (`~/.ssh/*`) and copying a subtree out (`cp -r ~/.ssh/keys /tmp`)
-  are already refused by the read/write patterns, not by the store rule — measured,
-  and the tests name which rule holds. `backend-py/app/services/workbench/code_runner.py`
+  `.ssh` is deliberately readable at its **public** members while its contents may
+  never be walked. That exception is an ALLOW list, `_SSH_PUBLIC_MEMBERS`
+  (`config`, `authorized_keys`, `known_hosts`, plus any `*.pub`), judged by
+  `_ssh_member_reason` on a DIRECT member — it used to be a deny list (`id_\w+`
+  in the read pattern), and `cat ~/.ssh/work_github`, a hand-named identity key,
+  read clean through every door. `id_rsa.pub` was refused by the same defect:
+  `(?:^|/)id_\w+` matched `id_rsa` inside it, so the `.pub` exemption sits
+  immediately after `id_` where backtracking cannot defeat it. Globbing
+  (`~/.ssh/*`) and copying a subtree out (`cp -r ~/.ssh/keys /tmp`) are already
+  refused by the read/write patterns, not by the store rule — measured, and the
+  tests name which rule holds. `backend-py/app/services/workbench/code_runner.py`
   carries a **port** of this guard rendered into every code run (it cannot import
   `app`); a new table or predicate in `sandbox/hardline.py` must be injected there
   too, and `tests/test_code_runner_hardline.py` fails on the drift. The port must
   probe the **resolved** path like `bind_path` does, or a workspace link into a
-  store reads the token.
+  store reads the token. Parity is not proof: a corpus entry both copies miss is
+  green, which is why that file also asserts the port's own verdicts.
 - **One tokenizer, and what it must survive** — `_tokenize` is the only splitter for
   a command line: `_is_write_intent`, `_enumerates_a_directory` and
   `check_hardline_command` all read through `_segments`, because when each had its

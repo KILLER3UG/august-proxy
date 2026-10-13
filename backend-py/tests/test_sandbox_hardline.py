@@ -221,6 +221,43 @@ def test_public_ssh_members_stay_readable():
     assert check_hardline_path('C:/Users/rober/.ssh/config', for_write=False) is None
 
 
+def test_a_key_inside_ssh_is_refused_by_the_directory_not_only_by_its_name():
+    """`id_\w+` is a name list, and OpenSSH keys are not required to use it.
+
+    Measured reading clean: `cat ~/.ssh/work_github` — a working identity key
+    named by hand, which is exactly what people do when they keep more than one
+    account. The store exception was always about `config` and
+    `authorized_keys` being public, so the exception is now what names them, and
+    anything else directly in the directory is a key until proven otherwise.
+    Everything that was refused before is still refused: this only converts a
+    deny-by-name into an allow-by-name for the members the docs promise.
+    """
+    for name in ('work_github', 'vault_key', 'deploy', 'server_ed25519.bak', 'id_ecdsa_sk'):
+        path = f'C:/Users/u/.ssh/{name}'
+        assert check_hardline_path(path, for_write=False) is not None, name
+        assert check_hardline_command(f'cat {path}') is not None, name
+    for name in (
+        'config',
+        'authorized_keys',
+        'authorized_keys2',
+        'known_hosts',
+        'known_hosts.old',
+        'id_rsa.pub',
+        'work_github.pub',
+    ):
+        assert check_hardline_path(f'C:/Users/u/.ssh/{name}', for_write=False) is None, name
+    # Writing into the store was refused before this and still is, name or no
+    # name — the read exception was never a write exception.
+    assert check_hardline_path('C:/Users/u/.ssh/authorized_keys', for_write=True) is not None
+    assert check_hardline_command('echo x >> ~/.ssh/authorized_keys') is not None
+    # A file that merely lives in a folder called `.ssh` elsewhere is not a key:
+    # the rule is the store directory, and the workspace doors bind the path
+    # before this is ever asked. Anchored to a `.ssh` COMPONENT, like everything
+    # else in this module.
+    assert check_hardline_path('C:/proj/.ssh_backup/config', for_write=False) is None
+    assert check_hardline_path('C:/proj/tools/ssh/work_github', for_write=False) is None
+
+
 def test_a_hook_definition_file_cannot_be_written_by_the_agent(tmp_path):
     """`hooks.json` is execution policy, so the write door owns it.
 

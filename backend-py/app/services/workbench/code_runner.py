@@ -429,6 +429,7 @@ _READER_CMDS = frozenset(__READERS__)
 # hand-maintained, which is the only reason the port can be trusted to agree.
 _CRED_DIRS = tuple(__CRED_DIRS__)
 _STORE_DIRS = tuple(__STORE_DIRS__)
+_SSH_PUBLIC = tuple(__SSH_PUBLIC__)
 _AUGUST_SECRETS = tuple(__AUGUST_SECRETS__)
 _ENUM_CMDS = frozenset(__ENUM_CMDS__)
 _REC_SEARCH = frozenset(__REC_SEARCH__)
@@ -529,6 +530,25 @@ def _hardline_store_form(path):
     return canon.lower()
 
 
+def _hardline_ssh_member_reason(_canon):
+    """Port of hardline._ssh_member_reason: the `.ssh` exception is an ALLOW list.
+
+    The read pattern names keys (`id_…`) and that is a list that goes stale —
+    `~/.ssh/work_github` is a hand-named identity key and read clean through
+    every door. Only a DIRECT member is judged; a path through a subdirectory is
+    the subtree case `_hardline_store_reason` already owns.
+    """
+    _segs = [s for s in _canon.split('/') if s]
+    for _i, _seg in enumerate(_segs):
+        if _seg != '.ssh' or _i + 1 >= len(_segs) or _i + 2 < len(_segs):
+            continue
+        _member = _segs[_i + 1]
+        if _member in _SSH_PUBLIC or _member.endswith('.pub'):
+            return None
+        return 'credential store .ssh member (' + _member + ') is not a public file'
+    return None
+
+
 def _hardline_store_reason(token):
     """Port of hardline._secret_store_reason: the store a path lives in or IS.
 
@@ -561,6 +581,9 @@ def _hardline_store_reason(token):
     for _i, _seg in enumerate(_segs):
         if _seg in _CRED_DIRS and _i + 2 < len(_segs):
             return 'credential store ' + _seg + ' subdirectory'
+    _member = _hardline_ssh_member_reason(_canon)
+    if _member:
+        return _member
     if _canon in _AUGUST_SECRETS:
         return "August's own credential store"
     return None
@@ -745,6 +768,7 @@ def build_runner_source(
         .replace('__READERS__', repr(sorted(_hardline._READER_COMMANDS)))
         .replace('__CRED_DIRS__', repr(sorted(_hardline._CREDENTIAL_DIRECTORIES)))
         .replace('__STORE_DIRS__', repr(sorted(_hardline._CREDENTIAL_STORES)))
+        .replace('__SSH_PUBLIC__', repr(sorted(_hardline._SSH_PUBLIC_MEMBERS)))
         .replace('__AUGUST_SECRETS__', repr(sorted(_hardline._august_secret_files())))
         .replace('__ENUM_CMDS__', repr(sorted(_hardline._ENUMERATING_COMMANDS)))
         .replace('__REC_SEARCH__', repr(sorted(_hardline._RECURSIVE_SEARCH_COMMANDS)))

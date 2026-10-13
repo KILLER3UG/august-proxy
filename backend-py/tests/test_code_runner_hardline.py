@@ -108,6 +108,8 @@ _COMMAND_CORPUS = [
     'bash -c "ls -la ~/.ssh;"',
     'ls C:/Users/u/.config/gh./',
     'cat C:/Users/u/.aws./sso/cache/6f2a.json',
+    'cat ~/.ssh/work_github',
+    'head -1 ~/.ssh/id_rsa.pub',
     'ls -la ~/notes;',
     'ls .aws-docs;',
 ]
@@ -143,6 +145,15 @@ _READ_PATH_CORPUS = [
     '/Users/u/.google_workspace_mcp./credentials/account.json',  # blocked
     '/Users/u/.aws /sso/cache/6f2a.json',  # blocked: trailing space
     'C:/Users/u/.aws-docs/readme.md',  # allowed: not `.aws`
+    # The `.ssh` exception is an ALLOW list now. A key named by hand is not
+    # `id_*`, and `id_rsa.pub` is the public half of a key — the same material
+    # `authorized_keys` holds — which the read pattern used to refuse by
+    # matching `id_rsa` inside it.
+    '/Users/me/.ssh/work_github',  # blocked: a hand-named identity key
+    '/Users/me/.ssh/vault_key',  # blocked
+    '/Users/me/.ssh/config',  # allowed: public member
+    '/Users/me/.ssh/id_rsa.pub',  # allowed: public half of a key
+    '/Users/me/.ssh/known_hosts.old',  # allowed: rotated public file
 ]
 
 _WRITE_PATH_CORPUS = [
@@ -226,10 +237,18 @@ def test_the_port_is_measured_on_its_own_verdicts_not_only_against_the_original(
         'bash -c "ls -la ~/.ssh;"',
         'cat C:/Users/u/.aws./sso/cache/6f2a.json',
         'ls C:/Users/u/.config/gh./',
+        'cat C:/Users/u/.ssh/work_github',
     ]
     for cmd in refused:
         assert guardNs['_hardline_check_command'](cmd) is not None, cmd
-    for cmd in ('ls -la ~/notes;', 'ls .aws-docs;', 'cat notes.txt', 'cd /tmp && ls'):
+    for cmd in (
+        'ls -la ~/notes;',
+        'ls .aws-docs;',
+        'cat notes.txt',
+        'cd /tmp && ls',
+        'cat C:/Users/u/.ssh/id_rsa.pub',
+        'head -3 C:/Users/u/.ssh/known_hosts',
+    ):
         assert guardNs['_hardline_check_command'](cmd) is None, cmd
     for path in (
         'C:/Users/u/.aws./sso/cache/6f2a.json',
