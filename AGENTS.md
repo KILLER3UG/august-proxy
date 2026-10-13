@@ -294,6 +294,31 @@ exist — corrected Part 25 Phase 7.1.)
   too, and `tests/test_code_runner_hardline.py` fails on the drift. The port must
   probe the **resolved** path like `bind_path` does, or a workspace link into a
   store reads the token.
+- **One tokenizer, and what it must survive** — `_tokenize` is the only splitter for
+  a command line: `_is_write_intent`, `_enumerates_a_directory` and
+  `check_hardline_command` all read through `_segments`, because when each had its
+  own `re.split(r'\s+')` they disagreed and `ls${IFS}~/.ssh` was one word for the
+  enumeration rule and two for every other rule. It splits on shell terminators
+  (`; && | < > ( ) ` newline {}`) and expands `${IFS}`, and it must: a glued
+  terminator compared the component `.ssh;`, which is not `.ssh`, and
+  `bash -c "ls -la ~/.ssh;"` printed the store's whole key inventory. Store
+  components are also matched after `_strip_dangling_dots`, because NTFS drops a
+  trailing dot or space from the component it opens — `.aws./sso/cache/<hash>.json`
+  **is** the SSO cache and leaked a token while `is_credential_directory`, which
+  resolves, kept refusing it. Do not add a second split or a second form: the
+  parity corpus only catches a blind spot the two copies do not share.
+- **The terminal is a gated shell, in both directions** —
+  `writeTerminalInput` (the REST route and the drawer's WebSocket both reach it)
+  runs the hardline list on **every** line, not on the
+  `_interactive_needs_preflight` subset: that predicate exempts anything starting
+  with `cd `, which let `cd ~/.ssh/keys && cat id_work` type a private key into a
+  buffer readable through `GET /api/terminal/buffer`, and exempts any single
+  whitespace token, which let `ls${IFS}~/.ssh` through unchecked. The exemption
+  stays only for the soft workspace preflight, whose subject is escaping a
+  workspace. `createTerminalSession` additionally refuses a `cwd` inside a store,
+  because `session['cwd']` is the launch directory and is never updated — a bare
+  `ls` names nothing for the line gate, and the store's contents are the secret
+  set. A human who wants their own `cd ~/.ssh` has a terminal outside the app.
 - **Hooks are execution policy, so the write door owns them** —
   `<dataDir>/hooks.json` loads with **no** trust decision (the trust gate in
   `user_hooks` keys on a *workspace* origin, and the user-level file has none), and

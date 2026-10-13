@@ -357,6 +357,17 @@ async def createTerminalSession(params: dict[str, object] | None = None) -> dict
     denial = check_hardline_command(launch)
     if denial:
         return {'status': 'error', 'error': f'Blocked: {denial}', 'command': launch}
+    # And the DIRECTORY it starts in. `session['cwd']` is this launch value and is
+    # never updated, so a session created inside a store types a bare `ls` — a
+    # line that names nothing, which no amount of line-gating can see — and the
+    # buffer then holds every key name in it.
+    from app.services.sandbox.hardline import is_credential_directory
+
+    if is_credential_directory(cwd):
+        return {
+            'status': 'error',
+            'error': f'Blocked: credential store is not a working directory: {cwd}',
+        }
     # Drawer / interactive sessions: real shell without per-keystroke approval
     if 'approvedInteractive' in params or 'approved_interactive' in params:
         approved = as_bool(
@@ -555,11 +566,12 @@ async def writeTerminalInput(sessionId: str, inputText: str, approved: bool = Fa
             'createdAt': _now(),
         }
         return {'status': 'approval_required', 'requestId': reqId}
-    # Interactive input rides two gates, and `_interactive_needs_preflight` is
-    # what makes the second one bearable on a human surface: navigation (`cd …`)
-    # and single-token input (an answer, a keystroke, a bare command name) pass
-    # untouched, so a person can still `cd ~/.ssh` in their own shell; a
-    # multi-token command line is treated as the command it is.
+    # Interactive input rides two gates with two different scopes. The hardline
+    # list runs on EVERY line, because it is the machine's credential stores and
+    # is immune to mode and to surface; the soft workspace preflight keeps the
+    # `cd …`/single-token exemption in `_interactive_needs_preflight`, because
+    # that gate is about escaping a workspace and navigation inside one is not an
+    # escape.
     #
     # The hardline list runs FIRST and NOT inside the workspace test below. That
     # was the one-shot route's flaw — `soft_preflight` only fires when
@@ -570,13 +582,22 @@ async def writeTerminalInput(sessionId: str, inputText: str, approved: bool = Fa
     # the key appeared in the buffer, which a local caller can read back through
     # `GET /api/terminal/buffer`. `POST /command` refuses the same string, and the
     # launch of this very session is checked in `createTerminalSession`.
-    needs_preflight = _interactive_needs_preflight(inputText)
-    if needs_preflight:
+    #
+    # Sharing `needs_preflight` with the hardline gate was itself a hole, and the
+    # same size from both sides: it exempts any line starting with `cd `, which
+    # made `cd <home>/.ssh/keys && cat id_work` — a compound line whose prefix is
+    # navigation — skip the check and leak the key, and it exempts any single
+    # whitespace token, which made `ls${IFS}~/.ssh` unchecked. Nothing that the
+    # stores refuse on another surface may be typed here, so the exemption stays
+    # where its reason does: the workspace gate.
+    hardline_line = (inputText or '').strip()
+    if hardline_line:
         from app.services.sandbox.hardline import check_hardline_command
 
-        hardline = check_hardline_command(inputText)
+        hardline = check_hardline_command(hardline_line)
         if hardline:
             return {'status': 'error', 'command': inputText, 'error': f'Blocked: {hardline}'}
+    needs_preflight = _interactive_needs_preflight(inputText)
     session_cwd = as_str(session.get('cwd'), '')
     workspace = _terminal_workspace_root(session_cwd) if session_cwd else None
     if workspace and needs_preflight:

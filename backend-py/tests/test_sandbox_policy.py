@@ -368,7 +368,7 @@ class TestTheTerminalSurfaceCarriesTheHardlineList:
 
 
 class TestTheInteractiveSurfaceCarriesTheHardlineList:
-    """Typing into a terminal was the third door on the same shell.
+    r"""Typing into a terminal was the third door on the same shell.
 
     `/api/terminal/command` runs the hardline list and `createTerminalSession`
     checks the program it launches; `writeTerminalInput` (the REST route and the
@@ -377,10 +377,13 @@ class TestTheInteractiveSurfaceCarriesTheHardlineList:
     the key came back in the session buffer, which any local caller can read
     through `GET /api/terminal/buffer`.
 
-    The gate rides `_interactive_needs_preflight`, the rule this function already
-    used for its soft sandbox, so a human keeps the terminal: a bare name, an
-    answer like `y`, and `cd …` are untouched — which means `cd ~/.ssh` still
-    types. A multi-token command line is treated as the command it is.
+    The gate is the hardline list itself, on every line, and NOT the
+    `_interactive_needs_preflight` exemption the soft workspace gate uses: that
+    one lets `cd …` and single tokens through, which is right for a workspace
+    escape check and was a hole here (see
+    `test_typing_into_the_store_is_refused_the_same_as_typing_at_it`). A bare
+    name, an answer like `y`, and `cd /tmp` still type — the terminal is a
+    working surface, it is just not a way into the stores.
     """
 
     @staticmethod
@@ -429,9 +432,85 @@ class TestTheInteractiveSurfaceCarriesTheHardlineList:
 
         sid, written = self._session(tmp_path)
         try:
-            for text in ('ls -la', 'python -m pytest -q', 'y', 'cd ~/.ssh', 'clear'):
+            for text in ('ls -la', 'python -m pytest -q', 'y', 'cd /tmp', 'clear'):
                 out = await ts.writeTerminalInput(sid, text)
                 assert str(out.get('status') or '') == 'written', (text, out)
-            assert written == ['ls -la', 'python -m pytest -q', 'y', 'cd ~/.ssh', 'clear'], written
+            assert written == ['ls -la', 'python -m pytest -q', 'y', 'cd /tmp', 'clear'], written
         finally:
             ts._sessions.pop(sid, None)
+
+    @pytest.mark.asyncio
+    async def test_typing_into_the_store_is_refused_the_same_as_typing_at_it(self, tmp_path):
+        """The `cd …` exemption was a hole with a name on it, not a courtesy.
+
+        `_interactive_needs_preflight` exempted any line STARTING with `cd `, so
+        the compound `cd <home>/.ssh/keys && cat id_work` skipped the hardline
+        gate entirely and the private key came back through
+        `GET /api/terminal/buffer` — the same string `POST /command` refuses. The
+        single-token exemption had the same shape from the other side: `ls${IFS}
+        ~/.ssh` is one whitespace token, so it was never checked, and a
+        `cd ~/.aws` followed by a bare `ls` walked the store with no line that
+        ever named it.
+
+        So the exemption is gone for the hardline list. It stays for the soft
+        workspace preflight, where `cd` really is navigation: that gate is about
+        escaping a workspace, and this one is about the machine's credential
+        stores, which are refused in every mode from every surface — including
+        this one. `cd ~/.ssh` now refuses for the same reason `ls ~/.ssh` always
+        did, and the terminal keeps everything else.
+        """
+        from app.services.workbench import terminal_service as ts
+
+        store = tmp_path / 'home' / '.ssh'
+        (store / 'keys').mkdir(parents=True)
+        (store / 'keys' / 'id_work').write_text('KEYBODY', encoding='utf-8')
+        aws = tmp_path / 'home' / '.aws'
+        (aws / 'sso' / 'cache').mkdir(parents=True)
+        (aws / 'sso' / 'cache' / 'deadbeef.json').write_text('{"accessToken":"t"}', encoding='utf-8')
+
+        sid, written = self._session(tmp_path)
+        try:
+            for line in (
+                f'cd {store / "keys"} && cat id_work',
+                f'cd {aws}\n',
+                'ls${IFS}~/.ssh',
+                f'cat {store / "keys" / "id_work"}',
+                f'ls -la {aws}/sso/cache;',
+            ):
+                out = await ts.writeTerminalInput(sid, line)
+                assert str(out.get('status') or '') == 'error', (line, out)
+                assert 'Blocked' in str(out.get('error') or ''), (line, out)
+            assert written == [], f'refused keystrokes still reached the shell: {written}'
+        finally:
+            ts._sessions.pop(sid, None)
+
+    @pytest.mark.asyncio
+    async def test_a_session_cannot_be_started_inside_a_credential_store(self, tmp_path, monkeypatch):
+        """The `ls` that needs no path is the one the line gate cannot see.
+
+        `session['cwd']` is the LAUNCH directory and is never updated, so a
+        session created with `cwd=<home>/.ssh` types a bare `ls` into a store and
+        the buffer holds every key name. The creation route takes a caller-named
+        `cwd` — `routers/preview.py` reaches it — so the directory is checked
+        where the session is made, not only where a line names it.
+        """
+        from app.services.workbench import terminal_service as ts
+
+        store = tmp_path / 'home' / '.ssh' / 'keys'
+        store.mkdir(parents=True)
+        spawned: list = []
+
+        async def fake_spawn(self, **kwargs):
+            spawned.append(kwargs)
+
+        monkeypatch.setattr(ts.PtyIO, 'spawn', fake_spawn)
+        out = await ts.createTerminalSession({'cwd': str(store), 'title': 'probe'})
+        assert str(out.get('status') or '') == 'error', out
+        assert 'Blocked' in str(out.get('error') or ''), out
+        assert spawned == [], f'a shell was started inside the store: {spawned}'
+
+        ok = await ts.createTerminalSession({'cwd': str(tmp_path), 'title': 'probe-ctrl'})
+        assert str(ok.get('status') or '') != 'error', ok
+        sid = str(ok.get('id') or '')
+        if sid:
+            await ts.closeTerminalSession(sid)
