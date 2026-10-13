@@ -161,7 +161,7 @@ def _august_secret_files() -> tuple[str, ...]:
     try:
         from app.config import settings  # lazy: app.config must not import here
 
-        data = _canonical(str(settings.dataDir)).lower().rstrip('/')
+        data = _strip_dangling_dots(_canonical(str(settings.dataDir))).lower().rstrip('/')
     except (ImportError, AttributeError, OSError, ValueError):
         # Narrow on purpose — this is a security guard, and a bare
         # `except Exception` here would hide any future import breakage by
@@ -173,13 +173,17 @@ def _august_secret_files() -> tuple[str, ...]:
 def _store_match_form(path: str) -> str:
     """The form of a path the store tables are matched against.
 
-    Two spellings defeat pure string matching, both measured on this machine:
+    Three spellings defeat pure string matching, all measured on this machine:
 
       * a home anchor the guard would not otherwise see — `~`, `$HOME`, and cmd's
         `%USERPROFILE%` are expanded by the SHELL, not by Python;
       * an 8.3 short name. `GOOGLE~1` IS `.google_workspace_mcp` on this volume,
         so `cat ~/GOOGLE~1/credentials/account.json` passed the rule that refuses
-        the long name, and the terminal route returned the token.
+        the long name, and the terminal route returned the token;
+      * a trailing dot or space, which NTFS strips from the component it opens,
+        making `.aws./sso/cache/<hash>.json` the SSO cache itself. That one is
+        normalised lexically in `_strip_dangling_dots` rather than by resolving,
+        so the answer cannot depend on the platform the guard runs on.
 
     `resolve()` is the only thing that turns a short name back into a long one
     (Windows expands it during path canonicalisation), and it costs more than a
@@ -187,10 +191,10 @@ def _store_match_form(path: str) -> str:
     A path that does not exist still resolves lexically, which is what the
     no-such-file case needs.
     """
-    text = _canonical(os.path.expandvars(os.path.expanduser(path.strip('"\''))))
+    text = _strip_dangling_dots(_canonical(os.path.expandvars(os.path.expanduser(path.strip('"\'')))))
     if _SHORT_NAME_RE.search(text):
         try:
-            text = _canonical(str(Path(text).resolve()))
+            text = _strip_dangling_dots(_canonical(str(Path(text).resolve())))
         except (OSError, ValueError):
             pass
     return text.lower()
@@ -269,7 +273,7 @@ def is_credential_directory(path: str) -> bool:
     except OSError:
         resolved = None
     canonical = _canonical(str(resolved)) if resolved is not None else _canonical(path)
-    lowered = {part.lower() for part in canonical.split('/') if part}
+    lowered = {part.lower() for part in _strip_dangling_dots(canonical).split('/') if part}
     if lowered.intersection(_CREDENTIAL_DIRECTORIES):
         return True
     # A token store is unlistable root AND subtree: enumerating
@@ -320,8 +324,76 @@ def _canonical(text: str) -> str:
     return text.replace('\\', '/')
 
 
+# Shell word terminators. A command line is not a list of whitespace-separated
+# words: `;`, `&&`, `|`, redirections, subshells and command substitutions all
+# end a word without a space in front of them, and `${IFS}` *is* a space as far
+# as the shell is concerned.
+#
+# Both halves mattered, and both were measured as evasions. `ls -la ~/.ssh;`
+# produced the token `~/.ssh;`, whose last component is `.ssh;` — not `.ssh` —
+# so every one of the four rules below compared a name the shell never opens,
+# and running that exact string through `bash -c` printed the store's whole key
+# inventory (`authorized_keys config deploy keys known_hosts work_github`)
+# through a door the file tools had closed. `ls${IFS}~/.ssh` is the same hole
+# with the shell's own separator variable: one token, checked as one token.
+#
+# Splitting conservatively (quote state ignored) is deliberate. A quoted
+# argument that *mentions* a store path is refused by the name patterns today
+# anyway — the tokenizer already breaks `"ls -la ~/.ssh"` into `~/.ssh"` and
+# strips the quote — so honouring quotes here would buy no coverage for the
+# patterns while reopening the `;` hole inside `bash -c "…"`, which is the
+# invocation that was defeated.
+_SHELL_WORD_END_RE = re.compile(r'[;&|<>()`\n\r{}]')
+_IFS_SPACED_RE = re.compile(r'\$\{IFS\}|\$IFS')
+
+
 def _tokenize(command: str) -> list[str]:
-    return [tok.strip('"\'').strip() for tok in re.split(r'\s+', command) if tok.strip()]
+    """The words a shell would open, not the whitespace-separated chunks.
+
+    Every rule in `check_hardline_command` asks a question about a NAME, so the
+    tokenizer owns the answer to "where does this name end". A trailing `;` is
+    not part of a name, and an `${IFS}` is not inside one.
+    """
+    words: list[str] = []
+    for word in re.split(r'\s+', _IFS_SPACED_RE.sub(' ', command)):
+        if not word:
+            continue
+        for piece in _SHELL_WORD_END_RE.split(word):
+            piece = piece.strip('"\'').strip()
+            if piece:
+                words.append(piece)
+    return words
+
+
+def _strip_dangling_dots(text: str) -> str:
+    """Remove the trailing dots/spaces Windows strips from every path component.
+
+    `C:\\Users\\u\\.aws.\\sso\\cache\\x.json` opens `.aws`. NTFS removes a
+    trailing dot or space from a name during canonicalisation, so the alias
+    addresses the same credential store — and the store tables are matched by
+    component, so `.aws.` matched nothing. Measured leaking on this machine:
+    `.aws./sso/cache/deadbeef.json` returned the access token, and
+    `.ssh./keys/deploy_token`, `.google_workspace_mcp./credentials/account.json`
+    and `.config/gh./hosts.yml` each did the same, while
+    `is_credential_directory` — which resolves first, and resolve() does this
+    stripping on Windows — kept refusing them. One door closed, one open on the
+    same target, which is the failure mode this file keeps hitting.
+
+    Done lexically rather than by resolving, because the answer must not depend
+    on the platform the guard runs on: on Linux `.aws.` is genuinely another
+    directory, and refusing it there costs nothing. No real project keeps a
+    directory whose name is a dotted store name plus a dot, whereas CI and a
+    developer box are both Linux.
+
+    Pure-dot components are `.` and `..` and stay untouched — they are
+    navigation, not names.
+    """
+    parts: list[str] = []
+    for part in text.split('/'):
+        if part.strip('.'):
+            part = part.rstrip('. ')
+        parts.append(part)
+    return '/'.join(parts)
 
 
 def _segment_is_write(first: str, tokens: list[str]) -> bool:
@@ -346,6 +418,39 @@ def _segment_is_write(first: str, tokens: list[str]) -> bool:
     return False
 
 
+# `;`, `&&` and `|` end a command; the wrappers that RUN another program are not
+# the verb the guards judge.
+_SEGMENT_SPLIT_RE = re.compile(r'[;&|]{1,2}')
+_EXEC_WRAPPERS = ('sudo', 'xargs', 'env', 'command', 'time', 'nice')
+
+
+def _segments(command: str) -> list[list[str]]:
+    """The segments of a line, each tokenized once.
+
+    One tokenizer for all three readers of a command line. `_is_write_intent`,
+    `_enumerates_a_directory` and `check_hardline_command` each used to split
+    the text themselves, and they did not split it the same way: the first two
+    carried their own `re.split(r'\\s+')` and their own wrapper lists (one had
+    `time`/`nice`, the other did not). A `${IFS}` line was therefore a two-word
+    command for `check_hardline_command` and a one-word command for the
+    enumeration rule, which is the difference between a refusal and a listing of
+    `~/.ssh`.
+    """
+    return [toks for toks in (_tokenize(seg) for seg in _SEGMENT_SPLIT_RE.split(command)) if toks]
+
+
+def _executable(tokens: list[str]) -> str:
+    """The verb a segment runs, looking through `sudo`/`xargs`/`env`/… once."""
+    first = _basename(tokens[0])
+    if first in _EXEC_WRAPPERS and len(tokens) > 1:
+        return _basename(tokens[1])
+    return first
+
+
+def _basename(token: str) -> str:
+    return token.split('/')[-1].split('\\')[-1].lower()
+
+
 def _is_write_intent(command: str) -> bool:
     """True when the command can mutate files (verbs, redirection, non-readers).
 
@@ -355,15 +460,8 @@ def _is_write_intent(command: str) -> bool:
     """
     if _WRITE_VERB_PATTERN.search(command):
         return True
-    for segment in re.split(r'[;&|]{1,2}', command):
-        tokens = _tokenize(segment)
-        if not tokens:
-            continue
-        first = tokens[0].split('/')[-1].split('\\')[-1].lower()
-        # Strip common invocation prefixes (sudo, xargs, env KEY=...).
-        if first in ('sudo', 'xargs', 'env', 'command'):
-            first = tokens[1].split('/')[-1].split('\\')[-1].lower() if len(tokens) > 1 else first
-        if _segment_is_write(first, tokens):
+    for tokens in _segments(command):
+        if _segment_is_write(_executable(tokens), tokens):
             return True
     return False
 
@@ -449,22 +547,21 @@ def _enumerates_a_directory(command: str) -> bool:
 
     Wrappers are looked through the same way `_segment_is_write` does it, so
     `sudo ls ~/.ssh` and `xargs -0 ls` are judged on the verb they run, not on
-    the word that starts the line.
+    the word that starts the line. Tokenization is `_tokenize`'s, shared: this
+    used to split the line on whitespace itself, so `ls${IFS}~/.ssh` was one
+    word here — a word that is not in `_ENUMERATING_COMMANDS` — and the store
+    rule never ran, while the same command line was two words for every other
+    guard in this module.
     """
-    for segment in re.split(r'[;&|]{1,2}', command):
-        toks = [t.strip('"\'').strip() for t in re.split(r'\s+', segment) if t.strip()]
-        if not toks:
-            continue
-        first = toks[0].split('/')[-1].split('\\')[-1].lower()
-        if first in ('sudo', 'xargs', 'env', 'command', 'time', 'nice') and len(toks) > 1:
-            first = toks[1].split('/')[-1].split('\\')[-1].lower()
+    for tokens in _segments(command):
+        first = _executable(tokens)
         if first in _ENUMERATING_COMMANDS:
             return True
         if first in _RECURSIVE_SEARCH_COMMANDS:
-            for i, tok in enumerate(toks[1:], start=1):
+            for i, tok in enumerate(tokens[1:], start=1):
                 if _RECURSIVE_SHORT_RE.match(tok) or tok in _RECURSIVE_LONG:
                     return True
-                if tok == '-d' and i + 1 < len(toks) and toks[i + 1].lower() in _RECURSIVE_VALUES:
+                if tok == '-d' and i + 1 < len(tokens) and tokens[i + 1].lower() in _RECURSIVE_VALUES:
                     return True
     return False
 

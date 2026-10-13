@@ -275,3 +275,69 @@ def test_the_write_tool_refuses_to_install_a_hook(tmp_path, monkeypatch):
     # Control: an ordinary file in the same directory still writes.
     ok = asyncio.run(file_tools._writeFile(str(tmp_path / 'notes.md'), '# hi'))
     assert (tmp_path / 'notes.md').is_file(), ok
+
+
+def test_a_shell_terminator_glued_to_a_store_path_is_still_a_store_path():
+    """`;`/`&&`/`|` terminate a word, they are not characters in its name.
+
+    Measured as an evasion before the rule existed: `check_hardline_command(
+    'ls -la ~/.ssh;')` returned None, and running exactly that string through
+    `bash -c` printed `authorized_keys config deploy keys known_hosts
+    work_github` — the whole key inventory of the store in one response,
+    through a door the file tools had closed. The tokenizer split on whitespace
+    only, so the component it compared was `.ssh;`, which is not `.ssh`.
+    `${IFS}` is the same trick with the shell's own separator variable.
+    """
+    for cmd in (
+        'ls -la ~/.ssh;',
+        'cd ~/.ssh; ls',
+        'find ~/.aws;',
+        'ls -la ~/.ssh\n',
+        'ls${IFS}~/.ssh',
+        'ls${IFS}~/.aws/',
+        'bash -c "ls -la ~/.ssh;"',
+        'ls ~/.ssh&&',
+        'ls ~/.ssh | wc -l',
+        'for f in ~/.ssh/*; do echo $f; done',
+    ):
+        assert check_hardline_command(cmd) is not None, cmd
+    # Controls: ordinary command lines keep passing, including one that ends
+    # with a terminator and one whose directory is merely store-shaped.
+    assert check_hardline_command('ls -la ~/notes;') is None
+    assert check_hardline_command('cat src/config.ts && npm run build') is None
+    assert check_hardline_command('ls -la .aws-docs;') is None
+
+
+def test_a_windows_trailing_dot_does_not_rename_a_credential_store():
+    """`C:\\Users\\u\\.aws.\\sso\\cache\\x.json` opens `.aws`, and did.
+
+    Windows strips a trailing dot (or space) from each path component during
+    name canonicalisation, so the alias addresses the same store. The store
+    tables are matched by component and the guard never normalised that form:
+    measured on this machine, `cat C:/Users/rober/.aws./sso/cache/deadbeef.json`
+    returned the access token, and `.ssh./keys/deploy_token`,
+    `.google_workspace_mcp./credentials/account.json` and `.config/gh./hosts.yml`
+    leaked the same way — while `is_credential_directory`, which resolves first,
+    kept refusing them. One door closed, the other open on the same target.
+
+    The normalisation is lexical, not a resolve: on Linux `.aws.` genuinely is a
+    different directory, and refusing it there costs nothing, because no real
+    project keeps a directory whose name is a dotted store name plus a dot.
+    """
+    aliased = (
+        'C:/Users/u/.aws./sso/cache/6f2a.json',
+        'C:/Users/u/.aws /sso/cache/6f2a.json',
+        'C:/Users/u/.ssh./keys/deploy_token',
+        'C:/Users/u/.google_workspace_mcp./credentials/account.json',
+        'C:/Users/u/.config/gh./hosts.yml',
+        'C:/Users/u/.docker./config.json',
+    )
+    for path in aliased:
+        assert check_hardline_path(path, for_write=False) is not None, path
+        assert check_hardline_path(path, for_write=True) is not None, path
+    assert check_hardline_command('cat C:/Users/u/.aws./sso/cache/6f2a.json') is not None
+    assert check_hardline_command('ls C:/Users/u/.config/gh./') is not None
+    # Controls: a dot inside a name, and the two navigation components, intact.
+    assert check_hardline_path('C:/Users/u/.aws-docs/readme.md', for_write=False) is None
+    assert check_hardline_path('C:/Users/u/project/../src/app.py', for_write=False) is None
+    assert check_hardline_path('C:/Users/u/project/./src/app.py', for_write=True) is None

@@ -96,6 +96,20 @@ _COMMAND_CORPUS = [
     'cd /tmp && ls',
     'python -c "print(42)"',
     'cat notes.txt',
+    # A shell TERMINATOR is not part of a name, and `${IFS}` is a space. Both
+    # spellings were measured getting past the live guard (`ls -la ~/.ssh;`
+    # printed the store's key inventory), and the port had the same whitespace
+    # split, so this is the pair that keeps the two copies of the tokenizer from
+    # being written separately again.
+    'ls -la ~/.ssh;',
+    'cd ~/.ssh; ls',
+    'find ~/.aws;',
+    'ls${IFS}~/.ssh',
+    'bash -c "ls -la ~/.ssh;"',
+    'ls C:/Users/u/.config/gh./',
+    'cat C:/Users/u/.aws./sso/cache/6f2a.json',
+    'ls -la ~/notes;',
+    'ls .aws-docs;',
 ]
 
 _READ_PATH_CORPUS = [
@@ -121,6 +135,14 @@ _READ_PATH_CORPUS = [
     '/Users/me/.ssh/authorized_keys',  # allowed by design
     '/workspace/.aws-sdk/app.py',  # allowed: not `.aws`
     '/workspace/.ssh_helpers/x',  # allowed
+    # NTFS strips a trailing dot (or space) from the component it opens, so the
+    # alias addresses the same store. The live guard refused these by resolve on
+    # Windows and by nothing elsewhere, which is the drift a lexical strip fixes.
+    'C:/Users/u/.aws./sso/cache/6f2a.json',  # blocked: store subtree
+    'C:/Users/u/.config/gh./hosts.yml',  # blocked: two-component store
+    '/Users/u/.google_workspace_mcp./credentials/account.json',  # blocked
+    '/Users/u/.aws /sso/cache/6f2a.json',  # blocked: trailing space
+    'C:/Users/u/.aws-docs/readme.md',  # allowed: not `.aws`
 ]
 
 _WRITE_PATH_CORPUS = [
@@ -185,6 +207,37 @@ def test_write_path_parity(guardNs: dict) -> None:
         if bool(real) != bool(embedded):
             mismatches.append((path, real, embedded))
     assert not mismatches, f'write-path parity mismatches: {mismatches}'
+
+
+def test_the_port_is_measured_on_its_own_verdicts_not_only_against_the_original(guardNs: dict) -> None:
+    """Parity alone cannot see a shared blind spot.
+
+    `test_command_parity` compares two verdicts, so a corpus entry that BOTH
+    copies miss passes — which is exactly how `ls -la ~/.ssh;` looked covered:
+    the old live guard and the old port agreed on `None` for it, and the test
+    was green while the store listed its keys. These are absolute assertions on
+    the generated source, so the port has to refuse on its own merits.
+    """
+    refused = [
+        'ls -la ~/.ssh;',
+        'cd ~/.ssh; ls',
+        'find ~/.aws;',
+        'ls${IFS}~/.ssh',
+        'bash -c "ls -la ~/.ssh;"',
+        'cat C:/Users/u/.aws./sso/cache/6f2a.json',
+        'ls C:/Users/u/.config/gh./',
+    ]
+    for cmd in refused:
+        assert guardNs['_hardline_check_command'](cmd) is not None, cmd
+    for cmd in ('ls -la ~/notes;', 'ls .aws-docs;', 'cat notes.txt', 'cd /tmp && ls'):
+        assert guardNs['_hardline_check_command'](cmd) is None, cmd
+    for path in (
+        'C:/Users/u/.aws./sso/cache/6f2a.json',
+        '/Users/u/.aws /sso/cache/6f2a.json',
+        'C:/Users/u/.config/gh./hosts.yml',
+    ):
+        assert guardNs['_hardline_check_path'](path, False) is not None, path
+    assert guardNs['_hardline_check_path']('C:/Users/u/.aws-docs/readme.md', False) is None
 
 
 def test_generated_guard_blocks_credential_read(guardNs: dict) -> None:

@@ -413,6 +413,10 @@ if _KERNEL_DIR is not None:
 _GUARD_TEMPLATE = r'''# Hardline credential guard (mirrors app/services/sandbox/hardline.py)
 import re as _re
 
+# The strip set of the live tokenizer is exactly the two quote characters; built
+# with chr() so this stays true when the literal is spliced into a runner file.
+_QUOTES = chr(34) + chr(39)
+
 _PROTECTED_WRITE_RE = _re.compile(__WRITE_PATTERN__, _re.IGNORECASE)
 _CREDENTIAL_READ_RE = _re.compile(__READ_PATTERN__, _re.IGNORECASE)
 _WRITE_VERB_RE = _re.compile(__WRITE_VERB__, _re.IGNORECASE)
@@ -432,6 +436,10 @@ _REC_LONG = frozenset(__REC_LONG__)
 _REC_VALUES = frozenset(__REC_VALUES__)
 _REC_SHORT_RE = _re.compile(__REC_SHORT__)
 _SHORT_NAME_RE = _re.compile(__SHORT_NAME__)
+_WORD_END_RE = _re.compile(__WORD_END__)
+_IFS_SPACED_RE = _re.compile(__IFS_SPACED__)
+_SEGMENT_SPLIT_RE = _re.compile(__SEGMENT_SPLIT__)
+_EXEC_WRAPPERS = tuple(__EXEC_WRAPPERS__)
 _MUTATING_FLAG_RES = {
     _cmd: tuple(_re.compile(_p, _re.IGNORECASE) for _p in _flags)
     for _cmd, _flags in __MUTATING_FLAGS__.items()
@@ -442,15 +450,66 @@ def _hardline_canonical(text):
     return text.replace('\\', '/')
 
 
+def _hardline_strip_dots(text):
+    """Port of hardline._strip_dangling_dots: NTFS drops a trailing dot or space
+    from the component it opens, so `.aws./sso/cache/<hash>.json` IS the SSO
+    cache. The store tables match on whole components, so the alias matched
+    nothing while `is_credential_directory` — which resolves, and resolving does
+    the stripping on Windows — kept refusing it. Pure-dot components are `.` and
+    `..` and stay.
+    """
+    _out = []
+    for _part in text.split('/'):
+        if _part.strip('.'):
+            _part = _part.rstrip('. ')
+        _out.append(_part)
+    return '/'.join(_out)
+
+
+def _hardline_tokenize(command):
+    """Port of hardline._tokenize: the words a shell opens, not whitespace chunks.
+
+    `ls -la ~/.ssh;` is a listing of `.ssh` with a terminator glued to the name,
+    and `ls${IFS}~/.ssh` is the same listing with the shell's separator variable
+    in place of the space. Both were measured getting past the live guard, and
+    the port that splits only on whitespace disagrees with the typed door in the
+    same way.
+    """
+    _words = []
+    for _word in _re.split(r'\s+', _IFS_SPACED_RE.sub(' ', command)):
+        if not _word:
+            continue
+        for _piece in _WORD_END_RE.split(_word):
+            _piece = _piece.strip(_QUOTES).strip()
+            if _piece:
+                _words.append(_piece)
+    return _words
+
+
+def _hardline_segments(command):
+    """Port of hardline._segments: each `;`/`&&`/`|` segment, tokenized once."""
+    return [_t for _t in (_hardline_tokenize(_s) for _s in _SEGMENT_SPLIT_RE.split(command)) if _t]
+
+
+def _hardline_executable(_toks):
+    """Port of hardline._executable: the verb a segment runs, past `sudo`/`xargs`/…"""
+    _first = _toks[0].split('/')[-1].split('\\')[-1].lower()
+    if _first in _EXEC_WRAPPERS and len(_toks) > 1:
+        return _toks[1].split('/')[-1].split('\\')[-1].lower()
+    return _first
+
+
 def _hardline_store_form(path):
-    """Port of hardline._store_match_form: expand the shell's anchors, and pay a
-    resolve only when a component has the 8.3 short-name shape.
+    """Port of hardline._store_match_form: expand the shell's anchors, drop the
+    dots/spaces NTFS strips from a component, and pay a resolve only when a
+    component has the 8.3 short-name shape.
 
     `GOOGLE~1` IS `.google_workspace_mcp` on this volume, so matching the string
     the model typed refused the long name and allowed the short one; `~`, `$HOME`
-    and `%USERPROFILE%` are the same class of miss. The port that does not do this
-    disagrees with the typed doors in BOTH directions, which is what the parity
-    corpus caught.
+    and `%USERPROFILE%` are the same class of miss, and so is `.aws.`, whose
+    trailing dot the filesystem removes before it ever opens the directory. The
+    port that does not do these disagrees with the typed doors in BOTH directions,
+    which is what the parity corpus caught.
     """
     import os as _o
 
@@ -459,12 +518,12 @@ def _hardline_store_form(path):
         text = _o.path.expandvars(_o.path.expanduser(text))
     except (OSError, ValueError):
         pass
-    canon = _hardline_canonical(text)
+    canon = _hardline_strip_dots(_hardline_canonical(text))
     if _SHORT_NAME_RE.search(canon):
         try:
             from pathlib import Path as _P
 
-            canon = _hardline_canonical(str(_P(canon).resolve()))
+            canon = _hardline_strip_dots(_hardline_canonical(str(_P(canon).resolve())))
         except (OSError, ValueError):
             pass
     return canon.lower()
@@ -529,7 +588,9 @@ def _hardline_is_credential_store(token):
     """
     if _hardline_store_reason(token):
         return True
-    _segs = [s for s in _hardline_canonical(str(token)).strip('"\\' + "'").lower().split('/') if s]
+    _segs = [
+        s for s in _hardline_strip_dots(_hardline_canonical(str(token))).strip(_QUOTES).lower().split('/') if s
+    ]
     return any(_seg in _CRED_DIRS for _seg in _segs)
 
 
@@ -537,13 +598,8 @@ def _hardline_is_write_intent(command):
     """Faithful port of hardline._is_write_intent (readers + mutating flags)."""
     if _WRITE_VERB_RE.search(command):
         return True
-    for _seg in _re.split(r'[;&|]{1,2}', command):
-        _toks = [t.strip('"\' ').strip() for t in _re.split(r'\s+', _seg) if t.strip()]
-        if not _toks:
-            continue
-        _first = _toks[0].split('/')[-1].split('\\')[-1].lower()
-        if _first in ('sudo', 'xargs', 'env', 'command') and len(_toks) > 1:
-            _first = _toks[1].split('/')[-1].split('\\')[-1].lower()
+    for _toks in _hardline_segments(command):
+        _first = _hardline_executable(_toks)
         if _first not in _READER_CMDS:
             return True
         _res = _MUTATING_FLAG_RES.get(_first)
@@ -565,14 +621,14 @@ def _hardline_enumerates(command):
     refuses `cat ~/.ssh/authorized_keys`, which is the one member the read rule
     deliberately keeps — so the gate belongs on the verbs that enumerate, exactly
     as it does on the side this mirrors.
+
+    Tokenization is `_hardline_tokenize`'s, shared with the two other readers of a
+    command line, because the live module kept three copies of the split and they
+    disagreed: `ls${IFS}~/.ssh` was one word here and two words everywhere else,
+    which is the difference between a listing of the store and a refusal.
     """
-    for _seg in _re.split(r'[;&|]{1,2}', command):
-        _toks = [t.strip('"\'').strip() for t in _re.split(r'\s+', _seg) if t.strip()]
-        if not _toks:
-            continue
-        _first = _toks[0].split('/')[-1].split('\\')[-1].lower()
-        if _first in ('sudo', 'xargs', 'env', 'command', 'time', 'nice') and len(_toks) > 1:
-            _first = _toks[1].split('/')[-1].split('\\')[-1].lower()
+    for _toks in _hardline_segments(command):
+        _first = _hardline_executable(_toks)
         if _first in _ENUM_CMDS:
             return True
         # The grep family only walks with its recursive flag — `-r`, `-R`, the
@@ -592,7 +648,7 @@ def _hardline_check_command(command):
         return None
     _write = _hardline_is_write_intent(command)
     _lists = _hardline_enumerates(command)
-    for _raw in _re.split(r'\s+', command):
+    for _raw in _hardline_tokenize(command):
         _tok = _hardline_canonical(_raw).strip('"\'')
         _lower = _tok.lower()
         if _write and _PROTECTED_WRITE_RE.search(_tok) and not (_ENV_TEMPLATE_RE.search(_tok) and '.env' in _lower):
@@ -696,6 +752,10 @@ def build_runner_source(
         .replace('__REC_VALUES__', repr(sorted(_hardline._RECURSIVE_VALUES)))
         .replace('__REC_SHORT__', repr(_hardline._RECURSIVE_SHORT_RE.pattern))
         .replace('__SHORT_NAME__', repr(_hardline._SHORT_NAME_RE.pattern))
+        .replace('__WORD_END__', repr(_hardline._SHELL_WORD_END_RE.pattern))
+        .replace('__IFS_SPACED__', repr(_hardline._IFS_SPACED_RE.pattern))
+        .replace('__SEGMENT_SPLIT__', repr(_hardline._SEGMENT_SPLIT_RE.pattern))
+        .replace('__EXEC_WRAPPERS__', repr(list(_hardline._EXEC_WRAPPERS)))
         .replace(
             '__MUTATING_FLAGS__',
             repr({k: tuple(p.pattern for p in v) for k, v in _hardline._MUTATING_FLAG_PATTERNS.items()}),
