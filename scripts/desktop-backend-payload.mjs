@@ -28,10 +28,21 @@ const userStateNames = new Set([
 const userStateDirs = new Set([
   'data', 'backups', 'logs', 'harness_proposals', 'shadow-git', 'checkpoints',
   'event_log', 'refine_store',
+  // A virtualenv is per-machine by definition: its `site-packages` is one
+  // person's pip resolution. It also has no business in the payload — the
+  // runtime venv is built at install time from the portable python
+  // (`backend.rs`), and a venv that survived into a working checkout must
+  // stop the build here, not ride the installer.
+  'venv', 'site-packages',
 ]);
 const userStateSuffixes = [
   '.sqlite', '.sqlite-wal', '.sqlite-shm', '.pre-migration', '.pre-migration-wal',
   '.db', '.key', '.pem', '.p12',
+  // Wheels: `wheels` is staged and hashed as a payload root, so a wheel
+  // dropped there WOULD ship in the installer. manimgx bundles a mixed
+  // MIT/GPL/LGPL license expression — that is a per-user `pip install`
+  // decision (the kernel-venv provisioning action), never a staged payload.
+  '.whl',
 ];
 
 function userStateReason(parts) {

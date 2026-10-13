@@ -216,6 +216,14 @@ test('the payload guard reads the shipped bytes and ignores third-party trees', 
     ['backend-py/app/harness_proposals/prop_1.json', 'harness_proposals'],
     ['backend-py/app/services/roots/logs/backend.log', 'logs'],
     ['skills/demo/.usage.json', '.usage.json'],
+    // A per-user python environment is state, not payload: `site-packages` is
+    // one machine's pip resolution, and the runtime venv is built at install
+    // time from the portable python. A wheel is a package decision — manimgx
+    // bundles a mixed MIT/GPL/LGPL expression, so it is a per-user install
+    // through the kernel-venv provisioning action, never a staged payload.
+    ['backend-py/app/services/tools/site-packages/manimgx-0.1.1.dist-info/METADATA', 'site-packages'],
+    ['backend-py/app/venv/Scripts/python.exe', 'venv'],
+    ['backend-py/app/cache/manimgx-0.1.1-cp313-abi3-win_amd64.whl', '.whl'],
   ];
 
   const clean = await cleanTree('baseline');
