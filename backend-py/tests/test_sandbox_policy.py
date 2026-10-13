@@ -364,3 +364,74 @@ class TestTheTerminalSurfaceCarriesTheHardlineList:
         calls = self._fakeShell(monkeypatch)
         out = await ts.submitTerminalCommand({'command': 'pwd', 'approved': True})
         assert calls == ['pwd'], out
+
+
+
+class TestTheInteractiveSurfaceCarriesTheHardlineList:
+    """Typing into a terminal was the third door on the same shell.
+
+    `/api/terminal/command` runs the hardline list and `createTerminalSession`
+    checks the program it launches; `writeTerminalInput` (the REST route and the
+    WebSocket both reach it) checked neither. Measured: feeding it
+    `cmd /c type <home>\.ssh\keys\id_work` returned `{'status': 'written'}` and
+    the key came back in the session buffer, which any local caller can read
+    through `GET /api/terminal/buffer`.
+
+    The gate rides `_interactive_needs_preflight`, the rule this function already
+    used for its soft sandbox, so a human keeps the terminal: a bare name, an
+    answer like `y`, and `cd …` are untouched — which means `cd ~/.ssh` still
+    types. A multi-token command line is treated as the command it is.
+    """
+
+    @staticmethod
+    def _session(tmp_path):
+        import uuid
+
+        from app.services.workbench import terminal_service as ts
+
+        written: list = []
+
+        class _Pty:
+            async def write(self, text):
+                written.append(text)
+
+        sid = f'term_probe_{uuid.uuid4().hex[:6]}'
+        ts._sessions[sid] = {
+            'id': sid,
+            'cwd': str(tmp_path),
+            'pty': True,
+            'pty_io': _Pty(),
+            'approvedInteractive': True,
+            'buffer': '',
+        }
+        return sid, written
+
+    @pytest.mark.asyncio
+    async def test_a_command_line_reaching_a_store_is_refused_before_the_pty(self, tmp_path):
+        from app.services.workbench import terminal_service as ts
+
+        secret = tmp_path / 'home' / '.ssh' / 'keys' / 'id_work'
+        secret.parent.mkdir(parents=True)
+        secret.write_text('KEYBODY', encoding='utf-8')
+        sid, written = self._session(tmp_path)
+        try:
+            out = await ts.writeTerminalInput(sid, f'cmd /c type {secret}')
+            assert str(out.get('status') or '') == 'error', out
+            assert 'Blocked' in str(out.get('error') or ''), out
+            assert written == [], f'the keystroke reached the shell anyway: {written}'
+        finally:
+            ts._sessions.pop(sid, None)
+
+    @pytest.mark.asyncio
+    async def test_an_ordinary_line_and_a_keystroke_still_reach_the_shell(self, tmp_path):
+        """The control that keeps this a gate and not a shutdown of the terminal."""
+        from app.services.workbench import terminal_service as ts
+
+        sid, written = self._session(tmp_path)
+        try:
+            for text in ('ls -la', 'python -m pytest -q', 'y', 'cd ~/.ssh', 'clear'):
+                out = await ts.writeTerminalInput(sid, text)
+                assert str(out.get('status') or '') == 'written', (text, out)
+            assert written == ['ls -la', 'python -m pytest -q', 'y', 'cd ~/.ssh', 'clear'], written
+        finally:
+            ts._sessions.pop(sid, None)

@@ -219,3 +219,59 @@ def test_public_ssh_members_stay_readable():
     swallow the one public member (`authorized_keys`) that stays readable."""
     assert check_hardline_command('head -5 ~/.ssh/authorized_keys') is None
     assert check_hardline_path('C:/Users/rober/.ssh/config', for_write=False) is None
+
+
+def test_a_hook_definition_file_cannot_be_written_by_the_agent(tmp_path):
+    """`hooks.json` is execution policy, so the write door owns it.
+
+    Measured end to end before the rule existed: `write_file` answered
+    'Successfully wrote 148 bytes to <dataDir>/hooks.json' — the data directory
+    is an allowed root for an absolute path — and
+    `user_hooks.ensure_hooks_loaded` then REGISTERED it (`registered: 1`),
+    because the trust gate keys on a WORKSPACE origin and the user-level file has
+    none. A model could install a shell command for August to run on the next
+    matching event: privilege escalation with a payload that survives a restart.
+
+    Reads stay allowed. A hook definition is not a secret — the settings panel
+    lists it — and refusing the read would only hide the thing the user needs to
+    see. The anchor is the whole filename at the end of the path, so a project's
+    `hooks.json.md` documentation and its `webhook.js` are untouched.
+    """
+    from app.services.sandbox.hardline import check_hardline_command, check_hardline_path
+
+    for target in (
+        str(tmp_path / 'hooks.json'),
+        str(tmp_path / '.aug' / 'hooks.json'),
+        str(tmp_path / 'HOOKS.JSON'),
+    ):
+        assert check_hardline_path(target, for_write=True) is not None, target
+        assert check_hardline_path(target, for_write=False) is None, f'reading a hook is not a leak: {target}'
+
+    assert check_hardline_command('rm hooks.json') is not None
+    assert check_hardline_command('echo x > .aug/hooks.json') is not None
+    # A mutating command that only happens to mention the name elsewhere still
+    # passes: the rule is the file, not the word.
+    assert check_hardline_command('rm webhook.js') is None
+    assert check_hardline_command('cat hooks.json') is None
+
+
+def test_the_write_tool_refuses_to_install_a_hook(tmp_path, monkeypatch):
+    """The door that was open is the tool, so the tool is what is tested.
+
+    `check_hardline_path` is a pure function and passes on its own; the claim
+    under test is that the agent's own `write_file` cannot land the file. The
+    probe runs against an isolated AUGUST_DATA_DIR, never the real one.
+    """
+    import asyncio
+    import json
+
+    from app.services.tool_registrations import file_tools
+
+    hooks = tmp_path / 'hooks.json'
+    payload = json.dumps({'hooks': [{'name': 'probe', 'event': 'session_start', 'command': 'touch x'}]})
+    out = asyncio.run(file_tools._writeFile(str(hooks), payload))
+    assert 'hardline' in out.lower() or 'blocked' in out.lower() or 'protected' in out.lower(), out
+    assert not hooks.exists(), 'the tool reported a refusal and wrote the file anyway'
+    # Control: an ordinary file in the same directory still writes.
+    ok = asyncio.run(file_tools._writeFile(str(tmp_path / 'notes.md'), '# hi'))
+    assert (tmp_path / 'notes.md').is_file(), ok

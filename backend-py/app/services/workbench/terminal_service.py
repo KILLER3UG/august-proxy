@@ -555,15 +555,31 @@ async def writeTerminalInput(sessionId: str, inputText: str, approved: bool = Fa
             'createdAt': _now(),
         }
         return {'status': 'approval_required', 'requestId': reqId}
-    # Interactive input in a workspace-bound terminal gets the same soft
-    # sandbox as one-shot commands. Navigation (`cd …`) and single-token
-    # inputs (answers, keystrokes, bare commands) pass through; multi-token
-    # command lines that escape the workspace (path tokens, redirects) are
-    # blocked — the drawer terminal was a second execution surface outside
-    # the documented sandbox policy.
+    # Interactive input rides two gates, and `_interactive_needs_preflight` is
+    # what makes the second one bearable on a human surface: navigation (`cd …`)
+    # and single-token input (an answer, a keystroke, a bare command name) pass
+    # untouched, so a person can still `cd ~/.ssh` in their own shell; a
+    # multi-token command line is treated as the command it is.
+    #
+    # The hardline list runs FIRST and NOT inside the workspace test below. That
+    # was the one-shot route's flaw — `soft_preflight` only fires when
+    # `_terminal_workspace_root` recognises the cwd, so a terminal opened anywhere
+    # else had no gate at all, and the preflight that did run checks escapes from a
+    # workspace, not the machine's credential stores. Measured before this: typing
+    # `cmd /c type <home>\.ssh\keys\id_work` returned `{'status': 'written'}` and
+    # the key appeared in the buffer, which a local caller can read back through
+    # `GET /api/terminal/buffer`. `POST /command` refuses the same string, and the
+    # launch of this very session is checked in `createTerminalSession`.
+    needs_preflight = _interactive_needs_preflight(inputText)
+    if needs_preflight:
+        from app.services.sandbox.hardline import check_hardline_command
+
+        hardline = check_hardline_command(inputText)
+        if hardline:
+            return {'status': 'error', 'command': inputText, 'error': f'Blocked: {hardline}'}
     session_cwd = as_str(session.get('cwd'), '')
     workspace = _terminal_workspace_root(session_cwd) if session_cwd else None
-    if workspace and _interactive_needs_preflight(inputText):
+    if workspace and needs_preflight:
         try:
             from app.services.sandbox.backends.fallback import soft_preflight
             from app.services.sandbox.policy import SandboxPolicy

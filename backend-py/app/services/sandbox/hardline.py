@@ -45,9 +45,19 @@ from pathlib import Path
 # documenting its own credential setup could not be written at all. A
 # directory named `credentials` is still protected — the anchor requires the
 # component to end there.
+#
+# `hooks.json` is here for a different reason than the credential names: it is
+# not secret, it is EXECUTION POLICY. `write_file` accepted an absolute path
+# inside the data directory (measured: 'Successfully wrote 148 bytes to
+# <dataDir>/hooks.json'), and `user_hooks.ensure_hooks_loaded` registers that
+# file with no trust decision at all — the trust gate keys on a WORKSPACE origin
+# and the user-level file has none (registered: 1). So a model could install a
+# shell command for August to run on the next matching event, which is
+# privilege escalation with a persistent payload. Reads stay allowed: a hook
+# definition is not a secret, and the settings panel shows it.
 _PROTECTED_WRITE_PATTERN = re.compile(
     r'(\.env|providers\.json|(?:^|/)credentials(?:/|$)|\.ssh(?:/|$)|'
-    r'id_rsa|id_ed25519|\.aws(?:/|$)|\.npmrc|\.pypirc)',
+    r'id_rsa|id_ed25519|\.aws(?:/|$)|\.npmrc|\.pypirc|hooks\.json$)',
     re.IGNORECASE,
 )
 

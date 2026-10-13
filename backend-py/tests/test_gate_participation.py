@@ -261,9 +261,11 @@ class TestEveryShellSpawnSiteIsGatedOrExempt:
         'app/services/sandbox/backends/windows.py':
             'backend executor; same funnel as fallback.py',
         'app/routers/hooks.py':
-            'runs user-authored hook commands, not model-supplied ones',
+            'executes hook commands a human authored; the agent cannot install one '
+            '(workspace trust gate + the hardline write rule on hooks.json)',
         'app/services/hooks/user_hooks.py':
-            'runs user-authored hook commands, not model-supplied ones',
+            'executes hook commands a human authored; the agent cannot install one '
+            '(workspace trust gate + the hardline write rule on hooks.json)',
         'app/services/hooks/sensitive_code.py':
             'static scan of hook source; executes nothing',
     }
@@ -309,15 +311,30 @@ class TestEveryShellSpawnSiteIsGatedOrExempt:
         stale = sorted(set(self.EXEMPT) - set(found))
         assert not stale, f'exempted files that no longer spawn a shell: {stale} — drop the shelter'
 
-    def test_the_hook_engine_still_requires_an_explicit_trust_decision(self):
-        """The hooks exemption is only true while a workspace must be trusted.
+    def test_the_hook_exemption_is_backed_by_two_doors(self):
+        """`user_hooks` is exempt because a model cannot install a hook. Measured.
 
-        If that door goes, a workspace file an agent can write becomes a command
-        an executor runs, and `user_hooks` belongs on the gated side — not here.
+        The exemption used to rest on one door: a workspace must be trusted before
+        its `.aug/hooks.json` loads. The user-level file has no workspace origin, so
+        no gate applied to it — and `write_file` accepted an absolute path into the
+        data directory, so registering a shell command for August to run was one
+        tool call away. The second door is the hardline write rule on
+        `hooks.json`; if either is removed, hooks stop being an exemption.
         """
         from app.services.hooks import user_hooks
+        from app.services.sandbox.hardline import check_hardline_path
 
         assert hasattr(user_hooks, 'trust_workspace'), (
-            'the hook trust door is gone — hooks are no longer an exemption'
+            'the workspace hook trust door is gone — hooks are no longer an exemption'
         )
         assert hasattr(user_hooks, 'revoke_workspace')
+        # The origin that carries no workspace has no trust gate, by design:
+        # `user`-level hooks load at boot. That is exactly why the write rule has
+        # to hold for it, so assert the shape rather than assume it.
+        from app.services.hooks.user_hooks import _config_paths
+
+        assert _config_paths(None) and _config_paths(None)[0][0] == 'user'
+        assert check_hardline_path('C:/Users/x/AppData/Roaming/August/data/hooks.json', for_write=True), (
+            'the user-level hook file is writable again — the exemption is now unsafe'
+        )
+        assert check_hardline_path('C:/proj/.aug/hooks.json', for_write=True)
