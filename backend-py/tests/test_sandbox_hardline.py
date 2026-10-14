@@ -416,8 +416,14 @@ def test_a_model_cannot_install_a_skill_through_the_write_tool(tmp_path):
     # Controls: the layer is `.aug/skills`, not the word `skills`. A checkout's
     # own bundled skills and documentation stay writable, and an ordinary file
     # in the same `.aug` directory is untouched.
+    #
+    # The checkout control has to live OUTSIDE the data directory: `isolatedData`
+    # points it at `tmp_path`, so `tmp_path/skills/bundled/…` is literally
+    # `<dataDir>/skills/…` — the agent layer, not a bundled tree. It read as a
+    # passing control only while the case mismatch kept the data-directory rule
+    # inert; the moment the door was fixed it refused its own control.
     for ok in (
-        str(tmp_path / 'skills' / 'bundled' / 'SKILL.md'),
+        '/proj/checkout/skills/bundled/SKILL.md',
         str(tmp_path / 'docs' / 'SKILL.md'),
         str(tmp_path / '.aug' / 'notes.md'),
     ):
@@ -455,3 +461,38 @@ def test_the_agent_layers_of_the_learning_store_are_policy_not_files(isolatedDat
     assert check_hardline_path(f'{data}/learning_state.json', for_write=True) is None
     assert check_hardline_path('/proj/src/mcp-servers.json', for_write=True) is None
     assert check_hardline_path('/proj/skills/deploy/SKILL.md', for_write=True) is None
+
+
+def test_the_agent_state_door_does_not_depend_on_how_a_path_is_spelled(isolatedData):
+    """The case the lower-cased fixture above structurally cannot reach.
+
+    `_agent_state_reason` compares against `_data_dir_form()` and
+    `_brain_db_prefixes()`, both lower-cased, so the door only works if its
+    caller hands it `_store_match_form`. `check_hardline_path` handed it
+    `_canonical`, which just swaps separators — so on a real Windows install,
+    where the resolved path keeps its drive letter and directory case, EVERY
+    data-directory rule was inert and `write_file` installed a skill, a policy
+    file or a brain write without a proposal. The command door normalized
+    correctly, so the two doors disagreed about the same file.
+
+    Three spellings of one path, because the escape is not just case: native
+    backslashes and an all-upper-case form take different routes through the
+    normalizers.
+    """
+    real = str(isolatedData)
+    spellings = (
+        real.replace(chr(92), '/'),
+        real,
+        real.replace(chr(92), '/').upper(),
+    )
+    for base in spellings:
+        for tail in (
+            '/skills/deploy/SKILL.md',
+            '/bots/agent1/skills/deploy/SKILL.md',
+            '/automations.json',
+            '/mcp-servers.json',
+            '/august_brain.sqlite',
+        ):
+            target = base + tail
+            assert check_hardline_path(target, for_write=True) is not None, target
+            assert check_hardline_path(target, for_write=False) is None, target

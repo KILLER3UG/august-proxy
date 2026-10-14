@@ -773,7 +773,14 @@ def check_hardline_path(path: str, *, for_write: bool) -> str | None:
     if for_write and _PROTECTED_WRITE_PATTERN.search(canonical) and not _is_env_template(canonical):
         return f'hardline protected path: {path}'
     if for_write:
-        state = _agent_state_reason(canonical)
+        # `_store_match_form`, not `_canonical`: `_agent_state_reason` compares
+        # against `_data_dir_form()` and `_brain_db_prefixes()`, both of which
+        # are lower-cased, so feeding it the raw spelling made the whole
+        # data-directory branch inert on every Windows install — a real
+        # `write_file` to `<dataDir>/skills/x/SKILL.md` resolved with its drive
+        # letter and directory case intact and bound clean. The command door
+        # above already normalizes this way; the two doors disagreed.
+        state = _agent_state_reason(_store_match_form(path))
         if state:
             return f'hardline protected {state}: {path}'
     if not for_write and _CREDENTIAL_READ_PATTERN.search(canonical):
