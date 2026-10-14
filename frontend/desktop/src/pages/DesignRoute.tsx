@@ -11,6 +11,7 @@ import type { ThemeMode, TextSize } from '@/lib/theme';
 import { Surface, type SurfaceElevation } from '@/components/ui/card';
 import { useStickToBottomScroll } from '@/sections/chat/hooks/useStickToBottomScroll';
 import { RightDrawerSubagentsSection } from '@/components/shell/RightDrawerSubagentsSection';
+import { RightDrawerDropdown } from '@/components/shell/RightDrawerLauncher';
 
 interface ColorToken {
   name: string;
@@ -361,13 +362,38 @@ function SubagentsRosterLab() {
   );
 }
 
+/** The workbench launcher with the counts a live session would give it. Props
+ *  only — no store, no queries — so what this proves is the render (badge text,
+ *  the 9+ cap, the artifacts dot and the accessible name), while the numbers
+ *  that decide those props stay covered by their unit tests. */
+function LauncherBadgeLab() {
+  const [cases] = useState([
+    { workers: 0, artifacts: 0 },
+    { workers: 3, artifacts: 5 },
+    { workers: 12, artifacts: 0 },
+  ]);
+  return (
+    <div data-testid="lab-launcher" className="flex items-end gap-6">
+      {cases.map((c) => (
+        <div key={`${c.workers}-${c.artifacts}`} className="flex flex-col items-center gap-1">
+          <RightDrawerDropdown drawerOpen={false} workersBadge={c.workers} artifactsCount={c.artifacts} />
+          <span className="text-2xs text-muted-foreground/60">
+            {c.workers} / {c.artifacts}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function DesignRoute() {
   // The roster lab mounts a live-polling drawer section, and other e2e specs
   // (a11y smoke, scroll pin) run against this same page — measured: adding it
   // unconditionally pushed the scroll pin's first assertion past its 5 s
   // expect under a contended dev server. So it mounts only when asked for.
-  const showRosterLab =
-    new URLSearchParams(window.location.search).get('lab') === 'subagents';
+  const lab = new URLSearchParams(window.location.search).get('lab');
+  const showRosterLab = lab === 'subagents';
+  const showLauncherLab = lab === 'launcher';
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-6xl px-6 py-10 space-y-10">
@@ -459,6 +485,15 @@ export function DesignRoute() {
             <h2 className="text-2xl font-semibold tracking-display">Subagent roster</h2>
             <div>
               <SubagentsRosterLab />
+            </div>
+          </section>
+        )}
+
+        {showLauncherLab && (
+          <section className="space-y-3">
+            <h2 className="text-2xl font-semibold tracking-display">Workbench launcher badge</h2>
+            <div>
+              <LauncherBadgeLab />
             </div>
           </section>
         )}
