@@ -904,8 +904,8 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // breakdown can report a measurement instead of guessing zero.
       setContextSectionsLive(sessionId, contextSections);
       // Only surface the warning when the budget is actually stressed (see
-      // isContextPressured); low/medium pressure is a silent no-op and the
-      // composer's ContextRing shows the gauge instead.
+      // isContextPressured); low/medium pressure updates the live stores and is
+      // otherwise silent.
       if (!isContextPressured(attentionPressure, contextUsedPct)) return;
       const pct = Number(contextUsedPct);
       const label = Number.isFinite(pct) && pct > 0 ? ` (${Math.round(pct)}% used)` : '';

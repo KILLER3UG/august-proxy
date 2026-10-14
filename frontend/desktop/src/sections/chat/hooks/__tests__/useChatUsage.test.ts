@@ -1,6 +1,6 @@
 /* ── useChatUsage ────────────────────────────────────────────────────────
  * A single early/transient failure used to null the state outright and
- * leave the ContextRing on the bare local fallback (tool definitions only)
+ * leave consumers on the bare local fallback (tool definitions only)
  * until the next turn flipped the refresh key. The hook now makes one
  * bounded retry before giving up.
  *

@@ -1,6 +1,6 @@
 /* ── promptCacheLive store (Bug 9a) ────────────────────────────────────
- * contextPressure SSE events feed the ContextRing through this store;
- * keyed per session, ignores empty payloads, clearable per session.
+ * contextPressure SSE events feed this store; keyed per session,
+ * ignores empty payloads, clearable per session.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
