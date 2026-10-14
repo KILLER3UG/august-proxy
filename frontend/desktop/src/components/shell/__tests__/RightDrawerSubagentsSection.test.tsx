@@ -248,6 +248,27 @@ describe('RightDrawerSubagentsSection', () => {
     expect(screen.queryByTestId('right-drawer-subagent-progress-p-2')).toBeNull();
   });
 
+  it('gives every worker a tab, even at a dozen', async () => {
+    // The strip scrolls, so slicing it to five did not tidy the strip — it
+    // dropped seven workers from the DOM where no scroll could reach them.
+    listAgentsMock.mockResolvedValue({
+      agents: Array.from({ length: 12 }, (_, i) => ({
+        taskId: `w-${i}`,
+        agentId: 'general',
+        goal: `work ${i}`,
+        status: 'running' as const,
+      })),
+      meta: {},
+    });
+    renderSection();
+    await screen.findByTestId('right-drawer-subagent-w-0');
+    const strip = await screen.findByTestId('right-drawer-subagent-tabstrip');
+    // One tab per worker (the strip also carries a search affordance, hence
+    // `>=` rather than an exact count). Before this, `slice(-5)` meant the
+    // twelve-worker case produced five tabs and seven workers had no tab at all.
+    expect(strip.querySelectorAll('[role="tab"]').length).toBeGreaterThanOrEqual(12);
+  });
+
   it('disambiguates multiple workers with the same role', async () => {
     listAgentsMock.mockResolvedValue({
       agents: [

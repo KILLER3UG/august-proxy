@@ -524,11 +524,12 @@ export function RightDrawerSubagentsSection({
     label: displayLabels.get(e.key) || getAgentRoleLabel(e.agent.agentId),
     elapsed: typeof e.agent.elapsed === 'number' ? e.agent.elapsed : undefined,
   }));
-  const recentTabs = tabs.slice(-5);
-  const selectedTab = tabs.find((tab) => tab.taskId === selectedTaskId);
-  const stripTabs = selectedTab && !recentTabs.some((tab) => tab.taskId === selectedTab.taskId)
-    ? [selectedTab, ...recentTabs]
-    : recentTabs;
+  // Every worker gets a tab. The strip already scrolls (`overflow-x-auto`), so
+  // slicing to the last five did not keep the strip tidy — it removed the other
+  // workers from the DOM, where no amount of scrolling could reach them. With a
+  // dozen running, seven were findable only through the roster or the search
+  // dropdown, and the tab list gave no sign they existed.
+  const stripTabs = tabs;
 
   const tabsStrip =
     entries.length > 0 ? (
