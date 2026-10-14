@@ -44,6 +44,30 @@ describe('getToolLabel mapping and cleaning', () => {
     expect(getToolLabel('run_command', { command: 'git status', status: 'done' })).toBe('Ran: git status');
   });
 
+  it('keeps directories out of the command label, on every surface that builds it', () => {
+    // The transcript row was shortened first; the label was the leak, because
+    // ToolCallItem, the timeline and the mutation cards all build their title
+    // through this one function.
+    expect(
+      getToolLabel('run_command', {
+        command: 'rg --files C:/Dev/august-proxy/frontend/desktop/src/components',
+        status: 'done',
+      }),
+    ).toBe('Ran: rg --files components');
+    expect(
+      getToolLabel('run_command', {
+        command: 'cat "C:\\Users\\rober\\.ssh\\id_ed25519.pub"',
+        status: 'running',
+      }),
+    ).toBe('Running: cat "id_ed25519.pub"');
+    // A URL is not a path, and a relative path is already short — both pass
+    // through untouched, so the label stays a true account of what ran.
+    expect(
+      getToolLabel('run_command', { command: 'curl https://api.example.com/v1/models', status: 'done' }),
+    ).toBe('Ran: curl https://api.example.com/v1/models');
+    expect(getToolLabel('run_command', { command: 'ls -la ./src', status: 'done' })).toBe('Ran: ls -la ./src');
+  });
+
   it('includes file/dir basename on read and list labels', () => {
     expect(getToolLabel('read_file', { filename: 'README.md', status: 'running' })).toBe(
       'Reading README.md',

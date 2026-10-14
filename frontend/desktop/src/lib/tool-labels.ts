@@ -354,7 +354,11 @@ export function getToolLabel(
   if (clean === 'run_command' || clean === 'bash') {
     const verb = isRunning ? 'Running' : 'Ran';
     if (context?.command) {
-      return `${verb}: ${truncateLabel(context.command, 120)}`;
+      // The same rewrite the transcript row uses: this label is built by three
+      // surfaces (ToolCallItem, the timeline, the mutation cards), so shortening
+      // it here is what keeps a path out of all of them rather than one at a
+      // time. The verbatim line is the caller's tooltip.
+      return `${verb}: ${truncateLabel(commandDisplay(context.command), 120)}`;
     }
     return verb;
   }
