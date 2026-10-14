@@ -12,6 +12,9 @@ import { Surface, type SurfaceElevation } from '@/components/ui/card';
 import { useStickToBottomScroll } from '@/sections/chat/hooks/useStickToBottomScroll';
 import { RightDrawerSubagentsSection } from '@/components/shell/RightDrawerSubagentsSection';
 import { RightDrawerDropdown } from '@/components/shell/RightDrawerLauncher';
+import { ToolStepRow } from '@/components/chat/ToolStepRow';
+import { getToolLabel } from '@/lib/tool-labels';
+import { extractCommand, extractFilename } from '@/components/chat/tool/extractors';
 
 interface ColorToken {
   name: string;
@@ -386,6 +389,57 @@ function LauncherBadgeLab() {
   );
 }
 
+/** The real tool-step rows over the payloads a session actually carries —
+ *  captured from a transcript written through POST /api/sessions/{id}/messages,
+ *  so `context` is the same JSON string the store returns, not an invented one.
+ *  Three shapes matter for the "filenames, not absolute paths" rule: a drive
+ *  letter, a long shell line with a path inside it, and a UNC share. jsdom can
+ *  assert the string that comes out of the helper; only a browser shows what the
+ *  row renders next to an icon and whether it overflows the transcript column. */
+function ToolRowLab() {
+  const BS = String.fromCharCode(92);
+  const rows = [
+    {
+      id: 't_win',
+      name: 'read_file',
+      args: JSON.stringify({ path: `C:${BS}Users${BS}rober${BS}Documents${BS}reports${BS}quarterly.xlsx` }),
+    },
+    {
+      id: 't_cmd',
+      name: 'run_command',
+      args: JSON.stringify({
+        command: 'rg --files C:/Dev/august-proxy/frontend/desktop/src/components/overlays --glob "*.tsx" | head -20',
+      }),
+    },
+    {
+      id: 't_unc',
+      name: 'read_file',
+      args: JSON.stringify({ path: `${BS}${BS}fileserver${BS}share${BS}proj${BS}report.docx` }),
+    },
+  ];
+  return (
+    <div data-testid="lab-tool-rows" className="w-[420px] space-y-1 rounded-xl border border-border bg-card p-2">
+      {rows.map((r) => (
+        <ToolStepRow
+          key={r.id}
+          tool={{ id: r.id, name: r.name, context: r.args, status: 'done' } as never}
+          // The label is what carries the file name, and the timeline computes
+          // it the same way — a lab that omitted it would prove nothing about
+          // the row a user actually sees.
+          label={getToolLabel(r.name, {
+            command: r.name === 'run_command' ? extractCommand(r.args) ?? undefined : undefined,
+            filename: r.name !== 'run_command' ? extractFilename(r.args) ?? undefined : undefined,
+            status: 'done',
+          })}
+          isCommand={r.name === 'run_command'}
+          expanded
+          onToggle={() => {}}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function DesignRoute() {
   // The roster lab mounts a live-polling drawer section, and other e2e specs
   // (a11y smoke, scroll pin) run against this same page — measured: adding it
@@ -394,6 +448,7 @@ export function DesignRoute() {
   const lab = new URLSearchParams(window.location.search).get('lab');
   const showRosterLab = lab === 'subagents';
   const showLauncherLab = lab === 'launcher';
+  const showToolRowsLab = lab === 'toolrows';
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-6xl px-6 py-10 space-y-10">
@@ -485,6 +540,15 @@ export function DesignRoute() {
             <h2 className="text-2xl font-semibold tracking-display">Subagent roster</h2>
             <div>
               <SubagentsRosterLab />
+            </div>
+          </section>
+        )}
+
+        {showToolRowsLab && (
+          <section className="space-y-3">
+            <h2 className="text-2xl font-semibold tracking-display">Tool step rows</h2>
+            <div>
+              <ToolRowLab />
             </div>
           </section>
         )}
