@@ -240,8 +240,14 @@ def _august_secret_files() -> tuple[str, ...]:
     return (f'{data}/config.json',)
 
 
-def _agent_state_reason(canonical: str) -> str | None:
-    """Why `canonical` is August's own instruction or execution state, else None.
+def _agent_state_reason(match_form: str) -> str | None:
+    """Why `match_form` is August's own instruction or execution state, else None.
+
+    Callers must pass `_store_match_form(...)`, not `_canonical(...)`: every
+    comparison below is lower-cased, so the raw spelling silently matches
+    nothing. That naming is how the whole data-directory branch ended up inert on
+    Windows, and the parameter is named for the form it expects because a name
+    called `canonical` means "the output of `_canonical`" in this module.
 
     The class is the one `hooks.json` established: a file the RUNTIME reads back
     as policy. Two of them were measured writable by the same door.
@@ -280,7 +286,7 @@ def _agent_state_reason(canonical: str) -> str | None:
     ordinary development work, and a human reviews it in a diff — the same reason
     a workspace's own `AGENTS.md` stays writable and the app's state files do not.
     """
-    parts = [p for p in canonical.split('/') if p]
+    parts = [p for p in match_form.split('/') if p]
     for i in range(1, len(parts)):
         if parts[i] == 'skills' and parts[i - 1] == '.aug':
             return 'agent skill layer (.aug/skills)'
@@ -290,12 +296,12 @@ def _agent_state_reason(canonical: str) -> str | None:
     # memory anywhere on disk, and a rule that only looked inside the data
     # directory would then protect a file that no longer exists.
     for prefix in _brain_db_prefixes():
-        if canonical == prefix or canonical.startswith(prefix + '-') or canonical.startswith(prefix + '/'):
+        if match_form == prefix or match_form.startswith(prefix + '-') or match_form.startswith(prefix + '/'):
             return f'August durable memory ({_DEFAULT_BRAIN_FILE})'
     data = _data_dir_form()
-    if not data or not canonical.startswith(data + '/'):
+    if not data or not match_form.startswith(data + '/'):
         return None
-    inner = [p for p in canonical[len(data) :].split('/') if p]
+    inner = [p for p in match_form[len(data) :].split('/') if p]
     if 'skills' in inner:
         return 'agent skill layer (data directory)'
     if inner and inner[-1] in _POLICY_FILE_NAMES:
