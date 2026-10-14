@@ -3,10 +3,9 @@
  *
  * The backend emits one `contextPressure` SSE event per turn carrying the
  * universal prompt-cache split (`promptCache: { hitTokens, missTokens,
- * hitRate }`). The composer's ContextRing subscribes here so the cache hit
- * rate updates the moment the turn's event lands — instead of waiting for
- * the aggregated session-usage poll. Keyed per session so concurrent chats
- * do not overwrite each other.
+ * hitRate }`). This store takes that split the moment the turn's event lands,
+ * instead of waiting for the aggregated session-usage poll. Keyed per session
+ * so concurrent chats do not overwrite each other.
  */
 
 import { create } from 'zustand';

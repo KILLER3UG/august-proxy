@@ -68,8 +68,8 @@ import {
   Zap,
 } from 'lucide-react';
 
-/** Visibility tier for the rail. `basic` items are always shown; the
- *  `advanced` tier is hidden until the user toggles "Show advanced". */
+/** Visibility tier for the rail. `basic` items are shown in the rail;
+ *  `hidden` items are reachable through search and deep links only. */
 export type SettingsTier = 'basic' | 'hidden';
 
 /**
@@ -85,10 +85,8 @@ export interface SettingsSection {
   description: string;
   icon: LucideIcon;
   category: string;
-  /** Beginner-friendliness tier. `basic` items are always shown in the
-   *  rail; `advanced` items are hidden until the user enables the
-   *  "Show advanced" toggle. `hidden` items are not shown in the rail at
-   *  all (deep links still resolve). */
+  /** Rail visibility. `basic` items appear in the rail; `hidden` items do
+   *  not, but still resolve through search and deep links. */
   tier: SettingsTier;
   /** Labels of the individual controls this section owns. Settings search
    *  matches these too and shows the hit under the result, so "pricing"

@@ -5,12 +5,12 @@
  * server-accurate `totalTokens` / `maxContext` / `remainingTokens` produced
  * by `computeBudget` (the proper tokenizer chain over system + tools +
  * messages). The handler used to destructure those fields and drop them,
- * leaving the composer's ContextRing on the persisted `usage_events` value —
+ * leaving any live readout on the persisted `usage_events` value —
  * which is stale after a reload/session switch, and whose denominator was
  * the hardcoded 128k fallback whenever the model carried no contextWindow.
  *
- * This store is the ring's preferred source; the persisted session-usage
- * value is the floor it never reports below (see ChatThread). Keyed per
+ * This store is the server-accurate source; the persisted session-usage
+ * value is the floor a gauge never reports below. Keyed per
  * session so concurrent chats do not overwrite each other.
  */
 

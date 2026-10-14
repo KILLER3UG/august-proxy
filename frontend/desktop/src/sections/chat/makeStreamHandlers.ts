@@ -123,9 +123,9 @@ export interface StreamHandlers {
 
 /** True when the server's context-pressure classification means the window
  *  is actually stressed — high/critical per the backend, or ≥75% used as a
- *  fallback when the classification is missing. Low/medium pressure is a
- *  live meter only (the composer's ContextRing shows the gauge); surfacing
- *  the "nearly full" warning for it is a false alarm on fresh sessions. */
+ *  fallback when the classification is missing. Low/medium pressure updates
+ *  the live stores only; surfacing the "nearly full" warning for it is a
+ *  false alarm on fresh sessions. */
 export function isContextPressured(
   attentionPressure: 'low' | 'medium' | 'high' | 'critical' | undefined,
   contextUsedPct?: number,
@@ -889,13 +889,13 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     },
     onContextPressure: ({ contextUsedPct, attentionPressure, totalTokens, maxContext, remainingTokens, promptCache, contextSections }) => {
       // Live-meter event — the backend emits one per turn, not only when the
-      // window is nearly full. The prompt-cache split always feeds the
-      // ContextRing live store (before the pressure gate — low pressure is
-      // the common case and still carries fresh cache stats).
+      // window is nearly full. The prompt-cache split always feeds the live
+      // store (before the pressure gate — low pressure is the common case and
+      // still carries fresh cache stats).
       setPromptCacheLive(sessionId, promptCache);
       // The server-accurate occupancy measurement (proper tokenizer chain
       // over system + tools + messages). These fields used to be
-      // destructured and thrown away, which left the ContextRing on the
+      // destructured and thrown away, which left the live context store on the
       // persisted session-usage number — stale after a reload/session
       // switch, and divided by the hardcoded 128k fallback whenever the
       // model carried no contextWindow of its own.
