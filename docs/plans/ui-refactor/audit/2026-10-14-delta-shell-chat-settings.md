@@ -87,8 +87,11 @@ No regression test exists for this (`useStickToBottomScroll.test` covers helpers
   Reminders (`RecurringTasksSection.tsx:31-51`), Learning (`LearningPanel.tsx:332-439`). Pure config: Privacy,
   Turn Limits, Model Families, the access hub (`ToolGrantsSection.tsx:22`, `KernelVenvSection.tsx:47`).
 - **Sidebar orphans:** the `Sessions|Terminal|Bots` strip is gone (`SessionList.tsx:718-735`) but
-  `railTab==='bots'` still renders `BotsRail` from a persisted localStorage key **with no way to set it**
-  (`:165-167`, `:1019-1032`). Date headers are off by default (`:461-462`). Per-row token delta deleted
+  `railTab==='bots'` still renders `BotsRail` from a persisted localStorage key with no way to set it
+  (`:165-167`, `:1019-1032`). **This is not dead code** — `:161-163` says the read is read-only on purpose so
+  an install that last sat on Bots keeps landing there. The real defect is the **one-way door**: `setRailTab`
+  no longer exists, so a user who lands on the Bots rail has no in-app control to get back to their session
+  list. Date headers are off by default (`:461-462`). Per-row token delta deleted
   (`SessionRow.tsx:557-571`) — a reversal of the old audit's L4.
 - **Icons:** lucide-react only (217 imports / 213 files); `react-icons/si` for brand logos in 5 files; the 7
   inline `<svg>` sites are functional renderers (gauges, charts, schematic), not icons. The registry enforces
@@ -147,3 +150,6 @@ mismatch (`State.ts:43-54` vs `RightDrawer.tsx:327-340`) — **still true**.
 4. Removing terminal/preview/browser from the chat drawer is a real capability change for circuit and dev-server
    work — confirm the `BottomTerminalDock` is the right home before I wire them off.
 5. 27 settings sections reachable only by search: is that the intended depth, or should the rail grow groups?
+6. The Bots rail's one-way door: give it a way back, or drop the persisted `railTab` read so Bots is reachable
+   only from wherever bots belong now? I did not remove it — the read is documented as deliberate for returning
+   installs, and deleting it changes what an existing user sees on next launch.
