@@ -228,9 +228,13 @@ The reversals that change a decision rather than a line count:
 - **Settings tiers 15/2/28 and "3 header groups"** — reversed: `SettingsTier` is now
   `basic | hidden` (18/26 of 44) and `SETTINGS_CATEGORIES` has 4 entries, asserted by
   `src/test/settings-registry-audit.test.ts:32`. Six comments in four files still *said*
-  three headers, and one still described the retired `advanced` tier; all seven lines are
-  corrected in this pass, because a comment that names a tier nobody can select is how the
-  next audit re-invents it.
+  three headers, and one still offered `advanced` as a tier a section could declare
+  (`6eaabd32`). **Then the visual pass caught my own correction being wrong in a second
+  way**: those comments — and the one I had just rewritten — all describe the headers as the
+  rail, but `c5748da0` (2026-10-12, the minimalist batch) deleted the grouped rendering from
+  the unfiltered branch, so the plain rail is a flat list of the 18 `basic` sections and the
+  four headers now head only the **search** results. Corrected again to say that, with the
+  commit that made it true named in each place.
 
 Of the 130 still-true items, this pass closed the three that were in its own scope and were
 measurable without a model call — all three are now fixed and pinned by a real-Chromium
