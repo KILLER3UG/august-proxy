@@ -69,6 +69,11 @@ export function useStickToBottomScroll({
   // Last scrollTop we saw, so a scroll event can be judged by DIRECTION rather
   // than by which input device produced it.
   const lastScrollTopRef = useRef(0);
+  // The position our own last write asked for. Anything ABOVE that did not come
+  // from us — which the programmatic guard alone cannot tell you, because the
+  // follow animation raises it on every frame, i.e. precisely while a reader is
+  // trying to escape the bottom.
+  const lastAppliedTopRef = useRef(-1);
   const onPinnedChangeRef = useRef(onPinnedChange);
   onPinnedChangeRef.current = onPinnedChange;
   // Audit P2#18 — the sanctioned reduced-motion read (lib/motion.ts). The
@@ -106,6 +111,7 @@ export function useStickToBottomScroll({
 
   const applyScrollTop = useCallback((el: HTMLElement, next: number) => {
     programmaticScrollRef.current = true;
+    lastAppliedTopRef.current = next;
     el.scrollTop = next;
     // Clear on next frame so the browser's scroll event from this write is ignored.
     requestAnimationFrame(() => {
@@ -198,6 +204,20 @@ export function useStickToBottomScroll({
       const top = el.scrollTop;
       const delta = top - lastScrollTopRef.current;
       lastScrollTopRef.current = top;
+      if (
+        pinnedToBottomRef.current
+        && lastAppliedTopRef.current >= 0
+        && top < lastAppliedTopRef.current - SCROLL_RELEASE_PX
+      ) {
+        // Above where our own last write put it. Only a reader can do that, and
+        // this holds even while the follow animation has the guard raised —
+        // which is every frame of a stream, i.e. exactly when it matters.
+        release();
+        return;
+      }
+      // Nothing has been written yet, so there is no anchor to compare against
+      // and direction is all there is — but only for events that are
+      // demonstrably not ours.
       if (programmaticScrollRef.current) return;
       if (delta < -SCROLL_RELEASE_PX && pinnedToBottomRef.current) release();
     };

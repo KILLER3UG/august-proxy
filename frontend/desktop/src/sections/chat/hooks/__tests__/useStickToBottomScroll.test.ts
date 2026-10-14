@@ -229,6 +229,54 @@ describe('useStickToBottomScroll', () => {
     expect(pinnedToBottomRef.current).toBe(false);
   });
 
+  it('releases when the reader moves above the position the follow animation last wrote', () => {
+    // The whole point of this case: during a stream the programmatic guard is
+    // raised on EVERY frame of the follow animation, so a scrollbar drag that
+    // lands mid-stream looks exactly like one of our own writes if you only
+    // watch for guard-free scroll events. Comparing against the position we
+    // last asked for is the check that survives it.
+    vi.useFakeTimers();
+    try {
+      const el = makeScrollEl();
+      const pinnedToBottomRef = { current: true };
+      const onPinnedChange = vi.fn();
+
+      renderHook(() =>
+        useStickToBottomScroll({
+          scrollRef: { current: el } as React.RefObject<HTMLDivElement>,
+          pinnedToBottomRef,
+          streaming: true,
+          sessionId: 's1',
+          loadedSessionId: 's1',
+          messagesVersion: 1,
+          hasContent: true,
+          onPinnedChange,
+        }),
+      );
+
+      // Grow the transcript mid-stream so the lerp has something to follow,
+      // then run exactly one frame: the guard is up and the clear is not yet due.
+      Object.defineProperty(el, 'scrollHeight', { value: 2000, configurable: true });
+      act(() => {
+        vi.advanceTimersByTime(16);
+      });
+      const followed = el.scrollTop;
+      expect(followed).toBeGreaterThan(400);
+      expect(onPinnedChange).not.toHaveBeenCalledWith(false);
+
+      // The drag: lands above where the animation just put us, guard still up.
+      act(() => {
+        el.scrollTop = followed - 300;
+        el.dispatchEvent(new Event('scroll'));
+      });
+
+      expect(onPinnedChange).toHaveBeenCalledWith(false);
+      expect(pinnedToBottomRef.current).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('holds the pin when the view moves down', () => {
     const el = makeScrollEl();
     const onPinnedChange = vi.fn();
