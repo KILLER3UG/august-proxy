@@ -107,7 +107,61 @@ Restrict the drawer to context tied to the current chat (subagent progress, per-
 
 ## 8. Report
 
-At the end: what shipped; what is **verified live** vs verified only in isolation; open items; and every mismatch between this brief and the code (§0 is the start of that list). Nothing gets called "functioning" unless it was confirmed in the running app.
+Written after implementation, against the tree and command output — not against
+this plan's intentions. Per-item detail, retractions and measurements live in
+`docs/plans/ui-refactor/STATUS-2026-10-14.md`; this is the summary the brief asked
+for.
+
+**What shipped**
+
+| Item | Commits | What changed |
+|---|---|---|
+| Stage A audit | `e3e619b0` | Delta against the five 2026-10-03 audits, in the repo's `docs/plans/ui-refactor/audit/` convention rather than the brief's `status/ui-audit.md`, with a keep/move/remove line per drawer section. |
+| B1 context/cache readout | `9c014058`, `c1ddd7f9` | The gauge was **already unmounted** before this pass; the dead component and the comments claiming it was mounted are gone. The `promptCache` accounting the brief protected is untouched and still read by Usage. |
+| B2 filenames, not paths | `7cdec061`, `a1fbb0f8`, `3024c295` | Row text shortened; then the **label** path, which three surfaces build through `getToolLabel`, was found still printing the verbatim absolute path and fixed where they converge; then **UNC paths**, which the rule did not recognise at all. Census: seven render sites, two owners. |
+| B3 scroll pin | `1fb087bc`, `b12c15b6`, `b6aacacf`, `f74798ad`, `c8339c40` | Listeners bound to a replaceable node; the anchor recorded the *requested* position instead of the clamped one the browser reached; and the lab grew a generation mode so the follow animation is actually running. |
+| B4 one disclosure | `849d5c5e` | `.disclosure-chevron` on every `<summary>` in the transcript, re-using an icon already imported there. |
+| C navigation | `76433449` | Sidebar shortened to Automations plus the session list; Board moved into the Settings rail; `nav: true` feeds the command palette, so nothing lost its only door. |
+| D right panel | `49765d3d`, `5863c1e6`, `e289849e`, `880ddb41` | Every subagent gets a tab (the `slice(-5)` is gone); per-worker todo progress shows in the roster; the section set is declared once with the picker derived from it and a totality test; the × is a real dismissal. Plus the twelve-worker measurement below. |
+| §7 security defects | `9e0526ed`, `a4c912de`, `c2b46d4c`, `3b0efc97` | Windows-inert agent-state write door, the kernel venv the door missed, the judge's host-wide loopback carve-out narrowed to the artifact route, and the URL built from the constant the carve-out matches. |
+
+**Verified live** — in real Chromium, not jsdom: both scroll-pin release cases
+(`e2e/scroll-pin.spec.ts`); the twelve-worker roster — 12 tabs, pane still exactly
+420 px, strip scrolls, last tab reachable and selectable, × removes only the view
+(`e2e/subagent-roster.spec.ts`); the launcher's counters including the `9+` cap and
+non-overlap of the two indicators (`e2e/launcher-badge.spec.ts`); B2's row and
+approval-card labels (`e2e/tool-rows.spec.ts`); B4 on restored data — 76
+"Task completed" triggers on a real session; the a11y smoke on `/`, `/automations`,
+`/settings`; and B1/C by an absence check (no cache/context text, no `t/s`, no
+`answered via`, Board and Learning rows gone, 47 session rows intact).
+
+**Verified only in isolation** — the drawer chooser's section coverage (jsdom,
+`RightDrawer.test.tsx`, proven to fail when a section is dropped), and every unit
+case behind the above. The label fix at `MutationDiffCards` is the one site asserted
+in the browser without also proving the other two surfaces can reach it.
+
+**Open, and why** — three decisions, none of them work: the terminal tab vs the
+bottom dock (measured: identical five imports, so removal costs a position, not a
+feature); the jobs tray, where the audit's own premise was wrong — it renders a
+non-persisted **frontend** registry and is already opt-in, so "move to a global
+surface" is not implementable as written; and whether 27 `tier:'hidden'` sections
+out of 48 is the intended depth. Plus two things outside my authority to finish: the
+`v11_math_unicode.test.tsx` flip is written and green but must land with another
+session's still-untracked `markdownMath.ts`, and nothing here is pushed — `master` is
+55 commits ahead of `origin/master`.
+
+**Mismatches between the brief and the code** — §0 lists the ones found before
+writing this plan; §0b lists the ones this plan itself got wrong and that
+implementation disproved, including `SkillEvolvedChip` (it exists and is mounted),
+the "skipped comment test" (no skips remain), the two already-fixed subagent claims,
+and B2 being under-specified in a way that hid two real leaks. Three findings of mine
+that turned out to be instrument errors are withdrawn in the status file rather than
+quietly deleted: the in-app browser never dispatches scroll events, `<details>` is
+the wrong primitive for a Radix disclosure, and a childless-node text scan cannot see
+a label rendered beside an icon.
+
+**Gates at writing time:** frontend 227/227 files (`FE_EXIT=0` read from the log's
+own marker), e2e 12/12, `tsc --noEmit` clean, `npm run check:docs` 6/6.
 
 ## Needs review
 
