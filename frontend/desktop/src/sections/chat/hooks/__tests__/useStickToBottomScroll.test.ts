@@ -277,6 +277,45 @@ describe('useStickToBottomScroll', () => {
     }
   });
 
+  it('releases after the scroller node is replaced, not just on the node it first bound to', () => {
+    // The listener effect resolves the scroller once and captures it in the
+    // handler's closure, and its dependency list carries session/hasContent —
+    // not the node. ChatThread swaps between an empty-state div and the
+    // populated list, and a session switch can hand back a different element,
+    // so a listener left on the old node is attached to nothing the user
+    // scrolls. This is the shape the real app showed and jsdom did not.
+    const first = makeScrollEl();
+    const second = makeScrollEl();
+    const ref = { current: first } as React.RefObject<HTMLDivElement>;
+    const pinnedToBottomRef = { current: true };
+    const onPinnedChange = vi.fn();
+
+    renderHook(() =>
+      useStickToBottomScroll({
+        scrollRef: ref,
+        pinnedToBottomRef,
+        streaming: true,
+        sessionId: 's1',
+        loadedSessionId: 's1',
+        messagesVersion: 1,
+        hasContent: true,
+        onPinnedChange,
+      }),
+    );
+
+    // Point the hook at the new scroller without changing any dependency it
+    // watches, then move above the position it last wrote.
+    act(() => {
+      ref.current = second;
+    });
+    act(() => {
+      second.scrollTop = 100;
+      second.dispatchEvent(new Event('scroll'));
+    });
+
+    expect(onPinnedChange).toHaveBeenCalledWith(false);
+  });
+
   it('holds the pin when the view moves down', () => {
     const el = makeScrollEl();
     const onPinnedChange = vi.fn();

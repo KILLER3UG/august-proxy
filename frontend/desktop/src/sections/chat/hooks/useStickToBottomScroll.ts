@@ -183,12 +183,20 @@ export function useStickToBottomScroll({
   // target with no listeners yet). Binding on every content change used to
   // thrash the listener on every stream flush.
   useEffect(() => {
-    const el = getScrollTarget();
-    if (!el) return;
-
+    // Bound on `document` in the capture phase and resolved per event, NOT on
+    // the element that happened to exist when this effect ran. The transcript
+    // node is replaced on a session switch and on the empty→populated swap; a
+    // listener left on the detached node never fires again, and the pin then
+    // only moves on wheel — which is what the app showed and jsdom never did.
     const release = () => setPinned(false);
 
+    const fromOurScroller = (target: EventTarget | null) => {
+      const scroller = getScrollTarget();
+      return !!scroller && target === scroller;
+    };
+
     const onWheel = (e: WheelEvent) => {
+      if (!fromOurScroller(e.target)) return;
       if (e.deltaY < 0) release();
     };
 
@@ -200,7 +208,10 @@ export function useStickToBottomScroll({
     // lerp kept pulling the reader back to the bottom. Judging the DIRECTION of
     // scrollTop catches all of them. Our own writes are excluded by the
     // programmatic guard, which is held up for the whole animation.
-    const onScroll = () => {
+    const onScroll = (e: Event) => {
+      if (!fromOurScroller(e.target)) return;
+      const el = getScrollTarget();
+      if (!el) return;
       const top = el.scrollTop;
       const delta = top - lastScrollTopRef.current;
       lastScrollTopRef.current = top;
@@ -223,9 +234,11 @@ export function useStickToBottomScroll({
     };
 
     const onTouchStart = (e: TouchEvent) => {
+      if (!fromOurScroller(e.target)) return;
       touchStartYRef.current = e.touches[0]?.clientY ?? null;
     };
     const onTouchMove = (e: TouchEvent) => {
+      if (!fromOurScroller(e.target)) return;
       const start = touchStartYRef.current;
       const y = e.touches[0]?.clientY;
       if (start == null || y == null) return;
@@ -239,26 +252,31 @@ export function useStickToBottomScroll({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'PageUp' || e.key === 'Home' || e.key === 'ArrowUp') {
         // Only release when the chat scroller (or a child) has focus / is target.
-        if (el.contains(document.activeElement) || document.activeElement === el) {
+        const el = getScrollTarget();
+        if (el && (el.contains(document.activeElement) || document.activeElement === el)) {
           release();
         }
       }
     };
 
-    el.addEventListener('wheel', onWheel, { passive: true });
-    lastScrollTopRef.current = el.scrollTop;
-    el.addEventListener('scroll', onScroll, { passive: true });
-    el.addEventListener('touchstart', onTouchStart, { passive: true });
-    el.addEventListener('touchmove', onTouchMove, { passive: true });
-    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    const initial = getScrollTarget();
+    if (initial) lastScrollTopRef.current = initial.scrollTop;
+    // Capture phase on the document: `scroll` does not bubble, but the capture
+    // pass still reaches document before the target, so one permanent listener
+    // sees every scroller swap.
+    document.addEventListener('wheel', onWheel, { passive: true, capture: true });
+    document.addEventListener('scroll', onScroll, { passive: true, capture: true });
+    document.addEventListener('touchstart', onTouchStart, { passive: true, capture: true });
+    document.addEventListener('touchmove', onTouchMove, { passive: true, capture: true });
+    document.addEventListener('touchend', onTouchEnd, { passive: true, capture: true });
     window.addEventListener('keydown', onKeyDown);
 
     return () => {
-      el.removeEventListener('wheel', onWheel);
-      el.removeEventListener('scroll', onScroll);
-      el.removeEventListener('touchstart', onTouchStart);
-      el.removeEventListener('touchmove', onTouchMove);
-      el.removeEventListener('touchend', onTouchEnd);
+      document.removeEventListener('wheel', onWheel, { capture: true });
+      document.removeEventListener('scroll', onScroll, { capture: true });
+      document.removeEventListener('touchstart', onTouchStart, { capture: true });
+      document.removeEventListener('touchmove', onTouchMove, { capture: true });
+      document.removeEventListener('touchend', onTouchEnd, { capture: true });
       window.removeEventListener('keydown', onKeyDown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
