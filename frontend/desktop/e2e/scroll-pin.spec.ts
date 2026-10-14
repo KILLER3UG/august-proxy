@@ -42,4 +42,32 @@ test.describe('transcript scroll pin', () => {
     expect(state.free, 'the pin must be released by a bare scroll').toBe(true);
     await expect(page.getByTestId('lab-pinned')).toHaveText('pinned: false');
   });
+
+  test('a scroll up during generation is not fought by the follow animation', async ({ page }) => {
+    // This is the reported symptom itself: while a turn streams, the lerp pulls
+    // the viewport back to the bottom every frame, and a reader who scrolls up
+    // to re-read something is dragged down again. The guard that marks "this
+    // write is ours" is raised on every frame of that animation, so a release
+    // that only listens for guard-free events cannot see the drag at all.
+    test.setTimeout(30_000);
+    await page.goto('/_design', { waitUntil: 'domcontentloaded' });
+    const scroller = page.getByTestId('lab-scroller');
+    await expect(scroller).toBeVisible();
+
+    await page.getByTestId('lab-stream').click();
+    // Let the animation settle into following the bottom.
+    await page.waitForTimeout(1200);
+    await expect(scroller).not.toHaveClass(/chat-scroll--free/);
+
+    await page.getByTestId('lab-jump-up').click();
+    // Long enough for many lerp frames to have run against the release.
+    await page.waitForTimeout(1500);
+
+    const state = await scroller.evaluate((el) => ({
+      free: el.classList.contains('chat-scroll--free'),
+      gap: Math.round(el.scrollHeight - el.clientHeight - el.scrollTop),
+    }));
+    expect(state.free, 'the drag must release the pin mid-animation').toBe(true);
+    expect(state.gap, 'the view must not be dragged back to the bottom').toBeGreaterThan(150);
+  });
 });

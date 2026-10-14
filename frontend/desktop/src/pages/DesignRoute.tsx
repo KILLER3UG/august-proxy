@@ -4,7 +4,7 @@
 /* Gated by `import.meta.env.DEV` in routes.ts — never included in    */
 /* production builds.                                                  */
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useThemeStore, setThemeMode, setTextSize } from '@/lib/theme';
 import type { ThemeMode, TextSize } from '@/lib/theme';
 import { Surface, type SurfaceElevation } from '@/components/ui/card';
@@ -277,11 +277,12 @@ function ScrollPinLab() {
   const pinnedToBottomRef = useRef(true);
   const [rows, setRows] = useState(40);
   const [pinned, setPinned] = useState(true);
+  const [streaming, setStreaming] = useState(false);
 
   useStickToBottomScroll({
     scrollRef,
     pinnedToBottomRef,
-    streaming: false,
+    streaming,
     sessionId: 'design-lab',
     loadedSessionId: 'design-lab',
     messagesVersion: rows,
@@ -289,9 +290,25 @@ function ScrollPinLab() {
     onPinnedChange: setPinned,
   });
 
+  // Tokens arrive on a fixed cadence so the follow animation has a steady
+  // target: the reported bug is only reachable while it is running.
+  useEffect(() => {
+    if (!streaming) return;
+    const id = window.setInterval(() => setRows((n) => n + 1), 90);
+    return () => window.clearInterval(id);
+  }, [streaming]);
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">
+        <button
+          type="button"
+          data-testid="lab-stream"
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+          onClick={() => setStreaming((s) => !s)}
+        >
+          {streaming ? 'Stop generation' : 'Start generation'}
+        </button>
         <button
           type="button"
           data-testid="lab-jump-up"
