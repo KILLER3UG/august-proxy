@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 if TYPE_CHECKING:
     from playwright.async_api import Browser, BrowserContext, ConsoleMessage, Page, Playwright, ViewportSize
@@ -24,6 +25,30 @@ _USERAgent = (
 )
 _MAXConsole = 500
 _LOOPBACK_HOSTS = frozenset({'127.0.0.1', 'localhost', '::1', '[::1]'})
+# The ONLY loopback resource an internal caller may reach. The artifact judge
+# screenshots August's own artifact route; every other endpoint on this origin
+# returns data the model is not allowed to read, and a judged document runs with
+# `script-src 'unsafe-inline'`, so it can navigate its own frame anywhere on the
+# host. Pinning the path is what keeps "may reach the backend" from meaning
+# "may read the backend".
+_ARTIFACT_ROUTE_PATH = '/api/workbench/artifact/html'
+
+
+def artifactRoutePath() -> str:
+    """The one loopback path an internal caller is allowed to reach.
+
+    Exposed so a caller compares against the SAME value the guard matches,
+    rather than re-typing a path that would silently drift.
+    """
+    return _ARTIFACT_ROUTE_PATH
+
+
+def _loopbackIsSanctioned(target: str) -> bool:
+    """True for the artifact route on a loopback host, false for anything else."""
+    parsed = urlparse(target)
+    if (parsed.hostname or '') not in _LOOPBACK_HOSTS:
+        return False
+    return parsed.path == _ARTIFACT_ROUTE_PATH
 
 
 class BrowserSession:
@@ -40,6 +65,12 @@ class BrowserSession:
         # blocked redirect can be reported instead of surfacing as a generic
         # "navigation failed".
         self.navBlockReason: str | None = None
+        # True for the artifact judge's session only: loopback is reachable,
+        # but ONLY at the artifact route. Both controls — the request guard and
+        # the final-URL re-check — read this one flag, because a carve-out the
+        # redirect layer does not know about is a carve-out that either breaks
+        # the feature or leaks, depending on which of the two runs.
+        self.sanctionedLoopbackOnly: bool = False
 
     @property
     def ready(self) -> bool:
@@ -174,6 +205,7 @@ async def getOrCreateSession(sessionId: str, *, allow_loopback: bool = False) ->
                 del session.consoleLogs[: len(session.consoleLogs) - _MAXConsole]
 
         page.on('console', _onConsole)
+        session.sanctionedLoopbackOnly = bool(allow_loopback)
         await _installNavigationGuard(page, session, allow_loopback=allow_loopback)
         _sessions[sid] = session
         return session
@@ -221,8 +253,6 @@ async def _installNavigationGuard(
     still be *contacted* through a redirect, but nothing it returns is ever
     read back.
     """
-    from urllib.parse import urlparse
-
     # Imported here: handlers imports this module, so a top-level import would
     # be circular. The page exists long after both modules are loaded.
     from app.services.browser.handlers import _checkUrlAllowlist
@@ -234,13 +264,14 @@ async def _installNavigationGuard(
         if urlparse(target).scheme not in ('http', 'https'):
             await route.continue_()
             return
-        if allow_loopback and (urlparse(target).hostname or '') in _LOOPBACK_HOSTS:
-            # The one sanctioned exception: an INTERNAL caller (the artifact
-            # judge) whose page must reach August's own backend. The SSRF rule
-            # exists to stop a MODEL-DIRECTED browser from reaching loopback;
-            # this session's page is never handed to a model-facing tool, and
-            # the redirect control below still re-checks where the browser
-            # ended up.
+        if allow_loopback and _loopbackIsSanctioned(target):
+            # The sanctioned exception, and it is a PATH not a host: an
+            # INTERNAL caller (the artifact judge) screenshots August's own
+            # artifact route. The SSRF rule exists to stop a MODEL-DIRECTED
+            # browser reaching loopback, and a judged document runs inline
+            # script that can navigate its own frame — so a host-wide carve-out
+            # would turn the judge into a reader for `/api/providers` and
+            # whatever else this origin serves.
             await route.continue_()
             return
         reason = _checkUrlAllowlist(target)
@@ -275,6 +306,13 @@ def assertFinalUrlAllowed(page: Page, session: BrowserSession) -> str | None:
 
     final = page.url
     if not final or final == 'about:blank':
+        return None
+    if session.sanctionedLoopbackOnly and _loopbackIsSanctioned(final):
+        # The judge's carve-out, read from the SAME predicate the request guard
+        # uses. The two controls have to agree or the feature is either broken
+        # (this one refuses the artifact route for being loopback) or leaking
+        # (only the request guard knows, so a redirect away from it is never
+        # re-checked).
         return None
     reason = _checkUrlAllowlist(final)
     if reason:

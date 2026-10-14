@@ -183,6 +183,8 @@ async def _renderHtmlPages(src: Path, out_dir: Path, dpi: int) -> dict[str, Any]
     Returns the render_pages shape: ``{ok, file, renderer, pageCount, rendered}``.
     An artifact document is one page; the ``pages`` spec does not apply.
     """
+    from urllib.parse import urlparse
+
     from app.services.browser import session_manager as browser
 
     try:
@@ -206,6 +208,17 @@ async def _renderHtmlPages(src: Path, out_dir: Path, dpi: int) -> dict[str, Any]
         # itself, and a settle figure is still at its rest pose. 400 ms is the
         # whole budget — this is a review pass, not a frame-accurate capture.
         await page.wait_for_timeout(400)
+        # The document runs with `script-src 'unsafe-inline'`, so it can move
+        # its own frame between the goto and the capture. Re-check where the
+        # page ACTUALLY is, on the same predicate the request guard used, and
+        # drop the screenshot if it moved — a refused navigation has still
+        # executed script and still populated the DOM, so capturing it would
+        # hand the vision model whatever the redirect returned.
+        moved = browser.assertFinalUrlAllowed(page, session)
+        if not moved and urlparse(page.url).path != browser.artifactRoutePath():
+            moved = f'navigation left the artifact route: {page.url}'
+        if moved:
+            return {'ok': False, 'error': f'navigation blocked: {moved}'}
         shot = out_dir / 'page-01.png'
         await page.screenshot(path=str(shot), full_page=False)
     except Exception as exc:

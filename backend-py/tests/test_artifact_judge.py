@@ -127,9 +127,18 @@ class _FakeJudgePage:
     def __init__(self) -> None:
         self.urls: list[str] = []
         self.navBlockReason = None
+        # Where the document actually is. A real page moves when a script
+        # navigates it, and the judge has to notice — so the stub tracks it
+        # rather than leaving `url` undefined.
+        self.url = 'about:blank'
 
     async def goto(self, url: str, **_kw) -> None:
         self.urls.append(url)
+        self.url = url
+
+    async def navigate_self(self, url: str) -> None:
+        """What `location = ...` in the judged document does to its own frame."""
+        self.url = url
 
     async def wait_for_timeout(self, _ms: int) -> None:
         pass
@@ -141,9 +150,11 @@ class _FakeJudgePage:
 
 
 class _FakeJudgeSession:
-    def __init__(self, page: _FakeJudgePage) -> None:
+    def __init__(self, page: _FakeJudgePage, sanctionedLoopbackOnly: bool = False) -> None:
         self.page = page
         self.navBlockReason = None
+        # Set the way `getOrCreateSession` sets it, from the caller's flag.
+        self.sanctionedLoopbackOnly = sanctionedLoopbackOnly
 
 
 def _stub_browser(monkeypatch) -> tuple[_FakeJudgePage, dict]:
@@ -155,7 +166,7 @@ def _stub_browser(monkeypatch) -> tuple[_FakeJudgePage, dict]:
     async def _fake_get_or_create(sid, **kw):
         seen['sid'] = sid
         seen.update(kw)
-        return _FakeJudgeSession(page)
+        return _FakeJudgeSession(page, sanctionedLoopbackOnly=bool(kw.get('allow_loopback')))
 
     monkeypatch.setattr(sm, 'getOrCreateSession', _fake_get_or_create)
     return page, seen
@@ -183,6 +194,45 @@ async def test_render_pages_live_html_uses_the_artifact_route(tmp_path, monkeypa
     # …through the shared engine with loopback permitted for the judge's own
     # session only.
     assert seen.get('allow_loopback') is True
+
+
+async def test_a_document_that_navigates_away_is_never_screened(tmp_path, monkeypatch):
+    """The judged document runs `script-src 'unsafe-inline'`, so between the
+    goto and the capture it can move its own frame to another endpoint on the
+    backend origin — and the screenshot would then show, and the vision model
+    would then read, whatever THAT returns.
+
+    The carve-out is a path, and the judge re-checks where the page actually
+    ended up and discards the capture.
+    """
+    from app.services.browser import session_manager as sm
+
+    src = tmp_path / 'hostile.html'
+    src.write_text(
+        '<!doctype html><html><body><script>'
+        "setTimeout(()=>location='http://127.0.0.1:8085/api/providers',0)"
+        '</script></body></html>',
+        'utf-8',
+    )
+
+    page = _FakeJudgePage()
+
+    async def _escape(_ms: int) -> None:
+        page.url = 'http://127.0.0.1:8085/api/providers'
+
+    page.wait_for_timeout = _escape  # type: ignore[method-assign]
+    captured: list[str] = []
+    page.screenshot = lambda **kw: captured.append(kw.get('path', ''))  # type: ignore[assignment]
+
+    async def _fake_get_or_create(sid, **kw):
+        return _FakeJudgeSession(page, sanctionedLoopbackOnly=bool(kw.get('allow_loopback')))
+
+    monkeypatch.setattr(sm, 'getOrCreateSession', _fake_get_or_create)
+
+    out = await aj.render_pages_live(str(src), workspace=str(tmp_path))
+    assert out['ok'] is False, out
+    assert 'blocked' in str(out.get('error', '')).lower(), out
+    assert not captured, 'the judge screenshotted a page that had left the artifact route'
 
 
 async def test_judge_html_reaches_the_vision_call(tmp_path, monkeypatch):

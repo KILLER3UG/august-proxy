@@ -130,6 +130,40 @@ async def test_judge_session_may_reach_its_own_backend():
     assert route.aborted_with is None
 
 
+async def test_the_carve_out_is_a_path_not_the_whole_host():
+    # `allow_loopback` exists so the judge can screenshot August's artifact
+    # route. Read as "any loopback URL" it would also let a judged document —
+    # which runs inline script and can navigate its own frame — reach
+    # /api/providers and have the answer come back as a picture.
+    for url in (
+        'http://127.0.0.1:8085/api/providers',
+        'http://127.0.0.1:8085/api/brain/stores/facts',
+        'http://localhost:8085/api/workbench/sessions',
+        'http://127.0.0.1:8085/openapi.json',
+    ):
+        route = await _drive(url, allow_loopback=True)
+        assert route.continued is False, url
+
+
+def test_the_two_loopback_controls_agree():
+    # The request guard permits the artifact route; the final-URL re-check has
+    # to permit exactly the same thing or the feature is broken one way and
+    # leaking the other.
+    class _P:
+        url = 'http://127.0.0.1:8085/api/workbench/artifact/html?path=x'
+
+    judge = sm.BrowserSession('artifact-judge')
+    judge.sanctionedLoopbackOnly = True
+    assert sm.assertFinalUrlAllowed(_P(), judge) is None
+
+    class _Moved:
+        url = 'http://127.0.0.1:8085/api/providers'
+
+    assert sm.assertFinalUrlAllowed(_Moved(), judge) is not None
+    plain = sm.BrowserSession('workbench-1')
+    assert sm.assertFinalUrlAllowed(_P(), plain) is not None
+
+
 async def test_allowlist_exception_does_not_open_other_private_hosts():
     # Loopback is the sanctioned target, not the whole private range.
     route = await _drive('http://169.254.169.254/latest/meta-data/', allow_loopback=True)
