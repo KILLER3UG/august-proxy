@@ -1,6 +1,6 @@
 # Harness UI → Claude Desktop parity (minimalist pass 2)
 
-Date: 2026-10-14 · Status: DRAFT · Owner: solo · Stack: Tauri + React 19 + TS, FastAPI backend, Zustand UI state, TanStack Query server state. Naming: `camelCase` TS, `snake_case` Python.
+Date: 2026-10-14 · Status: **executed, with three items left open on purpose** — Stage D's terminal/preview/browser scope, the "is 27 hidden settings sections the intended depth" question, and the live confirmation of B2/B4, which needs one real turn (see §0b and `docs/plans/ui-refactor/STATUS-2026-10-14.md`). Owner: solo · Stack: Tauri + React 19 + TS, FastAPI backend, Zustand UI state, TanStack Query server state. Naming: `camelCase` TS, `snake_case` Python.
 
 Goal: make the harness UI feel like Claude Desktop — minimalist, less text, no data the user doesn't need. **Do not assume what the navigation looks like; the audit is the first deliverable.**
 
@@ -17,12 +17,34 @@ The brief names things by memory. I checked each against the tree, because a pla
 |---|---|
 | "the step/token/cache-hit readout under the composer" | Real: `sections/chat/ContextRing.tsx` — % of context used plus "average cache hit rate after a divider", with a click-through `ContextBreakdown` (Messages / Thinking / … token rows, `:106-113`). Re-exported at `sections/chat/ChatComposer.tsx:9`. `aria-label` at `ContextRing.tsx:167` |
 | `SavePointChip` | Real: `components/chat/SavePointChip.tsx` (+ its test) |
-| `SkillEvolvedChip` | **Does not exist.** The chips that do: `SkillReceiptChip.tsx`, `TurnProvenanceChip.tsx`, `HarnessModeChip.tsx`, `SavePointChip.tsx`, `TaskProgressPill.tsx`. Assuming `SkillReceiptChip` is meant — confirm before styling against it |
+| `SkillEvolvedChip` | ~~**Does not exist.**~~ **This line was wrong, and it was my line, not the brief's.** The component is at `sections/chat/SkillEvolvedChip.tsx:58` and is mounted at `sections/chat/ComposerDecisionStack.tsx:18`, so it is on screen. The chips the brief's sentence might have meant (`SkillReceiptChip.tsx`, `TurnProvenanceChip.tsx`, `HarnessModeChip.tsx`, `SavePointChip.tsx`, `TaskProgressPill.tsx`) all exist too — which is exactly why the §B4 "consistent with the existing chip" work had to pick one deliberately. Corrected after implementation, having initially searched the wrong directory and reported the absence as fact |
 | "a collapsible Task-style component" | `TaskProgressPill.tsx` exists; `RightDrawerTasksSection.tsx` exists. Neither is a transcript card — the pattern has to be picked deliberately, not inherited |
 | left sidebar | `components/sidebar/SessionList.tsx`, `SessionRow.tsx`, `FolderTree.tsx` |
 | right panel | 13 sections already: `RightDrawer{Artifacts,Browser,Circuit,Diff,File,Jobs,Notes,Plan,Preview,Subagents,Tasks,Terminal}Section.tsx` + `RightDrawer.tsx`, `RightDrawerState.ts`, `RightDrawerLauncher.tsx` |
 | audit output → `status/ui-audit.md` | **No `status/` directory exists.** The repo convention is `docs/plans/ui-refactor/audit/`, which already holds five audits dated 2026-10-03 covering *these exact surfaces*: `-audit-chat-surface`, `-audit-shell-sidebar-drawer`, `-audit-settings-memory-skills`, `-audit-tokens-icons-update`, `-audit-mobile` |
 | "read docs/plans first and don't contradict work in flight" | Two specs already decide parts of this scope — see §1 |
+
+## 0b. Claims in this plan that implementation disproved
+
+The plan's §8 asks for "every mismatch between this brief and the code", so the
+list includes my own lines here. Each of these was checked again after the work
+landed, against the tree, not from memory:
+
+| Line in this plan | Measured state afterwards |
+|---|---|
+| §7 "one comment test is skipped" (heading demoter) | **False now.** `it.skip` / `test.skip` / `describe.skip` / `it.todo` — zero matches in the whole frontend suite. The HTML-comment case is present at `ChatMarkdown.test.tsx:349` as a documented limit with an explicit `continue`. |
+| §7 "the invariant is unstated" | **Stated** in `markdownHeadings.ts:57-66` ("Reachability, stated honestly"), with the regex now `/<(\/?)h([1-5])(?=[\s/>])/gi`. Landed in another session's in-flight file, so it is recorded rather than claimed as shipped by this plan. |
+| §5 / audit "the strip shows only the last 5 subagents" | **Already fixed before this work** (`49765d3d`), and measured in real Chromium at twelve workers. Same for "per-worker todos render only for the selected one" (`5863c1e6`, badge per roster row). |
+| §B2 "tool cards show filenames, not absolute paths" | **Under-specified.** Shortening the row text was not enough: three surfaces build their card *title* through `getToolLabel(…, { command })`, which printed the verbatim line, and `commandDisplay` never recognised a UNC path at all. Both fixed; the census is in the status file. |
+| §0 counts | Re-verified: **7** routes carry `nav: true`, the registry holds **48** sections of which **27** are `tier: 'hidden'` — the "reachable only by search" figure was right. |
+| §1.1 "fix the no-op 'Remove view' ×" | **No longer a no-op** — it removes the tab (12 → 11 measured). What it does not survive is the pane unmounting, because `dismissed` is component state (`RightDrawerSubagentsSection.tsx:432`). |
+
+Not disproved, but **not verifiable the way §8 demands**: B2 and B4 can only be
+read in a *live* turn. A restored transcript renders its assistant text (control:
+`wb_20261002_112122_1f26ba` shows the reply) but no tool steps at all — 29 stored
+messages with 10 `toolCall` blocks produce 0 `<details>`, 0 chevrons and no tool
+verb anywhere in the transcript text. Whether that is a defect or a retired
+payload shape needs one real turn through the current build.
 
 ## 1. Conflicts to record, not re-decide
 
