@@ -1,6 +1,8 @@
 # Anatomy + ManimGX integration, preceded by a branch reconcile
 
-Date: 2026-10-13 · Status: DRAFT, awaiting approval on the four decisions in the last section.
+Date: 2026-10-13 · Status: **executed 2026-10-14** (Stages 0–4 landed in `19847e98`…`0421fa12`); the open
+defects found while reviewing that landing are now listed in §7 of
+`docs/plans/2026-10-14-harness-ui-claude-parity.md`, which also carries the follow-on UI work.
 
 Supersedes the verbal plan reviewed on 2026-10-13. That plan's Phase 1–4 content was checked line by line
 against the working tree; five of its claims were false or insufficient, and the reorder below is the result.
