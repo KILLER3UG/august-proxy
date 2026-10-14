@@ -106,12 +106,11 @@ export function WorkspaceShell({
     });
   }, [sections]);
 
-  // Header IA: no tier filter — all sections stay reachable, but the rail
-  // only shows the 4 header groups when not searching. Search bypasses
-  // headers and surfaces matching sections directly (grouped by category)
-  // so deep discovery still works. Hidden sections never appear as rail
-  // rows; they live inside their parent's stacked cards or as tree
-  // (no tree grandchildren — the rail is flat; hidden-tier sections are search-only).
+  // Rail IA: no tier filter and no group headers — `c5748da0` flattened the
+  // plain rail to the 18 `basic` sections, so the four `SETTINGS_CATEGORIES`
+  // headers are now a *search* affordance: an unfiltered rail is a flat list,
+  // and a query groups its hits under those same headers. Hidden sections never
+  // appear as rail rows at all; they are reachable by search or deep link.
   const visibleForSearch = useMemo(() => decorated, [decorated]);
 
   const filtered = useMemo(() => {

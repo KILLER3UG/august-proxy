@@ -3,8 +3,9 @@
  * parallel chat-side workspace panel.
  *
  * 4 header groups (Setup / Agent / Data / App),
- * 44 sections. The headers are the rail; each header expands its related
- * sections as an inline tree (see `docs/settings-audit.md`).
+ * 44 sections. The groups head the *search results* in the rail; the
+ * unfiltered rail is a flat list of the `basic` sections, flattened on
+ * purpose by `c5748da0` (see `docs/settings-audit.md` for the older shape).
  *
  * See `docs/settings-audit.md` for the rationale + section movement
  * history.
