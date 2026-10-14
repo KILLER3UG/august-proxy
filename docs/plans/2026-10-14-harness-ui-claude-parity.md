@@ -1,6 +1,6 @@
 # Harness UI → Claude Desktop parity (minimalist pass 2)
 
-Date: 2026-10-14 · Status: **executed, with three items left open on purpose** — Stage D's terminal/preview/browser scope, the "is 27 hidden settings sections the intended depth" question, and the live confirmation of B2/B4, which needs one real turn (see §0b and `docs/plans/ui-refactor/STATUS-2026-10-14.md`). Owner: solo · Stack: Tauri + React 19 + TS, FastAPI backend, Zustand UI state, TanStack Query server state. Naming: `camelCase` TS, `snake_case` Python.
+Date: 2026-10-14 · Status: **executed, with two items left open on purpose** — Stage D's terminal/preview/browser scope, and whether 27 search-only settings sections is the intended depth. Everything else, including B2's live confirmation, is measured: see §0b and `docs/plans/ui-refactor/STATUS-2026-10-14.md`. Owner: solo · Stack: Tauri + React 19 + TS, FastAPI backend, Zustand UI state, TanStack Query server state. Naming: `camelCase` TS, `snake_case` Python.
 
 Goal: make the harness UI feel like Claude Desktop — minimalist, less text, no data the user doesn't need. **Do not assume what the navigation looks like; the audit is the first deliverable.**
 
@@ -39,15 +39,16 @@ landed, against the tree, not from memory:
 | §0 counts | Re-verified: **7** routes carry `nav: true`, the registry holds **48** sections of which **27** are `tier: 'hidden'` — the "reachable only by search" figure was right. |
 | §1.1 "fix the no-op 'Remove view' ×" | **No longer a no-op** — it removes the tab (12 → 11 measured). What it does not survive is the pane unmounting, because `dismissed` is component state (`RightDrawerSubagentsSection.tsx:432`). |
 
-Not disproved, but **not verifiable the way §8 demands**: B2's labels. A restored
-transcript does render its tool steps — 76 "Task completed" triggers on a real
-session, probed as `button[aria-expanded]` after an earlier read of this page
-wrongly counted `<details>` (the trigger is a Radix `CollapsibleTrigger`, not a
-native disclosure). But the list is virtualized and collapsed, so no snapshot I
-took ever mounted a command row whose text I could read: after expanding eighteen
-triggers the page held 3 685 characters and zero drive-letter paths, which is
-absence of evidence in a small window rather than proof. Settling B2 needs one real
-turn through the current build.
+**Settled, without a turn:** B2 is confirmed in a real browser. `?lab=toolrows`
+mounts the actual `ToolStepRow` over the JSON `context` strings a transcript stores
+(a drive-letter read, a long `rg` command, a UNC share) and the real
+`MutationDiffCards` over a pending `rm -rf C:\Dev\…`, and
+`e2e/tool-rows.spec.ts` asserts the pair: no path in the built label, the verbatim
+command still visible where an approval needs it. Reverting the label fix makes the
+approval-card case fail with the whole path in the title, so the tests cover the
+fix. What the earlier draft of this row called "no tool rows appear in a restored
+transcript" was my third instrument error on that page — see the status file's
+withdrawal.
 
 ## 1. Conflicts to record, not re-decide
 
