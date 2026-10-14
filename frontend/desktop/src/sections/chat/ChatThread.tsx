@@ -26,8 +26,6 @@ import {
   resolveActiveSession,
 } from '@/store/sessions';
 import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
-import {
-} from '@/store/contextSectionsLive';
 import { AnimatePresence } from 'framer-motion';
 import { SCROLL_TO_TOP_THRESHOLD } from '@/components/chat/ScrollToTopButton';
 import { NEAR_BOTTOM_PX } from '@/lib/chat-scroll';
