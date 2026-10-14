@@ -286,7 +286,11 @@ export function commandDisplay(command: string): string {
     const body = quote ? token.slice(1, -1) : token;
     if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(body)) return token;
     const isAbsolute =
-      /^[A-Za-z]:[\\/]/.test(body) || body.startsWith('/') || body.startsWith('~/');
+      /^[A-Za-z]:[\\/]/.test(body) ||
+      body.startsWith('\\\\') ||
+      body.startsWith('//') ||
+      body.startsWith('/') ||
+      body.startsWith('~/');
     if (!isAbsolute) return token;
     const base = body.split(/[\\/]/).filter(Boolean).pop();
     return base ? `${quote}${base}${quote}` : token;

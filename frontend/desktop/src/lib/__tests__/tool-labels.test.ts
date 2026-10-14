@@ -60,6 +60,12 @@ describe('getToolLabel mapping and cleaning', () => {
         status: 'running',
       }),
     ).toBe('Running: cat "id_ed25519.pub"');
+    expect(
+      getToolLabel('run_command', {
+        command: 'copy \\\\fileserver\\share\\proj\\report.docx',
+        status: 'done',
+      }),
+    ).toBe('Ran: copy report.docx');
     // A URL is not a path, and a relative path is already short — both pass
     // through untouched, so the label stays a true account of what ran.
     expect(
@@ -101,6 +107,8 @@ describe('getToolLabel mapping and cleaning', () => {
     expect(pathBasename('src/app.ts')).toBe('app.ts');
     expect(pathBasename('README.md')).toBe('README.md');
     expect(pathBasename('C:/Dev/Agentic-Trading/')).toBe('Agentic-Trading');
+    expect(pathBasename('\\\\nas\\team\\budget.xlsx')).toBe('budget.xlsx');
+    expect(pathBasename('//nas/team/budget.xlsx')).toBe('budget.xlsx');
   });
 
   it('falls back to title cased names for unknown tools', () => {
@@ -139,6 +147,12 @@ describe('getToolLabel mapping and cleaning', () => {
       .toBe('python.exe scene.py');
     expect(commandDisplay('cat "C:/Users/rober/My Notes/a b.txt"'))
       .toBe('cat "a b.txt"');
+
+    // UNC: the plan named this shape, and an absolute-path rule that only
+    // recognises drive letters lets a whole network path onto the row.
+    expect(commandDisplay('copy \\\\fileserver\\share\\proj\\report.docx'))
+      .toBe('copy report.docx');
+    expect(commandDisplay('ls //fileserver/share/proj')).toBe('ls proj');
 
     // Controls — a rewrite here would misrepresent the command that ran.
     expect(commandDisplay('curl https://api.example.com/v1/models'))
