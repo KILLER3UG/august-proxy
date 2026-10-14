@@ -203,6 +203,14 @@ function MessageBubbleInner({
     // registry id as the sentence ("Unknown card: open_browser"), which the
     // stage-1 inventory had already filed as noise. Say what happened, name the
     // command the way a person would, and keep the id where support can read it.
+    //
+    // The unknown-id wording has to stay true when the registry simply has not
+    // loaded yet: `main.tsx:81` defers `import('./api/voice/builtins')` to idle
+    // with a 2s timeout, and the registry is not reactive, so a transcript
+    // restored inside that window renders once and is never re-rendered. Claiming
+    // the command "is no longer installed" would then be a permanent lie, and a
+    // loaded machine reproduces it — measured: this row took the unknown branch
+    // under the parallel e2e run and passed under a single-worker run.
     const spokenName = cmd ? cmd.slashCommand || cmd.description : null;
     return (
       <div
@@ -212,7 +220,7 @@ function MessageBubbleInner({
       >
         {spokenName
           ? `“${spokenName}” has no result card in this build.`
-          : 'This message refers to a voice command that is no longer installed.'}
+          : 'This message came from a voice command, and voice commands have no result card in this build.'}
       </div>
     );
   }

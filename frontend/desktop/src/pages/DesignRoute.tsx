@@ -20,6 +20,10 @@ import { ToolStepRow } from '@/components/chat/ToolStepRow';
 import { getToolLabel } from '@/lib/tool-labels';
 import { extractCommand, extractFilename } from '@/components/chat/tool/extractors';
 import { MutationDiffCards } from '@/components/overlays/MutationDiffCards';
+// The working-strip lab renders a voice-command row, and `main.tsx:81` defers
+// this registration to idle — so the lab imports it here to make its own
+// precondition explicit instead of racing the boot order.
+import '@/api/voice/builtins';
 
 interface ColorToken {
   name: string;
