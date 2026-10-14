@@ -111,8 +111,13 @@ export function useStickToBottomScroll({
 
   const applyScrollTop = useCallback((el: HTMLElement, next: number) => {
     programmaticScrollRef.current = true;
-    lastAppliedTopRef.current = next;
     el.scrollTop = next;
+    // Record what the browser ACTUALLY landed on, not what was asked for.
+    // `next` is routinely clamped (already at the bottom, sub-pixel rounding,
+    // a scrollbar appearing between measure and write), and anchoring on the
+    // requested value makes the next scroll event look like the reader moved
+    // up — the pin then releases on our own write.
+    lastAppliedTopRef.current = el.scrollTop;
     // Clear on next frame so the browser's scroll event from this write is ignored.
     requestAnimationFrame(() => {
       programmaticScrollRef.current = false;
