@@ -22,6 +22,10 @@ import { useReducedMotion } from '@/lib/motion';
 import { OVERSIZE_STREAMING_ROW_RATIO } from '@/lib/chat-scroll';
 
 const FREE_CLASS = 'chat-scroll--free';
+// A scroll event that moves the view UP by more than this is the reader leaving
+// the bottom. Below it, sub-pixel rounding and fractional device-pixel ratios
+// would release the pin on our own animation.
+const SCROLL_RELEASE_PX = 2;
 
 
 /** The live streaming message row (`.chat-streaming-block` inside the last
@@ -62,6 +66,9 @@ export function useStickToBottomScroll({
   /** True while we assign scrollTop — ignore those events for pin tracking. */
   const programmaticScrollRef = useRef(false);
   const touchStartYRef = useRef<number | null>(null);
+  // Last scrollTop we saw, so a scroll event can be judged by DIRECTION rather
+  // than by which input device produced it.
+  const lastScrollTopRef = useRef(0);
   const onPinnedChangeRef = useRef(onPinnedChange);
   onPinnedChangeRef.current = onPinnedChange;
   // Audit P2#18 — the sanctioned reduced-motion read (lib/motion.ts). The
@@ -179,6 +186,22 @@ export function useStickToBottomScroll({
       if (e.deltaY < 0) release();
     };
 
+    // Wheel and touch only cover two of the ways a reader moves the view.
+    // Dragging the scrollbar, a trackpad two-finger gesture that arrives as a
+    // scroll without a wheel event, a focus jump from inside the transcript and
+    // `scrollIntoView` from a tool card all change scrollTop while emitting no
+    // wheel/touch/keydown at all — so the pin never released and the streaming
+    // lerp kept pulling the reader back to the bottom. Judging the DIRECTION of
+    // scrollTop catches all of them. Our own writes are excluded by the
+    // programmatic guard, which is held up for the whole animation.
+    const onScroll = () => {
+      const top = el.scrollTop;
+      const delta = top - lastScrollTopRef.current;
+      lastScrollTopRef.current = top;
+      if (programmaticScrollRef.current) return;
+      if (delta < -SCROLL_RELEASE_PX && pinnedToBottomRef.current) release();
+    };
+
     const onTouchStart = (e: TouchEvent) => {
       touchStartYRef.current = e.touches[0]?.clientY ?? null;
     };
@@ -203,6 +226,8 @@ export function useStickToBottomScroll({
     };
 
     el.addEventListener('wheel', onWheel, { passive: true });
+    lastScrollTopRef.current = el.scrollTop;
+    el.addEventListener('scroll', onScroll, { passive: true });
     el.addEventListener('touchstart', onTouchStart, { passive: true });
     el.addEventListener('touchmove', onTouchMove, { passive: true });
     el.addEventListener('touchend', onTouchEnd, { passive: true });
@@ -210,6 +235,7 @@ export function useStickToBottomScroll({
 
     return () => {
       el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('scroll', onScroll);
       el.removeEventListener('touchstart', onTouchStart);
       el.removeEventListener('touchmove', onTouchMove);
       el.removeEventListener('touchend', onTouchEnd);

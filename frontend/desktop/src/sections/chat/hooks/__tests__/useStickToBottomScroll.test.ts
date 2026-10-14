@@ -197,4 +197,62 @@ describe('useStickToBottomScroll', () => {
     // The settle pass must not have yanked the viewport back down.
     expect(el.scrollTop).toBe(100);
   });
+
+  it('releases the pin when the view moves up with no wheel, touch or key event', async () => {
+    // Dragging the scrollbar, a trackpad gesture that arrives as a bare scroll,
+    // a focus change inside the transcript and `scrollIntoView` from a tool card
+    // all move scrollTop without emitting anything the old listeners watched —
+    // so the pin held and streaming kept pulling the reader back down.
+    const el = makeScrollEl();
+    const pinnedToBottomRef = { current: true };
+    const onPinnedChange = vi.fn();
+
+    renderHook(() =>
+      useStickToBottomScroll({
+        scrollRef: { current: el } as React.RefObject<HTMLDivElement>,
+        pinnedToBottomRef,
+        streaming: true,
+        sessionId: 's1',
+        loadedSessionId: 's1',
+        messagesVersion: 1,
+        hasContent: true,
+        onPinnedChange,
+      }),
+    );
+
+    act(() => {
+      el.scrollTop = 200;
+      el.dispatchEvent(new Event('scroll'));
+    });
+
+    expect(onPinnedChange).toHaveBeenCalledWith(false);
+    expect(pinnedToBottomRef.current).toBe(false);
+  });
+
+  it('holds the pin when the view moves down', () => {
+    const el = makeScrollEl();
+    const onPinnedChange = vi.fn();
+
+    renderHook(() =>
+      useStickToBottomScroll({
+        scrollRef: { current: el } as React.RefObject<HTMLDivElement>,
+        pinnedToBottomRef: { current: true },
+        streaming: true,
+        sessionId: 's1',
+        loadedSessionId: 's1',
+        messagesVersion: 1,
+        hasContent: true,
+        onPinnedChange,
+      }),
+    );
+
+    act(() => {
+      el.scrollTop = 400;
+      el.dispatchEvent(new Event('scroll'));
+      el.scrollTop = 402;
+      el.dispatchEvent(new Event('scroll'));
+    });
+
+    expect(onPinnedChange).not.toHaveBeenCalledWith(false);
+  });
 });
