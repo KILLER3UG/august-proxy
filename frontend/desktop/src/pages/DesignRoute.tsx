@@ -5,10 +5,12 @@
 /* production builds.                                                  */
 
 import { useEffect, useRef, useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useThemeStore, setThemeMode, setTextSize } from '@/lib/theme';
 import type { ThemeMode, TextSize } from '@/lib/theme';
 import { Surface, type SurfaceElevation } from '@/components/ui/card';
 import { useStickToBottomScroll } from '@/sections/chat/hooks/useStickToBottomScroll';
+import { RightDrawerSubagentsSection } from '@/components/shell/RightDrawerSubagentsSection';
 
 interface ColorToken {
   name: string;
@@ -337,7 +339,35 @@ function ScrollPinLab() {
   );
 }
 
+/** The subagent drawer section at the width a user actually gets (420 px is
+ *  the drawer's default), mounted over the real component and its real
+ *  queries. The 12-worker roster is a layout question — is the last worker
+ *  still reachable? — and jsdom reports every element as zero-sized, so only
+ *  a real browser can answer it. The e2e spec intercepts the two routes it
+ *  fetches, so no backend or live agent run is involved. */
+function SubagentsRosterLab() {
+  const [client] = useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  );
+  return (
+    <QueryClientProvider client={client}>
+      <div
+        data-testid="lab-drawer-width"
+        className="h-[520px] w-[420px] overflow-hidden rounded-xl border border-border bg-card"
+      >
+        <RightDrawerSubagentsSection sessionId="design-lab" workbenchSessionId="design-lab" />
+      </div>
+    </QueryClientProvider>
+  );
+}
+
 export function DesignRoute() {
+  // The roster lab mounts a live-polling drawer section, and other e2e specs
+  // (a11y smoke, scroll pin) run against this same page — measured: adding it
+  // unconditionally pushed the scroll pin's first assertion past its 5 s
+  // expect under a contended dev server. So it mounts only when asked for.
+  const showRosterLab =
+    new URLSearchParams(window.location.search).get('lab') === 'subagents';
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-6xl px-6 py-10 space-y-10">
@@ -423,6 +453,15 @@ export function DesignRoute() {
             <ScrollPinLab />
           </div>
         </section>
+
+        {showRosterLab && (
+          <section className="space-y-3">
+            <h2 className="text-2xl font-semibold tracking-display">Subagent roster</h2>
+            <div>
+              <SubagentsRosterLab />
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );
