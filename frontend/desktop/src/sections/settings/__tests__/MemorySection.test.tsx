@@ -179,92 +179,92 @@ import { api } from '@/api/client';
 
 function renderSection(id = 'memory-facts') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const utils = render(
+  return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
         <MemorySection active={{ id }} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  // Global memory is a row that opens its own pane; these tests are about the
-  // browse inside it.
-  fireEvent.click(screen.getByTestId('memory-global-row'));
-  return utils;
 }
+
+/** The row whose text contains `title`. The merged list is grouped into named
+ *  sections rather than sorted into one flat column, so a position is not a
+ *  stable way to name a row — the text is. */
+const rowOf = (title: string) => {
+  const hit = screen
+    .getAllByTestId('memory-flat-row')
+    .find((r) => (r.textContent ?? '').includes(title));
+  if (!hit) throw new Error(`no row for ${title}`);
+  return hit;
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('MemorySection — unified flat list', () => {
-  /* The Global memory group is one list across every browsable store — facts,
-   * KV notes and the legacy heuristics table — because the choice between
-   * "Memories" and "Facts & Rules" was a choice between two backend tables. */
-  it('merges every global store into one flat list sorted newest first', () => {
+describe('MemorySection — the grouped list', () => {
+  /* The list is one column across every browsable store — facts, KV notes and
+   * the legacy heuristics table — because the choice between "Memories" and
+   * "Facts & Rules" was a choice between two backend tables. The grouping is
+   * the reference's: named sections instead of a chip stamped on every row. */
+  it('merges every global store into one list and files each row under its section', () => {
     renderSection('memory-facts');
     const rows = screen.getAllByTestId('memory-flat-row');
     expect(rows).toHaveLength(4);
-    // 5m fact → 10m KV note → 60m lesson → 120m fact
-    expect(rows[0]).toHaveTextContent('Prefers dark mode');
-    expect(rows[1]).toHaveTextContent('My plant is named Gerald');
-    expect(rows[2]).toHaveTextContent('Run tests after edits');
-    expect(rows[3]).toHaveTextContent('FastAPI backend');
+
+    // No profile row in this fixture, so the lane section is absent entirely.
+    expect(screen.queryByTestId('memory-section-you')).toBeNull();
+
+    const topics = within(screen.getByTestId('memory-section-topics')).getAllByTestId('memory-flat-row');
+    expect(topics.map((r) => r.textContent)).toEqual([
+      expect.stringContaining('Prefers dark mode'),
+      expect.stringContaining('FastAPI backend'),
+    ]);
+
+    const notes = within(screen.getByTestId('memory-section-notes')).getAllByTestId('memory-flat-row');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toHaveTextContent('My plant is named Gerald');
+
+    const rules = within(screen.getByTestId('memory-section-rules')).getAllByTestId('memory-flat-row');
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toHaveTextContent('Run tests after edits');
+    expect(rules[0]).toHaveAttribute('data-kind', 'lesson');
   });
 
   it('renders the same list for either deep-link alias', () => {
     const facts = renderSection('memory-facts');
     const count = screen.getAllByTestId('memory-flat-row').length;
+    expect(count).toBeGreaterThan(0);
     facts.unmount();
     renderSection('memory-knowledge');
     expect(screen.getAllByTestId('memory-flat-row')).toHaveLength(count);
-    expect(screen.getByRole('heading', { name: 'Memory' })).toBeInTheDocument();
   });
 
-  it('derives kind chips with counts: all / fact / lesson / pref / note / expiring', () => {
+  it('carries no per-row kind chip — the section heading says what a row is', () => {
     renderSection('memory-facts');
-    expect(screen.getByTestId('memory-kind-chip-all')).toHaveTextContent('4');
-    expect(screen.getByTestId('memory-kind-chip-fact')).toHaveTextContent('1');
-    expect(screen.getByTestId('memory-kind-chip-lesson')).toHaveTextContent('1');
-    expect(screen.getByTestId('memory-kind-chip-pref')).toHaveTextContent('1');
-    expect(screen.getByTestId('memory-kind-chip-note')).toHaveTextContent('1');
-    expect(screen.getByTestId('memory-kind-chip-expiring')).toHaveTextContent('1');
-  });
-
-  it('filters to lessons when the lesson chip is clicked', () => {
-    renderSection('memory-facts');
-    fireEvent.click(screen.getByTestId('memory-kind-chip-lesson'));
-    const rows = screen.getAllByTestId('memory-flat-row');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toHaveTextContent('Run tests after edits');
-    expect(rows[0]).toHaveAttribute('data-kind', 'lesson');
-  });
-
-  it('filters to rows with an expiry when the expiring chip is clicked', () => {
-    renderSection('memory-facts');
-    fireEvent.click(screen.getByTestId('memory-kind-chip-expiring'));
-    const rows = screen.getAllByTestId('memory-flat-row');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toHaveTextContent('FastAPI backend');
+    for (const row of screen.getAllByTestId('memory-flat-row')) {
+      expect(row.getAttribute('data-kind')).toBeTruthy();
+      expect(within(row).queryByTestId('memory-kind-label')).toBeNull();
+    }
+    // The chip family that used to sit above the list is gone with them.
+    expect(screen.queryByTestId('memory-kind-chip-all')).toBeNull();
+    expect(screen.queryByTestId('memory-kind-chip-fact')).toBeNull();
+    expect(screen.queryByTestId('memory-kind-chip-expiring')).toBeNull();
   });
 
   it('offers Edit + Delete for writable rows; legacy heuristics get Delete but not Edit (C-11)', () => {
     renderSection('memory-facts');
-    const rows = screen.getAllByTestId('memory-flat-row');
-    // Located by kind, not index: the merged list orders by recency across
-    // three stores, so a position is not a stable way to name a row.
-    const rowOf = (kind: string) => rows.find((r) => r.getAttribute('data-kind') === kind)!;
-    // Writable fact row: menu has Edit and Delete.
-    fireEvent.click(within(rowOf('fact')).getByTestId('memory-row-menu'));
-    expect(screen.getByRole('menuitem', { name: /edit/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /delete/i })).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: 'Escape' });
+    // Writable fact row: both hover actions.
+    const fact = rowOf('FastAPI backend');
+    expect(within(fact).getByTestId('memory-row-edit')).toBeInTheDocument();
+    expect(within(fact).getByTestId('memory-row-delete')).toBeInTheDocument();
     // Legacy heuristics row: no live writer so no Edit — but DELETABLE
     // (brain.py _ROW_DELETABLE includes heuristics; C-11 stops the UI
     // suppressing a delete the backend allows).
-    fireEvent.click(within(rowOf('lesson')).getByTestId('memory-row-menu'));
-    expect(screen.queryByRole('menuitem', { name: /edit/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /delete/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /view/i })).toBeInTheDocument();
+    const lesson = rowOf('Run tests after edits');
+    expect(within(lesson).queryByTestId('memory-row-edit')).toBeNull();
+    expect(within(lesson).getByTestId('memory-row-delete')).toBeInTheDocument();
   });
 
   it('shows the health footer with last consolidation counts and runs one on demand', async () => {
@@ -338,22 +338,23 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
     });
   });
 
-  // C-2: source badges render on rows that carry one.
-  it('shows a source badge on rows with a source (C-2)', () => {
+  /* C-2, in the shape the reference uses: the row is name + description + date,
+   * and the source is detail-level. A provenance chip stamped on every line was
+   * the version of this that made a scannable list unreadable. */
+  it('shows an entry’s source in its detail, not on the row (C-2)', async () => {
     renderSection('memory-facts');
-    const badges = screen.getAllByTestId('memory-source-badge');
-    expect(badges.length).toBeGreaterThan(0);
-    expect(badges.some((b) => b.textContent === 'remember')).toBe(true);
+    expect(screen.queryByTestId('memory-source-badge')).toBeNull();
+    fireEvent.click(within(rowOf('FastAPI backend')).getByTestId('memory-row-open'));
+    const detail = await screen.findByTestId('memory-detail-view');
+    expect(within(detail).getByTestId('memory-detail-source')).toHaveTextContent('extracted');
   });
 
   /* Category and expiry are per-entry edits now — the bottom bar is one field,
-   * so they moved into the row's edit view (both are in the facts whitelist the
-   * backend PATCH accepts). */
-  it('sets category and expiry from the row’s edit view (C-7, M-10)', async () => {
+   * so they moved into the entry's edit view (both are in the facts whitelist
+   * the backend PATCH accepts). The pencil on the row opens that view directly. */
+  it('sets category and expiry from the entry’s edit view (C-7, M-10)', async () => {
     renderSection('memory-facts');
-    const rows = screen.getAllByTestId('memory-flat-row');
-    fireEvent.click(within(rows[0]).getByTestId('memory-row-menu'));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /edit/i }));
+    fireEvent.click(within(rowOf('Prefers dark mode')).getByTestId('memory-row-edit'));
 
     fireEvent.change(screen.getByLabelText('category'), { target: { value: 'user' } });
     fireEvent.change(screen.getByLabelText('expires_at'), {
@@ -391,22 +392,29 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
     rowsByStore.facts.total = 2;
     try {
       renderSection('memory-facts');
-      const rows = screen.getAllByTestId('memory-flat-row');
-      // Two minutes, not "8h ago" — the shift was the machine's UTC offset.
-      expect(rows[0]).toHaveTextContent('Learned just now');
-      expect(rows[0]).toHaveTextContent('2m ago');
-      // And a future expiry must not be filed as expired.
+      // Read as local time on a UTC+8 box that stamp landed eight hours in the
+      // past, so a fact with an hour left was filed as already expired.
       expect(screen.queryByTestId('memory-expired-badge')).toBeNull();
       expect(screen.getByTestId('memory-expiring-badge')).toBeInTheDocument();
+      // And the date cell renders in the reference's "Updated <Mon D>" form.
+      expect(screen.getAllByTestId('memory-row-updated')[0]).toHaveTextContent(
+        /^Updated [A-Z][a-z]{2} \d{1,2}/,
+      );
     } finally {
       rowsByStore.facts.rows = original;
       rowsByStore.facts.total = originalTotal;
     }
   });
 
-  // C-6: bulk select + bulk delete + bulk export.
+  // C-6: bulk select + bulk delete + bulk export. The default row carries no
+  // checkbox — bulk mode is opt-in, because the reference's row is name,
+  // description and date and nothing else.
   it('bulk-select enables Delete selected + Export selected (C-6)', async () => {
     renderSection('memory-facts');
+    expect(screen.queryByTestId('memory-bulk-check')).toBeNull();
+    expect(screen.queryByTestId('memory-bulk-bar')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('memory-select-mode'));
     const checks = screen.getAllByTestId('memory-bulk-check');
     fireEvent.click(checks[0]);
     fireEvent.click(checks[2]);
@@ -419,8 +427,8 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
     });
   });
 
-  // C-9: picking a workspace shows its md files + entries + bound sessions —
-  // alongside the global list, which switching scope used to hide.
+  // C-9: picking a workspace shows its md files + entries — replacing the
+  // whole column, which is what a pane switch means here.
   it('opening a project replaces the pane with its files and entries (C-9)', async () => {
     renderSection('memory-facts');
     fireEvent.click(screen.getByTestId('memory-project-row'));
@@ -438,8 +446,8 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
       'NSIS is legacy here',
     );
     // A pane switch, not a region swap: the global list is gone from the DOM.
-    expect(screen.queryByTestId('memory-group-global')).toBeNull();
-    expect(screen.queryByTestId('memory-flat-list')).toBeNull();
+    expect(screen.queryByTestId('memory-section-topics')).toBeNull();
+    expect(screen.queryByTestId('memory-group-project')).toBeNull();
 
     // The pane's own bar posts through the md-file door.
     fireEvent.change(within(pane).getByTestId('memory-project-add-input'), {
@@ -464,7 +472,7 @@ describe('MemorySection — Part 17 Phase C gap closings', () => {
     fireEvent.click(screen.getByTestId('memory-project-row'));
     const pane = await screen.findByTestId('memory-project-pane');
     fireEvent.click(within(pane).getByTestId('memory-project-pane-header-back'));
-    await waitFor(() => expect(screen.getByTestId('memory-group-global')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('memory-group-project')).toBeInTheDocument());
     expect(screen.queryByTestId('memory-project-pane')).toBeNull();
   });
 

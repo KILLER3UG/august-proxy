@@ -5,9 +5,12 @@
  * you move a row in or out.
  *
  * The second half matters as much as the first: the lane action PATCHes and
- * then waits. A locally flipped chip would tell you a fact is riding along on
+ * then waits. A locally flipped label would tell you a fact is riding along on
  * every turn when the server never accepted it. These tests pin both the write
- * AND that the label only changes once the refetched row says so. */
+ * AND that the label only changes once the refetched row says so.
+ *
+ * The lane action lives in the entry's DETAIL view, not on the row: it is a
+ * per-entry decision, not something you do while scanning a list. */
 
 import { it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, configure } from '@testing-library/react';
@@ -81,8 +84,6 @@ async function renderTab(id = 'memory-facts') {
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  // The rows live inside the Global memory pane.
-  fireEvent.click(screen.getByTestId('memory-global-row'));
   return utils;
 }
 
@@ -98,8 +99,8 @@ function pageFor(store: string) {
   return { store, rows, total: rows.length, limit: 200, offset: 0 };
 }
 
-/* Row titles render wrapped in typographic quotes, so an exact-string
- * text matcher can never hit them — match the text content instead. */
+/* Row titles are the entry's own text, so an exact-string matcher can hit them;
+ * match on the text content anyway to stay robust to the description column. */
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const rowByTitle = (title: string) =>
@@ -116,12 +117,20 @@ const requireRow = (title: string) => {
   return r;
 };
 
-async function openMenu(title: string) {
-  // The list is a poll-based query: wait for the row, don't assume it painted.
+/** Open a row's detail view — the one click that replaces the ⋯ menu. */
+async function openRow(title: string) {
   const row = await waitFor(() => requireRow(title));
-  fireEvent.click(within(row).getByTestId('memory-row-menu'));
+  fireEvent.click(within(row).getByTestId('memory-row-open'));
   return row;
 }
+
+/** The count of fact-store reads, so a test can wait for the refetch a write
+ *  triggers instead of assuming the first paint already reflects it. */
+const factReads = () =>
+  getMock.mock.calls.filter((c) => String(c[0]).includes('/api/brain/stores/facts')).length;
+
+const laneButton = () => screen.getByTestId('memory-detail-toggle-lane');
+const backToList = () => fireEvent.click(screen.getByTestId('memory-detail-back'));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -161,45 +170,52 @@ it('reads a kind=profile fact as profile whatever its category', async () => {
   // The per-row kind chip is gone by design: it was a 56px coloured badge
   // stamped on every single line, where the reference labels a memory by the
   // GROUP it sits under. `data-kind` on the row is the stable contract for
-  // which kind this is, and the kind is surfaced as a group header whenever a
-  // kind filter is active.
+  // which kind this is, and the lane has its own named section.
   expect(within(row).queryByTestId('memory-kind-label')).toBeNull();
+  expect(within(screen.getByTestId('memory-section-you')).getByTestId('memory-flat-row')).toBe(row);
 });
 
 it('leaves non-profile rows on their existing derivation', async () => {
   await renderTab();
-  // 3 facts + 1 legacy lesson + 1 KV note: the Global group merges stores.
+  // 3 facts + 1 legacy lesson + 1 KV note: the sections merge stores.
   await waitFor(() => expect(screen.getAllByTestId('memory-flat-row')).toHaveLength(5));
   expect(rowByTitle('FastAPI backend')).toHaveAttribute('data-kind', 'fact');
   expect(rowByTitle('Prefers dark mode')).toHaveAttribute('data-kind', 'pref');
   expect(rowByTitle('Run tests after edits')).toHaveAttribute('data-kind', 'lesson');
 });
 
-/* ── 2 · chip + filter ───────────────────────────────────────────────── */
+/* ── 2 · the lane is a section, not a chip row ───────────────────────── */
 
-it('counts profile rows in a chip and filters to them', async () => {
+it('puts the profile row in its own section and leaves the rest under Topics', async () => {
   await renderTab();
-  const chip = await screen.findByTestId('memory-kind-chip-profile');
-  expect(chip).toHaveTextContent('1');
+  const you = await screen.findByTestId('memory-section-you');
+  expect(within(you).getAllByTestId('memory-flat-row')).toHaveLength(1);
+  expect(within(you).getByTestId('memory-flat-row')).toHaveTextContent('I train small Qwen models');
 
-  fireEvent.click(chip);
-  await waitFor(() => expect(screen.getAllByTestId('memory-flat-row')).toHaveLength(1));
-  expect(screen.getByTestId('memory-flat-row')).toHaveTextContent('I train small Qwen models');
-  expect(rowByTitle('FastAPI backend')).toBeNull();
+  const topics = screen.getByTestId('memory-section-topics');
+  const topicTitles = within(topics)
+    .getAllByTestId('memory-flat-row')
+    .map((r) => r.textContent ?? '');
+  expect(topicTitles).toHaveLength(2);
+  expect(topicTitles.some((t) => t.includes('FastAPI backend'))).toBe(true);
+  expect(topicTitles.some((t) => t.includes('Prefers dark mode'))).toBe(true);
 });
 
-it('explains what the profile lane is whenever the chip is present', async () => {
+it('explains what the profile lane is whenever the section is present', async () => {
   await renderTab();
   const line = await screen.findByTestId('memory-profile-explainer');
-  expect(line).toHaveTextContent('always in the model’s context on every turn');
+  // The claim is about what the model SEES: injected every turn, not recalled
+  // by keyword — and a parked row is carried by neither lane until restored.
+  expect(line).toHaveTextContent('injected into every turn');
   expect(line).toHaveTextContent('not recalled by keyword');
+  expect(line).toHaveTextContent('open one to add or remove it from the lane');
 });
 
-it('withholds the profile chip and its explainer when no row is profile', async () => {
+it('withholds the lane section and its explainer when no row is profile', async () => {
   factRows = factRows.filter((r) => r.kind !== 'profile');
   await renderTab();
   await waitFor(() => expect(screen.getAllByTestId('memory-flat-row')).toHaveLength(4));
-  expect(screen.queryByTestId('memory-kind-chip-profile')).toBeNull();
+  expect(screen.queryByTestId('memory-section-you')).toBeNull();
   expect(screen.queryByTestId('memory-profile-explainer')).toBeNull();
 });
 
@@ -207,26 +223,35 @@ it('withholds the profile chip and its explainer when no row is profile', async 
 
 it('promotes a fact through a PATCH of the kind column', async () => {
   await renderTab();
-  await openMenu('FastAPI backend');
-  fireEvent.click(await screen.findByText('Add to profile'));
+  await openRow('FastAPI backend');
+  fireEvent.click(await screen.findByTestId('memory-detail-toggle-lane'));
 
   await waitFor(() =>
     expect(patchMock).toHaveBeenCalledWith('/api/brain/stores/facts/2', { kind: 'profile' }),
   );
 });
 
-it('does not flip the chip locally while the server row still says fact', async () => {
+it('does not flip the lane label locally while the server row still says fact', async () => {
   patchMock.mockImplementation(async () => ({ row: {} }));
   await renderTab();
-  await openMenu('FastAPI backend');
-  fireEvent.click(await screen.findByText('Add to profile'));
-  await waitFor(() => expect(patchMock).toHaveBeenCalled());
+  await openRow('FastAPI backend');
+  const lane = await screen.findByTestId('memory-detail-toggle-lane');
+  expect(lane).toHaveTextContent('Always include in context');
 
-  // factRows was never mutated: the refetch re-reports kind='fact', so the row
-  // must still read 'fact'. An optimistic flip would show 'profile' here.
-  await waitFor(() => expect(screen.getAllByTestId('memory-flat-row')).toHaveLength(5));
-  expect(rowByTitle('FastAPI backend')).toHaveAttribute('data-kind', 'fact');
-  expect(screen.getByTestId('memory-kind-chip-profile')).toHaveTextContent('1');
+  const reads = factReads();
+  fireEvent.click(lane);
+  await waitFor(() => expect(patchMock).toHaveBeenCalled());
+  // Wait for the invalidation refetch to actually land before judging the
+  // label — otherwise the assertion passes on the pre-refetch paint.
+  await waitFor(() => expect(factReads()).toBeGreaterThan(reads));
+
+  // factRows was never mutated: the refetch re-reports kind='fact', so the
+  // detail must still offer the PROMOTE action. An optimistic flip would
+  // show the demote label here.
+  expect(laneButton()).toHaveTextContent('Always include in context');
+
+  backToList();
+  await waitFor(() => expect(requireRow('FastAPI backend')).toHaveAttribute('data-kind', 'fact'));
 });
 
 it('shows the promoted row as profile once the refetched kind comes back', async () => {
@@ -236,11 +261,19 @@ it('shows the promoted row as profile once the refetched kind comes back', async
     return { row: {} };
   });
   await renderTab();
-  await openMenu('FastAPI backend');
-  fireEvent.click(await screen.findByText('Add to profile'));
+  await openRow('FastAPI backend');
+  fireEvent.click(await screen.findByTestId('memory-detail-toggle-lane'));
 
-  await waitFor(() => expect(rowByTitle('FastAPI backend')).toHaveAttribute('data-kind', 'profile'));
-  await waitFor(() => expect(screen.getByTestId('memory-kind-chip-profile')).toHaveTextContent('2'));
+  // The detail reads the REFETCHED row, so its own label flips without a
+  // navigate-back — the fix for "the snapshot went stale".
+  await waitFor(() => expect(laneButton()).toHaveTextContent('Remove from the always-in-context lane'));
+
+  backToList();
+  await waitFor(() => expect(requireRow('FastAPI backend')).toHaveAttribute('data-kind', 'profile'));
+  // …and it now sits in the lane's own section, beside the row already there.
+  const laneRows = within(screen.getByTestId('memory-section-you')).getAllByTestId('memory-flat-row');
+  expect(laneRows).toHaveLength(2);
+  expect(laneRows.some((r) => r.textContent?.includes('FastAPI backend'))).toBe(true);
 });
 
 it('demotes a profile row back to fact', async () => {
@@ -251,17 +284,19 @@ it('demotes a profile row back to fact', async () => {
   });
   await renderTab();
 
-  const row = await openMenu('I train small Qwen models');
-  const action = await screen.findByText('Remove from profile');
+  const row = await openRow('I train small Qwen models');
   // `data-kind` is what says a row is profile now that the per-row kind chip
   // is gone (see the note in "reads a kind=profile fact as profile").
   expect(row).toHaveAttribute('data-kind', 'profile');
-  fireEvent.click(action);
+  const lane = await screen.findByTestId('memory-detail-toggle-lane');
+  expect(lane).toHaveTextContent('Remove from the always-in-context lane');
+  fireEvent.click(lane);
 
   await waitFor(() =>
     expect(patchMock).toHaveBeenCalledWith('/api/brain/stores/facts/1', { kind: 'fact' }),
   );
-  await waitFor(() => expect(rowByTitle('I train small Qwen models')).toHaveAttribute('data-kind', 'fact'));
+  backToList();
+  await waitFor(() => expect(requireRow('I train small Qwen models')).toHaveAttribute('data-kind', 'fact'));
 });
 
 it('reports a failed lane write instead of pretending it landed', async () => {
@@ -270,11 +305,12 @@ it('reports a failed lane write instead of pretending it landed', async () => {
   });
   const { toast } = await import('sonner');
   await renderTab();
-  await openMenu('FastAPI backend');
-  fireEvent.click(await screen.findByText('Add to profile'));
+  await openRow('FastAPI backend');
+  const lane = await screen.findByTestId('memory-detail-toggle-lane');
+  fireEvent.click(lane);
 
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith('column "kind" is not writable'));
-  expect(rowByTitle('FastAPI backend')).toHaveAttribute('data-kind', 'fact');
+  expect(laneButton()).toHaveTextContent('Always include in context');
 });
 
 /* ── 4 · only the store with a kind column offers the action ─────────── */
@@ -283,10 +319,10 @@ it('offers no lane action on a KV note row', async () => {
   await renderTab('memory-knowledge');
   // The note reads as its text, not as the key the store files it under —
   // `user:plant` is a handle for remember/forget, not something to show a user.
-  await openMenu('My plant is named Gerald');
+  await openRow('My plant is named Gerald');
+  await screen.findByTestId('memory-detail-view');
   expect(rowByTitle('user:plant')).toBeNull();
-  // View / Export / Delete render; the lane write would 400 on this store.
-  expect(screen.getByRole('menuitem', { name: 'View' })).toBeInTheDocument();
-  expect(screen.queryByText('Add to profile')).toBeNull();
-  expect(screen.queryByText('Remove from profile')).toBeNull();
+  // Edit / Export / Delete render; the lane write would 400 on this store.
+  expect(screen.getByTestId('memory-detail-delete')).toBeInTheDocument();
+  expect(screen.queryByTestId('memory-detail-toggle-lane')).toBeNull();
 });

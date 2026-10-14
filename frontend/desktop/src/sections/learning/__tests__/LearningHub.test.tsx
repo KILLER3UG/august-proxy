@@ -82,7 +82,9 @@ describe('LearningHub', () => {
     expect(await screen.findByRole('heading', { name: 'Skills' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /^Memory/ }));
-    expect(await screen.findByTestId('memory-group-global')).toBeTruthy();
+    // The project group is the memory page's own content marker and renders
+    // (with its empty state) whether or not any store has rows yet.
+    expect(await screen.findByTestId('memory-group-project')).toBeTruthy();
 
     // The scheduler tab is the learning panel, open on arrival: the job
     // ledger is inside it, so a collapsed card would show nothing.

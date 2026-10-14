@@ -28,7 +28,7 @@ import { BrainBackupsCard } from './BrainBackupsCard';
 import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArchiveRestore, ArrowUp, ChevronLeft, ChevronRight, Download, MoreHorizontal, Pencil, RefreshCw, Search, Trash2, UserRoundCog } from 'lucide-react';
+import { ArchiveRestore, ArrowUp, ChevronLeft, ChevronRight, Download, Pencil, RefreshCw, Search, Trash2, UserRoundCog } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
@@ -95,7 +95,6 @@ interface ProjectFile {
  *  made the page read as boxes inside boxes. */
 type Pane =
   | { kind: 'list' }
-  | { kind: 'global' }
   | { kind: 'project'; workspace: WorkspaceInfo }
   | { kind: 'file'; workspace: WorkspaceInfo; file: string };
 
@@ -119,10 +118,9 @@ interface ProjectList {
  * `memory-knowledge` / `memory-facts` are deep-link aliases for it: asking
  * someone to choose between "Memories" and "Facts & Rules" is asking them to
  * distinguish two backend tables they never see. The stores are still what a
- * row IS (the kind chip says so) — they are just no longer the navigation. */
-const PAGE_TITLE = 'Memory';
+ * row IS (its section says so) — they are just no longer the navigation. */
 
-/** The Global memory group lists every browsable store at once. */
+/** The browsable stores the one list merges, in section order. */
 const GLOBAL_STORES = ['facts', 'memory', 'heuristics'];
 
 const SORTS: Array<{ value: string; label: string }> = [
@@ -141,6 +139,10 @@ const SORTS: Array<{ value: string; label: string }> = [
 interface StoreMeta {
   idField: string;
   title: (r: Row) => string;
+  /** One-line human description, when the store has a column for it (facts
+   *  does — `description`). The row shows it as the second line; when empty
+   *  the row falls back to the summary. */
+  description?: (r: Row) => string;
   summary: (r: Row) => string;
   details?: (r: Row) => string | undefined;
   category?: (r: Row) => string;
@@ -215,7 +217,11 @@ function summarizeKvValue(raw: unknown): { summary: string; details: string } {
 const STORE_META: Record<string, StoreMeta> = {
   facts: {
     idField: 'id',
-    title: (r) => str(r.factKey),
+    // The `title` column is the name a person reads; `fact_key` is the machine
+    // handle the model quotes. Both exist on the wire, and the reference design
+    // (name + one-line description + updated date) reads the human pair.
+    title: (r) => str(r.title).trim() || str(r.factKey),
+    description: (r) => str(r.description).trim(),
     summary: (r) => parseFactValue(r.factValue).summary,
     details: (r) => parseFactValue(r.factValue).details,
     category: (r) => str(r.category),
@@ -250,16 +256,6 @@ const STORE_META: Record<string, StoreMeta> = {
 /* ── §5.1 flat-list kinds ──────────────────────────────────────────── */
 
 type EntryKind = 'profile' | 'fact' | 'lesson' | 'pref' | 'note';
-
-const KIND_META: Record<EntryKind, { label: string; className: string }> = {
-  profile: { label: 'profile', className: 'border-violet-500/30 bg-violet-500/10 text-violet-400' },
-  fact: { label: 'fact', className: 'border-sky-500/30 bg-sky-500/10 text-sky-400' },
-  lesson: { label: 'lesson', className: 'border-warning/30 bg-warning/10 text-warning-fg' },
-  pref: { label: 'pref', className: 'border-success/30 bg-success/10 text-success-fg' },
-  note: { label: 'note', className: 'border-border/60 bg-muted/30 text-muted-foreground' },
-};
-
-const KIND_ORDER: EntryKind[] = ['profile', 'fact', 'lesson', 'pref', 'note'];
 
 /** Kind chip for a row: a fact whose own `kind` column reads `profile` is a
  *  profile-lane entry whatever its category — that column, not the category,
@@ -312,12 +308,16 @@ interface FlatEntry {
   id: string;
   kind: EntryKind;
   title: string;
+  /** One-line description from the store's own column (facts.description),
+   *  '' when the store has none. */
+  description: string;
   summary: string;
   updated: string;
   expiring: boolean;
   expired: boolean;
   legacy: boolean;
   source: string;
+  category: string;
   /** `facts.status === 'retired'` — consolidation parked the row and BOTH
    *  recall lanes filter it out, so it is NOT in the model's context even
    *  when its kind is `profile`. The row keeps rendering here (this is the
@@ -325,6 +325,20 @@ interface FlatEntry {
    *  profile explainer's "always in context" claim was false for exactly
    *  these rows. */
   retired: boolean;
+}
+
+/** The row's right-hand date, the way the reference reads it: "Updated Aug 21"
+ *  this year, "Updated Aug 21, 2025" when the memory is older. */
+function shortUpdated(stamp: string): string {
+  const t = Date.parse(asUtc(stamp));
+  if (!Number.isFinite(t)) return '';
+  const d = new Date(t);
+  const now = new Date();
+  const sameYear = d.getFullYear() === now.getFullYear();
+  const month = d.toLocaleString('en-US', { month: 'short' });
+  return sameYear
+    ? `Updated ${month} ${d.getDate()}`
+    : `Updated ${month} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
 const UNIFIED_FETCH = 200;
@@ -337,7 +351,9 @@ const LONG_TEXT_FIELDS = new Set(['fact_value', 'value', 'event_summary', 'rule'
  * is named Gerald". The key stays the detail header and the remember/forget
  * handle. */
 function rowTitle(store: string, row: Row): string {
-  if (store === 'facts') return parseFactValue(row.factValue).summary || str(row.factKey);
+  if (store === 'facts') {
+    return str(row.title).trim() || parseFactValue(row.factValue).summary || str(row.factKey);
+  }
   if (store === 'memory') return summarizeKvValue(row.value).summary || str(row.key);
   return STORE_META[store]?.title(row) || '(untitled)';
 }
@@ -389,6 +405,17 @@ function entryToMarkdown(store: string, r: Row, meta: StoreMeta): string {
  * project, and the August-specific surface under that. Groups are separated by a
  * rule, not by a box — a box around every group is what made the page read as
  * stacked cards instead of one list you scan. */
+/* A flat section header — the reference's shape: a small title, a quiet hint
+ * at its right, then the rows separated by hairlines. No card chrome. */
+function MemorySectionHeader({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 pb-1">
+      <h3 className="text-[0.8125rem] font-semibold tracking-tight text-foreground">{title}</h3>
+      {hint && <span className="truncate text-2xs text-muted-foreground/55">{hint}</span>}
+    </div>
+  );
+}
+
 function MemoryGroup({
   title,
   aside,
@@ -438,15 +465,15 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const [search, setSearch] = useState('');
   const [addText, setAddText] = useState('');
   const [importOpen, setImportOpen] = useState(false);
-  const [kindFilter, setKindFilter] = useState<'all' | EntryKind | 'expiring'>('all');
   const [unifiedShown, setUnifiedShown] = useState(UNIFIED_RENDER);
   // C-3/4: server-side filters + sort (persist across page navigation).
   const [catFilter, setCatFilter] = useState('');
   const [srcFilter, setSrcFilter] = useState('');
   const [confFilter, setConfFilter] = useState('');
   const [sort, setSort] = useState('newest');
-  // C-6: bulk selection over the merged list.
+  // C-6: bulk selection is opt-in — the default row carries no checkbox.
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
   // C-5: pagination past the 200-row unified fetch cap.
   const [unifiedOffset, setUnifiedOffset] = useState(0);
   const query = search.trim();
@@ -459,7 +486,6 @@ export function MemorySection({ active }: { active: { id: string } }) {
     setSelected(null);
     setEditing(false);
     setSearch('');
-    setKindFilter('all');
     setUnifiedShown(UNIFIED_RENDER);
     setCatFilter('');
     setSrcFilter('');
@@ -624,12 +650,14 @@ export function MemorySection({ active }: { active: { id: string } }) {
           id: str(row[m?.idField ?? 'id']),
           kind: deriveKind(store, row),
           title: rowTitle(store, row),
+          description: m?.description?.(row) ?? '',
           summary: m?.summary(row) ?? '',
           updated: m?.updated?.(row) ?? '',
           expiring: hasExpiry(row),
           expired: isExpired(row),
           legacy: !!m?.legacy,
           source: m?.source?.(row) ?? '',
+          category: m?.category?.(row) ?? '',
           retired: str(row.status) === 'retired',
         });
       }
@@ -661,13 +689,13 @@ export function MemorySection({ active }: { active: { id: string } }) {
     return { ...counts, activeProfile };
   }, [flatEntries]);
 
-  const filteredEntries = useMemo(() => {
-    let out = flatEntries;
-    if (kindFilter === 'expiring') out = out.filter((e) => e.expiring);
-    else if (kindFilter !== 'all') out = out.filter((e) => e.kind === kindFilter);
-    // C-8: expired rows separate to the bottom of the list, live rows first.
-    return [...out].sort((a, b) => Number(b.expired) - Number(a.expired));
-  }, [flatEntries, kindFilter]);
+  // C-8: expired rows separate to the bottom of the list, live rows first.
+  // (The kind FILTER is gone: the sections are the grouping now, so a chip
+  // row would say the same thing twice.)
+  const filteredEntries = useMemo(
+    () => [...flatEntries].sort((a, b) => Number(b.expired) - Number(a.expired)),
+    [flatEntries],
+  );
 
   // Server-reported totals drive the unified pager (C-5).
   const unifiedTotal =
@@ -675,11 +703,60 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const unifiedCanPrev = unifiedOffset > 0;
   const unifiedCanNext = unifiedOffset + UNIFIED_FETCH < unifiedTotal;
 
-  // The group header answers "how much does August remember about me, and when
-  // did it last learn something" without anyone counting rows.
-  const newestGlobal = flatEntries.reduce(
-    (acc, e) => Math.max(acc, sortTime(e.row, STORE_META[e.store])),
-    0,
+  // The reference's grouping: the profile lane IS the "You" section, every
+  // other fact is a Topic grouped by its own category, the KV store is
+  // Notes, the legacy lessons are Rules. One row renderer shared by every
+  // section — the first version of this had two and they drifted.
+  const sections = useMemo(() => {
+    const you: FlatEntry[] = [];
+    const topics: FlatEntry[] = [];
+    const notes: FlatEntry[] = [];
+    const rules: FlatEntry[] = [];
+    for (const e of filteredEntries) {
+      if (e.kind === 'profile') you.push(e);
+      else if (e.store === 'heuristics') rules.push(e);
+      else if (e.store === 'memory') notes.push(e);
+      else topics.push(e);
+    }
+    const byCat = new Map<string, FlatEntry[]>();
+    for (const e of topics) {
+      const list = byCat.get(e.category) ?? [];
+      list.push(e);
+      byCat.set(e.category, list);
+    }
+    return { you, topics, notes, rules, topicGroups: [...byCat.entries()] };
+  }, [filteredEntries]);
+
+  /** One row renderer for every section (the old code had two and they
+   *  drifted: the grouped one silently lost the lane toggle and export). */
+  const rowFor = (e: FlatEntry) => (
+    <FlatEntryRow
+      key={`${e.store}:${e.id}`}
+      entry={e}
+      checked={checked.has(`${e.store}:${e.id}`)}
+      selectMode={selectMode}
+      onCheck={(v) =>
+        setChecked((prev) => {
+          const next = new Set(prev);
+          const k = `${e.store}:${e.id}`;
+          if (v) next.add(k);
+          else next.delete(k);
+          return next;
+        })
+      }
+      onView={() => openDetail(e.row, e.store)}
+      onEdit={() => {
+        openDetail(e.row, e.store);
+        const m = STORE_META[e.store];
+        if (m?.editable) {
+          const draft: Record<string, string> = {};
+          for (const fld of m.editable) draft[fld] = str(e.row[toCamel(fld)]);
+          setEditDraft(draft);
+          setEditing(true);
+        }
+      }}
+      onDelete={() => requestDelete(e.row, e.store)}
+    />
   );
 
   const openDetail = (r: Row, store?: string) => {
@@ -812,6 +889,25 @@ export function MemorySection({ active }: { active: { id: string } }) {
   // project's files replaces the WHOLE settings content.
   const [pane, setPane] = useState<Pane>({ kind: 'list' });
   const detailOpen = mode === 'detail' && !!selected && !!meta;
+  /* The row the detail view renders. `selected` is a SNAPSHOT taken when the
+   * row was opened, and every write here deliberately does not patch it — it
+   * invalidates and waits for the server (`laneMut.onSuccess` only toasts and
+   * refetches). Rendering the snapshot would leave the detail's lane label
+   * stale until you navigated back and re-opened the row, which is the
+   * "component guessed" state the lane design exists to avoid. So the detail
+   * prefers the refetched row while the store still holds it, and falls back
+   * to the snapshot only while that refetch is in flight — or after a delete,
+   * when the row is legitimately gone. */
+  const liveSelected = useMemo(() => {
+    if (!selected) return null;
+    const id = str(selected[meta?.idField ?? 'id']);
+    const hit = flatEntries.find((e) => e.store === activeStore && e.id === id);
+    return hit?.row ?? selected;
+  }, [selected, flatEntries, activeStore, meta]);
+  // `detailOpen` already proves `selected` is non-null on the branch that
+  // renders this, so the empty object is only there to keep the type honest
+  // for the unreachable path.
+  const detailRow: Row = liveSelected ?? selected ?? {};
 
   return (
     <div className="px-8 py-6 max-w-3xl">
@@ -830,7 +926,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
       ) : detailOpen ? (
         <DetailView
           store={activeStore}
-          row={selected}
+          row={detailRow}
           meta={meta}
           editing={editing}
           editDraft={editDraft}
@@ -846,400 +942,340 @@ export function MemorySection({ active }: { active: { id: string } }) {
           onCancelEdit={() => setEditing(false)}
           onDelete={() => requestDelete()}
           onExport={() => exportEntry()}
+          laneLabel={
+            activeStore === KIND_EDITABLE_STORE
+              ? deriveKind(activeStore, detailRow) === 'profile'
+                ? 'Remove from the always-in-context lane'
+                : 'Always include in context'
+              : null
+          }
+          laneBusy={laneMut.isPending}
+          onToggleLane={() =>
+            laneMut.mutate({
+              store: activeStore,
+              id: str(detailRow[meta.idField]),
+              kind: deriveKind(activeStore, detailRow) === 'profile' ? 'fact' : 'profile',
+            })
+          }
+          canRestore={str(detailRow.status) === 'retired'}
+          restoreBusy={restoreMut.isPending}
+          onRestore={() => restoreMut.mutate({ store: activeStore, id: str(selected[meta.idField]) })}
         />
       ) : (
         <>
-      <div className="pb-1">
-        {/* h2, not h1: ChatTitlebar already renders the page's single h1 as
-            "Settings · Memory" on every /settings route. A second h1 here
-            meant the screen had two page titles, so heading navigation
-            offered neither as "the" title. */}
-        <h2 className="text-[1.375rem] font-semibold tracking-tight text-foreground">{PAGE_TITLE}</h2>
-        
+      {/* The list IS the page — no "All global memories" click-through first.
+          The reference's shape: one scannable column grouped into named
+          sections (You / Topics / Notes / Rules), each row a name, a
+          one-line description and an updated date, with edit and delete on
+          hover. The old pane had the same rows one click deep, which made
+          the page whose job is showing what August remembers open with a
+          row ABOUT the list instead of the list. */}
+
+      {/* Import from another AI — the reference's banner position: one
+          prominent row at the very top, before the list it feeds. */}
+      <div
+        className="flex items-start justify-between gap-4 rounded-xl border border-white/[0.06] bg-card/60 p-4"
+        data-testid="memory-import-banner"
+      >
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">
+            Import memory from other AI providers
+          </h3>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            Bring relevant context and data from another AI provider into August. Drop a
+            Markdown or JSON memory export — August parses it into entries you can review
+            before importing.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setImportOpen(true)}
+          className="shrink-0 rounded-lg border border-border/60 bg-card px-3.5 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:bg-muted/60"
+          data-testid="memory-import-open"
+        >
+          Start import
+        </button>
       </div>
 
-      {/* Global memory opens as its own pane, exactly like a project does: the
-          column shows only the browse, with a back that returns here. */}
-      {pane.kind === 'global' && (
-        <PaneHeader
-          testId="memory-global-pane-header"
-          backLabel="Memory"
-          onBack={() => setPane({ kind: 'list' })}
-          title="Global memory"
-          subtitle={`${unifiedTotal} ${unifiedTotal === 1 ? 'memory' : 'memories'} August applies to every project.`}
-        />
+      {/* Search + server-side filters + sort + refresh + export + select. */}
+      <div className="flex flex-wrap items-center gap-2 pt-4">
+        <div className="relative flex-1 max-w-sm min-w-44">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/60" />
+          <input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setUnifiedOffset(0);
+              setUnifiedShown(UNIFIED_RENDER);
+            }}
+            placeholder="Search memory…"
+            aria-label="Search memory"
+            className="w-full rounded-lg border border-border/60 bg-card/60 py-1.5 pl-8 pr-3 text-xs text-foreground outline-none transition focus:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary/50"
+            data-testid="memory-search-input"
+          />
+        </div>
+        <select
+          value={catFilter}
+          onChange={(e) => {
+            setCatFilter(e.target.value);
+            setUnifiedOffset(0);
+          }}
+          className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
+          data-testid="memory-category-filter"
+          aria-label="Filter by category"
+        >
+          <option value="">All categories</option>
+          {['general', 'user', 'project', 'workflow', 'preference'].map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        <select
+          value={srcFilter}
+          onChange={(e) => {
+            setSrcFilter(e.target.value);
+            setUnifiedOffset(0);
+          }}
+          className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
+          data-testid="memory-source-filter"
+          aria-label="Filter by source"
+        >
+          <option value="">All sources</option>
+          {['remember', 'user', 'extracted', 'lesson'].map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <select
+          value={confFilter}
+          onChange={(e) => {
+            setConfFilter(e.target.value);
+            setUnifiedOffset(0);
+          }}
+          className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
+          data-testid="memory-confidence-filter"
+          aria-label="Filter by confidence"
+        >
+          <option value="">All confidence</option>
+          <option value="high">high</option>
+          <option value="medium">medium</option>
+          <option value="low">low</option>
+        </select>
+        <select
+          value={sort}
+          onChange={(e) => {
+            setSort(e.target.value);
+            setUnifiedOffset(0);
+          }}
+          className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
+          data-testid="memory-sort"
+          aria-label="Sort order"
+        >
+          {SORTS.map((s) => (
+            <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => {
+            void storesQ.refetch();
+            void unifiedQa.refetch();
+            void unifiedQb.refetch();
+            void workspacesQ.refetch();
+          }}
+          title="Refresh"
+          aria-label="Refresh memory stores"
+          className="rounded-lg border border-border/60 bg-card/60 p-1.5 text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
+          data-testid="memory-refresh"
+        >
+          <RefreshCw className={cn('size-3', (unifiedQa.isFetching || unifiedQb.isFetching) && 'animate-spin')} />
+        </button>
+        {/* C-6: bulk mode is opt-in — the default row carries no checkbox,
+            because the reference's row is name/description/date and nothing
+            else. The mode reveals the checkboxes and the bulk bar. */}
+        <button
+          type="button"
+          onClick={() => {
+            setSelectMode((v) => !v);
+            setChecked(new Set());
+          }}
+          aria-pressed={selectMode}
+          className={cn(
+            'rounded-lg border px-2 py-1.5 text-2xs transition',
+            selectMode
+              ? 'border-primary/40 bg-primary/10 text-foreground'
+              : 'border-border/60 bg-card/60 text-muted-foreground hover:border-primary/30 hover:text-foreground',
+          )}
+          data-testid="memory-select-mode"
+        >
+          {selectMode ? 'Done selecting' : 'Select'}
+        </button>
+        <button
+          type="button"
+          onClick={exportStore}
+          disabled={flatEntries.length === 0}
+          title="Export as Markdown" aria-label="Export as Markdown"
+          className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
+        >
+          <Download className="size-3" /> Export
+        </button>
+      </div>
+
+      {/* C-6: bulk bar appears when rows are checked. */}
+      {checked.size > 0 && (
+        <div className="flex items-center gap-2" data-testid="memory-bulk-bar">
+          <span className="text-2xs text-muted-foreground" data-testid="memory-bulk-count">
+            {checked.size} selected
+          </span>
+          <button
+            type="button"
+            onClick={() => void bulkExport()}
+            className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
+            data-testid="memory-bulk-export"
+          >
+            <Download className="size-3" /> Export selected
+          </button>
+          <button
+            type="button"
+            onClick={() => void bulkDelete()}
+            className="inline-flex items-center gap-1 rounded-lg border border-destructive/40 bg-destructive/10 px-2 py-1 text-2xs text-destructive transition hover:bg-destructive/20"
+            data-testid="memory-bulk-delete"
+          >
+            <Trash2 className="size-3" /> Delete selected
+          </button>
+        </div>
       )}
 
-      <div className="space-y-5 pt-4">
-
-      {/* The browse comes FIRST, above the behaviour toggles.
-          *
-          * This page used to open with ~1,600 characters of toggle prose — five
-          * switches, each with a paragraph explaining what it does — and not one
-          * stored memory. The list was one click deep behind an "All global
-          * memories" row, so the page whose entire job is to show what August
-          * remembers showed nothing about it.
-          *
-          * The reference makes the list the page: a search field, the entries,
-          * and nothing else competing for the first screen. The toggles are still
-          * on this page and still one scroll away, so the 2026-10-03 ruling that
-          * the gates render in EVERY pane is kept — they now sit below the content
-          * they govern instead of above it. */}
-      <MemoryGroup
-        testId="memory-group-global"
-        title="Global memory"
-        aside={`${unifiedTotal} ${unifiedTotal === 1 ? 'memory' : 'memories'}${
-          newestGlobal ? ` · updated ${timeAgo(new Date(newestGlobal))}` : ''
-        }`}
-      >
-        {pane.kind !== 'global' ? (
-          <MemoryRow
-            testId="memory-global-row"
-            title="All global memories"
-            detail="What August knows about you in every project"
-            meta={`${unifiedTotal} ${unifiedTotal === 1 ? 'memory' : 'memories'}`}
-            onClick={() => setPane({ kind: 'global' })}
-          />
-        ) : storesQ.isLoading ? (
-          <PageLoader label="Loading memory stores…" variant="card" className="py-6" />
-        ) : (
-          <>
-          {/* Search + filters + sort + refresh + export-store */}
-          <div className="flex flex-wrap items-center gap-2 pb-1">
-            <div className="relative flex-1 max-w-sm min-w-44">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/60" />
-              <input
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setUnifiedOffset(0);
-                  setUnifiedShown(UNIFIED_RENDER);
-                }}
-                placeholder="Search memory…"
-                aria-label="Search memory"
-                className="w-full rounded-lg border border-border/60 bg-card/60 py-1.5 pl-8 pr-3 text-xs text-foreground outline-none transition focus:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary/50"
-                data-testid="memory-search-input"
+      {unifiedLoading ? (
+        <PageLoader label="Loading entries…" variant="card" className="py-8" />
+      ) : unifiedError ? (
+        <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-6 text-center text-xs text-destructive">
+          Could not load memory: {(unifiedError as Error | null)?.message ?? 'unknown error'}
+        </div>
+      ) : (
+        <div className="space-y-6 pt-1">
+          {/* You — the profile lane. These facts ride along on every turn
+              instead of being recalled by keyword, so the section says so
+              once instead of stamping a chip on every row. */}
+          {sections.you.length > 0 && (
+            <section data-testid="memory-section-you">
+              <MemorySectionHeader
+                title="You"
+                hint={`always in the model's context on every turn · ${sections.you.length}`}
               />
-            </div>
-            {/* C-3: category + source filters (server-side). */}
-            <select
-              value={catFilter}
-              onChange={(e) => {
-                setCatFilter(e.target.value);
-                setUnifiedOffset(0);
-              }}
-              className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
-              data-testid="memory-category-filter"
-              aria-label="Filter by category"
-            >
-              <option value="">All categories</option>
-              {['general', 'user', 'project', 'workflow', 'preference'].map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-            <select
-              value={srcFilter}
-              onChange={(e) => {
-                setSrcFilter(e.target.value);
-                setUnifiedOffset(0);
-              }}
-              className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
-              data-testid="memory-source-filter"
-              aria-label="Filter by source"
-            >
-              <option value="">All sources</option>
-              {['remember', 'user', 'extracted', 'lesson'].map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-            {/* C-3: confidence bucket filter (§9 F-6 — low < 0.5, medium < 0.8, high >= 0.8). */}
-            <select
-              value={confFilter}
-              onChange={(e) => {
-                setConfFilter(e.target.value);
-                setUnifiedOffset(0);
-              }}
-              className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
-              data-testid="memory-confidence-filter"
-              aria-label="Filter by confidence"
-            >
-              <option value="">All confidence</option>
-              <option value="high">high</option>
-              <option value="medium">medium</option>
-              <option value="low">low</option>
-            </select>
-            {/* C-4: sort control. */}
-            <select
-              value={sort}
-              onChange={(e) => {
-                setSort(e.target.value);
-                setUnifiedOffset(0);
-              }}
-              className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
-              data-testid="memory-sort"
-              aria-label="Sort order"
-            >
-              {SORTS.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => {
-                void storesQ.refetch();
-                void unifiedQa.refetch();
-                void unifiedQb.refetch();
-                void workspacesQ.refetch();
-              }}
-              title="Refresh"
-              aria-label="Refresh memory stores"
-              className="rounded-lg border border-border/60 bg-card/60 p-1.5 text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
-            >
-              <RefreshCw className={cn('size-3', (unifiedQa.isFetching || unifiedQb.isFetching) && 'animate-spin')} />
-            </button>
-            <button
-              type="button"
-              onClick={exportStore}
-              disabled={flatEntries.length === 0}
-              title="Export as Markdown" aria-label="Export as Markdown"
-              className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
-            >
-              <Download className="size-3" /> Export
-            </button>
-          </div>
-
-              {/* §5.1 filter chips — above the list, not tabs. */}
-              <div className="flex flex-wrap items-center gap-1.5" data-testid="memory-kind-chips">
-                <KindChip
-                  label="all"
-                  count={kindCounts.all}
-                  active={kindFilter === 'all'}
-                  onClick={() => setKindFilter('all')}
-                />
-                {KIND_ORDER.filter((k) => kindCounts[k] > 0).map((k) => (
-                  <KindChip
-                    key={k}
-                    label={KIND_META[k].label}
-                    count={kindCounts[k]}
-                    active={kindFilter === k}
-                    onClick={() => setKindFilter(k)}
-                  />
-                ))}
-                {kindCounts.expiring > 0 && (
-                  <KindChip
-                    label="expiring"
-                    count={kindCounts.expiring}
-                    active={kindFilter === 'expiring'}
-                    onClick={() => setKindFilter('expiring')}
-                  />
-                )}
-                {/* C-6: bulk bar appears when rows are checked. */}
-                {checked.size > 0 && (
-                  <>
-                    <span className="ml-2 text-2xs text-muted-foreground" data-testid="memory-bulk-count">
-                      {checked.size} selected
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => void bulkExport()}
-                      className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
-                      data-testid="memory-bulk-export"
-                    >
-                      <Download className="size-3" /> Export selected
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void bulkDelete()}
-                      className="inline-flex items-center gap-1 rounded-lg border border-destructive/40 bg-destructive/10 px-2 py-1 text-2xs text-destructive transition hover:bg-destructive/20"
-                      data-testid="memory-bulk-delete"
-                    >
-                      <Trash2 className="size-3" /> Delete selected
-                    </button>
-                  </>
-                )}
+              <div className="divide-y divide-white/[0.04]">
+                {sections.you.map((e) => rowFor(e))}
               </div>
+              <p className="pt-1.5 text-[0.65625rem] leading-relaxed text-muted-foreground/60" data-testid="memory-profile-explainer">
+                {kindCounts.activeProfile === 1 ? 'This row is' : 'These rows are'} injected into every turn, not
+                recalled by keyword. Parked rows are recalled by nothing until restored — open one to
+                add or remove it from the lane.
+              </p>
+            </section>
+          )}
 
-              {/* The profile lane would otherwise be an unexplained chip: these
-                  facts ride along on every turn instead of being recalled by
-                  keyword, so a row in it costs context continuously. Counted
-                  over ACTIVE rows only — a retired row rides nowhere. */}
-              {kindCounts.activeProfile > 0 && (
-                <p className="text-[0.65625rem] text-muted-foreground/70" data-testid="memory-profile-explainer">
-                  profile · {kindCounts.activeProfile === 1 ? 'row is' : 'rows are'} always in the model’s context on every turn, not recalled by keyword.
-                  Retired rows below are parked and recalled by nothing until restored.
-                  Use a row’s ⋯ menu to add or remove entries.
-                </p>
-              )}
-
-              {unifiedLoading ? (
-                <PageLoader label="Loading entries…" variant="card" className="py-8" />
-              ) : unifiedError ? (
-                <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-6 text-center text-xs text-destructive">
-                  Could not load memory: {(unifiedError as Error | null)?.message ?? 'unknown error'}
-                </div>
-              ) : filteredEntries.length === 0 ? (
-                <p className="rounded-xl border border-white/[0.06] bg-card/60 px-4 py-6 text-center text-xs text-muted-foreground">
-                  {query
-                    ? `No entries match “${query}”.`
-                    : kindFilter !== 'all'
-                      ? `No ${kindFilter} entries.`
-                      : 'Nothing stored here yet.'}
-                </p>
-              ) : (
-                <>
-                {(() => {
-                  const shown = filteredEntries.slice(0, unifiedShown);
-
-                  /* One row renderer, used by both the grouped and the flat
-                     branch. Written twice the first time, which is how the two
-                     lists drift apart — the grouped one silently loses the lane
-                     toggle or the export action. */
-                  const row = (e: FlatEntry) => (
-                    <FlatEntryRow
-                      key={`${e.store}:${e.id}`}
-                      entry={e}
-                      checked={checked.has(`${e.store}:${e.id}`)}
-                      onCheck={(v) =>
-                        setChecked((prev) => {
-                          const next = new Set(prev);
-                          const k = `${e.store}:${e.id}`;
-                          if (v) next.add(k);
-                          else next.delete(k);
-                          return next;
-                        })
-                      }
-                      onView={() => openDetail(e.row, e.store)}
-                      onEdit={() => {
-                        openDetail(e.row, e.store);
-                        const m = STORE_META[e.store];
-                        if (m?.editable) {
-                          const draft: Record<string, string> = {};
-                          for (const fld of m.editable) draft[fld] = str(e.row[toCamel(fld)]);
-                          setEditDraft(draft);
-                          setEditing(true);
-                        }
-                      }}
-                      onDelete={() => requestDelete(e.row, e.store)}
-                      onExport={() => exportEntry(e.row, e.store)}
-                      laneLabel={
-                        e.store === KIND_EDITABLE_STORE
-                          ? e.kind === 'profile'
-                            ? 'Remove from profile'
-                            : 'Add to profile'
-                          : null
-                      }
-                      laneBusy={
-                        laneMut.isPending &&
-                        laneMut.variables?.store === e.store &&
-                        laneMut.variables?.id === e.id
-                      }
-                      onToggleLane={() =>
-                        laneMut.mutate({
-                          store: e.store,
-                          id: e.id,
-                          kind: e.kind === 'profile' ? 'fact' : 'profile',
-                        })
-                      }
-                      canRestore={e.retired}
-                      restoreBusy={
-                        restoreMut.isPending &&
-                        restoreMut.variables?.store === e.store &&
-                        restoreMut.variables?.id === e.id
-                      }
-                      onRestore={() => restoreMut.mutate({ store: e.store, id: e.id })}
-                    />
-                  );
-
-                  /* The `all` view stays flat. When nothing is filtered the
-                     grouping is still worth it — it is the reference’s shape —
-                     but a live search is a different job: you want the matches,
-                     not the taxonomy, so grouping is dropped once `all` is not the
-                     active filter. */
-                  if (kindFilter !== 'all') {
-                    const byKind = new Map<string, FlatEntry[]>();
-                    for (const e of shown) {
-                      const list = byKind.get(e.kind) ?? [];
-                      list.push(e);
-                      byKind.set(e.kind, list);
-                    }
-                    return (
-                      <div data-testid="memory-flat-list">
-                        {KIND_ORDER.filter((k) => byKind.has(k)).map((k) => (
-                          <section key={k} data-testid={`memory-group-${k}`}>
-                            <h3 className="flex items-baseline gap-2 pb-1 pt-3 text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55 first:pt-0">
-                              {KIND_META[k].label}
-                              <span className="text-2xs font-normal normal-case tracking-normal text-muted-foreground/60">
-                                {byKind.get(k)?.length}
-                              </span>
-                            </h3>
-                            <div className="divide-y divide-white/[0.04]">
-                              {byKind.get(k)!.map(row)}
-                            </div>
-                          </section>
-                        ))}
-                      </div>
-                    );
-                  }
-                  return <div className="divide-y divide-white/[0.04]" data-testid="memory-flat-list">{shown.map(row)}</div>;
-                })()}
-                  {filteredEntries.length > unifiedShown && (
-                    <button
-                      type="button"
-                      onClick={() => setUnifiedShown((n) => n + UNIFIED_RENDER)}
-                      className="w-full py-2 text-center text-2xs text-muted-foreground transition hover:text-foreground"
-                      data-testid="memory-show-more"
-                    >
-                      +{filteredEntries.length - unifiedShown} more
-                    </button>
+          {/* Topics — every other fact, grouped by its category. */}
+          {sections.topics.length > 0 && (
+            <section data-testid="memory-section-topics">
+              <MemorySectionHeader title="Topics" hint={`${sections.topics.length}`} />
+              {sections.topicGroups.map(([category, entries]) => (
+                <div key={category || 'uncategorized'} className="pt-2 first:pt-0">
+                  {sections.topicGroups.length > 1 && (
+                    <h4 className="pb-0.5 text-2xs font-medium uppercase tracking-widest text-muted-foreground/45">
+                      {category || 'uncategorized'}
+                    </h4>
                   )}
-                </>
-              )}
-
-              {/* C-5: server-side pager past the 200-row cap. */}
-              {unifiedTotal > UNIFIED_FETCH && (
-                <div className="flex items-center justify-between text-xs text-muted-foreground" data-testid="memory-unified-pager">
-                  <span className="tabular-nums" data-testid="memory-unified-range">
-                    {unifiedOffset + 1}–{Math.min(unifiedOffset + UNIFIED_FETCH, unifiedTotal)} of {unifiedTotal}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      disabled={!unifiedCanPrev}
-                      onClick={() => {
-                        setUnifiedOffset(Math.max(0, unifiedOffset - UNIFIED_FETCH));
-                        setUnifiedShown(UNIFIED_RENDER);
-                        setChecked(new Set());
-                      }}
-                      className="rounded-md border border-border/60 p-1 transition enabled:hover:text-foreground disabled:opacity-40"
-                      title="Previous 200"
-                    >
-                      <ChevronLeft className="size-3" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!unifiedCanNext}
-                      onClick={() => {
-                        setUnifiedOffset(unifiedOffset + UNIFIED_FETCH);
-                        setUnifiedShown(UNIFIED_RENDER);
-                        setChecked(new Set());
-                      }}
-                      className="rounded-md border border-border/60 p-1 transition enabled:hover:text-foreground disabled:opacity-40"
-                      title="Next 200"
-                    >
-                      <ChevronRight className="size-3" />
-                    </button>
+                  <div className="divide-y divide-white/[0.04]">
+                    {entries.map((e) => rowFor(e))}
                   </div>
                 </div>
-              )}
-
-              {/* §5.1 health footer — the §3.5 audit surface. */}
-              <HealthFooter
-                consolidating={consolidateMut.isPending}
-                onRunNow={() => consolidateMut.mutate()}
-              />
-            </>
+              ))}
+            </section>
           )}
-      </MemoryGroup>
+
+          {/* Notes — the KV store. */}
+          {sections.notes.length > 0 && (
+            <section data-testid="memory-section-notes">
+              <MemorySectionHeader title="Notes" hint={`${sections.notes.length}`} />
+              <div className="divide-y divide-white/[0.04]">
+                {sections.notes.map((e) => rowFor(e))}
+              </div>
+            </section>
+          )}
+
+          {/* Rules — legacy lessons, read-only but deletable. */}
+          {sections.rules.length > 0 && (
+            <section data-testid="memory-section-rules">
+              <MemorySectionHeader title="Rules" hint="retired writer · kept for recall" />
+              <div className="divide-y divide-white/[0.04]">
+                {sections.rules.map((e) => rowFor(e))}
+              </div>
+            </section>
+          )}
+
+          {filteredEntries.length === 0 && (
+            <p className="rounded-xl border border-white/[0.06] bg-card/60 px-4 py-6 text-center text-xs text-muted-foreground">
+              {query
+                ? `No entries match “${query}”.`
+                : 'Nothing stored here yet.'}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* C-5: client-side "show more" past the first render window. */}
+      {filteredEntries.length > unifiedShown && (
+        <button
+          type="button"
+          onClick={() => setUnifiedShown((n) => n + UNIFIED_RENDER)}
+          className="w-full py-2 text-center text-2xs text-muted-foreground transition hover:text-foreground"
+          data-testid="memory-show-more"
+        >
+          +{filteredEntries.length - unifiedShown} more
+        </button>
+      )}
+
+      {/* C-5: server-side pager past the 200-row fetch cap. */}
+      {unifiedTotal > UNIFIED_FETCH && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground" data-testid="memory-unified-pager">
+          <span className="tabular-nums" data-testid="memory-unified-range">
+            {unifiedOffset + 1}–{Math.min(unifiedOffset + UNIFIED_FETCH, unifiedTotal)} of {unifiedTotal}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={!unifiedCanPrev}
+              onClick={() => {
+                setUnifiedOffset(Math.max(0, unifiedOffset - UNIFIED_FETCH));
+                setUnifiedShown(UNIFIED_RENDER);
+                setChecked(new Set());
+              }}
+              className="rounded-md border border-border/60 p-1 transition enabled:hover:text-foreground disabled:opacity-40"
+              title="Previous 200"
+            >
+              <ChevronLeft className="size-3" />
+            </button>
+            <button
+              type="button"
+              disabled={!unifiedCanNext}
+              onClick={() => {
+                setUnifiedOffset(unifiedOffset + UNIFIED_FETCH);
+                setUnifiedShown(UNIFIED_RENDER);
+                setChecked(new Set());
+              }}
+              className="rounded-md border border-border/60 p-1 transition enabled:hover:text-foreground disabled:opacity-40"
+              title="Next 200"
+            >
+              <ChevronRight className="size-3" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* §5.1 health footer — the consolidation surface. */}
+      <HealthFooter
+        consolidating={consolidateMut.isPending}
+        onRunNow={() => consolidateMut.mutate()}
+      />
+
       {/* The behavior gates are settings, not browse controls: they render
           in EVERY pane, including Global. They used to disappear the moment
           the global pane opened, and the layout test pinned that (2026-10-03). */}
@@ -1322,34 +1358,14 @@ export function MemorySection({ active }: { active: { id: string } }) {
         )}
       </MemoryGroup>
 
-      {/* Import from another AI — prominent row (Claude-parity layout):
-          title + description on the left, a single "Start import" action on
-          the right. Opens the parser dialog (Markdown / JSON export). */}
-      <div className="flex items-start justify-between gap-4 rounded-xl border border-white/[0.06] bg-card/60 p-4">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-foreground">
-            Import memory from other AI providers
-          </h3>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Bring relevant context and data from another AI provider into August. Drop a
-            Markdown or JSON memory export — August parses it into entries you can review
-            before importing.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setImportOpen(true)}
-          className="shrink-0 rounded-lg border border-border/60 bg-card px-3.5 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:bg-muted/60"
-          data-testid="memory-import-open"
-        >
-          Start import
-        </button>
-      </div>
-      </div>
-
+      {/* The composer — the reference's bottom bar: one line, a send arrow,
+          and the placeholder names what it is for (a natural-language memory
+          the model will store). The old bar said "Add a memory, e.g. …",
+          which read like a form field; this one reads like a sentence you
+          would say. */}
       <BottomAddBar
         testId="memory-add"
-        placeholder="Add a memory, e.g. “My plant is named Gerald”"
+        placeholder="Tell August what to remember, e.g. “My dog’s name is Beans”"
         value={addText}
         onChange={setAddText}
         onSubmit={addGlobalMemory}
@@ -1767,158 +1783,98 @@ function BottomAddBar({
   );
 }
 
-function KindChip({
-  label,
-  count,
-  active,
-  onClick,
-}: {
-  label: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[0.65625rem] transition',
-        active
-          ? 'border-primary/50 bg-primary/10 text-foreground'
-          : 'border-border/60 bg-card/40 text-muted-foreground hover:border-primary/30 hover:text-foreground',
-      )}
-      data-testid={`memory-kind-chip-${label}`}
-    >
-      {label}
-      <span className="tabular-nums text-[0.59375rem] opacity-70">{count}</span>
-    </button>
-  );
-}
 
-/* ── §5.1 flat row: kind chip · "title" · relative date · ⋯ ─────────── */
-
+/* One row, the way the reference reads it: the memory's NAME, a one-line
+ * description under it, "Updated <date>" at the right, and — on hover — a
+ * pencil and a trash. No per-row kind chip (the section header already says
+ * what the row is), no checkbox unless select mode is on, no ⋯ menu: the
+ * rarer actions (export, the profile lane, un-parking a retired row) live
+ * in the detail view one click away. */
 function FlatEntryRow({
   entry,
   checked,
-  laneLabel,
-  laneBusy,
-  canRestore,
-  restoreBusy,
+  selectMode,
   onCheck,
   onView,
   onEdit,
   onDelete,
-  onExport,
-  onToggleLane,
-  onRestore,
 }: {
   entry: FlatEntry;
   checked: boolean;
-  /** Label for the profile-lane action, or null when this row has no `kind`
-   *  column (only `facts` rows do — see KIND_EDITABLE_STORE). */
-  laneLabel: string | null;
-  laneBusy: boolean;
-  /** Retired facts offer Restore — the one action a parked row needs. */
-  canRestore: boolean;
-  restoreBusy: boolean;
+  selectMode: boolean;
   onCheck: (v: boolean) => void;
   onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
-  onExport: () => void;
-  onToggleLane: () => void;
-  onRestore: () => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
   const meta = STORE_META[entry.store];
   const canEdit = !!meta?.editable && !meta?.readOnly;
   const canDelete = !!meta?.deletable;
-  const kind = KIND_META[entry.kind];
+  // The second line is the store's own description column when it has one
+  // (facts does), else the memory's body — and only when it says something
+  // the title does not. A short fact has title == summary, and printing the
+  // same words twice is how a list stops being scannable.
+  const detail =
+    entry.description && entry.description !== entry.title
+      ? entry.description
+      : entry.summary && entry.summary !== entry.title
+        ? entry.summary
+        : '';
 
   return (
     <div
-      className={cn('group relative flex items-center gap-2.5 py-2', entry.expired && 'opacity-50')}
+      className={cn('group relative flex items-center gap-3 py-2.5', entry.expired && 'opacity-50')}
       data-testid="memory-flat-row"
       data-kind={entry.kind}
       data-expired={entry.expired ? 'true' : undefined}
     >
-      {/* C-6: bulk-select checkbox. */}
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onCheck(e.target.checked)}
-        className="size-3 shrink-0 accent-primary"
-        aria-label={`Select ${entry.title}`}
-        data-testid="memory-bulk-check"
-      />
-      {/* The KIND BADGE is gone from the row. It was a 56px coloured chip
-          repeated on every single line, and the reference has no per-row kind
-          marker at all — it uses kind as a GROUP HEADER, so the same fact is
-          labelled once by the section it sits in rather than stamped on every
-          row. `data-kind` stays on the row so the grouping below can read it
-          and the existing selectors keep working.
-          The literal quotation marks around the title are gone for the same
-          reason: quoting every line made each memory read as a verbatim blob
-          quoted out of a transcript, which is what a machine key looks like,
-          not what a thing you asked August to remember looks like. */}
+      {selectMode && (
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onCheck(e.target.checked)}
+          className="size-3 shrink-0 accent-primary"
+          aria-label={`Select ${entry.title}`}
+          data-testid="memory-bulk-check"
+        />
+      )}
       <button
         type="button"
         onClick={onView}
         className="flex min-w-0 flex-1 items-baseline gap-3 text-left"
-        title={entry.summary || entry.title}
+        title={detail || entry.title}
+        data-testid="memory-row-open"
       >
-        <span className="min-w-0 shrink-0 basis-2/5 truncate text-[0.78125rem] text-foreground/90">
+        <span className="min-w-0 shrink-0 basis-[38%] truncate text-[0.8125rem] font-medium text-foreground/90">
           {entry.title}
         </span>
-        {/* Only when it says something the name does not. `summary` and `title`
-            are the same string for a short fact (both come from the fact body),
-            so an unconditional second column would print the same words twice
-            on most rows. A long fact is where they differ: the backend caps the
-            derived title at 60 chars (`derive_fact_title`), so this column is
-            the part that was being cut off and hidden behind a tooltip. */}
-        {entry.summary && entry.summary !== entry.title && (
-          <span className="hidden min-w-0 flex-1 truncate text-[0.71875rem] text-muted-foreground/75 sm:block">
-            {entry.summary}
+        {detail && (
+          <span className="hidden min-w-0 flex-1 truncate text-[0.71875rem] text-muted-foreground/70 sm:block">
+            {detail}
           </span>
         )}
       </button>
-      {/* C-2: source badge — imported:<provider> and remember/user visible. */}
-      {entry.source && (
+      {/* State, not decoration: a parked or expiring row must not read as
+          live. One small word each, not a chip family. */}
+      {entry.retired ? (
         <span
-          className="shrink-0 rounded border border-border/50 bg-muted/30 px-1 py-0.5 text-[0.53125rem] font-medium uppercase tracking-wide text-muted-foreground"
-          data-testid="memory-source-badge"
-        >
-          {entry.source}
-        </span>
-      )}
-      {entry.legacy && (
-        <span className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1 py-0.5 text-[0.53125rem] font-medium uppercase text-warning-fg">
-          legacy
-        </span>
-      )}
-      {entry.retired && (
-        <span
-          className="shrink-0 rounded border border-border/50 bg-muted/30 px-1 py-0.5 text-[0.53125rem] font-medium uppercase text-muted-foreground"
-          title="Parked by consolidation — no recall lane carries it. Restore from the ⋯ menu."
+          className="shrink-0 text-2xs text-muted-foreground/60"
+          title="Parked by consolidation — no recall lane carries it. Restore it from the detail view."
           data-testid="memory-retired-badge"
         >
-          retired
+          parked
         </span>
-      )}
-      {entry.expired ? (
-        // C-8: expired rows show the absolute date, dimmed.
+      ) : entry.expired ? (
         <span
-          className="shrink-0 rounded border border-destructive/30 bg-destructive/10 px-1 py-0.5 text-[0.53125rem] font-medium uppercase text-destructive"
+          className="shrink-0 text-2xs text-destructive/80"
           title={`Expired: ${str(entry.row.expiresAt)}`}
           data-testid="memory-expired-badge"
         >
-          expired {str(entry.row.expiresAt).slice(0, 10)}
+          expired
         </span>
       ) : entry.expiring ? (
         <span
-          className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1 py-0.5 text-[0.53125rem] font-medium uppercase text-warning"
+          className="shrink-0 text-2xs text-warning"
           title={`Expires: ${str(entry.row.expiresAt)}`}
           data-testid="memory-expiring-badge"
         >
@@ -1926,172 +1882,39 @@ function FlatEntryRow({
         </span>
       ) : null}
       <span
-        className="shrink-0 text-2xs tabular-nums text-muted-foreground/60"
+        className="shrink-0 text-2xs tabular-nums text-muted-foreground/55"
         title={absoluteDate(asUtc(entry.updated)) || entry.updated}
+        data-testid="memory-row-updated"
       >
-        {timeAgo(asUtc(entry.updated))}
+        {shortUpdated(entry.updated)}
       </span>
-      <div className="relative shrink-0">
-        <button
-          type="button"
-          onClick={() => setMenuOpen((v) => !v)}
-          className="rounded p-0.5 text-muted-foreground/40 transition hover:bg-white/[0.05] hover:text-foreground"
-          aria-label="Entry actions"
-          aria-expanded={menuOpen}
-          data-testid="memory-row-menu"
-        >
-          <MoreHorizontal className="size-3" />
-        </button>
-        {menuOpen && (
-          <RowMenu
-            canEdit={canEdit}
-            canDelete={canDelete}
-            laneLabel={laneLabel}
-            laneBusy={laneBusy}
-            onToggleLane={() => {
-              setMenuOpen(false);
-              onToggleLane();
-            }}
-            onView={() => {
-              setMenuOpen(false);
-              onView();
-            }}
-            onEdit={() => {
-              setMenuOpen(false);
-              onEdit();
-            }}
-            onDelete={() => {
-              setMenuOpen(false);
-              onDelete();
-            }}
-            onExport={() => {
-              setMenuOpen(false);
-              onExport();
-            }}
-            canRestore={canRestore}
-            restoreBusy={restoreBusy}
-            onRestore={() => {
-              setMenuOpen(false);
-              onRestore();
-            }}
-            onClose={() => setMenuOpen(false)}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function RowMenu({
-  canEdit,
-  canDelete,
-  laneLabel,
-  laneBusy,
-  canRestore,
-  restoreBusy,
-  onToggleLane,
-  onView,
-  onEdit,
-  onDelete,
-  onExport,
-  onRestore,
-  onClose,
-}: {
-  canEdit: boolean;
-  canDelete: boolean;
-  /** Profile-lane action label, or null to hide the row (no `kind` column). */
-  laneLabel: string | null;
-  laneBusy: boolean;
-  canRestore: boolean;
-  restoreBusy: boolean;
-  onToggleLane: () => void;
-  onView: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onExport: () => void;
-  onRestore: () => void;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      const el = e.target instanceof Element ? e.target : null;
-      if (!el?.closest('[data-slot="memory-row-menu-pop"]')) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [onClose]);
-
-  const item =
-    'w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-foreground/90 transition';
-
-  return (
-    <div
-      role="menu"
-      data-slot="memory-row-menu-pop"
-      className="absolute right-0 top-6 z-50 w-32 rounded-md border border-border/50 bg-popover py-1 text-xs shadow-2xl"
-    >
-      <button type="button" role="menuitem" onClick={onView} className={item}>
-        View
-      </button>
-      {canEdit && (
-        <button type="button" role="menuitem" onClick={onEdit} className={item}>
-          <Pencil className="size-3 text-muted-foreground" /> Edit
-        </button>
-      )}
-      {/* Profile lane: promote/demote through the same PATCH the Edit path
-          uses. Server-confirmed only — the refetch decides the new chip. */}
-      {laneLabel && (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={onToggleLane}
-          disabled={laneBusy}
-          className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-violet-400 transition disabled:opacity-40"
-          data-testid="memory-row-toggle-lane"
-        >
-          <UserRoundCog className="size-3" /> {laneBusy ? 'Saving…' : laneLabel}
-        </button>
-      )}
-      {/* Un-retire: consolidation parked this row and both recall lanes
-          filter on status, so nothing but this action brings it back. */}
-      {canRestore && (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={onRestore}
-          disabled={restoreBusy}
-          className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-success transition disabled:opacity-40"
-          data-testid="memory-row-restore"
-        >
-          <ArchiveRestore className="size-3" /> {restoreBusy ? 'Restoring…' : 'Restore'}
-        </button>
-      )}
-      <button type="button" role="menuitem" onClick={onExport} className={item}>
-        <Download className="size-3 text-muted-foreground" /> Export
-      </button>
-      {canDelete && (
-        <>
-          <div className="my-1 h-px bg-border/40" />
+      {/* Hover actions; focus-within keeps them reachable without a mouse. */}
+      <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+        {canEdit && (
           <button
             type="button"
-            role="menuitem"
-            onClick={onDelete}
-            className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-destructive transition"
+            onClick={onEdit}
+            aria-label={`Edit ${entry.title}`}
+            title="Edit"
+            className="rounded p-1 text-muted-foreground/60 transition hover:bg-white/[0.05] hover:text-foreground"
+            data-testid="memory-row-edit"
           >
-            <Trash2 className="size-3" /> Delete
+            <Pencil className="size-3" />
           </button>
-        </>
-      )}
+        )}
+        {canDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            aria-label={`Delete ${entry.title}`}
+            title="Delete"
+            className="rounded p-1 text-muted-foreground/60 transition hover:bg-destructive/10 hover:text-destructive"
+            data-testid="memory-row-delete"
+          >
+            <Trash2 className="size-3" />
+          </button>
+        )}
+      </span>
     </div>
   );
 }
@@ -2169,6 +1992,12 @@ function DetailView({
   onCancelEdit,
   onDelete,
   onExport,
+  laneLabel,
+  laneBusy,
+  onToggleLane,
+  canRestore,
+  restoreBusy,
+  onRestore,
 }: {
   store: string;
   row: Row;
@@ -2183,6 +2012,14 @@ function DetailView({
   onCancelEdit: () => void;
   onDelete: () => void;
   onExport: () => void;
+  /** Profile-lane action label, or null when this store has no `kind` column. */
+  laneLabel: string | null;
+  laneBusy: boolean;
+  onToggleLane: () => void;
+  /** A parked (retired) row can be brought back — the one action it needs. */
+  canRestore: boolean;
+  restoreBusy: boolean;
+  onRestore: () => void;
 }) {
   // The row and its pane must not disagree about what an entry is called:
   // `meta.title` is the store's own key column, which is an identifier the
@@ -2200,86 +2037,106 @@ function DetailView({
   const confidence = str(row.confidence);
   const expiresAt = str(row.expiresAt);
   const expired = isExpired(row);
+  const retired = str(row.status) === 'retired';
 
   return (
-    <div className="space-y-4" data-testid="memory-detail-view">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <button
-            type="button"
-            onClick={onBack}
-            className="mb-1 inline-flex items-center gap-1 text-2xs text-muted-foreground transition hover:text-foreground"
-          >
-            <ChevronLeft className="size-3" /> Back to {store}
-          </button>
-          <h2 className="text-lg font-semibold leading-snug text-foreground [overflow-wrap:anywhere]">
-            {title}
-          </h2>
-          {entryKey && entryKey !== title && (
-            <p className="mt-0.5 truncate text-2xs text-muted-foreground/55" data-testid="memory-detail-key">
-              {entryKey}
+    <div className="space-y-5" data-testid="memory-detail-view">
+      {/* The reference's header: a "← Memory" breadcrumb, the entry's name as
+          the title, one quiet meta line (last updated · category · source),
+          and every action on the right — Edit / Export / the lane / Restore /
+          Delete. The old header was a chip row and a "Back to facts" label
+          that named the TABLE, not the page the user came from. */}
+      <div>
+        <button
+          type="button"
+          onClick={onBack}
+          className="mb-2 inline-flex items-center gap-1 text-2xs text-muted-foreground transition hover:text-foreground"
+          data-testid="memory-detail-back"
+        >
+          <ChevronLeft className="size-3" /> Memory
+        </button>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-[1.0625rem] font-semibold leading-snug tracking-tight text-foreground [overflow-wrap:anywhere]">
+              {title}
+            </h2>
+            {entryKey && entryKey !== title && (
+              <p className="mt-0.5 truncate text-2xs text-muted-foreground/55" data-testid="memory-detail-key">
+                {entryKey}
+              </p>
+            )}
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted-foreground/60">
+              {updated && (
+                <span data-testid="memory-detail-updated-inline">Last updated {updated}</span>
+              )}
+              {category && <span>· {category}</span>}
+              {source && <span data-testid="memory-detail-source">· source: {source}</span>}
+              {meta.legacy && <span>· retired writer</span>}
+              {retired && <span data-testid="memory-detail-retired">· parked by consolidation</span>}
+              {expiresAt && (
+                <span
+                  className={expired ? 'text-destructive' : 'text-warning'}
+                  data-testid="memory-detail-expiry"
+                >
+                  · {expired ? 'expired' : 'expires'} {expiresAt.slice(0, 10)}
+                </span>
+              )}
             </p>
-          )}
-          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            {category && (
-              <span className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
-                {category}
-              </span>
-            )}
-            {source && (
-              <span
-                className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground"
-                data-testid="memory-detail-source"
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+            {!meta.readOnly && meta.editable && !editing && (
+              <button
+                type="button"
+                onClick={onStartEdit}
+                className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2 py-1.5 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
+                data-testid="memory-detail-edit"
               >
-                {source}
-              </span>
+                <Pencil className="size-3" /> Edit
+              </button>
             )}
-            {meta.legacy && (
-              <span className="rounded-md border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-warning-fg">
-                legacy
-              </span>
-            )}
-            {expiresAt && (
-              <span
-                className={cn(
-                  'rounded-md border px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide',
-                  expired
-                    ? 'border-destructive/30 bg-destructive/10 text-destructive'
-                    : 'border-warning/30 bg-warning/10 text-warning',
-                )}
-                data-testid="memory-detail-expiry"
+            <button
+              type="button"
+              onClick={onExport}
+              className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2 py-1.5 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
+              data-testid="memory-detail-export"
+            >
+              <Download className="size-3" /> Export
+            </button>
+            {/* The profile lane moved here from the row's ⋯ menu: it is a
+                per-entry decision, not something you do while scanning. */}
+            {laneLabel && (
+              <button
+                type="button"
+                onClick={onToggleLane}
+                disabled={laneBusy}
+                className="inline-flex items-center gap-1 rounded-lg border border-violet-500/30 bg-violet-500/10 px-2 py-1.5 text-2xs text-violet-300 transition hover:bg-violet-500/20 disabled:opacity-40"
+                data-testid="memory-detail-toggle-lane"
               >
-                {expired ? 'expired' : 'expires'} {expiresAt.slice(0, 10)}
-              </span>
+                <UserRoundCog className="size-3" /> {laneBusy ? 'Saving…' : laneLabel}
+              </button>
+            )}
+            {canRestore && (
+              <button
+                type="button"
+                onClick={onRestore}
+                disabled={restoreBusy}
+                className="inline-flex items-center gap-1 rounded-lg border border-success/30 bg-success/10 px-2 py-1.5 text-2xs text-success transition hover:bg-success/20 disabled:opacity-40"
+                data-testid="memory-detail-restore"
+              >
+                <ArchiveRestore className="size-3" /> {restoreBusy ? 'Restoring…' : 'Restore'}
+              </button>
+            )}
+            {meta.deletable && (
+              <button
+                type="button"
+                onClick={onDelete}
+                className="inline-flex items-center gap-1 rounded-lg border border-destructive/40 px-2 py-1.5 text-2xs text-destructive transition hover:bg-destructive/10"
+                data-testid="memory-detail-delete"
+              >
+                <Trash2 className="size-3" /> Delete
+              </button>
             )}
           </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {!meta.readOnly && meta.editable && !editing && (
-            <button
-              type="button"
-              onClick={onStartEdit}
-              className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2 py-1.5 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
-            >
-              <Pencil className="size-3" /> Edit
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onExport}
-            className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2 py-1.5 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
-          >
-            <Download className="size-3" /> Export
-          </button>
-          {meta.deletable && (
-            <button
-              type="button"
-              onClick={onDelete}
-              className="inline-flex items-center gap-1 rounded-lg border border-destructive/40 px-2 py-1.5 text-2xs text-destructive transition hover:bg-destructive/10"
-            >
-              <Trash2 className="size-3" /> Delete
-            </button>
-          )}
         </div>
       </div>
 
@@ -2344,15 +2201,6 @@ function DetailView({
          * fact's title IS its text), because printing it twice under a heading
          * that already says it is an echo, not information. */
         <div className="space-y-4">
-          {updated && (
-            <div data-testid="memory-detail-updated">
-              <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">
-                Last updated
-              </p>
-              <p className="mt-0.5 text-[0.8125rem] text-foreground/90">{updated}</p>
-            </div>
-          )}
-
           {summary && summary !== title && (
             <div data-testid="memory-detail-summary">
               <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">

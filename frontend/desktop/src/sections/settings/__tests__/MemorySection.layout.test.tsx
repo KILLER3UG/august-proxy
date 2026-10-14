@@ -1,10 +1,12 @@
 /* ── MemorySection: the Claude-shaped pane, not a stack of boxes ─────── */
 /* The complaint this pins down: the Memory page read as many nested cards with
- * wide gaps, and opening something swapped a region inside the list. It is now
- * one column of hairline-separated rows under small group labels, and opening a
- * memory, a project or a file replaces the whole content column. So the
- * load-bearing assertions are (a) no card chrome around the groups, and (b) what
- * is NOT in the DOM once a pane opens. */
+ * wide gaps, and the list itself was a click deep behind an "All global
+ * memories" row — so the page whose whole job is showing what August remembers
+ * opened with a row ABOUT the list instead of the list. It is now one column of
+ * hairline-separated rows under named section headings, and opening a memory, a
+ * project or a file replaces the whole content column. So the load-bearing
+ * assertions are (a) the rows are the page, (b) no card chrome around the
+ * groups, and (c) what is NOT in the DOM once a pane opens. */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
@@ -105,36 +107,52 @@ function renderPage() {
   );
 }
 
-describe('MemorySection — one column of rows', () => {
-  it('leads with one line per store and opens Global memory on click', async () => {
+describe('MemorySection — the rows are the page', () => {
+  it('renders the entries themselves, with no click-through row in front of them', async () => {
     renderPage();
-    await screen.findByTestId('memory-group-global');
-    for (const id of [
-      'memory-group-behavior',
-      'memory-group-global',
-      'memory-group-project',
-    ]) {
-      expect(screen.getByTestId(id)).toBeInTheDocument();
-    }
-    // Nothing is browsable yet: the rows live behind the Global memory row.
-    expect(screen.queryByTestId('memory-flat-row')).toBeNull();
-    fireEvent.click(screen.getByTestId('memory-global-row'));
-    expect(await screen.findByTestId('memory-flat-row')).toHaveTextContent('Prefers dark mode');
-    expect(screen.getByTestId('memory-global-pane-header')).toBeInTheDocument();
-    // The behavior gates are settings: they stay visible while browsing
-    // global memory (they used to vanish here — 2026-10-03).
-    expect(screen.getByTestId('memory-group-behavior')).toBeInTheDocument();
+    // The old page opened with one row per store that you had to click to see
+    // anything. That row is gone; the entries paint immediately.
+    expect(screen.queryByTestId('memory-global-row')).toBeNull();
+    const rows = await screen.findAllByTestId('memory-flat-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent('Prefers dark mode');
+    // Grouped under a named section rather than stamped with a per-row chip.
+    expect(within(screen.getByTestId('memory-section-topics')).getByTestId('memory-flat-row')).toBe(
+      rows[0],
+    );
+  });
+
+  it('opens the import door from a banner above the list', async () => {
+    renderPage();
+    const banner = await screen.findByTestId('memory-import-banner');
+    expect(banner).toHaveTextContent('Import memory from other AI providers');
+    expect(within(banner).getByTestId('memory-import-open')).toBeInTheDocument();
+  });
+
+  it('keeps the behaviour gates below the entries they describe', async () => {
+    renderPage();
+    await screen.findByTestId('memory-section-topics');
+    const order = [...document.querySelectorAll('[data-testid]')].map((e) =>
+      e.getAttribute('data-testid'),
+    );
+    // The content comes before the prose about the content's switches.
+    expect(order.indexOf('memory-section-topics')).toBeLessThan(
+      order.indexOf('memory-group-behavior'),
+    );
+    expect(order.indexOf('memory-group-behavior')).toBeLessThan(
+      order.indexOf('memory-group-project'),
+    );
   });
 
   it('dropped the card chrome the groups used to each sit inside', async () => {
     renderPage();
-    await screen.findByTestId('memory-group-global');
+    await screen.findByTestId('memory-group-project');
     // No collapsible cards anywhere in the memory groups.
-    for (const id of ['memory-group-behavior', 'memory-group-global', 'memory-group-project']) {
+    for (const id of ['memory-group-behavior', 'memory-group-project']) {
       expect(within(screen.getByTestId(id)).queryByTestId(/-card-header$/)).toBeNull();
     }
     // Groups are rules, not rounded boxes.
-    expect(screen.getByTestId('memory-group-global').className).toContain('border-t');
+    expect(screen.getByTestId('memory-group-project').className).toContain('border-t');
   });
 
   it('adds from one pinned input at the bottom of the pane', async () => {
@@ -150,15 +168,14 @@ describe('MemorySection — one column of rows', () => {
 describe('MemorySection — a pane replaces the column', () => {
   it('opening a project removes the list pane from the DOM', async () => {
     renderPage();
-    await screen.findByTestId('memory-project-row');
-    fireEvent.click(screen.getByTestId('memory-project-row'));
+    fireEvent.click(await screen.findByTestId('memory-project-row'));
 
     const pane = await screen.findByTestId('memory-project-pane');
     // The pane paints its own loading state before the folder read lands.
     expect(await within(pane).findByTestId('memory-project-file')).toHaveTextContent('memory.md');
-    expect(screen.queryByTestId('memory-group-global')).toBeNull();
+    expect(screen.queryByTestId('memory-section-topics')).toBeNull();
     expect(screen.queryByTestId('memory-group-project')).toBeNull();
-    expect(screen.queryByTestId('memory-flat-list')).toBeNull();
+    expect(screen.queryByTestId('memory-flat-row')).toBeNull();
   });
 
   it('back from the file pane lands on the project, then on the list', async () => {
@@ -187,12 +204,10 @@ describe('MemorySection — a pane replaces the column', () => {
 
   it('opening a memory row fills the column with its detail', async () => {
     renderPage();
-    fireEvent.click(await screen.findByTestId('memory-global-row'));
-    const row = await screen.findByTestId('memory-flat-row');
-    fireEvent.click(within(row).getByTestId('memory-row-menu'));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /view/i }));
+    // One click on the row — the ⋯ menu that used to gate "View" is gone.
+    fireEvent.click(await screen.findByTestId('memory-row-open'));
     await waitFor(() => expect(screen.getByTestId('memory-detail-view')).toBeInTheDocument());
-    expect(screen.queryByTestId('memory-flat-list')).toBeNull();
+    expect(screen.queryByTestId('memory-flat-row')).toBeNull();
     // The detail replaces the whole column (gates included) — that state is
     // the entry, not the browser. Browsing panes keep the gates visible.
     expect(screen.queryByTestId('memory-group-behavior')).toBeNull();
@@ -203,10 +218,7 @@ describe('MemorySection — a pane replaces the column', () => {
    * match against. It stays on the line below, quotable but not the label. */
   it('names the pane by the memory’s text and keeps the key underneath', async () => {
     renderPage();
-    fireEvent.click(await screen.findByTestId('memory-global-row'));
-    const row = await screen.findByTestId('memory-flat-row');
-    fireEvent.click(within(row).getByTestId('memory-row-menu'));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /view/i }));
+    fireEvent.click(await screen.findByTestId('memory-row-open'));
     const detail = await screen.findByTestId('memory-detail-view');
     expect(within(detail).getByRole('heading', { level: 2 })).toHaveTextContent('Prefers dark mode');
     expect(within(detail).getByTestId('memory-detail-key')).toHaveTextContent('user:editor');

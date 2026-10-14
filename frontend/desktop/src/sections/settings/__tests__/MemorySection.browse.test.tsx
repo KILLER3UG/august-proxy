@@ -9,8 +9,8 @@
  * Three contracts, all of which are about ORDER and LABELLING rather than
  * colour:
  *   1. the browse renders above the behaviour toggles;
- *   2. a row carries no per-row kind chip — the kind is a group header, which
- *      is how the reference labels a memory (by the section it sits under);
+ *   2. a row carries no per-row kind chip — the kind is a section heading,
+ *      which is how the reference labels a memory (by the group it sits in);
  *   3. a title is not wrapped in literal quotation marks, and a row with more
  *      to say than its 60-char derived name shows that text.
  *
@@ -18,7 +18,7 @@
  * than pixels. */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -118,27 +118,28 @@ function renderPage() {
 describe('MemorySection — the browse is the page', () => {
   it('renders the memory browse above the behaviour toggles', async () => {
     renderPage();
-    await waitFor(() => expect(screen.getByTestId('memory-group-global')).toBeTruthy());
+    // Both groups exist: the profile row is in "You", the lesson in "Topics".
+    await waitFor(() => expect(screen.getByTestId('memory-section-you')).toBeTruthy());
+    expect(screen.getByTestId('memory-section-topics')).toBeTruthy();
     expect(screen.getByTestId('memory-group-behavior')).toBeTruthy();
 
     const order = [...document.querySelectorAll('[data-testid]')].map((e) =>
       e.getAttribute('data-testid'),
     );
     // The content must come before the prose about the content's switches.
-    expect(order.indexOf('memory-group-global')).toBeLessThan(
+    expect(order.indexOf('memory-section-you')).toBeLessThan(
       order.indexOf('memory-group-behavior'),
     );
   });
 
   it('drops the per-row kind chip and the quotation marks around titles', async () => {
     renderPage();
-    fireEvent.click(await screen.findByTestId('memory-global-row'));
     const rows = await screen.findAllByTestId('memory-flat-row');
     expect(rows.length).toBeGreaterThan(0);
 
     for (const row of rows) {
-      // Kind survives as an attribute (and as a group header when filtered);
-      // the 56px chip repeated on every line is gone.
+      // Kind survives as an attribute and as the SECTION the row sits in; the
+      // 56px chip repeated on every line is gone.
       expect(row.getAttribute('data-kind')).toBeTruthy();
       expect(within(row).queryByTestId('memory-kind-label')).toBeNull();
       // A quoted title reads as a blob lifted out of a transcript.
@@ -148,7 +149,6 @@ describe('MemorySection — the browse is the page', () => {
 
   it('shows the rest of a long fact instead of truncating it into a tooltip', async () => {
     renderPage();
-    fireEvent.click(await screen.findByTestId('memory-global-row'));
     const rows = await screen.findAllByTestId('memory-flat-row');
     const long = rows.find((r) => r.textContent?.includes('A stale cache'));
     expect(long).toBeTruthy();
@@ -159,7 +159,6 @@ describe('MemorySection — the browse is the page', () => {
 
   it('does not print the same words twice when title and body are the same', async () => {
     renderPage();
-    fireEvent.click(await screen.findByTestId('memory-global-row'));
     const rows = await screen.findAllByTestId('memory-flat-row');
     const short = rows.find((r) => r.textContent?.includes('Prefers dark mode'));
     expect(short).toBeTruthy();
