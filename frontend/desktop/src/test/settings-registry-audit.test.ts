@@ -4,10 +4,10 @@
  *   - every section icon is unique within the registry
  *   - every keyword is owned by exactly one section
  *   - every section.category references a declared category id
- *   - every section declares a valid `tier` (`basic` or `advanced`)
+ *   - every section declares a valid `tier` (`basic` or `hidden`)
  *   - legacy alias resolution is stable
- *   - the 3 header groups (Settings / Agent Capabilities / Data &
- *     Statistics) each hold at least 2 sections (no singleton headers)
+ *   - the 4 header groups (Setup / Agent / Data / App)
+ *     each hold at least 2 sections (no singleton headers)
  *
  * If any of these regress, the IA has been broken. The build will fail
  * rather than silently ship a buggy left rail.

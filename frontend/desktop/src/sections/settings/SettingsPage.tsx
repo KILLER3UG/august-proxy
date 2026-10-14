@@ -23,8 +23,8 @@ import {
 import { WorkspaceShell, type WorkspaceSectionMeta } from '@/components/workspace/WorkspaceShell';
 import { useProviderOnboardingState } from '@/hooks/useProviderOnboardingState';
 
-/** Header IA: 3 header groups (Settings / Agent Capabilities / Data &
- *  Statistics, 2026-08-28 restructure). Rail shows headers, not 38 rows. */
+/** Header IA: 4 header groups (Setup / Agent / Data / App), added by
+ *  the `app` category after the 2026-08-28 restructure. Rail shows headers, not rows. */
 const HUB_CATEGORY_IDS = new Set(SETTINGS_CATEGORIES.map((c) => c.id));
 const LEGACY_HUB_MAP: Record<string, string> = {
   settings: 'basics',

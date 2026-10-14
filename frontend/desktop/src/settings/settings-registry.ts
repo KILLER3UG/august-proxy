@@ -2,7 +2,7 @@
 /* Drives the left rail, global search, route resolution, and the
  * parallel chat-side workspace panel.
  *
- * 3 header groups (Settings / Agent Capabilities / Data & Statistics),
+ * 4 header groups (Setup / Agent / Data / App),
  * 44 sections. The headers are the rail; each header expands its related
  * sections as an inline tree (see `docs/settings-audit.md`).
  *
@@ -110,10 +110,10 @@ export interface SettingsCategory {
 }
 
 /**
- * Top-level header groups shown in the sidebar rail (2026-08-28
- * restructure: the previous 8 hubs were folded into three headers per
- * the UI enhancement request). Headers group related sections; the rail
- * expands each header's sections as an inline tree.
+ * Top-level header groups shown in the sidebar rail (the 2026-08-28
+ * restructure folded the previous 8 hubs into three headers per the UI
+ * enhancement request, and a fourth — App — was added later). Headers group
+ * related sections; the rail expands each header's sections as an inline tree.
  */
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   {

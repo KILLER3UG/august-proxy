@@ -40,8 +40,8 @@ export interface WorkspaceSectionMeta {
 }
 
 /** Map of category id → lucide icon for the rail group header.
- *  3 header groups (2026-08-28 restructure): Basics / Agent
- *  Capabilities / Data & Statistics. */
+ *  4 header groups (Setup / Agent / Data / App;
+ *  the fourth was added after the 2026-08-28 restructure). */
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
   basics: Settings2,
   capabilities: BrainCircuit,
@@ -107,7 +107,7 @@ export function WorkspaceShell({
   }, [sections]);
 
   // Header IA: no tier filter — all sections stay reachable, but the rail
-  // only shows the 3 header groups when not searching. Search bypasses
+  // only shows the 4 header groups when not searching. Search bypasses
   // headers and surfaces matching sections directly (grouped by category)
   // so deep discovery still works. Hidden sections never appear as rail
   // rows; they live inside their parent's stacked cards or as tree

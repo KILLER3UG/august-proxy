@@ -1,6 +1,6 @@
 /* ── WorkspaceShell — header IA (no advanced toggle) ──────────────── */
-/* Since the 2026-08-28 restructure the rail shows 3 header groups
- * (Settings / Agent Capabilities / Data & Statistics), not section rows.
+/* Since the 2026-08-28 restructure the rail shows grouped headers
+ * (Setup / Agent / Data / App — four, after `app` was added), not section rows.
  * Search surfaces matching sections grouped by category. */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
