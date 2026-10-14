@@ -4,9 +4,11 @@
 /* Gated by `import.meta.env.DEV` in routes.ts — never included in    */
 /* production builds.                                                  */
 
+import { useRef, useState } from 'react';
 import { useThemeStore, setThemeMode, setTextSize } from '@/lib/theme';
 import type { ThemeMode, TextSize } from '@/lib/theme';
 import { Surface, type SurfaceElevation } from '@/components/ui/card';
+import { useStickToBottomScroll } from '@/sections/chat/hooks/useStickToBottomScroll';
 
 interface ColorToken {
   name: string;
@@ -265,6 +267,59 @@ function ThemeSwitcher() {
   );
 }
 
+
+/** Real-browser harness for the transcript pin. `/_design` is dev-only and
+ *  needs no backend, so an e2e run can drive the hook with a genuine viewport
+ *  — the in-app automation browser never dispatches scroll events, which is
+ *  what made three earlier attempts here unreadable. */
+function ScrollPinLab() {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const pinnedToBottomRef = useRef(true);
+  const [rows, setRows] = useState(40);
+  const [pinned, setPinned] = useState(true);
+
+  useStickToBottomScroll({
+    scrollRef,
+    pinnedToBottomRef,
+    streaming: false,
+    sessionId: 'design-lab',
+    loadedSessionId: 'design-lab',
+    messagesVersion: rows,
+    hasContent: true,
+    onPinnedChange: setPinned,
+  });
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          data-testid="lab-jump-up"
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+          onClick={() => {
+            const el = scrollRef.current;
+            if (el) el.scrollTop = Math.max(0, el.scrollTop - 400);
+          }}
+        >
+          Move up 400px (no wheel event)
+        </button>
+        <span data-testid="lab-pinned">pinned: {String(pinned)}</span>
+      </div>
+      <div
+        ref={scrollRef}
+        data-testid="lab-scroller"
+        className="chat-scroll h-64 overflow-y-auto rounded-xl border border-border bg-card p-3"
+      >
+        {Array.from({ length: rows }, (_, i) => (
+          <p key={i} className="py-1 text-sm text-muted-foreground">
+            line {i + 1} — synthetic transcript row
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function DesignRoute() {
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -342,6 +397,13 @@ export function DesignRoute() {
                 </span>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-2xl font-semibold tracking-display">Streaming scroll pin</h2>
+          <div className="rounded-xl border border-border bg-card p-4">
+            <ScrollPinLab />
           </div>
         </section>
       </div>
