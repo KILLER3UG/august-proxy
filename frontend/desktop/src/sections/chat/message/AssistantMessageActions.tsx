@@ -40,7 +40,10 @@ export function AssistantMessageActions({
   return (
     <div className={cn(
       "flex items-center gap-1 mt-1 transition-opacity duration-150 self-start",
-      showActions ? "opacity-100" : "opacity-0 group-focus-within:opacity-100"
+      /* `group-focus-within:` was dead here — no ancestor carries `group`, so
+         keyboard focus landed on four invisible buttons. Revealing on the row's
+         own `:focus-within` needs no ancestor and matches DisclosureRow. */
+      showActions ? "opacity-100" : "opacity-0 focus-within:opacity-100"
     )}>
       <button
         onClick={onSpeak}

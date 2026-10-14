@@ -106,7 +106,7 @@ export function UserMessageBubble({
       <div
         className={cn(
           'mt-1 mr-1 flex items-center gap-1 self-end transition-opacity duration-150',
-          showActions ? 'opacity-100' : 'opacity-0',
+          showActions ? 'opacity-100' : 'opacity-0 focus-within:opacity-100',
         )}
       >
         {/* No timestamp on the user bubble. It was rendered here with

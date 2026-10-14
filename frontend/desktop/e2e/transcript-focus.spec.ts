@@ -1,15 +1,23 @@
 /**
- * Real-browser check of the working strip above the composer.
+ * Real-browser checks of the transcript's hidden-but-focusable controls.
  *
- * The strip is the live activity line: a phase pill, the sentence stack, and —
- * once the model has posted a plan — a `<button>` (`working-todos-toggle`) that
- * expands the checklist. When no turn is streaming the strip collapses to
- * `height:0`, fades to `opacity:0` and is `aria-hidden`. `aria-hidden` does not
- * remove a control from the tab order, so the app kept an invisible, focusable
- * button above the composer: Tab landed on it, Enter expanded a checklist that
- * could not be seen. `inert` is what actually withdraws the subtree, and jsdom
- * only reflects the attribute — it never refuses the focus. So both states of
- * the real pane are mounted in the dev lab and Chromium reads the difference.
+ * Two shapes of the same defect, both measured in Chromium because jsdom
+ * renders a class and stops there — it never computes opacity, and never
+ * refuses a focus.
+ *
+ * 1. The working strip. It is the live activity line above the composer: a
+ *    phase pill, the sentence stack, and — once the model has posted a plan —
+ *    a button that expands the checklist. With no turn streaming it collapses
+ *    to `height:0`, fades to `opacity:0` and is `aria-hidden`. `aria-hidden`
+ *    does not withdraw a control from the tab order, so the app kept an
+ *    invisible, focusable button above the composer: Tab landed on it, Enter
+ *    expanded a checklist nobody could see. `inert` is what removes it.
+ * 2. The per-message action rows. Hidden the same way (opacity only), and they
+ *    carry seven buttons per exchange. The assistant row asked for
+ *    `group-focus-within:` while no ancestor carries `group`, so the reveal
+ *    never fired; the user row asked for nothing. Both now reveal on their own
+ *    `:focus-within`, which is what the transition has to settle before the
+ *    computed value moves — the reading is taken after it does.
  */
 import { expect, test, type Page } from '@playwright/test';
 
@@ -18,7 +26,20 @@ const strip = (page: Page, state: 'collapsed' | 'live') =>
     .getByTestId(`lab-strip-${state}`)
     .locator('[data-testid="aug-working-indicator"]');
 
-test.describe('the working strip above the composer', () => {
+async function opacityOnFocus(page: Page, ariaLabel: string) {
+  const btn = page.getByTestId('lab-working-strip').locator(`button[aria-label="${ariaLabel}"]`).first();
+  const row = btn.locator('xpath=..');
+  const before = await row.evaluate((el) => getComputedStyle(el).opacity);
+  await btn.focus();
+  await page.waitForTimeout(300);
+  const focused = await row.evaluate((el) => getComputedStyle(el).opacity);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.waitForTimeout(300);
+  const blurred = await row.evaluate((el) => getComputedStyle(el).opacity);
+  return { before, focused, blurred };
+}
+
+test.describe('the transcript’s hidden controls', () => {
   test.beforeEach(async ({ page }) => {
     // 404, not a mock 200: an unknown route must look absent, or the client
     // iterates a payload shape the backend would never send.
@@ -83,5 +104,17 @@ test.describe('the working strip above the composer', () => {
     await todos.click();
     await expect(page.getByTestId('lab-strip-live').getByTestId('working-todo-row')).toHaveCount(3);
     await expect(todos).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('the assistant action row reveals itself when focus reaches it', async ({ page }) => {
+    test.setTimeout(60_000);
+    const read = await opacityOnFocus(page, 'Copy');
+    expect(read).toEqual({ before: '0', focused: '1', blurred: '0' });
+  });
+
+  test('the user action row does the same', async ({ page }) => {
+    test.setTimeout(60_000);
+    const read = await opacityOnFocus(page, 'Copy message');
+    expect(read).toEqual({ before: '0', focused: '1', blurred: '0' });
   });
 });

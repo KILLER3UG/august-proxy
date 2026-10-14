@@ -470,7 +470,7 @@ function ToolRowLab() {
  * holds a real button (`working-todos-toggle`), which `aria-hidden`
  * alone leaves in the tab order. `inert` is what actually removes it, and only
  * Chromium enforces that, so the two states are mounted side by side here for
- * `e2e/working-strip-inert.spec.ts` to read the focus behaviour off both.
+ * `e2e/transcript-focus.spec.ts` to read the focus behaviour off both.
  */
 const LAB_STRIP_ACTIVITY = {
   headline: 'Working',
