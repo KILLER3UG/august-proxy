@@ -165,6 +165,14 @@ function transcriptToBlocks(events: Array<Record<string, unknown>>): MessageBloc
 
 /** Part 27 A4: "Progress n/m" header chip opening a completed/current/pending
  *  popover — replaces the always-inline Worker plan card with one affordance. */
+/** Completed/total for a worker's todo list, or null when it has none — the
+ *  roster row shows `x/y` so progress is comparable across workers without
+ *  opening each one. */
+function todoProgress(todos?: WorkbenchTodo[]) {
+  if (!todos || todos.length === 0) return null;
+  return { done: todos.filter((t) => t.status === 'completed').length, total: todos.length };
+}
+
 function ProgressPopover({ todos }: { todos: WorkbenchTodo[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -731,7 +739,9 @@ export function RightDrawerSubagentsSection({
         </p>
       ) : (
         <div className="px-1.5 py-1.5">
-          {visibleEntries.map(({ key, agent }) => (
+          {visibleEntries.map(({ key, agent }) => {
+            const prog = todoProgress(agent.todos);
+            return (
             <div key={key} className="group relative">
               <button
                 type="button"
@@ -744,6 +754,18 @@ export function RightDrawerSubagentsSection({
                 <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-foreground/90">
                   {displayLabels.get(key) || getAgentRoleLabel(agent.agentId) || 'Agent'}
                 </span>
+                {/* The todo list used to be readable only for the ONE selected
+                    worker, so with several running you could not see which had
+                    ground forward and which was stuck without clicking each. */}
+                {prog && (
+                  <span
+                    className="shrink-0 font-mono text-2xs text-muted-foreground/55"
+                    title={`${prog.done} of ${prog.total} steps done`}
+                    data-testid={`right-drawer-subagent-progress-${key}`}
+                  >
+                    {prog.done}/{prog.total}
+                  </span>
+                )}
                 <span className="shrink-0 text-xs text-muted-foreground/55">
                   {agent.status === 'queued' && agent.queuePosition
                     ? `queued #${agent.queuePosition}${agent.queueTotal && agent.queueTotal > 1 ? `/${agent.queueTotal}` : ''}`
@@ -764,7 +786,8 @@ export function RightDrawerSubagentsSection({
                 </button>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

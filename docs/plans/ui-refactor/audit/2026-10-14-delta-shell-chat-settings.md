@@ -109,7 +109,17 @@ todos, plan on plan (`ChatLayout.tsx:268-312`).
 | tasks (todos), plan, subagents, artifacts, circuit, file, diff, notes | yes | **keep** |
 | routines | bot chat | keep for bot chats only |
 | jobs | filtered by session, machine tray | move to a global surface |
-| terminal, preview, browser | **no — machine state** | remove from the chat drawer (duplicates `BottomTerminalDock`) |
+| terminal | **no — machine state** | removable: `BottomTerminalDock` really does serve it |
+| preview, browser | **no — machine state** | **DO NOT REMOVE — correction below** |
+
+> **Correction, made after implementing Stage C.** The table above originally
+> said terminal/preview/browser all "duplicate `BottomTerminalDock`". That came
+> from a subagent's summary and I did not check it. `BottomTerminalDock.tsx` is
+> a terminal strip and nothing else — it has no preview list and no browser
+> surface. Removing preview or browser from the drawer would have deleted their
+> only UI. Only the terminal is genuinely duplicated. The plan's own rule
+> ("a keep/move/remove line before anything is wired off") is what caught this,
+> because writing the line forced the check.
 
 **Multi-subagent scaling, measured:** 1 agent → strip + list. 4 → strip is `tabs.slice(-5)` (`:519`) + full
 roster (`:734`). **12 → the strip shows only the last 5 (+selected); the other 7 are reachable only by

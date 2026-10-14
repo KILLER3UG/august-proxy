@@ -221,6 +221,33 @@ describe('RightDrawerSubagentsSection', () => {
     expect(popover.textContent).toContain('1 completed');
   });
 
+  it('shows each worker\'s todo progress in the roster without selecting it', async () => {
+    // The todo list used to be readable only for the ONE selected worker, so
+    // with several running you could not tell which had ground forward.
+    listAgentsMock.mockResolvedValue({
+      agents: [
+        {
+          taskId: 'p-1',
+          agentId: 'general',
+          goal: 'Audit modules',
+          status: 'running',
+          todos: [
+            { id: '1', content: 'read routers', status: 'completed' },
+            { id: '2', content: 'read services', status: 'pending' },
+            { id: '3', content: 'write report', status: 'pending' },
+          ],
+        },
+        { taskId: 'p-2', agentId: 'scout', goal: 'Other work', status: 'running' },
+      ],
+      meta: {},
+    });
+    renderSection();
+    const badge = await screen.findByTestId('right-drawer-subagent-progress-p-1');
+    expect(badge.textContent).toBe('1/3');
+    // A worker with no todo list gets no badge — the row is not a progress bar.
+    expect(screen.queryByTestId('right-drawer-subagent-progress-p-2')).toBeNull();
+  });
+
   it('disambiguates multiple workers with the same role', async () => {
     listAgentsMock.mockResolvedValue({
       agents: [
