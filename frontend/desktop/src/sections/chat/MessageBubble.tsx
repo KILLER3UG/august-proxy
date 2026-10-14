@@ -197,10 +197,22 @@ function MessageBubbleInner({
         </div>
       );
     }
-    // Card component not found — fall through to a small toast-style hint.
+    // No card component for this command. No built-in in
+    // `api/voice/registry.ts` declares `uiCard`, so this is the branch every
+    // voice-command message actually takes today — and it used to print the
+    // registry id as the sentence ("Unknown card: open_browser"), which the
+    // stage-1 inventory had already filed as noise. Say what happened, name the
+    // command the way a person would, and keep the id where support can read it.
+    const spokenName = cmd ? cmd.slashCommand || cmd.description : null;
     return (
-      <div className="flex justify-start text-xs text-muted-foreground">
-        Unknown card: {message.commandId}
+      <div
+        className="flex justify-start text-xs text-muted-foreground"
+        title={message.commandId}
+        data-command-id={message.commandId}
+      >
+        {spokenName
+          ? `“${spokenName}” has no result card in this build.`
+          : 'This message refers to a voice command that is no longer installed.'}
       </div>
     );
   }

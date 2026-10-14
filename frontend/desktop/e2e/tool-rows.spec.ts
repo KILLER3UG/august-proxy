@@ -102,3 +102,24 @@ test.describe('approval card title', () => {
     expect(read.allText, 'the exact command stays visible for approval').toContain('C:');
   });
 });
+
+test.describe('a transcript row that has nothing human to say', () => {
+  test('names the command, and keeps the registry id in the attributes', async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.route((url) => url.pathname.startsWith('/api/'), (route) =>
+      route.fulfill({ status: 404, json: { error: 'Not found' } }),
+    );
+    await page.goto('/_design?lab=working', { waitUntil: 'domcontentloaded' });
+    const row = page.locator('[data-command-id="compact"]').first();
+    await expect(row).toBeVisible();
+
+    const text = (await row.textContent() || '').replace(/\s+/g, ' ').trim();
+    // No built-in voice command declares a `uiCard`, so this fallback is what
+    // every voice-command message renders. It used to print the id as the
+    // sentence — "Unknown card: compact" — which is the same class of defect as
+    // showing a path where a file name belongs.
+    expect(text).toContain('/compact');
+    expect(text).not.toMatch(/Unknown card/i);
+    expect(await row.getAttribute('title')).toBe('compact');
+  });
+});

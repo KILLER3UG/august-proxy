@@ -491,6 +491,9 @@ const LAB_STRIP_ACTIVITY = {
 const LAB_STRIP_MESSAGES: ChatMessage[] = [
   { id: 'u1', role: 'user', content: 'Take the parity pass end to end.', timestamp: '2026-10-14T10:00:00Z' },
   { id: 'a1', role: 'assistant', content: 'Working through it now.', timestamp: '2026-10-14T10:00:04Z' },
+  // A voice-command row, so the branch that prints its fallback text is
+  // rendered by the real MessageBubble rather than reasoned about.
+  { id: 'v1', role: 'assistant', kind: 'voice-command-card', commandId: 'compact', content: '', timestamp: '2026-10-14T10:00:06Z' },
 ];
 
 function WorkingStripPane({ streaming }: { streaming: boolean }) {
