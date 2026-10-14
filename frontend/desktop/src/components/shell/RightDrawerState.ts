@@ -99,6 +99,7 @@ export function useRightDrawer(): RightDrawerState {
   const file = useRightDrawerStore((s) => s.file);
   const chooserActive = useRightDrawerStore((s) => s.chooserActive);
   const bottomTerminal = useRightDrawerStore((s) => s.bottomTerminal);
+  const hidden = useRightDrawerStore((s) => s.hidden);
   return {
     open,
     sections,
@@ -108,6 +109,7 @@ export function useRightDrawer(): RightDrawerState {
     file,
     chooserActive,
     bottomTerminal,
+    hidden,
   };
 }
 

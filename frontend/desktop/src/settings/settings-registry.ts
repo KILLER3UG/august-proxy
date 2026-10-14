@@ -628,8 +628,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Durable kanban board for multi-agent work across sessions.',
     icon: Flame,
     category: 'capabilities',
-    // Left the sidebar with the other configuration surfaces; a rail entry is
-    // the only way to reach it now that the row is gone.
+    // Left the sidebar with the other configuration surfaces. Reachable from the
+    // Settings rail and from the command palette (`nav: true` feeds SECTION_NAV_ITEMS)
+    // — not from the chat rail any more.
     tier: 'basic',
     keywords: ['board', 'cards'],
     legacyAliases: ['kanban'],

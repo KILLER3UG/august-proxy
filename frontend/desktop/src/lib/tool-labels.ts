@@ -290,7 +290,8 @@ export function commandDisplay(command: string): string {
       body.startsWith('\\\\') ||
       body.startsWith('//') ||
       body.startsWith('/') ||
-      body.startsWith('~/');
+      body.startsWith('~/') ||
+      body.startsWith('~\\');
     if (!isAbsolute) return token;
     const base = body.split(/[\\/]/).filter(Boolean).pop();
     return base ? `${quote}${base}${quote}` : token;

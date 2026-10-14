@@ -145,6 +145,9 @@ describe('getToolLabel mapping and cleaning', () => {
     expect(commandDisplay('python3 /home/rober/work/scene.py')).toBe('python3 scene.py');
     expect(commandDisplay('~/.aug/kernel/venv/Scripts/python.exe scene.py'))
       .toBe('python.exe scene.py');
+    // The Windows spelling of the same home form was unmatched, so the whole
+    // path printed on the row.
+    expect(commandDisplay('~\\Dev\\notes\\scene.py')).toBe('scene.py');
     expect(commandDisplay('cat "C:/Users/rober/My Notes/a b.txt"'))
       .toBe('cat "a b.txt"');
 

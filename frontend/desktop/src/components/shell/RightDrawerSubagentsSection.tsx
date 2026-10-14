@@ -534,17 +534,15 @@ export function RightDrawerSubagentsSection({
     [entries, dismissed],
   );
 
+  // Every worker gets a tab, in order: the strip already scrolls
+  // (`overflow-x-auto`), so slicing to the last five did not tidy it — it
+  // removed the other workers from the DOM, where no amount of scrolling could
+  // reach them.
   const tabs = visibleEntries.map((e) => ({
     taskId: e.key,
     label: displayLabels.get(e.key) || getAgentRoleLabel(e.agent.agentId),
     elapsed: typeof e.agent.elapsed === 'number' ? e.agent.elapsed : undefined,
   }));
-  // Every worker gets a tab. The strip already scrolls (`overflow-x-auto`), so
-  // slicing to the last five did not keep the strip tidy — it removed the other
-  // workers from the DOM, where no amount of scrolling could reach them. With a
-  // dozen running, seven were findable only through the roster or the search
-  // dropdown, and the tab list gave no sign they existed.
-  const stripTabs = tabs;
 
   const tabsStrip =
     entries.length > 0 ? (
@@ -557,7 +555,7 @@ export function RightDrawerSubagentsSection({
           aria-label="Subagent workers"
           className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
         >
-          {stripTabs.map((t) => {
+          {tabs.map((t) => {
             const agent = visibleEntries.find((e) => e.key === t.taskId)?.agent;
             if (!agent) return null;
             const active = t.taskId === selectedTaskId;
