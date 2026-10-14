@@ -184,3 +184,78 @@ So the shape is not \"too many destinations on screen\" — the rail already sho
 surface. That is the real parity gap against Claude's four-destination, all-visible model,
 and it is why §5 item 5 asks whether hidden-by-search is the intended depth rather than
 assuming fewer rail rows is the fix.
+
+## 7. Verdict ledger — the five 2026-10-03 audits re-judged against today's tree
+
+Stage A's deliverable was not only the delta above but a verdict on the five audits this
+plan was built from (`2026-10-03-audit-{chat-surface,shell-sidebar-drawer,settings-memory-skills,tokens-icons-update,mobile}.md`).
+Five read-only agents, one per file, each told to re-read the named location and
+re-measure every count rather than inherit it. Verdict vocabulary: **still-true** (the
+defect is still there), **already-done** (fixed by later work, the audit line is now
+history), **reversed** (later work removed the thing the audit asked for, deliberately),
+**stale** (the file or line the audit cites no longer exists or moved), **mixed**.
+
+| Audit | Judged | still-true | already-done | reversed | stale | mixed |
+|---|---|---|---|---|---|---|
+| chat surface | 47 | 28 | 14 | 2 | 3 | 0 |
+| shell / sidebar / drawer | 97 | 45 | 42 | 2 | 8 | 0 |
+| settings / memory / skills | 45 | 20 | 13 | 3 | 7 | 2 |
+| tokens / icons / update | 46 | 24 | 12 | 6 | 4 | 0 |
+| mobile companion | 35 | 13 | 7 | 12 | 3 | 0 |
+| **Total** | **270** | **130** | **88** | **25** | **25** | **2** |
+
+**113 of 270 (42%) no longer describe the tree.** That is the number the plan should be
+remembered for, not the list of defects: eleven days of commits retired two fifths of the
+audit before this pass got to it, and the mobile audit is the worst case — a third of its
+items were undone by `5723de9f`, which landed the day *after* it was written. Any future
+plan built on these files has to re-judge them first; that is why this ledger exists.
+
+The reversals that change a decision rather than a line count:
+
+- **The drawer's resize re-clamp I cited as the model for the sidebar is gone.** `1970da87`
+  deleted the drawer's `addEventListener('resize')`, and `useResizablePane.ts:90-94` never
+  had one. So "the sidebar should clamp like the drawer" was an argument from a control
+  that no longer exists; the sidebar/drawer asymmetry is real, the direction is undecided.
+- **`SavePointChip` / `SkillEvolvedChip` "absent from the transcript"** — reversed: both
+  exist and are mounted at `AssistantMessageContent.tsx:266-269` (`d66133a0`). This plan's
+  §0 carried the wrong line until it was corrected here.
+- **Light mode second-class (29 `dark:` sites) and the raw status palette (52 files)** —
+  reversed: 12 `dark:` in 4 files, 8 raw status hits in 4 files, and `raw-status-color` is
+  now a `check:design` rule rather than a census item. `text-3xs` (441 uses) is at 0.
+- **"de-branding purple/violet/indigo hurts mobile"** — reversed *and* its premise is false:
+  the CSS rules were deleted, but the six desktop files still contain those hues, so the
+  drift is on the desktop side, not the WebView's.
+- **Settings tiers 15/2/28 and "3 header groups"** — reversed: `SettingsTier` is now
+  `basic | hidden` (18/26 of 44) and `SETTINGS_CATEGORIES` has 4 entries, asserted by
+  `src/test/settings-registry-audit.test.ts:32`. Six comments in four files still *said*
+  three headers, and one still described the retired `advanced` tier; all seven lines are
+  corrected in this pass, because a comment that names a tier nobody can select is how the
+  next audit re-invents it.
+
+Of the 130 still-true items, this pass closed the three that were in its own scope and were
+measurable without a model call — all three are now fixed and pinned by a real-Chromium
+check, not by a unit test:
+
+| Still-true item | Owner | Closed in |
+|---|---|---|
+| `(3) collapsed strip keeps focusable content` | `sections/chat/ChatThreadMessagePane.tsx:345` | `31d3223a` — `inert` on the collapsed slot; measured, reverting the attribute makes Chromium focus the invisible plan toggle |
+| `(3) assistant / user action rows keyboard-unreachable` + `(2) dead group-focus-within class` | `message/AssistantMessageActions.tsx:43`, `message/UserMessageBubble.tsx:109` | this commit — the assistant row asked for `group-focus-within:` with no `group` ancestor and the user row asked for nothing; both measured at opacity 0 while focused before, 1 after |
+| `§8 check-design passes at 496, 5 rules` | `pages/DesignRoute.tsx` | this commit — the gate had since gone red on two hand-rolled lab buttons the last commit introduced; they use the `Button` primitive now |
+
+The rest of the still-true column is not noise, but it is not this plan's scope either. The
+ones a reader should triage next, because each is small and user-visible: the finished
+turn's todos are rendered nowhere (`ChatThreadMessagePane.tsx` gates the strip on
+`streaming`, and the timeline never reads `todos`); `Backdrop.tsx:26-38` has no Escape, role
+or focus trap; `ModelRow.tsx:251` opens a modal with no trap and no initial focus; the drawer
+silently drops a fifth section over `MAX_SECTIONS` (`RightDrawerState.ts:49`); `ClarifyTool`
+binds a document-wide listener with `aria-modal={false}`; and three chat-surface font sizes
+(11.5 / 12.5 / 13px) exist only as un-tokenised rem literals, one of which was a dead class
+the row rendered over anyway (measured 13px on both `/` and `/_design`, so the literal that
+said 12.5px was removed).
+
+**How these counts were produced, so they can be re-run:** the five reports were extracted
+from the session's own completion records and counted with
+`grep -o -E "(still-true|reversed-by-later-work|reversed|already-done|stale|mixed)"` per
+report section. It counts verdict *tokens*, so a sentence naming two verdicts contributes
+twice — the columns are accurate to about one item each, and the item identities are the
+reports themselves, not this table.
