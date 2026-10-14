@@ -22,9 +22,9 @@ import { setOnboardingSeen, shouldShowOnboarding } from '@/components/overlays/O
 import { useAccountStore } from '@/store/account';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
+import { SettingsSelect } from '@/components/settings/SettingsSelect';
 import { SettingsTooltip } from '@/components/settings/SettingsTooltip';
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
 import { OsNotifyService } from '@/lib/os-notify';
 
 const IS_MAC =
@@ -57,10 +57,6 @@ const VOICE_SPEEDS: { id: VoiceSpeed; label: string }[] = [
   { id: 'normal', label: 'Normal' },
   { id: 'fast',   label: 'Fast' },
 ];
-
-const inputClass =
-  'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground ' +
-  'placeholder:text-muted-foreground/60 outline-none transition focus:border-primary/60';
 
 export function GeneralSection() {
   const textSize = useThemeStore((s) => s.textSize);
@@ -149,16 +145,13 @@ export function GeneralSection() {
                 <p className="text-sm font-medium text-foreground">Chat font</p>
                 <p className="text-xs text-muted-foreground">Typeface used for chat messages.</p>
               </div>
-              <select
+              <SettingsSelect
                 value={chatFont}
-                onChange={(e) => setChatFont(e.target.value as ChatFont)}
-                className={cn(inputClass, 'w-40 shrink-0')}
+                onChange={(v) => setChatFont(v as ChatFont)}
+                options={CHAT_FONT_OPTIONS.map((f) => ({ value: f.id, label: f.label }))}
                 aria-label="Chat font"
-              >
-                {CHAT_FONT_OPTIONS.map((f) => (
-                  <option key={f.id} value={f.id}>{f.label}</option>
-                ))}
-              </select>
+                className="w-40 shrink-0"
+              />
             </div>
 
             <SettingsToggle
@@ -176,42 +169,41 @@ export function GeneralSection() {
                   Files you open yourself stay static renders.
                 </p>
               </div>
-              <select
+              <SettingsSelect
                 value={liveHtmlPreview}
-                onChange={(e) => setLiveHtmlPreview(e.target.value as LiveHtmlPreview)}
-                className={cn(inputClass, 'w-40 shrink-0')}
+                onChange={(v) => setLiveHtmlPreview(v as LiveHtmlPreview)}
+                options={[
+                  { value: 'auto', label: "August's files only" },
+                  { value: 'on', label: 'Every file with a path' },
+                  { value: 'off', label: 'Never' },
+                ]}
                 aria-label="Live artifact previews"
-                data-testid="settings-live-html-preview"
-              >
-                <option value="auto">August's files only</option>
-                <option value="on">Every file with a path</option>
-                <option value="off">Never</option>
-              </select>
+                className="w-40 shrink-0"
+              />
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <label className="block space-y-1.5">
+              {/* div, not label: the primitive's control is a button, and a
+                  button is not a labelable element, so the old click-the-text
+                  association would have quietly stopped working. */}
+              <div className="block space-y-1.5">
                 <span className="text-xs font-medium text-foreground">Voice language</span>
-                <select
+                <SettingsSelect
                   value={voice.language}
-                  onChange={(e) => setVoice({ language: e.target.value })}
-                  className={inputClass}
-                >
-                  <option value="en">English (en)</option>
-                </select>
-              </label>
-              <label className="block space-y-1.5">
+                  onChange={(v) => setVoice({ language: v })}
+                  options={[{ value: 'en', label: 'English (en)' }]}
+                  aria-label="Voice language"
+                />
+              </div>
+              <div className="block space-y-1.5">
                 <span className="text-xs font-medium text-foreground">Voice speed</span>
-                <select
+                <SettingsSelect
                   value={voice.speed}
-                  onChange={(e) => setVoice({ speed: e.target.value as VoiceSpeed })}
-                  className={inputClass}
-                >
-                  {VOICE_SPEEDS.map((s) => (
-                    <option key={s.id} value={s.id}>{s.label}</option>
-                  ))}
-                </select>
-              </label>
+                  onChange={(v) => setVoice({ speed: v as VoiceSpeed })}
+                  options={VOICE_SPEEDS.map((s) => ({ value: s.id, label: s.label }))}
+                  aria-label="Voice speed"
+                />
+              </div>
             </div>
           </div>
         </SettingsCard>
