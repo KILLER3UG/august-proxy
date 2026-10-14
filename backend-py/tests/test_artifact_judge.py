@@ -288,3 +288,4 @@ async def test_judge_html_without_chromium_returns_the_receipt(tmp_path, monkeyp
     verdict = await aj.judge_artifact(str(src), 'an svg figure', workspace=str(tmp_path))
     assert verdict['ok'] is False
     assert 'playwright install chromium' in verdict['error']
+
