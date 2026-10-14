@@ -7,22 +7,17 @@ import {
   closeRightDrawer,
   openRightDrawerChooser,
   useRightDrawer,
-  type RightDrawerSectionId,
 } from './RightDrawerState';
 
 export function RightDrawerDropdown({
   drawerOpen,
-  // Kept for call-site compatibility; the chooser replaced the dropdown.
-  onSelect,
   workersBadge = 0,
   artifactsCount = 0,
 }: {
   drawerOpen: boolean;
-  onSelect?: (section: RightDrawerSectionId) => void;
   workersBadge?: number;
   artifactsCount?: number;
 }) {
-  void onSelect;
   const state = useRightDrawer();
 
   return (

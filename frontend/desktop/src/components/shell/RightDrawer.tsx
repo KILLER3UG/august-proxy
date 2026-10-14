@@ -52,7 +52,7 @@ import { RightDrawerJobsSection } from './RightDrawerJobsSection';
 import { RoutinesPane } from '@/components/sidebar/RoutinesPane';
 import { getBot } from '@/api/api-client';
 import type { WorkbenchSession } from '@/types/workbench';
-import { useRightDrawer } from './RightDrawerState';
+import { SECTION_ORDER, useRightDrawer } from './RightDrawerState';
 import { getFileIcon } from '@/lib/file-icon';
 import { PANEL_EASE, PANEL_MS } from '@/lib/motion';
 import { useResizablePane } from '@/hooks/useResizablePane';
@@ -305,8 +305,9 @@ export function RightDrawer({
   );
 }
 
-/** Tab metadata mirrors RightDrawerLauncher's SECTION_META so the strip
- *  shows the same icon + label the user used to open each section. */
+/** Icon + label per section, used by both the tab strip and the "+" chooser
+ *  so the pane names itself the same way wherever the user meets it. Typed as
+ *  a full `Record` over the union, so a new section id cannot render blank. */
 const TAB_META: Record<RightDrawerSectionId, { label: string; Icon: typeof FileDiff }> = {
   preview: { label: 'Preview', Icon: Play },
   diff: { label: 'Diffs', Icon: FileDiff },
@@ -323,18 +324,14 @@ const TAB_META: Record<RightDrawerSectionId, { label: string; Icon: typeof FileD
   jobs: { label: 'Jobs', Icon: Activity },
 };
 
-/** Menu order for the "+" picker (workbench-first, mirrors launcher). */
+/** Menu order for the "+" picker. Derived from the canonical tab order rather
+ *  than restated: the two lists carried the same ten entries by hand, and a
+ *  section added to one could silently vanish from the other. `routines` and
+ *  `jobs` are picker-only — they are never opened as tabs by a flow, only by
+ *  request. `file` is deliberately absent from both: it is opened
+ *  programmatically by `openFileInDrawer` and is not a thing to add. */
 const SECTION_ADD_ORDER: RightDrawerSectionId[] = [
-  'preview',
-  'diff',
-  'terminal',
-  'tasks',
-  'plan',
-  'browser',
-  'notes',
-  'subagents',
-  'artifacts',
-  'circuit',
+  ...SECTION_ORDER,
   'routines',
   'jobs',
 ];
@@ -452,6 +449,7 @@ function SectionChooser({ openSections }: { openSections: RightDrawerSectionId[]
               type="button"
               role="option"
               aria-selected={isOpen}
+              data-testid={`drawer-chooser-${id}`}
               title={isBottomTerminal ? 'Dock a terminal at the bottom' : isOpen ? `${meta.label} is already open` : `Open ${meta.label}`}
               onClick={() => pick(id)}
               className={cn(

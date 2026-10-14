@@ -5,20 +5,27 @@ import type { GitDiffResult } from '@/api/git';
 import type { FileAttachment } from '@/types/chat';
 import { toast } from 'sonner';
 
-export type RightDrawerSectionId =
-  | 'preview'
-  | 'diff'
-  | 'terminal'
-  | 'tasks'
-  | 'plan'
-  | 'browser'
-  | 'notes'
-  | 'subagents'
-  | 'artifacts'
-  | 'circuit'
-  | 'file'
-  | 'routines'
-  | 'jobs';
+/** Every drawer section, declared once. The union type is derived from this
+ *  array so a new section cannot be added to one list and forgotten in another;
+ *  `RightDrawer.test.tsx` asserts the tab order and the "+" picker together
+ *  cover it. */
+export const ALL_SECTION_IDS = [
+  'preview',
+  'diff',
+  'terminal',
+  'tasks',
+  'plan',
+  'browser',
+  'notes',
+  'subagents',
+  'artifacts',
+  'circuit',
+  'file',
+  'routines',
+  'jobs',
+] as const;
+
+export type RightDrawerSectionId = typeof ALL_SECTION_IDS[number];
 
 export interface RightDrawerState {
   open: boolean;
@@ -40,7 +47,7 @@ export interface RightDrawerState {
 }
 
 const MAX_SECTIONS = 4;
-const SECTION_ORDER: RightDrawerSectionId[] = [
+export const SECTION_ORDER: RightDrawerSectionId[] = [
   'preview',
   'diff',
   'terminal',

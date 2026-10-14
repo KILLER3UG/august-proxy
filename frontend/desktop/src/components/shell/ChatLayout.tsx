@@ -81,11 +81,6 @@ export function ChatLayout() {
     }
   }, [rightDrawer.open, rightDrawer.sections.length, rightDrawer.chooserActive, showRightSidebar]);
 
-  const openWorkbenchSidebar = (section: RightDrawerSectionId) => {
-    addRightDrawerSection(section);
-    setShowRightSidebar(true);
-  };
-
   // Ensure global realtime bridge is up (idempotent). Reconcile is only a
   // safety net — live creates/deletes/status arrive via /api/realtime/stream.
   useEffect(() => {
@@ -636,7 +631,6 @@ export function ChatLayout() {
             sidebarCollapsed={collapsed}
             rightDrawerOpen={showRightSidebar}
             onToggleSidebar={() => setCollapsed((c) => !c)}
-            onSelectRightDrawerSection={openWorkbenchSidebar}
             workersBadge={workersBadge}
           />
           <div className="august-content-area flex-1 min-h-0 overflow-hidden relative flex">

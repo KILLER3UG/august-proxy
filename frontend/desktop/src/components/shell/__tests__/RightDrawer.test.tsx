@@ -7,6 +7,8 @@ import {
   hideRightDrawerSection,
   isDrawerPanelVisible,
   toggleRightDrawerSection,
+  ALL_SECTION_IDS,
+  SECTION_ORDER,
   $rightDrawer,
 } from '../RightDrawerState';
 
@@ -70,6 +72,28 @@ describe('RightDrawer section chooser (ZCode "Open tab")', () => {
     expect(terminalCard?.querySelector('svg')).toBeTruthy();
   });
 
+  it('offers every section the state declares, so none can be added silently', () => {
+    // The tab order and the "+" picker used to be two hand-maintained lists,
+    // so a section could exist in state and be unreachable in the UI. The
+    // picker list is now derived; this checks the derived thing, not a constant.
+    act(() => {
+      $rightDrawer.set({ open: true, sections: [], chooserActive: true });
+    });
+    mountChooserDrawer();
+    const chooser = document.querySelector('[data-testid="drawer-section-chooser"]')!;
+    const cards = Array.from(chooser.querySelectorAll('[data-testid^="drawer-chooser-"]'));
+    // `file` is the one section never offered: it is opened by clicking an
+    // attachment, not by asking for a tab.
+    const expected = ALL_SECTION_IDS.filter((id) => id !== 'file');
+    expect(cards.length).toBe(expected.length);
+    for (const id of expected) {
+      expect(cards.some((c) => c.getAttribute('data-testid') === `drawer-chooser-${id}`),
+        `the picker must offer "${id}"`).toBe(true);
+    }
+    expect(new Set(SECTION_ORDER).size).toBe(SECTION_ORDER.length);
+    for (const id of SECTION_ORDER) expect(id).not.toBe('file');
+  });
+
   it('marks already-open sections and picking a card opens it, leaving the chooser', () => {
     act(() => {
       toggleRightDrawerSection('tasks');
@@ -110,7 +134,6 @@ describe('RightDrawer section chooser (ZCode "Open tab")', () => {
       <QueryClientProvider client={qc}>
         <RightDrawerDropdown
           drawerOpen={false}
-          onSelect={() => {}}
           workersBadge={0}
         />
       </QueryClientProvider>,

@@ -32,14 +32,12 @@ import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
 import { useSessionStream } from '@/sections/chat/hooks/useSessionStream';
 import { collectArtifacts } from '@/lib/artifacts';
 import type { Session } from "@/store/sessions";
-import type { RightDrawerSectionId } from "./RightDrawerState";
 
 interface ChatTitlebarProps {
   session: Session | null;
   sidebarCollapsed: boolean;
   rightDrawerOpen: boolean;
   onToggleSidebar: () => void;
-  onSelectRightDrawerSection: (section: RightDrawerSectionId) => void;
   workersBadge?: number;
 }
 
@@ -48,7 +46,6 @@ export function ChatTitlebar({
   sidebarCollapsed,
   rightDrawerOpen,
   onToggleSidebar,
-  onSelectRightDrawerSection,
   workersBadge = 0,
 }: ChatTitlebarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
@@ -246,7 +243,6 @@ export function ChatTitlebar({
       <div className="flex items-center gap-1">
         <RightDrawerDropdown
           drawerOpen={rightDrawerOpen}
-          onSelect={onSelectRightDrawerSection}
           workersBadge={workersBadge}
           artifactsCount={artifactsCount}
         />
