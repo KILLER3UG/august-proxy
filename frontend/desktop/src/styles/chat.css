@@ -31,6 +31,31 @@
   overflow-anchor: none;
 }
 
+/* One disclosure marker across the transcript. Tool rows drive it from React
+ * state; `<details>` sites are native and keep their own semantics — collapsing
+ * them into a button would trade away keyboard toggling and hash-link opening
+ * for a look. So the affordance is shared by class, not by component: the
+ * chevron rotates on `details[open]` exactly as it does on `aria-expanded`. */
+.disclosure-chevron {
+  flex: 0 0 auto;
+  width: 0.75rem;
+  height: 0.75rem;
+  opacity: 0.7;
+  transition: transform 200ms ease;
+}
+
+details[open] > summary .disclosure-chevron {
+  transform: rotate(180deg);
+}
+
+details > summary {
+  list-style: none;
+}
+
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
 .aug-letter {
   display: inline-block;
   animation: augLetterBounce 0.9s ease-in-out infinite;

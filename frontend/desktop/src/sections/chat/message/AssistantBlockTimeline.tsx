@@ -1073,8 +1073,9 @@ export function AssistantBlockTimeline({
               data-testid="recalled-memories-block"
               className="mx-3 my-1 max-w-full rounded border border-sky-500/20 bg-sky-500/5 px-2.5 py-1 text-2xs text-sky-300/90"
             >
-              <summary className="cursor-pointer select-none list-none">
-                <span aria-hidden="true" className="mr-1 opacity-70">
+              <summary className="flex cursor-pointer select-none items-center gap-1.5 list-none">
+                <ChevronDown className="disclosure-chevron" aria-hidden />
+                <span aria-hidden="true" className="opacity-70">
                   💭
                 </span>
                 <span className="truncate">{label}</span>
@@ -1334,7 +1335,8 @@ export function AssistantBlockTimeline({
             </div>
             {raw ? (
               <details className="mt-1.5 text-[0.75rem] text-danger-fg">
-                <summary className="cursor-pointer select-none">
+                <summary className="flex cursor-pointer select-none items-center gap-1.5 list-none">
+                  <ChevronDown className="disclosure-chevron" aria-hidden />
                   Show provider details
                 </summary>
                 <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-danger/40 p-2 font-mono text-2xs">
