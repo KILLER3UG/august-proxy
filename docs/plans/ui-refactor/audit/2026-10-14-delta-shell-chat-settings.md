@@ -159,7 +159,28 @@ mismatch (`State.ts:43-54` vs `RightDrawer.tsx:327-340`) — **still true**.
 3. `N t/s`, `answered via {model}`, live tool timers — remove all three, or keep the timer during long tools?
 4. Removing terminal/preview/browser from the chat drawer is a real capability change for circuit and dev-server
    work — confirm the `BottomTerminalDock` is the right home before I wire them off.
-5. 27 settings sections reachable only by search: is that the intended depth, or should the rail grow groups?
+5. 26 settings sections reachable only by search (recounted 2026-10-14 — see §6): is that the intended depth, or should the rail grow groups?
 6. The Bots rail's one-way door: give it a way back, or drop the persisted `railTab` read so Bots is reachable
    only from wherever bots belong now? I did not remove it — the read is documented as deliberate for returning
    installs, and deleting it changes what an existing user sees on next launch.
+
+## 6. The two counts the brief's goal depends on (measured, not inherited)
+
+The brief says the harness should feel like Claude Desktop, and Claude exposes **four**
+top-level destinations: New, Projects, Artifacts, Customize. Nobody had measured August's
+side of that comparison, so here it is from the tree:
+
+| What | Count | Where it comes from |
+|---|---|---|
+| Routes declared with `nav: true` | **7** | `routes.ts` — `/`, `/automations`, `/runs`, `/board`, `/live`, `/history`, `/learning` |
+| Destinations actually surfaced in the left rail | **1** | `SessionListNav.tsx:54-56` — `PRIMARY_DESTINATIONS` is now a single-item array (Automations) after `76433449` |
+| Destinations reachable through the command palette | **6** | `routes.ts:206` `SECTION_NAV_ITEMS = SECTION_ROUTES.filter(r => r.nav)`, rendered minus `/` at `CommandPalette.tsx:413` |
+| Settings sections | **44** | entries in `SETTINGS_SECTIONS` — *not* 48: a `grep -c "^    id: '"` also counts four `SETTINGS_CATEGORIES` ids above the array |
+| …of which visible in the Settings rail | **18** | `tier: 'basic'` |
+| …reachable only by search or deep link | **26** | `tier: 'hidden'` |
+
+So the shape is not \"too many destinations on screen\" — the rail already shows one. It is
+**seven declared destinations of which six are invisible**, plus 26 settings sections with no
+surface. That is the real parity gap against Claude's four-destination, all-visible model,
+and it is why §5 item 5 asks whether hidden-by-search is the intended depth rather than
+assuming fewer rail rows is the fix.
