@@ -5,7 +5,7 @@
 
 # API Index — every route
 
-415 routes across 342 paths,
+417 routes across 344 paths,
 grouped by family. **This file is generated.** For the prose that explains what
 these are for and when to reach for them, read
 [`API_REFERENCE.md`](./API_REFERENCE.md) — it covers the families that matter in
@@ -24,7 +24,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/v1/models` | Delegate model listing to the model-service-backed OpenAI route. |
 | `POST` | `/v1/responses` | OpenAI Responses API proxy. |
 
-## Workbench chat (66)
+## Workbench chat (68)
 
 | Method | Path | Summary |
 | --- | --- | --- |
@@ -33,6 +33,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/workbench/agents` | List agents for the UI's Agents tab (frontend listWorkbenchAgents). |
 | `GET` | `/api/workbench/approval-policy` | T5 approval axis (axis 2) config — durable allow/deny prefix rules, per-category auto-approve, and the never-… |
 | `PUT` | `/api/workbench/approval-policy` | Validate + persist the T5 approval policy. Body: the policy dict. |
+| `GET` | `/api/workbench/artifact/html` | Live HTML/SVG artifact document — the interactive half of the drawer. |
 | `POST` | `/api/workbench/attachments` | Persist a composer attachment (typically a pasted image) into the session workspace so the agent can actually… |
 | `POST` | `/api/workbench/btw` | BTW side-channel: always the same model as chat for this session. |
 | `GET` | `/api/workbench/capabilities` | List all tools grouped by source. |
@@ -55,6 +56,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/workbench/files/read` | Read a file as base64 for the right-drawer viewer. |
 | `POST` | `/api/workbench/goal` | Set/clear/status for goals. |
 | `POST` | `/api/workbench/guard-mode` | Update guard mode on a workbench session (system barrier). |
+| `POST` | `/api/workbench/kernel/provision` | Create the workspace kernel venv and pip-install its seed set. |
 | `POST` | `/api/workbench/mutations/respond` | Respond to a pending mutation (accept/reject — pre-apply). |
 | `POST` | `/api/workbench/plan` | Submit a plan for a session. |
 | `POST` | `/api/workbench/plan/approve` | Approve a pending plan. |
@@ -534,4 +536,4 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 
 ---
 
-Generated from `docs/api/openapi.json` (415 operations).
+Generated from `docs/api/openapi.json` (417 operations).

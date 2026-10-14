@@ -6186,6 +6186,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workbench/artifact/html": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Readartifacthtml
+         * @description Live HTML/SVG artifact document — the interactive half of the drawer.
+         *
+         *     ``create_html_artifact`` output and a session's figures are HTML with
+         *     inline script. The drawer used to render them through ``srcDoc``, which
+         *     inherits the shell CSP (``script-src 'self'``): the figure painted and
+         *     nothing moved, with no error anywhere. Serving the document from the
+         *     backend's own origin puts it under THIS response's CSP instead — the shell
+         *     policy stays untouched.
+         *
+         *     Same access gate as /files/read + /files/raw (hardline + workspace/temp
+         *     roots + size cap): one path policy, reused — not a second one. Anything
+         *     that is not .html/.svg is refused, because a route that answers
+         *     ``text/html`` for arbitrary bytes is a content-confusion hole.
+         */
+        get: operations["readArtifactHtml_api_workbench_artifact_html_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workbench/attachments": {
         parameters: {
             query?: never;
@@ -6622,6 +6654,36 @@ export interface paths {
          *     Full Access so the chat is not stuck on plan approval.
          */
         post: operations["setGuardMode_api_workbench_guard_mode_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workbench/kernel/provision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Provision Kernel Venv Route
+         * @description Create the workspace kernel venv and pip-install its seed set.
+         *
+         *     An explicit user action from Settings — the only door that writes
+         *     ``<workspace>/.aug/kernel/venv``. The network pip needs is THIS action's
+         *     consent (the user pressed the button), which is a different thing from
+         *     the per-session ``sandboxNetwork`` flag — that one is the model-command
+         *     default, and inheriting it here would let a session's network toggle
+         *     stand in for a user's install decision. The grant is logged by
+         *     ``kernel.provision_kernel_venv``.
+         *
+         *     Body: { workspace? } — defaults to the calling session's workspace.
+         */
+        post: operations["provision_kernel_venv_route_api_workbench_kernel_provision_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -19688,6 +19750,38 @@ export interface operations {
             };
         };
     };
+    readArtifactHtml_api_workbench_artifact_html_get: {
+        parameters: {
+            query?: {
+                path?: string;
+                sessionId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     uploadAttachment_api_workbench_attachments_post: {
         parameters: {
             query?: never;
@@ -20206,6 +20300,26 @@ export interface operations {
         };
     };
     setGuardMode_api_workbench_guard_mode_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    provision_kernel_venv_route_api_workbench_kernel_provision_post: {
         parameters: {
             query?: never;
             header?: never;

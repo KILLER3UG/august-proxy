@@ -16676,6 +16676,55 @@
         "summary": "Set Approval Policy"
       }
     },
+    "/api/workbench/artifact/html": {
+      "get": {
+        "description": "Live HTML/SVG artifact document — the interactive half of the drawer.\n\n``create_html_artifact`` output and a session's figures are HTML with\ninline script. The drawer used to render them through ``srcDoc``, which\ninherits the shell CSP (``script-src 'self'``): the figure painted and\nnothing moved, with no error anywhere. Serving the document from the\nbackend's own origin puts it under THIS response's CSP instead — the shell\npolicy stays untouched.\n\nSame access gate as /files/read + /files/raw (hardline + workspace/temp\nroots + size cap): one path policy, reused — not a second one. Anything\nthat is not .html/.svg is refused, because a route that answers\n``text/html`` for arbitrary bytes is a content-confusion hole.",
+        "operationId": "readArtifactHtml_api_workbench_artifact_html_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sessionId",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Sessionid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Readartifacthtml"
+      }
+    },
     "/api/workbench/attachments": {
       "post": {
         "description": "Persist a composer attachment (typically a pasted image) into the\nsession workspace so the agent can actually open it.\n\nImages attached in the chat lived as data URLs that never left the\nclient — analyze_media/read_file had no path to read, so the agent was\nblind to them. This decodes the base64 payload, writes it under\n``<workspace>/.aug/attachments/<sessionId>/``, and returns the path the\nfrontend names in the prompt text. Size cap mirrors the /files/read\nbase64 envelope (25 MB).\n\nThe FIRST message of a new chat has no backend Workbench session yet\n(the client only has its UI ``session_*`` id), so the client also sends\nthe workspace path it already knows — same trust level as the git\nrouter's explicit ``repoPath``.",
@@ -17254,6 +17303,23 @@
           }
         },
         "summary": "Setguardmode"
+      }
+    },
+    "/api/workbench/kernel/provision": {
+      "post": {
+        "description": "Create the workspace kernel venv and pip-install its seed set.\n\nAn explicit user action from Settings — the only door that writes\n``<workspace>/.aug/kernel/venv``. The network pip needs is THIS action's\nconsent (the user pressed the button), which is a different thing from\nthe per-session ``sandboxNetwork`` flag — that one is the model-command\ndefault, and inheriting it here would let a session's network toggle\nstand in for a user's install decision. The grant is logged by\n``kernel.provision_kernel_venv``.\n\nBody: { workspace? } — defaults to the calling session's workspace.",
+        "operationId": "provision_kernel_venv_route_api_workbench_kernel_provision_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Provision Kernel Venv Route"
       }
     },
     "/api/workbench/mutations/respond": {
