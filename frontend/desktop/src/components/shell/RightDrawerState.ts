@@ -47,6 +47,10 @@ export interface RightDrawerState {
 }
 
 const MAX_SECTIONS = 4;
+/** Tab order for the drawer. `terminal` stays listed because the "+" picker
+ *  offers it — but picking it docks the terminal at the bottom
+ *  (`toggleBottomTerminal`), it does not open a tab, and there is no drawer
+ *  renderer for it. Do not add one back without retiring the dock. */
 export const SECTION_ORDER: RightDrawerSectionId[] = [
   'preview',
   'diff',

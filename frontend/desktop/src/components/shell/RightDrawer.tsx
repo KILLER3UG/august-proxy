@@ -40,7 +40,6 @@ import {
 import { RightDrawerDiffSection } from './RightDrawerDiffSection';
 import { RightDrawerTasksSection } from './RightDrawerTasksSection';
 import { RightDrawerPlanSection } from './RightDrawerPlanSection';
-import { RightDrawerTerminalSection } from './RightDrawerTerminalSection';
 import { RightDrawerPreviewSection } from './RightDrawerPreviewSection';
 import { RightDrawerBrowserSection } from './RightDrawerBrowserSection';
 import { RightDrawerNotesSection } from './RightDrawerNotesSection';
@@ -492,8 +491,6 @@ function renderSection(
       );
     case 'diff':
       return <RightDrawerDiffSection sessionId={ctx.sessionId} />;
-    case 'terminal':
-      return <RightDrawerTerminalSection />;
     case 'tasks':
       return <RightDrawerTasksSection sessionId={ctx.sessionId} todos={ctx.workbenchSession?.todos ?? []} />;
     case 'plan':

@@ -94,6 +94,23 @@ describe('RightDrawer section chooser (ZCode "Open tab")', () => {
     for (const id of SECTION_ORDER) expect(id).not.toBe('file');
   });
 
+  it('picking Terminal from the chooser docks it and opens no tab', () => {
+    // The drawer has no terminal renderer any more — the surface is
+    // BottomTerminalDock. This pins that the picker still reaches it, and
+    // reaches it as a dock rather than a tab.
+    act(() => {
+      $rightDrawer.set({ open: true, sections: [], chooserActive: true });
+    });
+    mountChooserDrawer();
+    const card = document.querySelector('[data-testid="drawer-chooser-terminal"]') as HTMLElement;
+    expect(card, 'the chooser must still offer the terminal').toBeTruthy();
+    expect(card.textContent).toContain('Terminal (bottom)');
+    fireEvent.click(card);
+    expect($rightDrawer.get().bottomTerminal).toBe(true);
+    expect($rightDrawer.get().sections).not.toContain('terminal');
+    expect(document.querySelector('[data-testid="drawer-tab-terminal"]')).toBeNull();
+  });
+
   it('marks already-open sections and picking a card opens it, leaving the chooser', () => {
     act(() => {
       toggleRightDrawerSection('tasks');

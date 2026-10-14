@@ -175,7 +175,10 @@ export function ChatLayout() {
           break;
         case 'set_drawer_section': {
           const section = e.target as RightDrawerSectionId;
-          if (['preview', 'diff', 'terminal', 'tasks', 'plan', 'browser', 'subagents'].includes(section)) {
+          // `terminal` is deliberately absent: the terminal is a bottom-docked
+          // surface (BottomTerminalDock), not a drawer tab, and the picker card
+          // routes there. Nothing in the app adds it as a section.
+          if (['preview', 'diff', 'tasks', 'plan', 'browser', 'subagents'].includes(section)) {
             addRightDrawerSection(section);
             setActiveRightDrawerSection(section);
             setShowRightSidebar(true);
