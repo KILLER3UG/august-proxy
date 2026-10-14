@@ -547,11 +547,18 @@ def _hardline_agent_state_reason(canon):
     directory decide what August runs and what it remembers. Code mode reached
     all of them with its own `write_file`, which is why the port carries the
     rule rather than leaving it on the typed door.
+
+    `.aug/kernel/**` is the same class: `run_command` is exempted to execute
+    that venv's interpreter, so a module dropped into its `site-packages` runs
+    on the next cell — and code mode is the path most likely to be used to drop
+    it.
     """
     parts = [p for p in canon.split('/') if p]
     for _i in range(1, len(parts)):
         if parts[_i] == 'skills' and parts[_i - 1] == '.aug':
             return 'agent skill layer (.aug/skills)'
+        if parts[_i] == 'kernel' and parts[_i - 1] == '.aug':
+            return 'agent kernel state (.aug/kernel)'
     # Ahead of the data-directory branch: the env override can move the memory
     # file outside the data directory, where a data-dir-anchored rule would not
     # see it.

@@ -259,6 +259,15 @@ def _agent_state_reason(canonical: str) -> str | None:
         is closed rather than one filename.
       * `<dataDir>/skills/**` and `<dataDir>/bots/<id>/skills/**` — the agent
         layer of the same store, reachable by absolute path.
+      * `<workspace>/.aug/kernel/**` — the kernel venv and the per-session cell
+        snapshots. `run_command` is EXEMPTED to execute `venv/Scripts/python.exe`
+        (the tier in `tool_registrations/file_tools.py`), and code mode runs its
+        cells against the same interpreter, so a module dropped into
+        `site-packages` executes on the next run — persistence with no session
+        and no proposal behind it. The sanctioned writer is
+        `kernel.provision_kernel_venv`, which shells out to `python -m venv` and
+        `pip` and never passes through this door, which is what makes the
+        proposal route the only one left.
 
     Reads stay allowed: an agent must be able to read the skill it already has.
     The sanctioned writers (`skill_service`, `harness_self_improve`) use
@@ -275,6 +284,8 @@ def _agent_state_reason(canonical: str) -> str | None:
     for i in range(1, len(parts)):
         if parts[i] == 'skills' and parts[i - 1] == '.aug':
             return 'agent skill layer (.aug/skills)'
+        if parts[i] == 'kernel' and parts[i - 1] == '.aug':
+            return 'agent kernel state (.aug/kernel)'
     # Before the data-directory branch: `AUGUST_BRAIN_SQLITE_FILE` can move the
     # memory anywhere on disk, and a rule that only looked inside the data
     # directory would then protect a file that no longer exists.

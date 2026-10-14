@@ -463,6 +463,30 @@ def test_the_agent_layers_of_the_learning_store_are_policy_not_files(isolatedDat
     assert check_hardline_path('/proj/skills/deploy/SKILL.md', for_write=True) is None
 
 
+def test_the_kernel_venv_is_execution_state_not_a_folder(tmp_path, monkeypatch):
+    """`run_command` is exempted to EXECUTE `<ws>/.aug/kernel/venv`'s
+    interpreter, and code mode runs its cells against the same one. So anything
+    dropped into that tree's `site-packages` runs on the next call, with no
+    session and no proposal behind it — the same class as `hooks.json`.
+
+    The anchor is `.aug/kernel`, not the word `kernel`: an ordinary source tree
+    with a `kernel/` directory and a plain file in `.aug` both stay writable.
+    """
+    ws = str(tmp_path)
+    monkeypatch.setenv('AUGUST_WORKSPACE', ws)
+    for rel in (
+        '.aug/kernel/venv/Lib/site-packages/evil/__init__.py',
+        '.aug/kernel/venv/Scripts/python.exe',
+        '.aug/kernel/venv/pyvenv.cfg',
+        '.aug/kernel/sess-1/snapshot.json',
+    ):
+        target = f'{ws}/{rel}'
+        assert check_hardline_path(target, for_write=True) is not None, rel
+        assert check_hardline_path(target, for_write=False) is None, rel
+    for rel in ('src/kernel/main.py', '.aug/notes.md', '.aug/kernel.txt'):
+        assert check_hardline_path(f'{ws}/{rel}', for_write=True) is None, rel
+
+
 def test_the_agent_state_door_does_not_depend_on_how_a_path_is_spelled(isolatedData):
     """The case the lower-cased fixture above structurally cannot reach.
 

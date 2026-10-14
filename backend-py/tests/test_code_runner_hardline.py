@@ -290,6 +290,12 @@ def test_the_port_closes_the_same_instruction_and_execution_layers(isolatedData,
         # The env-configured file, which is what the fixture actually points at:
         # a rule naming only the default would protect a file that does not exist.
         str(isolatedData / 'test_brain.sqlite').replace(chr(92), '/').lower(),
+        # The kernel venv: `run_command` is exempted to execute this
+        # interpreter, so a module written into its site-packages runs on the
+        # next call. Code mode is the likeliest way to write it.
+        str(tmp_path / '.aug' / 'kernel' / 'venv' / 'Lib' / 'site-packages' / 'evil' / '__init__.py').replace(chr(92), '/'),
+        str(tmp_path / '.aug' / 'kernel' / 'venv' / 'Scripts' / 'python.exe').replace(chr(92), '/'),
+        str(tmp_path / '.aug' / 'kernel' / 'venv' / 'pyvenv.cfg').replace(chr(92), '/'),
     ]
     for path in refused:
         assert ns['_hardline_check_path'](path, True) is not None, path
@@ -302,6 +308,9 @@ def test_the_port_closes_the_same_instruction_and_execution_layers(isolatedData,
         '/proj/docs/SKILL.md',
         '/proj/src/mcp-servers.json',
         '/proj/automations.json',
+        # The anchor is `.aug/kernel`, not the word `kernel`.
+        '/proj/src/kernel/main.py',
+        f'{str(tmp_path).replace(chr(92), "/")}/.aug/kernel.txt',
         f'{data}/learning_state.json',
     ):
         assert ns['_hardline_check_path'](ok, True) is None, ok

@@ -346,9 +346,14 @@ exist — corrected Part 25 Phase 7.1.)
   with a `run.sh` beside it, bypassing the proposal, the approval and the content
   rails in `harness_rails` that the learning pipeline is held to. `_agent_state_reason`
   closes the two agent layers plus `mcp-servers.json` (launches a process per
-  entry), `automations.json` (`jobType: 'shell'` with its command) and the brain
-  database itself (from `AUGUST_BRAIN_SQLITE_FILE` **or** the data-dir default —
-  naming only the default protects a file that may not exist). Reads stay
+  entry), `automations.json` (`jobType: 'shell'` with its command),
+  `<workspace>/.aug/kernel/**` (`run_command` is exempted to EXECUTE that venv's
+  interpreter, so a module dropped into its `site-packages` runs on the next
+  cell) and the brain database itself (from `AUGUST_BRAIN_SQLITE_FILE` **or** the
+  data-dir default — naming only the default protects a file that may not exist).
+  The door is fed `_store_match_form`, not `_canonical`: its comparisons are
+  lower-cased, so the raw spelling left every data-directory rule inert on
+  Windows. Reads stay
   allowed; the sanctioned writers (`skill_service`, `harness_self_improve`) use
   `Path.write_text` and are deliberately NOT behind the door, which is what makes
   the proposal route the only one a model can take. The BUNDLED layer
