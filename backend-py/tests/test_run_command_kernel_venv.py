@@ -105,3 +105,46 @@ async def test_no_venv_no_exception(ws, monkeypatch):
     )
     assert 'not in the allowed list' in out
     assert not ran
+
+
+def test_the_tree_that_may_run_is_the_tree_that_may_not_be_written(ws) -> None:
+    """One rule, two halves — asserted against the SAME derived path.
+
+    `run_command` is exempted to EXECUTE this venv, so `write_file` must not be
+    able to put code inside it. The exemption follows `kernel._KERNEL_SUBDIR`
+    while the door in `hardline._agent_state_reason` matches the literal
+    `.aug/kernel`, and the door's own tests spell that same literal — so renaming
+    the constant leaves the door guarding a directory nothing uses, its tests
+    still green, while the exemption moves to the real one. Measured: with
+    `_KERNEL_SUBDIR` set to `.aug/kernels`, `test_sandbox_hardline`'s kernel cases
+    pass and this one fails.
+
+    Deriving both sides from `kernel_venv_dir()` is what makes the pair move
+    together or fail here.
+    """
+    from pathlib import Path
+
+    from app.services.sandbox.hardline import check_hardline_path
+    from app.services.workbench.kernel import kernel_venv_dir
+
+    venv = kernel_venv_dir(str(ws))
+    assert 'kernel' in venv.replace(chr(92), '/'), f'not derived from the real constant: {venv}'
+
+    program = Path(venv) / 'Scripts' / 'python.exe'
+    program.parent.mkdir(parents=True, exist_ok=True)
+    program.write_bytes(b'\x00binary-not-run')
+
+    # The execution exemption is live for exactly this tree...
+    assert file_tools._isKernelVenvProgram(f'"{program}"') is True
+
+    # ...so every writable location inside it must be refused, reads allowed.
+    for target in (
+        str(program),
+        str(Path(venv) / 'Lib' / 'site-packages' / 'evil' / '__init__.py'),
+        str(Path(venv) / 'pyvenv.cfg'),
+    ):
+        assert check_hardline_path(target, for_write=True) is not None, target
+        assert check_hardline_path(target, for_write=False) is None, target
+
+    # And the tree next door is untouched — the rule is the venv, not `.aug`.
+    assert check_hardline_path(str(ws / '.aug' / 'notes.md'), for_write=True) is None
