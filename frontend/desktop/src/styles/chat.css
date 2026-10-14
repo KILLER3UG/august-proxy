@@ -48,13 +48,8 @@ details[open] > summary .disclosure-chevron {
   transform: rotate(180deg);
 }
 
-details > summary {
-  list-style: none;
-}
-
-details > summary::-webkit-details-marker {
-  display: none;
-}
+/* The marker reset itself lives in base.css — two non-chat surfaces render a
+   <details> and were relying on a rule scoped to this file. */
 
 .aug-letter {
   display: inline-block;

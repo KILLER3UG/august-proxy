@@ -431,4 +431,18 @@ input::placeholder {
   background-size: 200% 100%;
   animation: skeletonShimmer 1.5s infinite linear;
 }
+
+/* ── Disclosure marker reset (element-level, not chat-level) ─────── */
+/* Moved out of chat.css: `ErrorBoundary.tsx` and the bootstrap error card in
+ * `BackendBootstrapGate.tsx` both render a <details>, and neither surface is
+ * chat. The chat-only half of that pattern — `.disclosure-chevron` — stayed
+ * where the rows that use it live. */
+
+details > summary {
+  list-style: none;
+}
+
+details > summary::-webkit-details-marker {
+  display: none;
+}
 
