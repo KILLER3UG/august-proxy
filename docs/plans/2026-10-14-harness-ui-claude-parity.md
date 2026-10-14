@@ -39,12 +39,15 @@ landed, against the tree, not from memory:
 | §0 counts | Re-verified: **7** routes carry `nav: true`, the registry holds **48** sections of which **27** are `tier: 'hidden'` — the "reachable only by search" figure was right. |
 | §1.1 "fix the no-op 'Remove view' ×" | **No longer a no-op** — it removes the tab (12 → 11 measured). What it does not survive is the pane unmounting, because `dismissed` is component state (`RightDrawerSubagentsSection.tsx:432`). |
 
-Not disproved, but **not verifiable the way §8 demands**: B2 and B4 can only be
-read in a *live* turn. A restored transcript renders its assistant text (control:
-`wb_20261002_112122_1f26ba` shows the reply) but no tool steps at all — 29 stored
-messages with 10 `toolCall` blocks produce 0 `<details>`, 0 chevrons and no tool
-verb anywhere in the transcript text. Whether that is a defect or a retired
-payload shape needs one real turn through the current build.
+Not disproved, but **not verifiable the way §8 demands**: B2's labels. A restored
+transcript does render its tool steps — 76 "Task completed" triggers on a real
+session, probed as `button[aria-expanded]` after an earlier read of this page
+wrongly counted `<details>` (the trigger is a Radix `CollapsibleTrigger`, not a
+native disclosure). But the list is virtualized and collapsed, so no snapshot I
+took ever mounted a command row whose text I could read: after expanding eighteen
+triggers the page held 3 685 characters and zero drive-letter paths, which is
+absence of evidence in a small window rather than proof. Settling B2 needs one real
+turn through the current build.
 
 ## 1. Conflicts to record, not re-decide
 
