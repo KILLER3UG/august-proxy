@@ -628,7 +628,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Durable kanban board for multi-agent work across sessions.',
     icon: Flame,
     category: 'capabilities',
-    tier: 'hidden',
+    // Left the sidebar with the other configuration surfaces; a rail entry is
+    // the only way to reach it now that the row is gone.
+    tier: 'basic',
     keywords: ['board', 'cards'],
     legacyAliases: ['kanban'],
   },

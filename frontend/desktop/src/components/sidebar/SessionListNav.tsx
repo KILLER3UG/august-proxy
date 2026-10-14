@@ -4,8 +4,6 @@ import { motion } from "framer-motion";
 import {
   ChevronDown,
   Bot,
-  GraduationCap,
-  Kanban,
   FolderOpen,
   PanelLeft,
   Plus,
@@ -47,10 +45,13 @@ const plusIconMotion = {
   tap: { scale: 0.9, rotate: 90, transition: t.fast },
 };
 
+/** The sidebar is for what a chat is used for daily. Board and Learning were
+ *  rows here; both are configuration-shaped surfaces now — the kanban lives in
+ *  Settings as `agent-board`, and the human half of the learning loop is the
+ *  Review Inbox section. Both routes stay in the command palette, so nothing is
+ *  orphaned by this list shrinking. */
 const PRIMARY_DESTINATIONS = [
   { to: '/automations', label: 'Automations', Icon: Bot },
-  { to: '/board', label: 'Board', Icon: Kanban },
-  { to: '/learning', label: 'Learning', Icon: GraduationCap },
 ] as const;
 
 
