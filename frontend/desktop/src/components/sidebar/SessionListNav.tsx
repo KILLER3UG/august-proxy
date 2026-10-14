@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import {
+  Check,
   ChevronDown,
   Bot,
   FolderOpen,
@@ -127,7 +128,7 @@ export function SessionListNav({
               >
                 <FolderOpen className="size-3.5 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
-                {workspace.id === currentWorkspaceId ? <span aria-label="Current workspace">✓</span> : null}
+                {workspace.id === currentWorkspaceId ? <Check className="size-3.5 shrink-0 text-muted-foreground" aria-label="Current workspace" /> : null}
               </DropdownMenuItem>
             ))}
             <DropdownMenuItem onSelect={() => void addWorkspaceFromPicker()}>

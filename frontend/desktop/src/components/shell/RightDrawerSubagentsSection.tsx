@@ -173,6 +173,17 @@ function todoProgress(todos?: WorkbenchTodo[]) {
   return { done: todos.filter((t) => t.status === 'completed').length, total: todos.length };
 }
 
+/** One resolution for "this worker's todos": the live row first, then the
+ *  persisted run. The roster badge and the selected pane used to read
+ *  different sources, so a worker whose todos only exist on the run showed a
+ *  progress popover when opened and no badge at all in the roster. */
+function workerTodos(
+  agent: { todos?: WorkbenchTodo[] },
+  run?: { todos?: WorkbenchTodo[] },
+): WorkbenchTodo[] | undefined {
+  return agent.todos?.length ? agent.todos : run?.todos;
+}
+
 function ProgressPopover({ todos }: { todos: WorkbenchTodo[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -482,6 +493,10 @@ export function RightDrawerSubagentsSection({
   // Auto-dismiss an empty section shortly after activity ends (kept from the
   // previous behavior, minus the drawer-hijack feel — only when truly idle).
   useEffect(() => {
+    // A parked pane is inert and off-screen; it must not reach out and close
+    // the section the user is looking at elsewhere. Both pollers already gate
+    // on `hidden` — this effect was the one that did not.
+    if (hidden) return;
     if (!query.data || activeAgents.length > 0 || entries.length > 0) {
       setDismissArmedAt(null);
       return;
@@ -646,8 +661,7 @@ export function RightDrawerSubagentsSection({
           </div>
 
           {(() => {
-            const agentTodos = (selectedAgent as { todos?: WorkbenchTodo[] }).todos;
-            const list = agentTodos?.length ? agentTodos : run?.todos;
+            const list = workerTodos(selectedAgent as { todos?: WorkbenchTodo[] }, run);
             return list?.length ? <ProgressPopover todos={list} /> : null;
           })()}
 
@@ -741,7 +755,7 @@ export function RightDrawerSubagentsSection({
       ) : (
         <div className="px-1.5 py-1.5">
           {visibleEntries.map(({ key, agent }) => {
-            const prog = todoProgress(agent.todos);
+            const prog = todoProgress(workerTodos(agent, runByTask.get(key)));
             return (
             <div key={key} className="group relative">
               <button

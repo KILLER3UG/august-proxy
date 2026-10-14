@@ -269,6 +269,47 @@ describe('RightDrawerSubagentsSection', () => {
     expect(strip.querySelectorAll('[role="tab"]').length).toBeGreaterThanOrEqual(12);
   });
 
+  it('badges progress that only exists on the persisted run', async () => {
+    // The roster badge used to read `agent.todos` alone while the selected pane
+    // fell back to the run, so the same worker showed "1/2" when opened and
+    // nothing at all in the list. Both must resolve todos the same way.
+    const { api } = await import('@/api/client');
+    listAgentsMock.mockResolvedValue({
+      agents: [
+        { taskId: 'r-only', agentId: 'general', goal: 'Run-sourced todos', status: 'running' },
+      ],
+      meta: {},
+    });
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes('/runs')) {
+        return {
+          runs: [
+            {
+              task_id: 'r-only',
+              agent_id: 'general',
+              goal: 'Run-sourced todos',
+              status: 'running',
+              todos: [
+                { id: '1', content: 'done thing', status: 'completed' },
+                { id: '2', content: 'next thing', status: 'pending' },
+              ],
+            },
+          ],
+        };
+      }
+      if (url.includes('/config')) {
+        return { maxConcurrent: 3, maxIterations: 25, maxDepth: 1, worktreeIsolation: false };
+      }
+      return { messages: [] };
+    });
+
+    renderSection();
+    const badge = await screen.findByTestId('right-drawer-subagent-progress-r-only', undefined, {
+      timeout: 3000,
+    });
+    expect(badge.textContent).toBe('1/2');
+  });
+
   it('disambiguates multiple workers with the same role', async () => {
     listAgentsMock.mockResolvedValue({
       agents: [

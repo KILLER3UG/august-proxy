@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { ChevronDown } from 'lucide-react';
+import { Brain, ChevronDown, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   ToolCallItemBody,
@@ -1041,12 +1041,10 @@ export function AssistantBlockTimeline({
             <div
               key={block.id || `memory_${ti}`}
               data-testid="memory-notice-chip"
-              className="mx-3 my-1 inline-flex max-w-full items-center gap-1.5 rounded-full border border-sky-500/25 bg-sky-500/8 px-2.5 py-1 text-2xs text-sky-300/90"
+              className="mx-3 my-1 inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-2xs text-muted-foreground"
               title={block.content || undefined}
             >
-              <span aria-hidden="true" className="opacity-70">
-                🧠
-              </span>
+              <Brain className="size-3 shrink-0 opacity-70" aria-hidden />
               <span className="truncate">{block.content || 'Memory updated'}</span>
             </div>
           ),
@@ -1075,9 +1073,6 @@ export function AssistantBlockTimeline({
             >
               <summary className="flex cursor-pointer select-none items-center gap-1.5 list-none">
                 <ChevronDown className="disclosure-chevron" aria-hidden />
-                <span aria-hidden="true" className="opacity-70">
-                  💭
-                </span>
                 <span className="truncate">{label}</span>
               </summary>
               <ul className="mt-1 space-y-1 pl-1">
@@ -1243,11 +1238,9 @@ export function AssistantBlockTimeline({
         <div
           key={key}
           data-testid="chat-system-notice"
-          className="mt-1 flex w-full max-w-3xl items-start gap-2 text-2xs leading-relaxed text-muted-foreground/80"
+          className="mt-1 flex w-full august-chat-column items-start gap-2 text-2xs leading-relaxed text-muted-foreground/80"
         >
-          <span aria-hidden="true" className="mt-px shrink-0">
-            ⚙
-          </span>
+          <Settings className="mt-px size-3 shrink-0 opacity-70" aria-hidden />
           <span className="min-w-0 flex-1">{block.content}</span>
         </div>
       );
@@ -1310,7 +1303,7 @@ export function AssistantBlockTimeline({
           key={key}
           role="alert"
           data-testid="chat-error-bubble"
-          className="mt-1.5 flex w-full max-w-3xl items-start gap-2.5"
+          className="mt-1.5 flex w-full august-chat-column items-start gap-2.5"
         >
           <span
             aria-hidden="true"

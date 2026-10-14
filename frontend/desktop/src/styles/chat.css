@@ -428,7 +428,8 @@ details > summary::-webkit-details-marker {
 
 .august-message-list,
 .august-composer-slot,
-.august-empty-state-content {
+.august-empty-state-content,
+.august-chat-column {
   max-width: 58rem !important;
 }
 
