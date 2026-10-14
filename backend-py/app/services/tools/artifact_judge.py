@@ -167,8 +167,12 @@ def _artifactRouteUrl(src: Path) -> str:
     from os import environ
     from urllib.parse import quote
 
+    from app.services.browser.session_manager import artifactRoutePath
+
     port = environ.get('AUGUST_PROXY_PORT', '8085')
-    return f'http://127.0.0.1:{port}/api/workbench/artifact/html?path={quote(str(src))}'
+    # The same accessor the guard matches against: this URL and the carve-out
+    # that permits it must not be two spellings of one path.
+    return f'http://127.0.0.1:{port}{artifactRoutePath()}?path={quote(str(src))}'
 
 
 async def _renderHtmlPages(src: Path, out_dir: Path, dpi: int) -> dict[str, Any]:
