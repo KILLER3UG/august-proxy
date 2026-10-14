@@ -339,6 +339,10 @@ export function ChatThreadMessagePane({
           streaming ? 'h-auto opacity-100 pointer-events-auto' : 'h-0 overflow-hidden opacity-0 pointer-events-none',
         )}
         aria-hidden={!streaming}
+        /* `aria-hidden` alone does not withdraw a control from the tab order:
+           with a plan posted, the collapsed strip still held its toggle button
+           and Chromium focused it (measured by reverting this attribute). */
+        inert={!streaming || undefined}
       >
         <div className="pt-1" data-testid="aug-working-indicator">
           <WorkingIndicator sessionId={sessionId} />

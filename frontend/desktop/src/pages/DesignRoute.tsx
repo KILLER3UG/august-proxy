@@ -9,6 +9,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useThemeStore, setThemeMode, setTextSize } from '@/lib/theme';
 import type { ThemeMode, TextSize } from '@/lib/theme';
 import { Surface, type SurfaceElevation } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { ChatThreadMessagePane } from '@/sections/chat/ChatThreadMessagePane';
+import { useLiveActivityStore } from '@/store/liveActivity';
+import type { ChatMessage } from '@/types/chat';
 import { useStickToBottomScroll } from '@/sections/chat/hooks/useStickToBottomScroll';
 import { RightDrawerSubagentsSection } from '@/components/shell/RightDrawerSubagentsSection';
 import { RightDrawerDropdown } from '@/components/shell/RightDrawerLauncher';
@@ -308,25 +312,25 @@ function ScrollPinLab() {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">
-        <button
+        <Button
           type="button"
+          variant="outline"
           data-testid="lab-stream"
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
           onClick={() => setStreaming((s) => !s)}
         >
           {streaming ? 'Stop generation' : 'Start generation'}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="outline"
           data-testid="lab-jump-up"
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
           onClick={() => {
             const el = scrollRef.current;
             if (el) el.scrollTop = Math.max(0, el.scrollTop - 400);
           }}
         >
           Move up 400px (no wheel event)
-        </button>
+        </Button>
         <span data-testid="lab-pinned">pinned: {String(pinned)}</span>
       </div>
       <div
@@ -459,6 +463,78 @@ function ToolRowLab() {
   );
 }
 
+/**
+ * The working strip is the line anchored above the composer that says what the
+ * model is doing. Collapsed (no turn streaming) it is `height:0`, `opacity:0`
+ * and `aria-hidden` — and while a turn has posted a plan, that hidden subtree
+ * holds a real button (`working-todos-toggle`), which `aria-hidden`
+ * alone leaves in the tab order. `inert` is what actually removes it, and only
+ * Chromium enforces that, so the two states are mounted side by side here for
+ * `e2e/working-strip-inert.spec.ts` to read the focus behaviour off both.
+ */
+const LAB_STRIP_ACTIVITY = {
+  headline: 'Working',
+  items: [
+    { id: 'i1', kind: 'tool' as const, label: 'Reading the plan', status: 'done' as const, at: Date.now() },
+  ],
+  todos: {
+    title: 'Ship the parity pass',
+    at: Date.now(),
+    items: [
+      { id: 'a', content: 'Audit the shell', status: 'completed' as const },
+      { id: 'b', content: 'Clean the chat', status: 'in_progress' as const },
+      { id: 'c', content: 'Reshape Settings', status: 'pending' as const },
+    ],
+  },
+};
+
+const LAB_STRIP_MESSAGES: ChatMessage[] = [
+  { id: 'u1', role: 'user', content: 'Take the parity pass end to end.', timestamp: '2026-10-14T10:00:00Z' },
+  { id: 'a1', role: 'assistant', content: 'Working through it now.', timestamp: '2026-10-14T10:00:04Z' },
+];
+
+function WorkingStripPane({ streaming }: { streaming: boolean }) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  return (
+    <div
+      data-testid={`lab-strip-${streaming ? 'live' : 'collapsed'}`}
+      className="flex h-[340px] w-[520px] flex-col rounded-xl border border-border bg-background"
+    >
+      <ChatThreadMessagePane
+        sessionId="lab-strip"
+        messages={LAB_STRIP_MESSAGES}
+        streaming={streaming}
+        revertingIndex={null}
+        modelPickerActive={false}
+        onDismissModelPicker={() => {}}
+        scrolledFromTop={false}
+        scrollRef={scrollRef}
+        onRevert={() => {}}
+        onEdit={() => {}}
+        onRegenerate={() => {}}
+        onContinue={() => {}}
+        onEditPrompt={() => {}}
+        onFork={() => {}}
+        onClarifyAnswer={() => {}}
+        footerSlot={<div className="p-2 text-xs text-muted-foreground">composer slot</div>}
+      />
+    </div>
+  );
+}
+
+function WorkingStripLab() {
+  useEffect(() => {
+    // Both panes subscribe to the same session key, so one seed drives both.
+    useLiveActivityStore.setState({ bySession: { 'lab-strip': LAB_STRIP_ACTIVITY } });
+  }, []);
+  return (
+    <div className="flex flex-wrap gap-4" data-testid="lab-working-strip">
+      <WorkingStripPane streaming={false} />
+      <WorkingStripPane streaming />
+    </div>
+  );
+}
+
 export function DesignRoute() {
   // The roster lab mounts a live-polling drawer section, and other e2e specs
   // (a11y smoke, scroll pin) run against this same page — measured: adding it
@@ -468,6 +544,7 @@ export function DesignRoute() {
   const showRosterLab = lab === 'subagents';
   const showLauncherLab = lab === 'launcher';
   const showToolRowsLab = lab === 'toolrows';
+  const showWorkingStripLab = lab === 'working';
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-6xl px-6 py-10 space-y-10">
@@ -568,6 +645,15 @@ export function DesignRoute() {
             <h2 className="text-2xl font-semibold tracking-display">Tool step rows</h2>
             <div>
               <ToolRowLab />
+            </div>
+          </section>
+        )}
+
+        {showWorkingStripLab && (
+          <section className="space-y-3">
+            <h2 className="text-2xl font-semibold tracking-display">Collapsed working strip</h2>
+            <div>
+              <WorkingStripLab />
             </div>
           </section>
         )}
