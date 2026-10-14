@@ -23,7 +23,7 @@ import { extractCommand, extractDiffData, extractFilename } from '@/components/c
 import { classifyTool } from '@/lib/tool-classify';
 import { commandErrorOneLiner } from '@/lib/command-error-line';
 import { formatToolContext } from '@/lib/tool-context-format';
-import { pathBasename } from '@/lib/tool-labels';
+import { commandDisplay, pathBasename } from '@/lib/tool-labels';
 import { diffStats } from '@/components/chat/DiffView';
 import { visibleProgress, type ProgressEntry } from '@/lib/tool-progress';
 import type { ToolEntry } from '@/components/chat/ToolCallItem';
@@ -301,7 +301,7 @@ export function ToolStepRow({
                     title={commandText}
                     data-testid="command-inline-cmd"
                   >
-                    {commandText}
+                    {commandDisplay(commandText)}
                   </span>
                 ) : null}
               </>

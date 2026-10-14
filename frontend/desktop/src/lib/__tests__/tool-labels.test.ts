@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getToolLabel, pathBasename } from '../tool-labels';
+import { commandDisplay, getToolLabel, pathBasename } from '../tool-labels';
 
 describe('getToolLabel mapping and cleaning', () => {
   it('maps canonical tool names correctly', () => {
@@ -104,5 +104,24 @@ describe('getToolLabel mapping and cleaning', () => {
     expect(getToolLabel('list_agent_jobs', { status: 'done' })).toBe('Listed jobs');
     expect(getToolLabel('get_agent_job', { status: 'done' })).toBe('Fetched job');
     expect(getToolLabel('get_activity', { status: 'done' })).toBe('Read activity');
+  });
+
+  it('commandDisplay shortens absolute paths and leaves everything else verbatim', () => {
+    // The collapsed transcript row shows the file name; the full line stays
+    // available (the row keeps it as a title, and the output pane prints it).
+    expect(commandDisplay('python3 C:/Dev/august-proxy/scene.py')).toBe('python3 scene.py');
+    expect(commandDisplay('python3 /home/rober/work/scene.py')).toBe('python3 scene.py');
+    expect(commandDisplay('~/.aug/kernel/venv/Scripts/python.exe scene.py'))
+      .toBe('python.exe scene.py');
+    expect(commandDisplay('cat "C:/Users/rober/My Notes/a b.txt"'))
+      .toBe('cat "a b.txt"');
+
+    // Controls — a rewrite here would misrepresent the command that ran.
+    expect(commandDisplay('curl https://api.example.com/v1/models'))
+      .toBe('curl https://api.example.com/v1/models');
+    expect(commandDisplay('python ./src/app.py')).toBe('python ./src/app.py');
+    expect(commandDisplay('python src/app.py')).toBe('python src/app.py');
+    expect(commandDisplay('--out=C:/build/art.pdf')).toBe('--out=C:/build/art.pdf');
+    expect(commandDisplay('')).toBe('');
   });
 });

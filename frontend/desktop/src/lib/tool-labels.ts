@@ -267,6 +267,32 @@ export function pathBasename(path: string): string {
   return base && base.length > 0 ? base : path;
 }
 
+const COMMAND_TOKEN = /"[^"]*"|'[^']*'|\S+/g;
+
+/** A command line as a transcript row should read it: the file names, not the
+ *  directories they live in.
+ *
+ *  Deliberately narrow, because this is a display of what actually ran and an
+ *  over-eager rewrite turns it into a claim about a command that was never
+ *  issued. Only whole tokens that are absolute (drive-letter, `/`, `~/`) are
+ *  shortened; URLs, relative paths and `--flag=/abs/path` forms are left alone.
+ *  Quoting is matched first so a path containing spaces survives as one token.
+ *  The verbatim line stays available to the caller for a tooltip, and the
+ *  expanded output pane prints it in full.
+ */
+export function commandDisplay(command: string): string {
+  return command.replace(COMMAND_TOKEN, (token) => {
+    const quote = token[0] === '"' || token[0] === "'" ? token[0] : '';
+    const body = quote ? token.slice(1, -1) : token;
+    if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(body)) return token;
+    const isAbsolute =
+      /^[A-Za-z]:[\\/]/.test(body) || body.startsWith('/') || body.startsWith('~/');
+    if (!isAbsolute) return token;
+    const base = body.split(/[\\/]/).filter(Boolean).pop();
+    return base ? `${quote}${base}${quote}` : token;
+  });
+}
+
 function formatFallbackLabel(name: string): string {
   console.warn(`[ToolLabels] Unknown tool name: "${name}"`);
   const cleanName = normalizeToolName(name).replace(/[_-]+/g, ' ');
