@@ -540,7 +540,7 @@ function SessionRowInner({
           )}
           <div
             className={cn(
-              "flex-1 min-w-0 session-list-title text-[0.78125rem]",
+              "flex-1 min-w-0 session-list-title",
               active
                 ? "font-medium text-sidebar-foreground"
                 : "text-sidebar-foreground/70 group-hover:text-sidebar-foreground",
