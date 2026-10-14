@@ -15,6 +15,7 @@ import { RightDrawerDropdown } from '@/components/shell/RightDrawerLauncher';
 import { ToolStepRow } from '@/components/chat/ToolStepRow';
 import { getToolLabel } from '@/lib/tool-labels';
 import { extractCommand, extractFilename } from '@/components/chat/tool/extractors';
+import { MutationDiffCards } from '@/components/overlays/MutationDiffCards';
 
 interface ColorToken {
   name: string;
@@ -436,6 +437,24 @@ function ToolRowLab() {
           onToggle={() => {}}
         />
       ))}
+      {/* The third getToolLabel site: an approval card's title, built from a
+          pending run_command. The function is module private, so the only
+          honest check is the text the card actually shows. */}
+      <MutationDiffCards
+        sessionId="design-lab"
+        status={{
+          state: 'awaiting_approval',
+          pendingMutations: [
+            {
+              token: 'tkn_win',
+              toolName: 'run_command',
+              args: { command: `rm -rf C:${BS}Dev${BS}august-proxy${BS}build${BS}artifacts` },
+              preview: 'Run: rm -rf artifacts',
+            },
+          ],
+        } as never}
+        onContinued={() => {}}
+      />
     </div>
   );
 }

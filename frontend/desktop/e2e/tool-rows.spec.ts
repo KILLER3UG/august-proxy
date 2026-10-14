@@ -71,3 +71,34 @@ test.describe('tool step rows at the transcript width', () => {
       'no directory chain of either spelling should survive').toBe(false);
   });
 });
+
+test.describe('approval card title', () => {
+  test('a pending run_command title carries no absolute path', async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.route((url) => url.pathname.startsWith('/api/'), (route) =>
+      route.fulfill({ status: 404, json: { error: 'Not found' } }),
+    );
+    await page.goto('/_design?lab=toolrows', { waitUntil: 'domcontentloaded' });
+    const card = page.getByTestId('mutation-diff-cards');
+    await expect(card).toBeVisible();
+    const read = await card.evaluate((box) => {
+      const leaves = Array.from(box.querySelectorAll('*'))
+        .filter((e) => e.children.length === 0)
+        .map((e) => (e.textContent || '').trim())
+        .filter(Boolean);
+      // The title is the label this component builds through getToolLabel. The
+      // `$ …` line beside it is the verbatim command an approval has to show —
+      // asserting over the whole card would demand the app hide exactly the text
+      // a person needs before saying yes.
+      const titles = leaves.filter((t) => /^(Ran|Running):/.test(t));
+      return {
+        titles,
+        allText: (box.textContent || '').replace(/\s+/g, ' ').trim(),
+        leakedTitles: titles.filter((t) => /[A-Za-z]:[\\/]/.test(t)),
+      };
+    });
+    expect(read.titles.length, 'the card should render a built title').toBeGreaterThan(0);
+    expect(read.leakedTitles, 'the approval card title must not print the path').toEqual([]);
+    expect(read.allText, 'the exact command stays visible for approval').toContain('C:');
+  });
+});
