@@ -629,3 +629,28 @@ positive id never takes that branch. What remains unseen is the *neighbouring* m
    against a temp session, which would also let the shape ladder be tested without eight real 400s.
    `tests/test_stuck_request_escape.py` currently reaches the ladder by calling the rescue functions
    directly, so it pins the rungs, not the wiring that decides to take them.
+
+   **That last sentence was false when re-read (2026-10-16), and the item is now split.**
+   `tests/test_stuck_request_escape.py:82` defines `StubClient`, injected at the real client seam
+   (`clientsMod.getClient`, `:146-147`), and `TestInTheLoop` (`:522`) drives
+   `wb.sendWorkbenchMessageStream` end to end: it asserts `stub.callCount == 2`, reads the
+   `recovery {kind:'stuck-request', outcome:'flattened', degraded:true}` frame off the event list,
+   requires a `warning` telling the user their history was reshaped, and inspects the **retry body
+   the stub was handed** to prove the tool pairing is gone. So the stuck-request ladder is already
+   measured through the wiring, on the wire, not on an internal call. The prefix-reuse half is
+   covered by `tests/test_prompt_cache_stability.py`.
+   1. **Still genuinely unbuilt: a MULTI-ROUND script.** `StubClient` yields text only, so the loop
+      ends after one call — it cannot exercise anything that needs several managed rounds. The two
+      ladders with no in-loop measurement are therefore the **turn budget rungs** (`budgetSoft*`,
+      which spend one rung per round) and the **runaway backstop** (`runawayNudgeRounds` /
+      `runawayStopRounds`, which count world delta across rounds). Both are unit-pinned today
+      (`tests/test_runaway_backstop.py`, the budget branch in `loop/recovery.py`). Building it needs
+      a script that replays tool_use rounds, and the interesting part is not the plumbing: the
+      runaway arm fires on the ABSENCE of world delta, so a scripted round sequence has to produce
+      novel arguments *without* touching the filesystem, or the counter resets and the test proves
+      nothing. Decide the scripted tool surface first (a no-op tool the loop treats as world-neutral)
+      rather than driving `read_file` at temp paths.
+    2. **Not built, by the same reading: a bench that forces an overflow** by shrinking the model
+      window (`ds-bot/dev/bench.sh` with `CONTEXT_WINDOW`), which is how `reactive_overflow` gets
+      reached deterministically instead of by a 40k-token fixture.
+
