@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { Brain, ChevronDown, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Task, TaskContent, TaskTrigger } from '@/components/ui/task';
 import {
   ToolCallItemBody,
   extractAgentId,
@@ -1066,16 +1068,20 @@ export function AssistantBlockTimeline({
         tagged.push({
           kind: 'block',
           node: (
-            <details
+            <Task
               key={block.id || `recall_${ti}`}
+              defaultOpen={false}
               data-testid="recalled-memories-block"
-              className="mx-3 my-1 max-w-full rounded border border-border/60 bg-muted/40 px-2.5 py-1 text-2xs text-muted-foreground"
+              className="mx-3 my-1 block max-w-full rounded border border-border/60 bg-muted/40 px-2.5 py-1 text-2xs text-muted-foreground"
             >
-              <summary className="flex cursor-pointer select-none items-center gap-1.5 list-none">
-                <ChevronDown className="disclosure-chevron" aria-hidden />
-                <span className="truncate">{label}</span>
-              </summary>
-              <ul className="mt-1 space-y-1 pl-1">
+              <TaskTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" className="h-auto w-full gap-1.5 justify-start px-0 py-0 text-2xs font-normal">
+                  <ChevronDown className="disclosure-chevron shrink-0 transition-transform group-data-[state=open]:rotate-180" aria-hidden />
+                  <span className="truncate">{label}</span>
+                </Button>
+              </TaskTrigger>
+              <TaskContent className="mt-1">
+              <ul className="space-y-1 pl-1">
                 {rows.map((m) => (
                   <li key={m.id} className="flex items-start gap-1.5">
                     <span
@@ -1095,7 +1101,8 @@ export function AssistantBlockTimeline({
                   </li>
                 ))}
               </ul>
-            </details>
+              </TaskContent>
+            </Task>
           ),
         });
         ti++;
@@ -1327,15 +1334,19 @@ export function AssistantBlockTimeline({
               {block.content || 'Generation failed.'}
             </div>
             {raw ? (
-              <details className="mt-1.5 text-[0.75rem] text-danger-fg">
-                <summary className="flex cursor-pointer select-none items-center gap-1.5 list-none">
-                  <ChevronDown className="disclosure-chevron" aria-hidden />
-                  Show provider details
-                </summary>
-                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-danger/40 p-2 font-mono text-2xs">
-                  {raw}
-                </pre>
-              </details>
+              <Task defaultOpen={false} className="mt-1.5 block text-[0.75rem] text-danger-fg">
+                <TaskTrigger asChild>
+                  <Button type="button" variant="ghost" size="sm" className="h-auto gap-1.5 px-0 py-0 text-[0.75rem] font-normal">
+                    <ChevronDown className="disclosure-chevron shrink-0 transition-transform group-data-[state=open]:rotate-180" aria-hidden />
+                    Show provider details
+                  </Button>
+                </TaskTrigger>
+                <TaskContent className="mt-1">
+                  <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-danger/40 p-2 font-mono text-2xs">
+                    {raw}
+                  </pre>
+                </TaskContent>
+              </Task>
             ) : null}
             {(onRetryTurn || onSwitchModel) && (
               <div className="mt-2.5 flex items-center gap-2">

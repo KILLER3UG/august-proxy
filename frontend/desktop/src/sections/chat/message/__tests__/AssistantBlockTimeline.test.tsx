@@ -748,7 +748,7 @@ describe('recalledMemories renderer', () => {
     expect(chip).toBeTruthy();
     expect(chip!.textContent).toContain('Recalled 2 memories (1 project)');
     // Open the details and check both scope badges render.
-    fireEvent.click(chip!.querySelector('summary')!);
+    fireEvent.click(chip!.querySelector('summary, button[aria-expanded]')!);
     expect(chip!.textContent).toContain('user-name');
     expect(chip!.textContent).toContain('project:DB port');
     expect(chip!.textContent).toContain('glob');
@@ -819,9 +819,16 @@ describe('provider-error bubble', () => {
     const bubble = document.querySelector('[data-testid="chat-error-bubble"]');
     expect(bubble).toBeTruthy();
     expect(bubble!.textContent).toContain('Rate limited');
-    // The friendly copy is visible WITHOUT expanding anything, and the raw
-    // provider text is behind a details element.
-    expect(bubble!.querySelector('details')).toBeTruthy();
+    /* The friendly copy is visible WITHOUT expanding anything, and the raw
+       provider text is behind the disclosure. Asserted on the property rather
+       than on the element name: B4 moved this site onto the transcript's Task
+       primitive, whose trigger is a button[aria-expanded] and whose body is not
+       mounted until it is opened — a <details> kept it in the DOM. */
+    const errTrigger = bubble!.querySelector('summary, button[aria-expanded]');
+    expect(errTrigger).toBeTruthy();
+    expect(bubble!.textContent).not.toContain('[429] upstream busy');
+    fireEvent.click(errTrigger!);
+    expect(bubble!.textContent).toContain('[429] upstream busy');
     // No collapsible activity pack hides it — a lone error turn has no pack.
     expect(document.querySelector('[data-slot="activity-summary"]')).toBeNull();
   });
