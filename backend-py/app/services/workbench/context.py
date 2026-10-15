@@ -36,6 +36,37 @@ currentSubagentTaskId: ContextVar[str] = ContextVar('workbench_subagent_task_id'
 # the value to later root spawns. The orchestrator reads this (default 0 = root).
 currentSubagentDepth: ContextVar[int] = ContextVar('workbench_subagent_depth', default=0)
 
+# Tool names the current sub-agent worker may NOT execute. Set by
+# ``executeSubAgent`` alongside ``currentSubagentTaskId``.
+#
+# A withheld name was not a refused name: ``tool_call`` accepts an arbitrary tool
+# name and dispatches through the parent turn's real executor, so a worker spawned
+# read-only could still execute a write by naming it. The bridge can only check
+# that ceiling if the worker publishes it, and only a ContextVar is per-worker —
+# concurrent workers share the parent session.
+#
+# A DENY set deliberately, not the offered-tool list: the offered list is a
+# progressive-disclosure slice, and a worker is meant to reach tools outside it
+# through `tool_search` -> `tool_call`. Gating on it would have broken that
+# documented path. Gating on the exclusions — the capability tier, the restricted
+# set, the never-tools, the lineage ceiling, a declared permission list — refuses
+# what the worker was not entitled to, discovered or not.
+currentSubagentDenied: ContextVar[frozenset[str]] = ContextVar('workbench_subagent_denied', default=frozenset())
+
+
+def currentAgentId() -> str:
+    """The agent the executing tool call belongs to, or '' outside an agent session.
+
+    A plain chat has no agent bound, and a turn outside any dispatch has no session,
+    so '' is the common case and callers must treat it as "no position in the agent
+    hierarchy" rather than as a wildcard.
+    """
+    from app.json_narrowing import as_str
+    from app.services.workbench.sessions import get_workbench_session
+
+    session = get_workbench_session(currentSessionId.get())
+    return as_str(getattr(session, 'agentId', '')) if session else ''
+
 # ---------------------------------------------------------------------------
 # One authority for the spawn-depth cap.
 #

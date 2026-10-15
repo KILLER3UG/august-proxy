@@ -26,6 +26,27 @@ def _err(message: str, **fields: object) -> str:
     return json.dumps({'status': 'error', 'error': message, **fields}, default=str)
 
 
+# An agent's capability definition — what its turns may touch, and which model
+# runs them. Authored only at the human door (``PUT /api/agents/{id}``, actor='ui'),
+# because these tools are callable by whichever model is talking: a turn that can
+# write them can grant itself ``permissions=['all']``, strip a peer's, or repoint
+# a colleague at another model. The roster never sets them, so no real flow does.
+_AUTHORITY_KEYS = {'permissions': 'permissions', 'tools': 'tools', 'model_alias': 'model routing (modelAlias)'}
+
+
+def _authority_refusal(provided: dict[str, object]) -> str | None:
+    """Error text naming every authority field the caller tried to author, else None."""
+    named = [label for key, label in _AUTHORITY_KEYS.items() if provided.get(key)]
+    if not named:
+        return None
+    return _err(
+        f"Refused: {', '.join(named)} is an agent's capability definition, which only the "
+        'user can author (Settings → Agents). An agent that declares no capabilities inherits '
+        'the surface of the turn that spawned it, which is normally what a delegated worker wants.',
+        refused=named,
+    )
+
+
 async def createAlias(alias: str, target_model: str, target_provider: str, display_alias: str = '') -> str:
     from app.services import alias_service
 
@@ -111,6 +132,10 @@ async def createAgent(
     # so every agent is a Bot with a canonical chat. Idempotent on name.
     from app.services.bot_mode import roster
 
+    refused = _authority_refusal({'permissions': permissions, 'tools': tools, 'model_alias': model_alias})
+    if refused:
+        return refused
+
     try:
         agent = roster.create_bot(
             name=name,
@@ -118,21 +143,12 @@ async def createAgent(
             role=role,
             actor='agent',
         )
-        if tools or permissions or model_alias or parent_agent:
+        if parent_agent:
             from app.services.tools import agent_registry
 
             agent_registry.updateAgent(
                 as_str(agent.get('id')),
-                {
-                    k: v
-                    for k, v in {
-                        'tools': tools or [],
-                        'permissions': permissions or [],
-                        'modelAlias': model_alias,
-                        'parentId': parent_agent or None,
-                    }.items()
-                    if v
-                },
+                {'parentId': parent_agent},
                 actor='agent',
             )
         return _ok(agent=agent)
@@ -151,18 +167,21 @@ async def updateAgent(
 ) -> str:
     from app.services.tools import agent_registry
 
+    refused = _authority_refusal({'permissions': permissions, 'tools': tools, 'model_alias': model_alias})
+    if refused:
+        return refused
+
     updates = {
         k: v
         for k, v in {
             'name': name,
             'description': description,
             'role': role,
-            'tools': tools,
-            'permissions': permissions,
-            'modelAlias': model_alias,
         }.items()
         if v is not None
     }
+    if not updates:
+        return _err('Nothing to update: pass a name, description or role.')
     try:
         agent = agent_registry.updateAgent(agentId, cast('dict[str, object]', updates), actor='agent')
         if not agent:
@@ -175,8 +194,49 @@ async def updateAgent(
 async def deleteAgent(agentId: str) -> str:
     from app.services.tools import agent_registry
 
+    if not agent_registry.getAgent(agentId):
+        return _err(f"Agent '{agentId}' not found")
+    # Through the roster, not the registry: the route this tool predates. Only
+    # ``roster.delete_bot`` refuses the default assistant Bot and cascades a
+    # deleted Bot's private footprint (its ``bot:<id>`` facts, DM rows, room
+    # memberships and canonical chat) — a bare registry delete leaves all of it
+    # behind and re-mints a NEW id for `assistant` on the next boot, stranding
+    # every chat bound to the old one.
+    from app.services.bot_mode import roster
+
+    default = roster.get_default_bot()
+    if default and as_str(default.get('id')) == agentId:
+        return _err(
+            "Refused: the default assistant Bot cannot be deleted. Use a different agentId, "
+            'or ask the user to remove it in Settings → Agents.'
+        )
+    # A turn may retire its own descendants, not the hierarchy above it: deleting
+    # an ancestor orphans every agent under it, and `deleteAgent` removes rows
+    # without reparenting them. Bot rooms and DM sessions run guardMode='full',
+    # so the confirmation that would ask a human first is not armed for them.
+    from app.services.workbench.context import currentAgentId
+
+    callerId = currentAgentId()
+    if callerId:
+        if callerId == agentId:
+            return _err('Refused: an agent cannot delete itself.')
+        ancestor = agent_registry.getAgent(callerId)
+        steps = 0
+        while ancestor and steps < 8:
+            if as_str(ancestor.get('id')) == agentId:
+                return _err(
+                    'Refused: that agent is an ancestor of the one running this turn, so deleting '
+                    'it would orphan the subtree below it.'
+                )
+            ancestor = agent_registry.getAgent(as_str(ancestor.get('parentId')))
+            steps += 1
+    if any(as_str(a.get('parentId')) == agentId for a in agent_registry.listAgents()):
+        return _err(
+            "Refused: that agent still has children. Delete them first, or ask the user to "
+            'remove the whole branch in Settings → Agents.'
+        )
     try:
-        removed = agent_registry.deleteAgent(agentId, actor='agent')
+        removed = roster.delete_bot(agentId, actor='agent')
         if not removed:
             return _err(f"Agent '{agentId}' not found")
         return _ok(deleted=True, agentId=agentId)
@@ -312,7 +372,9 @@ def register() -> None:
     )
     tool_registry.register(
         'create_agent',
-        'Create a new agent with a name, role, description, tool set, and optional model alias. The agent is persisted and immediately usable (bind it to a session or invoke it as a sub-agent).',
+        'Create a new agent (a Bot) with a name, role and description. The agent is persisted '
+        'and immediately usable — bind it to a session or invoke it as a sub-agent. Its tool '
+        'surface is inherited from the turn that spawns it; capabilities are the user to set.',
         createAgent,
         {
             'type': 'object',
@@ -320,17 +382,6 @@ def register() -> None:
                 'name': {'type': 'string', 'description': 'Human-readable agent name.'},
                 'description': {'type': 'string', 'description': 'What the agent does.'},
                 'role': {'type': 'string', 'description': "Role label (e.g. 'Researcher')."},
-                'tools': {
-                    'type': 'array',
-                    'items': {'type': 'string'},
-                    'description': 'Tool names this agent may use.',
-                },
-                'permissions': {
-                    'type': 'array',
-                    'items': {'type': 'string'},
-                    'description': "Permission tokens (or ['all']).",
-                },
-                'modelAlias': {'type': 'string', 'description': 'Model alias to inherit/use.'},
                 'parentAgent': {'type': 'string', 'description': 'Parent agent id (for hierarchy).'},
             },
             'required': ['name'],
@@ -338,7 +389,8 @@ def register() -> None:
     )
     tool_registry.register(
         'update_agent',
-        "Update an existing agent's configuration. Pass only the fields to change.",
+        "Update an existing agent's name, description or role. Pass only the fields to change. "
+        "Capabilities (tools, permissions, model routing) are the user's to author in Settings.",
         updateAgent,
         {
             'type': 'object',
@@ -347,9 +399,6 @@ def register() -> None:
                 'name': {'type': 'string'},
                 'description': {'type': 'string'},
                 'role': {'type': 'string'},
-                'tools': {'type': 'array', 'items': {'type': 'string'}},
-                'permissions': {'type': 'array', 'items': {'type': 'string'}},
-                'modelAlias': {'type': 'string'},
             },
             'required': ['agentId'],
         },

@@ -52,6 +52,9 @@ SUBAGENT_MODEL_TIMEOUT_S = 240
 _SUBAGENT_NEVER_TOOLS = frozenset(
     {
         'create_agent', 'set_agent_mode',
+        # Same reason as `create_agent`, and these two were missing: the whole
+        # agent-management surface lets a turn rewrite shared authority state.
+        'update_agent', 'delete_agent',
         'interrupt_subagent', 'send_subagent_message',
         # Sub-agents do not write durable memory — only the main model does.
         # The whole memory write/read-CRUD surface is blocked, not
@@ -267,6 +270,70 @@ def _toolAllowed(agent: dict[str, object], name: str) -> bool:
     if aid and (not as_bool(agent.get('_synthetic', False))) and getAgent(aid):
         return bool(as_bool(evaluateAgentTool(aid, name).get('allowed', False)))
     return True
+
+
+def _lineageCeiling(
+    session: object, agent: dict[str, object], childId: str
+) -> set[str] | None:
+    """The authority a child may not exceed, or ``None`` when its lineage declares none.
+
+    ``toolDefinitions(session)`` bounds a worker to the parent's tool LIST, but the
+    parent's DECLARED permissions were never applied to it: a parent scoped to
+    ``['web_search']`` could spawn a child declaring ``['all']`` and hand it more
+    than it had itself. ``deriveChildPermissions`` computes exactly that
+    intersection — and used to be called for effect, its result discarded, behind a
+    guard that read ``session.agent_id`` while the field is ``agentId``, so it never
+    ran at all.
+    """
+    if as_bool(agent.get('_synthetic', False)):
+        return None
+    parentId = as_str(getattr(session, 'agentId', ''))
+    if not parentId:
+        return None
+    try:
+        derived = deriveChildPermissions(parentId, childId)
+    except Exception:
+        logger.warning('subagent lineage ceiling unavailable for %s under %s', childId, parentId)
+        return None
+    if 'all' in derived:
+        return None
+    return {as_str(n) for n in derived}
+
+
+def _allToolNames() -> set[str]:
+    """Every name the registry can dispatch to — including deferred ones.
+
+    The deny set has to be expressed over this universe, not over the tools a
+    worker was shown: a worker reaches undiscovered tools on purpose through
+    ``tool_search`` → ``tool_call``, so "not in the offered list" is not the same
+    statement as "not entitled to".
+    """
+    from app.services import tool_registry
+
+    return {as_str(t.get('name')) for t in tool_registry.listRaw()}
+
+
+def _workerDeniedNames(
+    agent: dict[str, object],
+    session: object,
+    cap_filter: set[str] | None,
+    restricted_names: set[str] | frozenset[str] | None,
+    lineageCeiling: set[str] | None,
+) -> frozenset[str]:
+    """What this worker may not execute, whatever route it takes to ask for it."""
+    universe = _allToolNames()
+    denied = set(_blocked_tools(session))
+    denied |= set(restricted_names or ())
+    if cap_filter is not None:
+        denied |= universe - cap_filter
+    if lineageCeiling is not None:
+        denied |= universe - lineageCeiling
+    if as_list(agent.get('permissions'), []):
+        # Only a DECLARED list scopes: an absent one inherits (see
+        # agent_registry._declaredPermissions), and inheriting must not deny the
+        # whole universe.
+        denied |= {n for n in universe if not _toolAllowed(agent, n)}
+    return frozenset(denied)
 
 
 def subagent_memory_block(session: object, goal: str, workspace: str | None) -> str:
@@ -610,12 +677,7 @@ async def executeSubAgent(
     agentCtx = renderAgentContext(resolvedAgentId) if not as_bool(agent.get('_synthetic', False)) else ''
     if not agentCtx:
         agentCtx = f'Agent: {as_str(agent.get("name"), "General")}\nRole: {as_str(agent.get("role"), "General")}'
-    parentId = getattr(session, 'agent_id', '') or None
-    if parentId and (not as_bool(agent.get('_synthetic', False))):
-        try:
-            deriveChildPermissions(parentId, resolvedAgentId)
-        except Exception:
-            pass
+    lineageCeiling = _lineageCeiling(session, agent, resolvedAgentId)
     # Part 26 2.6/Phase 8: reuse the parent's already-assembled tool lists —
     # each builder here re-ran assembleToolDefs (a BM25 walk over the whole
     # transcript), so a 5-wave spawn copied the parent transcript through
@@ -638,6 +700,8 @@ async def executeSubAgent(
         # Guard by guardMode — full is required for write/shell subagents; read_only is always allowed.
         if restricted_names:
             allowedNames -= set(restricted_names)
+        if lineageCeiling is not None:
+            allowedNames &= lineageCeiling
         tools = [t for t in fullTools if _toolName(t) in allowedNames]
         openaiTools = [t for t in fullOpenaiTools if _toolName(t) in allowedNames]
     else:
@@ -648,9 +712,17 @@ async def executeSubAgent(
         }
         if cap_filter is not None:
             raw_allowed &= cap_filter
+        if lineageCeiling is not None:
+            raw_allowed &= lineageCeiling
         allowedNames = raw_allowed
         tools = [t for t in fullTools if _toolName(t) in allowedNames]
         openaiTools = [t for t in fullOpenaiTools if _toolName(t) in allowedNames]
+    # The worker's authority, once, as the names it may NOT execute.
+    # The dispatch guard and the `tool_call` bridge both read this, because a name
+    # removed from the surface was never refused at execution — `tool_call` takes
+    # an arbitrary name and only consulted `_blocked_tools`, so a read-only worker
+    # could write a file by asking for it by name.
+    _workerDenied = _workerDeniedNames(agent, session, cap_filter, restricted_names, lineageCeiling)
     # Sub-agents inherit the parent session's workspace
     # so project skills (and their shadowing) appear in their prompts —
     # tool dispatch already resolves paths against the same workspace.
@@ -739,10 +811,11 @@ async def executeSubAgent(
     # copied per asyncio task, so concurrent workers each see their OWN value
     # — unlike the session-attribute hack below, which races (the last
     # spawned worker overwrote it for all).
-    from app.services.workbench.context import currentSubagentTaskId
+    from app.services.workbench.context import currentSubagentDenied, currentSubagentTaskId
 
     _workerTaskId = task_id or as_str(getattr(session, '_current_subagent_task_id', ''), '')
     tidToken = currentSubagentTaskId.set(_workerTaskId)
+    authToken = currentSubagentDenied.set(_workerDenied)
     _subagentTask = _register_current_subagent(getattr(session, 'id', '') or '')
     try:
         toolRound = 0
@@ -1166,7 +1239,11 @@ async def executeSubAgent(
                         emit=emit,
                     )
                     status = 'done'
-                elif not _toolAllowed(agent, tName) or tName in _blocked_tools(session):
+                elif (
+                    tName in _workerDenied
+                    or not _toolAllowed(agent, tName)
+                    or tName in _blocked_tools(session)
+                ):
                     result = f"[Blocked] Sub-agent not permitted to use '{tName}'."
                     status = 'blocked'
                 else:
@@ -1506,6 +1583,7 @@ async def executeSubAgent(
     finally:
         _unregister_current_subagent(getattr(session, 'id', '') or '', _subagentTask)
         currentSubagentTaskId.reset(tidToken)
+        currentSubagentDenied.reset(authToken)
         currentSessionId.reset(token)
         if _depthToken is not None:
             try:

@@ -190,6 +190,51 @@ failure cannot switch the gate off silently; failed reads log at warning. Stated
 that arrives already escaped (`\u0073k-…`, base64 of the transcript) does not match,
 and a keyring-held credential is out of reach. Tests drive a real client through an
 `httpx.MockTransport` and assert on what the provider would receive.
+**An agent's capability definition is not model-writable.** `create_agent`,
+`update_agent` and `delete_agent` are ordinary registered tools, so whichever
+model is talking could pass `agentId` plus `permissions: ['all']` for any agent —
+measured before the fix: a turn holding `['read_file']` wrote itself `['all']`,
+rewrote an unrelated agent's permissions *and* model routing, and deleted both
+that stranger and its own root. Guard modes do not cover this: `needs_approval_in`
+returns False for `full`, and **every Bot DM and room session is created with
+`guardMode='full'`** (`rooms.py`), and no session is even required. So
+`_authority_refusal` rejects `permissions` / `tools` / `modelAlias` at the handler
+(they are gone from the advertised schemas too — a knob that always refuses is a
+lie), the descriptive fields stay writable, and the registry's own write stays
+open for the human door (`PUT /api/agents/{id}`, `actor='ui'`). `delete_agent` now
+routes through `roster.delete_bot` like the UI route always has, whose docstring
+names the reason: only that path refuses the default assistant Bot and cascades a
+deleted Bot's private footprint; a bare registry delete left the facts, DM rows,
+room memberships and canonical chat behind and `ensure_default_bot` re-minted a
+NEW id for `assistant`, stranding every chat bound to the old one. On top of that
+a turn may not delete itself, an ancestor, or a branch that still has children.
+`tests/test_agent_authority_door.py` pins all of it, including that no session
+bound is not a free pass.
+**An absent capability definition means inherit, and inheritance cannot widen.**
+`permissions: []` was read as "allowed nothing", which is why `evaluateAgentTool`
+denied every tool to a roster-created Bot — measured: a delegated worker kept **0
+of 6** tools, while the sibling controls (`['all']` → 6, prefix `read_` → 1) proved
+the probe could tell. Both real agents in this install's store are `[]`, and
+`create_bot` never sets the field, so the empty list is the ABSENCE of a
+definition, not a grant of nothing; `_declaredPermissions` says so once and
+`evaluateAgentTool`, `_effectivePermissions` and the spawn surface all read it.
+Inheriting is safe because a worker's names are always drawn from
+`toolDefinitions(session)` — the PARENT's list — so it cannot exceed the turn that
+spawned it. `_effectivePermissions` now applies the parent's bound even to a child
+declaring `'all'`, because otherwise `'all'` launders the restriction away, and
+`deriveChildPermissions` — which existed, was called, and had its result
+discarded behind a guard reading `session.agent_id` while the field is `agentId`,
+so it never ran — is now the spawn-time ceiling in `_lineageCeiling`.
+**Enforcement is the deny set, not the withheld surface**: `tool_call` dispatches
+an arbitrary name through the real executor, so a worker spawned read-only could
+still `write_file` by naming it. `_workerDeniedNames` (tier, restricted set,
+never-tools, lineage ceiling, a declared list) is published on
+`currentSubagentDenied`, read by both the worker's dispatch guard and the bridge.
+It is a DENY set on purpose — the offered list is a progressive-disclosure slice
+and `tool_search` → `tool_call` is the documented route to a tool outside it, so
+gating on that slice would break delegation for weak models. `update_agent` and
+`delete_agent` were added to `_SUBAGENT_NEVER_TOOLS`, which had only `create_agent`
+despite its own comment naming all three doors.
 **Context relief has two routes, and the route is chosen from state, not by a
 model.** Compact-in-place keeps the first `DEFAULT_HEAD_COUNT` (4) messages
 verbatim *forever* and summarizes what follows, so from the second relief onward

@@ -160,6 +160,18 @@ async def handleToolCall(name: str, arguments: str) -> str:
 
             if name in _blocked_tools(session):
                 return f"[Blocked] Sub-agent not permitted to use '{name}' via tool_call."
+            # Same site, same second ceiling: the worker's own DENY set. A name
+            # taken off the surface was never refused at execution, so a worker
+            # spawned read-only could write a file by naming it here — the tier
+            # lived only in the tool list the model was shown. Denied rather than
+            # allowed-typed, because reaching a tool the surface hid is the
+            # documented route (tool_search -> tool_call) for a worker entitled
+            # to it, and only these exclusions say who is not.
+            from app.services.workbench.context import currentSubagentDenied
+
+            denied = currentSubagentDenied.get()
+            if name in denied:
+                return f"[Blocked] Sub-agent is not permitted to use '{name}' via tool_call."
     except Exception:
         return '[Blocked] tool_call could not verify sub-agent tool restrictions.'
     # Dispatch through the turn loop's real executor (hooks,

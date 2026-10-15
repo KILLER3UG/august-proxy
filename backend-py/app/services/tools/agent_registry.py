@@ -144,12 +144,30 @@ def getAgentTreeRooted(root: str = '', maxDepth: int = 4) -> dict[str, object]:
     return {'agent': None, 'children': [buildNode(a, 0) for a in roots]}
 
 
+def _declaredPermissions(agent: dict[str, object]) -> set[str] | None:
+    """The capability set an agent declares for itself, or ``None`` for "declares none".
+
+    ``permissions`` is an authority definition, and only the human door writes one
+    (``routers/agents.py``, actor='ui'): the roster path that creates every Bot never
+    sets it, so in a real install every agent is ``[]``. Reading that as "allowed
+    nothing" made the registry's own predicate deny every tool, which is why a
+    Bot spawned as a worker arrived with an empty surface. An empty list is the
+    ABSENCE of a definition, and absence means inherit — the caller's own bound
+    (the parent's tool list, the guard mode, the capability tier) still applies,
+    so inheriting cannot widen anything.
+    """
+    perms = {as_str(p) for p in as_list(agent.get('permissions'), []) if as_str(p)}
+    return perms or None
+
+
 def evaluateAgentTool(agentId: str, toolName: str) -> dict[str, object]:
     """Check if an agent is permitted to use a tool."""
     agent = getAgent(agentId)
     if not agent:
         return {'allowed': False, 'reason': 'agent_not_found'}
-    permissions = as_list(agent.get('permissions'), [])
+    permissions = _declaredPermissions(agent)
+    if permissions is None:
+        return {'allowed': True, 'reason': 'no declared permission set — inherits'}
     if 'all' in permissions:
         return {'allowed': True}
     if toolName in permissions:
@@ -166,22 +184,27 @@ def evaluateAgentTool(agentId: str, toolName: str) -> dict[str, object]:
 def _effectivePermissions(agentId: str) -> set[str] | None:
     """Resolve the effective permission set, walking parents.
 
-    Returns ``None`` when ``"all"`` appears in the chain (no restriction),
-    otherwise the most-restrictive intersection across the lineage.
+    One rule: an agent's bound is its OWN declaration intersected with its
+    parent's. ``None`` means nothing in the chain restricts it — an absent
+    declaration (see ``_declaredPermissions``) or an explicit ``"all"``.
+
+    The parent's bound is applied even when the child declares ``"all"``, because
+    that is the escalation this walk exists to stop: a worker granted ``['all']``
+    under a read-only parent would otherwise inherit no limit at all, and the
+    short-circuit here was exactly how the spawn-time ceiling came back empty.
     """
     agent = getAgent(agentId)
     if not agent:
         return set()
-    perms = {as_str(p) for p in as_list(agent.get('permissions'), [])}
-    if 'all' in perms:
-        return None
+    perms = _declaredPermissions(agent)
+    unboundedHere = perms is None or 'all' in perms
     parentId = as_str(agent.get('parentId'))
     if parentId:
         parentEff = _effectivePermissions(parentId)
-        if parentEff is None:
-            return perms
-        return perms & parentEff
-    return perms
+        if unboundedHere:
+            return parentEff
+        return perms if parentEff is None else (perms or set()) & parentEff
+    return None if unboundedHere else cast('set[str]', perms)
 
 
 def deriveChildPermissions(parentId: str, childId: str) -> list[str]:
