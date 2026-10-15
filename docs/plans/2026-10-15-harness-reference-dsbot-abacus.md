@@ -346,6 +346,13 @@ write door. `provider_credentials.invalidate()` genuinely does not fire callback
 (documented in the stamp comment); `saveProvidersStore` is the only providers.json
 writer (16 call sites measured, all through it).
 
+Verification of this round: the whole backend suite green on its own marker —
+5424 passed, 5 skipped in 29m19s on `-n 8` (`-n auto` had oversubscribed the
+machine while the two review agents ran and killed an xdist worker on the 200 MB
+paging fixture; the same test passes alone in 242 s, and it is in the suite's
+green run here). `ruff check .` and `mypy app/` (339 files) clean, `check:design`
+unchanged at the 964 baseline, `check:docs` 6/6.
+
 ## Next, in value-per-risk order
 
 1. **Review-from-archive** (abacus item 4) — **attempted today, larger than it reads, and that is
