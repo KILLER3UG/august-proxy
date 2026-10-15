@@ -45,7 +45,7 @@ nothing from either was executed.
    no hop count across forwards and has no team-wide ceiling. **Cost:** one column + two checks.
    **Adopt** — this is the runaway class our loop guards already cover for one agent, not for a
    conversation between agents.
-5. **[V] Poisoned-history escape hatch.** `src/host/parts.js` `agent/request-error`: a stuck code,
+5. **[V, shipped today] Poisoned-history escape hatch.** `src/host/parts.js` `agent/request-error`: a stuck code,
    or a *second consecutive* `INVALID_REQUEST`, starts a fresh part instead of replaying the same
    history; a `bare` rescue mode drops the newest messages outright. August treats
    `invalid_request_error` as an overflow string only (`app/services/workbench/loop/recovery.py:59`)
@@ -119,6 +119,34 @@ Neighbours unaffected — `test_memory_review_pass`, `test_skill_relevance_prior
 `test_prune_then_compact`, `test_gate_participation` 90 passed. `ruff` and `mypy` clean on both
 files.
 
+`backend-py/app/services/workbench/loop/recovery.py` + `workbench.py` — **DS Bot item 5, the
+poisoned-history escape hatch.** August already kept a deterministic 400 out of the retry policy,
+which is the correct half and the reason the other half was invisible: an identical request would
+fail identically, but the *next turn* sends the same `session.messages`, so one orphaned
+`tool_use_id` surviving into persisted history bricked the chat and only deleting the session
+escaped it. The ladder is a function of data the loop already writes — the trailing run of
+`ok=0, error_class='bad_request'` rows for that session in `turn_outcomes` — so it needs no new
+column, no new state key and it survives a restart. Refusal 1 is left alone (the reference's own
+rule: "a provider may turn down one request for reasons of its own"); refusal 2 flattens the tool
+pairing into text and keeps the whole conversation; refusal 3 sends only the newest user ask; at 4
+nothing fires, so the turn fails honestly rather than discarding more transcript. The archive is
+written before every rung, each emits `recovery {kind:'stuck-request', outcome, degraded:true}`
+plus a warning whose refusal count is computed from the ledger rather than asserted, and
+`_stripToolsFromHistory` gained one `note=` parameter rather than a second copy — the two rescues
+must not tell the model the same thing, since one drops the tool surface and the other keeps it.
+Overflow stays on its own ladder: `classify_error` matches `context_overflow` before
+`bad_request`, and the branch additionally refuses anything `_isContextOverflowError` claims.
+New `tests/test_stuck_request_escape.py` (17): streak semantics (a clean turn, a rate limit and a
+sub-agent fan-out row each behave as documented), the two surface builders, the four-step
+escalation bound, plus a real managed-loop case that asserts on the **retry wire body** (no
+`tool_use_id`, no tool-role message, the receipt text still present) and that the reduced surface
+was persisted so the next turn cannot re-send the poison. Its control case asserts that a single
+refusal still ends as an ordinary error with no reshape. **Red-proved**: with the branch condition
+forced False, the loop case fails at `callCount == 1` — one refusal and no repair — and the two
+control cases still pass; restored, all 17 pass. Neighbours: compaction-parity, runaway-backstop,
+overflow-probe, turn-ok and gate-participation together 104 passed. `ruff check .` and
+`mypy app/` (339 files) clean. Whole backend suite: 5380 passed, 5 skipped, 20m38s on 16 cores.
+
 ## Next, in value-per-risk order
 
 1. **Review-from-archive** (abacus item 4) — **attempted today, larger than it reads, and that is
@@ -138,9 +166,10 @@ files.
    `parse_verdicts`/`apply_verdict` (`skill_distiller.py:1591-1612`) and the migration that would
    carry the archive watermark, and must preserve the two stated invariants: an empty window still
    advances the cursor, and the `messages` table stays the single transcript authority.
-2. **Stuck-request recovery** (DS Bot item 5): counter + fresh-part/bare rescue on a second
-   consecutive `INVALID_REQUEST`.
-3. **Rotate-vs-compact steward** (DS Bot item 1) — and build item 8's dev-only eval **first**, so a
+2. **Rotate-vs-compact steward** (DS Bot item 1) — and build item 8's dev-only eval **first**, so a
    model-chosen context policy ships with a measurement rather than a vibe.
-4. **Per-send hop and unread budgets for bot conversations** (DS Bot item 4).
-5. **Outbound secret scrub** (DS Bot item 7), tested on the serialized body.
+3. **Per-send hop and unread budgets for bot conversations** (DS Bot item 4) — measured today:
+   `bot_mode/dm.py` guards a *pair* (`has_inflight(sender, to)`), so an A→B→A→B or A→B→C→A chain is
+   bounded only by the instruction "Do not ping-pong" in the tool description. Nothing travels with
+   the message.
+4. **Outbound secret scrub** (DS Bot item 7), tested on the serialized body.

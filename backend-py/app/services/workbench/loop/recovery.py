@@ -1,10 +1,12 @@
-"""Context-overflow + budget recovery for the managed tool loop (P1#11 split).
+"""Context-overflow, stuck-request + budget recovery for the managed tool loop (P1#11 split).
 
 Moved from workbench.py: the context-window overflow detection, the reactive
 prune-then-compact rescue, the turn budget ladder (soft USD / token /
 wall-clock arms), and the compaction the ladder's middle rung buys. The
 transcript landmark pins the two compaction paths share live here too, so
-loop/ never has to reach back into workbench.py for them.
+loop/ never has to reach back into workbench.py for them. The stuck-request
+ladder (a history the provider refuses on shape) joins them because it is the
+same problem with the same three parts — detect, reduce the surface, retry.
 
 workbench.py re-exports every name here under its original name, so the loop
 body, subagent.py and the tests keep resolving them on the workbench module.
@@ -218,6 +220,193 @@ async def _reactiveContextReduction(
         return None
     logger.info('workbench reactive context reduction: %d→%d tokens', before, after)
     return reduced
+
+
+# A provider that objects to a request's SHAPE — a 400 / invalid_request that
+# is not a full window and not transient — has rejected the history, not the
+# turn. The loop already refuses to REPLAY those (`_DETERMINISTIC_400_MARKERS`
+# keeps them out of the retry policy, correctly: an identical request fails
+# identically), but nothing repaired them, and `session.messages` is what the
+# NEXT turn sends. A session that trips this twice in a row therefore can never
+# send again, and only deleting the chat could fix it. DeepSeek-Bot's `parts.js`
+# names the rule — "a provider may turn down one request for reasons of its own;
+# a history that breaks every request fails the next turn as well" — and answers
+# it with a fresh part carrying the recent lines, then a bare part that leaves
+# even those out. Two rungs here, same order of severity: flatten the tool
+# pairing the gateway objected to (keeps the whole conversation), then the bare
+# newest ask. The strikes are counted out of `turn_outcomes`, the ledger
+# `turn_close` already writes per turn: the signal has to outlive the process (a
+# poisoned session stays poisoned) and a previous turn's error class is already a
+# column, so this needs no new state and no migration.
+_STUCK_REQUEST_CLASS = 'bad_request'
+# Rows walked back through the session's recorded outcomes. A longer failure run
+# is not more stuck, it is more clearly unrecoverable, and the ladder tops out
+# at the bare surface anyway.
+_STUCK_SCAN_ROWS = 8
+
+# Both notes are merged into the last user message (never added beside one) by
+# `_stripToolsFromHistory`, because a trailing second user message is itself a
+# shape objection on a strict gateway.
+_STUCK_FLATTEN_NOTE = (
+    '[Proxy Self-Heal] The provider refused the previous request over its message '
+    'structure, so this retry repeats the same conversation with every tool call '
+    'and result rendered as plain text instead of tool blocks. Nothing was '
+    'dropped or deleted. Tools ARE still available — re-run anything you need to '
+    'act on rather than trusting a receipt quoted as text.'
+)
+_STUCK_BARE_NOTE = (
+    '[Proxy Self-Heal] The provider refused this conversation twice over its '
+    'message structure, so this request carries only the newest user message and '
+    'no history. The earlier turns are archived, not deleted. Tell the user the '
+    'previous message could not be sent and ask again for whatever you need.'
+)
+
+
+def _requestStuckStreak(sessionId: str) -> int:
+    """Consecutive recent turns on this session the provider refused on shape.
+
+    Sub-agent fan-out rows share the table and the session id but never carry an
+    ``error_class`` (the writer passes none), so they are skipped rather than
+    counted. Any other outcome — a clean turn, a rate limit, an overflow —
+    breaks the run: the request's shape was not what the provider objected to,
+    so dropping history would fix nothing.
+
+    Returns 0 when nothing is recorded, including on a database without the
+    table. Absent means "not stuck", never "assume stuck".
+    """
+    if not sessionId:
+        return 0
+    try:
+        from app.services.memory_conn import conn as _brainConn
+
+        rows = _brainConn().execute(
+            'SELECT ok, error_class, task_type FROM turn_outcomes '
+            'WHERE session_id = ? ORDER BY id DESC LIMIT ?',
+            (sessionId, _STUCK_SCAN_ROWS),
+        ).fetchall()
+    except Exception:
+        logger.debug('stuck-request streak read failed', exc_info=True)
+        return 0
+    streak = 0
+    for row in rows:
+        if as_str(row['task_type'], '') == 'subagent_fanout':
+            continue
+        if int(row['ok'] or 0) == 1 or as_str(row['error_class'], '') != _STUCK_REQUEST_CLASS:
+            break
+        streak += 1
+    return streak
+
+
+def _isShapeRefusal(response: object) -> bool:
+    """True when this failure is the provider objecting to the request itself.
+
+    Classified by the SAME table the telemetry writer uses
+    (``turn_outcomes.classify_error``), not a second marker list — and that
+    ordering is load-bearing: ``context_overflow`` is matched before
+    ``bad_request``, so a 400 that says "prompt is too long" stays on the
+    overflow ladder (which shrinks by tokens) instead of this one (which drops
+    by shape).
+    """
+    from app.services.turn_outcomes import classify_error
+
+    try:
+        return classify_error(_overflowProbeText(response)) == _STUCK_REQUEST_CLASS
+    except Exception:
+        logger.debug('shape-refusal classify failed', exc_info=True)
+        return False
+
+
+def _hasToolStructure(messages: list[dict[str, object]]) -> bool:
+    """True when a request surface carries tool pairing at all.
+
+    The flattening rung only exists to remove pairing, so a history with none is
+    the case where it would buy nothing — that goes to the bare rung instead.
+    Checked on the shapes both wire formats use: a ``tool`` role row (OpenAI),
+    a ``tool_calls`` field (OpenAI), and ``tool_use`` / ``tool_result`` content
+    blocks (Anthropic).
+    """
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        if as_str(msg.get('role'), '') == 'tool' or msg.get('tool_calls') or msg.get('tool_use_id'):
+            return True
+        content = msg.get('content')
+        if isinstance(content, list):
+            for b in content:
+                if isinstance(b, dict) and as_str(b.get('type'), '') in ('tool_use', 'tool_result'):
+                    return True
+    return False
+
+
+def _flattenedRequestSurface(messages: list[dict[str, object]]) -> list[dict[str, object]] | None:
+    """Strike one: the same conversation, with its tool pairing rendered as text.
+
+    Keeps every message the model already exchanged — the objection is that a
+    ``tool_use_id`` no longer resolves, a result arrived without its call, or a
+    role the gateway will not accept rode in from an older turn. Flattening the
+    pairing removes all three without discarding the substance, which is why
+    this rung comes before dropping anything.
+    """
+    from app.services.workbench.loop.prompt import _stripToolsFromHistory
+
+    if not _hasToolStructure(messages):
+        return None
+    return _stripToolsFromHistory(list(messages), note=_STUCK_FLATTEN_NOTE)
+
+
+def _bareRequestSurface(messages: list[dict[str, object]]) -> list[dict[str, object]] | None:
+    """Strike two: the newest user ask and nothing else.
+
+    The bare rung of the reference ladder — "the latest messages carried into a
+    rescued part may be what breaks the request". The newest USER message is
+    chosen over the newest message of any role because the user's ask is the one
+    thing the turn cannot proceed without, and the harness note tells the model
+    to say the previous message could not be sent rather than silently answering
+    from nothing. If no user message exists, there is nothing to rescue.
+    """
+    from app.services.workbench.loop.prompt import _stripToolsFromHistory
+
+    latest = next(
+        (
+            m
+            for m in reversed(messages)
+            if isinstance(m, dict) and as_str(m.get('role'), '') == 'user'
+        ),
+        None,
+    )
+    if latest is None:
+        return None
+    surface = _stripToolsFromHistory([latest], note=_STUCK_BARE_NOTE)
+    return surface or None
+
+
+def _stuckRequestEscape(
+    session: WorkbenchSession, messages: list[dict[str, object]]
+) -> tuple[int, str, list[dict[str, object]]] | None:
+    """Repair a history the provider refuses, or say there is nothing to do.
+
+    Returns ``(streak, strike, surface)`` where ``strike`` is ``'flattened'``
+    (same conversation, tool pairing rendered as text) or ``'bare'`` (newest ask
+    only). ``None`` means do not try: this is only the FIRST refused turn (one
+    bad 400 may be the provider's own bad day, not the history), the ladder is
+    already spent, or no rung can make this surface smaller.
+
+    Each rung drops strictly more structure than the one before it, and the
+    streak only advances on a turn that still ends refused, so the ladder
+    escalates carried → bare → honest failure. It cannot ping-pong and it cannot
+    eat the transcript across turns, because at streak 3 nothing fires at all.
+    """
+    streak = _requestStuckStreak(as_str(getattr(session, 'id', ''), ''))
+    if streak < 1 or streak > 2:
+        return None
+    if streak == 1:
+        flat = _flattenedRequestSurface(messages)
+        if flat is not None:
+            return (streak, 'flattened', flat)
+    bare = _bareRequestSurface(messages)
+    if bare is None or len(bare) >= len(messages):
+        return None
+    return (streak, 'bare', bare)
 
 
 # Turn budget ladder (audit P1#12). A turn that outgrows its soft budget is

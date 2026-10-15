@@ -96,6 +96,29 @@ removed. Two neighbours it must not be confused with, both pinned by
 `tests/test_runaway_backstop.py`: re-reading one file at shifting offsets is
 caught by the `(tool, target)` polling guard and is *not* the runaway case,
 and a fresh path each round is real progress and resets the counter.
+**A request the provider refuses on shape is repaired, not replayed.** A
+deterministic 400 is already kept out of the retry policy (an identical request
+would fail identically), but that left the harder case: `session.messages` is
+what the NEXT turn sends, so one orphaned `tool_use_id` surviving into persisted
+history bricked the chat — every turn failed the same way and only deleting the
+session escaped it. `_stuckRequestEscape` now escalates across turns off
+`turn_outcomes` (the ledger `turn_close` already writes; the strike count is the
+trailing run of `ok=0, error_class='bad_request'` rows for that session, so it
+needs no new state and survives a restart): the first refusal is left alone (one
+bad 400 may be the provider's own bad day), the second flattens the tool pairing
+into text while keeping the whole conversation (or goes straight to the bare rung
+if the history carries no tool pairing to flatten, because that rung would buy
+nothing), the third sends only the newest
+user ask, and at a fourth nothing fires — the turn fails honestly rather than
+eating more of the transcript. Every rung archives the surface it is replacing
+through `transcript_archive` first, so nothing is deleted, and each emits
+`recovery {kind: 'stuck-request', outcome: flattened|bare, degraded: true}` plus
+a warning naming the refusal count. Overflow keeps its own ladder:
+`classify_error` matches `context_overflow` before `bad_request`, and the branch
+additionally refuses anything `_isContextOverflowError` claims, so a too-long
+prompt can never be routed to a shape repair. Pinned by
+`tests/test_stuck_request_escape.py`, whose control case asserts that a single
+refusal still produces an ordinary error and no reshape.
 Malformed tool JSON never executes as `{}` — the loop
 returns a `[Validation Error] … Do NOT stop` self-heal and downgrades to the
 bare tool surface after 3 consecutive failures. Stream rules flag

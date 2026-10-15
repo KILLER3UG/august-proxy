@@ -550,9 +550,11 @@ from app.services.workbench.loop.recovery import (  # noqa: E402
     _is_failing_receipt,  # noqa: F401 -- re-export: subagent.py compaction pins
     _is_update_state_transition,  # noqa: F401 -- re-export: subagent.py compaction pins
     _isContextOverflowError,
+    _isShapeRefusal,
     _msgTextLower,  # noqa: F401 -- re-export: old name kept
     _nextBudgetStep,
     _reactiveContextReduction,
+    _stuckRequestEscape,
     _turnBudget,
     _turnSpendUsd,
 )
@@ -3258,6 +3260,12 @@ async def _sendWorkbenchMessageStreamImpl(
     chainModels = _chatFallbackChain()
     promotionModel, promotionProvider = _chatContextPromotion()
     promotionUsed = False
+    # Stuck-request repair is once per TURN, not per round: the poison is in the
+    # persisted history, so a second attempt in the same round would re-send a
+    # surface this round already proved unacceptable, and the round loop is
+    # uncapped by default. Escalation happens across turns instead, off
+    # turn_outcomes — see `_stuckRequestEscape`.
+    stuckEscapeUsed = False
     # Audit D1 (migration 050): the turn's credit-assignment accumulators.
     # Families ride the per-round steering scan (the union of each round's
     # window covers every tool failure the steering ever saw); loaded skills
@@ -3876,6 +3884,69 @@ async def _sendWorkbenchMessageStreamImpl(
                             context_window=contextWindow,
                         )
                         _emitRecovery(emit, 'context-reduction', 1, 'failed', True)
+                    elif (
+                        # Stuck-request repair: the provider refused this request's
+                        # SHAPE (not a full window, not transient) and it refused
+                        # the previous turn's too, so the persisted history is what
+                        # it objects to. Repairing the surface and retrying is the
+                        # difference between a degraded answer and a chat that can
+                        # never send again.
+                        not stuckEscapeUsed
+                        and not _isContextOverflowError(response)
+                        and _isShapeRefusal(response)
+                        and not attemptEmittedContent
+                        and not _isCancelled()
+                        and retryAttempt < retryPolicy['maxRetries']
+                    ):
+                        stuckEscapeUsed = True
+                        escaped = _stuckRequestEscape(session, currentMessages)
+                        if escaped is not None:
+                            _streak, _strike, reduced = escaped
+                            try:
+                                from app.services.transcript_archive import archive_messages
+
+                                archive_messages(sessionId, currentMessages, reason=f'stuck-{_strike}')
+                            except Exception:
+                                logger.debug('stuck-request archive failed', exc_info=True)
+                            logger.warning(
+                                'workbench stuck request (%d refused turns, %s) — %s surface %d→%d messages: %s',
+                                _streak,
+                                as_str(response.get('error'))[:120],
+                                _strike,
+                                len(currentMessages),
+                                len(reduced),
+                                as_str(response.get('error'))[:200],
+                            )
+                            if emit:
+                                # Counted from the ledger, not asserted: `_streak`
+                                # is the refusals already recorded, and this turn is
+                                # one more. A copy that named a number the data does
+                                # not support would be the usual UI lie.
+                                _refusals = _streak + 1
+                                emit(
+                                    {
+                                        'type': 'warning',
+                                        'message': (
+                                            f'The provider refused the last {_refusals} turns of '
+                                            'this conversation over their message structure (not a '
+                                            'full context window), so this retry sends the same '
+                                            'conversation with tool calls and results as plain '
+                                            'text. Nothing was deleted — the transcript is '
+                                            'archived.'
+                                            if _strike == 'flattened'
+                                            else f'The provider refused the last {_refusals} turns '
+                                            'of this conversation over their message structure, '
+                                            'and the plain-text surface did not fix it, so this '
+                                            'retry carries only your latest message. Nothing was '
+                                            'deleted — the transcript is archived.'
+                                        ),
+                                    }
+                                )
+                            # Degraded is the honest flag: the answer the user gets
+                            # was produced on a reduced surface.
+                            _emitRecovery(emit, 'stuck-request', _streak, _strike, True)
+                            currentMessages = reduced
+                            continue
                     break
                 if retryAttempt >= retryPolicy['maxRetries'] or _isCancelled():
                     break

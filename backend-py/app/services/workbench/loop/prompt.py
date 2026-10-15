@@ -57,7 +57,9 @@ def _toolBlockText(content: object) -> str:
     return json.dumps(content, default=str) if content is not None else ''
 
 
-def _stripToolsFromHistory(messages: list[dict[str, object]]) -> list[dict[str, object]]:
+def _stripToolsFromHistory(
+    messages: list[dict[str, object]], *, note: str = _TOOLS_FALLBACK_NOTE
+) -> list[dict[str, object]]:
     """Flatten tool-call history for a tools-fallback retry.
 
     Strict gateways reject tool-role messages / tool_use blocks when no
@@ -67,6 +69,13 @@ def _stripToolsFromHistory(messages: list[dict[str, object]]) -> list[dict[str, 
     is not mutated — the flattened copy feeds the wire request only. The
     self-heal note is merged into the last user message (Anthropic requires
     strict role alternation; a trailing user note must not sit beside another).
+
+    ``note`` is the only variable because a second rescue needs the same
+    flattening and must not say the same thing: the tools-fallback drops the
+    declared tool surface, so it tells the model tools are unavailable, while
+    the stuck-request repair keeps tools declared and removes only the pairing
+    structure a gateway objected to. A second copy here would be a second
+    alternation rule.
     """
     out: list[dict[str, object]] = []
     for msg in messages:
@@ -119,12 +128,12 @@ def _stripToolsFromHistory(messages: list[dict[str, object]]) -> list[dict[str, 
         if as_str(m.get('role')) == 'user':
             c = m.get('content')
             if isinstance(c, list):
-                m['content'] = [*c, {'type': 'text', 'text': _TOOLS_FALLBACK_NOTE}]
+                m['content'] = [*c, {'type': 'text', 'text': note}]
             else:
-                m['content'] = f"{as_str(c, '')}\n\n{_TOOLS_FALLBACK_NOTE}"
+                m['content'] = f"{as_str(c, '')}\n\n{note}"
             break
     else:
-        out.append({'role': 'user', 'content': _TOOLS_FALLBACK_NOTE})
+        out.append({'role': 'user', 'content': note})
     return out
 
 
