@@ -39,12 +39,13 @@ nothing from either was executed.
    imported at `app/services/workbench/subagent.py:25`. The main loop gives every bot the full
    surface. **Cost:** one call in the surface builder. **Adopt — but decide the semantics first**:
    a bot's *conversations* are first-class user-facing sessions in August, not child tasks.
-4. **[V] Chain budgets on bot-to-bot work.** `src/host/constants.js`: `MAX_HOPS = 6`,
+4. **[V, shipped today] Chain budgets on bot-to-bot work.** `src/host/constants.js`: `MAX_HOPS = 6`,
    `MAX_UNATTENDED_MESSAGES = 40` ("reset only by a human"), `MAX_UNREAD_REQUESTS = 10`. August
    caps per-send rounds/messages (`app/services/bot_mode/rooms.py:45` `MAX_ROUNDS = 3`) but carries
    no hop count across forwards and has no team-wide ceiling. **Cost:** one column + two checks.
    **Adopt** — this is the runaway class our loop guards already cover for one agent, not for a
-   conversation between agents.
+   conversation between agents. *(Shipped as the per-chat unattended ceiling rather than a hop
+   column — see "Shipped" below and the decision note there.)*
 5. **[V, shipped today] Poisoned-history escape hatch.** `src/host/parts.js` `agent/request-error`: a stuck code,
    or a *second consecutive* `INVALID_REQUEST`, starts a fresh part instead of replaying the same
    history; a `bare` rescue mode drops the newest messages outright. August treats
@@ -147,6 +148,100 @@ control cases still pass; restored, all 17 pass. Neighbours: compaction-parity, 
 overflow-probe, turn-ok and gate-participation together 104 passed. `ruff check .` and
 `mypy app/` (339 files) clean. Whole backend suite: 5380 passed, 5 skipped, 20m38s on 16 cores.
 
+`backend-py/app/services/bot_mode/dm.py` + `brain_config_service.py` + the Settings panel — **DS Bot
+item 4, the chain budget for bot-to-bot work.** Measured before writing: August had two caps and
+neither covers the class. `has_inflight(from→to)` bounds one *pair* of concurrent DMs,
+`rooms.MAX_ROUNDS` bounds one *user send* in a group room, and the loop's stall/runaway guards count
+world delta inside **one turn** — while every DM hop is a fresh turn in a **different session**, so
+`A→B→C→A` is none of the three and every turn in it ends `finished`. Only the prompt forbade it
+(`message_agent`'s own description: "Do not ping-pong"), which is nondeterminism on the runaway path.
+
+**Decision, flagged for the owner:** the reference's `MAX_HOPS` needs a counter that *travels with
+the message*, and August's wake is not a DM row — the sender-wake turn is appended text inside the
+same chat, so a hop count cannot be derived from `bot_dm` without threading depth through
+`deliver()` and tagging the wake. The **per-chat unattended ceiling** (the reference's
+`MAX_UNATTENDED_MESSAGES`, whose comment is the whole design: "reset only by a human") bounds the
+same class with no new column: every hop is a turn in some Bot's chat, and a chat that may not keep
+working unattended stops the chain wherever it arrives. Cost: one brain key, one read door, one
+check. `MAX_UNREAD_REQUESTS` (an inbox backlog ceiling) is **not** built — an unread DM backlog in
+August is a queue depth, not a runaway, and arming it would refuse delivery rather than refuse work.
+
+`_unattendedRun` reads the persisted `messages` table (the arriving Bot message is already flushed
+at the model-dispatch barrier, so the guard sees the turn it is being asked about, and a restart
+cannot launder a runaway), stops at the first human row, and scans at most `ceiling` rows. A row is
+Bot-authored when it starts with `BOT_TURN_PREFIX` — now the single constant both the DM body and
+the sender wake are built from, so a new inbound author kind that skips it silently never counts — or
+when `messages.source` names a machine source (migration 049). The content column is JSON-encoded,
+so it is decoded first: a raw prefix comparison would find no human row ever and turn a guard into a
+lockout — the trap AGENTS.md already records for the fact/KV read doors, and its own test case here.
+The ceiling guards the **model's** send door, not the store: `POST /api/agents/dm` delivers what a
+human asked for and a human send is the reset, so gating the route would be a lockout;
+`test_the_human_route_is_never_gated` pins that asymmetry.
+
+`maxUnattendedTurns` is registered through all three doors a numeric brain key needs — `numKeys`, a
+`fieldTable` entry defaulting to `None` (absent, not 0, so an armed ceiling is distinguishable from
+a disarmed one) and an explicit `unattendedTurnsRange` branch, because the validator's fallback
+range starts at 1 and would make the disarming write invalid. That is the exact defect
+`tests/test_turn_limits_fields.py` exists to catch, and it now pins the new key against the Settings
+panel (`TurnLimitsSection.tsx` + the `BrainConfig` TS field) rather than trusting the copy.
+New `tests/test_bot_unattended_ceiling.py` (18) covers the counting semantics (five provenance
+cases including the JSON-encoding control and a human quoting a Bot), the writer/reader prefix
+parity, the door at 2/3/9 turns, the human reset, the ungated human route, and **reachability
+end-to-end through `saveBrainConfig`** — a guard nobody can arm is a guard that does not exist.
+**Red-proved**: with the door's ceiling forced to 0, exactly the three enforcement cases fail and
+the measurement cases still pass; restored, all 18 pass.
+
+## Reviewer round on the two shipped items
+
+Two review agents (design quality + runtime correctness) were pointed at both
+changes; every claim was re-checked in the code before acting. Four were real and
+are fixed, and each is now pinned by a test that fails when the fix is reverted.
+
+1. **The provider's reason was being thrown away before the loop saw it**
+   (`stream_translate.py`). `as_str` returns `''` for a dict and the standard
+   `{'error': {'type': ..., 'message': ...}}` envelope nests, so the aggregator
+   produced `Stream error HTTP 400: ` with an empty body — and that single string
+   is everything `classify_error`, the deterministic-400 replay decision, the new
+   ladder and the user's receipt read. Found because the shipped loop test
+   stopped repairing: with no marker in the text the ladder correctly declined.
+   `_errorEventText` now flattens dict/list bodies. (This is why the reviewer's
+   "the ledger sees a flat field while the detector sees a nested one" claim was
+   half right: the nesting was being lost one layer earlier, at extraction.)
+2. **Flattening an assistant round that was only tool calls left `content: []`,**
+   which `translateMessagesToAnthropic` re-renders as an empty text block — an
+   upstream 400. So the flatten rung would ship a request refused for a *new*
+   shape reason and, being once per turn, could not try again. Fixed inside
+   `_stripToolsFromHistory` via `_isBlankAssistantContent`, which repairs the
+   pre-existing tools-fallback path too (it had the same hole).
+3. **`MACHINE_SOURCES` includes `queued_user`, which IS the human speaking**
+   (mid-turn queued text wrapped in `<queued_message>`). Reusing that set meant a
+   human reply would *extend* the unattended run it exists to end. Replaced with
+   a declared `_NON_HUMAN_SOURCES` subset, so a new plumbing source defaults to
+   "human" (lenient) rather than to lockout.
+4. **Two precision defects in the ladder's inputs:** the scan window is rows, not
+   turns, and sub-agent fan-out rows share the session id, so eight of them newer
+   than the refused turns read "not stuck" and an orchestrator chat never
+   repaired (window widened, count short-circuits at 3); and `classify_error`'s
+   bare `400` arm makes a bad model name or an oversized image look like a broken
+   pairing, so the shape marker table is now a second required leg — which meant
+   moving `_DETERMINISTIC_400_MARKERS` into `loop/recovery.py` (one table, two
+   doors: the retry policy re-exports it).
+
+Claim checked and **not** acted on: that `deliver()` and `POST /api/agents/dm`
+bypass the ceiling. They do not start Bot-initiated hops — the turn they run
+still has to call `message_agent`, which is the gated door — and the human route
+is the reset by definition, so gating it would be a lockout. The reviewer's
+related point that `automation_memory.deliver_to_bot_chat` can keep a Bot chat
+busy without any DM is **true and out of this item's scope**: the ceiling bounds
+Bot→Bot chains, not scheduled routines. Also true and unfixed by design here:
+`subagent.py` runs its own retry loop with no shape repair, so a poisoned
+*sub-agent* history still just fails.
+
+Wording fixed after measuring, not assuming: the warning no longer claims
+"nothing was deleted". The reduced surface is what turn close persists, so after
+the bare rung the older turns stop being sent *and* stop being shown in this
+chat; they survive in `transcript_archive`, which this chat does not render.
+
 ## Next, in value-per-risk order
 
 1. **Review-from-archive** (abacus item 4) — **attempted today, larger than it reads, and that is
@@ -168,8 +263,10 @@ overflow-probe, turn-ok and gate-participation together 104 passed. `ruff check 
    advances the cursor, and the `messages` table stays the single transcript authority.
 2. **Rotate-vs-compact steward** (DS Bot item 1) — and build item 8's dev-only eval **first**, so a
    model-chosen context policy ships with a measurement rather than a vibe.
-3. **Per-send hop and unread budgets for bot conversations** (DS Bot item 4) — measured today:
-   `bot_mode/dm.py` guards a *pair* (`has_inflight(sender, to)`), so an A→B→A→B or A→B→C→A chain is
-   bounded only by the instruction "Do not ping-pong" in the tool description. Nothing travels with
-   the message.
+3. **The two DS Bot chain budgets deliberately not built** (item 4, Needs review): a travelling
+   `MAX_HOPS` counter — the ceiling above bounds the same class without it, and a hop count cannot be
+   derived from `bot_dm` because the sender wake is not a DM row (it would have to be threaded through
+   `deliver()` and tagged); and `MAX_UNREAD_REQUESTS`, because an unread DM backlog in August is a
+   queue depth rather than a runaway, and arming it would refuse *delivery* instead of refusing
+   *work*. Say so if you want either anyway.
 4. **Outbound secret scrub** (DS Bot item 7), tested on the serialized body.

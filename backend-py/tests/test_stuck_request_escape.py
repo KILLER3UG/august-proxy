@@ -257,6 +257,108 @@ class TestStreakIsReadOffTheLedger:
         assert _requestStuckStreak('wb_d') == 1
 
 
+    def test_a_page_of_fanout_rows_does_not_blind_the_streak(self, isolatedData):
+        """The window is ROWS, and fan-out rows share the session id.
+
+        Eight rows used to be the whole window, so an orchestrator chat with a
+        page of fan-out rows newer than the refused turn read as "not stuck" and
+        the poisoned session never repaired — a fail-open nobody would see.
+        """
+        from app.services.turn_outcomes import record_turn_outcome
+        from app.services.workbench.loop.recovery import _requestStuckStreak
+
+        _recordRefusedTurn('wb_f', 1)
+        for i in range(12):
+            record_turn_outcome(
+                model='',
+                provider='',
+                task_type='subagent_fanout',
+                ok=(i % 2 == 0),
+                session_id='wb_f',
+                end_reason='finished',
+            )
+        assert _requestStuckStreak('wb_f') == 1
+
+
+class TestTheRefusalReasonReachesTheLoop:
+    """The ladder reads one string, and the aggregator used to blank it.
+
+    Found while wiring this feature: `as_str` returns '' for a dict, and the
+    standard envelope NESTS the reason
+    (`{'error': {'type': ..., 'message': ...}}`), so the loop's whole view of a
+    refusal was `Stream error HTTP 400: ` — no marker, no evidence for
+    `classify_error`, and a user facing an empty receipt for an error that had
+    named the reason. Every predicate downstream reads that one string, so the
+    repair could never be reached from a real gateway.
+    """
+
+    def test_a_nested_error_envelope_keeps_its_message(self):
+        from app.services.workbench.stream_translate import AnthropicWorkbenchStreamAggregator
+
+        agg = AnthropicWorkbenchStreamAggregator()
+        agg.on_event(
+            {
+                'type': 'error',
+                'status': 400,
+                'error': {
+                    'type': 'invalid_request_error',
+                    'message': 'messages must alternate between user and assistant roles',
+                },
+            }
+        )
+        assert agg.error is not None
+        assert 'messages must alternate' in agg.error, agg.error
+        assert agg.error_status == 400
+
+    def test_a_string_body_still_reads_the_same_way(self):
+        """The control: the fix must not lose the shape that already worked."""
+        from app.services.workbench.stream_translate import AnthropicWorkbenchStreamAggregator
+
+        agg = AnthropicWorkbenchStreamAggregator()
+        agg.on_event({'type': 'error', 'status': 503, 'body': 'upstream Overloaded'})
+        assert 'upstream Overloaded' in str(agg.error)
+
+
+class TestOnlyAShapeRefusalRepairs:
+    """`classify_error`'s bare 400 arm cannot be the whole predicate.
+
+    A bad model name, an oversized image and a broken tool pairing all classify
+    as `bad_request`. Only the last is fixed by reshaping the history, and the
+    cost of guessing wrong is rewriting the user's transcript.
+    """
+
+    def test_a_400_about_the_payload_is_not_a_shape_refusal(self):
+        from app.services.workbench.loop.recovery import _isShapeRefusal
+
+        assert (
+            _isShapeRefusal({'error': '[400] the input image exceeds the 5 MB limit', 'errorStatus': 400})
+            is False
+        )
+        assert _isShapeRefusal({'error': '[400] quota exceeded for this key', 'errorStatus': 400}) is False
+
+    def test_a_400_about_the_structure_is(self):
+        from app.services.workbench.loop.recovery import _isShapeRefusal
+
+        assert (
+            _isShapeRefusal(
+                {
+                    'error': '[400] messages.4.content.0: `tool_use_id` attributes on '
+                    'tool_result blocks must match a tool_use block in the preceding '
+                    'assistant message',
+                    'errorStatus': 400,
+                }
+            )
+            is True
+        )
+        # Nested envelope, because that is what most gateways send.
+        assert (
+            _isShapeRefusal(
+                {'error': {'type': 'invalid_request_error', 'message': 'messages must alternate'}}
+            )
+            is True
+        )
+
+
 class TestSurfaceLadder:
     def test_flattening_keeps_the_substance_and_drops_the_pairing(self):
         from app.services.workbench.loop.recovery import _flattenedRequestSurface
@@ -268,6 +370,68 @@ class TestSurfaceLadder:
         assert 'port: 8080' in text, 'the tool RESULT was dropped, not flattened'
         assert 'read the config' in text, 'the conversation itself was dropped'
         assert 'Tools ARE' in text or 'plain text' in text, 'the note did not ride along'
+
+    def test_flattening_never_leaves_an_empty_assistant_bubble(self):
+        """A round that was ONLY a tool call flattens to nothing.
+
+        `translateMessagesToAnthropic` re-renders `content: []` as
+        `[{'type': 'text', 'text': ''}]` and upstream rejects an empty text
+        block — so the rescue would ship a request refused for a NEW shape
+        reason, and (being once per turn) could not try again. The loop already
+        refuses to append such a bubble for the same reason.
+        """
+        from app.services.workbench.loop.recovery import _flattenedRequestSurface
+
+        hist: list[dict[str, object]] = [
+            {'role': 'user', 'content': 'run the tests'},
+            {
+                'role': 'assistant',
+                'content': [
+                    {
+                        'type': 'tool_use',
+                        'id': 'toolu_solo',
+                        'name': 'run_command',
+                        'input': {'command': 'pytest -q'},
+                    }
+                ],
+            },
+            {'role': 'tool', 'tool_use_id': 'toolu_solo', 'content': '4 passed'},
+            {'role': 'user', 'content': 'and now?'},
+        ]
+        flat = _flattenedRequestSurface(hist)
+        assert flat is not None
+        assert not _hasToolBlocks(flat)
+        for msg in flat:
+            if msg.get('role') != 'assistant':
+                continue
+            content = msg.get('content')
+            assert content not in ([], '', None), f'an empty assistant bubble survived: {flat}'
+            if isinstance(content, list):
+                assert any(
+                    isinstance(b, dict) and str(b.get('text', '')).strip() for b in content
+                ), f'a blank text block survived: {flat}'
+        assert '4 passed' in json.dumps(flat, default=str), 'the receipt was dropped, not flattened'
+
+    def test_an_openai_shaped_tool_round_flattens_the_same_way(self):
+        from app.services.workbench.loop.recovery import _flattenedRequestSurface
+
+        hist: list[dict[str, object]] = [
+            {'role': 'user', 'content': 'read it'},
+            {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [
+                    {'id': 'call_1', 'function': {'name': 'read_file', 'arguments': '{"path":"a"}'}}
+                ],
+            },
+            {'role': 'tool', 'tool_call_id': 'call_1', 'content': 'the file says hi'},
+        ]
+        flat = _flattenedRequestSurface(hist)
+        assert flat is not None
+        text = json.dumps(flat, default=str)
+        assert 'the file says hi' in text
+        assert not _hasToolBlocks(flat)
+        assert all(m.get('content') != '' for m in flat if m.get('role') == 'assistant'), flat
 
     def test_a_history_with_no_tool_pairing_is_not_flattenable(self):
         """Otherwise strike one is a no-op that costs a retry."""
@@ -361,6 +525,9 @@ class TestInTheLoop:
         stub = StubClient(failTimes=1)
         _isolate['client'] = stub
         _recordRefusedTurn('wb_live1', 1)
+        from app.services.workbench.loop.recovery import _requestStuckStreak
+
+        assert _requestStuckStreak('wb_live1') == 1, 'the seeded refusal row is not visible'
         sess = _seedSession(sessions, 'wb_live1', _toolHistory())
         events: list[dict[str, object]] = []
         await asyncio.wait_for(
@@ -372,7 +539,14 @@ class TestInTheLoop:
             ),
             timeout=60,
         )
-        assert stub.callCount == 2, f'expected one refusal then one repair, got {stub.callCount}'
+        assert stub.callCount == 2, (
+            f'expected one refusal then one repair, got {stub.callCount}; events: '
+            + json.dumps([e.get('type') for e in events])
+            + ' warnings: '
+            + json.dumps([e.get('message') for e in events if e.get('type') == 'warning'])
+            + ' error: '
+            + json.dumps([e.get('message') for e in events if e.get('type') == 'error'])
+        )
         frames = _recoveryFrames(events)
         assert frames, f'no stuck-request recovery frame in {[e.get("type") for e in events]}'
         assert frames[0]['outcome'] == 'flattened'

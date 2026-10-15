@@ -369,29 +369,10 @@ _MODEL_RETRY_MARKERS = (
     'empty response',
 )
 
-# T16(d): deterministic 400s — the request itself is malformed
-# (orphaned tool-use id, broken message structure). Retrying re-sends the
-# identical request forever (a documented field incident); these are
-# fatal-or-repair, never transient. Checked before the marker scan so a
-# message that happens to contain "timeout" still fails fast.
-_DETERMINISTIC_400_MARKERS = (
-    'tool_use_id',
-    'tool use id',
-    'tool_call_id',
-    'orphan',
-    'no tool call',
-    'messages must alternate',
-    'unexpected role',
-    'invalid role',
-    'unrecognized role',
-    # These are request-shape rejections — the identical retry
-    # fails identically, so classifying them as deterministic stops the
-    # useless retry storm (each one verified against real upstream text).
-    'budget_tokens',
-    'thinking',
-    'schema',
-    'model not found',
-)
+# T16(d): deterministic 400s live in loop/recovery.py now — the retry policy here
+# and the stuck-request repair there must not hold different opinions about what
+# "the request's shape is the problem" means, so the table has ONE home and is
+# re-exported below under the original name.
 
 
 def _isRetryableModelError(response: dict[str, object]) -> bool:
@@ -545,6 +526,7 @@ from app.services.workbench.loop.recovery import (  # noqa: E402
     _BUDGET_FINAL_DIRECTIVE,  # noqa: F401 -- re-export: loop appends it to the system text
     _BUDGET_LADDER,
     _CONTEXT_OVERFLOW_MARKERS,  # noqa: F401 -- re-export: readers introspect the marker list
+    _DETERMINISTIC_400_MARKERS,  # noqa: F401 -- re-export: one table, two doors
     _budgetBreached,
     _budgetTriggeredCompaction,
     _is_failing_receipt,  # noqa: F401 -- re-export: subagent.py compaction pins
@@ -3921,7 +3903,13 @@ async def _sendWorkbenchMessageStreamImpl(
                                 # Counted from the ledger, not asserted: `_streak`
                                 # is the refusals already recorded, and this turn is
                                 # one more. A copy that named a number the data does
-                                # not support would be the usual UI lie.
+                                # not support would be the usual UI lie — and it must
+                                # not claim the chat is intact either: the reduced
+                                # surface is what turn close persists, so the older
+                                # turns stop being SENT *and* stop being shown here.
+                                # They are in the archived transcript
+                                # (`transcript_archive`), which this chat does not
+                                # render.
                                 _refusals = _streak + 1
                                 emit(
                                     {
@@ -3930,15 +3918,18 @@ async def _sendWorkbenchMessageStreamImpl(
                                             f'The provider refused the last {_refusals} turns of '
                                             'this conversation over their message structure (not a '
                                             'full context window), so this retry sends the same '
-                                            'conversation with tool calls and results as plain '
-                                            'text. Nothing was deleted — the transcript is '
-                                            'archived.'
+                                            'conversation with the tool calls and results as plain '
+                                            'text. The tool history stays in this chat and in the '
+                                            'archived transcript, but not in the requests from '
+                                            'here on.'
                                             if _strike == 'flattened'
                                             else f'The provider refused the last {_refusals} turns '
                                             'of this conversation over their message structure, '
                                             'and the plain-text surface did not fix it, so this '
-                                            'retry carries only your latest message. Nothing was '
-                                            'deleted — the transcript is archived.'
+                                            'retry carries only your latest message. The earlier '
+                                            'turns are archived, but they are no longer part of '
+                                            'this conversation as it is sent and shown — start a '
+                                            'new chat if you need them back in place.'
                                         ),
                                     }
                                 )

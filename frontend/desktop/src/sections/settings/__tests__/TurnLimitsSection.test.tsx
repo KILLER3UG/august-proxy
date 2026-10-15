@@ -22,6 +22,7 @@ const KEYS = [
   'budgetWallClockSec',
   'runawayNudgeRounds',
   'runawayStopRounds',
+  'maxUnattendedTurns',
 ] as const;
 
 function offConfig(): Record<string, number> {

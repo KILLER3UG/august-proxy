@@ -11,6 +11,10 @@ as a ``Message from 🤖 …`` user-role turn and one turn runs there so the
 sender relays it — capped at one wake per DM, with an in-flight guard so two
 Bots can't ping-pong concurrent DMs.
 
+A third cap exists because those two do not cover a three-Bot cycle: an
+opt-in ceiling on how long a chat may keep taking turns with no human in it
+(see ``_unattendedRun``).
+
 The delivery runner is injectable (``runner=``) so the round-trip + wake
 ordering are unit-testable without a live model, mirroring the gateway
 ``SessionBridge`` pattern.
@@ -24,7 +28,7 @@ import logging
 from datetime import datetime, timezone
 from typing import cast
 
-from app.json_narrowing import as_dict, as_str
+from app.json_narrowing import as_dict, as_int, as_str
 from app.services.bot_mode import protocol
 from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
@@ -40,6 +44,19 @@ REASON_BODY_TOO_LONG = 'body_too_long'
 REASON_IN_FLIGHT = 'in_flight'
 REASON_NO_CHAT = 'no_canonical_chat'
 REASON_DELIVERY_ERROR = 'delivery_error'
+# The unattended ceiling (see ``_unattendedRun``): the chat has kept working on
+# Bot-authored turns with no human in it.
+REASON_UNATTENDED = 'unattended_budget'
+
+# The shape a delivered Bot turn takes in a chat transcript: the DM body and the
+# sender wake are BOTH built from this prefix, in this module. It is the marker
+# `_unattendedRun` reads, so the two writers and the reader cannot drift apart —
+# a new inbound author kind that does not join this prefix silently never counts
+# toward the unattended ceiling.
+# (``messages.source`` is the sanctioned provenance column, but a delivered DM
+# is appended by the turn loop, which tags the human's own text — so until that
+# path learns a source, the prefix is what identifies a Bot-authored row.)
+BOT_TURN_PREFIX = 'Message from 🤖 '
 
 _MESSAGE_AGENT = 'message_agent'
 
@@ -139,6 +156,100 @@ def has_inflight(from_agent: str, to_agent: str) -> bool:
         return False
 
 
+# ── unattended ceiling ───────────────────────────────────────────────────────
+# The loop's own runaway backstop cannot see this failure class. It counts world
+# delta inside ONE turn, and every DM hop is a FRESH turn in a DIFFERENT session
+# — so two or three Bots handing one ask back and forth never look like a spin:
+# each individual turn ends `finished`. `has_inflight` caps one (from→to) pair
+# and `rooms.MAX_ROUNDS` caps one user send, but an A→B→C→A cycle is neither.
+# The one thing that bounds it is a ceiling on how long a Bot chat may keep
+# working with no human in it — DeepSeek-Bot's `MAX_UNATTENDED_MESSAGES`, whose
+# comment is the whole design: "reset only by a human".
+#
+# Opt-in, like every rule here that can stop work: an absent or 0 key leaves the
+# ceiling off (`maxUnattendedTurns`), the same convention as the runaway backstop
+# and the budget ladder.
+
+
+def _unattendedCeiling() -> int:
+    """brain-config `maxUnattendedTurns`; 0 (or unreadable) means OFF."""
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        return max(0, as_int(getRuntimeConfig().get('maxUnattendedTurns'), 0))
+    except Exception:
+        logger.debug('unattended ceiling read failed; stays off', exc_info=True)
+        return 0
+
+
+# The provenance values (migration 049) that mean "this user-role row was not a
+# human speaking now". `queued_user` is DELIBERATELY absent: a queued message is
+# the human typing mid-turn (`workbench.py` wraps it in `<queued_message>`), and
+# that is exactly the reset this ceiling is defined against — counting it would
+# make a human reply *extend* the run it is supposed to end. Enumerated instead
+# of derived from `message_sources.MACHINE_SOURCES` so a new plumbing source has
+# to be chosen here; defaulting an unknown value to "human" keeps the ceiling
+# lenient rather than locking a chat out.
+_NON_HUMAN_SOURCES: frozenset[str] = frozenset(
+    {'harness_nudge', 'subagent_results', 'memory_delivery', 'live_transcript'}
+)
+
+
+def _isBotAuthoredTurn(content: object, source: object) -> bool:
+    """True when a user-role transcript row was written by a Bot, not a human.
+
+    ``content`` is stored JSON-encoded, so it is decoded before the prefix test:
+    comparing the raw column against ``BOT_TURN_PREFIX`` would be comparing it
+    against a leading quote and would find NO human row ever — the trap
+    AGENTS.md records for the fact/KV read doors, and turning a runaway ceiling
+    into a lockout is the worse direction for a mistake. A row whose provenance
+    says it was not a human speaking now also cannot reset the run.
+
+    A structured payload (a dict/list the session writer persisted for an
+    attachment turn) is not a Bot's message text, so it reads as a reset.
+    """
+    if as_str(source, '') in _NON_HUMAN_SOURCES:
+        return True
+    if not isinstance(content, str) or not content:
+        return False
+    try:
+        decoded = json.loads(content) if content.startswith('"') else content
+    except Exception:
+        decoded = content
+    return isinstance(decoded, str) and decoded.startswith(BOT_TURN_PREFIX)
+
+
+def _unattendedRun(sessionId: str, ceiling: int) -> int:
+    """Bot-authored turns at the tail of this chat, capped at `ceiling`.
+
+    The scan stops at the first human user row — that is the reset — and reads
+    at most `ceiling` rows, so the cost is bounded by the ceiling rather than by
+    the length of the chat and the answer cannot exceed the number the caller is
+    comparing against. Reads the persisted transcript, not the in-memory
+    session: the turn loop flushes the arriving Bot message at the
+    model-dispatch barrier (`flush_session_barrier(..., currentMessages)`), so
+    the row this very turn is reacting to is already in the table, and a restart
+    cannot launder a runaway.
+    """
+    if not sessionId or ceiling <= 0:
+        return 0
+    try:
+        rows = _conn().execute(
+            "SELECT content, source FROM messages WHERE session_id = ? AND role = 'user' "
+            'ORDER BY id DESC LIMIT ?',
+            (sessionId, ceiling),
+        ).fetchall()
+    except Exception:
+        logger.debug('unattended run read failed', exc_info=True)
+        return 0
+    run = 0
+    for row in rows:
+        if not _isBotAuthoredTurn(row['content'], row['source']):
+            break
+        run += 1
+    return run
+
+
 # ── roster target resolution ─────────────────────────────────────────────────
 
 
@@ -227,6 +338,7 @@ async def messageAgent(target: str = '', message: str = '') -> str:
             'message_agent is only available in a Bot\'s own chat.',
             reason_code=REASON_NO_CHAT,
         )
+    sender_session = as_str(getattr(session, 'id', ''))
     body = (message or '').strip()
     if not body:
         return _err('message is required.')
@@ -251,6 +363,22 @@ async def messageAgent(target: str = '', message: str = '') -> str:
             'instead of sending another (no ping-pong).',
             reason_code=REASON_IN_FLIGHT,
         )
+    # Unattended ceiling (opt-in; see the section above). This is the model's
+    # door, NOT the store's: `POST /api/agents/dm` delivers a message the human
+    # asked for, and a human send is the reset that makes the next Bot turn
+    # legal, so gating it would turn the guard into a lockout.
+    ceiling = _unattendedCeiling()
+    if ceiling > 0:
+        run = _unattendedRun(sender_session, ceiling)
+        if run >= ceiling:
+            return _err(
+                f'This chat has taken {run} Bot-authored turns since a human last '
+                f'spoke in it, which is the ceiling for unattended Bot work '
+                f'(maxUnattendedTurns={ceiling}). Do not message another Bot — '
+                'summarise where things stand and ask the user, who can reset the '
+                'run by replying.',
+                reason_code=REASON_UNATTENDED,
+            )
     from app.services.bot_mode import roster
 
     try:
@@ -263,8 +391,9 @@ async def messageAgent(target: str = '', message: str = '') -> str:
             f'Bot {_handle_for(to_agent)} has no chat to deliver into.',
             reason_code=REASON_NO_CHAT,
         )
-    sender_session = as_str(getattr(session, 'id', ''))
-    attributed = f'Message from 🤖 {_handle_for(sender_agent)} (@{_handle_for(sender_agent)}):\n{body}'
+    attributed = (
+        f'{BOT_TURN_PREFIX}{_handle_for(sender_agent)} (@{_handle_for(sender_agent)}):\n{body}'
+    )
     dm_id = enqueue(
         from_agent=sender_agent,
         to_agent=to_agent,
@@ -365,7 +494,7 @@ async def deliver(dm_id: int, *, runner: object = None) -> str:
         # double-wrote it (mirrors automation_memory.deliver_to_bot_chat).
         if from_session:
             wake = (
-                f'Message from 🤖 {_handle_for(to_agent)} '
+                f'{BOT_TURN_PREFIX}{_handle_for(to_agent)} '
                 f'(@{_handle_for(to_agent)}) in reply to your message:\n'
                 + (reply or '(the recipient Bot sent no text reply)')
             )

@@ -105,6 +105,10 @@ numKeys: tuple[str, ...] = (
     # config.json value was discarded before the guard could see it.
     'runawayNudgeRounds',
     'runawayStopRounds',
+    # Bot-to-Bot unattended ceiling (bot_mode/dm.py): absent/0 means OFF, the
+    # same convention as the two keys above, and it must be listed here or a PUT
+    # naming it is rejected and the guard is unreachable through the API.
+    'maxUnattendedTurns',
 )
 floatKeys: tuple[str, ...] = ('flagRateCap',)
 strKeys: tuple[str, ...] = (
@@ -147,6 +151,11 @@ budgetWallClockSecRange = (0, 86_400)  # 24h
 # past the stop is not rejected here — it is normalized at read, and the UI
 # shows the resolved pair.
 runawayRoundsRange = (0, 100_000)
+# Bot-to-Bot unattended ceiling (see `_unattendedRun` in bot_mode/dm.py). 0 is
+# the OFF sentinel and must stay writable so an armed ceiling can be disarmed;
+# the ceiling on the top end is a chat length nobody should be running
+# unattended, not a bound anyone would tune.
+unattendedTurnsRange = (0, 500)
 # Mirrors the clamp in consolidation._sweep_usage (`max(30, min(3650, days))`)
 # exactly, so the API door cannot accept a value the sweep then silently
 # rewrites behind the caller's back.
@@ -187,6 +196,10 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # warning. The default is None so an unarmed key is genuinely ABSENT.
     ('runawayNudgeRounds', 'runaway_nudge_rounds', None, 'num'),
     ('runawayStopRounds', 'runaway_stop_rounds', None, 'num'),
+    # Same absent-means-OFF rule: a default of 0 here would be indistinguishable
+    # from an operator disarming the ceiling, and `_snakeToCamel` would hand the
+    # guard a configured-looking number.
+    ('maxUnattendedTurns', 'max_unattended_turns', None, 'num'),
     # Evidence-driven routing introspection: `autoRoute` /
     # `autoRouteMinWinRate` / `autoRouteWinGap` are REMOVED — no turn-loop
     # reader ever existed (the "auto-routing" claim was corrected in Part 25
@@ -594,6 +607,11 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 # any real turn for the same reason the budget rungs are: a
                 # bound that can never be reached is a silently dead knob.
                 lo, hi = runawayRoundsRange
+            elif key == 'maxUnattendedTurns':
+                # The fallback range below starts at 1, which would make the
+                # disarming write (0) invalid — the exact bug the runaway keys
+                # above were added to avoid.
+                lo, hi = unattendedTurnsRange
             else:
                 lo, hi = maxWorkbenchLoopsRange
             if value < lo or value > hi:

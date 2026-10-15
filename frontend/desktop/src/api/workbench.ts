@@ -454,6 +454,9 @@ export interface BrainConfig {
   budgetWallClockSec: number;
   runawayNudgeRounds: number;
   runawayStopRounds: number;
+  // Bot-to-Bot unattended ceiling (backend: bot_mode/dm.py `_unattendedRun`).
+  // Absent/null means off, exactly like the two keys above.
+  maxUnattendedTurns: number;
   // Camera access for the camera_snapshot / camera_list_devices model tools.
   // Off by default — frames captured during a call are transient regardless.
   cameraAccess?: boolean;

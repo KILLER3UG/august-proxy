@@ -239,10 +239,41 @@ async def _reactiveContextReduction(
 # poisoned session stays poisoned) and a previous turn's error class is already a
 # column, so this needs no new state and no migration.
 _STUCK_REQUEST_CLASS = 'bad_request'
-# Rows walked back through the session's recorded outcomes. A longer failure run
-# is not more stuck, it is more clearly unrecoverable, and the ladder tops out
-# at the bare surface anyway.
-_STUCK_SCAN_ROWS = 8
+# T16(d): deterministic 400s — the request itself is malformed (an orphaned
+# tool-use id, a broken message structure). Retrying re-sends the identical
+# request forever (a documented field incident); these are
+# fatal-or-repair, never transient. Checked before the marker scan so a message
+# that happens to contain "timeout" still fails fast.
+#
+# This table lives HERE rather than in workbench.py because two doors consult it:
+# the retry policy (`_isRetryableModelError`, re-exported under the same name)
+# and the shape-repair predicate below. A second copy would let the two disagree
+# about what "the request's shape is the problem" means — which is the one thing
+# this ladder must not guess at.
+_DETERMINISTIC_400_MARKERS = (
+    'tool_use_id',
+    'tool use id',
+    'tool_call_id',
+    'orphan',
+    'no tool call',
+    'messages must alternate',
+    'unexpected role',
+    'invalid role',
+    'unrecognized role',
+    # These are request-shape rejections — the identical retry
+    # fails identically, so classifying them as deterministic stops the
+    # useless retry storm (each one verified against real upstream text).
+    'budget_tokens',
+    'thinking',
+    'schema',
+    'model not found',
+)
+# Rows walked back through the session's recorded outcomes. Generous because the
+# window is ROWS, not turns: sub-agent fan-out rows share the table and the
+# session id and are skipped, so an orchestrator chat with a page of fan-out
+# rows newer than the two refused turns would otherwise read streak 0 and never
+# repair. Counting stops at 3 (see `_stuckRequestEscape`).
+_STUCK_SCAN_ROWS = 60
 
 # Both notes are merged into the last user message (never added beside one) by
 # `_stripToolsFromHistory`, because a trailing second user message is itself a
@@ -294,23 +325,35 @@ def _requestStuckStreak(sessionId: str) -> int:
         if int(row['ok'] or 0) == 1 or as_str(row['error_class'], '') != _STUCK_REQUEST_CLASS:
             break
         streak += 1
+        if streak > 2:
+            # Past the bare rung the ladder does nothing, so the exact length of
+            # a long run is never consulted — stop counting rather than scan the
+            # window for a number that cannot change the answer.
+            break
     return streak
 
 
 def _isShapeRefusal(response: object) -> bool:
-    """True when this failure is the provider objecting to the request itself.
+    """True when the provider objected to this request's message STRUCTURE.
 
-    Classified by the SAME table the telemetry writer uses
-    (``turn_outcomes.classify_error``), not a second marker list — and that
-    ordering is load-bearing: ``context_overflow`` is matched before
-    ``bad_request``, so a 400 that says "prompt is too long" stays on the
-    overflow ladder (which shrinks by tokens) instead of this one (which drops
-    by shape).
+    Two conditions, because the cost of a false positive is rewriting the user's
+    transcript. `classify_error`'s bare `400` arm makes *any* two consecutive
+    400s look alike — a bad model name, an oversized image, a moderation refusal
+    and a broken tool pairing all classify as `bad_request`, but only the last
+    is fixed by reshaping the history. So the class decides which ladder this is
+    (``context_overflow`` is matched first, so a too-long prompt stays on the
+    token-shaped rescue) and the marker table decides whether there is a shape to
+    repair. Both read the flattened envelope (`_overflowProbeText`): a gateway
+    that nests its message stringified to something with no marker, which is the
+    exact bug that made the overflow rescue silently never run.
     """
     from app.services.turn_outcomes import classify_error
 
     try:
-        return classify_error(_overflowProbeText(response)) == _STUCK_REQUEST_CLASS
+        hay = _overflowProbeText(response)
+        if classify_error(hay) != _STUCK_REQUEST_CLASS:
+            return False
+        return any(m in hay for m in _DETERMINISTIC_400_MARKERS)
     except Exception:
         logger.debug('shape-refusal classify failed', exc_info=True)
         return False

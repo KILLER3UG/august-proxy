@@ -240,7 +240,10 @@ async def sendBotDm(agentId: str, body: DmSend):
         from_agent = str(default.get('id')) if default else 'user'
     chat = roster.ensure_canonical_bot_chat(agentId)
     to_session = str(getattr(chat, 'id', '') or '')
-    attributed = f'Message from 🤖 {dm._handle_for(from_agent)} (@{dm._handle_for(from_agent)}):\n{message}'
+    attributed = (
+        f'{dm.BOT_TURN_PREFIX}{dm._handle_for(from_agent)} '
+        f'(@{dm._handle_for(from_agent)}):\n{message}'
+    )
     dm_id = dm.enqueue(
         from_agent=from_agent,
         to_agent=agentId,

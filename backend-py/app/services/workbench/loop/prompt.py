@@ -57,6 +57,38 @@ def _toolBlockText(content: object) -> str:
     return json.dumps(content, default=str) if content is not None else ''
 
 
+def _isBlankAssistantContent(content: object) -> bool:
+    """True when an assistant message carries nothing a provider will accept.
+
+    An empty bubble is a shape objection, not just a rendering wart: the
+    Anthropic translator re-renders `content: []` as
+    `[{'type': 'text', 'text': ''}]`, and upstream rejects an empty text block
+    (the loop already refuses to APPEND one for this reason — the
+    `skipEmptyAssistantAppend` guard in workbench.py, which learned that an
+    empty string slips past an empty-list-only check). Flattening a
+    tool-call-only round is exactly what produces this shape, so both rescues
+    that use it must drop the row rather than ship it.
+
+    A non-text block (an image part) counts as content: this never drops a real
+    turn.
+    """
+    if isinstance(content, str):
+        return not content.strip()
+    if isinstance(content, list):
+        if not content:
+            return True
+        for b in content:
+            if not isinstance(b, dict):
+                return False
+            if as_str(b.get('type'), '') in ('text', 'output_text'):
+                if as_str(b.get('text'), '').strip():
+                    return False
+            else:
+                return False
+        return True
+    return False
+
+
 def _stripToolsFromHistory(
     messages: list[dict[str, object]], *, note: str = _TOOLS_FALLBACK_NOTE
 ) -> list[dict[str, object]]:
@@ -96,7 +128,10 @@ def _stripToolsFromHistory(
             if msg.get('tool_calls'):
                 cleaned = {k: v for k, v in msg.items() if k != 'tool_calls'}
                 cleaned['content'] = as_str(content, '')
-                out.append(cleaned)
+                # A round that was ONLY tool calls flattens to nothing, and the
+                # empty bubble it leaves is itself a shape objection.
+                if not _isBlankAssistantContent(cleaned['content']):
+                    out.append(cleaned)
                 continue
             if isinstance(content, list):
                 kept = [
@@ -104,7 +139,11 @@ def _stripToolsFromHistory(
                     for b in content
                     if isinstance(b, dict) and as_str(b.get('type'), '') not in ('tool_use', 'tool_result')
                 ]
+                if _isBlankAssistantContent(kept):
+                    continue
                 out.append({**msg, 'content': kept})
+                continue
+            if _isBlankAssistantContent(content):
                 continue
             out.append(dict(msg))
             continue

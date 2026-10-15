@@ -118,7 +118,42 @@ a warning naming the refusal count. Overflow keeps its own ladder:
 additionally refuses anything `_isContextOverflowError` claims, so a too-long
 prompt can never be routed to a shape repair. Pinned by
 `tests/test_stuck_request_escape.py`, whose control case asserts that a single
-refusal still produces an ordinary error and no reshape.
+refusal still produces an ordinary error and no reshape. One more refusal leg is
+required beyond the class: the marker table must match too, because
+`classify_error`'s bare `400` arm makes a bad model name, an oversized image and
+a broken tool pairing look identical, and only the last is fixed by reshaping
+history. That leg is only reachable because
+`stream_translate._errorEventText` now flattens a nested envelope — `as_str`
+returns '' for a dict, and the standard `{'error': {'type', 'message'}}` shape
+was being stringified to nothing, so the loop's ONE error string read
+`Stream error HTTP 400: ` with the provider's reason discarded. Every consumer
+reads that one string (`classify_error`, the deterministic-400 replay decision,
+this ladder, and the receipt the user sees), so an error envelope that nests is
+a silent-blindness bug at the extractor, not a formatting detail.
+**Bot-to-Bot work needs its own ceiling, because every loop guard is per-turn.**
+`message_agent` runs one headless turn in the recipient's chat and its reply
+wakes the sender, so a hop is a *fresh turn in a different session*: the stall
+counter and the runaway backstop (which count one turn's world delta) cannot see
+a chain, `has_inflight` bounds one (from→to) pair, and `rooms.MAX_ROUNDS` bounds
+one user send. An A→B→C→A cycle is none of those, and every turn in it ends
+`finished`. `bot_mode/dm.py _unattendedRun` therefore counts what a chain
+actually does to a chat — the trailing run of Bot-authored user rows since the
+last human one — read off the **persisted** `messages` table (the arriving
+message is flushed at the model-dispatch barrier, so the row this turn is
+reacting to is already there, and a restart cannot launder a runaway). A row is
+Bot-authored when it starts with `BOT_TURN_PREFIX` — the one constant both the
+DM body and the sender wake are built from, so a new inbound author kind that
+skips it silently never counts — or when `messages.source` names a machine
+source. The content column is JSON-encoded, so it is decoded before the prefix
+test; comparing the raw column would find no human row ever and turn the guard
+into a lockout. Opt-in like every rule here that can stop work:
+`maxUnattendedTurns` absent/0 = off, and 0 must stay writable or an armed
+ceiling can never be disarmed. The ceiling guards the **model's** send door, not
+the store: `POST /api/agents/dm` delivers what a human asked for and a human send
+is the reset, so gating it would be a lockout. A new numeric brain key needs all
+three of `numKeys`, a `fieldTable` entry defaulting to `None` (absent, not 0) and
+an explicit range branch — the validator's fallback range starts at 1 — which is
+what `tests/test_turn_limits_fields.py` pins against the Settings panel.
 Malformed tool JSON never executes as `{}` — the loop
 returns a `[Validation Error] … Do NOT stop` self-heal and downgrades to the
 bare tool surface after 3 consecutive failures. Stream rules flag

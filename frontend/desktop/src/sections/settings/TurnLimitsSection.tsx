@@ -43,7 +43,8 @@ type FieldSpec = {
 };
 
 /* Order is the reading order: the hard cap, then the soft budget ladder, then
- * the backstop for a turn that never trips either.
+ * the backstop for a turn that never trips either, then the ceiling on Bot
+ * work that keeps going with no human in the loop.
  *
  * This table is the ONE place these are described. It is hand-written because
  * the label and hint are product copy, not metadata the backend can supply —
@@ -98,6 +99,14 @@ const TURN_FIELDS: FieldSpec[] = [
     min: 0,
     max: 100000,
     unit: 'rounds',
+  },
+  {
+    key: 'maxUnattendedTurns',
+    label: 'Unattended Bot turns',
+    hint: 'How long a Bot chat may keep running on teammate messages before a human has to speak again. Once a chat has taken this many Bot-authored turns with no reply from you, its Bot can no longer message a teammate — it has to report where things stand and ask. Your reply resets it. 0 (the default) means no ceiling: a Bot team can then pass one ask around indefinitely, because every individual turn ends cleanly and the runaway stop above only sees one turn at a time.',
+    min: 0,
+    max: 500,
+    unit: 'turns',
   },
 ];
 

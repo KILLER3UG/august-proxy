@@ -154,7 +154,12 @@ _ERROR_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ('not_found', re.compile(r'\[?404\]?|not found', re.IGNORECASE)),
     (
         'bad_request',
-        re.compile(r'\[?400\]?|invalid (?:input|request|parameter)|bad request', re.IGNORECASE),
+        # `invalid[_ ]` because the provider's own error TYPE is snake-cased
+        # (`invalid_request_error`) and gateways that pass the envelope without a
+        # numeric status were classifying as `other` — which hid a refused
+        # request shape from every reader of this column, including the
+        # stuck-request ladder that exists to repair it.
+        re.compile(r'\[?400\]?|invalid[_ ](?:input|request|parameter)|bad request', re.IGNORECASE),
     ),
     (
         'upstream_5xx',

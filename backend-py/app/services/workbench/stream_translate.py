@@ -18,6 +18,29 @@ from app.json_narrowing import as_dict, as_int, as_str
 EmitFn = Callable[[dict[str, object]], None]
 
 
+def _errorEventText(event: dict[str, object]) -> str:
+    """Flatten whatever a gateway put in an error event into readable text.
+
+    ``as_str`` returns '' for a dict, and the standard Anthropic/OpenAI envelope
+    NESTS the reason (`{'error': {'type': ..., 'message': ...}}`), so the
+    provider's own explanation was thrown away at the extraction site: the loop
+    saw `Stream error HTTP 400: ` with nothing after the colon. Everything
+    downstream reads that one string — `classify_error` for the ledger, the
+    deterministic-400 marker scan that decides whether to replay, the
+    stuck-request ladder that decides whether the history can be repaired, and
+    the user, who got an empty receipt for a refusal that HAD named the reason.
+    """
+    for key in ('body', 'error', 'message', 'detail'):
+        value = event.get(key)
+        if isinstance(value, str):
+            if value.strip():
+                return value
+            continue
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False, default=str)
+    return ''
+
+
 class AnthropicWorkbenchStreamAggregator:
     """Stateful aggregator for one Anthropic workbench stream turn."""
 
@@ -65,7 +88,7 @@ class AnthropicWorkbenchStreamAggregator:
         # without _event_type — treat them as hard failures (not empty success).
         if event.get('type') == 'error' or (not event_type and event.get('error')):
             status = event.get('status')
-            body = as_str(event.get('body') or event.get('error') or event.get('message'))
+            body = _errorEventText(event)
             if isinstance(status, int):
                 self.error_status = status
             retryAfter = event.get('retryAfterMs')

@@ -36,6 +36,9 @@ _ALLCamelKeys = {
     # — the documented backstop had no door. See brain_config_service.numKeys.
     'runawayNudgeRounds',
     'runawayStopRounds',
+    # Bot-to-Bot unattended ceiling (bot_mode/dm.py `_unattendedRun`): absent
+    # means off, and 0 stays writable so an armed ceiling can be disarmed.
+    'maxUnattendedTurns',
     # Routing introspection: autoRoute/MinWinRate/WinGap are
     # removed — no turn-loop reader ever existed; MinSamples stays for the
     # harness flow map.

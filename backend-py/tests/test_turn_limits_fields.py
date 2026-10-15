@@ -40,6 +40,7 @@ _OWNED_FAMILIES = (
     'budgetWallClockSec',
     'runawayNudgeRounds',
     'runawayStopRounds',
+    'maxUnattendedTurns',
 )
 
 
