@@ -2753,6 +2753,7 @@ async def _sendWorkbenchMessageStreamImpl(
             # Tier (a) projection prune: old tool outputs are blanked
             # in the model-facing projection only — session.messages stays
             # untouched unless compaction below persists the reduced list.
+            unprunedMessages = currentMessages
             currentMessages = pruneToolOutputs(currentMessages)
             if _shouldAutoCompact(attentionPressure, turnsSinceCompaction, remainingTokens):
                 if not acquireCompactionLock(session):
@@ -2761,7 +2762,14 @@ async def _sendWorkbenchMessageStreamImpl(
                     try:
                         from app.services.transcript_archive import archive_messages
 
-                        archive_messages(sessionId, currentMessages, reason='auto-compact')
+                        # The UNPRUNED transcript. This handed the archive
+                        # `currentMessages`, i.e. the projection whose old tool
+                        # outputs have already been replaced by
+                        # `[Old tool result content cleared]`, and compaction then
+                        # persists that reduced list — so the content was in
+                        # neither place while the chat card tells the user "The
+                        # full transcript is archived".
+                        archive_messages(sessionId, unprunedMessages, reason='auto-compact')
                     except Exception:
                         logger.debug('transcript archive failed', exc_info=True)
                     summarizer = None

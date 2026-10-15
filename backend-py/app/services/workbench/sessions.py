@@ -1565,10 +1565,16 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
     # produced a different (worse) summary than the loop would have, and the
     # newest user turns were dropped rather than replayed.
     from app.services.workbench.loop.recovery import _compactionCall
+    from app.services.workbench.workbench import _resolveModelContextWindow
 
     compressed, relief = await _compactionCall(
         original,
-        context_window=0,
+        # The model's real window, not 0. A zero here is not "unknown size", it
+        # selects the COUNT-budgeted tail (six messages) instead of the
+        # token-budgeted one every automatic path uses — so forcing the threshold
+        # while leaving the window at zero would have quietly kept a second
+        # policy on this path.
+        context_window=_resolveModelContextWindow(as_str(getattr(session, 'model', '') or ''), None),
         goalHint=as_str(getattr(session, 'goal', '') or ''),
         summarizer=None,
         thresholdOverride=0,

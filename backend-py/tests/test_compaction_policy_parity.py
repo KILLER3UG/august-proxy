@@ -112,6 +112,59 @@ class TestOneCompactionPolicy:
         )
         assert sites[0].startswith('loop/recovery.py:'), sites
 
+    def test_no_path_hands_the_shared_site_a_zero_context_window(self):
+        """The census above counts SITES; this one reads ARGUMENTS.
+
+        `context_window=0` is not "size unknown" downstream: `_compactionCall`
+        turns it into `contextWindow=None`, which selects the COUNT-budgeted tail
+        (six messages) instead of the token-budgeted tail every automatic path
+        gets. The manual endpoint passed exactly that while being consolidated onto
+        the shared site, so "one policy" was false on tail budgeting — and neither
+        the parity assertions (which compare the two recovery paths against each
+        other) nor the site census could see it.
+        """
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1] / 'app' / 'services' / 'workbench'
+        callLines: list[str] = []
+        offenders: list[str] = []
+        for py in sorted(root.rglob('*.py')):
+            for i, line in enumerate(py.read_text(encoding='utf-8').splitlines(), 1):
+                where = f'{py.relative_to(root).as_posix()}:{i}'
+                if '_compactionCall(' in line and 'async def ' not in line:
+                    callLines.append(where)
+                if 'context_window=0' in line.replace(' ', ''):
+                    offenders.append(where)
+        assert len(callLines) >= 4, (
+            f'expected one call line per compaction path, found {callLines} — '
+            'a census that matches nothing is not a gate'
+        )
+        assert not offenders, f'a path pins the tail budget to the count route: {offenders}'
+
+    def test_the_auto_compact_archive_is_written_before_the_projection_prune(self):
+        """The chat card says "The full transcript is archived". The pre-turn path
+        archived AFTER `pruneToolOutputs`, so the snapshot held
+        `[Old tool result content cleared]` where the old tool outputs had been,
+        and compaction then persisted that reduced list — the content ended up in
+        neither place.
+
+        No test drives the pre-turn turn function, so this pins the ORDER in the
+        source: the archive must not be handed the pruned variable.
+        """
+        from pathlib import Path
+
+        src = (
+            Path(__file__).resolve().parents[1] / 'app' / 'services' / 'workbench' / 'workbench.py'
+        ).read_text(encoding='utf-8')
+        lines = src.splitlines()
+        archive = next((i for i, ln in enumerate(lines) if "reason='auto-compact')" in ln), None)
+        assert archive is not None, 'the gate lost its target line'
+        callLine = next(ln for ln in lines[archive - 8 : archive + 1] if 'archive_messages(' in ln)
+        assert 'currentMessages' not in callLine, (
+            f'the archive is handed the pruned projection: {callLine.strip()}'
+        )
+        assert 'unprunedMessages' in callLine, f'unknown archive argument: {callLine.strip()}'
+
     @pytest.mark.asyncio
     async def test_the_reactive_path_replays_the_users_own_words(self, monkeypatch):
         """The defect that mattered most, stated as an assertion."""

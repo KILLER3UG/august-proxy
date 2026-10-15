@@ -223,7 +223,26 @@ counts the call sites in the package (it read 3 before the fix, 1 after), and it
 first assertion is that the census is non-empty — a scanner gate that passes on
 zero matches is not a gate. The budget path also reported `compressedCount` as the
 messages *remaining* while the pre-turn path reported those *removed*, and the card
-renders that number as "summarized N messages".
+renders that number as "summarized N messages". **A site census is not an argument
+check:** the consolidated manual endpoint still passed `context_window=0`, which is
+not "size unknown" downstream — `_compactionCall` turns it into `contextWindow=None`
+and that selects the count-budgeted six-message tail instead of the token-budgeted
+tail every automatic path gets, so "one policy" was false on tail budgeting while
+the site count read 1. `test_no_path_hands_the_shared_site_a_zero_context_window`
+reads the arguments. Related, and found the same way: the pre-turn path archived the
+transcript AFTER `pruneToolOutputs`, so the snapshot held
+`[Old tool result content cleared]` where old tool outputs had been while compaction
+then persisted the reduced list — the content was in neither place, while the chat
+card tells the user "The full transcript is archived". It now archives the unpruned
+list (the projection prune still applies to the turn itself, and re-pruning inside
+`_compactionCall` is idempotent by design). Rotate also refuses to carry an opening
+that alone exceeds `REPLAY_USER_BUDGET_BYTES`, because claiming it would spend the
+whole budget on one message and can leave the relief freeing too little to be worth
+running; such a spec stays in the summarized span and still reaches the note's Goal.
+Two limits of the route are stated in `reliefStrategy` rather than fixed: it resets
+head staleness, not note-on-note loss (each note still carries its predecessors as
+600 characters of prose), and its predicate is "a fenced summary block is present",
+so a transcript that pastes a genuine handoff note rotates on its first relief.
 Malformed tool JSON never executes as `{}` — the loop
 returns a `[Validation Error] … Do NOT stop` self-heal and downgrades to the
 bare tool surface after 3 consecutive failures. Stream rules flag

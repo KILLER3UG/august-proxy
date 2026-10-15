@@ -64,6 +64,24 @@ class TestStrategyIsStateNotModel:
         msgs.append({'role': 'user', 'content': '<<compressed_summary not a note'})
         assert reliefStrategy(msgs, armed=True) == RELIEF_COMPACT
 
+    def test_a_pasted_note_reads_as_already_compacted(self):
+        """A stated limit, pinned so it cannot change silently.
+
+        `_isSummaryMessage` matches the fenced shape in any role — that is how it
+        recognizes legacy notes — so a user who pastes a genuine note verbatim
+        makes the first relief rotate on a session that never compacted. Consequence
+        is mild (both routes reduce context; rotate keeps no head), and tightening
+        the detector would break legacy-note detection, so this is documented and
+        measured rather than fixed.
+        """
+        from app.services.workbench.context_compressor import buildSummaryMessage
+
+        pasted = {'role': 'user', 'content': buildSummaryMessage(
+            [{'role': 'user', 'content': 'x'}], '## Goal\nan old note')['content']}
+        msgs = _conversation(turns=6, filler=400)
+        msgs.insert(2, pasted)
+        assert reliefStrategy(msgs, armed=True) == RELIEF_ROTATE
+
     def test_the_head_count_map_is_total(self):
         assert reliefHeadCount(RELIEF_COMPACT) == DEFAULT_HEAD_COUNT
         assert reliefHeadCount(RELIEF_ROTATE) == 0
@@ -215,6 +233,33 @@ class TestRotateBehaviour:
             'the replay budget was spent twice over, so rotating costs more context '
             'than stacking — the trade the docstring claims is not real'
         )
+
+    @pytest.mark.asyncio
+    async def test_an_ask_bigger_than_the_budget_is_summarized_not_carried(self):
+        """A pasted spec larger than the whole replay budget stays in the span.
+
+        Claiming it anyway spends the budget on one message, replays nothing else,
+        and can leave the relief freeing too little to be worth running — the
+        route must degrade to summarizing it, not to keeping it regardless.
+        """
+        msgs = _conversation(turns=20, filler=1200)
+        msgs[1] = {'role': 'user', 'content': 'SPEC' + ('s' * 40_000)}
+        out = await compressMessages(
+            msgs,
+            threshold=64,
+            head_count=DEFAULT_HEAD_COUNT,
+            contextWindow=4000,
+            schema=True,
+            replayUserBytes=512,
+            rotate=True,
+        )
+        assert len(out) < len(msgs), 'the relief stopped freeing context'
+        assert not [m for m in out if str(m.get('content', '')).startswith('SPEC')], (
+            'the oversized ask was carried verbatim, so the replay budget bought '
+            'one message and nothing else'
+        )
+        note = next(m for m in out if str(m.get('content', '')).startswith('<<compressed_summary'))
+        assert 'SPEC' in str(note['content']), 'the ask was dropped from both places'
 
     @pytest.mark.asyncio
     async def test_rotating_never_orphans_a_tool_result_from_its_call(self):

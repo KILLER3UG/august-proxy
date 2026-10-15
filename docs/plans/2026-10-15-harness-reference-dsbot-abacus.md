@@ -516,6 +516,52 @@ Verification of this round: `ruff` and `mypy` (339 files) clean, 13/13 rails via
 temp dirs no longer accumulate, and 129 distiller/quality/secret-door/learning
 tests pass.
 
+## Fourth reviewer round: the consolidation was not actually one policy
+
+Two agents reviewed the rotate commit. Five claims were verified in code and acted
+on; the commit's own sentence "All five now share the site" turned out to be true
+about the CALL and false about the POLICY, which is the kind of thing a site census
+cannot see.
+
+1. **The manual endpoint passed `context_window=0`** while being consolidated, and
+   `0` is not "size unknown" downstream — `_compactionCall` maps it to
+   `contextWindow=None`, which selects the count-budgeted six-message tail instead
+   of the token-budgeted tail every automatic path uses. So the button ran a second
+   policy *through* the shared site. It now resolves the model's window. The census
+   gate counted 1 site and the parity assertions compared the two recovery paths;
+   neither could see it, so the new gate reads ARGUMENTS
+   (`test_no_path_hands_the_shared_site_a_zero_context_window`) — proven red by
+   putting `context_window=0` back, restore verified by hash.
+2. **Rotate carried an oversized opening regardless of the replay budget.** The byte
+   guard only gated the *newest* turns, so a pasted spec larger than
+   `REPLAY_USER_BUDGET_BYTES` was kept verbatim, bought the whole budget, replayed
+   nothing else and could leave the relief freeing too little to be worth running.
+   Now such an ask stays in the summarized span (and still reaches the note's Goal).
+   Proven red by neutralizing the cap.
+3. **The pre-turn path archived the transcript AFTER the projection prune** — found
+   while checking the reviewer's claim about double pruning. `archive_messages`
+   stores exactly what it is handed, so the snapshot held
+   `[Old tool result content cleared]` where the old tool outputs had been, and
+   compaction then persisted the reduced list. The content existed in neither place
+   while `CompactionNoticeCard` tells the user "The full transcript is archived".
+   It now archives the unpruned list; the projection prune still applies to the
+   turn, and the second prune inside `_compactionCall` is idempotent by design.
+   No test drives the pre-turn function, so this is pinned by a source-ordering gate
+   with an explicit "the gate lost its target line" guard on both lookups.
+4. **Two limits of the route are now stated in `reliefStrategy` instead of implied**:
+   it resets head staleness, not note-on-note loss (each note still carries its
+   predecessors as 600 characters of prose — closing that needs a durable handoff
+   store, not a flag), and because `_isSummaryMessage` matches the fenced shape in
+   any role, a transcript that pastes a genuine note rotates on its first relief.
+5. **`reliefHeadCount(rotate) == 0` is reported to the frame while the opening is
+   present verbatim**, so the number is "messages kept from the head span", not
+   "verbatim messages". Left as-is and named, because changing it would make the
+   frame disagree with the `head_count` the compressor actually received.
+
+Verification of this round: `ruff` clean, `mypy` (339 files) clean, rotate + parity
+gates 27 passed, and the full backend suite re-run after these edits (the earlier
+run was invalidated by them).
+
 ## Next, in value-per-risk order
 
 1. **Review-from-archive** (abacus item 4) — **attempted today, larger than it reads, and that is

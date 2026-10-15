@@ -73,6 +73,18 @@ def reliefStrategy(messages: list[dict[str, object]], *, armed: bool) -> str:
     verbatim head IS the live task statement, and re-anchoring on a summary whose
     own footer says "decisions, constraints and next steps were not analyzed"
     would trade a fact for a guess.
+
+    Two limits, stated because the route is easier to oversell than to read:
+    * it resets the *head* staleness, not note-on-note loss. Each note still
+      carries its predecessors as 600 characters of prose, so a tenth rotation is
+      built on the ninth one's squeeze. Removing that channel means a real
+      durable-handoff store, not a different flag here.
+    * the predicate is "a summary block is present", and `_isSummaryMessage`
+      matches the fenced shape in any role. A user or an imported transcript that
+      pastes a genuine handoff note verbatim therefore reads as "already
+      compacted", and the first relief rotates. The same false positive already
+      folds such a message into `priorSummaryTexts`, so this rides an existing
+      detection choice rather than adding one.
     """
     if not armed:
         return RELIEF_COMPACT
@@ -856,7 +868,15 @@ async def compressMessages(
                     opening = m
                     break
         if opening is not None:
-            acc += len(_json.dumps(opening, default=str, sort_keys=True))
+            openingCost = len(_json.dumps(opening, default=str, sort_keys=True))
+            if openingCost > replayUserBytes:
+                # A pasted spec larger than the whole replay budget stays in the
+                # summarized span. Claiming it anyway would spend the budget on one
+                # message and replay nothing else, and the relief could then fail to
+                # free enough context to be worth running at all.
+                opening = None
+            else:
+                acc += openingCost
         for m in reversed(middle):
             if m.get('role') != 'user' or _isToolResultMsg(m) or _isSummaryMessage(m):
                 continue
