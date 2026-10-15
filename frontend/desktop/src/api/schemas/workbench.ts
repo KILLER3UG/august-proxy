@@ -127,8 +127,15 @@ export const WorkbenchBtwEventSchema = WorkbenchBaseSchema.extend({
 
 export const WorkbenchCompactionEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('compaction'),
-  headCount: z.number(),
-  tailCount: z.number(),
+  // Optional because the reactive overflow rescue reports no split. The validator
+  // only warns (it never discards), but a required field here made a legitimate
+  // frame look like contract drift, which dulled the warning for real drift.
+  headCount: z.number().optional(),
+  tailCount: z.number().optional(),
+  pinnedCount: z.number().optional(),
+  replayedCount: z.number().optional(),
+  relief: z.string().optional(),
+  trigger: z.string().optional(),
   compressedCount: z.number(),
   originalTokens: z.number(),
   compressedTokens: z.number(),

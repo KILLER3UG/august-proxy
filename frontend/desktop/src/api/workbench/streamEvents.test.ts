@@ -133,6 +133,23 @@ describe('previously-undispatched backend events', () => {
     );
   });
 
+  it('leaves an unknown compaction split unknown instead of inventing zero', () => {
+    // The reactive overflow rescue reports no split. `Number(undefined) || 0`
+    // folded that into "first 0 and last 6 messages" — a number the backend
+    // never sent, rendered as fact.
+    const onCompaction = vi.fn();
+    dispatchWorkbenchEvent(
+      'compaction',
+      { trigger: 'reactive_overflow', compressedCount: 12, originalTokens: 400, compressedTokens: 90 },
+      { onCompaction },
+      7,
+    );
+    const info = onCompaction.mock.calls[0][0];
+    expect(info.headCount).toBeUndefined();
+    expect(info.tailCount).toBeUndefined();
+    expect(info.compressedCount).toBe(12);
+  });
+
   it('turn_end dispatches onTurnEnd with reason, rounds, and error flag', () => {
     const onTurnEnd = vi.fn();
     dispatchWorkbenchEvent(

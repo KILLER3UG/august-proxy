@@ -294,3 +294,45 @@ class TestOneEventPerCompaction:
         assert frames[0]['trigger'] == 'budget', (
             'an untagged compaction frame is anonymous in the stream'
         )
+
+
+class TestFrameReportsTheSplitItUsed:
+    """A frame that reports the defaults instead of the result is a lie the card
+    repeats: `tailCount: 6` was the compressor's default, while the tail is
+    token-budgeted, so the card said "kept the first 4 and last 6" about a
+    compaction that had kept far more verbatim."""
+
+    def test_the_budget_frame_reports_the_real_tail_not_the_default(self, monkeypatch):
+        import asyncio
+
+        from app.services.workbench import context_compressor as cc
+        from app.services.workbench.loop import recovery as rec
+
+        events: list[dict] = []
+        msgs: list[dict[str, object]] = [{'role': 'system', 'content': 'sys'}]
+        for i in range(20):
+            msgs.append({'role': 'user', 'content': f'note {i} ' + ('x' * 3000)})
+            msgs.append({'role': 'assistant', 'content': f'reply {i} ' + ('y' * 3000)})
+
+        class _S:
+            goal = ''
+            messages: list = list(msgs)
+            messageCount = len(msgs)
+            turnCount = 1
+
+        monkeypatch.setattr(cc, 'acquireCompactionLock', lambda s: True)
+        monkeypatch.setattr(cc, 'releaseCompactionLock', lambda s: None)
+
+        asyncio.run(
+            rec._budgetTriggeredCompaction(
+                _S(), 'sess', msgs, contextWindow=40_000, emit=events.append,
+                resolvedProvider=None, resolvedModel='m', currentTurn=1,
+            )
+        )
+
+        frames = [e for e in events if e.get('type') == 'compaction']
+        assert len(frames) == 1, f'expected one compaction frame, got {events}'
+        f = frames[0]
+        assert f['tailCount'] > 6, f'a token-budgeted tail reported the default: {f}'
+        assert f['headCount'] == 4, f
+        assert {'pinnedCount', 'replayedCount', 'relief'} <= set(f), sorted(f)

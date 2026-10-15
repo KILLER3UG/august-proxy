@@ -719,6 +719,7 @@ async def compressMessages(
     schema: bool = False,
     replayUserBytes: int = 0,
     rotate: bool = False,
+    reliefStats: dict[str, int] | None = None,
 ) -> list[dict[str, object]]:
     """Compress messages to fit within a token threshold by summarizing the middle.
 
@@ -838,6 +839,22 @@ async def compressMessages(
     # after the system message. That is a 400 from every provider, and because the
     # projection is what gets persisted, one orphan bricked every later turn — the
     # exact failure the stuck-request ladder exists to escape.
+    replayed: list[dict[str, object]] = []
+
+    def _noteSplit() -> None:
+        """Report the split this projection actually used.
+
+        Three emitters hardcoded `headCount: 4, tailCount: 6` — the defaults, not
+        the result — while the tail is token-budgeted, so the chat card told the user
+        "Kept the first 4 and last 6 messages" about a compaction that had kept 120
+        verbatim. The counts are only knowable here.
+        """
+        if reliefStats is None:
+            return
+        reliefStats.update(
+            {'head': len(head), 'pinned': len(pinned), 'replayed': len(replayed), 'tail': len(tail)}
+        )
+
     pinned: list[dict[str, object]] = []
     if pin_predicates:
         for unit in middleUnits:
@@ -854,6 +871,7 @@ async def compressMessages(
         compressedTokens = estimateTokens(compressed)
         if compressedTokens >= currentTokens:
             return list(messages)
+        _noteSplit()
         return compressed
 
     # Verbatim replay of the newest USER messages from the
@@ -862,7 +880,6 @@ async def compressMessages(
     # already keeps every result with its call).
     import json as _json
 
-    replayed: list[dict[str, object]] = []
     if replayUserBytes > 0 and middle:
         selected: list[dict[str, object]] = []
         acc = 0
@@ -913,6 +930,7 @@ async def compressMessages(
         compressedTokens = estimateTokens(compressed)
         if compressedTokens >= currentTokens:
             return list(messages)
+        _noteSplit()
         return compressed
 
     summaryMaxChars = summaryCapTokens * 4
@@ -964,4 +982,5 @@ async def compressMessages(
     compressedTokens = estimateTokens(compressed)
     if compressedTokens >= currentTokens:
         return list(messages)
+    _noteSplit()
     return compressed

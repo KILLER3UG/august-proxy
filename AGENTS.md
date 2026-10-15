@@ -258,10 +258,16 @@ exact failure the stuck-request ladder exists to escape. It was already reachabl
 the compact route (reproduced on the parent commit); rotate made the opening pair
 newly reachable. The shipped pairing test passed because it called the compressor
 WITHOUT `pin_predicates`, which `_compactionCall` always supplies — omit the
-production arguments and the test green-lights the defect it names. Still open, both
-measured: three emitters hardcode `tailCount: 6` while the tail is token-budgeted (a
-real projection kept 120 messages), and the `reactive_overflow` frame reports no
-head/tail/relief at all, so the card renders "first 0 and last 0".
+production arguments and the test green-lights the defect it names. `tailCount` is now
+the split the compressor used (`reliefStats` flows out of `_compactionCall`): three
+emitters had hardcoded the defaults `4`/`6` while the tail is token-budgeted, so the
+card asserted "kept the first 4 and last 6 messages" about a compaction that had kept
+120 verbatim. Where a path genuinely never learns its split — the reactive overflow
+rescue — the field is OMITTED, not zeroed: `Number(undefined) || 0` in the stream
+reader used to fold absence into a fact, and the card now renders the count clause only
+when both numbers exist. The zod schema marks them optional for the same reason — the
+validator only warns and never discards, but a required field made a legitimate frame
+look like contract drift and dulled the warning for real drift.
 Malformed tool JSON never executes as `{}` — the loop
 returns a `[Validation Error] … Do NOT stop` self-heal and downgrades to the
 bare tool surface after 3 consecutive failures. Stream rules flag

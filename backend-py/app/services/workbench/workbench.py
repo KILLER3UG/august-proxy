@@ -2787,7 +2787,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     # `_compactionCall`; this used to duplicate its arguments
                     # inline, which the parity test could not see because it only
                     # compared the two recovery paths against EACH OTHER.
-                    compressed, _relief = await _compactionCall(
+                    compressed, _relief, _stats = await _compactionCall(
                         currentMessages,
                         context_window=contextWindow,
                         goalHint=as_str(getattr(session, 'goal', '') or ''),
@@ -2812,9 +2812,11 @@ async def _sendWorkbenchMessageStreamImpl(
                                     'originalTokens': originalTokens,
                                     'compressedTokens': compressedTokens,
                                     'compressedCount': compressedCount,
-                                    'headCount': reliefHeadCount(_relief),
+                                    'headCount': _stats.get('head', reliefHeadCount(_relief)),
+                                    'pinnedCount': _stats.get('pinned', 0),
+                                    'replayedCount': _stats.get('replayed', 0),
                                     'relief': _relief,
-                                    'tailCount': 6,
+                                    'tailCount': _stats.get('tail', 6),
                                     'threshold': threshold,
                                     'contextWindow': contextWindow,
                                     'underThreshold': False,
@@ -3812,7 +3814,10 @@ async def _sendWorkbenchMessageStreamImpl(
                         overflowReducedThisRound = True
                         _messagesBeforeReactive = len(currentMessages)
                         _tokensBeforeReactive = estimateTokens(currentMessages)
-                        reduced = await _reactiveContextReduction(currentMessages, contextWindow, session)
+                        _reactiveSplit: dict[str, object] = {}
+                        reduced = await _reactiveContextReduction(
+                            currentMessages, contextWindow, session, statsOut=_reactiveSplit
+                        )
                         if reduced is not None:
                             from app.providers.clients.base import estimateTokens as _estTok
 
@@ -3846,6 +3851,13 @@ async def _sendWorkbenchMessageStreamImpl(
                                 original_messages=_messagesBeforeReactive,
                                 current_messages=currentMessages,
                                 context_window=contextWindow,
+                                relief=str(_reactiveSplit.get('relief', '') or ''),
+                                split={
+                                    k: v
+                                    for k, v in _reactiveSplit.items()
+                                    if k in ('head', 'pinned', 'replayed', 'tail')
+                                    and isinstance(v, int)
+                                },
                             )
                             continue
                         # The rescue RAN and achieved nothing — the threshold it

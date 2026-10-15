@@ -1566,7 +1566,7 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
     # newest user turns were dropped rather than replayed.
     from app.services.workbench.loop.recovery import _compactionCall
 
-    compressed, relief = await _compactionCall(
+    compressed, relief, stats = await _compactionCall(
         original,
         # Deliberately 0, and the ONE path allowed to be. Passing the model's real
         # window here selects the token-budgeted tail (16% of it), which for any
@@ -1590,8 +1590,8 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
             'originalTokens': original_tokens,
             'compressedTokens': compressed_tokens,
             'compressedCount': 0,
-            'headCount': reliefHeadCount(relief),
-            'tailCount': 6,
+            'headCount': stats.get('head', reliefHeadCount(relief)),
+            'tailCount': stats.get('tail', 6),
             'message': 'Context is already compact enough.',
         }
     session.messages = compressed
@@ -1613,9 +1613,11 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
         'originalTokens': original_tokens,
         'compressedTokens': compressed_tokens,
         'compressedCount': compressed_count,
-        'headCount': reliefHeadCount(relief),
+        'headCount': stats.get('head', reliefHeadCount(relief)),
+        'pinnedCount': stats.get('pinned', 0),
+        'replayedCount': stats.get('replayed', 0),
         'relief': relief,
-        'tailCount': 6,
+        'tailCount': stats.get('tail', 6),
         'message': (
             f'Freed chat memory — summarized {compressed_count} middle messages '
             f'(~{original_tokens} → ~{compressed_tokens} tokens).'

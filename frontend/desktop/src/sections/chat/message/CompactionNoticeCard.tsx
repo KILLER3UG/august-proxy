@@ -12,8 +12,10 @@ import { formatContextWindow } from '@/sections/chat/model-display';
 import { t } from '@/lib/motion';
 
 export interface CompactionNoticeInfo {
-  headCount: number;
-  tailCount: number;
+  /** Absent when the path that compacted never learned its own split — the
+   *  reactive rescue. Rendered as an omitted clause, never as "first 0". */
+  headCount?: number;
+  tailCount?: number;
   compressedCount: number;
   originalTokens: number;
   compressedTokens: number;
@@ -73,8 +75,9 @@ export function CompactionNoticeCard({ info }: { info: CompactionNoticeInfo }) {
             'text-[0.78125rem] leading-relaxed text-muted-foreground/85',
           )}
         >
-          Kept the first {info.headCount} and last {info.tailCount} messages; summarized{' '}
-          {info.compressedCount} in the middle
+          {info.headCount != null && info.tailCount != null
+            ? `Kept the first ${info.headCount} and last ${info.tailCount} messages; summarized ${info.compressedCount} in the middle`
+            : `Summarized ${info.compressedCount} messages in the middle`}
           {info.contextWindow
             ? ` to stay within ${formatContextWindow(info.contextWindow)} context`
             : ''}

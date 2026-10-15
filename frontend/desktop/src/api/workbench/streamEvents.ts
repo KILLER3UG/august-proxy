@@ -122,8 +122,12 @@ export function dispatchWorkbenchEvent(
       break;
     case 'compaction':
       handlers.onCompaction?.({
-        headCount: Number(p?.headCount) || 0,
-        tailCount: Number(p?.tailCount) || 0,
+        // Unknown stays unknown. `Number(p?.x) || 0` folded a missing count into
+        // zero, so the reactive path — which reports no split — rendered as
+        // "Kept the first 0 and last 6 messages", asserting a number the backend
+        // never sent.
+        headCount: p?.headCount == null ? undefined : Number(p.headCount),
+        tailCount: p?.tailCount == null ? undefined : Number(p.tailCount),
         compressedCount: Number(p?.compressedCount) || 0,
         originalTokens: Number(p?.originalTokens) || 0,
         compressedTokens: Number(p?.compressedTokens) || 0,

@@ -293,8 +293,10 @@ export interface WorkbenchEventHandlers {
   /** `seq` is the SSE frame id (`id:` line) — stable across a cursor
    *  replay, so replay-sensitive consumers can derive a durable identity. */
   onCompaction?: (data: {
-    headCount: number;
-    tailCount: number;
+    // Optional: the reactive overflow rescue does not know its own split, and a
+    // required number here forced the reader to invent 0 for it.
+    headCount?: number;
+    tailCount?: number;
     compressedCount: number;
     originalTokens: number;
     compressedTokens: number;

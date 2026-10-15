@@ -841,7 +841,7 @@ async def executeSubAgent(
                     # so a subagent mid-run got the heuristic summarizer, a
                     # count-budgeted tail, no tool-output prune and no verbatim
                     # replay of the user's own words.
-                    messages, _relief = await _compactionCall(
+                    messages, _relief, _stats = await _compactionCall(
                         messages,
                         context_window=_contextWindow,
                         goalHint=as_str(getattr(session, 'goal', '') or ''),

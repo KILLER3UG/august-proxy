@@ -154,7 +154,7 @@ async def _compactionCall(
     goalHint: str,
     summarizer: object | None,
     thresholdOverride: int | None = None,
-) -> tuple[list[dict[str, object]], str]:
+) -> tuple[list[dict[str, object]], str, dict[str, int]]:
     """THE compaction policy — one site, shared by every path that compacts.
 
     Five paths reduce context: the pre-turn auto-compact, the budget ladder's
@@ -198,6 +198,7 @@ async def _compactionCall(
 
     pruned = pruneToolOutputs(list(messages))
     relief = reliefStrategy(pruned, armed=_contextRotateArmed())
+    stats: dict[str, int] = {}
     compressed = await compressMessages(
         pruned,
         threshold=(
@@ -214,8 +215,9 @@ async def _compactionCall(
         schema=summarizer is None,
         replayUserBytes=REPLAY_USER_BUDGET_BYTES,
         rotate=relief == RELIEF_ROTATE,
+        reliefStats=stats,
     )
-    return compressed, relief
+    return compressed, relief, stats
 
 
 def _tokens(messages: list[dict[str, object]]) -> int:
@@ -225,7 +227,10 @@ def _tokens(messages: list[dict[str, object]]) -> int:
 
 
 async def _reactiveContextReduction(
-    messages: list[dict[str, object]], contextWindow: int, session: WorkbenchSession
+    messages: list[dict[str, object]],
+    contextWindow: int,
+    session: WorkbenchSession,
+    statsOut: dict[str, object] | None = None,
 ) -> list[dict[str, object]] | None:
     """Reactive prune-then-compact for a context-overflow error.
 
@@ -239,12 +244,15 @@ async def _reactiveContextReduction(
     """
     before = _tokens(messages)
     try:
-        reduced, _relief = await _compactionCall(
+        reduced, _relief, _stats = await _compactionCall(
             messages,
             context_window=contextWindow,
             goalHint=as_str(getattr(session, 'goal', '') or ''),
             summarizer=None,
         )
+        if statsOut is not None:
+            statsOut['relief'] = _relief
+            statsOut.update(_stats)
         reduced = _injectPlanState(reduced, session)
     except Exception:
         logger.debug('reactive context reduction failed', exc_info=True)
@@ -614,7 +622,7 @@ async def _budgetTriggeredCompaction(
                 summarizer = make_compactor_llm_client(resolvedProvider, resolvedModel)
         except Exception:
             summarizer = None
-        compressed, relief = await _compactionCall(
+        compressed, relief, stats = await _compactionCall(
             messages,
             context_window=contextWindow,
             goalHint=as_str(getattr(session, 'goal', '') or ''),
@@ -644,9 +652,14 @@ async def _budgetTriggeredCompaction(
                     # this as "summarized N messages", so reporting the result
                     # length told the user the compaction had kept what it kept.
                     'compressedCount': max(0, len(messages) - len(compressed)),
-                    'headCount': reliefHeadCount(relief),
+                    # The split the compressor actually used. `headCount`/`tailCount`
+                    # were the defaults (4/6), so the card reported "kept the first 4
+                    # and last 6" about a compaction that had kept 120 verbatim.
+                    'headCount': stats.get('head', reliefHeadCount(relief)),
+                    'pinnedCount': stats.get('pinned', 0),
+                    'replayedCount': stats.get('replayed', 0),
                     'relief': relief,
-                    'tailCount': 6,
+                    'tailCount': stats.get('tail', 6),
                     'contextWindow': contextWindow,
                     'underThreshold': False,
                 }

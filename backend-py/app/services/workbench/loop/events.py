@@ -50,6 +50,8 @@ def _emitCompactionEvent(
     original_messages: int,
     current_messages: list[dict[str, object]],
     context_window: int,
+    relief: str = '',
+    split: dict[str, int] | None = None,
 ) -> None:
     """One ``compaction`` frame per compaction, tagged with what caused it.
 
@@ -71,13 +73,23 @@ def _emitCompactionEvent(
     from app.providers.clients.base import estimateTokens as _estTok
 
     compressedTokens = _estTok(current_messages)
-    emit(
-        {
-            'type': 'compaction',
-            'trigger': trigger,
-            'originalTokens': int(original_tokens),
-            'compressedTokens': compressedTokens,
-            'compressedCount': max(0, int(original_messages) - len(current_messages)),
-            'contextWindow': int(context_window),
-        }
-    )
+    frame: dict[str, object] = {
+        'type': 'compaction',
+        'trigger': trigger,
+        'originalTokens': int(original_tokens),
+        'compressedTokens': compressedTokens,
+        'compressedCount': max(0, int(original_messages) - len(current_messages)),
+        'contextWindow': int(context_window),
+    }
+    if relief:
+        frame['relief'] = relief
+    if split:
+        frame['headCount'] = int(split.get('head', 0))
+        frame['tailCount'] = int(split.get('tail', 0))
+        frame['pinnedCount'] = int(split.get('pinned', 0))
+        frame['replayedCount'] = int(split.get('replayed', 0))
+    # Absent, not zero: `Number(p?.headCount) || 0` in the stream reader turns a
+    # missing field into 0, and the card then says "Kept the first 0 and last 0"
+    # about a compaction whose split this path never learned. Omitting lets the
+    # card drop that clause instead of asserting a false one.
+    emit(frame)
