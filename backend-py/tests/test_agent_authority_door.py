@@ -453,3 +453,73 @@ class TestUnresolvableLineage:
         kid = agent_registry.createAgent(name='Kid2', parentId=fresh['id'], actor='test')
         assert kid['parentId'] == fresh['id']
         assert agent_registry.deriveChildPermissions(fresh['id'], kid['id']) == ['read_file']
+
+
+class TestTheRefusalComesFromTheDenySetNotFromNothingBeingBound:
+    """A reviewer drove a REAL worker (session bound, guardMode='full') and pointed
+    out that my no-session cases pass partly because `get_session()` is None, and
+    that under `plan` the guard-mode check precedes this gate. So the shipped tests
+    did not identify WHICH rule refused. These bind a session, pin guardMode to
+    'full' (which is what Bot DM and room sessions get, so the guard cannot be what
+    stops the call), and run at depth 0 (the roster-Bot case that used to skip both
+    gates)."""
+
+    def _worker_session(self, guard_mode: str):
+        sess = create_workbench_session(guardMode=guard_mode)
+        sessions_mod._sessions[sess.id] = sess
+        return sess
+
+    def test_guard_mode_full_still_refuses_because_of_the_deny_set(self, isolatedData):
+        from app.services.tools.tool_bridges import handleToolCall
+        from app.services.workbench.context import currentSessionId, currentSubagentDenied
+
+        sess = self._worker_session('full')
+        sid = currentSessionId.set(sess.id)
+        denied = currentSubagentDenied.set(frozenset({'write_file'}))
+        try:
+            out = asyncio.run(handleToolCall('write_file', json.dumps({'path': 'x.txt', 'content': 'hi'})))
+            assert 'not permitted to use' in str(out), out
+            assert 'via tool_call' in str(out), f'not the deny-set message: {out!r}'
+        finally:
+            currentSubagentDenied.reset(denied)
+            currentSessionId.reset(sid)
+        # The control that makes the above mean something: with the deny set empty,
+        # the SAME session and the SAME args are not refused by this gate at all.
+        sess2 = create_workbench_session(guardMode='full')
+        sess2.workspacePath = str(isolatedData / 'ws')
+        (isolatedData / 'ws').mkdir(parents=True, exist_ok=True)
+        sessions_mod._sessions[sess2.id] = sess2
+        sid2 = currentSessionId.set(sess2.id)
+        try:
+            out2 = asyncio.run(handleToolCall('write_file', json.dumps({'path': 'x.txt', 'content': 'hi'})))
+            assert 'not permitted to use' not in str(out2), (
+                f'the gate fires regardless of the deny set: {out2!r}'
+            )
+        finally:
+            currentSessionId.reset(sid2)
+
+    def test_a_denied_never_tool_is_refused_even_when_the_guard_is_silent(self, isolatedData):
+        """`update_agent` is a never-tool AND deny-set member; in 'full' no guard
+        mode would stop it, so only this gate can."""
+        from app.services.tools.tool_bridges import handleToolCall
+        from app.services.workbench.context import currentSessionId, currentSubagentDenied
+
+        sess = self._worker_session('full')
+        sid = currentSessionId.set(sess.id)
+        denied = currentSubagentDenied.set(frozenset({'update_agent', 'remember', 'create_agent'}))
+        try:
+            for name, args in (
+                ('update_agent', json.dumps({'agentId': 'agent_x', 'role': 'hacked'})),
+                ('remember', json.dumps({'key': 'k', 'value': 'v'})),
+                ('create_agent', json.dumps({'name': 'Shadow'})),
+            ):
+                out = asyncio.run(handleToolCall(name, args))
+                assert 'Blocked' in str(out), f'{name} reached the registry from a worker: {out!r}'
+        finally:
+            currentSubagentDenied.reset(denied)
+            currentSessionId.reset(sid)
+        from app.services.tools import agent_registry
+
+        assert not [a for a in agent_registry.listAgents() if a['name'] == 'Shadow'], (
+            'create_agent executed despite the refusal'
+        )
