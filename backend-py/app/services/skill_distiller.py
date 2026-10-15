@@ -1273,7 +1273,7 @@ def apply_verdict(
             )
         except ValueError as exc:
             logger.info('distiller draft proposal refused: %s', exc)
-            return 'refused'
+            return 'rejected-write-door'
         # The fingerprint's status clock starts at ship time, not
         # at the last mined occurrence.
         try:
@@ -1396,7 +1396,7 @@ def apply_verdict(
             )
         except ValueError as exc:
             logger.info('amend_body proposal refused: %s', exc)
-            return 'refused'
+            return 'rejected-write-door'
         try:
             from app.services.episode_miner import set_fingerprint_status
 

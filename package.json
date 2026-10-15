@@ -24,6 +24,7 @@
     "dev:desktop": "node scripts/dev-tauri.mjs",
     "dev:web": "npm run dev:vite -w frontend/desktop",
     "doctor": "cd backend-py && uv run python scripts/doctor.py",
+    "eval:harness": "cd backend-py && uv run python scripts/harness_eval.py",
     "download:node-binaries": "node scripts/download-node-binaries.mjs",
     "download:node-binaries:all": "node scripts/download-node-binaries.mjs --all",
     "gen:api": "openapi-typescript docs/api/openapi.json -o frontend/desktop/src/api/gen/openapi.ts",

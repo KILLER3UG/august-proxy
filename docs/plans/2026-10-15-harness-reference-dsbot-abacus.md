@@ -452,6 +452,70 @@ fixtures were caught asserting on a transcript that never compacted at all — a
 20-turn/1200-char fixture and an explicit `len(out) < len(msgs)` guard is now the
 house rule in this file.
 
+## Third reviewer round: on the eval itself
+
+A design-quality agent and a runtime-correctness agent reviewed the eval and the
+write-door fixes. Everything below was re-derived in code before being acted on;
+two of their claims did not survive that check and are recorded as disproved.
+
+Fixed, each verified by running it:
+
+1. **A typo in `--only` was a green run that measured nothing.** `return 0 if
+   passed == len(results)` made an empty selection print
+   `0/0 cases behaved as labelled` and exit 0. Now an unknown case id lists the
+   known ones and exits 2, and a run with zero executed cases exits 2 rather than
+   reporting success.
+2. **`--judge` had never reached a model.** It ran inside the same throwaway data
+   dir as rails mode, so the provider store it needs was empty, `resolver.resolve`
+   returned None and every case came back `no-answer` — a harness that looks like
+   it is scoring a model while scoring its own isolation. Judge mode writes nothing
+   (it reads config, asks one question, scores the answer), so it no longer
+   isolates.
+3. **Judge mode had nothing to judge.** `_episode()` fed every case the same
+   placeholder excerpt (`case thin-rule: the ask, in the user's words`), so the
+   model was asked to distil a stub. Each judged case now carries its own events,
+   and a case whose subject is a door or a mode is reported `SKIP … not judgeable`
+   instead of being scored as noise.
+4. **`python scripts/harness_eval.py` died.** The `sys.path` bootstrap sat at the
+   end of `main()`, *after* `_isolateData()` had already imported `app.config` —
+   dead for `-m`, a `ModuleNotFoundError` for the direct form. Moved to module
+   scope, and the script is wired as `npm run eval:harness`, because the repo's
+   own convention is that an unprefixed `scripts/*.py` is npm-wired and a `_`
+   prefix marks an unwired one.
+5. **21 leaked temp dirs.** The throwaway home was deleted with
+   `ignore_errors=True`, and on Windows an open SQLite handle makes `rmtree` fail
+   *silently*. Measured: 22 dirs survived. Closing the store before the delete
+   fixes it (verified: the count no longer grows) and the path is now printed if a
+   handle still wins, so a leak is visible rather than inferred.
+6. **One event class, three labels.** `apply_verdict` returned
+   `rejected-write-door` for a refused memory verdict while two proposal doors
+   returned bare `'refused'` for the identical event (a `ValueError` from a store
+   write). Unified to one label; `learning_scheduler`'s `kept` counter is an
+   allowlist of `memory-saved`/`proposal-filed`, so no consumer read the old name.
+   The two proposal sites have no test of their own — the rename is not covered by
+   a case that makes `save_proposal` raise.
+
+Disproved, and left alone:
+
+- **"The two modes encode opposite correctness, so judge mode passes a wrong
+  answer."** For `thin-rule` they are both right at different layers: the judge
+  *should* answer `create_skill` (drafting is its job) and the door *should*
+  downgrade the thin draft to a memory. The eval now says exactly that in the
+  case's own note rather than forcing one expectation on both.
+- **"Rails mode may not isolate the brain DB."** It does. The reviewer's premise
+  about the real data dir was also wrong — it is `C:/Dev/august-proxy/data` (from
+  `_findProjectRoot()`), not `backend-py/data`, which does not exist. Verified the
+  strong way: all 315 files under the real dir hashed before and after a run, no
+  change; then a decoy `AUGUST_DATA_DIR` with `app.config` and four service
+  modules imported *first* still produced zero files in the decoy, and
+  `AUGUST_BRAIN_SQLITE_FILE` — a separate key the review flagged as possibly
+  missed — is set by `_isolateData()`.
+
+Verification of this round: `ruff` and `mypy` (339 files) clean, 13/13 rails via
+`npm run eval:harness`, `--only thin-rules` exits 2, direct invocation exits 0,
+temp dirs no longer accumulate, and 129 distiller/quality/secret-door/learning
+tests pass.
+
 ## Next, in value-per-risk order
 
 1. **Review-from-archive** (abacus item 4) — **attempted today, larger than it reads, and that is

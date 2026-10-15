@@ -44,6 +44,12 @@ import sys
 import tempfile
 from typing import Any
 
+# Bootstrap BEFORE any `app` import, so both documented forms work. This used to
+# sit at the end of `main()`, after `_isolateData()` had already imported
+# `app.config` — a no-op for `-m`, and a `ModuleNotFoundError` for a direct
+# `python scripts/harness_eval.py`.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # ── cases ────────────────────────────────────────────────────────────────────
 # `expect` is a prediction made here, not read out of the code. Where the rails
 # disagree with a prediction, that is the finding — do not "fix" the label
@@ -70,12 +76,26 @@ CASES: list[dict[str, Any]] = [
     {
         'id': 'nothing-to-learn',
         'note': 'A plain question that went fine must not create memory.',
+        'judge': 'none',
+        'events': [
+            {'type': 'user', 'excerpt': 'What does `uv run pytest -n auto` actually do?'},
+            {'type': 'assistant', 'excerpt': 'It runs the suite across one worker per core, '
+             'so independent tests execute in parallel.'},
+        ],
         'verdict': {'action': 'none', 'episode': 1, 'reason': 'no durable lesson'},
         'expect': {'label': 'none', 'proposals': 0, 'facts': 0},
     },
     {
         'id': 'memory-durable',
         'note': 'A real rule: passes the memory bar and writes with no human in the loop.',
+        'judge': 'memory',
+        'events': [
+            {'type': 'user', 'excerpt': 'Build the FPGA image.'},
+            {'type': 'tool', 'excerpt': 'run_command -> quartus: command not found'},
+            {'type': 'assistant', 'excerpt': 'The toolchains are not on PATH globally, they ship '
+             'under the bundled tools directory — the build has to call them by workspace-relative '
+             'path. Fixed and it compiled.'},
+        ],
         'verdict': {
             'action': 'memory',
             'episode': 2,
@@ -88,7 +108,14 @@ CASES: list[dict[str, Any]] = [
     },
     {
         'id': 'memory-junk',
-        'note': 'Task state: true while the turn ran, stale the moment it is written.',
+        'note': 'Task state: true while the turn ran, stale the moment it is written. '
+        'Judge mode expects `none` here, not `memory` — the door drops a verdict that '
+        'should never have been filed, and that asymmetry is the point.',
+        'judge': 'none',
+        'events': [
+            {'type': 'user', 'excerpt': 'Migrate src/api to TypeScript, directory by directory.'},
+            {'type': 'assistant', 'excerpt': 'I am now migrating src/api and have finished 7 files.'},
+        ],
         'verdict': {
             'action': 'memory',
             'episode': 3,
@@ -99,6 +126,13 @@ CASES: list[dict[str, Any]] = [
     {
         'id': 'memory-question',
         'note': 'A question is not a memory, however durable the topic.',
+        'judge': 'none',
+        'events': [
+            {'type': 'user', 'excerpt': 'Does the desktop release have to ship backend changes '
+             'even when only the UI was rebuilt?'},
+            {'type': 'assistant', 'excerpt': 'Yes — installed builds re-copy bundled backend-py from '
+             'the installer stamp, so a UI-only rebuild would not carry a backend fix.'},
+        ],
         'verdict': {
             'action': 'memory',
             'episode': 4,
@@ -122,7 +156,15 @@ CASES: list[dict[str, Any]] = [
     {
         'id': 'thin-rule',
         'note': 'The substance bar: one sentence of advice is a lesson, not a skill. '
-        'From the outside a downgrade is a memory write and no proposal.',
+        'From the outside a downgrade is a memory write and no proposal. Judge mode '
+        'legitimately expects `create_skill` here — drafting is the judge\'s job, and '
+        'the bar that turns the draft into a lesson belongs to the door, which is '
+        'exactly why the two modes cannot share one expectation.',
+        'judge': 'create_skill',
+        'events': [
+            {'type': 'user', 'excerpt': 'The suite keeps failing on flaky tests.'},
+            {'type': 'assistant', 'excerpt': 'Retry the test suite when it fails.'},
+        ],
         'verdict': {
             'action': 'create_skill',
             'episode': 6,
@@ -135,6 +177,14 @@ CASES: list[dict[str, Any]] = [
     {
         'id': 'real-skill',
         'note': 'Authored sections file a proposal; a human still decides.',
+        'judge': 'create_skill',
+        'events': [
+            {'type': 'user', 'excerpt': 'Why does the brain database lock only under -n auto?'},
+            {'type': 'tool', 'excerpt': 'run_command -> pytest -q -n auto  (database is locked)'},
+            {'type': 'tool', 'excerpt': 'run_command -> pytest -q tests/test_x.py  (passes)'},
+            {'type': 'assistant', 'excerpt': 'It is a fixture race: the per-test SQLite swap runs a '
+             'PRAGMA that SQLite gives no busy handler. Re-run alone to confirm, then check the pragma.'},
+        ],
         'verdict': {
             'action': 'create_skill',
             'episode': 7,
@@ -214,17 +264,28 @@ CASES: list[dict[str, Any]] = [
 
 # One episode window per case, in the shape `_episodeWindow` renders. Judge mode
 # sends these; rails mode does not need them but shares the ids.
-def _episode(caseId: str, n: int) -> dict[str, Any]:
-    return {
-        'id': n,
-        'kind': 'episode',
-        'outcome': 'success',
-        'events': [
-            {'type': 'user', 'excerpt': f"case {caseId}: the ask, in the user's words"},
-            {'type': 'tool', 'excerpt': 'run_command -> pytest -q -n auto'},
-            {'type': 'assistant', 'excerpt': f'case {caseId}: what the turn concluded'},
-        ],
-    }
+def _episode(case: dict[str, Any], n: int) -> dict[str, Any]:
+    """The episode the judge actually reads.
+
+    A placeholder excerpt cannot be judged: the model would be asked to distill
+    'case thin-rule: the ask' and any verdict would be a guess about the fixture,
+    not about a conversation. So a case that wants judge mode carries its own
+    `events`, and `run_judge` refuses the ones that do not rather than scoring
+    noise.
+    """
+    events = case.get('events')
+    if not events:
+        return {
+            'id': n,
+            'kind': 'episode',
+            'outcome': 'success',
+            'events': [
+                {'type': 'user', 'excerpt': f"case {case['id']}: the ask, in the user's words"},
+                {'type': 'tool', 'excerpt': 'run_command -> pytest -q -n auto'},
+                {'type': 'assistant', 'excerpt': f'case {case["id"]}: what the turn concluded'},
+            ],
+        }
+    return {'id': n, 'kind': 'episode', 'outcome': str(case.get('outcome', 'success')), 'events': events}
 
 
 # ── the runner ───────────────────────────────────────────────────────────────
@@ -347,8 +408,27 @@ def run_judge(only: set[str] | None, model: str, provider: str) -> list[dict[str
         if only and case['id'] not in only:
             continue
         verdict = case['verdict']
-        want = str(verdict.get('action', 'none'))
-        prompt = sd.build_judge_prompt([_episode(case['id'], int(verdict.get('episode', 1) or 1))])
+        want = str(case.get('judge') or '')
+        if not want:
+            # A case whose subject is a door or a mode has no judge-side answer to
+            # predict. Scoring it anyway would produce a number about the fixture.
+            results.append(
+                {
+                    'id': case['id'],
+                    'note': case['note'],
+                    'expected': ['(not judgeable)'],
+                    'got': ['skipped'],
+                    'proposals': 0,
+                    'facts': 0,
+                    'expectedProposals': 0,
+                    'expectedFacts': 0,
+                    'error': '',
+                    'pass': True,
+                    'skipped': True,
+                }
+            )
+            continue
+        prompt = sd.build_judge_prompt([_episode(case, int(verdict.get('episode', 1) or 1))])
         payload = asyncio.run(sd.call_judge(prompt))
         chosen = ''
         if payload:
@@ -383,8 +463,14 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     only = {s.strip() for s in args.only.split(',') if s.strip()}
-    home = _isolateData()
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    unknown = only - {str(c['id']) for c in CASES}
+    if unknown:
+        # A typo in `--only` selected nothing, and an empty selection used to
+        # print "0/0 cases behaved as labelled" and exit 0 — a green run that
+        # measured nothing is worse than a red one.
+        print(f'no such case id(s): {", ".join(sorted(unknown))}', file=sys.stderr)
+        print('known: ' + ', '.join(str(c['id']) for c in CASES), file=sys.stderr)
+        return 2
 
     if args.judge:
         if not args.confirm_tokens:
@@ -393,30 +479,52 @@ def main(argv: list[str] | None = None) -> int:
         if not args.model:
             print('--judge needs --model <id> (and usually --provider <name>)', file=sys.stderr)
             return 2
-        from app.config import settings
-
-        settings.reload()
+        # Judge mode writes NOTHING: it reads the provider store to resolve a
+        # client, asks one question, and scores the answer. Isolating the data
+        # dir would hide the providers it needs and make every case come back
+        # 'no-answer' — a green-looking harness that had never reached a model.
         results = run_judge(only, args.model, args.provider)
     else:
-        results = run_rails(only)
+        home = _isolateData()
+        try:
+            results = run_rails(only)
+        finally:
+            # Close the store first: on Windows an open SQLite handle makes
+            # `rmtree` fail, and it fails SILENTLY under `ignore_errors=True`, so
+            # every run used to leave a throwaway data dir (with its brain DB) in
+            # %TEMP% — 21 of them measured before this line existed. If a handle
+            # still wins the race, say where the residue is instead of pretending.
+            try:
+                from app.services.memory_store import close as _closeStore
 
-    passed = sum(1 for r in results if r['pass'])
-    width = max(len(str(r['id'])) for r in results) if results else 4
+                _closeStore()
+            except Exception:
+                pass
+            shutil.rmtree(home, ignore_errors=True)
+            if os.path.exists(home):
+                print(f'left behind (open handle): {home}', file=sys.stderr)
+
+    executed = [r for r in results if not r.get('skipped')]
+    if not executed:
+        print('no case executed, so nothing was measured', file=sys.stderr)
+        return 2
+    passed = sum(1 for r in executed if r['pass'])
+    width = max(len(str(r['id'])) for r in results)
     for r in results:
-        flag = 'PASS' if r['pass'] else 'FAIL'
+        flag = 'SKIP' if r.get('skipped') else ('PASS' if r['pass'] else 'FAIL')
         print(
             f'{flag}  {str(r["id"]).ljust(width)}  expected={",".join(r["expected"]):<24} '
             f'got={",".join(r["got"])}'
-            + (f'  ({r["proposals"]} proposals, {r["facts"]} facts)' if not r['pass'] else '')
+            + (f'  ({r["proposals"]} proposals, {r["facts"]} facts)' if not r['pass'] and not r.get('skipped') else '')
             + (f'  error={r["error"]}' if r.get('error') else '')
         )
-    print(f'\n{passed}/{len(results)} cases behaved as labelled')
+    skippedNote = f'  ({len(results) - len(executed)} skipped as not judgeable)' if len(results) != len(executed) else ''
+    print(f'\n{passed}/{len(executed)} cases behaved as labelled{skippedNote}')
     if args.out:
         with open(args.out, 'w', encoding='utf-8') as fh:
-            json.dump({'passed': passed, 'total': len(results), 'cases': results}, fh, indent=2)
+            json.dump({'passed': passed, 'total': len(executed), 'cases': results}, fh, indent=2)
         print(f'wrote {args.out}')
-    shutil.rmtree(home, ignore_errors=True)
-    return 0 if passed == len(results) else 1
+    return 0 if passed == len(executed) else 1
 
 
 if __name__ == '__main__':
