@@ -22,7 +22,26 @@ export function HandoffNoticeCard({
 
   return (
     <div className="text-sm text-muted-foreground w-full py-0.5" data-slot="handoff-notice">
-      <DisclosureRow onToggle={() => setOpen(!open)} open={open}>
+      <DisclosureRow
+        onToggle={() => setOpen(!open)}
+        open={open}
+        /* The body goes through the disclosure instead of sitting beside it as a
+           sibling the trigger knows nothing about: that is what gives the pill an
+           `aria-controls` and the summary a real hidden state, and it is why
+           DisclosureRow moved onto the same Radix base as ui/task.tsx. */
+        content={(
+          <div
+            className={cn(
+              'ml-5 mt-1 mb-1 rounded-lg border border-border/50 bg-muted/20 px-3 py-2',
+              'text-[0.78125rem] leading-relaxed text-muted-foreground/80 whitespace-pre-wrap wrap-anywhere',
+              'max-h-48 overflow-y-auto',
+            )}
+            data-testid="handoff-notice-summary"
+          >
+            {summary}
+          </div>
+        )}
+      >
         <span className="flex min-w-0 items-center gap-2">
           <ArrowRightLeft className="size-3 shrink-0 text-muted-foreground/80" />
           <span className="text-[0.78125rem] font-medium leading-5 text-muted-foreground/85">
@@ -31,17 +50,6 @@ export function HandoffNoticeCard({
           </span>
         </span>
       </DisclosureRow>
-      {open && (
-        <div
-          className={cn(
-            'ml-5 mt-1 mb-1 rounded-lg border border-border/50 bg-muted/20 px-3 py-2',
-            'text-[0.78125rem] leading-relaxed text-muted-foreground/80 whitespace-pre-wrap wrap-anywhere',
-            'max-h-48 overflow-y-auto',
-          )}
-        >
-          {summary}
-        </div>
-      )}
     </div>
   );
 }
