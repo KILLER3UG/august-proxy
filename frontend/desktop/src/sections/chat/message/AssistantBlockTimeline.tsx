@@ -1069,7 +1069,7 @@ export function AssistantBlockTimeline({
             <details
               key={block.id || `recall_${ti}`}
               data-testid="recalled-memories-block"
-              className="mx-3 my-1 max-w-full rounded border border-sky-500/20 bg-sky-500/5 px-2.5 py-1 text-2xs text-sky-300/90"
+              className="mx-3 my-1 max-w-full rounded border border-border/60 bg-muted/40 px-2.5 py-1 text-2xs text-muted-foreground"
             >
               <summary className="flex cursor-pointer select-none items-center gap-1.5 list-none">
                 <ChevronDown className="disclosure-chevron" aria-hidden />
