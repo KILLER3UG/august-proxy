@@ -242,6 +242,22 @@ Wording fixed after measuring, not assuming: the warning no longer claims
 the bare rung the older turns stop being sent *and* stop being shown in this
 chat; they survive in `transcript_archive`, which this chat does not render.
 
+Verification after this round: the two feature files plus the neighbours that
+read the same code (`error_families`, `overflow_probe_shapes`, `turn_ok`,
+`part26_wave2`, `workbench_retry`, `compaction_policy_parity`,
+`runaway_backstop`, `bot_mode_phase_c`, `gate_participation`, `log_stream`,
+`dump_upstream_body`, `brain_config`, `turn_limits_fields`) — 206 passed.
+`ruff check .` and `mypy app/` (339 files) clean; `check:design` unchanged at the
+964 baseline; `check:docs` 6/6; the Settings panel test 6 passed. Whole backend
+suite: **5406 passed, 5 skipped, 1 test recorded as failed by a crashed xdist
+worker** — `test_remaining_regressions.py::test_a_large_file_does_not_arrive_whole`
+writes a 200 MB fixture and measured **241.7 s passing on its own**, so under
+`-n auto` on this machine the worker dies on resources, not on this diff (no
+changed file is on the `read_file` paging path). Flagged because a green suite is
+the claim this project makes about itself, and this one was not green: it is a
+load-sensitivity bug in that test, the same class AGENTS.md already documents for
+the WAL and round-snapshot races.
+
 ## Next, in value-per-risk order
 
 1. **Review-from-archive** (abacus item 4) — **attempted today, larger than it reads, and that is
