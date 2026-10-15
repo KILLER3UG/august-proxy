@@ -67,7 +67,13 @@ export function DisclosureRow({
           <span className="ml-auto flex h-5 shrink-0 items-center pr-1">{trailing}</span>
         )}
       </div>
-      {content !== undefined && <CollapsibleContent>{content}</CollapsibleContent>}
+      {/* forceMount keeps the region in the DOM with a real `hidden` flag while
+          closed. Without it Radix unmounts the content, and a probe measured the
+          consequence on the handoff notice: the trigger advertised neither
+          aria-controls nor aria-expanded, so the closed disclosure — the exact
+          case a screen reader navigates — exposed less than the native
+          <details> it replaced. */}
+      {content !== undefined && <CollapsibleContent forceMount hidden={!open}>{content}</CollapsibleContent>}
     </Collapsible>
   );
 }
