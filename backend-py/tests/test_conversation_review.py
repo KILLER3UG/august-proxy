@@ -556,3 +556,62 @@ class TestArchivedPositionsSurviveADroppedSnapshot:
         window, consumed = sd._archiveWindow('s-torn2', bound + 5)
         assert window == ''
         assert consumed == bound + 5, 'a cursor past the end must not walk backwards'
+
+
+class TestReviewerFindings2026Oct16:
+    """Closed against the runtime review round. Each of these was measured as a
+    live failure on the commits that shipped the archive channel."""
+
+    def test_invalid_utf8_at_the_tail_corrupts_one_line_not_the_review(self, brain):
+        """`read_text` raises UnicodeDecodeError, which is neither OSError nor
+        JSONDecodeError, so it escaped both readers and out of `run_review_pass` —
+        whose docstring promises it never raises — and one damaged transcript
+        blocked EVERY session's review at each cadence."""
+        from app.services.transcript_archive import _path, archive_messages, archivedCount, load_archive
+
+        archive_messages('s-bad', [{'role': 'user', 'content': 'readable middle'}], reason='auto-compact')
+        with _path('s-bad').open('ab') as f:
+            f.write(b'{"messages":[{"role":"user","content":"\xff\xfe broken"}\n')
+
+        snaps = load_archive('s-bad')
+        assert len(snaps) == 1, f'the readable record must survive the torn one: {snaps}'
+        assert archivedCount('s-bad') == 1
+        ids = _seed('s-bad', [('user', 'a live row')])
+        sd._setReviewCursor('s-bad', ids[-1], sd._REVIEW_CURSOR_KEY)
+        sessionId, cursor, fromArchive = sd._reviewTarget()
+        assert (sessionId, fromArchive) == ('s-bad', True)
+
+    def test_a_quoted_negative_id_still_reaches_the_archive(self, brain):
+        """The verdict schema types the episode id as int OR string, so "-1" is a
+        legal answer. The archive branch keyed on the TYPE, so a model that quoted
+        the id shipped a draft with no evidence at all — silently."""
+        from app.services.transcript_archive import archive_messages
+
+        archive_messages('s-quoted', [{'role': 'user', 'content': 'ARCH QUOTED ASK'}], reason='auto-compact')
+        ev = sd._evidenceWindow({'episode': '-1'}, '-1', fingerprint='review:s-quoted')
+        assert 'ARCH QUOTED ASK' in str(ev), ev
+
+    def test_the_archive_probe_rotates_rather_than_starving(self, brain):
+        """With more exhausted sessions than the per-pass cap, a stable scan order
+        probed the same first N every pass and never looked at the tail — measured
+        at 12 sessions against a cap of 8, where four were skipped forever."""
+        from app.services.transcript_archive import archive_messages
+
+        cap = sd._REVIEW_ARCHIVE_SCAN
+        n = cap + 4
+        for i in range(n):
+            sid = f's{i:02d}'
+            ids = _seed(sid, [('user', f'row of {sid}')])
+            archive_messages(sid, [{'role': 'user', 'content': f'UNREAD MIDDLE {sid}'}], reason='auto-compact')
+            sd._setReviewCursor(sid, ids[-1], sd._REVIEW_CURSOR_KEY)
+            # `_seed` inserts in order, so the scan's `newest DESC` walks s11 first
+            # and s00 last. Marking the NEWEST n-cap sessions as already read puts
+            # every unread one past the per-pass cap — which is exactly the state
+            # the old stable order could never leave.
+            if i >= n - cap:
+                sd._setReviewCursor(sid, 1, sd._ARCHIVE_CURSOR_KEY)
+
+        sessionId, cursor, fromArchive = sd._reviewTarget()
+        assert fromArchive is True, sessionId
+        assert cursor == 0, 'the least-read archive must be next, not an already-read one'
+        assert int(sessionId[1:]) < n - cap, f'{sessionId} is inside the starved tail'

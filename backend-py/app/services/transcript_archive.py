@@ -46,20 +46,34 @@ def _nextSeq(path: Path) -> int:
     total = 0
     if not path.is_file():
         return 0
-    try:
-        for line in path.read_text(encoding='utf-8').splitlines():
-            if not line.strip():
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            msgs = rec.get('messages') if isinstance(rec, dict) else None
-            if isinstance(msgs, list):
-                total += sum(1 for m in msgs if isinstance(m, dict))
-    except OSError:
-        return 0
+    for line in _readLines(path):
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        msgs = rec.get('messages') if isinstance(rec, dict) else None
+        if isinstance(msgs, list):
+            total += sum(1 for m in msgs if isinstance(m, dict))
     return total
+
+
+def _readLines(path: Path) -> list[str]:
+    """The transcript's lines, with a torn append confined to ONE line.
+
+    A half-written record at the tail is not invalid UTF-8, and `read_text` raises
+    `UnicodeDecodeError` — which is neither `OSError` nor `JSONDecodeError`, so it
+    escaped both readers here and out of `run_review_pass`, whose docstring promises
+    it never raises, and one damaged transcript blocked every session's review at
+    each cadence. Decoding with a replacement character keeps that corruption on
+    the line that has the problem: the torn line then fails to parse and is skipped
+    like any other, and `startSeq` means the records after it keep their positions.
+    """
+    try:
+        return path.read_bytes().decode('utf-8', errors='replace').splitlines()
+    except OSError:
+        return []
 
 
 def load_archive(session_id: str) -> list[dict[str, Any]]:
@@ -67,16 +81,13 @@ def load_archive(session_id: str) -> list[dict[str, Any]]:
     if not path.is_file():
         return []
     out: list[dict[str, Any]] = []
-    try:
-        for line in path.read_text(encoding='utf-8').splitlines():
-            if not line.strip():
-                continue
-            try:
-                out.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    except OSError:
-        return []
+    for line in _readLines(path):
+        if not line.strip():
+            continue
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
     return out
 
 

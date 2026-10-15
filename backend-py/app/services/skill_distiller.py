@@ -1056,6 +1056,15 @@ def _evidenceWindow(verdict: dict[str, Any], episode_id: Any, fingerprint: str =
     raised from it would otherwise ship with no evidence at all — the reviewer would
     approve prose whose source they cannot see.
     """
+    # The verdict schema types the episode id as int OR string, and a model that
+    # quotes it ("−1" as "-1") is well within that contract. Without the coercion
+    # the archive branch below is skipped by TYPE, so a draft raised from an
+    # archived middle ships with no evidence at all — silently.
+    if isinstance(episode_id, str):
+        try:
+            episode_id = int(episode_id.strip())
+        except ValueError:
+            episode_id = 0
     if isinstance(episode_id, int) and not isinstance(episode_id, bool) and episode_id < 0:
         sessionId = fingerprint.split(':', 1)[1] if fingerprint.startswith('review:') else ''
         if sessionId:
@@ -1541,6 +1550,14 @@ def _reviewTarget() -> tuple[str, int, bool]:
         logger.debug('review target lookup failed', exc_info=True)
         return '', 0, False
     probed = 0
+    live: list[tuple[str, int]] = []
+    # `newest DESC` is the right order for the live leg (the most recently active
+    # chat first) and the wrong one for the archive leg: the probe below is capped,
+    # so with more exhausted sessions than the cap, the tail of a stable order is
+    # never looked at — measured, 12 exhausted sessions and a cap of 8 starved the
+    # same four every single pass. Ordering the archive candidates by how little of
+    # their archive has been read rotates the cap instead of aiming it.
+    archived: list[tuple[int, str]] = []
     for row in rows:
         sessionId = str(row['session_id'] or '')
         if not sessionId:
@@ -1551,9 +1568,15 @@ def _reviewTarget() -> tuple[str, int, bool]:
         except (TypeError, ValueError):
             continue
         if newest > cursor:
-            return sessionId, cursor, False
-        from app.services.transcript_archive import archivedCount, hasArchive
+            live.append((sessionId, cursor))
+            continue
+        archived.append((int(archiveCursors.get(sessionId, 0)), sessionId))
+    if live:
+        return live[0][0], live[0][1], False
+    archived.sort()
+    from app.services.transcript_archive import archivedCount, hasArchive
 
+    for __, sessionId in archived:
         if probed >= _REVIEW_ARCHIVE_SCAN or not hasArchive(sessionId):
             continue
         probed += 1
