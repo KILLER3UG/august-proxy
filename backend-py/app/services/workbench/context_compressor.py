@@ -313,10 +313,18 @@ def _callSubjects(messages: list[dict[str, object]]) -> dict[str, str]:
 
 
 def _subjectOf(name: str, args: object) -> str:
-    """`read_file src/a.ts`; empty when nothing identifies the call."""
+    """`read_file src/a.ts`; empty when nothing identifies the call.
+
+    Read-style targets only. `command` and `url` are deliberately excluded: naming
+    half a truncated compound command (`rm -rf build && npm publish`) advertises it
+    as the thing to redo, when what the model actually lost is the OUTCOME — and a
+    cleared marker is persisted into the projection on compaction, so it would keep
+    suggesting that re-run in every later turn. A lost search or file read has no
+    such hazard.
+    """
     target = ''
     if isinstance(args, dict):
-        for key in ('path', 'file_path', 'filePath', 'pattern', 'query', 'command', 'url'):
+        for key in ('path', 'file_path', 'filePath', 'pattern', 'query'):
             val = args.get(key)
             if isinstance(val, str) and val.strip():
                 target = ' '.join(val.split())[:120]

@@ -1557,8 +1557,21 @@ def _reviewTarget() -> tuple[str, int, bool]:
         if probed >= _REVIEW_ARCHIVE_SCAN or not hasArchive(sessionId):
             continue
         probed += 1
-        if archivedCount(sessionId) > archiveCursors.get(sessionId, 0):
-            return sessionId, archiveCursors.get(sessionId, 0), True
+        total = archivedCount(sessionId)
+        archiveCursor = archiveCursors.get(sessionId, 0)
+        if total > archiveCursor:
+            return sessionId, archiveCursor, True
+        if archiveCursor > total:
+            # The cursor is ahead of anything this file can now yield, so the
+            # comparison above can never be true again and the session's archived
+            # middle would be skipped in total silence forever. That needs a log
+            # line, not a silent fall-through.
+            logger.warning(
+                'review archive cursor past end session=%s cursor=%d archived=%d',
+                sessionId,
+                archiveCursor,
+                total,
+            )
     return '', 0, False
 
 
@@ -1639,26 +1652,35 @@ def _archiveWindow(session_id: str, reviewed: int) -> tuple[str, int]:
     """
     from app.services.transcript_archive import archivedMessages
 
-    items = archivedMessages(session_id)
+    items = [it for it in archivedMessages(session_id) if -it[0] - 1 >= reviewed]
     lines: list[str] = []
     used = 0
     seen: set[str] = set()
     consumed = reviewed
-    for epid, msg in items[reviewed : reviewed + _REVIEW_MAX_MESSAGES]:
-        consumed += 1
+    for epid, msg in items[:_REVIEW_MAX_MESSAGES]:
+        # The cursor is a POSITION, not a count: with a snapshot the reader could
+        # not parse, a count would drift off the recorded positions and the session
+        # would look permanently exhausted. `epid` is -(seq+1), so -epid is the
+        # position the next pass should resume from.
+        nextCursor = -int(epid)
         text = ' '.join(_flattenMessageText(msg.get('content')).split())
         if not text or text in seen:
+            # Advanced even when nothing is rendered: an empty or repeated row can
+            # never yield a lesson, and not advancing re-reads it on every pass.
+            consumed = max(consumed, nextCursor)
             continue
         seen.add(text)
         if len(text) > _REVIEW_LINE_CAP:
             text = text[:_REVIEW_LINE_CAP] + '…'
         line = f'  [{epid}] {msg.get("role", "")}: {text}'
-        used += len(line) + 1
-        if used > _REVIEW_TOTAL_CAP:
+        if used + len(line) + 1 > _REVIEW_TOTAL_CAP:
+            # Left unread on purpose: this row was never shown to the judge, so
+            # advancing past it would lose it outright.
             lines.append('  … window truncated …')
-            consumed -= 1
             break
+        used += len(line) + 1
         lines.append(line)
+        consumed = max(consumed, nextCursor)
     return '\n'.join(lines), consumed
 
 

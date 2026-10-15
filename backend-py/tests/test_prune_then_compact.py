@@ -347,3 +347,31 @@ class TestClearedMarkerNamesWhatItDropped:
         twice = cc.pruneToolOutputs(once, protectTokens=100)
         assert once[1]['content'] == '[Old tool result content cleared]'
         assert twice[1]['content'] == once[1]['content']
+
+
+def test_a_cleared_command_result_names_nothing():
+    """`command` and `url` are excluded from the subject on purpose.
+
+    Naming half a truncated compound command tells the model the SIDE EFFECT is the
+    thing to redo, when what it lost is the outcome — and the marker is persisted
+    into the projection on compaction, so it would keep suggesting that re-run in
+    every later turn. Read-style targets carry no such hazard.
+    """
+    msgs = [
+        {
+            'role': 'assistant',
+            'content': 'ok',
+            'tool_calls': [
+                {
+                    'id': 'crun',
+                    'function': {'name': 'run_command', 'arguments': '{"command": "rm -rf build && npm publish"}'},
+                }
+            ],
+        },
+        {'role': 'tool', 'tool_call_id': 'crun', 'content': 'publish exited 0'},
+        _toolMsg('newest ' + 'q' * 5000),
+    ]
+    out = cc.pruneToolOutputs(msgs, protectTokens=100)
+    cleared = str(out[1]['content'])
+    assert cleared.startswith(cc.CLEARED_MARKER)
+    assert 'rm -rf' not in cleared and 'npm publish' not in cleared, cleared

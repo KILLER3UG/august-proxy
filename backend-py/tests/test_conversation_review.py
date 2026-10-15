@@ -469,3 +469,90 @@ class TestArchiveDraftCarriesEvidence:
         out = sd._evidenceWindow({'events': []}, 1, 'review:s-live')
         assert 'ARCHIVED TEXT' not in out, out
         assert '[archived' not in out, out
+
+
+class TestArchivedPositionsSurviveADroppedSnapshot:
+    """Positions are stamped at write time rather than re-derived by counting what
+    happens to parse on read, so the numbering a cursor was stored against is the
+    numbering the next pass sees. What a torn append genuinely costs (the welded
+    records) is unrecoverable by any scheme; the reachable hazard is a cursor that
+    outruns the file, and that one must be loud."""
+
+    def _torn(self, sid: str) -> None:
+        """Three snapshots with a corrupt-but-terminated middle record.
+
+        A torn line with no trailing newline is worse still — it welds the next
+        record onto the broken bytes and BOTH vanish — but no position scheme can
+        recover those bytes. This is the case `startSeq` does protect: the middle
+        record is dropped and the later one must keep the position it was written
+        with, instead of sliding forward and invalidating every stored cursor.
+        """
+        from app.lib.paths import dataPath
+        from app.services.transcript_archive import archive_messages
+
+        archive_messages(sid, [{'role': 'user', 'content': 'first middle'}], reason='auto-compact')
+        path = dataPath('transcripts', f"{sid[:120]}.jsonl")
+        with path.open('a', encoding='utf-8') as fh:
+            fh.write('{"reason": "auto-compact", broken\n')
+        archive_messages(sid, [{'role': 'assistant', 'content': 'later middle'}], reason='auto-compact')
+
+    def test_positions_are_recorded_and_agree_across_reads(self, brain):
+        from app.services.transcript_archive import archivedMessages, load_archive
+
+        self._torn('s-torn')
+        # Every surviving snapshot carries the position it was written with...
+        starts = [r.get('startSeq') for r in load_archive('s-torn')]
+        assert starts and all(isinstance(s, int) for s in starts), starts
+        # ...and two reads of the same file must never disagree, or a stored cursor
+        # means something different on the next pass.
+        first = archivedMessages('s-torn')
+        assert archivedMessages('s-torn') == first
+        # Ids descend as positions ascend, so transcript order is ascending ids.
+        assert [ep for ep, _ in first] == sorted((ep for ep, _ in first), reverse=True), first
+
+    def test_a_cursor_past_the_end_is_logged_not_swallowed(self, brain, caplog):
+        """The hazard that IS reachable: a stored cursor ahead of everything the
+        file can yield makes `count > cursor` false forever. Silent would be
+        indistinguishable from a session with nothing archived.
+
+        The session needs a live row to be a candidate at all: the scan walks
+        sessions by their newest `messages` id, so a session with no rows anywhere
+        is not considered — that is an undone or cleared chat, not a compacted one.
+        """
+        import logging
+
+        from app.services.transcript_archive import archive_messages, archivedCount
+
+        ids = _seed('s-past', [('user', 'a row that survived the compaction')])
+        archive_messages('s-past', [{'role': 'user', 'content': 'one'}], reason='auto-compact')
+        sd._setReviewCursor('s-past', ids[-1], sd._REVIEW_CURSOR_KEY)
+        bound = archivedCount('s-past')
+        sd._setReviewCursor('s-past', bound + 5, sd._ARCHIVE_CURSOR_KEY)
+        with caplog.at_level(logging.WARNING, logger='app.services.skill_distiller'):
+            sessionId, cursor, fromArchive = sd._reviewTarget()
+        assert 'cursor past end' in caplog.text, (
+            f'a past-the-end archive cursor produced no log line (session={sessionId})'
+        )
+        # Nothing unread in either channel, so the pass reports no target — but it
+        # now says why, instead of the session vanishing from the ledger quietly.
+        assert (sessionId, cursor, fromArchive) == ('', 0, False)
+
+    def test_the_cursor_never_claims_more_than_exists(self, brain):
+        from app.services.transcript_archive import archivedCount
+
+        self._torn('s-torn2')
+        bound = archivedCount('s-torn2')
+        sd._setReviewCursor('s-torn2', bound + 5, sd._ARCHIVE_CURSOR_KEY)
+        window, consumed = sd._archiveWindow('s-torn2', bound + 5)
+        assert window == ''
+        assert consumed == bound + 5, 'a cursor past the end must not walk backwards'
+
+    def test_the_cursor_never_claims_more_than_exists(self, brain):
+        from app.services.transcript_archive import archivedCount
+
+        self._torn('s-torn2')
+        bound = archivedCount('s-torn2')
+        sd._setReviewCursor('s-torn2', bound + 5, sd._ARCHIVE_CURSOR_KEY)
+        window, consumed = sd._archiveWindow('s-torn2', bound + 5)
+        assert window == ''
+        assert consumed == bound + 5, 'a cursor past the end must not walk backwards'
