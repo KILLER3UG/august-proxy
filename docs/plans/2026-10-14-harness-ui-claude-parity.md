@@ -206,7 +206,44 @@ another session's uncommitted files. Nothing is pushed: **`master` is 88 commits
 
 ## Needs review
 
-1. Which chip is `SkillEvolvedChip` meant to be?
-2. Where should the context/cache readout go instead of being deleted outright?
-3. Confirm the §1.4 line: read-door *field* fixes in scope, recall behaviour out.
-4. `status/ui-audit.md` vs the existing `docs/plans/ui-refactor/audit/` convention — I've assumed the latter.
+Rewritten after both review passes. The four questions written at planning time are answered
+inline so nobody re-asks them; the six live ones each carry the measurement and the default I
+would take if you want me to proceed without further input.
+
+**Resolved since writing:** (1) `SkillEvolvedChip` exists and is mounted
+(`sections/chat/SkillEvolvedChip.tsx:58` via `ComposerDecisionStack.tsx:18`) — the brief's
+premise was wrong, not the code. (2) The context/cache readout was already unmounted, so
+"where should it go instead" has no ship-blocking answer; Usage still reads `promptCache`.
+(3) §1.4's read-door scope was implemented as written. (4) The audit convention stayed
+`docs/plans/ui-refactor/audit/`.
+
+**Live decisions:**
+
+1. **Jobs tray destination.** The audit's "move to a global surface" is not implementable as
+   written: `RightDrawerJobsSection` renders `useBackgroundTasksStore`, which has no `persist`
+   and is session-scoped, so a global page would show nothing. Either keep as-is (my default),
+   or design persistence + a floating indicator as its own feature.
+2. **Composer row and sidebar density.** No measured target exists; this is your eye against
+   Claude's, not a defect list.
+3. **`ChangesCard` hierarchy** — the biggest remaining visual gap. Three literal type sizes
+   (`:137` 11.5px, `:144/:248` 10.5px, `:207/:259` 11px) and a bordered file row inside a
+   bordered "N file changed" card inside a bordered turn card, plus a 32px icon tile. Claude
+   (`2026-10-08 165256`) is one hairline-divided stack. Default I'd take: one meta rung
+   (`text-2xs`), drop the inner row's border, keep the outer card, keep counts and Undo.
+4. **Sidebar header controls.** `FolderTree.tsx:40-44` states the header keeps two icons
+   because only those are in the reference; the DOM renders three (`Sort chats`, `Open
+   Workspace Folder`, `Create Sidebar Folder`) and a nested Tasks row adds `New chat in Tasks`
+   plus `Delete all tasks`. Two of those are the only door to their capability, so removal is a
+   feature decision; my default is to keep the controls and correct the comment.
+5. **Settings backdrop tint.** `workspace-shell-tier-filter.test.tsx:77` pins an *undimmed*
+   backdrop ("floats the panel over the app instead of tinting the background"); the references
+   at `2026-10-10 235015` show a dimmed one. A pinned test versus a reference image — one of
+   them is wrong and it is not mine to pick.
+6. **`tier: 'hidden'` depth.** 26 of 44 sections are reachable only by search or deep link
+   against Claude's four always-visible destinations. Keep, or promote a subset.
+
+**Outside my authority to finish:** §7's math items belong to another session's uncommitted
+`markdownMath.ts` / `markdownHeadings.ts`, and the `v11_math_unicode.test.tsx` flip must land
+with them. And **nothing is pushed** — `master` is 88 commits ahead of `origin/master`; the
+`Type check` job does not gate a tag, so pushing a tag without checking it first publishes
+unchecked.
