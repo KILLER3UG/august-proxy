@@ -140,6 +140,46 @@ test.describe('the changes card hierarchy', () => {
     expect(read.minSize, 'nothing renders below the 11px meta rung').toBeGreaterThanOrEqual(11);
     expect(read.metaCount, 'the meta text is all one rung').toBeGreaterThanOrEqual(6);
   });
+
+  test('the rewired disclosure trigger still opens the inline diff, and the trailing '
+    + 'counts stay inside the row', async ({ page }) => {
+    // DisclosureRow moved onto the same Radix base as ui/task.tsx, so the pill is
+    // a real CollapsibleTrigger now: the risk was a double toggle (onClick plus
+    // onOpenChange calling the parent twice, which lands back where it started)
+    // and the trailing span moving from `absolute right-1` into a flex row.
+    test.setTimeout(90_000);
+    await page.route((url) => url.pathname.startsWith('/api/'), (route) =>
+      route.fulfill({ status: 404, json: { error: 'Not found' } }),
+    );
+    await page.goto('/_design?lab=changes', { waitUntil: 'domcontentloaded' });
+    await dismissFirstRunOverlays(page);
+    const card = page.getByTestId('lab-changes-card');
+    const row = card.locator('[data-testid="changes-card-row"]').first();
+    const trigger = row.locator('button[aria-expanded]').first();
+
+    await expect(card.locator('[data-testid="changes-card-inline-diff"]')).toHaveCount(0);
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(card.locator('[data-testid="changes-card-inline-diff"]')).toHaveCount(1);
+
+    const geo = await row.evaluate((r) => {
+      const rb = r.getBoundingClientRect();
+      const tb = r.querySelector('button[aria-expanded]')!.getBoundingClientRect();
+      const counts = r.querySelector('[data-testid="changes-card-review"]')!;
+      const cb = counts.getBoundingClientRect();
+      const cs = getComputedStyle(r.querySelector('button[aria-expanded]')!);
+      return {
+        triggerInside: tb.left >= rb.left - 0.5 && tb.right <= rb.right + 0.5,
+        countsInside: cb.right <= rb.right + 0.5,
+        gapBetween: Math.round(cb.left - tb.right),
+        outline: cs.outlineStyle,
+        overflowX: getComputedStyle(r).overflowX,
+      };
+    });
+    expect(geo.triggerInside, 'the pill stays in its row').toBe(true);
+    expect(geo.countsInside, 'the trailing controls must not spill past the row').toBe(true);
+    expect(geo.gapBetween, 'the pill and the trailing counts do not overlap').toBeGreaterThan(0);
+  });
 });
 
 test.describe('a transcript row that has nothing human to say', () => {
