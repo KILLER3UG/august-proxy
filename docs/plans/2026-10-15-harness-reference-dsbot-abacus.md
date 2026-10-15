@@ -562,25 +562,55 @@ Verification of this round: `ruff` clean, `mypy` (339 files) clean, rotate + par
 gates 27 passed, and the full backend suite re-run after these edits (the earlier
 run was invalidated by them).
 
+## Shipped: the review pass can read the transcript compaction erased (abacus item 4)
+
+The hole, confirmed by reading the save path rather than trusting the plan: compaction
+persists the reduced projection through `saveSessions()`, and
+`memory_store/sessions.py:200-216` states that a row the snapshot no longer contains
+**is deleted**. The review pass read `messages WHERE id > cursor`. So the middle every
+compaction folded away was deleted from the only table the pass could read, while the
+archive that still holds it was read by exactly one HTTP route. A long session was
+learned from only at its head and tail — the two regions compaction never touches.
+
+**What made this tractable was the archive fix two commits back.** Reviewing an archive
+of already-pruned projections would have taught the loop from
+`[Old tool result content cleared]`.
+
+Design, chosen to preserve the two invariants the review pass already owns (`messages`
+stays the single transcript authority; an empty window still advances its cursor):
+
+* `archivedMessages()` gives every archived message a **stable synthetic id** — its
+  running position across appended snapshots, negated. The archive is append-only with
+  no delete and no rotation, so the position is identical on every read; negating it
+  makes collision with `messages.id` (a positive INTEGER primary key) impossible, so no
+  consumer has to be taught which kind it holds.
+* A **second per-session cursor** (`skill_distiller:review:archive_cursors`) counting
+  archived messages, read and written through the *same* `_reviewCursors(key)` /
+  `_setReviewCursor(key)` functions. The eviction rule exists once; a second copy would
+  have been a second rule to forget.
+* A session qualifies on **either** channel and live content wins, so the same window is
+  never judged through two doors in one pass. Reading an archive means parsing every
+  snapshot, so the archive scan is capped at 8 sessions against the live scan's 50,
+  behind a `hasArchive()` size check.
+* Consecutive snapshots **overlap** — each holds the whole projection at that moment,
+  not only what was removed — so the window dedupes on normalized text while the cursor
+  still advances over the repeats. Without that, one lesson is offered once per snapshot
+  it survived in and the only thing between that and duplicate memories is the dedupe
+  door.
+
+Not built, and stated: `_evidenceWindow` does not yet resolve a negative id from the
+archive, so a skill drafted from archived content still ships without the evidence line a
+human should see before approving. That is the same pre-existing gap the review pass has
+always had (a review verdict has no `episodes` row), and the reviewer was right that
+`review:<sessionId>` fingerprinting deserves a look before the archive widens it.
+
 ## Next, in value-per-risk order
 
-1. **Review-from-archive** (abacus item 4) — **attempted today, larger than it reads, and that is
-   the finding.** The hole is confirmed: `workbench.py:2819-2826` writes the compacted projection
-   through `saveSessions()`, `memory_store/sessions.py:212` states that a row the snapshot no
-   longer contains **is deleted**, and `skill_distiller.py:1539 _reviewWindow` reads
-   `messages WHERE id > cursor` — so the erased middle is never reviewed, while the archive that
-   holds it (`app/services/transcript_archive.py`, written at `workbench.py:2778`) is read only by
-   `routers/workbench.py:2248`. But the review pass is **id-keyed end to end**, in three places that
-   a fallback has to satisfy at once: `_reviewTarget` selects a session only when
-   `MAX(messages.id) > cursor` (so a session whose unread content lives only in the archive is never
-   even chosen); the rendered lines carry `[message id]` markers the judge is told to return as
-   `episode`s; and `apply_verdict` fingerprints `review:<sessionId>` per episode. Archived
-   snapshots are `{reason, count, messages}` dicts with **no ids**, so a real fix needs a durable
-   per-session archive position *and* a synthetic-episode namespace that cannot collide with
-   message ids — a cursor-semantics change, not a fallback branch. Next attempt should start from
-   `parse_verdicts`/`apply_verdict` (`skill_distiller.py:1591-1612`) and the migration that would
-   carry the archive watermark, and must preserve the two stated invariants: an empty window still
-   advances the cursor, and the `messages` table stays the single transcript authority.
+1. **Evidence for an archive-drafted proposal.** `apply_verdict` still resolves a
+   verdict's evidence from the `episodes` table, so a draft distilled from archived
+   content — a negative episode id — ships with an empty evidence line. The archive
+   lookup exists (`archivedMessage`); wiring it into `_evidenceWindow` is a few lines,
+   and a reviewer approving a skill should see the span that produced it.
 2. **A Settings switch for the rotate route** (see "Needs review" under the shipped
    section) — the knob exists in `config.json` and nowhere else, so today only a
    developer can arm it. Decide placement before building; do not add a switch that

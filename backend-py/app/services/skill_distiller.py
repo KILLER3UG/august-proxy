@@ -1425,6 +1425,11 @@ def apply_verdict(
 # model call: an absent config key means off, not the shipped constant.
 
 _REVIEW_CURSOR_KEY = 'skill_distiller:review:cursors'
+# A SECOND cursor per session, counting ARCHIVED messages already reviewed. The
+# live cursor cannot cover them: compaction deletes the middle it folded away from
+# `messages`, so a session can be fully reviewed against the live table and still
+# hold content that has never been read. See `transcript_archive.archivedMessages`.
+_ARCHIVE_CURSOR_KEY = 'skill_distiller:review:archive_cursors'
 _REVIEW_MAX_MESSAGES = 60
 _REVIEW_LINE_CAP = 420
 _REVIEW_TOTAL_CAP = 9000
@@ -1433,6 +1438,10 @@ _REVIEW_TOTAL_CAP = 9000
 # that grows for as long as the app is installed.
 _REVIEW_SCAN_SESSIONS = 50
 _REVIEW_CURSOR_CAP = 500
+# Reading an archive means parsing every snapshot it holds, so the archive scan is
+# capped far below the live scan: the pass is looking for SOMETHING unread, not for
+# the best thing unread.
+_REVIEW_ARCHIVE_SCAN = 8
 
 _REVIEW_SYSTEM = _JUDGE_SYSTEM + (
     'THIS PASS: the evidence is a recent CONVERSATION window (user turns,'
@@ -1448,8 +1457,12 @@ _REVIEW_SYSTEM = _JUDGE_SYSTEM + (
 )
 
 
-def _reviewCursors() -> dict[str, int]:
-    """Per-session high-water message ids, from `internal_state`.
+def _reviewCursors(key: str = _REVIEW_CURSOR_KEY) -> dict[str, int]:
+    """Per-session high-water marks, from `internal_state`.
+
+    One function serves both cursors — the live message-id high-water and the
+    archived-message count — because the only difference is which key is read. A
+    second copy would be a second eviction rule to forget.
 
     A MAP, not one number, because a single global cursor skips real work: work
     in session A, open B, return to A, and A's ids sit on both sides of B's. A
@@ -1462,7 +1475,7 @@ def _reviewCursors() -> dict[str, int]:
     try:
         from app.services.memory_store import get_internal_state
 
-        raw = get_internal_state(_REVIEW_CURSOR_KEY)
+        raw = get_internal_state(key)
     except Exception:
         return {}
     if not isinstance(raw, dict):
@@ -1482,15 +1495,22 @@ def _reviewCursors() -> dict[str, int]:
     return out
 
 
-def _reviewTarget() -> tuple[str, int]:
-    """``(session_id, cursor)`` for the most recently active session that still
-    has unreviewed messages — or ``('', 0)`` when none does.
+def _reviewTarget() -> tuple[str, int, bool]:
+    """``(session_id, cursor, fromArchive)`` for the most recently active session
+    with unread content — or ``('', 0, False)`` when none does.
 
     One session per pass, and its own scope: a Bot's conversation must not
     distill lessons into global memory, which is the leak the remember/forget
     doors close and this side door has to close too.
+
+    A session qualifies on EITHER channel, and live content wins. The archive
+    channel exists because compaction DELETES the middle it folded away from
+    `messages`: a session can be fully reviewed against the live table and still
+    hold unread content that now exists only in the archive. Preferring live rows
+    is what stops the same window being judged through two doors in one pass.
     """
     cursors = _reviewCursors()
+    archiveCursors = _reviewCursors(_ARCHIVE_CURSOR_KEY)
     try:
         rows = _conn().execute(
             'SELECT session_id, MAX(id) AS newest FROM messages'
@@ -1500,7 +1520,8 @@ def _reviewTarget() -> tuple[str, int]:
         ).fetchall()
     except Exception:
         logger.debug('review target lookup failed', exc_info=True)
-        return '', 0
+        return '', 0, False
+    probed = 0
     for row in rows:
         sessionId = str(row['session_id'] or '')
         if not sessionId:
@@ -1511,8 +1532,15 @@ def _reviewTarget() -> tuple[str, int]:
         except (TypeError, ValueError):
             continue
         if newest > cursor:
-            return sessionId, cursor
-    return '', 0
+            return sessionId, cursor, False
+        from app.services.transcript_archive import archivedCount, hasArchive
+
+        if probed >= _REVIEW_ARCHIVE_SCAN or not hasArchive(sessionId):
+            continue
+        probed += 1
+        if archivedCount(sessionId) > archiveCursors.get(sessionId, 0):
+            return sessionId, archiveCursors.get(sessionId, 0), True
+    return '', 0, False
 
 
 def _flattenMessageText(raw: object) -> str:
@@ -1578,6 +1606,43 @@ def _reviewWindow(session_id: str, cursor: int) -> tuple[str, int]:
     return '\n'.join(lines), newest
 
 
+def _archiveWindow(session_id: str, reviewed: int) -> tuple[str, int]:
+    """(rendered window, messages now consumed) for the archived transcript.
+
+    The same `[id] role: text` shape as :func:`_reviewWindow`, so the judge prompt
+    and `parse_verdicts` do not change; the ids are the negative positions from
+    `transcript_archive.archivedMessages`.
+
+    Consecutive snapshots OVERLAP — each one holds the whole projection at that
+    moment, not only what was removed — so the window dedupes on normalized text.
+    Without it the same lesson is offered once per snapshot it survived in, and the
+    only thing standing between that and duplicate memories is the dedupe door.
+    """
+    from app.services.transcript_archive import archivedMessages
+
+    items = archivedMessages(session_id)
+    lines: list[str] = []
+    used = 0
+    seen: set[str] = set()
+    consumed = reviewed
+    for epid, msg in items[reviewed : reviewed + _REVIEW_MAX_MESSAGES]:
+        consumed += 1
+        text = ' '.join(_flattenMessageText(msg.get('content')).split())
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        if len(text) > _REVIEW_LINE_CAP:
+            text = text[:_REVIEW_LINE_CAP] + '…'
+        line = f'  [{epid}] {msg.get("role", "")}: {text}'
+        used += len(line) + 1
+        if used > _REVIEW_TOTAL_CAP:
+            lines.append('  … window truncated …')
+            consumed -= 1
+            break
+        lines.append(line)
+    return '\n'.join(lines), consumed
+
+
 def run_review_pass() -> dict[str, Any]:
     """One conversation review. Never raises; a failed judge call costs a
     cooldown, exactly as the episode pass does."""
@@ -1595,19 +1660,23 @@ def run_review_pass() -> dict[str, Any]:
     if _in_cooldown():
         return {'skipped': 'judge cooldown'}
 
-    sessionId, cursor = _reviewTarget()
+    sessionId, cursor, fromArchive = _reviewTarget()
     if not sessionId:
         return {'status': 'idle', 'reviewed': 0}
-    window, newest = _reviewWindow(sessionId, cursor)
+    if fromArchive:
+        window, newest = _archiveWindow(sessionId, cursor)
+    else:
+        window, newest = _reviewWindow(sessionId, cursor)
     if not window.strip():
         # Advance the cursor anyway: a window of nothing but empty tool rows
         # must not be re-read on every future pass.
-        _setReviewCursor(sessionId, newest)
+        _setReviewCursor(sessionId, newest, _ARCHIVE_CURSOR_KEY if fromArchive else _REVIEW_CURSOR_KEY)
         return {'status': 'idle', 'reviewed': 0}
 
     prompt = (
         f'Existing skills (titles/descriptions only):\n{_skillIndexLines()}\n\n'
-        f'Conversation window for session {sessionId} (episode ids are message ids):\n'
+        f'Conversation window for session {sessionId} '
+        f'({"negative ids are positions in the archived transcript" if fromArchive else "episode ids are message ids"}):\n'
         f'{window}\n\n'
         'Return a verdict for every message id above. Prefer "none": the burden of'
         ' proof is on the memory, not on the pass to fill itself.'
@@ -1636,7 +1705,7 @@ def run_review_pass() -> dict[str, Any]:
     for v in applicable:
         label = apply_verdict(v, f'review:{sessionId}', mode, scope=scope)
         results.append({'episode': v.get('episode'), 'label': label})
-    _setReviewCursor(sessionId, newest)
+    _setReviewCursor(sessionId, newest, _ARCHIVE_CURSOR_KEY if fromArchive else _REVIEW_CURSOR_KEY)
     return {
         'session': sessionId,
         'reviewed': len(applicable) + len(dropped),
@@ -1645,7 +1714,9 @@ def run_review_pass() -> dict[str, Any]:
     }
 
 
-def _setReviewCursor(session_id: str, message_id: int) -> None:
+def _setReviewCursor(
+    session_id: str, message_id: int, key: str = _REVIEW_CURSOR_KEY
+) -> None:
     """Advance one session's cursor, keeping the map bounded.
 
     Eviction takes the LOWEST cursor, not the newest: a session that has been
@@ -1654,7 +1725,7 @@ def _setReviewCursor(session_id: str, message_id: int) -> None:
     """
     if not session_id:
         return
-    cursors = _reviewCursors()
+    cursors = _reviewCursors(key)
     cursors[session_id] = max(cursors.get(session_id, 0), int(message_id))
     if len(cursors) > _REVIEW_CURSOR_CAP:
         keep = sorted(cursors.items(), key=lambda kv: kv[1], reverse=True)[:_REVIEW_CURSOR_CAP]
@@ -1666,7 +1737,7 @@ def _setReviewCursor(session_id: str, message_id: int) -> None:
         # this writes — a `dict[str, int]` is not assignable to it (invariance),
         # and a cast would hide it rather than state it.
         payload: dict[str, object] = dict(cursors)
-        set_internal_state(_REVIEW_CURSOR_KEY, payload)
+        set_internal_state(key, payload)
     except Exception:
         logger.debug('review cursor could not be stored', exc_info=True)
 

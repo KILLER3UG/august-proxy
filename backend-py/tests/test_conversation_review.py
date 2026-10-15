@@ -352,3 +352,72 @@ class TestSchedulerWiring:
 
         # 24h and the Job clamp (1..168) means an unset key never spins.
         assert ls.JOBS['review'].interval() >= 1.0
+
+
+class TestArchivedTranscriptIsReviewable:
+    """Compaction DELETES the middle it folded away from `messages` — a row the
+    saved snapshot no longer contains is removed — so a session can be fully
+    reviewed against the live table while unread content survives only in the
+    append-only archive. These pin the second cursor that reaches it.
+    """
+
+    def _archive(self, sessionId: str, rows: list[tuple[str, str]]) -> None:
+        from app.services.transcript_archive import archive_messages
+
+        archive_messages(
+            sessionId, [{'role': r, 'content': c} for r, c in rows], reason='auto-compact'
+        )
+
+    def test_live_content_is_preferred_over_the_archive(self, brain):
+        ids = _seed('s-pref', [('user', 'still unread'), ('assistant', 'reply')])
+        self._archive('s-pref', [('user', 'archived ask'), ('assistant', 'archived answer')])
+        sessionId, cursor, fromArchive = sd._reviewTarget()
+        assert sessionId == 's-pref'
+        assert fromArchive is False, 'live rows are unread, so the archive must wait'
+        assert cursor == 0
+        assert ids
+
+    def test_a_fully_reviewed_session_falls_through_to_the_archive(self, brain):
+        ids = _seed('s-arch', [('user', 'unread yet'), ('assistant', 'reply')])
+        self._archive('s-arch', [('user', 'the erased middle'), ('assistant', 'what it taught')])
+        sd._setReviewCursor('s-arch', ids[-1])
+        sessionId, cursor, fromArchive = sd._reviewTarget()
+        assert (sessionId, fromArchive) == ('s-arch', True)
+        assert cursor == 0
+
+    def test_the_archive_window_carries_negative_positions(self, brain):
+        self._archive('s-win', [('user', 'erased ask about the ledger'), ('assistant', 'erased fix')])
+        window, consumed = sd._archiveWindow('s-win', 0)
+        assert '[-1] user: erased ask about the ledger' in window, window
+        assert '[-2] assistant: erased fix' in window, window
+        assert consumed == 2
+
+    def test_overlapping_snapshots_are_not_judged_twice(self, brain):
+        """Each snapshot holds the WHOLE projection at that moment, so consecutive
+        ones repeat messages. Without the dedupe the same lesson is offered once per
+        snapshot it survived in."""
+        shared = ('user', 'always run the suite with -n auto')
+        self._archive('s-dup', [shared, ('assistant', 'noted')])
+        self._archive('s-dup', [shared, ('assistant', 'later turn')])
+        window, consumed = sd._archiveWindow('s-dup', 0)
+        assert window.count('always run the suite') == 1, window
+        assert consumed == 4, 'the cursor still advances over the repeated row'
+
+    def test_a_blank_archive_window_advances_its_own_cursor(self, brain, monkeypatch):
+        """Re-reading an empty window forever is the failure this whole map exists
+        to prevent, and it must advance the ARCHIVE cursor, not the live one."""
+        ids = _seed('s-blank', [('user', 'live row, reviewed')])
+        sd._setReviewCursor('s-blank', ids[-1])
+        self._archive('s-blank', [('tool', '')])
+        _arm(monkeypatch)
+        calls: list[str] = []
+        monkeypatch.setattr(sd, '_run_judge_sync', lambda *a, **k: calls.append('judge') or [])
+
+        out = sd.run_review_pass()
+
+        assert out['status'] == 'idle', out
+        assert not calls, 'an empty window must not spend a judge call'
+        assert sd._reviewCursors(sd._ARCHIVE_CURSOR_KEY).get('s-blank') == 1, (
+            'the archive cursor did not advance, so this window is re-read every pass'
+        )
+        assert sd._reviewCursors().get('s-blank') == ids[-1], 'the live cursor was overwritten'

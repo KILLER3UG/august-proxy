@@ -62,3 +62,66 @@ def derive_messages(session_id: str, projection: list[dict[str, Any]]) -> list[d
     if isinstance(msgs, list) and msgs:
         return msgs
     return list(projection)
+
+
+def archivedMessages(session_id: str) -> list[tuple[int, dict[str, Any]]]:
+    """Every archived message, in transcript order, with a stable synthetic id.
+
+    Compaction DELETES the middle it folded away from the `messages` table (a row
+    the saved snapshot no longer contains is removed), so the archive is the only
+    place that content still exists at all. Snapshots are appended and never
+    rewritten — this module has no delete and no rotation — so a message's running
+    position is identical on every read, which is what makes the position usable
+    both as a review cursor and as the `episode` id a judge returns.
+
+    Ids are negative because `messages.id` is a positive INTEGER primary key: a
+    negative cannot be mistaken for a live row on a path that reads both, so the
+    review pass never needs to know which kind it was handed.
+    """
+    out: list[tuple[int, dict[str, Any]]] = []
+    for rec in load_archive(session_id):
+        msgs = rec.get('messages')
+        if not isinstance(msgs, list):
+            continue
+        for m in msgs:
+            if isinstance(m, dict):
+                out.append((-(len(out) + 1), m))
+    return out
+
+
+def archivedMessage(session_id: str, episodeId: int) -> dict[str, Any] | None:
+    """One archived message by its synthetic id, or None if this is not one.
+
+    Reads straight through the file instead of building the list: this is called
+    once per proposal, to attach the evidence a human should see before approving.
+    """
+    if episodeId >= 0:
+        return None
+    want = -int(episodeId) - 1
+    pos = 0
+    for rec in load_archive(session_id):
+        msgs = rec.get('messages')
+        if not isinstance(msgs, list):
+            continue
+        for m in msgs:
+            if not isinstance(m, dict):
+                continue
+            if pos == want:
+                return m
+            pos += 1
+    return None
+
+
+def archivedCount(session_id: str) -> int:
+    """How many messages the archive holds — the upper bound of a cursor."""
+    return len(archivedMessages(session_id))
+
+
+def hasArchive(session_id: str) -> bool:
+    """Cheap check before parsing: reading an archive means parsing every
+    snapshot, so a scan over candidate sessions asks this first."""
+    try:
+        p = _path(session_id)
+        return p.is_file() and p.stat().st_size > 0
+    except OSError:
+        return False
