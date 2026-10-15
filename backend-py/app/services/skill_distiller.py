@@ -1118,16 +1118,26 @@ def apply_verdict(
             else None
         )
         key = re.sub(r'[^a-z0-9-]+', '-', (title or summary).lower()).strip('-')[:48] or 'distilled-lesson'
-        save_fact(
-            f'distilled:{key}',
-            summary,
-            category=str(verdict.get('category', 'general') or 'general'),
-            source='harness',
-            kind='lesson',
-            expires_at=expiresAt,
-            title=title,
-            scope=factScope,
-        )
+        try:
+            save_fact(
+                f'distilled:{key}',
+                summary,
+                category=str(verdict.get('category', 'general') or 'general'),
+                source='harness',
+                kind='lesson',
+                expires_at=expiresAt,
+                title=title,
+                scope=factScope,
+            )
+        except ValueError as exc:
+            # The write door's own refusals (a secret-shaped fact, a cross-scope
+            # overwrite) raise, and a raise here escapes the batch: the episode
+            # pass drops the verdicts after this one and the review pass dies
+            # before `_setReviewCursor`, so the same window is re-read forever.
+            # One bad verdict must cost exactly one verdict — that is the rule
+            # `parse_verdicts` already holds for every other door.
+            _noteMemoryDrop(f'stores refused the write: {exc}'[:200], episodeId, summary)
+            return 'rejected-write-door'
         return 'memory-saved'
 
     if action in ('create_skill', 'amend_trigger', 'amend_body'):

@@ -366,14 +366,23 @@ def apply_promotion(payload: dict[str, Any]) -> dict[str, Any]:
             if not body:
                 body = title
             key = 'promoted-' + re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')[:60]
-            save_fact(
-                key,
-                body,
-                category='promoted',
-                source='promoted-from:' + (origin or 'unknown'),
-                title=title,
-                kind='lesson',
-            )
+            try:
+                save_fact(
+                    key,
+                    body,
+                    category='promoted',
+                    source='promoted-from:' + (origin or 'unknown'),
+                    title=title,
+                    kind='lesson',
+                )
+            except ValueError as exc:
+                # Not a crash fix: the function-wide `except Exception` below
+                # already caught this and returned {'ok': False}. The point is
+                # that `promotion failed: <raw>` is the bucket every OTHER
+                # failure lands in, so a human reading the inbox could not tell
+                # "the store refuses this content" (their decision to make) from
+                # "the applier broke" (a bug to report).
+                return {'ok': False, 'error': f'stores refused the write: {exc}'[:300]}
             return {'ok': True, 'action': 'promoted_fact', 'target': key, 'origin': origin}
         if promoteType == 'skill':
             name = as_str(payload.get('name')).strip()

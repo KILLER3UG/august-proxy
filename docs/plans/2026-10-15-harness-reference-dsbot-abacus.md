@@ -68,12 +68,14 @@ nothing from either was executed.
    the `dump_*_upstream_body` path. **Adopt with care** — AGENTS.md marks those two functions
    high-risk ("a wrong key breaks all chat"), so it needs a test on the serialized body, not only
    the helper.
-8. **[V] A key-free labelled eval plus a scripted provider** (`ds-bot/dev/steward-eval.mjs` — 21
+8. **[V, shipped today] A key-free labelled eval plus a scripted provider** (`ds-bot/dev/steward-eval.mjs` — 21
    cases, `--runs`, a score; `dev/mock-llm.mjs` logs system-prompt/tool hashes to confirm shared
    prefix reuse; `dev/bench.sh` forces overflow via `CONTEXT_WINDOW`). August removed harness evals
    by request (`AGENTS.md`), so the only measurement left is telemetry-shaped
    (`turn_outcomes.skill_lift`). **Adopt the shape, dev-only**: it is also the honest way to test
    item 1, which otherwise ships a model-chosen context policy with no measurement behind it.
+   *(Shipped as `scripts/harness_eval.py` — rails + `--judge`, no scripted provider; see "Shipped"
+   below, which records the defect it found on its first run.)*
 
 ## Rejected, with reasons
 
@@ -353,6 +355,45 @@ paging fixture; the same test passes alone in 242 s, and it is in the suite's
 green run here). `ruff check .` and `mypy app/` (339 files) clean, `check:design`
 unchanged at the 964 baseline, `check:docs` 6/6.
 
+## Shipped: the dev-only eval (DS Bot item 8)
+
+`backend-py/scripts/harness_eval.py` — 13 labelled cases, run through
+`parse_verdicts` then `apply_verdict` in an isolated data directory, scored on
+BOTH the returned label and the side effect (proposals filed, facts written),
+reported as per-case **count deltas** rather than absolute counts so the fixtures
+can share one store. `rails` mode is the default and costs zero tokens;
+`--judge --provider X --model Y --confirm-tokens` sends the real
+`build_judge_prompt` for the same cases through `call_judge` and scores the
+model's action against the label — opt-in twice over, because it spends a real
+key, and it overrides `sd.resolve_judge` in-process rather than inventing an env
+var. A flipped case there is a prompt-contract change, not a test failure.
+
+It paid for itself on the first run: `memory-secret` crashed the pass instead of
+returning `rejected-write-door`. `save_fact`'s refusal is a `ValueError`, and
+both batch callers loop `for v in applicable: apply_verdict(...)` with no
+try/except of their own, so one secret-shaped lesson used to take the rest of the
+batch with it AND skip the state each loop writes afterwards — the review pass's
+`_setReviewCursor`, the episode pass's `set_judge_verdict` — leaving the same
+window unreviewed and re-crashing on every future pass. `apply_verdict` now
+catches it, notes the drop through `_noteMemoryDrop` and returns
+`rejected-write-door`, so one bad verdict costs exactly one verdict, which is the
+rule `parse_verdicts` already holds at every other door.
+`tests/test_memory_secret_door.py::test_a_refused_lesson_costs_one_verdict_not_the_whole_batch`
+pins it; red-proof: swapping the clause to `except ZeroDivisionError` makes the
+`ValueError` escape and that test fail, and the restore was verified by hash.
+
+The same sweep touched `harness_promote.apply_promotion`, and the honest framing
+matters: that one is **not** a crash fix. A function-wide `except Exception`
+already caught the refusal and returned `{'ok': False}`, so all the new inner
+clause does is name the door (`stores refused the write: …`) instead of dropping
+a refused credential into the same `promotion failed: …` bucket as an absent
+workspace. The inbox row a human reads is the surface that benefits, and
+`test_a_refused_promotion_names_the_door_not_the_generic_failure` says so.
+
+Verification of this item: `13/13 cases behaved as labelled` (exit 0),
+`tests/test_memory_secret_door.py` 6 passed, `ruff check .` and `mypy app/`
+clean.
+
 ## Next, in value-per-risk order
 
 1. **Review-from-archive** (abacus item 4) — **attempted today, larger than it reads, and that is
@@ -372,17 +413,21 @@ unchanged at the 964 baseline, `check:docs` 6/6.
    `parse_verdicts`/`apply_verdict` (`skill_distiller.py:1591-1612`) and the migration that would
    carry the archive watermark, and must preserve the two stated invariants: an empty window still
    advances the cursor, and the `messages` table stays the single transcript authority.
-2. **Rotate-vs-compact steward** (DS Bot item 1) — and build item 8's dev-only eval **first**, so a
-   model-chosen context policy ships with a measurement rather than a vibe.
+2. **Rotate-vs-compact steward** (DS Bot item 1) — item 8's eval now exists, so this ships with a
+   measurement instead of a vibe; run `python -m scripts.harness_eval --judge --provider <name>
+   --model <id> --confirm-tokens` before and after, and treat a flipped case as a prompt change.
 3. **The two DS Bot chain budgets deliberately not built** (item 4, Needs review): a travelling
    `MAX_HOPS` counter — the ceiling above bounds the same class without it, and a hop count cannot be
    derived from `bot_dm` because the sender wake is not a DM row (it would have to be threaded through
    `deliver()` and tagged); and `MAX_UNREAD_REQUESTS`, because an unread DM backlog in August is a
    queue depth rather than a runaway, and arming it would refuse *delivery* instead of refusing
    *work*. Say so if you want either anyway.
-4. **Key-free labelled eval + scripted provider** (DS Bot item 8) — the last adopted mechanism not
-   yet built. `dev/steward-eval.mjs` runs 21 cases against a mock LLM that logs system-prompt and
-   tool-hash reuse; `dev/bench.sh` forces an overflow by shrinking `CONTEXT_WINDOW`. August removed
-   its harness evals by request, so nothing measures whether the learning loop or the rescue ladders
-   help. Build this before item 2, which otherwise ships a model-chosen context policy with no
-   measurement behind it.
+4. **A scripted provider inside the eval** (the other half of DS Bot item 8, not built):
+   `scripts/harness_eval.py` scores the doors and the judge, but nothing here drives the *loop*, so
+   the rescue ladders — the stuck-request escape, the budget rungs, the runaway backstop — still have
+   no measurement. `ds-bot/dev/mock-llm.mjs` logs system-prompt and tool-definition hashes to prove
+   shared-prefix reuse, and `dev/bench.sh` forces an overflow by shrinking `CONTEXT_WINDOW`; the
+   August equivalent is a scripted `BaseProviderClient` that replays a recorded tool-call sequence
+   against a temp session, which would also let the shape ladder be tested without eight real 400s.
+   `tests/test_stuck_request_escape.py` currently reaches the ladder by calling the rescue functions
+   directly, so it pins the rungs, not the wiring that decides to take them.
