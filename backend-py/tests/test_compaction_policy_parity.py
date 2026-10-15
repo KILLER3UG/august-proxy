@@ -79,12 +79,38 @@ class TestOneCompactionPolicy:
         reactive, budget = calls
         for key in (
             'threshold', 'head_count', 'tail_count', 'pin_predicates',
-            'contextWindow', 'goalHint', 'schema', 'replayUserBytes',
+            'contextWindow', 'goalHint', 'schema', 'replayUserBytes', 'rotate',
         ):
             assert reactive.get(key) == budget.get(key), (
                 f'the two compaction paths disagree on {key!r}: '
                 f"reactive={reactive.get(key)!r} budget={budget.get(key)!r}"
             )
+
+    def test_exactly_one_site_builds_a_compaction_request(self):
+        """`_compactionCall`'s docstring claims every path shares it. The pre-turn
+        auto-compact did not — it passed the same arguments inline, and the parity
+        test above could never see the divergence because it compared the two
+        recovery paths against EACH OTHER, not against the third caller.
+
+        So the gate is on the shape: one call site for `compressMessages` in the
+        workbench package means no path can quietly own a second policy.
+        """
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1] / 'app' / 'services' / 'workbench'
+        sites: list[str] = []
+        for py in sorted(root.rglob('*.py')):
+            text = py.read_text(encoding='utf-8')
+            for i, line in enumerate(text.splitlines(), 1):
+                if 'compressMessages(' in line and 'def ' not in line:
+                    sites.append(f'{py.relative_to(root).as_posix()}:{i}')
+        assert sites, 'no compaction call site at all — the gate would pass on an empty census'
+        assert len(sites) == 1, (
+            f'compressMessages is called from {len(sites)} site(s): {sites} — every path '
+            'must go through `_compactionCall` or a rescue becomes a second context '
+            'policy wearing the same name'
+        )
+        assert sites[0].startswith('loop/recovery.py:'), sites
 
     @pytest.mark.asyncio
     async def test_the_reactive_path_replays_the_users_own_words(self, monkeypatch):

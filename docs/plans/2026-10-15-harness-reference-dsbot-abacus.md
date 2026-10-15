@@ -17,7 +17,7 @@ nothing from either was executed.
 
 ## DS Bot mechanisms, ranked for August
 
-1. **[V] Two-route context relief, model chooses the *strategy*, never the permission.**
+1. **[V, shipped today — deterministic, not model-chosen] Two-route context relief.**
    `ds-bot/src/host/steward.js` — `linesFor({window, reserve, checkRatio})` computes
    `usable = declared − reserve`, `hard = floor(usable × HARD_SHARE)`, `check = min(usable × ratio, hard)`,
    and `STEWARD_SYSTEM` asks the model to pick `"switch"` (work reached a stopping point → start a
@@ -394,6 +394,64 @@ Verification of this item: `13/13 cases behaved as labelled` (exit 0),
 `tests/test_memory_secret_door.py` 6 passed, `ruff check .` and `mypy app/`
 clean.
 
+## Shipped: two-route context relief (DS Bot item 1)
+
+`reliefStrategy` returns `compact` or `rotate`. The strategy is read from state,
+not from a model asked to judge its own conversation: DS Bot's `steward.js` hands
+the model the switch/compact choice, but in August the two signals that decision
+needs are already on disk — whether a `<<compressed_summary` note exists, and the
+token ratio. A model-chosen route would also have to be trusted not to rotate
+mid-task, where the mid-task detail is exactly what the lossy note loses.
+
+Compact-in-place kept the first four messages verbatim **forever**. From the
+second relief onward that means the note's `Goal` is built from a follow-up turn
+(the original ask is outside the summarized span) while earlier decisions survive
+only as the 600 characters of prose the previous note squeezed out of itself —
+loss applied to loss. Rotating keeps no head, so the opening moves into the
+span the note is summarized from and names the task again; the ask itself is
+claimed back verbatim first, inside the existing `REPLAY_USER_BUDGET_BYTES`, and
+the newest turns are what a mid-task rotation actually needs. Both halves of that
+trade are pinned, including the case where the opening alone exhausts the budget.
+
+**Built the census, not the claim.** `_compactionCall` documents itself as "THE
+compaction policy — one site, shared by every path that compacts". Writing the
+gate that counts its call sites found **four** paths, not three: the pre-turn
+auto-compact called `compressMessages` inline with the same arguments (faithful,
+but a duplicate nobody reconciled — and the existing parity test could never see
+it because it compared the two recovery paths against *each other*), the manual
+"Free up memory" endpoint passed only threshold/head/tail, and a subagent
+compacting mid-run passed only a threshold and the pin predicates. So a subagent
+got the heuristic summarizer, a count-budgeted tail, no tool-output prune, no
+landmark pins and no verbatim replay of the user's own words, and the button a
+human presses produced a different summary than the loop would have. All five now
+share the site; the button's deliberate `threshold=0` forcing is preserved through
+`thresholdOverride`. The gate's first assertion is that the census is non-empty,
+because a scanner that matches nothing passes. It measured 3 sites before the
+consolidation and 1 after — that failing run is the red proof.
+
+Also fixed on the way: the budget path reported `compressedCount` as the messages
+*remaining* while the pre-turn path reported those *removed*, and the chat card
+renders that number as "summarized N messages".
+
+**Needs review (yours to decide, not built):** the route has **no Settings
+switch** — `contextReliefRotate` is armed by editing `{appData}/data/config.json`
+only, verified by 0 frontend references to the key. Boolean brain keys are
+hand-written switches in `MemorySection.tsx`, not generated from `fieldTable`, so
+this needs a placement decision: a switch beside the memory gates, one beside the
+composer's context readout, or nothing (a developer-only knob, like the eval). The
+`compaction` frame also carries a new `relief` field that the zod schema strips
+(z.object is not `.strict()`, so nothing breaks but the card cannot show the
+route); surfacing "re-anchored on a fresh note" instead of "kept the first 0"
+requires the schema + `streamEvents` + `CompactionNoticeCard` edit and a
+running-app check.
+
+Verification: `ruff`, `mypy` (339 files) clean; `tests/test_context_relief_rotate.py`
+14 passed, `test_compaction_policy_parity.py` 10, `test_brain_config.py` +
+`test_turn_limits_fields.py` + subagent/session-ops/policy files green. Two
+fixtures were caught asserting on a transcript that never compacted at all — a
+20-turn/1200-char fixture and an explicit `len(out) < len(msgs)` guard is now the
+house rule in this file.
+
 ## Next, in value-per-risk order
 
 1. **Review-from-archive** (abacus item 4) — **attempted today, larger than it reads, and that is
@@ -413,9 +471,10 @@ clean.
    `parse_verdicts`/`apply_verdict` (`skill_distiller.py:1591-1612`) and the migration that would
    carry the archive watermark, and must preserve the two stated invariants: an empty window still
    advances the cursor, and the `messages` table stays the single transcript authority.
-2. **Rotate-vs-compact steward** (DS Bot item 1) — item 8's eval now exists, so this ships with a
-   measurement instead of a vibe; run `python -m scripts.harness_eval --judge --provider <name>
-   --model <id> --confirm-tokens` before and after, and treat a flipped case as a prompt change.
+2. **A Settings switch for the rotate route** (see "Needs review" under the shipped
+   section) — the knob exists in `config.json` and nowhere else, so today only a
+   developer can arm it. Decide placement before building; do not add a switch that
+   leads nowhere.
 3. **The two DS Bot chain budgets deliberately not built** (item 4, Needs review): a travelling
    `MAX_HOPS` counter — the ceiling above bounds the same class without it, and a hop count cannot be
    derived from `bot_dm` because the sender wake is not a DM row (it would have to be threaded through

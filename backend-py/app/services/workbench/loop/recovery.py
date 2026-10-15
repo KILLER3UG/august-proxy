@@ -131,19 +131,38 @@ def _compactionThreshold(before: int, context_window: int) -> int:
     return 4096
 
 
+def _contextRotateArmed() -> bool:
+    """Is the second context-relief route armed? An absent key means today's
+    single route, so shipping the alternative changes nothing by default.
+
+    Read per compaction rather than memoized: arming it from Settings should take
+    effect on the next long turn without a restart, and a compaction is rare
+    enough that one config read per event is not a hot path.
+    """
+    try:
+        from app.services import brain_config_service as _bc
+
+        return bool(_bc.getRuntimeConfig().get('contextReliefRotate', False))
+    except Exception:
+        return False
+
+
 async def _compactionCall(
     messages: list[dict[str, object]],
     *,
     context_window: int,
     goalHint: str,
     summarizer: object | None,
-) -> list[dict[str, object]]:
+    thresholdOverride: int | None = None,
+) -> tuple[list[dict[str, object]], str]:
     """THE compaction policy — one site, shared by every path that compacts.
 
-    Pre-turn auto-compact, the budget ladder's middle rung and the reactive
-    overflow rescue all reduce context for the same session, so they must agree
-    on HOW or a rescue is a second context policy wearing the same name. Three
-    things used to differ, and the differences were not deliberate:
+    Five paths reduce context: the pre-turn auto-compact, the budget ladder's
+    middle rung, the reactive overflow rescue, the manual "Free up memory"
+    endpoint (which forces its own threshold), and a subagent compacting
+    mid-run. They must agree on HOW or a rescue is a second context policy
+    wearing the same name. Three things used to differ, and the differences were
+    not deliberate:
 
     * the reactive path passed NO ``replayUserBytes``, so the newest whole user
       messages from the summarized middle were dropped — on the one path that
@@ -155,20 +174,38 @@ async def _compactionCall(
       the LLM compactor enabled still got the heuristic on the overflow path.
 
     The trigger is the ONLY intended difference now, and it is not even a
-    parameter: all three call this with the same policy and differ only in what
-    they do with the result.
+    parameter: all five call this with the same policy and differ only in what
+    they do with the result. They did not always — the pre-turn path, the manual
+    endpoint and the subagent each passed the arguments inline, so the two
+    recovery paths could be (and were) reconciled against EACH OTHER while three
+    more policies stayed divergent. A subagent compacting mid-run used to get the
+    heuristic summarizer, a count-budgeted tail, no tool-output prune, no landmark
+    pins and no verbatim replay of the user's own words; the manual button shared
+    most of that. `tests/test_compaction_policy_parity.py` now gates the census.
+
+    Returns ``(messages, relief)`` — the route is returned rather than left for
+    each caller to recompute, because a path that emitted a frame about a route it
+    did not take is the same class of bug this function exists to prevent.
     """
     from app.services.workbench.context_compressor import (
+        RELIEF_ROTATE,
         REPLAY_USER_BUDGET_BYTES,
         compressMessages,
         pruneToolOutputs,
+        reliefHeadCount,
+        reliefStrategy,
     )
 
     pruned = pruneToolOutputs(list(messages))
-    return await compressMessages(
+    relief = reliefStrategy(pruned, armed=_contextRotateArmed())
+    compressed = await compressMessages(
         pruned,
-        threshold=_compactionThreshold(_tokens(pruned), context_window),
-        head_count=4,
+        threshold=(
+            int(thresholdOverride)
+            if thresholdOverride is not None
+            else _compactionThreshold(_tokens(pruned), context_window)
+        ),
+        head_count=reliefHeadCount(relief),
         tail_count=6,
         summarizer=summarizer,  # type: ignore[arg-type]
         pin_predicates=[_is_update_state_transition, _is_failing_receipt],
@@ -176,7 +213,9 @@ async def _compactionCall(
         goalHint=goalHint,
         schema=summarizer is None,
         replayUserBytes=REPLAY_USER_BUDGET_BYTES,
+        rotate=relief == RELIEF_ROTATE,
     )
+    return compressed, relief
 
 
 def _tokens(messages: list[dict[str, object]]) -> int:
@@ -200,7 +239,7 @@ async def _reactiveContextReduction(
     """
     before = _tokens(messages)
     try:
-        reduced = await _compactionCall(
+        reduced, _relief = await _compactionCall(
             messages,
             context_window=contextWindow,
             goalHint=as_str(getattr(session, 'goal', '') or ''),
@@ -575,7 +614,7 @@ async def _budgetTriggeredCompaction(
                 summarizer = make_compactor_llm_client(resolvedProvider, resolvedModel)
         except Exception:
             summarizer = None
-        compressed = await _compactionCall(
+        compressed, relief = await _compactionCall(
             messages,
             context_window=contextWindow,
             goalHint=as_str(getattr(session, 'goal', '') or ''),
@@ -593,14 +632,20 @@ async def _budgetTriggeredCompaction(
         # `trigger='budget'` is what makes the three paths distinguishable in
         # the stream; without it this frame is anonymous.
         if emit:
+            from app.services.workbench.context_compressor import reliefHeadCount
+
             emit(
                 {
                     'type': 'compaction',
                     'trigger': 'budget',
                     'originalTokens': originalTokens,
                     'compressedTokens': compressedTokens,
-                    'compressedCount': len(compressed),
-                    'headCount': 4,
+                    # Messages REMOVED, not messages remaining: the card renders
+                    # this as "summarized N messages", so reporting the result
+                    # length told the user the compaction had kept what it kept.
+                    'compressedCount': max(0, len(messages) - len(compressed)),
+                    'headCount': reliefHeadCount(relief),
+                    'relief': relief,
                     'tailCount': 6,
                     'contextWindow': contextWindow,
                     'underThreshold': False,

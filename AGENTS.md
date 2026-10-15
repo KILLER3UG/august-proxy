@@ -118,8 +118,7 @@ a warning naming the refusal count. Overflow keeps its own ladder:
 additionally refuses anything `_isContextOverflowError` claims, so a too-long
 prompt can never be routed to a shape repair. Pinned by
 `tests/test_stuck_request_escape.py`, whose control case asserts that a single
-refusal still produces an ordinary error and no reshape. One more refusal leg is
-required beyond the class: the marker table must match too, because
+refusal still produces an ordinary error and no reshape. One more refusal leg isrequired beyond the class: the marker table must match too, because
 `classify_error`'s bare `400` arm makes a bad model name, an oversized image and
 a broken tool pairing look identical, and only the last is fixed by reshaping
 history. That leg is only reachable because
@@ -191,6 +190,40 @@ failure cannot switch the gate off silently; failed reads log at warning. Stated
 that arrives already escaped (`\u0073k-…`, base64 of the transcript) does not match,
 and a keyring-held credential is out of reach. Tests drive a real client through an
 `httpx.MockTransport` and assert on what the provider would receive.
+**Context relief has two routes, and the route is chosen from state, not by a
+model.** Compact-in-place keeps the first `DEFAULT_HEAD_COUNT` (4) messages
+verbatim *forever* and summarizes what follows, so from the second relief onward
+the note's `Goal` is built from a follow-up turn — the original ask sits outside
+the summarized span — and earlier decisions survive only as the 600 chars of prose
+the previous note squeezed out of itself. `reliefStrategy` therefore returns
+`rotate` only when the brain key `contextReliefRotate` is armed **and** a
+`<<compressed_summary` note already exists: the first relief never rotates, even
+armed, because before a note exists the verbatim head IS the live task and
+folding it into a summary whose own footer says "decisions, constraints and next
+steps were not analyzed" trades a fact for a guess. Rotating keeps no head, so the
+opening moves into the summarized span (the note names the task again) and is
+claimed back verbatim FIRST inside the existing `REPLAY_USER_BUDGET_BYTES` —
+which is the stated trade: the opening spends budget the newest turns would
+otherwise get, and the newest turns are what a mid-task rotation actually needs,
+so both are pinned (`test_the_opening_spends_budget_the_newest_turns_would_have_used`).
+Replaying the ask out of the span is also what feeds `goalHint` on the fallback
+path, or the Goal silently reverts to a follow-up. Absent key = today's route;
+`reliefHeadCount` is the single map between a route and the head count a frame
+may report. **Five paths compact, and they were reconciled by a census, not by
+trust**: the pre-turn auto-compact, the budget ladder's middle rung, the reactive
+overflow rescue, the manual "Free up memory" endpoint (its `threshold=0` forcing is
+preserved through `thresholdOverride`), and a subagent compacting mid-run.
+`_compactionCall` documents itself as the single shared site; the pre-turn path
+called `compressMessages` inline anyway and the manual endpoint and subagent each
+carried their own argument list, so a subagent got the heuristic summarizer, a
+count-budgeted tail, no tool-output prune, no landmark pins and no verbatim replay.
+The parity test could not see this because it compared the two recovery paths
+against *each other*. `test_exactly_one_site_builds_a_compaction_request` now
+counts the call sites in the package (it read 3 before the fix, 1 after), and its
+first assertion is that the census is non-empty — a scanner gate that passes on
+zero matches is not a gate. The budget path also reported `compressedCount` as the
+messages *remaining* while the pre-turn path reported those *removed*, and the card
+renders that number as "summarized N messages".
 Malformed tool JSON never executes as `{}` — the loop
 returns a `[Validation Error] … Do NOT stop` self-heal and downgrades to the
 bare tool surface after 3 consecutive failures. Stream rules flag

@@ -1537,7 +1537,7 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
     if not session:
         return None
     from app.providers.clients.base import estimateTokens
-    from app.services.workbench.context_compressor import compressMessages
+    from app.services.workbench.context_compressor import reliefHeadCount
 
     original = list(session.messages)
     original_tokens = estimateTokens(original)
@@ -1559,7 +1559,20 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
         archive_messages(session_id, original, reason='compact')
     except Exception:
         pass
-    compressed = await compressMessages(original, threshold=0, head_count=4, tail_count=6)
+    # The same policy the automatic paths use — prune, landmark pins, the handoff
+    # schema, verbatim replay of the user's own words. This used to call
+    # `compressMessages` with only threshold/head/tail, so pressing the button
+    # produced a different (worse) summary than the loop would have, and the
+    # newest user turns were dropped rather than replayed.
+    from app.services.workbench.loop.recovery import _compactionCall
+
+    compressed, relief = await _compactionCall(
+        original,
+        context_window=0,
+        goalHint=as_str(getattr(session, 'goal', '') or ''),
+        summarizer=None,
+        thresholdOverride=0,
+    )
     compressed_tokens = estimateTokens(compressed)
     compressed_count = max(0, len(original) - len(compressed))
     if compressed_count <= 0 or compressed_tokens >= original_tokens:
@@ -1569,7 +1582,7 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
             'originalTokens': original_tokens,
             'compressedTokens': compressed_tokens,
             'compressedCount': 0,
-            'headCount': 4,
+            'headCount': reliefHeadCount(relief),
             'tailCount': 6,
             'message': 'Context is already compact enough.',
         }
@@ -1592,7 +1605,8 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
         'originalTokens': original_tokens,
         'compressedTokens': compressed_tokens,
         'compressedCount': compressed_count,
-        'headCount': 4,
+        'headCount': reliefHeadCount(relief),
+        'relief': relief,
         'tailCount': 6,
         'message': (
             f'Freed chat memory — summarized {compressed_count} middle messages '

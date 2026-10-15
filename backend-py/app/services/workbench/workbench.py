@@ -2722,14 +2722,14 @@ async def _sendWorkbenchMessageStreamImpl(
         from app.providers.clients.base import estimateTokens
         from app.services.workbench.context_compressor import (
             COMPACT_TRIGGER_RATIO,
-            REPLAY_USER_BUDGET_BYTES,
             acquireCompactionLock,
-            compressMessages,
             isFeatureEnabled,
             noteCompactionPhase,
             pruneToolOutputs,
             releaseCompactionLock,
+            reliefHeadCount,
         )
+        from app.services.workbench.loop.recovery import _compactionCall
 
         if isFeatureEnabled():
             contextWindow = _resolveModelContextWindow(resolvedModel, resolvedProvider)
@@ -2774,27 +2774,16 @@ async def _sendWorkbenchMessageStreamImpl(
                     except Exception:
                         summarizer = None
                     noteCompactionPhase(session, 'summary')
-                    compressed = await compressMessages(
+                    # One policy, three paths. The pre-turn trigger, the budget
+                    # ladder's middle rung and the overflow rescue all go through
+                    # `_compactionCall`; this used to duplicate its arguments
+                    # inline, which the parity test could not see because it only
+                    # compared the two recovery paths against EACH OTHER.
+                    compressed, _relief = await _compactionCall(
                         currentMessages,
-                        threshold=threshold,
-                        head_count=4,
-                        tail_count=6,
-                        summarizer=summarizer,
-                        # Landmark pins (P4): the latest update_state transition
-                        # and failing verification receipts survive the middle
-                        # summary verbatim — a summary can drop the only mention
-                        # of a phase/step or an error string the model still needs.
-                        pin_predicates=[_is_update_state_transition, _is_failing_receipt],
-                        # Prune-then-compact: token-budgeted verbatim
-                        # tail (retain 0.16 × window) + fixed handoff schema
-                        # carrying the file ledger across compactions.
-                        contextWindow=contextWindow or None,
+                        context_window=contextWindow,
                         goalHint=as_str(getattr(session, 'goal', '') or ''),
-                        schema=summarizer is None,
-                        # Replay the newest verbatim user turns
-                        # right after the summary (the summary loses nuance
-                        # the user already paid for — fewer recovery rounds).
-                        replayUserBytes=REPLAY_USER_BUDGET_BYTES,
+                        summarizer=summarizer,
                     )
                     compressedTokens = estimateTokens(compressed)
                     if compressedTokens < originalTokens:
@@ -2815,7 +2804,8 @@ async def _sendWorkbenchMessageStreamImpl(
                                     'originalTokens': originalTokens,
                                     'compressedTokens': compressedTokens,
                                     'compressedCount': compressedCount,
-                                    'headCount': 4,
+                                    'headCount': reliefHeadCount(_relief),
+                                    'relief': _relief,
                                     'tailCount': 6,
                                     'threshold': threshold,
                                     'contextWindow': contextWindow,

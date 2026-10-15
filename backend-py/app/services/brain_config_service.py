@@ -63,6 +63,7 @@ boolKeys: tuple[str, ...] = (
     'projectMemory',
     'projectSkills',
     'fileMemory',
+    'contextReliefRotate',
 )
 numKeys: tuple[str, ...] = (
     'maxAgentDepth',
@@ -245,6 +246,10 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # would leave whole days of conversation unread.
     ('reviewIntervalHours', 'review_interval_hours', 24, 'num'),
     ('memoryReview', 'memory_review', False, 'bool'),
+    # Second context-relief route (rotate onto a fresh handoff note instead of
+    # stacking another summary). Off: it re-anchors what the provider cache sees
+    # mid-chat, so it is armed deliberately, per install.
+    ('contextReliefRotate', 'context_relief_rotate', False, 'bool'),
     ('outcomeIntervalHours', 'outcome_interval_hours', 72, 'num'),
     ('outcomeWindowDays', 'outcome_window_days', 14, 'num'),
     ('consolidationModelSummarize', 'consolidation_model_summarize', False, 'bool'),

@@ -39,6 +39,10 @@ _ALLCamelKeys = {
     # Bot-to-Bot unattended ceiling (bot_mode/dm.py `_unattendedRun`): absent
     # means off, and 0 stays writable so an armed ceiling can be disarmed.
     'maxUnattendedTurns',
+    # Second context-relief route (context_compressor.reliefStrategy): absent
+    # means today's compact-in-place, because re-anchoring the provider cache
+    # mid-chat is not something a build may arm by default.
+    'contextReliefRotate',
     # Routing introspection: autoRoute/MinWinRate/WinGap are
     # removed — no turn-loop reader ever existed; MinSamples stays for the
     # harness flow map.

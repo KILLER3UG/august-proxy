@@ -48,6 +48,48 @@ LOCK_TTL_S = 300.0
 # 8–16 KB range) lets the next agent act without re-asking.
 REPLAY_USER_BUDGET_BYTES = 12 * 1024
 
+# ── Two-route context relief ──
+# Compact-in-place preserves the FIRST `head_count` messages verbatim forever and
+# summarizes what comes after it. From the second relief onward that is loss
+# applied to loss: the note is built from a follow-up turn (the original ask sits
+# OUTSIDE the summarized span, so `Goal` names whatever the user said fifth), and
+# every earlier decision survives only as the 600 characters of prose the previous
+# note squeezed out of itself.
+RELIEF_COMPACT = 'compact'
+RELIEF_ROTATE = 'rotate'
+
+
+def reliefStrategy(messages: list[dict[str, object]], *, armed: bool) -> str:
+    """Pick the relief route: summarize in place, or re-anchor on a fresh note.
+
+    Rotating drops the stale verbatim head and rebuilds the note from the WHOLE
+    span, so `Goal` is the task rather than a follow-up and the summary is derived
+    from original text again instead of from its own predecessor. What the head
+    was holding is not lost: the original ask is replayed verbatim under the same
+    byte budget the newest user turns already get, the tail stays verbatim, and
+    the transcript archive has the full history before either route runs.
+
+    The first relief never rotates, even when armed. Before a note exists the
+    verbatim head IS the live task statement, and re-anchoring on a summary whose
+    own footer says "decisions, constraints and next steps were not analyzed"
+    would trade a fact for a guess.
+    """
+    if not armed:
+        return RELIEF_COMPACT
+    if not any(_isSummaryMessage(m) for m in messages):
+        return RELIEF_COMPACT
+    return RELIEF_ROTATE
+
+
+def reliefHeadCount(relief: str) -> int:
+    """How many opening messages a route keeps verbatim.
+
+    One map, declared next to the strategy that chooses the route, because the
+    compaction frame reports this number to the user and a frame that reports a
+    head count the compressor did not use is the same lie in a different place.
+    """
+    return 0 if relief == RELIEF_ROTATE else DEFAULT_HEAD_COUNT
+
 
 def isFeatureEnabled() -> bool:
     """Check if the summarizing compactor feature flag is set.
@@ -664,6 +706,7 @@ async def compressMessages(
     goalHint: str = '',
     schema: bool = False,
     replayUserBytes: int = 0,
+    rotate: bool = False,
 ) -> list[dict[str, object]]:
     """Compress messages to fit within a token threshold by summarizing the middle.
 
@@ -709,6 +752,11 @@ async def compressMessages(
         goalHint: Session goal forwarded to the schema summarizer.
         schema: Use the fixed handoff schema for deterministic summaries.
         replayUserBytes: Byte budget for verbatim user-message replay (0 = off).
+        rotate: Re-anchor instead of stacking (see :func:`reliefStrategy`). Keeps
+            NO head verbatim, so the summarized span includes the opening — the
+            note's Goal becomes the original ask rather than whatever the user
+            said fifth — and the original ask itself is claimed back verbatim
+            first, before the newest turns, inside the same ``replayUserBytes``.
 
     Returns:
         Compressed message list (may be unchanged if already under threshold).
@@ -723,7 +771,10 @@ async def compressMessages(
     priorSummaryTexts = [_extractSummaryText(m) for m in messages if _isSummaryMessage(m)]
     priorSummaryTexts = [t for t in priorSummaryTexts if t]
     otherSystem = systemMsgs
-    if len(nonSystem) <= head_count + tail_count:
+    # Rotating keeps no head: the opening moves INTO the summarized span, which is
+    # the whole point (the note then describes the task instead of a follow-up).
+    headBudget = 0 if rotate else head_count
+    if len(nonSystem) <= headBudget + tail_count:
         return list(messages)
 
     # Tool-pair-safe split: group into atomic units, then take head units,
@@ -732,7 +783,7 @@ async def compressMessages(
     headUnits: list[list[dict[str, object]]] = []
     headMsgCount = 0
     idx = 0
-    while idx < len(units) and headMsgCount < head_count:
+    while idx < len(units) and headMsgCount < headBudget:
         headUnits.append(units[idx])
         headMsgCount += len(units[idx])
         idx += 1
@@ -794,19 +845,39 @@ async def compressMessages(
     if replayUserBytes > 0 and middle:
         selected: list[dict[str, object]] = []
         acc = 0
+        # Rotating moved the opening INTO the span, so it is claimed back first:
+        # of every message the compaction is about to fold away, the original ask
+        # is the one whose loss changes what the model believes the task is. It
+        # spends budget the newest turns would otherwise get, which is the trade.
+        opening: dict[str, object] | None = None
+        if rotate:
+            for m in middle:
+                if m.get('role') == 'user' and not _isToolResultMsg(m) and not _isSummaryMessage(m):
+                    opening = m
+                    break
+        if opening is not None:
+            acc += len(_json.dumps(opening, default=str, sort_keys=True))
         for m in reversed(middle):
             if m.get('role') != 'user' or _isToolResultMsg(m) or _isSummaryMessage(m):
                 continue
+            if opening is not None and m is opening:
+                continue
             cost = len(_json.dumps(m, default=str, sort_keys=True))
-            if selected and acc + cost > replayUserBytes:
+            if (selected or opening is not None) and acc + cost > replayUserBytes:
                 break
             selected.append(m)
             acc += cost
-        if selected:
+        if selected or opening is not None:
             selected.reverse()
-            replayed = selected
-            removedIds = {id(m) for m in selected}
+            replayed = ([opening] if opening is not None else []) + selected
+            removedIds = {id(m) for m in replayed}
             middle = [m for m in middle if id(m) not in removedIds]
+        if opening is not None and not goalHint:
+            # Claiming the ask back for verbatim replay takes it OUT of the span
+            # the note is summarized from, so `_firstUserText(middle)` would read
+            # the next user turn and Goal would still name a follow-up — the very
+            # defect rotating exists to fix. Hand the note the ask directly.
+            goalHint = _firstUserText([opening])
     if not middle:
         # The whole middle was pinned or replayed — no summary needed.
         compressed = otherSystem + head + pinned + replayed + tail

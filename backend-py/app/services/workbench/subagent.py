@@ -773,8 +773,6 @@ async def executeSubAgent(
             MAX_STALLED_ROUNDS,
             MIN_ROUNDS_BEFORE_STALL_CHECK,
             _assistant_round_is_novel,
-            _is_failing_receipt,
-            _is_update_state_transition,
             _resolveModelContextWindow,
         )
 
@@ -827,7 +825,7 @@ async def executeSubAgent(
             # 110k threshold overflowed those windows before compaction ran).
             try:
                 from app.providers.clients.base import estimateTokens as _estimateTokens
-                from app.services.workbench.context_compressor import compressMessages
+                from app.services.workbench.loop.recovery import _compactionCall
 
                 _contextWindow = _resolveModelContextWindow(resolvedModel, provider)
                 _threshold = max(4096, int(_contextWindow * 0.55))
@@ -838,12 +836,16 @@ async def executeSubAgent(
                         archive_messages(str(getattr(session, 'id', '') or ''), messages, reason='subagent-compact')
                     except Exception:
                         pass
-                    messages = await compressMessages(
+                    # One policy with the parent's: this used to hand
+                    # `compressMessages` only a threshold and the pin predicates,
+                    # so a subagent mid-run got the heuristic summarizer, a
+                    # count-budgeted tail, no tool-output prune and no verbatim
+                    # replay of the user's own words.
+                    messages, _relief = await _compactionCall(
                         messages,
-                        threshold=_threshold,
-                        # Landmark pins (P4): update_state transitions and
-                        # failing receipts survive the middle summary.
-                        pin_predicates=[_is_update_state_transition, _is_failing_receipt],
+                        context_window=_contextWindow,
+                        goalHint=as_str(getattr(session, 'goal', '') or ''),
+                        summarizer=None,
                     )
             except Exception:
                 pass
