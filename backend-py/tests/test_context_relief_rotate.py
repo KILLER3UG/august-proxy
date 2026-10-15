@@ -98,7 +98,7 @@ class TestArmingReachesTheLoop:
 
         monkeypatch.setattr(rec, '_contextRotateArmed', lambda: False)
         msgs = _conversation(turns=20, filler=1200) + [_note()]
-        out, relief = await rec._compactionCall(
+        out, relief, _stats = await rec._compactionCall(
             msgs, context_window=4000, goalHint='billing ledger', summarizer=None
         )
         assert len(out) < len(msgs), 'nothing compacted, so this asserts nothing'
@@ -115,7 +115,7 @@ class TestArmingReachesTheLoop:
         msgs = _conversation(turns=20, filler=1200) + [_note()]
         # No goalHint: a session with a recorded goal takes Goal from it, so the
         # route's effect on the note is only visible on the fallback path.
-        out, relief = await rec._compactionCall(
+        out, relief, _stats = await rec._compactionCall(
             msgs, context_window=4000, goalHint='', summarizer=None
         )
         assert len(out) < len(msgs), 'nothing compacted, so this asserts nothing'
