@@ -248,16 +248,18 @@ premise was wrong, not the code. (2) The context/cache readout was already unmou
    transcript still expands three ways: `components/ui/task.tsx` (the Task disclosure) has **2**
    consumers (`ToolStepRow`, `SearchResultsCard`); `components/chat/DisclosureRow.tsx`, which is a
    *second* Radix `Collapsible` wrapper with its own shape (content-sized pill, caret on the
-   right, hover-only), has **8**; and **3** raw `<details>` remain inline in the transcript — the
-   recalled-memories notice (`AssistantBlockTimeline.tsx:1069`), "Show provider details" (`:1330`)
-   and the turn-end badge (`AssistantMessageContent.tsx:210`). Seven more files outside the
-   transcript use `<details>` (ErrorBoundary, the bootstrap error card, ModelPickerCard, three
-   settings panes, ModelRow). What the pass did deliver here is the shared *marker*
-   (`.disclosure-chevron` on every `<summary>` site, `849d5c5e`) and tool steps on the Task
-   disclosure. Collapsing the remaining three patterns into one component is a visible redesign of
-   eight consumers, and each of the three `<details>` sites needs to be seen rendered — a turn-end
-   badge, a provider-error blob and a recall list are not producible through the offline lab
-   harness — so it is listed rather than done blind.
+   right, hover-only), has **8** consumers. **Zero raw `<details>` remain inside the transcript**:
+   all three sites were converged onto `ui/task.tsx` (`9adee7bd`, `1e52a771`), each gaining the
+   `Button` primitive trigger and its focus ring, and their tests rewritten to assert the
+   disclosure's *property* rather than the element name. Seven files outside the transcript still
+   use `<details>` (ErrorBoundary, the bootstrap error card, ModelPickerCard, three settings panes,
+   ModelRow) — different surfaces, and a native details is defensible there.
+
+   **What is left of B4 is one step, not four:** make `DisclosureRow` build itself on
+   `ui/task.tsx` internals instead of its own `Collapsible` markup, which converges all 8 consumers
+   without touching them. It is a visible change to eight call sites (Task adds a left rule and
+   indent to the body) and needs each consumer rendered to sign off, so it is listed rather than
+   done blind — the census above is the evidence that the transcript itself is already uniform.
 
 6. **`tier: 'hidden'` depth.** 26 of 44 sections are reachable only by search or deep link
    against Claude's four always-visible destinations. Keep, or promote a subset.
