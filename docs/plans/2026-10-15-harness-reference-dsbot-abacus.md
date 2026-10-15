@@ -602,6 +602,66 @@ draft raised from a negative episode id ships with the archived span attached; a
 positive id never takes that branch. What remains unseen is the *neighbouring* messages
 — the evidence is the one message the judge cited, not the window around it.
 
+## Pause status, 2026-10-15 23:01 — what is landed, what is unverified, next step per item
+
+HEAD is `e4a02c7d` on local `master`; **nothing pushed** (never authorized). This
+evening's commits: `de19bddd` (capability definition not model-writable), `ed1d696c`
+(three archive-review defects), `d7eeab82` (compaction card names the relief route),
+`31e52a3` (bridge decided "am I in a worker" from the wrong signal), `3c3bb94e` (two
+lineage states + the second delete door), `e7514890` (tests bind a real worker session),
+`b184392a` (`august-bench --context-window`), `e4a02c7d` (`sample_error` redacted before
+it is stored).
+
+**Verification honesty, stated once and applying to all of it:** a full suite is running
+against this HEAD, writing `/tmp/suite_head.log` and ending in `SUITE_EXIT=<code>`. Read
+that marker — never a background task's own exit code (two earlier runs reported "exit 0"
+with 0-byte logs, and one chained `mypy && git commit && pytest` died on a git lock and
+silently skipped the commit). Until the marker says zero, nothing here is suite-green;
+each change is individually verified by its own test file, `ruff`, `mypy` and, where the
+claim needed a negative, by extracting the pre-fix commit (`git archive <sha> | tar -x -C
+/tmp/...`) and running the new tests there with the main venv. **No real-app run was done
+for delegation or for any compaction card** — that needs a model completion, which was not
+authorized. The relief-route card text was read in Chromium at `/_design?lab=working`,
+which is how a misattached clause got caught; that is the only app-level evidence.
+
+Next step, per open item, in value order:
+
+1. **#31 — why pre-turn relief did not fire for a seeded in-memory session.** Start here
+   because it may not be a test problem. Print `originalTokens / contextWindow / ratio` at
+   `workbench.py:2745-2746` for two states: a session whose rows are persisted in the brain
+   `messages` table, and one seeded only in `session.messages`. If only the first compacts,
+   then **a restored chat can skip auto-compact**, which is user-visible and larger than this
+   plan. `isFeatureEnabled()` defaults True (`context_compressor.py:110-118`), so that gate
+   is already excluded.
+2. **#33 — `skill_lift`'s "one aggregation for two consumers" is false.**
+   `routers/brain_config.py:518-581` duplicates the SQL with `COUNT(*)` where
+   `turn_outcomes.py:627` uses `COUNT(ok)`, so the Skills UI and the demotion prior can
+   disagree about the same skill — the exact failure the docstring promises is impossible.
+   Point the route at `skill_lift()`; make the test write a row with `ok IS NULL`, because
+   `test_skill_relevance_prior.py:227-258` only writes non-NULL ones and cannot see it.
+3. **#28 — the manual "Free up memory" button emits no `compaction` frame**, so deleting rows
+   from the user's chat leaves no transcript record while the automatic path renders one.
+   Do not synthesize the card in the browser: the card is a transcript *message* and both
+   live and replayed paths read `message.context`, so a client-side one vanishes on reload.
+   Server frame or nothing.
+4. **#30 — `parentAgent` on `create_agent` lets a model write another agent's lineage**, which
+   shields that agent from deletion through the model door and edits the graph the new ceiling
+   reads. Low severity (recoverable in two steps, and the walk cap was confirmed not
+   exploitable — do not "fix" the cap).
+5. **Not started, from the coverage audit** — mechanisms neither reference dive considered:
+   an in-flight resume journal (DS Bot `src/host/resume.js`: work and undelivered DM wakes
+   survive app close), crash-time stream mirroring (`abacus/src/recovery.rs`; August's barriers
+   flush only at step boundaries, so the loss window is one whole generation), two-stage
+   interrupt (`abacus/src/agent.rs:625-628`: first Stop lets the in-flight tool land so its
+   result is recorded), and handle-based oversize results (`abacus/src/handles.rs`: August
+   spills to `.aug/spill/` and can only page it back). Each is a design decision, not a patch.
+6. **Owner decisions, unchanged:** `contextReliefRotate` still has no Settings switch
+   (config.json only), the model-facing archived-bytes read door is a security-surface call,
+   and whether the sandbox should treat August's own loopback API as a protected target — a
+   `run_command` in a `guardMode='full'` Bot DM can `PUT` the same agent record my handler now
+   refuses.
+
+
 ## Next, in value-per-risk order
 
 1. **A tool that resolves a cleared result back to its archived bytes.** The marker now
