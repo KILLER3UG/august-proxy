@@ -121,10 +121,23 @@ files.
 
 ## Next, in value-per-risk order
 
-1. **Review-from-archive** (abacus item 4): make `_reviewWindow` fall back to
-   `transcript_archive.derive_messages` when the live window is thin, so the learning pass sees the
-   pre-compaction verbatim text once and still advances its cursor. Keep "an empty window still
-   advances" and do not create a second transcript authority.
+1. **Review-from-archive** (abacus item 4) — **attempted today, larger than it reads, and that is
+   the finding.** The hole is confirmed: `workbench.py:2819-2826` writes the compacted projection
+   through `saveSessions()`, `memory_store/sessions.py:212` states that a row the snapshot no
+   longer contains **is deleted**, and `skill_distiller.py:1539 _reviewWindow` reads
+   `messages WHERE id > cursor` — so the erased middle is never reviewed, while the archive that
+   holds it (`app/services/transcript_archive.py`, written at `workbench.py:2778`) is read only by
+   `routers/workbench.py:2248`. But the review pass is **id-keyed end to end**, in three places that
+   a fallback has to satisfy at once: `_reviewTarget` selects a session only when
+   `MAX(messages.id) > cursor` (so a session whose unread content lives only in the archive is never
+   even chosen); the rendered lines carry `[message id]` markers the judge is told to return as
+   `episode`s; and `apply_verdict` fingerprints `review:<sessionId>` per episode. Archived
+   snapshots are `{reason, count, messages}` dicts with **no ids**, so a real fix needs a durable
+   per-session archive position *and* a synthetic-episode namespace that cannot collide with
+   message ids — a cursor-semantics change, not a fallback branch. Next attempt should start from
+   `parse_verdicts`/`apply_verdict` (`skill_distiller.py:1591-1612`) and the migration that would
+   carry the archive watermark, and must preserve the two stated invariants: an empty window still
+   advances the cursor, and the `messages` table stays the single transcript authority.
 2. **Stuck-request recovery** (DS Bot item 5): counter + fresh-part/bare rescue on a second
    consecutive `INVALID_REQUEST`.
 3. **Rotate-vs-compact steward** (DS Bot item 1) — and build item 8's dev-only eval **first**, so a
