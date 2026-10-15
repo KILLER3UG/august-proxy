@@ -181,7 +181,7 @@ def evaluateAgentTool(agentId: str, toolName: str) -> dict[str, object]:
     return {'allowed': False, 'reason': f"tool '{toolName}' not in permissions"}
 
 
-def _effectivePermissions(agentId: str) -> set[str] | None:
+def _effectivePermissions(agentId: str, _seen: frozenset[str] = frozenset()) -> set[str] | None:
     """Resolve the effective permission set, walking parents.
 
     One rule: an agent's bound is its OWN declaration intersected with its
@@ -192,15 +192,32 @@ def _effectivePermissions(agentId: str) -> set[str] | None:
     that is the escalation this walk exists to stop: a worker granted ``['all']``
     under a read-only parent would otherwise inherit no limit at all, and the
     short-circuit here was exactly how the spawn-time ceiling came back empty.
+
+    ``_seen`` bounds the walk. ``parentId`` is not validated anywhere on write —
+    the model door can set it (``create_agent(parentAgent=…)``, and ``update_agent``
+    kept it writable so a Bot can re-attach a teammate) — so ``A→B→A`` is a
+    reachable record, and an unbounded walk answered it with ``RecursionError``.
+    The caller swallowed that to "no ceiling", which is the fail-OPEN direction:
+    a cycle in the lineage therefore erased the restriction instead of enforcing
+    it. A repeated id stops the walk and returns the intersection gathered so far.
     """
+    if agentId in _seen:
+        return set()
     agent = getAgent(agentId)
     if not agent:
-        return set()
+        # A dangling parentId — the UI can delete a declared parent and nothing
+        # reparents the children. Returning `set()` here would read as "this
+        # lineage allows nothing", which the ceiling turns into a worker with zero
+        # tools: a data-state accident silently collapsing a chat, with no security
+        # gain because the parent's own surface already bounds the child. Unknown
+        # lineage is no restriction, and the caller logs it.
+        return None
+    _seen = _seen | {agentId}
     perms = _declaredPermissions(agent)
     unboundedHere = perms is None or 'all' in perms
     parentId = as_str(agent.get('parentId'))
     if parentId:
-        parentEff = _effectivePermissions(parentId)
+        parentEff = _effectivePermissions(parentId, _seen)
         if unboundedHere:
             return parentEff
         return perms if parentEff is None else (perms or set()) & parentEff

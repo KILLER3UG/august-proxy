@@ -234,7 +234,22 @@ It is a DENY set on purpose — the offered list is a progressive-disclosure sli
 and `tool_search` → `tool_call` is the documented route to a tool outside it, so
 gating on that slice would break delegation for weak models. `update_agent` and
 `delete_agent` were added to `_SUBAGENT_NEVER_TOOLS`, which had only `create_agent`
-despite its own comment naming all three doors.
+despite its own comment naming all three doors. **The bridge decides "am I inside a
+worker" from the deny set's presence, never from `currentSubagentDepth > 0`** — a
+worker's runtime depth is `max(depth, agent.depth)` and every roster-created Bot has
+depth 0, so the depth test skipped both the never-tool gate and the deny set for every
+real subagent (`tool_call('remember')` executed), while a root turn publishes no deny
+set at all. **Two unresolvable lineages resolve in opposite directions on purpose**: a
+dangling `parentId` is reachable by ordinary use (the UI delete has no children check)
+and means *no restriction* — the parent's bound left with the record, and reading it as
+`set()` collapsed every such worker to zero tools — whereas a `parentId` **cycle** is
+not reachable by a model turn (`update_agent` no longer writes `parentId`, and
+`create_agent` sets it only on a freshly minted id) so it fails closed; before the walk
+was bounded it raised `RecursionError`, which the ceiling swallowed into "no ceiling",
+i.e. the fail-OPEN direction (measured, at `agent_registry._effectivePermissions`).
+`POST /api/august/agents/manage` now deletes through `roster.delete_bot` like
+`DELETE /api/agents/{id}`, because only that path refuses the default Bot, cascades the
+Bot's private footprint, and names the actor in the audit.
 **Context relief has two routes, and the route is chosen from state, not by a
 model.** Compact-in-place keeps the first `DEFAULT_HEAD_COUNT` (4) messages
 verbatim *forever* and summarizes what follows, so from the second relief onward

@@ -363,7 +363,16 @@ async def manage_agents(body: ActionBody):
                 before = copy.deepcopy(a)
                 break
         try:
-            agent_registry.deleteAgent(body.id)
+            # Through the roster, like `DELETE /api/agents/{id}`: only
+            # ``roster.delete_bot`` refuses the default assistant Bot and cascades a
+            # deleted Bot's private footprint (``bot:<id>`` facts, DM rows, room
+            # memberships, canonical chat). A bare registry delete here orphaned all
+            # of it and left `assistant` to be re-minted under a NEW id at next boot,
+            # stranding every chat bound to the old one. Also names the actor: the
+            # default `'system'` mislabeled a human-initiated request in the audit.
+            from app.services.bot_mode import roster
+
+            roster.delete_bot(body.id, actor='ui')
         except Exception:
             pass
         cfg['customAgents'] = [

@@ -396,3 +396,60 @@ class TestTheWorkerGateDoesNotDependOnDepth:
 
         out = asyncio.run(handleToolCall('list_agents', '{}'))
         assert 'not permitted' not in str(out), out
+
+
+class TestUnresolvableLineage:
+    """Two ways a lineage stops making sense, resolved in opposite directions on
+    purpose — and the one that used to be a crash that read as "no restrictions".
+
+    A dangling `parentId` is reachable by ordinary use: the UI delete has no
+    children check, so deleting a declared parent leaves the children pointing at
+    nothing. That must not zero out a worker, because there is no parent bound left
+    to intersect and the parent's own surface already limits the child.
+
+    A cycle is not reachable by a model turn: `update_agent` no longer writes
+    `parentId` at all and `create_agent` only sets it on a freshly minted id, so a
+    loop needs the UI. Contradictory bounds fail closed instead of open.
+    """
+
+    def test_a_dangling_parent_does_not_deny_everything(self, isolatedData):
+        from app.services.workbench.subagent import _lineageCeiling
+
+        parent = agent_registry.createAgent(name='P', permissions=['read_file'], actor='test')
+        kid = agent_registry.createAgent(name='C', parentId=parent['id'], permissions=['all'], actor='test')
+        sess = create_workbench_session()
+        sess.agentId = parent['id']
+        sessions_mod._sessions[sess.id] = sess
+        assert _lineageCeiling(sess, kid, kid['id']) == {'read_file'}
+
+        agent_registry.deleteAgent(parent['id'], actor='test')
+        # The bound is gone with the record; nothing in the chain restricts the
+        # child any more. `set()` here used to mean "allowed nothing", which the
+        # ceiling turned into a worker with zero tools and no explanation.
+        assert _lineageCeiling(sess, kid, kid['id']) is None
+        assert agent_registry.getAgent(kid['id'])['parentId'] == parent['id'], 'fixture, not product'
+
+    def test_a_parent_cycle_fails_closed_instead_of_crashing(self, isolatedData):
+        a = agent_registry.createAgent(name='A', permissions=['read_file'], actor='test')
+        b = agent_registry.createAgent(name='B', parentId=a['id'], permissions=['write_file'], actor='test')
+        agent_registry.updateAgent(a['id'], {'parentId': b['id']}, actor='test')  # A -> B -> A
+
+        assert agent_registry._effectivePermissions(a['id']) is not None, (
+            'a cyclic lineage resolved to "no restriction", which is the escalation direction'
+        )
+        assert agent_registry._effectivePermissions(a['id']) == set()
+
+    def test_a_model_turn_cannot_construct_either_state(self, isolatedData):
+        """The write door that could create these is the human one, not the tool."""
+        from app.services import self_config_tools as sct
+        from app.services import tool_registry
+
+        sct.register()
+        upd = tool_registry.get('update_agent') or {}
+        assert 'parentId' not in as_dict(as_dict(upd.get('parameters')).get('properties')), (
+            'update_agent can still re-parent, which is how a cycle gets written'
+        )
+        fresh = agent_registry.createAgent(name='Root2', permissions=['read_file'], actor='test')
+        kid = agent_registry.createAgent(name='Kid2', parentId=fresh['id'], actor='test')
+        assert kid['parentId'] == fresh['id']
+        assert agent_registry.deriveChildPermissions(fresh['id'], kid['id']) == ['read_file']
