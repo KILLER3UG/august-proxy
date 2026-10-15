@@ -51,7 +51,9 @@ export const Task = ({
 );
 
 export type TaskTriggerProps = ComponentProps<typeof CollapsibleTrigger> & {
-  title: string;
+  /** Only read by the default markup; a caller that passes its own `children`
+      (asChild) supplies the label inside them, so it is optional. */
+  title?: string;
 };
 
 export const TaskTrigger = ({

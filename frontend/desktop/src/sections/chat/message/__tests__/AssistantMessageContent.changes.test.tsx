@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AssistantMessageContent } from '../AssistantMessageContent';
@@ -97,8 +97,20 @@ describe('AssistantMessageContent — turn_end stop-reason badge', () => {
  * wording and the warning/error coloring are unchanged — those are the
  * contracts worth keeping — but the detail is now visible text and every
  * non-`finished` reason except `interrupted` also names its remedy. */
+/* The badge's disclosure moved from <details>/<summary> onto the transcript's
+   Task primitive, whose trigger is a button[aria-expanded]. Both are accepted so
+   this helper keeps testing the LABEL rather than the markup that carries it. */
+/* The Task disclosure does not keep its body mounted while closed the way a
+   native <details> did, so these checks expand first — which is also what the
+   case's own wording promises: "visible on expand". One click per test: a second
+   one would close it again. */
+const expandBadge = (el: HTMLElement | null) => {
+  const trigger = el?.querySelector('summary, button[aria-expanded]');
+  if (trigger) fireEvent.click(trigger);
+};
+
 const badgeLabel = (el: HTMLElement | null) =>
-  el?.querySelector('summary')?.textContent ?? '';
+  el?.querySelector('summary, button[aria-expanded]')?.textContent ?? '';
 
   it('names a stalled stop in plain words, with the raw token visible on expand', () => {
     renderContent(
@@ -109,6 +121,7 @@ const badgeLabel = (el: HTMLElement | null) =>
     expect(badgeLabel(el)).toContain('stalled then stopped · 12 rounds');
     expect(el?.className).toContain('text-warning');
     // Raw token kept for the event log / turn_outcomes column.
+    expandBadge(el);
     expect(el?.textContent).toContain('turn_end: stall-stop');
     // And it says what to do, not just what happened.
     expect(screen.queryByTestId('turn-end-remedy')?.textContent).toMatch(/continue|narrow/i);
@@ -131,6 +144,7 @@ const badgeLabel = (el: HTMLElement | null) =>
     renderContent({ isLast: true, streaming: false }, { turnEnd: { reason: 'interrupted' } });
     const el = badge();
     expect(badgeLabel(el)).toBe('you stopped it· why?');
+    expandBadge(el);
     expect(el?.textContent).toContain('turn_end: interrupted');
   });
 
@@ -138,11 +152,13 @@ const badgeLabel = (el: HTMLElement | null) =>
     renderContent({ isLast: true, streaming: false }, { turnEnd: { error: true } });
     const el = badge();
     expect(badgeLabel(el)).toContain('stopped');
+    expandBadge(el);
     expect(el?.textContent).toContain('no reason recorded');
   });
 
   it('points the tool-round cap at the control that raises it', () => {
     renderContent({ isLast: true, streaming: false }, { turnEnd: { reason: 'cap', rounds: 40 } });
+    expandBadge(badge());
     expect(screen.queryByTestId('turn-end-remedy')?.textContent).toMatch(/Settings/);
   });
 

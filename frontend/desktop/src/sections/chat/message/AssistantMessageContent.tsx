@@ -12,7 +12,9 @@ import {
   type SubagentPromptEntry,
   type ToolProgressMap,
 } from './AssistantBlockTimeline';
-import { Clock } from 'lucide-react';
+import { ChevronDown, Clock } from 'lucide-react';
+import { Task, TaskContent, TaskTrigger } from '@/components/ui/task';
+import { Button } from '@/components/ui/button';
 import { AssistantMessageActions } from './AssistantMessageActions';
 import { TurnEndActionRow } from './TurnEndActionRow';
 import { turnEndActions, turnEndPhrase, turnEndRemedy } from '@/lib/turn-end';
@@ -204,22 +206,35 @@ export function AssistantMessageContent({
             }`}
             data-testid="turn-end-badge"
           >
-            {/* Visible + keyboard-reachable, not a `title` tooltip: a stop
-                reason the user cannot act on is decoration. The raw token
-                stays available for the event log / turn_outcomes column. */}
-            <details className="group">
-              <summary className="cursor-pointer list-none marker:content-none">
-                {message.turnEnd.reason
-                  ? turnEndPhrase(message.turnEnd.reason)
-                  : 'stopped'}
-                {typeof message.turnEnd.rounds === 'number'
-                  ? ` · ${message.turnEnd.rounds} round${message.turnEnd.rounds === 1 ? '' : 's'}`
-                  : ''}
-                <span className="ml-1 opacity-60 group-open:hidden">
-                  · why?
-                </span>
-              </summary>
-              <div className="mt-1 space-y-0.5">
+            {/* Converged on the transcript's Task disclosure (B4's "one
+                component"): this was the last inline <details> in the message
+                body. Visible + keyboard-reachable, not a `title` tooltip: a
+                stop reason the user cannot act on is decoration. The raw token
+                stays in the expanded body for the event log / turn_outcomes
+                column, and the chevron is the shared `.disclosure-chevron`
+                marker rotating on Radix's own data-state. */}
+            <Task defaultOpen={false} className="inline-block">
+              <TaskTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto gap-1 px-1 py-0 text-left text-2xs"
+                >
+                  {message.turnEnd.reason
+                    ? turnEndPhrase(message.turnEnd.reason)
+                    : 'stopped'}
+                  {typeof message.turnEnd.rounds === 'number'
+                    ? ` · ${message.turnEnd.rounds} round${message.turnEnd.rounds === 1 ? '' : 's'}`
+                    : ''}
+                  <span className="ml-1 opacity-60 group-data-[state=open]:hidden">
+                    · why?
+                  </span>
+                  <ChevronDown className="disclosure-chevron" aria-hidden />
+                </Button>
+              </TaskTrigger>
+              <TaskContent className="mt-1">
+                <div className="space-y-0.5">
                 {turnEndRemedy(message.turnEnd.reason ?? '') ? (
                   <div data-testid="turn-end-remedy">
                     {turnEndRemedy(message.turnEnd.reason ?? '')}
@@ -249,8 +264,9 @@ export function AssistantMessageContent({
                   onRetry={onRegen}
                   onEditPrompt={onEditPrompt}
                 />
-              </div>
-            </details>
+                </div>
+              </TaskContent>
+            </Task>
           </div>
         ) : null}
         {/* Audit A6: the skills and facts that went into THIS answer, plus the
