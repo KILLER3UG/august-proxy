@@ -1555,8 +1555,9 @@ def _reviewTarget() -> tuple[str, int, bool]:
     # chat first) and the wrong one for the archive leg: the probe below is capped,
     # so with more exhausted sessions than the cap, the tail of a stable order is
     # never looked at — measured, 12 exhausted sessions and a cap of 8 starved the
-    # same four every single pass. Ordering the archive candidates by how little of
-    # their archive has been read rotates the cap instead of aiming it.
+    # same four every single pass. Ordering the archive candidates by how much of
+    # THEIR OWN ARCHIVE they have already read (the archive cursor, not the live
+    # review cursor) rotates the cap instead of aiming it.
     archived: list[tuple[int, str]] = []
     for row in rows:
         sessionId = str(row['session_id'] or '')

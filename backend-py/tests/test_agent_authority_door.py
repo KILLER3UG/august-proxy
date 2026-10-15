@@ -352,3 +352,47 @@ class TestAuthorityIsEnforcedNotMerelyWithheld:
 
         for name in ('create_agent', 'update_agent', 'delete_agent', 'set_agent_mode'):
             assert name in _SUBAGENT_NEVER_TOOLS, name
+
+
+class TestTheWorkerGateDoesNotDependOnDepth:
+    """The bridge decided "am I inside a sub-agent?" from `currentSubagentDepth > 0`.
+    A worker's runtime depth is `max(depth, agent.depth)` (subagent.py:437), the
+    spawners pass no depth, and every roster-created Bot has depth 0 — so a real
+    worker of a normal Bot ran at depth 0 and BOTH the never-tool gate and the deny
+    set were skipped. `tool_call('remember')` from inside such a worker executed."""
+
+    def test_deny_set_is_enforced_at_depth_zero(self, isolatedData):
+        from app.services.tools.tool_bridges import handleToolCall
+        from app.services.workbench.context import currentSubagentDenied, currentSubagentDepth
+
+        depth = currentSubagentDepth.set(0)
+        denied = currentSubagentDenied.set(frozenset({'write_file'}))
+        try:
+            out = asyncio.run(handleToolCall('write_file', json.dumps({'path': 'x.txt', 'content': 'hi'})))
+            assert 'not permitted' in str(out), f'depth-0 worker bypassed the deny set: {out!r}'
+        finally:
+            currentSubagentDepth.reset(depth)
+            currentSubagentDenied.reset(denied)
+
+    def test_never_tools_are_refused_at_depth_zero(self, isolatedData):
+        """Same skipped branch, the pre-existing half of it: `remember` is the
+        invariant that the parent turn is the only memory write door."""
+        from app.services.tools.tool_bridges import handleToolCall
+        from app.services.workbench.context import currentSubagentDenied, currentSubagentDepth
+
+        depth = currentSubagentDepth.set(0)
+        denied = currentSubagentDenied.set(frozenset({'update_agent'}))
+        try:
+            out = asyncio.run(handleToolCall('remember', json.dumps({'key': 'k', 'value': 'v'})))
+            assert 'Blocked' in str(out), f'depth-0 worker reached the memory door: {out!r}'
+        finally:
+            currentSubagentDepth.reset(depth)
+            currentSubagentDenied.reset(denied)
+
+    def test_a_root_turn_still_reaches_its_own_tools(self, isolatedData):
+        """Control: presence-based gating must not start refusing the parent turn,
+        which publishes no deny set at all."""
+        from app.services.tools.tool_bridges import handleToolCall
+
+        out = asyncio.run(handleToolCall('list_agents', '{}'))
+        assert 'not permitted' not in str(out), out

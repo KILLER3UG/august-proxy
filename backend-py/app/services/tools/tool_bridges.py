@@ -153,9 +153,17 @@ async def handleToolCall(name: str, arguments: str) -> str:
     # reach `remember`/`forget`/`create_agent` through the back door. The
     # invariant is that the parent turn is the single memory write door.
     try:
-        from app.services.workbench.context import currentSubagentDepth
+        from app.services.workbench.context import currentSubagentDenied, currentSubagentDepth
 
-        if currentSubagentDepth.get() > 0:
+        # Presence, not depth. `runtimeDepth = max(depth, agent.depth)`
+        # (subagent.py:437) and the spawners pass no depth, while every
+        # roster-created Bot has depth 0 — so a real worker of a normal Bot ran at
+        # runtimeDepth 0 and this `> 0` test skipped BOTH the never-tool gate and
+        # the deny set below it. A worker always publishes a non-empty deny set
+        # (it contains `_blocked_tools`, which is never empty), so a populated set
+        # is the accurate "inside a worker" and depth stays a secondary signal.
+        denied = currentSubagentDenied.get()
+        if denied or currentSubagentDepth.get() > 0:
             from app.services.workbench.subagent import _blocked_tools
 
             if name in _blocked_tools(session):
@@ -163,13 +171,7 @@ async def handleToolCall(name: str, arguments: str) -> str:
             # Same site, same second ceiling: the worker's own DENY set. A name
             # taken off the surface was never refused at execution, so a worker
             # spawned read-only could write a file by naming it here — the tier
-            # lived only in the tool list the model was shown. Denied rather than
-            # allowed-typed, because reaching a tool the surface hid is the
-            # documented route (tool_search -> tool_call) for a worker entitled
-            # to it, and only these exclusions say who is not.
-            from app.services.workbench.context import currentSubagentDenied
-
-            denied = currentSubagentDenied.get()
+            # lived only in the tool list the model was shown.
             if name in denied:
                 return f"[Blocked] Sub-agent is not permitted to use '{name}' via tool_call."
     except Exception:

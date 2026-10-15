@@ -62,13 +62,14 @@ def _nextSeq(path: Path) -> int:
 def _readLines(path: Path) -> list[str]:
     """The transcript's lines, with a torn append confined to ONE line.
 
-    A half-written record at the tail is not invalid UTF-8, and `read_text` raises
-    `UnicodeDecodeError` — which is neither `OSError` nor `JSONDecodeError`, so it
-    escaped both readers here and out of `run_review_pass`, whose docstring promises
-    it never raises, and one damaged transcript blocked every session's review at
-    each cadence. Decoding with a replacement character keeps that corruption on
-    the line that has the problem: the torn line then fails to parse and is skipped
-    like any other, and `startSeq` means the records after it keep their positions.
+    A half-written record at the tail is OFTEN not valid UTF-8, and `read_text`
+    raises `UnicodeDecodeError` — which is neither `OSError` nor `JSONDecodeError`,
+    so it escaped both readers here and out of `run_review_pass`, whose docstring
+    promises it never raises, and one damaged transcript blocked every session's
+    review at each cadence. Decoding with a replacement character keeps that
+    corruption on the line that has the problem: the torn line then fails to parse
+    and is skipped like any other, and `startSeq` means the records after it keep
+    their positions.
     """
     try:
         return path.read_bytes().decode('utf-8', errors='replace').splitlines()
