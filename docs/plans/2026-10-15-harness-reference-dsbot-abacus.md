@@ -650,7 +650,37 @@ positive id never takes that branch. What remains unseen is the *neighbouring* m
       novel arguments *without* touching the filesystem, or the counter resets and the test proves
       nothing. Decide the scripted tool surface first (a no-op tool the loop treats as world-neutral)
       rather than driving `read_file` at temp paths.
-    2. **Not built, by the same reading: a bench that forces an overflow** by shrinking the model
-      window (`ds-bot/dev/bench.sh` with `CONTEXT_WINDOW`), which is how `reactive_overflow` gets
-      reached deterministically instead of by a 40k-token fixture.
+
+   **Correction (same day, 2026-10-16): the paragraph above is wrong in exactly the way the one
+   before it was, and I wrote it an hour later.** Both named ladders are already measured through
+   the wiring, with controls:
+
+   - **Runaway backstop** — `tests/test_runaway_backstop.py:33` defines
+     `VaryingNoWorldDeltaClient` (a multi-round scripted client, i.e. the very thing claimed not to
+     exist), and `TestRunawayInTheLoop` (`:166`) drives `wb.sendWorkbenchMessageStream` three times:
+     a world-stalled turn that must end (`:168`), the off-by-default case that must NOT end early
+     (`:220`), and `test_real_world_movement_resets_the_counter` (`:250`) — the control that proves
+     the probe discriminates, which is precisely the "novel arguments without touching the
+     filesystem" problem described above, already solved.
+   - **Turn budget ladder** — `tests/test_turn_budget_ladder.py` drives `sendWorkbenchMessageStream`
+     five times.
+   - **Stuck-request escape** — as recorded above.
+
+   So DS Bot item 8's scripted-provider half is **built**, in three files, and the honest residual is
+   small and specific:
+    2. **Not built, and now the only residual: a bench that forces an overflow** by shrinking the
+      model window (`ds-bot/dev/bench.sh` with `CONTEXT_WINDOW`). `reactive_overflow` appears in
+      `tests/test_compaction_policy_parity.py` and `tests/test_overflow_probe_shapes.py`, but nothing
+      reaches it by lowering a window through the loop — the two files pin the arguments and the
+      shapes, not the arrival. Today the only way to a reactive overflow is a fixture big enough to
+      actually overflow a real window, which is why that path is the least-measured rescue in the
+      loop. This is a `dev`-side measurement, not a behaviour change: the arm itself ships.
+    3. **Also not built, deliberately: `mock-llm.mjs`'s system-prompt/tool-definition hash log.** The
+      prefix-reuse property it proves is asserted directly in `tests/test_prompt_cache_stability.py`
+      rather than through a hash diff, so the logging would be a second way to see the same fact.
+
+   Recorded so nobody builds these twice: three of the loop's four rescue ladders already have
+   in-loop coverage, and the lesson is about method — the Next list was written from what I remembered
+   shipping, not from reading the test files, and reading them cost one grep each time.
+
 
