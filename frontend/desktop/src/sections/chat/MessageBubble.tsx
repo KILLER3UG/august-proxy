@@ -256,8 +256,13 @@ function MessageBubbleInner({
       <div className="flex justify-start w-full max-w-3xl">
         <CompactionNoticeCard
           info={{
-            headCount: ctx.headCount ?? 0,
-            tailCount: ctx.tailCount ?? 0,
+            // Passed through, not defaulted. A replayed transcript card whose frame
+            // reported no split used to have `?? 0` applied HERE — a second
+            // coercion behind the one in the SSE reader — and the persisted card
+            // then read "Kept the first 0 and last 0 messages". The real app caught
+            // this; the reader and card unit tests both passed without it.
+            headCount: ctx.headCount,
+            tailCount: ctx.tailCount,
             compressedCount: ctx.compressedCount ?? 0,
             originalTokens: ctx.originalTokens ?? 0,
             compressedTokens: ctx.compressedTokens ?? 0,

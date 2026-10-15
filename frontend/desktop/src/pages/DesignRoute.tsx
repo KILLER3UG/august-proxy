@@ -509,6 +509,26 @@ const LAB_STRIP_MESSAGES: ChatMessage[] = [
     context: { fromModel: 'deepseek-flash', toModel: 'claude-sonnet', summary: 'Carried 3 turns of context forward.' },
     timestamp: '2026-10-14T10:00:08Z',
   },
+  // Two compaction notices, because the card has two copy states and only one of
+  // them was ever looked at: a frame that reports the split it used, and the
+  // reactive overflow frame that reports none. The second used to render
+  // "Kept the first 0 and last 0 messages" — an invented fact from a missing field.
+  {
+    id: 'cp1',
+    role: 'assistant',
+    kind: 'compaction-notice',
+    content: '',
+    context: { headCount: 4, tailCount: 9, compressedCount: 23, originalTokens: 30258, compressedTokens: 12436, contextWindow: 40000 },
+    timestamp: '2026-10-14T10:00:10Z',
+  },
+  {
+    id: 'cp2',
+    role: 'assistant',
+    kind: 'compaction-notice',
+    content: '',
+    context: { compressedCount: 12, originalTokens: 400, compressedTokens: 90 },
+    timestamp: '2026-10-14T10:00:12Z',
+  },
 ];
 
 function WorkingStripPane({ streaming }: { streaming: boolean }) {

@@ -42,3 +42,31 @@ describe('CompactionNoticeCard', () => {
     expect(screen.getByText(/summarized 23 messages/i)).toBeInTheDocument();
   });
 });
+
+/* The frame reaches the card by two paths: the live SSE reader, and a persisted
+ * transcript row re-read through MessageBubble's `context` object. The second one
+ * had its own `?? 0` and only the real app showed it, so it is asserted here. */
+import { MessageBubble } from '../MessageBubble';
+
+describe('compaction notice via MessageBubble', () => {
+  it('keeps an absent split absent on the replayed-transcript path', () => {
+    const { container } = render(
+      <MessageBubble
+        message={{
+          id: 'cp-replay',
+          role: 'assistant',
+          content: '',
+          kind: 'compaction-notice',
+          timestamp: '2026-10-15T10:00:00Z',
+          context: { compressedCount: 12, originalTokens: 400, compressedTokens: 90 },
+        }}
+      />,
+    );
+    const trigger = container.querySelector('button');
+    expect(trigger).not.toBeNull();
+    fireEvent.click(trigger as HTMLElement);
+    const text = container.textContent ?? '';
+    expect(text).not.toMatch(/first 0/);
+    expect(text).toContain('Summarized 12 messages in the middle');
+  });
+});
