@@ -120,18 +120,60 @@ async def _post_tool_redact(ctx: HookContext) -> HookResult:
 # replaced by `[secret:<NAME>]` on the wire, so the machine's own credential
 # inventory never travels in a prompt body.
 #
+# The door is the TRANSPORT (`providers/clients/base.py` calls `wireBody` at its
+# two httpx sends), not the body serializers. A first version wired the dump
+# functions and a review round proved that covered neither real path: the
+# workbench dumps an empty request and assigns `body['messages']` afterwards, and
+# the proxy round-2 re-send appends tool results after the dump. The transport
+# sees every body those paths send, and nothing else reaches a provider.
+#
 # Matched by VALUE, never by pattern, and only for credentials this app holds.
 # A pattern scrub here would rewrite anything key-shaped: a user pasting their own
 # `sk-…` to ask why it returns 401 would get advice about a string the model can
-# no longer see. This is the one serialization path every chat request takes, so
-# the false-positive cost is the whole product.
+# no longer see. The false-positive cost is therefore the whole product.
 _OUTBOUND_MIN_LEN = 12
+# Credential-shaped env vars. Deliberately only `*_API_KEY`: including
+# `_PASSWORD` / `_SECRET` / `_TOKEN` would rewrite a database password or an API
+# token the user PASTED ON PURPOSE (write this into my .env, why does this
+# PASSWORD fail) out from under them on every later turn. Those are secrets the
+# user is working WITH; a provider key is a secret the install works FROM.
+_OUTBOUND_ENV_SUFFIXES = ('_API_KEY',)
 _outboundCache: list[tuple[str, str]] | None = None
+_outboundStamp: tuple[object, ...] | None = None
 _outboundWired = False
 
 
-def _outboundLabel(name: str) -> str:
+def _storeStamp() -> tuple[object, ...] | None:
+    """(mtime_ns, size) of BOTH files a credential can be written to, or None.
+
+    providers.json holds the per-provider keys and fires the invalidation
+    callback on save; the gateway key does not — `routers/config.py` mints it
+    through `saveConfig`, which busts neither the callback nor a providers.json
+    stamp. Without config.json in the stamp, a rotated gateway key would be
+    shipped forever and the retired one rewritten forever, which is the exact
+    staleness this cache has to avoid.
+
+    The stat is taken once per body, never per leaf (see `scrubOutboundBody`).
+    """
+    try:
+        from app.lib.paths import dataPath
+
+        stamps: list[object] = []
+        for name in ('providers.json', 'config.json'):
+            stat = dataPath(name).stat()
+            stamps.extend((int(stat.st_mtime_ns), int(stat.st_size)))
+        return tuple(stamps)
+    except Exception:  # noqa: BLE001 — an unreadable store just rebuilds each call
+        return None
+
+
+def _outboundLabel(name: str, value: str = '') -> str:
     clean = re.sub(r'[^A-Za-z0-9]+', '_', str(name or '')).strip('_').upper()
+    if value and len(value) >= _OUTBOUND_MIN_LEN and value in (name or ''):
+        # A provider NAMED after its own key would have the key echoed inside the
+        # marker this substitution exists to put in its place.
+        clean = re.sub(re.escape(value), 'REDACTED', str(name), flags=re.IGNORECASE)
+        clean = re.sub(r'[^A-Za-z0-9]+', '_', clean).strip('_').upper()
     return f'[secret:{clean[:48] or "CREDENTIAL"}]'
 
 
@@ -151,7 +193,7 @@ def _collectOutboundSecrets() -> list[tuple[str, str]]:
     def add(value: object, name: object) -> None:
         text = as_str(value, '').strip()
         if len(text) >= _OUTBOUND_MIN_LEN:
-            found.setdefault(text, _outboundLabel(as_str(name, '')))
+            found.setdefault(text, _outboundLabel(as_str(name, ''), text))
 
     try:
         from app.services import config_service
@@ -176,7 +218,7 @@ def _collectOutboundSecrets() -> list[tuple[str, str]]:
         import os
 
         for name, value in os.environ.items():
-            if name.endswith(('_API_KEY', '_TOKEN', '_SECRET', '_PASSWORD')):
+            if name.endswith(_OUTBOUND_ENV_SUFFIXES):
                 add(value, name)
     except Exception:  # noqa: BLE001 — fails open, but logged
         logger.warning('outbound scrub: environment unreadable', exc_info=True)
@@ -184,57 +226,93 @@ def _collectOutboundSecrets() -> list[tuple[str, str]]:
 
 
 def _outboundSecrets() -> list[tuple[str, str]]:
-    """The cache, busted through the store's own invalidation hook.
+    """The credential set, rebuilt when the store changes.
 
-    `saveProvidersStore` fires `provider_credentials._fireInvalidation`, so a key
-    edited in Settings stops being shipped on the next request without a per
-    request file read — the stamp-on-read pattern AGENTS.md records for the price
-    index, but through the callback the store already offers.
+    Two triggers, because neither alone is enough. The file stamp catches every
+    writer (a hand-edit of providers.json, or `provider_credentials.invalidate()`,
+    neither of which fires the callback); the callback catches a key minted
+    without touching the file (the gateway key is written through
+    `saveConfig`, which busts neither). Registration is only marked done once it
+    actually succeeded — setting the flag first meant one import hiccup disabled
+    cache-busting for the life of the process.
+
+    An EMPTY result is never cached: an unreadable store would otherwise turn
+    the gate off permanently and silently, which is the blindness this whole
+    round is about. Consumers take one local snapshot, so a rebuild on another
+    thread cannot make a later read return an empty list mid-request.
     """
-    global _outboundCache, _outboundWired
-    if _outboundCache is None:
-        _outboundCache = _collectOutboundSecrets()
+    global _outboundCache, _outboundStamp, _outboundWired
+    stamp = _storeStamp()
+    if _outboundCache is not None and stamp == _outboundStamp:
+        return _outboundCache
+    rebuilt = _collectOutboundSecrets()
+    if rebuilt:
+        _outboundCache = rebuilt
+        _outboundStamp = stamp
         if not _outboundWired:
-            _outboundWired = True
             try:
                 from app.services import provider_credentials
 
                 provider_credentials.registerInvalidationCallback(_invalidateOutbound)
-            except Exception:  # noqa: BLE001 — the cache still rebuilds
+                _outboundWired = True
+            except Exception:  # noqa: BLE001 — the stamp still busts the cache
                 logger.warning('outbound scrub: invalidation hook unavailable', exc_info=True)
-    return _outboundCache
+    return rebuilt if _outboundCache is None else _outboundCache
 
 
 def _invalidateOutbound() -> None:
-    global _outboundCache
+    global _outboundCache, _outboundStamp
     _outboundCache = None
+    _outboundStamp = None
+
+
+def _scrubLeaf(text: str, secrets: list[tuple[str, str]]) -> str:
+    out = text
+    for value, marker in secrets:
+        if value in out:
+            out = out.replace(value, marker)
+    return out
+
+
+def _scrubWalk(value: object, secrets: list[tuple[str, str]]) -> object:
+    if isinstance(value, str):
+        return _scrubLeaf(value, secrets)
+    if isinstance(value, dict):
+        return {k: _scrubWalk(v, secrets) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_scrubWalk(v, secrets) for v in value]
+    return value
 
 
 def scrubOutboundText(text: str) -> str:
     """Replace this install's credential values with named markers."""
-    out = text
-    for value, marker in _outboundSecrets():
-        if value in out:
-            out = out.replace(value, marker)
-    return out
+    return _scrubLeaf(text, _outboundSecrets())
 
 
 def scrubOutboundBody(value: object) -> object:
     """Recursively scrub the string leaves of an outbound request body.
 
     Keys, structure and non-string values are rebuilt untouched — this runs on
-    the serialization path every chat request takes, so a body with no credential
-    in it must come back byte-identical.
+    the path every provider request takes, so a body with no credential in it
+    must come back byte-identical.
+
+    The credential set is resolved ONCE per body, not per leaf: it is
+    file-stamped, so a per-leaf read cost one `os.stat` per string in the
+    transcript — measured at 204 ms and 1,307 stats on a 200 KB body against
+    2.0 ms for the `json.dumps` that follows it.
+
+    Three limits, stated because a security gate that implies more than it does is
+    worse than a narrower one:
+    * a value that arrives already JSON-escaped (a `\\u0073k-…` blob produced by a
+      gateway SDK, or base64 of the transcript) does not match a literal value;
+    * the marker is text the model can quote into a file, so the write door blocks
+      it (`PRE_TOOL_USE`) rather than this door;
+    * a credential the app cannot read (an OS keyring) is out of reach.
     """
-    if not _outboundSecrets():
+    secrets = _outboundSecrets()
+    if not secrets:
         return value
-    if isinstance(value, str):
-        return scrubOutboundText(value)
-    if isinstance(value, dict):
-        return {k: scrubOutboundBody(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [scrubOutboundBody(v) for v in value]
-    return value
+    return _scrubWalk(value, secrets)
 
 
 def register(reg: HookRegistry) -> None:

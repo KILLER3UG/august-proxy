@@ -211,7 +211,15 @@ def _extract_upstream_error_message(event: dict[str, object]) -> str:
     """Pull a human-readable message from a provider stream/error event."""
     errObj = event.get('error')
     if isinstance(errObj, dict):
-        msg = as_str(errObj.get('message') or errObj.get('type') or errObj)
+        # `as_str` returns '' for a dict, so an envelope nested one level deeper
+        # (`{'error': {'error': {'message': …}}}`, which proxies do send) used to
+        # yield an empty msg here, fall through, and surface the generic
+        # 'Upstream provider error' — every reader of this string (retry policy,
+        # `classify_error`, the stuck-request ladder, the user) lost the reason.
+        # Serialize the envelope instead of returning nothing.
+        msg = as_str(errObj.get('message') or errObj.get('type') or '') or json.dumps(
+            errObj, ensure_ascii=False, default=str
+        )
         if msg:
             status = event.get('status')
             return f'[{status}] {msg}' if status else msg

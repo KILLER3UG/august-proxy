@@ -21,7 +21,7 @@ import json
 import os
 import random
 import time
-from typing import TYPE_CHECKING, AsyncIterator, Callable
+from typing import TYPE_CHECKING, AsyncIterator, Callable, cast
 
 if TYPE_CHECKING:
     import httpx
@@ -395,6 +395,24 @@ class BaseProviderClient:
             await self._client.aclose()
             self._client = None
 
+    @staticmethod
+    def wireBody(body: dict[str, object] | None) -> dict[str, object] | None:
+        """The last step before the wire: replace this install's own credentials.
+
+        The transport, not the serializer, is the door. The workbench builds its
+        body through `dump_openai_upstream_body` and then ASSIGNS
+        `body['messages']` afterwards (`workbench/providers.py`), and the `/v1`
+        proxy forwards the caller's parsed body verbatim — so a scrub wired into
+        the dump functions would cover neither, while every provider request in
+        the app does reach one of the two `self.client` calls below. The auth
+        header is left alone: that is where a key legitimately belongs.
+        """
+        from app.services.hooks.secret_guard import scrubOutboundBody
+
+        if body is None:
+            return None
+        return cast('dict[str, object]', scrubOutboundBody(body))
+
     async def chat_completions(self, body: dict[str, object], apiKey: str | None = None) -> ProviderResponse:
         raise NotImplementedError
 
@@ -523,7 +541,9 @@ class BaseProviderClient:
         for attempt in range(self.maxRetries + 1):
             try:
                 await rateGate.wait(host)
-                resp = await self.client.request(method, url, headers=headers, json=body, timeout=self.timeout)
+                resp = await self.client.request(
+                    method, url, headers=headers, json=self.wireBody(body), timeout=self.timeout
+                )
                 if resp.status_code == 429:
                     rateGate.recordRateLimit(host, parseRetryAfterMs(resp.headers.get('retry-after')))
                 if isRetryableStatus(resp.status_code) and attempt < self.maxRetries:
@@ -616,7 +636,9 @@ class BaseProviderClient:
         for attempt in range(self.maxRetries + 1):
             try:
                 await rateGate.wait(host)
-                async with self.client.stream('POST', url, headers=headers, json=body, timeout=self.timeout) as resp:
+                async with self.client.stream(
+                    'POST', url, headers=headers, json=self.wireBody(body), timeout=self.timeout
+                ) as resp:
                     # Streaming responses carry the same standard rate-limit
                     # headers as buffered ones, and streaming is the main chat
                     # path — capture before the first event so a short turn

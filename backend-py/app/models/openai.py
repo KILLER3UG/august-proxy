@@ -10,7 +10,6 @@ from typing import cast
 
 from app.adapters.case_converters import strip_none_deep
 from app.models.base import ExtraAllowBaseModel, JsonValue
-from app.services.hooks.secret_guard import scrubOutboundBody
 from app.services.message_sources import strip_august_message_keys
 
 # ── Strict models (the proxy reads/constructs these) ──────────────────────
@@ -77,11 +76,7 @@ def dump_openai_upstream_body(
         dumped.pop(key, None)
     if 'messages' in dumped:
         dumped['messages'] = strip_august_message_keys(dumped['messages'])
-    # Never ship this install's own credentials onward: a key that rode into the
-    # transcript once is re-sent to every gateway on every later turn unless it
-    # is replaced here. Matched by value, so key-shaped text the user pasted on
-    # purpose survives (see `secret_guard`'s outbound section).
-    return cast('dict[str, object]', scrubOutboundBody(dumped))
+    return dumped
 
 
 class ChatCompletionRequest(ExtraAllowBaseModel):

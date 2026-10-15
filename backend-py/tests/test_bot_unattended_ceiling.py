@@ -70,6 +70,14 @@ def _seed(sessionId: str, *turns: tuple[str, str]) -> None:
         memory_store.save_message(sessionId, role, content)
 
 
+def _summaryRow(text: str) -> str:
+    """A compressed-summary row, fenced the way `context_compressor` fences it."""
+    from app.services.workbench.context_compressor import DEFAULT_SUMMARY_MARKER as M
+
+    closing = f'{M.replace("<", "</")}>>'
+    return f'{M}\n{{"files": []}}\n{text}\n{closing}'
+
+
 def _botTurn(handle: str, text: str) -> str:
     return f'{dm.BOT_TURN_PREFIX}{handle} (@{handle}):\n{text}'
 
@@ -134,16 +142,25 @@ class TestProvenanceIsReadFromPersistedRows:
         )
         assert dm._unattendedRun(sid, 8) == 0
 
-    def test_machine_sourced_rows_do_not_reset_the_run(self, bots):
+    def test_a_machine_sourced_row_is_skipped_not_counted_not_a_reset(self, bots):
         """A harness nudge or a routine delivery is not the human talking.
 
-        Read off `messages.source` (migration 049) — the provenance column that
-        replaced guessing from text prefixes.
+        Read off `messages.source` (migration 049), the provenance column that
+        replaced guessing from text prefixes. It is also not a Bot→Bot hop, so it
+        does not add to the run either — the row is passed over, which is what
+        keeps the chain on the far side of a delivery counted.
         """
         from app.services.memory_conn import commit, conn
 
         sid = _canonical(bots['alpha']).id
-        _seed(sid, ('user', 'a real human ask'), ('user', _botTurn('beta', 'reply')))
+        _seed(
+            sid,
+            ('user', 'a real human ask'),
+            ('user', _botTurn('beta', 'first hop')),
+            ('user', _botTurn('beta', 'second hop')),
+        )
+        # The delivery lands NEWEST, above both hops: a two-way "Bot or human?"
+        # read calls it a human and resets the run to 0.
         conn().execute(
             "INSERT INTO messages (session_id, role, content, source) VALUES (?, 'user', ?, ?)",
             (sid, json.dumps('[routine:nightly] result: all clear'), 'memory_delivery'),
@@ -169,6 +186,37 @@ class TestProvenanceIsReadFromPersistedRows:
         )
         commit(conn())
         assert dm._unattendedRun(sid, 4) == 0
+
+    def test_a_compressed_summary_neither_counts_nor_resets(self, bots):
+        """Compaction writes its summary as a USER row with no provenance.
+
+        Asking only "Bot or human?" reads that row as the human having spoken, so
+        the ceiling disarms in exactly the long chats where compaction runs — the
+        ones it exists for. A summary is neither author, so it is skipped.
+        """
+        sid = _canonical(bots['alpha']).id
+        summary = _summaryRow('they were discussing the port')
+        _seed(
+            sid,
+            ('user', 'the human ask'),
+            ('user', _botTurn('beta', 'one')),
+            ('user', summary),
+            ('user', _botTurn('beta', 'two')),
+            ('user', _botTurn('beta', 'three')),
+        )
+        assert dm._unattendedRun(sid, 8) == 3
+
+    def test_turn_author_labels_the_three_cases(self, bots):
+        assert dm._turnAuthor(json.dumps(_botTurn('beta', 'x')), None) == 'bot'
+        assert dm._turnAuthor(json.dumps('what about the port?'), None) == 'human'
+        assert dm._turnAuthor(json.dumps(_summaryRow('abs')), None) == 'machine'
+        # A dict payload (an attachment turn) is not a Bot message: it reads as
+        # the human, which is the lenient direction.
+        assert dm._turnAuthor(json.dumps({'content': 'x'}), None) == 'human'
+        assert dm._turnAuthor('', None) == 'human'
+        assert dm._turnAuthor('typed text', 'harness_nudge') == 'machine'
+        # `queued_user` is the human typing mid-turn — never a Bot turn.
+        assert dm._turnAuthor('hold on, do this instead', 'queued_user') == 'human'
 
     def test_the_scan_is_bounded_by_the_ceiling_not_the_chat(self, bots):
         sid = _canonical(bots['alpha']).id

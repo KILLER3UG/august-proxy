@@ -195,8 +195,8 @@ _NON_HUMAN_SOURCES: frozenset[str] = frozenset(
 )
 
 
-def _isBotAuthoredTurn(content: object, source: object) -> bool:
-    """True when a user-role transcript row was written by a Bot, not a human.
+def _turnAuthor(content: object, source: object) -> str:
+    """'bot' | 'human' | 'machine' for a user-role transcript row.
 
     ``content`` is stored JSON-encoded, so it is decoded before the prefix test:
     comparing the raw column against ``BOT_TURN_PREFIX`` would be comparing it
@@ -205,18 +205,31 @@ def _isBotAuthoredTurn(content: object, source: object) -> bool:
     into a lockout is the worse direction for a mistake. A row whose provenance
     says it was not a human speaking now also cannot reset the run.
 
-    A structured payload (a dict/list the session writer persisted for an
-    attachment turn) is not a Bot's message text, so it reads as a reset.
+    'machine' is the third case a two-way read kept getting wrong: compaction
+    writes its `<<compressed_summary` block as a USER row with no provenance
+    (`context_compressor._isSummaryMessage`), so "Bot or human?" reads the
+    summary as the human having spoken and disarms the ceiling in exactly the
+    long chats where compaction happens. A summary neither counts nor resets.
     """
+    from app.services.workbench.context_compressor import _isSummaryMessage
+
     if as_str(source, '') in _NON_HUMAN_SOURCES:
-        return True
+        return 'machine'
     if not isinstance(content, str) or not content:
-        return False
+        return 'human'
     try:
         decoded = json.loads(content) if content.startswith('"') else content
     except Exception:
         decoded = content
-    return isinstance(decoded, str) and decoded.startswith(BOT_TURN_PREFIX)
+    if isinstance(decoded, dict):
+        return 'machine' if _isSummaryMessage(decoded) else 'human'
+    if not isinstance(decoded, str):
+        return 'human'
+    if decoded.startswith(BOT_TURN_PREFIX):
+        return 'bot'
+    if _isSummaryMessage({'role': 'user', 'content': decoded}):
+        return 'machine'
+    return 'human'
 
 
 def _unattendedRun(sessionId: str, ceiling: int) -> int:
@@ -225,11 +238,12 @@ def _unattendedRun(sessionId: str, ceiling: int) -> int:
     The scan stops at the first human user row — that is the reset — and reads
     at most `ceiling` rows, so the cost is bounded by the ceiling rather than by
     the length of the chat and the answer cannot exceed the number the caller is
-    comparing against. Reads the persisted transcript, not the in-memory
-    session: the turn loop flushes the arriving Bot message at the
-    model-dispatch barrier (`flush_session_barrier(..., currentMessages)`), so
-    the row this very turn is reacting to is already in the table, and a restart
-    cannot launder a runaway.
+    comparing against. Machine rows (a compressed summary, a harness nudge, a
+    routine delivery) are skipped: they neither count nor break the run. Reads
+    the persisted transcript, not the in-memory session: the turn loop flushes
+    the arriving Bot message at the model-dispatch barrier
+    (`flush_session_barrier(..., currentMessages)`), so the row this very turn is
+    reacting to is already in the table, and a restart cannot launder a runaway.
     """
     if not sessionId or ceiling <= 0:
         return 0
@@ -244,7 +258,10 @@ def _unattendedRun(sessionId: str, ceiling: int) -> int:
         return 0
     run = 0
     for row in rows:
-        if not _isBotAuthoredTurn(row['content'], row['source']):
+        author = _turnAuthor(row['content'], row['source'])
+        if author == 'machine':
+            continue
+        if author != 'bot':
             break
         run += 1
     return run

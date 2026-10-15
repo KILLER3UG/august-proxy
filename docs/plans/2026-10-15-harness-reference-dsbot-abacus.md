@@ -295,6 +295,57 @@ controls still pass. `ruff check .` and `mypy app/` clean; `test_dump_upstream_b
 unaffected; whole backend suite 5416 passed / 5 skipped in 21m34s, with the 200 MB paging test
 included and green this time.
 
+## Second reviewer round: the door was in the wrong place
+
+A second pair of agents reviewed the ceiling and the scrub. Six claims were
+verified in the code and fixed; each is now pinned by a test that fails when the
+fix is reverted (revert-toggle runs recorded below).
+
+1. **The scrub's door was the serializer, and the main path does not pass through
+   it.** The workbench calls `dump_openai_upstream_body(ChatCompletionRequest(model))`
+   — an empty skeleton — and assigns `body['messages']` afterwards
+   (`workbench/providers.py:731-735`); the `/v1` proxy appends tool results after
+   its dump and re-sends; `buildAnthropicUpstreamRequest` never calls the dump at
+   all. `BaseProviderClient` has exactly two `self.client` calls, so the door moved
+   to `wireBody` at those two sends and the dump-level calls were removed. Red-proof:
+   with `wireBody` unwired, 9 tests fail — and the 7 that still pass are exactly the
+   negative controls. Tests now drive a real client through `httpx.MockTransport`
+   and assert what the provider would receive, plus a case reproducing the
+   assign-after-dump shape that defeated the first version.
+2. **A per-leaf `os.stat`:** the cache stamp was read inside the recursion, so on a
+   641 KB body with 1,001 string leaves the scrub cost **419.6 ms** against
+   **1.94 ms** once the set is resolved once per body (both measured here, same
+   fixture; the `json.dumps` that follows the dump costs 5.9 ms).
+3. **The gateway key's rotation busted nothing.** It is minted through
+   `saveConfig`, which fires no invalidation callback and does not touch
+   providers.json, so a rotated key would ship forever. The stamp now covers
+   providers.json AND config.json; and because `saveProvidersStore`'s callback is
+   the only other trigger, an EMPTY result is no longer cached — a transient read
+   failure used to switch the gate off silently until restart.
+4. **A two-way "Bot or human?" read disarmed the ceiling.** Compaction writes its
+   `<<compressed_summary` block as a **user** row with no `source`, so the summary
+   counted as the human having spoken — in exactly the long chats compaction
+   exists for. `_turnAuthor` is now tri-state (a machine row neither counts nor
+   resets). Red-proof: making machine rows fall through breaks precisely the two
+   tests that pin it.
+5. **The env sweep was too wide to ship.** Including `*_PASSWORD`/`*_SECRET`
+   rewrote a database password the user pasted *on purpose* (write this into my
+   .env) out of every later request. Collection is `*_API_KEY` only;
+   `test_a_database_password_in_the_env_is_deliberately_NOT_scrubbed` pins the
+   reason.
+6. **`_extract_upstream_error_message` could return nothing.** `as_str` on a
+   doubly-nested envelope is `''`, so the user got `Upstream provider error` for a
+   refusal that had named its reason, and the shape ladder saw no marker. It now
+   serializes the envelope instead of returning empty.
+
+Checked and **not** acted on: that the scrub should also cover base64/escaped
+forms, and that a model can quote `[secret:NAME]` into a file — both are now stated
+as limits in the docstring and AGENTS.md rather than papered over, because closing
+the first means rewriting sibling leaves and the second is already blocked at the
+write door. `provider_credentials.invalidate()` genuinely does not fire callbacks
+(documented in the stamp comment); `saveProvidersStore` is the only providers.json
+writer (16 call sites measured, all through it).
+
 ## Next, in value-per-risk order
 
 1. **Review-from-archive** (abacus item 4) — **attempted today, larger than it reads, and that is

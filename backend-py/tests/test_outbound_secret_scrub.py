@@ -1,18 +1,27 @@
-"""Outbound credential scrub — DS Bot item 7 (`secrets.js`), tested on the wire.
+"""Outbound credential scrub — DS Bot item 7 (`secrets.js`), tested at the wire.
 
-The tool-boundary guard already denies a write that carries a secret and redacts
-a read of a protected path. Neither covers how a credential actually leaves: it
-rides into the transcript once — pasted by the user, quoted by a log line,
-printed by a command whose path looked harmless — and is then re-sent to
-whichever gateway is active on **every later turn**. DeepSeek-Bot closes that at
-the request door, replacing the value with `[secret:<NAME>]` so the machine's own
-credential inventory never travels in a prompt body.
+The tool-boundary guard already denies a secret-shaped write and redacts a
+protected-path read. Neither covers how a credential actually leaves: it rides
+into the transcript once — pasted by the user, quoted by a log line, printed by a
+command whose path looked harmless — and is then re-sent to whichever gateway is
+active on **every later turn**. The reference closes that at the request door,
+replacing the value with `[secret:<NAME>]` so the machine's own credential
+inventory never travels in a prompt body.
 
-The whole design risk here is a false positive: `dump_*_upstream_body` is the one
-serialization path every chat request takes, and AGENTS.md marks it "a wrong key
-breaks all chat". So the scrub matches VALUES this install holds, never
-key-shaped text, and these tests assert on the serialized body rather than on the
-helper — a unit test of the matcher would pass even if the door never called it.
+**The door is the transport, not the serializer.** A first version wired this
+into `dump_openai_upstream_body` / `dump_anthropic_upstream_body` and a review
+round proved it covered neither of the two real paths: the workbench dumps an
+empty request and then ASSIGNS `body['messages']` afterwards
+(`workbench/providers.py`), and the `/v1` proxy forwards the caller's parsed body
+verbatim (`adapters/openai.py`). `BaseProviderClient` has exactly two `self.client`
+calls (`requestJson`, `streamSse`), so those are where every provider body —
+chat, streaming, title generation, probes, proxy, sub-agents — actually leaves.
+These tests therefore drive a real client through a mocked httpx transport and
+assert on what the provider would receive.
+
+Matched by VALUE, never by pattern: this path serves every chat request, and a
+pattern scrub would rewrite key-shaped text a user pasted precisely to ask why
+their own key returns 401.
 """
 
 from __future__ import annotations
@@ -21,14 +30,14 @@ import json
 import os
 
 import pytest
-from app.models.anthropic import dump_anthropic_upstream_body
-from app.models.openai import dump_openai_upstream_body
+from app.providers.clients.base import BaseProviderClient
 from app.services import config_service
 from app.services.hooks import secret_guard
 
 PROVIDER_KEY = 'sk-proj-aaaaaaaaaaaaaaaaaaaa1111'
 GATEWAY_KEY = 'gw-key-bbbbbbbbbbbbbbbbbbbb2222'
 ENV_KEY = 'zz-cccccccccccccccccccc3333'
+URL = 'https://gateway.test/v1/chat/completions'
 
 
 @pytest.fixture(autouse=True)
@@ -36,23 +45,26 @@ def _resetCache():
     secret_guard._invalidateOutbound()
     yield
     secret_guard._invalidateOutbound()
+    os.environ.pop('ACME_SERVICE_API_KEY', None)
+    from app.config import settings
+
+    settings.gatewayApiKey = None
 
 
 @pytest.fixture
 def configured(isolatedData):
-    """One provider key, the gateway key, and one env-backed token.
+    """One provider key, the gateway key, one env-backed token.
 
     Written through `saveProvidersStore` — the real door, which is also what
-    fires the invalidation the scrub's cache depends on. Monkeypatching the
-    reader would have tested the matcher and missed both wiring bugs this file
-    exists to catch.
+    fires the invalidation the cache depends on. Monkeypatching the reader would
+    test the matcher and miss both wiring bugs this file exists to catch.
     """
     config_service.saveProvidersStore(
         {
             'providers': [
                 {'id': 'openai', 'name': 'openai-test', 'apiKey': PROVIDER_KEY, 'enabled': True},
-                # A credential too short to scrub by: substring-replacing three
-                # characters would mangle ordinary prose.
+                # Too short to scrub by: substring-replacing three characters
+                # would mangle ordinary prose.
                 {'id': 'tiny', 'name': 'tiny', 'apiKey': 'abc', 'enabled': True},
             ]
         }
@@ -60,104 +72,152 @@ def configured(isolatedData):
     from app.config import settings
 
     settings.gatewayApiKey = GATEWAY_KEY
-    os.environ['ACME_SERVICE_TOKEN'] = ENV_KEY
-    secret_guard._invalidateOutbound()
-    yield
-    settings.gatewayApiKey = None
-    os.environ.pop('ACME_SERVICE_TOKEN', None)
+    os.environ['ACME_SERVICE_API_KEY'] = ENV_KEY
     secret_guard._invalidateOutbound()
 
 
-def _bodyWith(text: str) -> dict[str, object]:
-    return {
-        'model': 'gpt-test',
-        'messages': [{'role': 'user', 'content': text}],
-    }
+def _client(sent: list[dict[str, object]]) -> BaseProviderClient:
+    """A real client whose transport records exactly the body httpx would send."""
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content.decode('utf-8')))
+        return httpx.Response(200, json={'choices': [{'message': {'content': 'ok'}}]})
+
+    client = BaseProviderClient({'name': 'test', 'baseUrl': 'https://gateway.test/v1'})
+    client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return client
 
 
-class TestTheDoorScrubbs:
+def _wire(body: dict[str, object]) -> dict[str, object]:
+    sent: list[dict[str, object]] = []
+    import asyncio
+
+    asyncio.run(_client(sent).requestJson('POST', URL, {'x-api-key': PROVIDER_KEY}, body))
+    assert sent, 'nothing was sent'
+    return sent[0]
+
+
+class TestTheTransportDoor:
     def test_a_provider_key_in_the_transcript_never_reaches_the_wire(self, configured):
-        body = dump_openai_upstream_body(
-            _bodyWith(f'here is the key: {PROVIDER_KEY} — why does it 401?')
-        )
-        wire = json.dumps(body)
-        assert PROVIDER_KEY not in wire, 'the credential shipped verbatim'
-        assert '[secret:OPENAI_TEST]' in wire, wire
+        wire = _wire({'model': 'gpt-test', 'messages': [{'role': 'user', 'content': f'key: {PROVIDER_KEY}'}]})
+        text = json.dumps(wire)
+        assert PROVIDER_KEY not in text, 'the credential shipped verbatim'
+        assert '[secret:OPENAI_TEST]' in text, text
 
-    def test_the_anthropic_door_scrubs_the_system_and_the_messages(self, configured):
-        body = dump_anthropic_upstream_body(
-            {
-                'model': 'claude-test',
-                'system': f'contact {GATEWAY_KEY} for access',
-                'messages': [{'role': 'user', 'content': f'and {ENV_KEY} too'}],
-            }
+    def test_the_workbench_assembly_pattern_is_covered(self, configured):
+        """The exact bug a review round found: dump first, assign messages after.
+
+        `workbench/providers.py` builds the body from an EMPTY request and then
+        sets `body['messages']`, so a serializer-level scrub sees no transcript
+        at all. This is the shape of the real call, asserted on the wire.
+        """
+        from app.models.openai import ChatCompletionRequest, dump_openai_upstream_body
+
+        body = dump_openai_upstream_body(ChatCompletionRequest(model='gpt-test'))
+        body['messages'] = [{'role': 'user', 'content': f'my {PROVIDER_KEY} fails'}]
+        # The dump itself never saw the transcript — that is the point.
+        assert PROVIDER_KEY in json.dumps(body), 'the dump scrubbed something it should not own'
+        wire = json.dumps(_wire(body))
+        assert PROVIDER_KEY not in wire, 'the transcript-side credential escaped'
+        assert '[secret:OPENAI_TEST]' in wire
+
+    def test_the_gateway_key_and_an_env_credential_are_scrubbed_too(self, configured):
+        wire = json.dumps(
+            _wire(
+                {
+                    'model': 'gpt-test',
+                    'system': f'register with {GATEWAY_KEY}',
+                    'messages': [{'role': 'user', 'content': f'and {ENV_KEY}'}],
+                }
+            )
         )
-        wire = json.dumps(body)
         assert GATEWAY_KEY not in wire and ENV_KEY not in wire
-        assert '[secret:GATEWAY]' in wire
-        assert '[secret:ACME_SERVICE_TOKEN]' in wire
+        assert '[secret:GATEWAY]' in wire and '[secret:ACME_SERVICE_API_KEY]' in wire
 
-    def test_a_nested_tool_result_and_a_tool_definition_are_scrubbed(self, configured):
-        body = dump_openai_upstream_body(
-            {
-                'model': 'gpt-test',
-                'messages': [
-                    {
-                        'role': 'user',
-                        'content': [
-                            {'type': 'text', 'text': f'log said {PROVIDER_KEY}'},
-                        ],
-                    }
-                ],
-                'tools': [
-                    {
-                        'type': 'function',
-                        'function': {'name': 'x', 'description': f'uses {PROVIDER_KEY}'},
-                    }
-                ],
-            }
+    def test_the_auth_header_is_never_touched(self, configured):
+        """The key belongs in the header; scrubbing there would break all chat."""
+        sentHeaders: list[dict[str, str]] = []
+        import httpx
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sentHeaders.append(dict(request.headers))
+            return httpx.Response(200, json={'ok': True})
+
+        client = BaseProviderClient({'name': 'test'})
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        import asyncio
+
+        asyncio.run(client.requestJson('POST', URL, {'x-api-key': PROVIDER_KEY}, {'model': 'm'}))
+        assert PROVIDER_KEY in str(sentHeaders[0].get('x-api-key')), 'auth was mangled'
+
+    def test_nested_blocks_and_tool_definitions_are_scrubbed(self, configured):
+        wire = json.dumps(
+            _wire(
+                {
+                    'model': 'gpt-test',
+                    'messages': [
+                        {'role': 'user', 'content': [{'type': 'text', 'text': f'log {PROVIDER_KEY}'}]}
+                    ],
+                    'tools': [{'function': {'name': 'x', 'description': f'uses {PROVIDER_KEY}'}}],
+                }
+            )
         )
-        wire = json.dumps(body)
         assert PROVIDER_KEY not in wire, 'a nested leaf was skipped'
         assert wire.count('[secret:OPENAI_TEST]') == 2, wire
 
-    def test_every_later_turn_repeats_it(self, configured):
-        """The leak is not one request: the value is in the persisted history."""
-        for _ in range(3):
-            assert PROVIDER_KEY not in json.dumps(
-                dump_openai_upstream_body(_bodyWith(f'again {PROVIDER_KEY}'))
-            )
+    def test_the_streaming_path_uses_the_same_door(self, configured):
+        import asyncio
+
+        sent: list[dict[str, object]] = []
+
+        async def _run() -> None:
+            import httpx
+
+            def handler(request: httpx.Request) -> httpx.Response:
+                sent.append(json.loads(request.content.decode('utf-8')))
+                return httpx.Response(
+                    200, headers={'content-type': 'text/event-stream'}, content=b'data: [DONE]\n\n'
+                )
+
+            client = BaseProviderClient({'name': 'test'})
+            client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            async for _ in client.streamSse(
+                URL, {'x-api-key': PROVIDER_KEY}, {'model': 'm', 'messages': [{'role': 'user', 'content': PROVIDER_KEY}]}
+            ):
+                pass
+
+        asyncio.run(_run())
+        assert sent and PROVIDER_KEY not in json.dumps(sent[0]), sent
 
 
 class TestWhatItMustNotDo:
     def test_key_shaped_text_the_user_pasted_survives(self, configured):
         """The control that keeps this safe to run on every request.
 
-        A pattern scrub would rewrite this string and the model could no longer
-        answer a question about the user's own key. Value matching is what makes
-        the door survivable, so the test asserts the non-match.
+        Value matching is the whole reason this door can exist on the main path:
+        a pattern scrub would rewrite this string and the model could no longer
+        answer a question about the user's own key.
         """
         text = 'try sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX and sk-ant-foobar12345678901234567890'
-        body = dump_openai_upstream_body(_bodyWith(text))
-        assert text in json.dumps(body), 'key-SHAPED text was rewritten — this is pattern matching'
+        wire = json.dumps(_wire({'model': 'gpt-test', 'messages': [{'role': 'user', 'content': text}]}))
+        assert text in wire, 'key-SHAPED text was rewritten — this is pattern matching'
 
     def test_a_credential_shorter_than_the_floor_is_ignored(self, configured):
-        body = dump_openai_upstream_body(_bodyWith('the abc thing works'))
-        assert 'the abc thing works' in json.dumps(body)
+        wire = json.dumps(_wire({'model': 'gpt-test', 'messages': [{'role': 'user', 'content': 'the abc thing'}]}))
+        assert 'the abc thing' in wire
 
     def test_an_install_with_no_credentials_is_byte_identical(self, isolatedData):
-        """Nothing configured ⇒ the scrub must be inert."""
         config_service.saveProvidersStore({'providers': []})
         from app.config import settings
 
         settings.gatewayApiKey = None
         secret_guard._invalidateOutbound()
-        original = _bodyWith('plain question, nothing secret')
-        snapshot = json.dumps(original, sort_keys=True)
-        assert json.dumps(dump_openai_upstream_body(original), sort_keys=True) == snapshot
+        original = {'model': 'm', 'messages': [{'role': 'user', 'content': 'plain question'}], 'stream': True}
+        assert _wire(dict(original)) == original
 
     def test_structure_and_types_survive_the_walk(self, configured):
-        body = dump_openai_upstream_body(
+        wire = _wire(
             {
                 'model': 'gpt-test',
                 'max_tokens': 64,
@@ -167,36 +227,93 @@ class TestWhatItMustNotDo:
                 'messages': [{'role': 'user', 'content': f'x {PROVIDER_KEY}'}],
             }
         )
-        assert body['max_tokens'] == 64
-        assert body['stream'] is True
-        assert body['stop'] == ['a', 'b']
-        assert body['metadata'] == {'nested': {'deep': [1, None, True]}}
-        assert list(body['messages'][0].keys()) == ['role', 'content']  # type: ignore[index]
+        assert wire['max_tokens'] == 64 and wire['stream'] is True and wire['stop'] == ['a', 'b']
+        assert wire['metadata'] == {'nested': {'deep': [1, None, True]}}
+        assert list(wire['messages'][0].keys()) == ['role', 'content']  # type: ignore[index]
 
-    def test_the_marker_never_carries_the_value_or_an_ugly_label(self, configured):
-        wire = json.dumps(dump_openai_upstream_body(_bodyWith(f'{PROVIDER_KEY} and {ENV_KEY}')))
-        assert PROVIDER_KEY not in wire and ENV_KEY not in wire
-        assert '[secret:OPENAI_TEST] and [secret:ACME_SERVICE_TOKEN]' in json.loads(wire)['messages'][0]['content']
-        # The label is the provider's NAME, which the user chose; nothing about
-        # the value leaks through the sanitizer.
-        assert 'sk-proj' not in wire and 'zz-cccc' not in wire
+    def test_a_escaped_or_split_value_is_named_as_a_limit(self, configured):
+        """Unicode-escaped or split-across-blocks forms are NOT caught.
+
+        Documented, not fixed: closing them means rewriting sibling leaves, and a
+        credential split into two tool outputs is a different threat model than
+        the one this door is for. The test exists so the limit cannot silently
+        become a promise.
+        """
+        escaped = json.dumps({'v': PROVIDER_KEY}).replace('sk-proj', 'sk\\u002dproj')
+        assert 'sk\\u002d' in escaped
+        assert secret_guard.scrubOutboundText(escaped) == escaped
+
+    def test_the_marker_carries_no_part_of_the_value(self, configured):
+        wire = json.dumps(_wire({'model': 'm', 'messages': [{'role': 'user', 'content': PROVIDER_KEY}]}))
+        assert 'sk-proj' not in wire
+        assert '[secret:OPENAI_TEST]' in wire
+
+
+class TestTheInventoryIsBounded:
+    def test_a_database_password_in_the_env_is_deliberately_NOT_scrubbed(self, configured):
+        """The false positive this door must not create.
+
+        `_PASSWORD` / `_SECRET` / generic `_TOKEN` names are excluded: a user
+        pasting their own database password so the model can write it into a
+        compose file would otherwise get a file containing `[secret:DB_PASSWORD]`
+        and no way to see why. Provider keys are the inventory the install works
+        FROM; a password the user is typing is content they work WITH.
+        """
+        password = 'super-secret-db-pass-1234'
+        os.environ['ACME_DB_PASSWORD'] = password
+        secret_guard._invalidateOutbound()
+        wire = json.dumps(_wire({'model': 'm', 'messages': [{'role': 'user', 'content': password}]}))
+        assert password in wire, 'a user-typed password was rewritten out from under them'
+
+    def test_an_unreadable_store_fails_open_without_disabling_the_gate(self, configured):
+        """A read failure must not be cached as "no credentials exist".
+
+        Failing open is correct (this runs on every request); caching the empty
+        result would leave the door off until the process restarts, silently.
+        """
+        original = config_service.getProvidersStore
+
+        def boom(*_a, **_kw):
+            raise RuntimeError('store locked')
+
+        config_service.getProvidersStore = boom  # type: ignore[assignment]
+        try:
+            secret_guard._invalidateOutbound()
+            wire = json.dumps(_wire({'model': 'm', 'messages': [{'role': 'user', 'content': PROVIDER_KEY}]}))
+            assert PROVIDER_KEY in wire, 'a failed read should not invent a marker'
+        finally:
+            config_service.getProvidersStore = original  # type: ignore[assignment]
+        secret_guard._invalidateOutbound()
+        recovered = json.dumps(_wire({'model': 'm', 'messages': [{'role': 'user', 'content': PROVIDER_KEY}]}))
+        assert PROVIDER_KEY not in recovered, 'the gate stayed off after a transient read failure'
+
+    def test_a_provider_named_after_its_own_key_does_not_echo_it(self, configured):
+        """The marker must not become the leak it replaced."""
+        config_service.saveProvidersStore(
+            {'providers': [{'id': 'weird', 'name': f'acme {PROVIDER_KEY}', 'apiKey': PROVIDER_KEY}]}
+        )
+        secret_guard._invalidateOutbound()
+        wire = json.dumps(_wire({'model': 'm', 'messages': [{'role': 'user', 'content': PROVIDER_KEY}]}))
+        assert wire.count(PROVIDER_KEY) == 0, wire
+        assert '[secret:' in wire
 
 
 class TestARotatedKeyIsNotStale:
     def test_saving_the_store_rebuilds_the_value_set(self, configured):
         """A key edited in Settings must stop being shipped, and the new one too.
 
-        Cached forever, this would scrub a value nobody holds any more and let
-        the CURRENT key through. Goes through `saveProvidersStore`, because that
-        is the door that fires the invalidation — a test that cleared the cache
-        by hand would pass with the wiring missing.
+        Goes through `saveProvidersStore`, because that is the door that fires the
+        invalidation — a test that cleared the cache by hand would pass with the
+        wiring missing.
         """
-        assert PROVIDER_KEY not in json.dumps(dump_openai_upstream_body(_bodyWith(PROVIDER_KEY)))
+        assert PROVIDER_KEY not in json.dumps(_wire({'model': 'm', 'messages': [{'content': PROVIDER_KEY}]}))
 
         rotated = 'sk-proj-uuuuuuuuuuuuuuuuuuuu9999'
         config_service.saveProvidersStore(
             {'providers': [{'id': 'openai', 'name': 'openai-test', 'apiKey': rotated}]}
         )
-        body = json.dumps(dump_openai_upstream_body(_bodyWith(f'old {PROVIDER_KEY} new {rotated}')))
-        assert rotated not in body, 'the rotated key was not picked up'
-        assert PROVIDER_KEY in body, 'the retired key is still being rewritten'
+        wire = json.dumps(
+            _wire({'model': 'm', 'messages': [{'role': 'user', 'content': f'old {PROVIDER_KEY} new {rotated}'}]})
+        )
+        assert rotated not in wire, 'the rotated key was not picked up'
+        assert PROVIDER_KEY in wire, 'the retired key is still being rewritten'

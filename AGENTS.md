@@ -142,11 +142,18 @@ last human one — read off the **persisted** `messages` table (the arriving
 message is flushed at the model-dispatch barrier, so the row this turn is
 reacting to is already there, and a restart cannot launder a runaway). A row is
 Bot-authored when it starts with `BOT_TURN_PREFIX` — the one constant both the
-DM body and the sender wake are built from, so a new inbound author kind that
-skips it silently never counts — or when `messages.source` names a machine
-source. The content column is JSON-encoded, so it is decoded before the prefix
-test; comparing the raw column would find no human row ever and turn the guard
-into a lockout. Opt-in like every rule here that can stop work:
+DM body and the sender wake are built from (the `/api/agents/dm` route too), so a
+new inbound author kind that skips it silently never counts — or when
+`messages.source` names a non-human source. `_turnAuthor` returns three values,
+not two, because a two-way read is wrong in the dangerous direction: compaction
+writes its `<<compressed_summary` block as a **user** row with no provenance, so
+"Bot or human?" calls that row a human and disarms the ceiling in exactly the long
+chats where compaction runs. A machine row neither counts nor resets. `source`
+membership is an explicitly declared subset, not `MACHINE_SOURCES`: that set
+includes `queued_user`, which IS the human typing mid-turn, and counting it would
+make the message that should end the run extend it. The content column is
+JSON-encoded, so it is decoded before the prefix test; comparing the raw column
+would find no human row ever and turn a runaway ceiling into a lockout. Opt-in like every rule here that can stop work:
 `maxUnattendedTurns` absent/0 = off, and 0 must stay writable or an armed
 ceiling can never be disarmed. The ceiling guards the **model's** send door, not
 the store: `POST /api/agents/dm` delivers what a human asked for and a human send
@@ -159,22 +166,31 @@ rides into the transcript once — pasted by the user, quoted by a log line, pri
 by a command whose path looked harmless — is re-sent to whichever gateway is
 active on EVERY later turn, which is why the tool-boundary guard
 (`hooks/secret_guard.py`: deny secret-shaped writes, redact protected-path reads)
-was not enough. `scrubOutboundBody` now runs at the two serialization doors
-(`models/openai.py` / `models/anthropic.py` `dump_*_upstream_body`, re-exported to
-the proxy adapters) and replaces each value with `[secret:<NAME>]`, longest value
-first so a shorter one cannot leave a longer secret's remainder on the wire.
+was not enough. `scrubOutboundBody` runs at the **transport**:
+`BaseProviderClient.wireBody(body)` wraps its two `self.client` calls
+(`requestJson`, `streamSse`), which is the only place that sees every body. It is
+NOT in the `dump_*_upstream_body` serializers, and a review round proved why: the
+workbench dumps an empty `ChatCompletionRequest` and assigns `body['messages']`
+afterwards (`workbench/providers.py`), and the `/v1` proxy appends tool results and
+re-sends after its dump — a serializer door covered neither, while the auth header
+(where a key legitimately belongs) stays untouched at either.
 **Matched by VALUE, never by pattern**: a pattern scrub would rewrite
-key-shaped text a user pasted to ask why their own key 401s, and this is the one
-path every chat request takes — `test_key_shaped_text_the_user_pasted_survives`
-is that control. Values come from the providers store (the Settings door),
-`settings.gatewayApiKey`, and env vars named `*_API_KEY`/`*_TOKEN`/`*_SECRET`/
-`*_PASSWORD`; a credential under 12 characters is ignored (a 3-char "key" would
-substring-mangle prose), and the cache is rebuilt through
-`provider_credentials`' invalidation callback that `saveProvidersStore` already
-fires, so a rotated key stops being shipped. Reads that fail are logged at
-warning, not swallowed: a scrub that silently saw nothing is the same blindness
-as the error envelope that dropped a provider's reason. Tests assert on the
-**serialized body**, not the helper.
+key-shaped text a user pasted to ask why their own key 401s —
+`test_key_shaped_text_the_user_pasted_survives` is that control, and
+`test_a_database_password_in_the_env_is_deliberately_NOT_scrubbed` the other:
+env collection is `*_API_KEY` only, because a DB password the user is working WITH
+must stay visible while a provider key the install works FROM must not. Values come
+from the providers store, `settings.gatewayApiKey` and those env vars; anything
+under 12 characters is ignored (a 3-char "key" would substring-mangle prose). The
+cache is stamped on **both** `providers.json` and `config.json` — the gateway key is
+minted through `saveConfig`, which fires no invalidation callback at all — and the
+stat is taken once per body, never per leaf: on a 641 KB body with 1,001 string
+leaves the per-leaf stamp cost 419.6 ms against 1.94 ms hoisted (the `json.dumps`
+that follows costs 5.9 ms). An EMPTY result is never cached, so a transient read
+failure cannot switch the gate off silently; failed reads log at warning. Stated limits: a value
+that arrives already escaped (`\u0073k-…`, base64 of the transcript) does not match,
+and a keyring-held credential is out of reach. Tests drive a real client through an
+`httpx.MockTransport` and assert on what the provider would receive.
 Malformed tool JSON never executes as `{}` — the loop
 returns a `[Validation Error] … Do NOT stop` self-heal and downgrades to the
 bare tool surface after 3 consecutive failures. Stream rules flag
