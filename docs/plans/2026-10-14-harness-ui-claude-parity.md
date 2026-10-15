@@ -234,7 +234,7 @@ premise was wrong, not the code. (2) The context/cache readout was already unmou
    because only those are in the reference; the DOM renders three (`Sort chats`, `Open
    Workspace Folder`, `Create Sidebar Folder`) and a nested Tasks row adds `New chat in Tasks`
    plus `Delete all tasks`. Two of those are the only door to their capability, so removal is a
-   feature decision; my default is to keep the controls and correct the comment.
+   feature decision; the prose is now corrected (the false claims were the defect a reader would trust); dropping the two buttons remains your call.
 5. **Settings backdrop tint.** `workspace-shell-tier-filter.test.tsx:77` pins an *undimmed*
    backdrop ("floats the panel over the app instead of tinting the background"); the references
    at `2026-10-10 235015` show a dimmed one. A pinned test versus a reference image — one of

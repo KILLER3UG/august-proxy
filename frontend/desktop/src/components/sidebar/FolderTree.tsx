@@ -39,12 +39,22 @@ export function Section({
           {/* Count removed, and the label is sentence case with normal
               tracking. Measured off the Claude reference at 2.4x, the section
               header reads `Chats and tasks` — sentence case, muted, with NO
-              number beside it. The two icons on the right (magnifier, sort) are
-              kept; they are in the reference.
+              number beside it; both hold in this markup.
 
-              August rendered the same total twice, as `CHATS AND TASKS 39`
-              containing a nested `Tasks 39`. The nested `Tasks` group header is
-              removed separately below. */}
+              What this comment used to add — "the two icons on the right
+              (magnifier, sort) are kept; they are in the reference" — never
+              matched the tree: this header has no magnifier (search is a
+              separate textbox in `SessionList`), and it renders three optional
+              controls, `Sort chats`, `Open Workspace Folder` and `Create
+              Sidebar Folder`. The last two are the only door to those
+              capabilities, so they were left alone and the prose was corrected
+              instead. If the reference's two-icon header is the target, that is
+              a removal decision for the owner, not a documentation fix.
+
+              The duplicate total this section once rendered (`CHATS AND TASKS
+              39` containing `Tasks 39`) is gone here; the nested `Tasks` lane
+              header still exists, but in `SessionList.tsx`, with its own
+              `New chat in Tasks` / `Delete all tasks` controls. */}
           <h3 className="text-2xs text-sidebar-foreground/45 font-medium">
             {title}
           </h3>
