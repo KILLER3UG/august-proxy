@@ -163,6 +163,47 @@ a label rendered beside an icon.
 **Gates at writing time:** frontend 227/227 files (`FE_EXIT=0` read from the log's
 own marker), e2e 12/12, `tsc --noEmit` clean, `npm run check:docs` 6/6.
 
+### 8b. Addendum — after two review passes (2026-10-14 late)
+
+The report above was written at `9a7b3ef5`. Two review passes since then changed both the
+shipped set and four of its claims, so they are corrected here rather than left to rot:
+
+| §8 claim | Current state |
+|---|---|
+| "Open: the terminal tab vs the bottom dock" | **Closed by measurement, not decision.** Nothing in the app could add `terminal` as a drawer section, so the tab was unreachable: `RightDrawerTerminalSection.tsx` (436 lines) deleted in `3fe68169`; the dock is the only terminal surface and keeps its picker card. |
+| "27 `tier:'hidden'` sections out of 48" | Wrong counts from a grep that double-counted `SETTINGS_CATEGORIES`. Measured: **44** sections, **18** basic, **26** hidden. |
+| "Verified only in isolation — the drawer chooser" | Now verified live: 12 cards on the real shell, and picking `notes` opened its tab and pane and exited the chooser. |
+| "e2e 12/12" | **19/19**, and both scroll-pin cases now include the streaming one that discriminates (removing the `lastAppliedTopRef` release branch fails it at `free: false` while the idle case keeps passing). |
+
+Shipped by the review passes, each measured before and after in real Chromium:
+
+| Commit | Change |
+|---|---|
+| `31d3223a` | The collapsed working strip kept its plan toggle in the tab order — `aria-hidden` does not withdraw a control; `inert` does. Red-proven: reverting the attribute makes Chromium focus the invisible button. Same commit fixes the design gate I had turned red with my own lab buttons. |
+| `26219ae5` | Both per-message action rows were invisible exactly when keyboard focus reached them (a `group-focus-within:` variant with no `group` ancestor; the user row had no reveal clause at all). Seven focusable buttons per exchange. Measured `focused=0` before, `1` after — and the 150ms opacity transition had to settle or the reading is the pre-animation value. |
+| `425f2101` | `SessionRow` carried `text-[0.78125rem]` over a rule that wins the cascade; computed 13px on `/` and `/_design`, so the class stated a size the app did not render. |
+| `6eaabd32`, `81e9df48` | Six comments described an IA that stopped rendering in October — first corrected from three headers to four, then corrected **again**, because all of them (including my fix) claimed the headers are the rail while `c5748da0` had flattened the unfiltered rail to 18 rows. |
+| `79b5362a`, `abe60049` | A voice-command row printed its registry id as the sentence. The replacement copy then failed under the 6-worker suite and exposed a real readiness race: registration is deferred to idle and the registry is not reactive, so an absence-claiming fallback becomes a permanent lie. The wording is now branch-true. |
+| `68022ddf` | The global `details > summary` reset lived in `chat.css` while two non-chat surfaces (`ErrorBoundary`, the bootstrap error card) depended on it. |
+| `c365c586` | GeneralSection's four native `<select>` boxes migrated to the app's own listbox primitive; two of their `<label>` wrappers had to become divs, since a button is not a labelable element. |
+| `a72cc440` | Jump-to-top sat on the composer at the app's default 1280px window (35.5px of gutter against the 48px a 36px circle needs); re-anchored to the transcript area, with a rect assertion that fails if the anchor is dropped. |
+
+The audit-side deliverable this plan owed but had not produced is now there too: §7 of
+`docs/plans/ui-refactor/audit/2026-10-14-delta-shell-chat-settings.md` re-judges all five
+2026-10-03 audits item by item — 270 verdicts, 130 still-true, 88 already-done, 25 reversed,
+25 stale citations, i.e. 42% of this plan's own source material no longer described the tree.
+
+**Still open, and none of it is work I can do quietly:** the jobs tray destination (its audit
+premise was wrong — non-persisted frontend registry, already opt-in, so "move to a global
+surface" is a feature, not a relocation); the composer row and sidebar density pass;
+`ChangesCard`'s three type sizes and three nested borders; four native selects' *behaviour*
+in the desktop app (offline web mode blocks every click in that panel, pre-existing and proven
+with a control click); the Settings scrim tint, which the references show dimmed and
+`workspace-shell-tier-filter.test.tsx:77` asserts undimmed; the sidebar header whose own
+comment claims two icons while the DOM renders three; and §7's math items, which belong to
+another session's uncommitted files. Nothing is pushed: **`master` is 88 commits ahead of
+`origin/master`** (`git rev-list --count origin/master..HEAD`, not an estimate).
+
 ## Needs review
 
 1. Which chip is `SkillEvolvedChip` meant to be?
