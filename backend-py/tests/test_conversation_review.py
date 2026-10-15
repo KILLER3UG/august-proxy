@@ -421,3 +421,51 @@ class TestArchivedTranscriptIsReviewable:
             'the archive cursor did not advance, so this window is re-read every pass'
         )
         assert sd._reviewCursors().get('s-blank') == ids[-1], 'the live cursor was overwritten'
+
+
+class TestArchiveDraftCarriesEvidence:
+    """A proposal raised from archived content must show the span it came from."""
+
+    def test_a_negative_episode_resolves_to_the_archived_message(self, brain, monkeypatch, tmp_path):
+        from app.services import skill_service
+        from app.services.harness_self_improve import list_proposals
+
+        monkeypatch.setattr(skill_service, '_agentSkillsDir', lambda: tmp_path / 'agent-skills')
+        from app.services.transcript_archive import archive_messages
+
+        archive_messages(
+            's-ev',
+            [{'role': 'user', 'content': 'the erased ledger migration conversation'}],
+            reason='auto-compact',
+        )
+        label = sd.apply_verdict(
+            {
+                'action': 'create_skill',
+                'episode': -1,
+                'name': 'ledger-migration',
+                'description': 'Migrate the billing ledger when the ask arrives already scoped.',
+                'when_to_use': ['- The user hands over a ledger migration with the schema attached.'],
+                'steps': ['Read the existing projection before rewriting.', 'Replay the deltas in order.'],
+                'pitfalls': ['Summarizing the middle without archiving it first.'],
+                'verification': ['The replayed ledger matches the source totals.'],
+            },
+            'review:s-ev',
+            mode='full',
+        )
+        assert label == 'proposal-filed', label
+        filed = list_proposals()
+        assert filed, 'no proposal was filed, so the evidence has nowhere to be'
+        evidence = str(filed[0].get('evidence', ''))
+        assert 'the erased ledger migration conversation' in evidence, (
+            f'a draft from the archive shipped with no evidence of it: {evidence[:200]!r}'
+        )
+
+    def test_a_live_episode_id_does_not_take_the_archive_path(self, brain):
+        """A positive id is a `messages`/`episodes` row; the archive branch must not
+        claim it just because the fingerprint looks like a review pass."""
+        from app.services.transcript_archive import archive_messages
+
+        archive_messages('s-live', [{'role': 'user', 'content': 'ARCHIVED TEXT'}], reason='auto-compact')
+        out = sd._evidenceWindow({'events': []}, 1, 'review:s-live')
+        assert 'ARCHIVED TEXT' not in out, out
+        assert '[archived' not in out, out

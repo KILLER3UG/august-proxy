@@ -1043,13 +1043,32 @@ def _bundledSkillText(name: str) -> tuple[str, str] | None:
         return None
 
 
-def _evidenceWindow(verdict: dict[str, Any], episode_id: Any) -> str:
+def _evidenceWindow(verdict: dict[str, Any], episode_id: Any, fingerprint: str = '') -> str:
     """The episode as the judge saw it, attached to the proposal for the human.
 
     The evidence line used to be built from `verdict['events']` — a key the
     judge never sends — so it came out empty for every real draft. A reviewer
     approving a skill body had no sight of the failure that produced it.
+
+    A negative `episode_id` is a position in the append-only archive, not a row in
+    `messages` (see `transcript_archive.archivedMessages`): the review pass can now
+    distill from a middle that compaction deleted from the live table, and a draft
+    raised from it would otherwise ship with no evidence at all — the reviewer would
+    approve prose whose source they cannot see.
     """
+    if isinstance(episode_id, int) and not isinstance(episode_id, bool) and episode_id < 0:
+        sessionId = fingerprint.split(':', 1)[1] if fingerprint.startswith('review:') else ''
+        if sessionId:
+            try:
+                from app.services.transcript_archive import archivedMessage
+
+                msg = archivedMessage(sessionId, episode_id)
+            except Exception:
+                logger.debug('archived evidence read failed', exc_info=True)
+                msg = None
+            if msg is not None:
+                text = ' '.join(_flattenMessageText(msg.get('content')).split())[:2500]
+                return f'[archived {episode_id}] {msg.get("role", "")}: {text}'
     row = None
     if episode_id is not None:
         try:
@@ -1245,7 +1264,7 @@ def apply_verdict(
         try:
             save_proposal(
                 problem=f'distiller {action} for fingerprint {fingerprint} (episode {episodeId})',
-                evidence=_evidenceWindow(verdict, episodeId)
+                evidence=_evidenceWindow(verdict, episodeId, fingerprint)
                 or f'flagged fingerprint {fingerprint}',
                 proposal=(f'{action}: {name}' + (f' — {description}' if description else ''))[:4000],
                 rollback=(

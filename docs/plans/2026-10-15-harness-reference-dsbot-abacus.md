@@ -598,11 +598,10 @@ stays the single transcript authority; an empty window still advances its cursor
   it survived in and the only thing between that and duplicate memories is the dedupe
   door.
 
-Not built, and stated: `_evidenceWindow` does not yet resolve a negative id from the
-archive, so a skill drafted from archived content still ships without the evidence line a
-human should see before approving. That is the same pre-existing gap the review pass has
-always had (a review verdict has no `episodes` row), and the reviewer was right that
-`review:<sessionId>` fingerprinting deserves a look before the archive widens it.
+Not built, and stated: the archive lookup is wired into `_evidenceWindow` now, so a
+draft raised from a negative episode id ships with the archived span attached; a
+positive id never takes that branch. What remains unseen is the *neighbouring* messages
+— the evidence is the one message the judge cited, not the window around it.
 
 ## Next, in value-per-risk order
 
