@@ -1082,7 +1082,7 @@ export function AssistantBlockTimeline({
                       className={
                         m.scope === 'project'
                           ? 'shrink-0 rounded bg-success/15 px-1 text-2xs uppercase tracking-wide text-success-fg'
-                          : 'shrink-0 rounded bg-sky-500/15 px-1 text-2xs uppercase tracking-wide text-sky-300/90'
+                          : 'shrink-0 rounded bg-info/15 px-1 text-2xs uppercase tracking-wide text-info'
                       }
                       title={m.scope === 'project' ? 'Project memory' : 'Global memory'}
                     >

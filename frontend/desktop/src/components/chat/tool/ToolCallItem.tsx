@@ -204,7 +204,7 @@ export const ToolCallItem = memo(function ToolCallItem({
           <span className="flex items-center gap-1.5 shrink-0 ml-auto pl-2">
             {isRunning && liveBackend.label && (
               <span
-                className="tool-row-meta text-sky-300/90 max-w-[7.5rem] truncate"
+                className="tool-row-meta text-info max-w-[7.5rem] truncate"
                 data-testid="tool-live-backend"
                 title={liveBackend.label}
               >
