@@ -438,12 +438,11 @@ switch** — `contextReliefRotate` is armed by editing `{appData}/data/config.js
 only, verified by 0 frontend references to the key. Boolean brain keys are
 hand-written switches in `MemorySection.tsx`, not generated from `fieldTable`, so
 this needs a placement decision: a switch beside the memory gates, one beside the
-composer's context readout, or nothing (a developer-only knob, like the eval). The
-`compaction` frame also carries a new `relief` field that the zod schema strips
-(z.object is not `.strict()`, so nothing breaks but the card cannot show the
-route); surfacing "re-anchored on a fresh note" instead of "kept the first 0"
-requires the schema + `streamEvents` + `CompactionNoticeCard` edit and a
-running-app check.
+composer's context readout, or nothing (a developer-only knob, like the eval). The `compaction` frame also carries a `relief` field that never reaches the UI:
+`streamEvents.ts` maps an explicit list of fields and `relief` is not in it (the zod
+schema is a warning-only cross-check, not the parser, so blaming it would be wrong).
+`CompactionNoticeCard` has no use for it either. Surfacing "re-anchored on a fresh
+note" is therefore a reader field + card copy change, and needs a running-app check.
 
 Verification: `ruff`, `mypy` (339 files) clean; `tests/test_context_relief_rotate.py`
 14 passed, `test_compaction_policy_parity.py` 10, `test_brain_config.py` +
