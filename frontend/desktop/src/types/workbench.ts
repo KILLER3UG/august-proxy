@@ -246,7 +246,7 @@ export type WorkbenchEvent =
   | { type: 'toolResult'; data: { id: string; content: unknown; isError?: boolean } }
   | { type: 'session'; data: WorkbenchSession }
   | { type: 'btw'; data: WorkbenchBtwResult }
-  | { type: 'compaction'; data: { headCount: number; tailCount: number; compressedCount: number; originalTokens: number; compressedTokens: number; underThreshold?: boolean; threshold?: number; contextWindow?: number } }
+  | { type: 'compaction'; data: { headCount?: number; tailCount?: number; compressedCount: number; originalTokens: number; compressedTokens: number; underThreshold?: boolean; threshold?: number; contextWindow?: number; relief?: string; pinnedCount?: number; replayedCount?: number } }
   | { type: 'done'; data: { usage?: WorkbenchTurnUsage } }
   | { type: 'error'; data: { message: string } }
   | {
@@ -297,6 +297,14 @@ export interface WorkbenchEventHandlers {
     // required number here forced the reader to invent 0 for it.
     headCount?: number;
     tailCount?: number;
+    /** Which relief route the compressor took: `compact` folds the middle in
+     *  place, `rotate` replaces the span with the handoff note and replays the
+     *  opening ask. Emitted on every frame that knows it — the two routes leave
+     *  the transcript in different shapes, so the card cannot say "kept the first
+     *  N" about a rotate, which keeps no head at all. */
+    relief?: string;
+    pinnedCount?: number;
+    replayedCount?: number;
     compressedCount: number;
     originalTokens: number;
     compressedTokens: number;

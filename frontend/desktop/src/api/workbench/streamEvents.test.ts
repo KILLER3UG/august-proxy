@@ -150,6 +150,39 @@ describe('previously-undispatched backend events', () => {
     expect(info.compressedCount).toBe(12);
   });
 
+  it('forwards the relief route the compressor reported', () => {
+    // `relief` was emitted on every pre-turn and budget frame and dropped here,
+    // so a rotate (which keeps NO head) rendered the same "kept the first N"
+    // sentence as a compact-in-place.
+    const onCompaction = vi.fn();
+    dispatchWorkbenchEvent(
+      'compaction',
+      {
+        relief: 'rotate', headCount: 0, tailCount: 9, pinnedCount: 2, replayedCount: 1,
+        compressedCount: 31, originalTokens: 400, compressedTokens: 90,
+      },
+      { onCompaction },
+      8,
+    );
+    const info = onCompaction.mock.calls[0][0];
+    expect(info.relief).toBe('rotate');
+    expect(info.pinnedCount).toBe(2);
+    expect(info.replayedCount).toBe(1);
+  });
+
+  it('leaves an absent relief absent', () => {
+    const onCompaction = vi.fn();
+    dispatchWorkbenchEvent(
+      'compaction',
+      { compressedCount: 12, originalTokens: 400, compressedTokens: 90 },
+      { onCompaction },
+      9,
+    );
+    const info = onCompaction.mock.calls[0][0];
+    expect(info.relief).toBeUndefined();
+    expect(info.pinnedCount).toBeUndefined();
+  });
+
   it('turn_end dispatches onTurnEnd with reason, rounds, and error flag', () => {
     const onTurnEnd = vi.fn();
     dispatchWorkbenchEvent(

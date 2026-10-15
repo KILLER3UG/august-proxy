@@ -128,6 +128,9 @@ export function dispatchWorkbenchEvent(
         // never sent.
         headCount: p?.headCount == null ? undefined : Number(p.headCount),
         tailCount: p?.tailCount == null ? undefined : Number(p.tailCount),
+        relief: typeof p?.relief === 'string' ? p.relief : undefined,
+        pinnedCount: p?.pinnedCount == null ? undefined : Number(p.pinnedCount),
+        replayedCount: p?.replayedCount == null ? undefined : Number(p.replayedCount),
         compressedCount: Number(p?.compressedCount) || 0,
         originalTokens: Number(p?.originalTokens) || 0,
         compressedTokens: Number(p?.compressedTokens) || 0,

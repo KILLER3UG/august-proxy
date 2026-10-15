@@ -246,6 +246,9 @@ function MessageBubbleInner({
     const ctx = (message.context ?? {}) as {
       headCount?: number;
       tailCount?: number;
+      relief?: string;
+      pinnedCount?: number;
+      replayedCount?: number;
       compressedCount?: number;
       originalTokens?: number;
       compressedTokens?: number;
@@ -263,6 +266,9 @@ function MessageBubbleInner({
             // this; the reader and card unit tests both passed without it.
             headCount: ctx.headCount,
             tailCount: ctx.tailCount,
+            relief: ctx.relief,
+            pinnedCount: ctx.pinnedCount,
+            replayedCount: ctx.replayedCount,
             compressedCount: ctx.compressedCount ?? 0,
             originalTokens: ctx.originalTokens ?? 0,
             compressedTokens: ctx.compressedTokens ?? 0,

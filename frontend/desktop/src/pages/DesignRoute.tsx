@@ -529,6 +529,16 @@ const LAB_STRIP_MESSAGES: ChatMessage[] = [
     context: { compressedCount: 12, originalTokens: 400, compressedTokens: 90 },
     timestamp: '2026-10-14T10:00:12Z',
   },
+  // The other relief route: rotate keeps NO head and replays the opening ask, so
+  // it must not render the "kept the first N" clause that is true of compact.
+  {
+    id: 'cp3',
+    role: 'assistant',
+    kind: 'compaction-notice',
+    content: '',
+    context: { relief: 'rotate', headCount: 0, tailCount: 9, replayedCount: 1, pinnedCount: 2, compressedCount: 31, originalTokens: 41900, compressedTokens: 8120, contextWindow: 40000 },
+    timestamp: '2026-10-14T10:00:14Z',
+  },
 ];
 
 function WorkingStripPane({ streaming }: { streaming: boolean }) {

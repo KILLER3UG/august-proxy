@@ -16,6 +16,13 @@ export interface CompactionNoticeInfo {
    *  reactive rescue. Rendered as an omitted clause, never as "first 0". */
   headCount?: number;
   tailCount?: number;
+  /** `compact` folds the middle in place; `rotate` replaces the whole span with
+   *  the handoff note and replays the opening ask, keeping NO head. Read from the
+   *  frame: both routes report a compressed count, and only one of them can
+   *  honestly say "kept the first N". */
+  relief?: string;
+  pinnedCount?: number;
+  replayedCount?: number;
   compressedCount: number;
   originalTokens: number;
   compressedTokens: number;
@@ -30,13 +37,20 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
+const rotates = (info: CompactionNoticeInfo) => info.relief === 'rotate';
+
 export function CompactionNoticeCard({ info }: { info: CompactionNoticeInfo }) {
   const [open, setOpen] = useState(false);
   const saved = Math.max(0, info.originalTokens - info.compressedTokens);
+  const rotate = rotates(info);
   const label =
     info.compressedCount > 0
-      ? `Context compacted — summarized ${info.compressedCount} messages`
-      : 'Context compacted';
+      ? rotate
+        ? `Context rotated onto its handoff note — ${info.compressedCount} messages replaced`
+        : `Context compacted — summarized ${info.compressedCount} messages`
+      : rotate
+        ? 'Context rotated onto its handoff note'
+        : 'Context compacted';
 
   return (
     <motion.div
@@ -75,9 +89,16 @@ export function CompactionNoticeCard({ info }: { info: CompactionNoticeInfo }) {
             'text-[0.78125rem] leading-relaxed text-muted-foreground/85',
           )}
         >
-          {info.headCount != null && info.tailCount != null
-            ? `Kept the first ${info.headCount} and last ${info.tailCount} messages; summarized ${info.compressedCount} in the middle`
-            : `Summarized ${info.compressedCount} messages in the middle`}
+          {rotate
+            ? (info.tailCount != null
+                ? `Rotated onto the handoff note — kept the last ${info.tailCount} messages` +
+                  (info.replayedCount
+                    ? ` and replayed the opening ${info.replayedCount === 1 ? 'ask' : 'asks'}`
+                    : '')
+                : `Rotated onto the handoff note; summarized ${info.compressedCount} messages into it`)
+            : info.headCount != null && info.tailCount != null
+              ? `Kept the first ${info.headCount} and last ${info.tailCount} messages; summarized ${info.compressedCount} in the middle`
+              : `Summarized ${info.compressedCount} messages in the middle`}
           {info.contextWindow
             ? ` to stay within ${formatContextWindow(info.contextWindow)} context`
             : ''}
@@ -104,6 +125,13 @@ export function buildCompactionNoticeMessage(info: CompactionNoticeInfo, seq?: n
     context: {
       headCount: info.headCount,
       tailCount: info.tailCount,
+      // Named in the rebuild or the persisted card loses the route and renders
+      // "Kept the first N" for a rotate that kept no head. Same trap as the
+      // provider store: a field added to one shape but not the other is
+      // write-only.
+      relief: info.relief,
+      pinnedCount: info.pinnedCount,
+      replayedCount: info.replayedCount,
       compressedCount: info.compressedCount,
       originalTokens: info.originalTokens,
       compressedTokens: info.compressedTokens,
