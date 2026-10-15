@@ -60,7 +60,7 @@ nothing from either was executed.
    key there publishes it onward indefinitely. Now refused at `memory_store/rest.py save_fact`, the
    one door every fact write passes (the same door that already refuses `project:` scopes and
    cross-scope overwrites), labels never values. See "Shipped" below.
-7. **[R] Secrets scrubbed out of every outbound model request** (`src/host/secrets.js` header: a
+7. **[V, shipped today] Secrets scrubbed out of every outbound model request** (`src/host/secrets.js` header: a
    value lives in `secrets.json` mode 600, tool results lose it before they are saved, and every
    request has it replaced by `[secret:<NAME>]`). August's guard is tool-boundary-scoped
    (`secret_guard.py` PRE_TOOL_USE scans write args, POST_TOOL_USE redacts reads on protected paths),
@@ -191,7 +191,7 @@ end-to-end through `saveBrainConfig`** — a guard nobody can arm is a guard tha
 **Red-proved**: with the door's ceiling forced to 0, exactly the three enforcement cases fail and
 the measurement cases still pass; restored, all 18 pass.
 
-## Reviewer round on the two shipped items
+## Reviewer round on the first two shipped items
 
 Two review agents (design quality + runtime correctness) were pointed at both
 changes; every claim was re-checked in the code before acting. Four were real and
@@ -258,6 +258,43 @@ the claim this project makes about itself, and this one was not green: it is a
 load-sensitivity bug in that test, the same class AGENTS.md already documents for
 the WAL and round-snapshot races.
 
+## Shipped: the outbound credential scrub
+
+`app/services/hooks/secret_guard.py` gained `scrubOutboundBody`, wired into BOTH serialization doors
+(`models/openai.py` / `models/anthropic.py` `dump_*_upstream_body`). It replaces every credential
+value this install holds with `[secret:<NAME>]`, longest value first, walking string leaves only.
+
+Why the tool-boundary guard wasn't enough: it denies a secret-shaped *write* and redacts a
+protected-path *read*, but a key that reaches the transcript by any other route — pasted by the
+user, quoted from a log, printed by a command whose path looked harmless — is then re-sent to
+whichever gateway is active on every later turn. That is the loop the reference closes at the
+request door.
+
+**Matched by value, never by pattern**, and that is the load-bearing choice: this is the one
+serialization path every chat request takes (AGENTS.md: "a wrong key breaks all chat"), so a
+pattern scrub would rewrite key-shaped text a user pasted precisely to ask why their own key 401s.
+`test_key_shaped_text_the_user_pasted_survives` is the control for that;
+`test_an_install_with_no_credentials_is_byte_identical` is the control for inertness;
+`test_a_credential_shorter_than_the_floor_is_ignored` is the control against substring mangling.
+Reads that fail are logged at warning rather than swallowed — a gate that silently saw no
+credentials is the same blindness class as the error envelope fixed above. The cache busts through
+the store's own invalidation callback (`saveProvidersStore` already fires it), tested by writing a
+rotated key through the real door, not by clearing the cache by hand.
+
+**What was not copied:** the reference keeps its secrets in one `secrets.json` with a name per
+entry, so a name-based replace is exact there. August's credentials live in `providers.json` (one
+key per provider), `settings.gatewayApiKey` and dev-installed env vars, so the door enumerates
+values from three sources and names each label by the provider the user chose. A key held only in
+an OS keyring is out of reach here — the door scrubs what the app can actually read, and says so in
+its docstring rather than claiming a guarantee it cannot make.
+
+New `tests/test_outbound_secret_scrub.py` (10), asserting on the **serialized body**. **Red-proved**:
+with the OpenAI door's call removed, 5 fail (and only the OpenAI-side ones — the two Anthropic-door
+cases keep passing, which is the correct shape for a one-door toggle), while the three negative
+controls still pass. `ruff check .` and `mypy app/` clean; `test_dump_upstream_body` goldens
+unaffected; whole backend suite 5416 passed / 5 skipped in 21m34s, with the 200 MB paging test
+included and green this time.
+
 ## Next, in value-per-risk order
 
 1. **Review-from-archive** (abacus item 4) — **attempted today, larger than it reads, and that is
@@ -285,4 +322,9 @@ the WAL and round-snapshot races.
    `deliver()` and tagged); and `MAX_UNREAD_REQUESTS`, because an unread DM backlog in August is a
    queue depth rather than a runaway, and arming it would refuse *delivery* instead of refusing
    *work*. Say so if you want either anyway.
-4. **Outbound secret scrub** (DS Bot item 7), tested on the serialized body.
+4. **Key-free labelled eval + scripted provider** (DS Bot item 8) — the last adopted mechanism not
+   yet built. `dev/steward-eval.mjs` runs 21 cases against a mock LLM that logs system-prompt and
+   tool-hash reuse; `dev/bench.sh` forces an overflow by shrinking `CONTEXT_WINDOW`. August removed
+   its harness evals by request, so nothing measures whether the learning loop or the rescue ladders
+   help. Build this before item 2, which otherwise ships a model-chosen context policy with no
+   measurement behind it.

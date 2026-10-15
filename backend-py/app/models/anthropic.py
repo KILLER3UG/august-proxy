@@ -11,6 +11,7 @@ from typing import TypedDict, cast
 
 from app.adapters.case_converters import strip_none_deep
 from app.models.base import ExtraAllowBaseModel, JsonValue
+from app.services.hooks.secret_guard import scrubOutboundBody
 from app.services.message_sources import strip_august_message_keys
 
 # ── Strict models (the proxy reads/constructs these) ──────────────────────
@@ -70,7 +71,8 @@ def dump_anthropic_upstream_body(
         dumped.pop(key, None)
     if 'messages' in dumped:
         dumped['messages'] = strip_august_message_keys(dumped['messages'])
-    return dumped
+    # Never ship this install's own credentials onward — see the OpenAI dump.
+    return cast('dict[str, object]', scrubOutboundBody(dumped))
 
 
 class AnthropicRequest(ExtraAllowBaseModel):

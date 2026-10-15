@@ -154,6 +154,27 @@ is the reset, so gating it would be a lockout. A new numeric brain key needs all
 three of `numKeys`, a `fieldTable` entry defaulting to `None` (absent, not 0) and
 an explicit range branch — the validator's fallback range starts at 1 — which is
 what `tests/test_turn_limits_fields.py` pins against the Settings panel.
+**The outbound body is scrubbed of this install's own credentials.** A key that
+rides into the transcript once — pasted by the user, quoted by a log line, printed
+by a command whose path looked harmless — is re-sent to whichever gateway is
+active on EVERY later turn, which is why the tool-boundary guard
+(`hooks/secret_guard.py`: deny secret-shaped writes, redact protected-path reads)
+was not enough. `scrubOutboundBody` now runs at the two serialization doors
+(`models/openai.py` / `models/anthropic.py` `dump_*_upstream_body`, re-exported to
+the proxy adapters) and replaces each value with `[secret:<NAME>]`, longest value
+first so a shorter one cannot leave a longer secret's remainder on the wire.
+**Matched by VALUE, never by pattern**: a pattern scrub would rewrite
+key-shaped text a user pasted to ask why their own key 401s, and this is the one
+path every chat request takes — `test_key_shaped_text_the_user_pasted_survives`
+is that control. Values come from the providers store (the Settings door),
+`settings.gatewayApiKey`, and env vars named `*_API_KEY`/`*_TOKEN`/`*_SECRET`/
+`*_PASSWORD`; a credential under 12 characters is ignored (a 3-char "key" would
+substring-mangle prose), and the cache is rebuilt through
+`provider_credentials`' invalidation callback that `saveProvidersStore` already
+fires, so a rotated key stops being shipped. Reads that fail are logged at
+warning, not swallowed: a scrub that silently saw nothing is the same blindness
+as the error envelope that dropped a provider's reason. Tests assert on the
+**serialized body**, not the helper.
 Malformed tool JSON never executes as `{}` — the loop
 returns a `[Validation Error] … Do NOT stop` self-heal and downgrades to the
 bare tool surface after 3 consecutive failures. Stream rules flag

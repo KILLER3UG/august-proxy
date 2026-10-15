@@ -6,10 +6,14 @@ POST_TOOL_USE: redacts secrets from read results on protected paths.
 
 from __future__ import annotations
 
+import logging
 import re
 
+from app.json_narrowing import as_dict, as_list, as_str
 from app.services.hooks.registry import HookRegistry
 from app.services.hooks.types import HookContext, HookEvent, HookResult
+
+logger = logging.getLogger('august.hooks.secret_guard')
 
 # Secret patterns (never log the matched value)
 _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
@@ -104,6 +108,133 @@ async def _post_tool_redact(ctx: HookContext) -> HookResult:
         if redacted != ctx.tool_result:
             return HookResult(action='modify', modified_result=redacted)
     return HookResult(action='allow')
+
+
+# ── outbound scrub ───────────────────────────────────────────────────────────
+# The two guards above police the TOOL boundary: a write that carries a secret is
+# denied, and a read of a protected path is redacted. Neither covers the way a
+# credential actually leaves: it rides into the transcript once (pasted by the
+# user, quoted by a log line, printed by a command whose path looked harmless)
+# and is then re-sent to whichever gateway is active on EVERY later turn.
+# DeepSeek-Bot closes that at the request door in `secrets.js` — the value is
+# replaced by `[secret:<NAME>]` on the wire, so the machine's own credential
+# inventory never travels in a prompt body.
+#
+# Matched by VALUE, never by pattern, and only for credentials this app holds.
+# A pattern scrub here would rewrite anything key-shaped: a user pasting their own
+# `sk-…` to ask why it returns 401 would get advice about a string the model can
+# no longer see. This is the one serialization path every chat request takes, so
+# the false-positive cost is the whole product.
+_OUTBOUND_MIN_LEN = 12
+_outboundCache: list[tuple[str, str]] | None = None
+_outboundWired = False
+
+
+def _outboundLabel(name: str) -> str:
+    clean = re.sub(r'[^A-Za-z0-9]+', '_', str(name or '')).strip('_').upper()
+    return f'[secret:{clean[:48] or "CREDENTIAL"}]'
+
+
+def _collectOutboundSecrets() -> list[tuple[str, str]]:
+    """(value, marker) for every credential this install holds.
+
+    Sources: the providers store (where Settings writes every configured key),
+    the gateway key, and environment variables NAMED like credentials — the last
+    is a name heuristic, not a registry, because a dev install exports keys the
+    store never sees; a key held only in a keyring is out of reach here.
+
+    Longest first: replacing a short value before a longer one that contains it
+    would leave the longer secret's remainder on the wire.
+    """
+    found: dict[str, str] = {}
+
+    def add(value: object, name: object) -> None:
+        text = as_str(value, '').strip()
+        if len(text) >= _OUTBOUND_MIN_LEN:
+            found.setdefault(text, _outboundLabel(as_str(name, '')))
+
+    try:
+        from app.services import config_service
+
+        store = as_dict(config_service.getProvidersStore())
+        for entry in as_list(store.get('providers'), []):
+            if isinstance(entry, dict):
+                add(entry.get('apiKey') or entry.get('api_key'), entry.get('name') or entry.get('id'))
+    except Exception:  # noqa: BLE001 — fails open, but logged
+        # Fails OPEN on purpose — this runs on every chat request and must not
+        # break a turn. But it logs: a scrub that silently read nothing is the
+        # same class of blindness as the error envelope that swallowed a
+        # provider's reason, and nobody would know the gate was off.
+        logger.warning('outbound scrub: provider store unreadable', exc_info=True)
+    try:
+        from app.config import settings
+
+        add(getattr(settings, 'gatewayApiKey', None), 'gateway')
+    except Exception:  # noqa: BLE001 — fails open, but logged
+        logger.warning('outbound scrub: gateway key unreadable', exc_info=True)
+    try:
+        import os
+
+        for name, value in os.environ.items():
+            if name.endswith(('_API_KEY', '_TOKEN', '_SECRET', '_PASSWORD')):
+                add(value, name)
+    except Exception:  # noqa: BLE001 — fails open, but logged
+        logger.warning('outbound scrub: environment unreadable', exc_info=True)
+    return sorted(found.items(), key=lambda item: -len(item[0]))
+
+
+def _outboundSecrets() -> list[tuple[str, str]]:
+    """The cache, busted through the store's own invalidation hook.
+
+    `saveProvidersStore` fires `provider_credentials._fireInvalidation`, so a key
+    edited in Settings stops being shipped on the next request without a per
+    request file read — the stamp-on-read pattern AGENTS.md records for the price
+    index, but through the callback the store already offers.
+    """
+    global _outboundCache, _outboundWired
+    if _outboundCache is None:
+        _outboundCache = _collectOutboundSecrets()
+        if not _outboundWired:
+            _outboundWired = True
+            try:
+                from app.services import provider_credentials
+
+                provider_credentials.registerInvalidationCallback(_invalidateOutbound)
+            except Exception:  # noqa: BLE001 — the cache still rebuilds
+                logger.warning('outbound scrub: invalidation hook unavailable', exc_info=True)
+    return _outboundCache
+
+
+def _invalidateOutbound() -> None:
+    global _outboundCache
+    _outboundCache = None
+
+
+def scrubOutboundText(text: str) -> str:
+    """Replace this install's credential values with named markers."""
+    out = text
+    for value, marker in _outboundSecrets():
+        if value in out:
+            out = out.replace(value, marker)
+    return out
+
+
+def scrubOutboundBody(value: object) -> object:
+    """Recursively scrub the string leaves of an outbound request body.
+
+    Keys, structure and non-string values are rebuilt untouched — this runs on
+    the serialization path every chat request takes, so a body with no credential
+    in it must come back byte-identical.
+    """
+    if not _outboundSecrets():
+        return value
+    if isinstance(value, str):
+        return scrubOutboundText(value)
+    if isinstance(value, dict):
+        return {k: scrubOutboundBody(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [scrubOutboundBody(v) for v in value]
+    return value
 
 
 def register(reg: HookRegistry) -> None:
