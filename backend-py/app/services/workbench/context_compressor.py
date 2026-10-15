@@ -30,7 +30,11 @@ PROTECTED_TOOL_TOKENS = 40_000
 PRUNE_THRESHOLD_CHARS = 8192
 PRUNE_HEAD_CHARS = 4096
 PRUNE_TAIL_CHARS = 1024
-CLEARED_MARKER = '[Old tool result content cleared]'
+# A PREFIX, not a complete sentence: the cleared marker is followed by the name of
+# the call it replaced when that is knowable, and a marker persisted by an older
+# build (`[Old tool result content cleared]`) must still be recognized as already
+# pruned rather than re-eroded on the next turn.
+CLEARED_MARKER = '[Old tool result content cleared'
 PRUNE_ELISION_MARKER = '[... middle omitted'
 # Tier (b) compaction ratios (documented calibration defaults): trigger at
 # 0.8 × context window, retain the newest 0.16 verbatim, cap the summary at
@@ -223,6 +227,21 @@ def _slotText(msg: dict[str, object], slot: tuple[str, int] | None) -> str:
     return ''
 
 
+def _slotCallId(msg: dict[str, object], slot: tuple[str, int] | None) -> str:
+    """The call id a tool-result slot answers, or '' when it names none."""
+    if slot is None:
+        return ''
+    kind, idx = slot
+    if kind == 'content':
+        return as_str(msg.get('tool_call_id'))
+    content = msg.get('content')
+    if isinstance(content, list) and 0 <= idx < len(content):
+        block = content[idx]
+        if isinstance(block, dict):
+            return as_str(block.get('tool_use_id'))
+    return ''
+
+
 def _rewriteSlot(msg: dict[str, object], slot: tuple[str, int] | None, text: str) -> dict[str, object]:
     """Return a copy of ``msg`` with one tool-result slot replaced."""
     if slot is None:
@@ -248,10 +267,70 @@ def _rewriteSlot(msg: dict[str, object], slot: tuple[str, int] | None, text: str
     return copy
 
 
-def _pruneOne(text: str) -> str:
+def _callSubjects(messages: list[dict[str, object]]) -> dict[str, str]:
+    """`tool_call_id` → the shortest thing that names the call that made it.
+
+    A cleared result said only `[Old tool result content cleared]`. The model knew
+    SOMETHING had been blanked but not what, so it could not decide whether to
+    re-read that file deliberately — it had to guess, or re-run the whole step.
+    Naming the call makes the loss inspectable. `[]` means the call was not found:
+    never invent a subject.
+    """
+    out: dict[str, str] = {}
+    for m in messages:
+        if m.get('role') != 'assistant':
+            continue
+        content = m.get('content')
+        blocks = [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
+        for b in blocks:
+            if b.get('type') != 'tool_use':
+                continue
+            cid = as_str(b.get('id'))
+            if cid:
+                out[cid] = _subjectOf(as_str(b.get('name')), b.get('input'))
+        for tc in as_list(m.get('tool_calls')):
+            if not isinstance(tc, dict):
+                continue
+            cid = as_str(tc.get('id'))
+            if not cid or cid in out:
+                continue
+            fn = tc.get('function')
+            name = as_str(fn.get('name')) if isinstance(fn, dict) else as_str(tc.get('name'))
+            rawArgs = fn.get('arguments') if isinstance(fn, dict) else None
+            if isinstance(rawArgs, str):
+                import json as _json
+
+                try:
+                    argsObj: object = _json.loads(rawArgs)
+                except (ValueError, TypeError):
+                    argsObj = {}
+            elif isinstance(rawArgs, dict):
+                argsObj = rawArgs
+            else:
+                argsObj = {}
+            out[cid] = _subjectOf(name, argsObj if isinstance(argsObj, dict) else {})
+    return out
+
+
+def _subjectOf(name: str, args: object) -> str:
+    """`read_file src/a.ts`; empty when nothing identifies the call."""
+    target = ''
+    if isinstance(args, dict):
+        for key in ('path', 'file_path', 'filePath', 'pattern', 'query', 'command', 'url'):
+            val = args.get(key)
+            if isinstance(val, str) and val.strip():
+                target = ' '.join(val.split())[:120]
+                break
+    label = name.strip()
+    if not label:
+        return ''
+    return f'{label} {target}'.strip()
+
+
+def _pruneOne(text: str, subject: str = '') -> str:
     """Stage A rewrite of a single old tool result (deterministic)."""
     if len(text) <= PRUNE_THRESHOLD_CHARS:
-        return CLEARED_MARKER
+        return f'{CLEARED_MARKER} — {subject}]' if subject else f'{CLEARED_MARKER}]'
     omitted = len(text) - PRUNE_HEAD_CHARS - PRUNE_TAIL_CHARS
     return (
         text[:PRUNE_HEAD_CHARS]
@@ -290,13 +369,15 @@ def pruneToolOutputs(
             acc += tokens
             newest = False
     out = list(messages)
+    subjects = _callSubjects(messages)
     for i, slot, text in slots:
         key = (i, slot[1] if slot else -1)
         if key in protected:
             continue
-        if not text or text == CLEARED_MARKER or PRUNE_ELISION_MARKER in text[: PRUNE_HEAD_CHARS + 80]:
-            continue  # already pruned — idempotent
-        out[i] = _rewriteSlot(out[i], slot, _pruneOne(text))
+        if not text or text.startswith(CLEARED_MARKER) or PRUNE_ELISION_MARKER in text[: PRUNE_HEAD_CHARS + 80]:
+            continue  # already pruned — idempotent, suffix included
+        callId = _slotCallId(out[i], slot)
+        out[i] = _rewriteSlot(out[i], slot, _pruneOne(text, subjects.get(callId, '') if callId else ''))
     return out
 
 

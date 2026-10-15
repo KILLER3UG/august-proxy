@@ -44,7 +44,8 @@ class TestPruneToolOutputs:
     def testOldSmallOutputCleared(self):
         msgs = [_toolMsg('old small result'), _assistantText('mid'), _toolMsg('y' * 5000)]
         out = cc.pruneToolOutputs(msgs, protectTokens=100)
-        assert out[0]['content'] == cc.CLEARED_MARKER
+        # No `tool_call_id` on the row, so nothing is invented about its subject.
+        assert out[0]['content'] == f'{cc.CLEARED_MARKER}]'
         # the newest result stays
         assert out[2]['content'] == 'y' * 5000
 
@@ -83,7 +84,12 @@ class TestPruneToolOutputs:
         ]
         out = cc.pruneToolOutputs(msgs, protectTokens=100)
         block = out[1]['content'][0]  # type: ignore[index]
-        assert block['content'] == cc.CLEARED_MARKER
+        # `t1` resolves to the assistant's `tool_use`, so the model is told WHICH
+        # call was dropped. This fixture's call carries no arguments, so the
+        # subject is the tool name alone — no path is invented.
+        assert block['content'].startswith(cc.CLEARED_MARKER)
+        assert 'read_file' in block['content'], block['content']
+        assert 'a.py' not in block['content'], block['content']
         # original untouched
         assert msgs[1]['content'][0]['content'] == 'old result text'  # type: ignore[index]
 
@@ -285,3 +291,59 @@ class TestCompactionLock:
         # Simulate a mid-compaction crash: the lock is left far in the past.
         s._compaction_lock['startedAt'] -= cc.LOCK_TTL_S + 10  # type: ignore[operator]
         assert cc.acquireCompactionLock(s) is True
+
+
+class TestClearedMarkerNamesWhatItDropped:
+    """A cleared result used to say only that something was cleared. The model then
+    had to guess which file, or re-run the whole step to find out — which is the
+    opposite of "subject recoverable" (abacus `microcompact`)."""
+
+    def test_an_openai_call_names_its_tool_and_target(self):
+        msgs = [
+            {
+                'role': 'assistant',
+                'content': 'ok',
+                'tool_calls': [
+                    {'id': 'c1', 'function': {'name': 'search_files', 'arguments': '{"pattern": "ledger"}'}}
+                ],
+            },
+            {'role': 'tool', 'tool_call_id': 'c1', 'content': 'old hit list'},
+            _toolMsg('newest ' + 'q' * 5000),
+        ]
+        out = cc.pruneToolOutputs(msgs, protectTokens=100)
+        cleared = str(out[1]['content'])
+        assert cleared.startswith(cc.CLEARED_MARKER)
+        assert 'search_files ledger' in cleared, cleared
+
+    def test_an_unmatched_call_id_names_nothing(self):
+        """An id with no call in the transcript must not borrow some other call's
+        subject — a wrong subject is worse than none, because the model trusts it."""
+        msgs = [
+            {
+                'role': 'assistant',
+                'content': 'ok',
+                'tool_calls': [{'id': 'other', 'function': {'name': 'read_file', 'arguments': '{"path":"x"}'}}],
+            },
+            {'role': 'tool', 'tool_call_id': 'missing', 'content': 'old result'},
+            _toolMsg('newest ' + 'q' * 5000),
+        ]
+        out = cc.pruneToolOutputs(msgs, protectTokens=100)
+        assert out[1]['content'] == f'{cc.CLEARED_MARKER}]'
+
+    def test_a_legacy_marker_is_not_pruned_again(self):
+        """Idempotence spans the old exact text, which had the closing bracket and
+        no subject: persisted history must not be re-eroded every turn."""
+        legacy = {'role': 'tool', 'tool_call_id': 'c9', 'content': '[Old tool result content cleared]'}
+        msgs = [
+            {
+                'role': 'assistant',
+                'content': 'ok',
+                'tool_calls': [{'id': 'c9', 'function': {'name': 'read_file', 'arguments': '{"path":"y"}'}}],
+            },
+            legacy,
+            _toolMsg('newest ' + 'q' * 5000),
+        ]
+        once = cc.pruneToolOutputs(msgs, protectTokens=100)
+        twice = cc.pruneToolOutputs(once, protectTokens=100)
+        assert once[1]['content'] == '[Old tool result content cleared]'
+        assert twice[1]['content'] == once[1]['content']

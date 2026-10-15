@@ -98,7 +98,7 @@ nothing from either was executed.
 | Item | Verdict | Evidence / where it lands |
 |---|---|---|
 | `eval --state both` (measured lift) | **PARTIAL** | `turn_outcomes.py:622 skill_lift()` already computes ok-rate-with minus without from real turns ("no evidence ≠ 0.0"), consumed by `capabilities_prompt.py:334` and pinned by `tests/test_skill_relevance_prior.py:227`; `app/bench/cli.py` runs one task in one memory state. So the *measurement shape* exists; the two-arm suite does not, and golden harness evals were removed by request. |
-| Microcompact, subject recoverable | **PARTIAL** | `context_compressor.py:209 pruneToolOutputs` blanks old results; `_splitUnits:270` keeps the assistant call+args verbatim, so tool *calls* survive. Gap: `CLEARED_MARKER:33` names nothing, and no model-facing tool resolves `tool_call_id` → archived bytes. |
+| Microcompact, subject recoverable | **SHIPPED (subject), PARTIAL (bytes)** | `context_compressor.py:209 pruneToolOutputs` blanks old results; `_splitUnits` keeps the assistant call+args verbatim, so tool *calls* survive. The cleared marker used to name nothing — it now resolves the slot's `tool_call_id` / `tool_use_id` back to the call that made it and appends `read_file src/a.ts`, so the model can decide to re-read that file instead of guessing or re-running the step. `CLEARED_MARKER` became a PREFIX so a marker persisted by an older build is still recognized as already-pruned. Remaining gap unchanged: no model-facing tool resolves an archived `tool_call_id` back to its bytes. |
 | Append-only per-layer context with `(cleared…)` markers | **ABSENT — deliberate** | August freezes the boot index and volatile-tails the rest on purpose (`workbench.py:954-1049`, `prompt_segments_cache.py:70-74`, `tests/test_prompt_cache_stability.py`); item 3 would re-read ~29k cached prompt bytes per turn. Decline. |
 | Reflection **before** compaction erases evidence | **PARTIAL, real gap** | **[V] Verified by me:** compaction does `session.messages = list(compressed)` + `saveSessions()` (`workbench.py:2819-2826`) and `memory_store/sessions.py:212` states "A row the snapshot no longer contains IS deleted"; meanwhile `skill_distiller._reviewWindow:1539` reads `messages WHERE id > cursor`. An append-only archive of exactly that content already exists (`app/services/transcript_archive.py`, written at `workbench.py:2778`) but only `routers/workbench.py:2248` reads it. So a review pass over a compacted session silently skips the erased middle. |
 | Cheap gate before the expensive proposal call | **PARTIAL** | Deterministic pre-filters exist (`consolidation.py:956`, `skill_distiller.py:1677/1812` cooldown, `episode_miner.py:593`); a cheap *model* gate does not exist, and `_cooldown_batch`/`_record_judge_success` assume one call per batch. |
@@ -605,11 +605,12 @@ positive id never takes that branch. What remains unseen is the *neighbouring* m
 
 ## Next, in value-per-risk order
 
-1. **Evidence for an archive-drafted proposal.** `apply_verdict` still resolves a
-   verdict's evidence from the `episodes` table, so a draft distilled from archived
-   content — a negative episode id — ships with an empty evidence line. The archive
-   lookup exists (`archivedMessage`); wiring it into `_evidenceWindow` is a few lines,
-   and a reviewer approving a skill should see the span that produced it.
+1. **A tool that resolves a cleared result back to its archived bytes.** The marker now
+   names the call it dropped, so the model knows WHAT it lost; it still cannot get the
+   content back. That needs a model-facing read over `transcript_archive`, which is a NEW
+   read door over archived file contents — including anything a protected-path read had
+   redacted at the time — so it is a security-surface decision, not a few lines. Say so
+   if you want it anyway; the deterministic half is already shipped.
 2. **A Settings switch for the rotate route** (see "Needs review" under the shipped
    section) — the knob exists in `config.json` and nowhere else, so today only a
    developer can arm it. Decide placement before building; do not add a switch that
