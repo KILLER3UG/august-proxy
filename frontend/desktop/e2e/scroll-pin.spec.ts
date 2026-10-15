@@ -70,4 +70,33 @@ test.describe('transcript scroll pin', () => {
     expect(state.free, 'the drag must release the pin mid-animation').toBe(true);
     expect(state.gap, 'the view must not be dragged back to the bottom').toBeGreaterThan(150);
   });
+
+  test('the jump-to-top circle stays out of the composer band', async ({ page }) => {
+    // Not a cosmetic ask: the chrome used to anchor to the pane, whose bottom
+    // band IS the composer, and the column is capped at 58rem. At the app's
+    // default 1280px window the gutter left for a 36px circle at right-3 was
+    // 35.5px against the 48px it needs, so the control sat on the Send row.
+    // The lab pane is 520px wide — under the cap, i.e. the narrow case where the
+    // old anchoring collided.
+    test.setTimeout(30_000);
+    await page.route((url) => url.pathname.startsWith('/api/'), (route) =>
+      route.fulfill({ status: 404, json: { error: 'Not found' } }),
+    );
+    await page.goto('/_design?lab=working', { waitUntil: 'domcontentloaded' });
+    const pane = page.getByTestId('lab-strip-live');
+    await expect(pane.locator('.chat-scroll-chrome')).toBeVisible();
+
+    const read = await pane.evaluate((root) => {
+      const c = root.querySelector('.chat-scroll-chrome')!.getBoundingClientRect();
+      const f = root.querySelector('.august-message-footer')!.getBoundingClientRect();
+      return {
+        paneWidth: Math.round(root.clientWidth),
+        chromeBottom: Math.round(c.bottom),
+        footerTop: Math.round(f.top),
+        overlaps: !(c.bottom <= f.top || c.top >= f.bottom || c.right <= f.left || c.left >= f.right),
+      };
+    });
+    expect(read.paneWidth, 'the lab pane must be narrower than the 58rem column cap').toBeLessThan(928);
+    expect(read.overlaps, `chrome bottom ${read.chromeBottom} vs footer top ${read.footerTop}`).toBe(false);
+  });
 });

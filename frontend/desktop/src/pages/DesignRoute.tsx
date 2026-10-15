@@ -514,7 +514,9 @@ function WorkingStripPane({ streaming }: { streaming: boolean }) {
         revertingIndex={null}
         modelPickerActive={false}
         onDismissModelPicker={() => {}}
-        scrolledFromTop={false}
+        // True on purpose: the chrome must be rendered so its geometry can be
+        // measured against the footer band below it (e2e/scroll-pin.spec.ts).
+        scrolledFromTop
         scrollRef={scrollRef}
         onRevert={() => {}}
         onEdit={() => {}}

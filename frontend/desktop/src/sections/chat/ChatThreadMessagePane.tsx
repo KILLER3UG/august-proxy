@@ -222,6 +222,14 @@ export function ChatThreadMessagePane({
       {sessionId && (
         <ChangesPill sessionId={sessionId} roster={subagentRoster} />
       )}
+      {/* The transcript's own positioning context. The chrome below used to
+          anchor to `.august-message-pane`, whose bottom band IS the composer —
+          measured: at the default 1280px window (sidebar 280, column capped at
+          58rem) the gutter left for the circle is 35.5px and it needs 48px, so
+          jump-to-top sat on the Send row and worse at minWidth 960. Anchoring to
+          the transcript area instead of the pane keeps the same idiom and puts it
+          out of the composer's reach for every width. */}
+      <div className="august-transcript-area relative flex-1 flex flex-col min-h-0">
       <div
         ref={scrollRef}
         className="august-chat-scroll flex-1 overflow-y-auto overflow-x-hidden chat-scroll"
@@ -329,6 +337,7 @@ export function ChatThreadMessagePane({
           scrollParentRef={scrollRef}
           visible={scrolledFromTop}
         />
+      </div>
       </div>
 
       {/* AUG — anchored above the composer; the slot grows with the live
