@@ -20,6 +20,7 @@
  *    computed value moves — the reading is taken after it does.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { dismissFirstRunOverlays } from './first-run';
 
 const strip = (page: Page, state: 'collapsed' | 'live') =>
   page
@@ -47,6 +48,7 @@ test.describe('the transcript’s hidden controls', () => {
       route.fulfill({ status: 404, json: { error: 'Not found' } }),
     );
     await page.goto('/_design?lab=working', { waitUntil: 'domcontentloaded' });
+    await dismissFirstRunOverlays(page);
     await expect(page.getByTestId('lab-working-strip')).toBeVisible();
     await expect(strip(page, 'collapsed')).toHaveCount(1);
     await expect(strip(page, 'live')).toHaveCount(1);

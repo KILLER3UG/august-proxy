@@ -12,6 +12,7 @@
  * intercepted with twelve synthetic workers.
  */
 import { expect, test } from '@playwright/test';
+import { dismissFirstRunOverlays } from './first-run';
 
 const WORKERS = Array.from({ length: 12 }, (_, i) => ({
   taskId: `w-${i}`,
@@ -44,6 +45,7 @@ test.beforeEach(async ({ page }) => {
     (route) => route.fulfill({ json: { taskId: 'w-11', events: [] } }),
   );
   await page.goto('/_design?lab=subagents', { waitUntil: 'domcontentloaded' });
+  await dismissFirstRunOverlays(page);
   await expect(page.getByTestId('lab-drawer-width')).toBeVisible();
   await expect(page.getByTestId('right-drawer-subagent-w-0')).toBeVisible();
 });

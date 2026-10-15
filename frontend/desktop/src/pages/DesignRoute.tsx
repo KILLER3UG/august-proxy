@@ -4,7 +4,7 @@
 /* Gated by `import.meta.env.DEV` in routes.ts — never included in    */
 /* production builds.                                                  */
 
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useThemeStore, setThemeMode, setTextSize } from '@/lib/theme';
 import type { ThemeMode, TextSize } from '@/lib/theme';
@@ -544,6 +544,46 @@ function WorkingStripLab() {
   );
 }
 
+/**
+ * The changes card over the shape a post-turn git diff really carries: two code
+ * files with hunks and one produced document. Lazy because `/_design` is shared
+ * by several specs — a static import pulled DiffView, the revert hook and the
+ * drawer store into every lab page. Its type scale and border nesting are
+ * asserted in e2e/tool-rows.spec.ts; jsdom reports no computed style at all.
+ */
+const ChangesCardLazy = lazy(() => import('@/components/chat/ChangesCard').then((m) => ({ default: m.ChangesCard })));
+
+const LAB_NL = String.fromCharCode(10);
+const LAB_CHANGES_DIFF = {
+  branch: 'master',
+  dirty: true,
+  files: [
+    {
+      path: 'src/report/quarterly.ts',
+      added: 12,
+      removed: 3,
+      status: 'modified',
+      diff: ['@@ -1,3 +1,5 @@', '-export const q = 1;', '+export const q = 2;'].join(LAB_NL),
+    },
+    {
+      path: 'src/report/render.tsx',
+      added: 4,
+      removed: 0,
+      status: 'added',
+      diff: ['@@ -0,0 +1,2 @@', '+export const Row = () => null;'].join(LAB_NL),
+    },
+    { path: 'docs/quarterly.xlsx', added: 0, removed: 0, status: 'modified', diff: '' },
+  ],
+};
+
+function ChangesCardLab() {
+  return (
+    <div data-testid="lab-changes-card" className="w-[420px]">
+      <ChangesCardLazy blocks={null} sessionId="design-lab" changedFiles={LAB_CHANGES_DIFF as never} />
+    </div>
+  );
+}
+
 export function DesignRoute() {
   // The roster lab mounts a live-polling drawer section, and other e2e specs
   // (a11y smoke, scroll pin) run against this same page — measured: adding it
@@ -554,6 +594,7 @@ export function DesignRoute() {
   const showLauncherLab = lab === 'launcher';
   const showToolRowsLab = lab === 'toolrows';
   const showWorkingStripLab = lab === 'working';
+  const showChangesLab = lab === 'changes';
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-6xl px-6 py-10 space-y-10">
@@ -655,6 +696,15 @@ export function DesignRoute() {
             <div>
               <ToolRowLab />
             </div>
+          </section>
+        )}
+
+        {showChangesLab && (
+          <section className="space-y-3">
+            <h2 className="text-2xl font-semibold tracking-display">Changes card</h2>
+            <Suspense fallback={<p className="text-xs text-muted-foreground">loading changes card…</p>}>
+              <ChangesCardLab />
+            </Suspense>
           </section>
         )}
 

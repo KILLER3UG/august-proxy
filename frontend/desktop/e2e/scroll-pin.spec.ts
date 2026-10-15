@@ -14,11 +14,13 @@
  * hook and needs no backend.
  */
 import { expect, test } from '@playwright/test';
+import { dismissFirstRunOverlays } from './first-run';
 
 test.describe('transcript scroll pin', () => {
   test('a scroll with no wheel event releases the pin', async ({ page }) => {
     test.setTimeout(30_000);
     await page.goto('/_design', { waitUntil: 'domcontentloaded' });
+    await dismissFirstRunOverlays(page);
 
     const scroller = page.getByTestId('lab-scroller');
     await expect(scroller).toBeVisible();
@@ -51,6 +53,7 @@ test.describe('transcript scroll pin', () => {
     // that only listens for guard-free events cannot see the drag at all.
     test.setTimeout(30_000);
     await page.goto('/_design', { waitUntil: 'domcontentloaded' });
+    await dismissFirstRunOverlays(page);
     const scroller = page.getByTestId('lab-scroller');
     await expect(scroller).toBeVisible();
 
@@ -83,6 +86,7 @@ test.describe('transcript scroll pin', () => {
       route.fulfill({ status: 404, json: { error: 'Not found' } }),
     );
     await page.goto('/_design?lab=working', { waitUntil: 'domcontentloaded' });
+    await dismissFirstRunOverlays(page);
     const pane = page.getByTestId('lab-strip-live');
     await expect(pane.locator('.chat-scroll-chrome')).toBeVisible();
 

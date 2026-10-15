@@ -19,6 +19,9 @@ test.describe.configure({ mode: 'serial' });
 
 for (const route of ROUTES) {
   test(`axe: ${route} has no critical violations`, async ({ page }) => {
+    await page.route((url) => url.pathname.startsWith('/api/'), (route) =>
+          route.fulfill({ status: 404, json: { error: 'Not found' } }),
+        );
     await page.goto(route, { waitUntil: 'domcontentloaded' });
     // Let the router + shell settle; offline states are acceptable, crashes are not.
     await page.waitForTimeout(1_500);

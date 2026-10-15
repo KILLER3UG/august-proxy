@@ -9,6 +9,7 @@
  * Chromium reads the result.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { dismissFirstRunOverlays } from './first-run';
 
 test.describe('workbench launcher counters', () => {
   test.beforeEach(async ({ page }) => {
@@ -16,6 +17,7 @@ test.describe('workbench launcher counters', () => {
       route.fulfill({ status: 404, json: { error: 'Not found' } }),
     );
     await page.goto('/_design?lab=launcher', { waitUntil: 'domcontentloaded' });
+    await dismissFirstRunOverlays(page);
     await expect(page.getByTestId('lab-launcher')).toBeVisible();
   });
 

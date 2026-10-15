@@ -12,6 +12,7 @@
  * inside it, and a UNC share.
  */
 import { expect, test } from '@playwright/test';
+import { dismissFirstRunOverlays } from './first-run';
 
 test.describe('tool step rows at the transcript width', () => {
   test.beforeEach(async ({ page }) => {
@@ -19,6 +20,7 @@ test.describe('tool step rows at the transcript width', () => {
       route.fulfill({ status: 404, json: { error: 'Not found' } }),
     );
     await page.goto('/_design?lab=toolrows', { waitUntil: 'domcontentloaded' });
+    await dismissFirstRunOverlays(page);
     await expect(page.getByTestId('lab-tool-rows')).toBeVisible();
   });
 
@@ -79,6 +81,7 @@ test.describe('approval card title', () => {
       route.fulfill({ status: 404, json: { error: 'Not found' } }),
     );
     await page.goto('/_design?lab=toolrows', { waitUntil: 'domcontentloaded' });
+    await dismissFirstRunOverlays(page);
     const card = page.getByTestId('mutation-diff-cards');
     await expect(card).toBeVisible();
     const read = await card.evaluate((box) => {
@@ -103,6 +106,42 @@ test.describe('approval card title', () => {
   });
 });
 
+test.describe('the changes card hierarchy', () => {
+  test('one meta rung, and rows that are not boxes inside a box', async ({ page }) => {
+    // The reference (2026-10-08 165256) is one hairline-divided stack; this card
+    // was three nested bordered boxes carrying 10.5 / 11 / 11.5 / 13px at once.
+    test.setTimeout(90_000);
+    await page.route((url) => url.pathname.startsWith('/api/'), (route) =>
+      route.fulfill({ status: 404, json: { error: 'Not found' } }),
+    );
+    await page.goto('/_design?lab=changes', { waitUntil: 'domcontentloaded' });
+    await dismissFirstRunOverlays(page);
+    const card = page.getByTestId('lab-changes-card');
+    await expect(card.locator('[data-testid="changes-card-row"]')).toHaveCount(3);
+
+    const read = await card.evaluate((root) => {
+      const sizes: number[] = [];
+      root.querySelectorAll('*').forEach((el) => {
+        if (el.children.length === 0 && (el.textContent || '').trim()) {
+          sizes.push(parseFloat(getComputedStyle(el).fontSize));
+        }
+      });
+      return {
+        minSize: Math.min(...sizes),
+        metaCount: sizes.filter((s) => s === 11).length,
+        rowBorders: Array.from(root.querySelectorAll('[data-testid="changes-card-row"]')).map(
+          (r) => getComputedStyle(r).borderTopWidth,
+        ),
+        outerBorder: getComputedStyle(root.firstElementChild as HTMLElement).borderTopWidth,
+      };
+    });
+    expect(read.rowBorders, 'no row keeps its own box').toEqual(['0px', '0px', '0px']);
+    expect(read.outerBorder, 'the card itself keeps its single border').toBe('1px');
+    expect(read.minSize, 'nothing renders below the 11px meta rung').toBeGreaterThanOrEqual(11);
+    expect(read.metaCount, 'the meta text is all one rung').toBeGreaterThanOrEqual(6);
+  });
+});
+
 test.describe('a transcript row that has nothing human to say', () => {
   test('names the command, and keeps the registry id in the attributes', async ({ page }) => {
     test.setTimeout(90_000);
@@ -110,6 +149,7 @@ test.describe('a transcript row that has nothing human to say', () => {
       route.fulfill({ status: 404, json: { error: 'Not found' } }),
     );
     await page.goto('/_design?lab=working', { waitUntil: 'domcontentloaded' });
+    await dismissFirstRunOverlays(page);
     const row = page.locator('[data-command-id="compact"]').first();
     await expect(row).toBeVisible();
 

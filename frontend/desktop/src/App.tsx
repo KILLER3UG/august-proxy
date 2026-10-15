@@ -119,8 +119,15 @@ export default function App() {
         <CommandPalette />
         <ShortcutsModal />
         <ConversationSearchModal />
-        <OnboardingTour />
-        <ProviderOnboardingModal />
+        {/* First-run overlays stay off the dev-only design route: they cover
+            the whole viewport with a scrim, and the /_design labs are driven by
+            automated checks that click the controls underneath. */}
+        {!window.location.pathname.startsWith('/_design') && (
+          <>
+            <OnboardingTour />
+            <ProviderOnboardingModal />
+          </>
+        )}
         {/* First launch after a version bump: animated "what's new" chat. */}
         <UpdateConversation />
       </BackendBootstrapGate>
