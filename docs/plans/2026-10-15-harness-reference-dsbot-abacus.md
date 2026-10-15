@@ -612,9 +612,13 @@ lineage states + the second delete door), `e7514890` (tests bind a real worker s
 `b184392a` (`august-bench --context-window`), `e4a02c7d` (`sample_error` redacted before
 it is stored).
 
-**Verification honesty, stated once and applying to all of it:** a full suite is running
-against this HEAD, writing `/tmp/suite_head.log` and ending in `SUITE_EXIT=<code>`. Read
-that marker — never a background task's own exit code (two earlier runs reported "exit 0"
+**Verification, now measured:** the full suite against HEAD `bd38edac` finished
+**5511 passed, 5 skipped, `SUITE_EXIT=0`** in 42m50s (`/tmp/suite_head.log`), with zero
+`crashed while running` / `INTERNALERROR` matches — that grep is required, because a known
+xdist flake in the 200 MB paging test otherwise reads as a real failure. An earlier run at
+`b184392a` (5507 passed, also marker 0) covered seven of the eight code commits; the four
+extra tests are the `sample_error` redaction in `e4a02c7d`, so every commit in this round is
+now suite-green. Read — never a background task's own exit code (two earlier runs reported "exit 0"
 with 0-byte logs, and one chained `mypy && git commit && pytest` died on a git lock and
 silently skipped the commit). Until the marker says zero, nothing here is suite-green;
 each change is individually verified by its own test file, `ruff`, `mypy` and, where the
