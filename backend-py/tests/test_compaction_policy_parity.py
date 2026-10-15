@@ -112,34 +112,58 @@ class TestOneCompactionPolicy:
         )
         assert sites[0].startswith('loop/recovery.py:'), sites
 
-    def test_no_path_hands_the_shared_site_a_zero_context_window(self):
-        """The census above counts SITES; this one reads ARGUMENTS.
+    def test_only_the_manual_path_may_use_the_count_budgeted_tail(self):
+        """The census counts SITES; this reads ARGUMENTS, and the distinction paid.
 
         `context_window=0` is not "size unknown" downstream: `_compactionCall`
-        turns it into `contextWindow=None`, which selects the COUNT-budgeted tail
-        (six messages) instead of the token-budgeted tail every automatic path
-        gets. The manual endpoint passed exactly that while being consolidated onto
-        the shared site, so "one policy" was false on tail budgeting — and neither
-        the parity assertions (which compare the two recovery paths against each
-        other) nor the site census could see it.
+        turns it into `contextWindow=None`, which selects the count-budgeted tail.
+        That is right for the "Free up memory" button and wrong for every automatic
+        path — and I once "fixed" the button by giving it the real window, which
+        measured 71 messages -> 71 messages and 0 tokens freed on a transcript below
+        16% of a 128k window, i.e. the button silently stopped working.
         """
         from pathlib import Path
 
         root = Path(__file__).resolve().parents[1] / 'app' / 'services' / 'workbench'
         callLines: list[str] = []
-        offenders: list[str] = []
+        zeroWindow: list[str] = []
+        forced: list[str] = []
         for py in sorted(root.rglob('*.py')):
             for i, line in enumerate(py.read_text(encoding='utf-8').splitlines(), 1):
                 where = f'{py.relative_to(root).as_posix()}:{i}'
                 if '_compactionCall(' in line and 'async def ' not in line:
                     callLines.append(where)
                 if 'context_window=0' in line.replace(' ', ''):
-                    offenders.append(where)
-        assert len(callLines) >= 4, (
-            f'expected one call line per compaction path, found {callLines} — '
-            'a census that matches nothing is not a gate'
+                    zeroWindow.append(py.name)
+                if 'thresholdOverride=0' in line.replace(' ', ''):
+                    forced.append(py.name)
+        assert len(callLines) >= 4, f'expected one call line per compaction path, got {callLines}'
+        assert zeroWindow == ['sessions.py'], (
+            f'the count-budgeted tail belongs to the manual button alone: {zeroWindow}'
         )
-        assert not offenders, f'a path pins the tail budget to the count route: {offenders}'
+        assert forced == ['sessions.py'], (
+            f'forcing and the count tail travel together: {forced}'
+        )
+
+    def test_the_subagent_compacts_with_its_own_models_window(self):
+        """The mid-run subagent branch sits inside a function no test drives, so
+        this pins the two arguments that decide its policy.
+
+        A subagent defaults to a cheap 32k/64k model; hardcoding a window (an old
+        110k threshold here) overflowed those windows before compaction could run.
+        It must pass the RESOLVED window and must not force: forcing is the manual
+        button's contract, not a subagent's.
+        """
+        from pathlib import Path
+
+        src = (
+            Path(__file__).resolve().parents[1] / 'app' / 'services' / 'workbench' / 'subagent.py'
+        ).read_text(encoding='utf-8')
+        i = src.index('_compactionCall(')
+        block = src[i : i + 600]
+        assert 'context_window=_contextWindow' in block, block[:200]
+        assert 'thresholdOverride' not in block, 'a subagent must not force a compaction'
+        assert 'summarizer=None' in block, block[:200]
 
     def test_the_auto_compact_archive_is_written_before_the_projection_prune(self):
         """The chat card says "The full transcript is archived". The pre-turn path

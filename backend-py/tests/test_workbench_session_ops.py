@@ -79,3 +79,38 @@ def test_compact_short_conversation_no_op():
     result = asyncio.run(compact_workbench_session_now(s.id))
     assert result is not None
     assert result.get('underThreshold') is True
+
+
+def test_compact_now_frees_memory_on_a_transcript_smaller_than_the_window_share():
+    """The button's whole contract, and the only test that measured it.
+
+    Handing the manual path the model's real window selects a token-budgeted tail
+    of 16% of it, which for a modest transcript is larger than the transcript — the
+    compaction then "succeeds" while freeing nothing, and the user is told the
+    context is already compact. A session well under that share is exactly the case
+    the button exists for, and until this test nothing covered a reduction at all.
+    """
+    import asyncio
+
+    from app.providers.clients.base import estimateTokens
+
+    s = create_workbench_session()
+    s.messages = [{'role': 'system', 'content': 'you are a coding agent'}]
+    for i in range(30):
+        s.messages.append({'role': 'user', 'content': f'ask {i} ' + ('a' * 500)})
+        s.messages.append({'role': 'assistant', 'content': f'ans {i} ' + ('b' * 500)})
+    s.messageCount = len(s.messages)
+    before = len(s.messages)
+    beforeTokens = estimateTokens(s.messages)
+
+    result = asyncio.run(compact_workbench_session_now(s.id))
+    assert result is not None
+    # Counts only: `result` carries the entire session, and a failure that dumps
+    # 30 KB of transcript hides the one number that matters.
+    assert result.get('underThreshold') is False, (
+        f'the button freed nothing: {result.get("compressedCount")} of {before} messages, '
+        f'{result.get("originalTokens")} -> {result.get("compressedTokens")} tokens'
+    )
+    assert result['compressedCount'] > 0
+    assert estimateTokens(get_workbench_session(s.id).messages) < beforeTokens
+    assert result['headCount'] in (0, 4)

@@ -824,18 +824,27 @@ async def compressMessages(
         return list(messages)
     head = [m for u in headUnits for m in u]
     tail = [m for u in tailUnits for m in u]
-    middle = [m for u in units[idx:jdx] for m in u]
+    middleUnits = units[idx:jdx]
+    middle = [m for u in middleUnits for m in u]
     if not middle:
         return list(messages)
     # Landmark pins: middle messages a predicate marks are kept VERBATIM
     # (before the summary) instead of being folded into it.
+    #
+    # Pinned by UNIT, never by message. Every other boundary here is unit-safe,
+    # and this one used to walk the flattened messages: a predicate matching a
+    # `role: tool` result whose `read_file` call does NOT match pinned the result
+    # and summarized the call, emitting a projection that opens with a tool result
+    # after the system message. That is a 400 from every provider, and because the
+    # projection is what gets persisted, one orphan bricked every later turn — the
+    # exact failure the stuck-request ladder exists to escape.
     pinned: list[dict[str, object]] = []
     if pin_predicates:
-        for m in middle:
+        for unit in middleUnits:
             if len(pinned) >= max_pinned:
                 break
-            if any(p(m) for p in pin_predicates):
-                pinned.append(m)
+            if any(any(p(m) for p in pin_predicates) for m in unit):
+                pinned.extend(unit)
         if pinned:
             pinnedIds = {id(m) for m in pinned}
             middle = [m for m in middle if id(m) not in pinnedIds]

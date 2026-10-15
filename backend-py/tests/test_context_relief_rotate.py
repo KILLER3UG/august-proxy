@@ -292,6 +292,78 @@ class TestRotateBehaviour:
                 )
 
     @pytest.mark.asyncio
+    async def test_pinning_keeps_a_call_with_its_result(self):
+        """Landmark pins must be unit-safe, and the test for that has to use them.
+
+        The pairing test that shipped with this route called `compressMessages`
+        WITHOUT `pin_predicates`, which `_compactionCall` always supplies — so it
+        green-lit a route that emitted a projection opening with a `role: tool`
+        result right after the system message. Pins walked flattened messages, so
+        a predicate matching a result whose `read_file` call matched nothing pinned
+        the result and summarized the call. Every provider 400s that, and because
+        the projection is what gets persisted, one orphan bricks every later turn.
+        """
+        from app.services.workbench.loop.recovery import (
+            _is_failing_receipt,
+            _is_update_state_transition,
+        )
+
+        pins = [_is_update_state_transition, _is_failing_receipt]
+
+        def _assertPaired(out: list[dict[str, object]]) -> None:
+            for i, m in enumerate(out):
+                if m.get('role') != 'tool':
+                    continue
+                prev = out[i - 1]
+                assert prev.get('role') in ('assistant', 'tool'), (
+                    f'tool result at {i} follows {prev.get("role")!r}'
+                )
+                assert prev.get('tool_calls'), f'tool result at {i} lost its call'
+                ids = {tc.get('id') for tc in (prev.get('tool_calls') or []) if isinstance(tc, dict)}
+                if ids and m.get('tool_call_id') not in ids and prev.get('role') == 'assistant':
+                    raise AssertionError(
+                        f'tool result {m.get("tool_call_id")!r} is not the call before it'
+                    )
+
+        openai = [
+            {'role': 'system', 'content': 'sys'},
+            {
+                'role': 'assistant',
+                'content': 'opening',
+                'tool_calls': [{'id': 'call_1', 'function': {'name': 'read_file', 'arguments': '{}'}}],
+            },
+            {'role': 'tool', 'tool_call_id': 'call_1', 'content': 'FAILED error: boom ' + ('b' * 400)},
+        ]
+        # Anthropic carries the result inside a user message's block list.
+        anthropic = [
+            {'role': 'system', 'content': 'sys'},
+            {
+                'role': 'assistant',
+                'content': [
+                    {'type': 'text', 'text': 'opening'},
+                    {'type': 'tool_use', 'id': 'tu_1', 'name': 'read_file', 'input': {}},
+                ],
+            },
+            {
+                'role': 'user',
+                'content': [{'type': 'tool_result', 'tool_use_id': 'tu_1', 'content': 'FAILED error: boom'}],
+            },
+        ]
+        for name, base in (('openai', openai), ('anthropic', anthropic)):
+            msgs = list(base)
+            for i in range(14):
+                msgs.append({'role': 'user', 'content': f'note {i} ' + ('c' * 1200)})
+                msgs.append({'role': 'assistant', 'content': f'reply {i} ' + ('d' * 1200)})
+            for rotate in (True, False):
+                out = await compressMessages(
+                    msgs, threshold=64, head_count=DEFAULT_HEAD_COUNT, tail_count=6,
+                    contextWindow=4000, schema=True, replayUserBytes=12 * 1024,
+                    rotate=rotate, pin_predicates=pins,
+                )
+                assert len(out) < len(msgs), f'{name}/rotate={rotate}: nothing compacted'
+                _assertPaired(out)
+
+    @pytest.mark.asyncio
     async def test_rotate_still_refuses_a_useless_reduction(self):
         """The size guard is route-independent: a relief that does not shrink is
         not a relief, and must return the transcript untouched."""
