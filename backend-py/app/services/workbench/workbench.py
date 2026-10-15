@@ -1275,6 +1275,15 @@ def _resolveModelContextWindow(
     resolvedModel: str, resolvedProvider: dict[str, object] | None
 ) -> int:
     """Model context window for auto-compact (never the legacy 2M workbench budget)."""
+    from app.services.workbench.context import contextWindowOverride
+
+    # Measurement override (`august-bench --context-window`). Checked first and
+    # floored the same way, so an override cannot produce a window smaller than the
+    # compressor's own minimum and the rescue behaves identically to a real small
+    # model rather than to a broken one.
+    override = contextWindowOverride.get()
+    if override and override > 0:
+        return max(8192, int(override))
     try:
         from app.services.model_service import _getContextWindow
 

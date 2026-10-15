@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from contextvars import Token
 
 from app.bench.protocol import EXIT_INPUT
 from app.bench.runner import BenchOptions, load_output_schema, run_bench
@@ -67,6 +68,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSONL event stream destination ('-' = stdout)",
     )
     parser.add_argument('--run-id', default='', help='run id (generated when empty)')
+    parser.add_argument(
+        '--context-window',
+        type=int,
+        default=0,
+        help=(
+            'shrink the window auto-compact and the overflow rescue measure against '
+            '(0 = the model real window; the resolver floors at 8192). This is how a '
+            'reactive overflow is forced deterministically instead of by a transcript '
+            'big enough to overflow a real model.'
+        ),
+    )
     return parser
 
 
@@ -90,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         trajectory_path=args.trajectory,
         events_path=args.events,
         run_id=args.run_id,
+        context_window=args.context_window,
     )
     if args.output_schema:
         try:
@@ -100,11 +113,35 @@ def main(argv: list[str] | None = None) -> int:
     if args.max_turns <= 0:
         print('august-bench: --max-turns must be positive', file=sys.stderr)
         return EXIT_INPUT
+    token = _apply_context_window_override(opts.context_window)
+    if token is not None:
+        print(f'august-bench: context window overridden to {opts.context_window} tokens', file=sys.stderr)
     try:
         return asyncio.run(run_bench(opts))
     except KeyboardInterrupt:
         print('august-bench: interrupted', file=sys.stderr)
         return EXIT_INPUT
+    finally:
+        if token is not None:
+            from app.services.workbench.context import contextWindowOverride
+
+            contextWindowOverride.reset(token)
+
+
+def _apply_context_window_override(tokens: int) -> Token[int] | None:
+    """Publish the shrunk window for the whole run, or None when there is none.
+
+    A ContextVar rather than a session field because the loop resolves the window
+    from the MODEL (`workbench._resolveModelContextWindow`), not from the session, so
+    there is no session attribute it would consult. Set here, before `asyncio.run`
+    copies the context into the run's task.
+    """
+    from app.services.workbench.context import contextWindowOverride
+
+    if tokens <= 0:
+        return None
+    token: Token[int] = contextWindowOverride.set(tokens)
+    return token
 
 
 if __name__ == '__main__':

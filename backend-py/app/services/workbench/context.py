@@ -53,6 +53,19 @@ currentSubagentDepth: ContextVar[int] = ContextVar('workbench_subagent_depth', d
 # what the worker was not entitled to, discovered or not.
 currentSubagentDenied: ContextVar[frozenset[str]] = ContextVar('workbench_subagent_denied', default=frozenset())
 
+# A declared context window smaller than the model's own, for measurement. Set by
+# ``august-bench --context-window`` (port of DS Bot's ``dev/bench.sh``, which forces a
+# context overflow by shrinking ``CONTEXT_WINDOW``) and read by
+# ``workbench._resolveModelContextWindow``, so the reactive-overflow rescue becomes
+# reachable by lowering a number instead of assembling a transcript big enough to
+# overflow a real 128k window — or, worse, by making a stub lie about the refusal.
+#
+# Per-run on a ContextVar rather than a session field, because the window is resolved
+# inside the loop from the model, not from the session, and a bench run is not allowed
+# to change what a concurrent normal chat estimates. 0 = no override, which is every
+# real turn's state.
+contextWindowOverride: ContextVar[int] = ContextVar('workbench_context_window_override', default=0)
+
 
 def currentAgentId() -> str:
     """The agent the executing tool call belongs to, or '' outside an agent session.

@@ -60,6 +60,9 @@ class BenchOptions:
     max_turns: int = 50
     max_duration_s: float = 1800.0
     max_cost_usd: float = 0.0  # 0 = no ceiling
+    # Shrink the window the compressor measures against, so an overflow is reached
+    # by lowering a number (DS Bot's dev/bench.sh). 0 = use the model's real window.
+    context_window: int = 0
     output_schema: dict[str, Any] | None = None
     trajectory_path: str = 'trajectory.json'
     events_path: str = '-'  # '-' = stdout
