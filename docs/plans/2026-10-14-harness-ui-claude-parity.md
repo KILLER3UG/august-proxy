@@ -193,6 +193,11 @@ The audit-side deliverable this plan owed but had not produced is now there too:
 2026-10-03 audits item by item — 270 verdicts, 130 still-true, 88 already-done, 25 reversed,
 25 stale citations, i.e. 42% of this plan's own source material no longer described the tree.
 
+**Every §7 line, re-checked against the tree rather than against this plan's memory.** Items
+1-3 — the `hardline.py:776` normalization miss, the judge's host-wide loopback carve-out and the
+kernel venv behind the wrong door — are fixed and committed (`9e0526ed`, `a4c912de`, `c2b46d4c`,
+`3b0efc97`), each with its red proof recorded in the status file. item 6, `test_bundled_skills_snapshot_parity.py` red locally, **is green now**: 5 passed in 16.1 s on this machine without running `prepare:desktop-backend`, so the stale staged artifact it named has since been refreshed. Items 4, 5 and 7 are the markdown-math cluster; they live in another session's in-flight files and process rule 7 excludes them, so they are neither claimed nor done here.
+
 **Still open, and none of it is work I can do quietly:** the jobs tray destination (its audit
 premise was wrong — non-persisted frontend registry, already opt-in, so "move to a global
 surface" is a feature, not a relocation); the composer row and sidebar density pass;
