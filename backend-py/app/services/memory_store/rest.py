@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from typing import cast
 
 from app.json_narrowing import as_int, as_str
+from app.services.hooks.secret_guard import scan_secrets
 from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 from app.services.memory_conn import db_path as _db_path
@@ -139,6 +140,25 @@ def save_fact(
                     f'from scope "{requested}" — write the global key from a '
                     'global scope, or use a distinct key for this scope.'
                 )
+    # A durable fact is re-injected into later turns — the <memory> tail and the
+    # always-in profile lane carry whatever is stored here out to every provider
+    # request. A credential saved as a fact is therefore published onward
+    # indefinitely, and read back into any session that unions the scope, so the
+    # shape is refused at this one door (the same door that refuses
+    # project-scoped rows and cross-scope overwrites). Labels only, never the
+    # matched value, matching hooks/secret_guard.scan_secrets' own contract.
+    _secret_hits = scan_secrets(' '.join([
+        factValue if isinstance(factValue, str) else str(factValue or ''),
+        title or '',
+        description or '',
+    ]))
+    if _secret_hits:
+        raise ValueError(
+            f'refusing to store secret-shaped content in durable memory '
+            f'({", ".join(_secret_hits)}); keep credentials in a provider '
+            'config or a secret store, not in a fact'
+        )
+
     conn = _conn()
     # '' = unspecified: fresh inserts default to 'fact', updates keep the
     # existing kind (a remember-without-kind must not downgrade a lesson).
