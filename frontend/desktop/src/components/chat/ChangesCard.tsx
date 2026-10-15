@@ -134,14 +134,14 @@ export function ChangesCard({
           ) : (
             <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
           )}
-          <span className="shrink-0 text-[0.71875rem] text-foreground/85">
+          <span className="shrink-0 text-2xs text-foreground/85">
             <span className="font-medium">{paths.length}</span>
             <span className="text-muted-foreground/70">
               {' '}file{paths.length === 1 ? '' : 's'} changed
             </span>
           </span>
           {hasTotals && (
-            <span className="flex shrink-0 items-center gap-1.5 font-mono text-[0.65625rem] tabular-nums">
+            <span className="flex shrink-0 items-center gap-1.5 font-mono text-2xs tabular-nums">
               {totals.added > 0 && (
                 <span className="text-success" data-testid="changes-card-added">
                   +{totals.added} added
@@ -163,7 +163,7 @@ export function ChangesCard({
           }}
           disabled={reverting}
           title="Revert all changes from this turn"
-          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/40 bg-background/50 px-2 py-0.5 text-[0.65625rem] font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground disabled:opacity-50"
+          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/40 bg-background/50 px-2 py-0.5 text-2xs font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground disabled:opacity-50"
           data-testid="changes-card-undo"
         >
           {reverting ? (
@@ -239,13 +239,13 @@ function CodeFileRow({
 }) {
   const hasDiff = Boolean(file.diff && file.diff.trim());
   return (
-    <div className="min-w-0 rounded-xl border border-border/30 bg-card/20 p-2 transition-all hover:border-border/60" data-testid="changes-card-row" data-style="code" data-kind="code">
+    <div className="min-w-0 rounded-xl px-2 py-1.5 transition-colors" data-testid="changes-card-row" data-style="code" data-kind="code">
       <div className="flex items-center gap-1.5">
         <DisclosureRow
           open={diffOpen && hasDiff}
           onToggle={hasDiff ? onToggleDiff : undefined}
           trailing={
-            <span className="font-mono text-[0.65625rem] tabular-nums">
+            <span className="font-mono text-2xs tabular-nums">
               {file.added > 0 && <span className="text-success">+{file.added}</span>}{' '}
               {file.removed > 0 && <span className="text-danger-fg">-{file.removed}</span>}
               {file.added === 0 && file.removed === 0 && (
@@ -265,7 +265,7 @@ function CodeFileRow({
           <button
             type="button"
             onClick={onReview}
-            className="shrink-0 rounded-md border border-border/50 bg-background/50 px-2 py-0.5 text-[0.65625rem] font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground"
+            className="shrink-0 rounded-md border border-border/50 bg-background/50 px-2 py-0.5 text-2xs font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground"
             title="Open full diff in drawer" aria-label="Open full diff in drawer"
             data-testid="changes-card-review"
           >
@@ -276,7 +276,7 @@ function CodeFileRow({
           type="button"
           onClick={onOpen}
           disabled={busy}
-          className="shrink-0 rounded-md border border-border/50 bg-background/50 px-2 py-0.5 text-[0.65625rem] font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground disabled:opacity-50"
+          className="shrink-0 rounded-md border border-border/50 bg-background/50 px-2 py-0.5 text-2xs font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground disabled:opacity-50"
           title="Open file in side panel" aria-label="Open file in side panel"
           data-testid="changes-card-open"
         >
@@ -308,7 +308,7 @@ function DocumentFileRow({
 }) {
   return (
     <div
-      className="flex items-center gap-3 rounded-xl border border-border/40 bg-card/40 p-2.5 hover:border-border/70 hover:bg-card/70 transition-all duration-150"
+      className="flex items-center gap-3 rounded-xl px-2.5 py-1.5 transition-colors hover:bg-card/40"
       data-testid="changes-card-row"
       data-style="document"
       data-kind={info.kind}
