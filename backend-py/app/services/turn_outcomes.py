@@ -892,6 +892,41 @@ def _coerce_class(entry: FailureClass | Sequence[str]) -> FailureClass:
 _LABELLED_KINDS = (KIND_ERROR, KIND_GUARDRAIL)
 
 
+_SAMPLE_ERROR_CAP = 1200
+
+
+def _redactedSampleError(text: str) -> str:
+    """Strip this install's own credentials from an error before it is STORED.
+
+    The outbound scrub (`scrubOutboundBody`, wired at the transport in
+    `providers/clients/base.py`) protects what is SENT, and `secret_guard` protects
+    tool args and protected-path reads. Neither covers a provider's own failure
+    string: an auth rejection routinely echoes part of the credential back, and this
+    function's output is persisted into `turn_outcomes` and then re-read by the
+    lesson promotion, the telemetry surfaces and `scripts/harness_eval.py`. DS Bot
+    treats exactly this case (`src/host/diagnostics.js`, `turns.js:9-11`) and drops
+    the message on AUTH failures for the stated reason that providers may echo a key.
+
+    Matched by VALUE, never by pattern — the same rule the outbound scrub ships
+    with. A pattern pass would rewrite the key-shaped text a user pasted into their
+    own question to ask why their key 401s, and that text is legitimate content.
+    A credential this install does not hold (another tenant's, echoed back) is out of
+    reach here, and saying so is better than pretending otherwise.
+    """
+    if not text:
+        return text
+    try:
+        from app.services.hooks.secret_guard import scrubOutboundBody
+
+        scrubbed = scrubOutboundBody(text)
+        if isinstance(scrubbed, str):
+            text = scrubbed
+    except Exception:
+        logger.debug('sample_error scrub failed', exc_info=True)
+    return text[:_SAMPLE_ERROR_CAP]
+
+
+
 def _candidate_classes(
     error_class: str, sample_error: str, extra: Sequence[FailureClass | Sequence[str]]
 ) -> list[FailureClass]:
@@ -903,7 +938,10 @@ def _candidate_classes(
     """
     out: list[FailureClass] = []
     seen: set[tuple[str, str]] = set()
-    candidates = [FailureClass(KIND_ERROR, error_class, sample_error), *( _coerce_class(e) for e in extra or () )]
+    candidates = [
+        FailureClass(KIND_ERROR, error_class, _redactedSampleError(sample_error)),
+        *(_coerce_class(e) for e in extra or ()),
+    ]
     for failure in candidates:
         if failure.kind not in FAILURE_KINDS:
             continue

@@ -317,3 +317,63 @@ class TestARotatedKeyIsNotStale:
         )
         assert rotated not in wire, 'the rotated key was not picked up'
         assert PROVIDER_KEY in wire, 'the retired key is still being rewritten'
+
+
+class TestPersistedErrorSamples:
+    """The outbound door protects what is SENT; this is the door that protects what
+    is STORED. A provider's auth rejection routinely echoes part of the credential
+    back, and `turn_outcomes` persisted that string verbatim before this — then the
+    lesson promotion, the telemetry surfaces and `harness_eval` all read it back."""
+
+    _LIVE = 'sk-live-AAAAAAAAAAAAAAAAAAAA'
+    _PASTED = 'sk-live-BBBBBBBBBBBBBBBBBBBB'   # not this install's value
+
+    def _install_holds(self, monkeypatch):
+        from app.config import settings
+
+        monkeypatch.setattr(settings, 'gatewayApiKey', self._LIVE, raising=False)
+        return settings
+
+    def test_a_credential_this_install_holds_is_not_stored(self, isolatedData, monkeypatch):
+        from app.services.turn_outcomes import _redactedSampleError
+
+        self._install_holds(monkeypatch)
+        msg = f'Stream error HTTP 401: invalid api key {self._LIVE} provided'
+        out = _redactedSampleError(msg)
+        assert self._LIVE not in out, f'the key survived into the persisted sample: {out!r}'
+        assert '401' in out and 'invalid api key' in out, f'lost the diagnosis: {out!r}'
+
+    def test_key_shaped_text_the_user_pasted_survives(self, isolatedData, monkeypatch):
+        """The control that keeps this from becoming a pattern scrub: a key-shaped
+        string this install does not hold is CONTENT. The user pastes their own key
+        to ask why it 401s, and rewriting that would break the thing they asked."""
+        from app.services.turn_outcomes import _redactedSampleError
+
+        self._install_holds(monkeypatch)
+        msg = f'why does this fail? provider said: bad key {self._PASTED}'
+        assert self._PASTED in _redactedSampleError(msg)
+
+    def test_the_funnel_applies_it_so_no_caller_can_skip(self, isolatedData, monkeypatch):
+        """`_candidate_classes` is the one place both writers pass through, so the
+        redaction cannot be forgotten at a new call site."""
+        from app.services import turn_outcomes as t
+
+        self._install_holds(monkeypatch)
+        seen: list[str] = []
+
+        def fake_scrub(value):
+            seen.append(value if isinstance(value, str) else '')
+            return str(value).replace(self._LIVE, '[redacted]')
+
+        import app.services.hooks.secret_guard as sg
+
+        monkeypatch.setattr(sg, 'scrubOutboundBody', fake_scrub)
+        classes = t._candidate_classes('auth', f'401 {self._LIVE}', ())
+        assert seen, 'the funnel never reached the scrub'
+        assert all(self._LIVE not in c.sample for c in classes), [c.sample for c in classes]
+
+    def test_a_mounterous_sample_is_capped(self, isolatedData):
+        from app.services.turn_outcomes import _SAMPLE_ERROR_CAP, _redactedSampleError
+
+        out = _redactedSampleError('x' * (_SAMPLE_ERROR_CAP * 3))
+        assert len(out) == _SAMPLE_ERROR_CAP
