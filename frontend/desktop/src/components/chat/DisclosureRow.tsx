@@ -1,5 +1,5 @@
 import { ChevronRight } from 'lucide-react';
-import { type ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
@@ -29,6 +29,14 @@ export function DisclosureRow({
   trailing?: ReactNode;
   content?: ReactNode;
 }) {
+  // The association is set here rather than left to Radix: measured on the
+  // handoff notice, a CollapsibleTrigger asChild chained through the Button
+  // primitive advertised neither aria-controls nor aria-expanded while the body
+  // was closed — which is the state a screen reader actually navigates. Owning
+  // the ids makes it deterministic and testable.
+  const uid = useId();
+  const triggerId = `${uid}-trigger`;
+  const regionId = `${uid}-content`;
   return (
     <Collapsible
       open={open}
@@ -38,7 +46,9 @@ export function DisclosureRow({
       <div className="flex w-full min-w-0 items-start">
         <CollapsibleTrigger asChild disabled={!onToggle}>
           <button
+            id={triggerId}
             aria-expanded={onToggle ? open : undefined}
+            aria-controls={content !== undefined ? regionId : undefined}
             className={cn(
               'flex min-w-0 max-w-fit items-start gap-1.5 text-left transition-colors',
               onToggle
@@ -73,7 +83,17 @@ export function DisclosureRow({
           aria-controls nor aria-expanded, so the closed disclosure — the exact
           case a screen reader navigates — exposed less than the native
           <details> it replaced. */}
-      {content !== undefined && <CollapsibleContent forceMount hidden={!open}>{content}</CollapsibleContent>}
+      {content !== undefined && (
+        <CollapsibleContent
+          forceMount
+          hidden={!open}
+          id={regionId}
+          role="region"
+          aria-labelledby={triggerId}
+        >
+          {content}
+        </CollapsibleContent>
+      )}
     </Collapsible>
   );
 }

@@ -498,6 +498,17 @@ const LAB_STRIP_MESSAGES: ChatMessage[] = [
   // A voice-command row, so the branch that prints its fallback text is
   // rendered by the real MessageBubble rather than reasoned about.
   { id: 'v1', role: 'assistant', kind: 'voice-command-card', commandId: 'compact', content: '', timestamp: '2026-10-14T10:00:06Z' },
+  // A handoff notice, whose body now renders inside the disclosure. The pane box
+  // is tall (see WorkingStripPane) so this row is inside the virtualiser's
+  // mounted slice — absence in a virtualised list is not evidence of absence.
+  {
+    id: 'h1',
+    role: 'assistant',
+    kind: 'handoff-notice',
+    content: '',
+    context: { fromModel: 'deepseek-flash', toModel: 'claude-sonnet', summary: 'Carried 3 turns of context forward.' },
+    timestamp: '2026-10-14T10:00:08Z',
+  },
 ];
 
 function WorkingStripPane({ streaming }: { streaming: boolean }) {
@@ -505,7 +516,7 @@ function WorkingStripPane({ streaming }: { streaming: boolean }) {
   return (
     <div
       data-testid={`lab-strip-${streaming ? 'live' : 'collapsed'}`}
-      className="flex h-[340px] w-[520px] flex-col rounded-xl border border-border bg-background"
+      className="flex h-[760px] w-[520px] flex-col rounded-xl border border-border bg-background"
     >
       <ChatThreadMessagePane
         sessionId="lab-strip"

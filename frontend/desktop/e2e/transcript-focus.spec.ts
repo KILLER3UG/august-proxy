@@ -108,6 +108,22 @@ test.describe('the transcript’s hidden controls', () => {
     await expect(todos).toHaveAttribute('aria-expanded', 'true');
   });
 
+  test('the handoff notice trigger names its region, hidden while closed', async ({ page }) => {
+    test.setTimeout(60_000);
+    const pane = page.getByTestId('lab-strip-live');
+    const pill = pane.locator('button[aria-controls]').filter({ hasText: 'claude-sonnet' }).first();
+    await expect(pill).toBeVisible();
+    await expect(pill).toHaveAttribute('aria-expanded', 'false');
+    const region = pane.locator('#' + (await pill.getAttribute('aria-controls')!));
+    await expect(region).toBeHidden();
+    await expect(region).toHaveAttribute('role', 'region');
+
+    await pill.click();
+    await expect(pill).toHaveAttribute('aria-expanded', 'true');
+    await expect(region).toBeVisible();
+    await expect(region).toContainText('Carried 3 turns of context forward.');
+  });
+
   test('the assistant action row reveals itself when focus reaches it', async ({ page }) => {
     test.setTimeout(60_000);
     const read = await opacityOnFocus(page, 'Copy');
