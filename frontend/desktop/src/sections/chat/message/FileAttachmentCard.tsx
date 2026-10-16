@@ -6,6 +6,7 @@ import { getFileIcon } from '@/lib/file-icon';
 import { cn } from '@/lib/utils';
 import type { FileAttachment } from '@/types/chat';
 import { openRightDrawerFile } from '@/components/shell/RightDrawerState';
+import { useState } from 'react';
 
 function extensionLabel(name: string): string {
   const ext = name.split('.').pop()?.toUpperCase();
@@ -27,6 +28,7 @@ export function FileAttachmentCard({
   const Icon = fi.Icon;
   const badge = extensionLabel(file.name);
   const canOpen = (file.status ?? 'ready') === 'ready';
+  const [ratio, setRatio] = useState<number | null>(null);
 
   return (
     <button
@@ -46,15 +48,36 @@ export function FileAttachmentCard({
       title={canOpen ? `Open ${file.name} in preview` : file.name}
       aria-label={canOpen ? `Open ${file.name} in preview` : file.name}
     >
-      <div className="relative aspect-[3/4] w-full bg-[#1a1a1c]">
+      {/* The box takes the media's own ratio once it loads.
+          It used to be a fixed `aspect-[3/4]` with `object-cover`, which is a
+          portrait frame: `renderPdfThumbnail` rasterises the page at its native
+          MediaBox aspect (file-reader.ts:149-151), so a landscape page arrived
+          as ~160x113 and was scaled to cover 148x197 — losing about 47% of the
+          page width on each side. A wide diagram rendered as an unreadable
+          centre strip. `object-contain` covers the frame before the ratio is
+          known, so nothing is cropped in either state. */}
+      <div
+        className="relative flex max-h-[220px] min-h-[72px] w-full items-center justify-center bg-[#1a1a1c]"
+        style={{ aspectRatio: ratio ? String(ratio) : '3 / 4' }}
+      >
         {thumb ? (
           <img
             src={thumb}
             alt=""
-            className={cn(
-              'h-full w-full',
-              isImage ? 'object-cover' : 'object-cover object-top bg-white',
-            )}
+            ref={(el) => {
+              // A data-URL thumbnail can finish decoding before React attaches
+              // `onLoad`, and then the event never comes — measured in Chromium,
+              // where the frame stayed portrait despite naturalWidth 210. The
+              // already-complete case is read here as well as on load.
+              if (el && el.complete && el.naturalWidth > 0 && el.naturalHeight > 0) {
+                setRatio(el.naturalWidth / el.naturalHeight);
+              }
+            }}
+            onLoad={(e) => {
+              const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+              if (w > 0 && h > 0) setRatio(w / h);
+            }}
+            className={cn('h-full w-full object-contain', !isImage && 'bg-white')}
             draggable={false}
           />
         ) : (
@@ -96,7 +119,7 @@ export function FileAttachmentCardRow({
 }) {
   if (!attachments.length) return null;
   return (
-    <div className="mb-2 flex flex-wrap justify-end gap-2">
+    <div className="mb-2 flex flex-wrap items-start justify-end gap-2">
       {attachments.map((a, i) => (
         <FileAttachmentCard key={a.id ?? `${a.name}-${i}`} file={a} />
       ))}

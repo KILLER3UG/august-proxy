@@ -22,6 +22,8 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 
+import { describe, expect, it } from 'vitest';
+
 const srcRoot = resolve(__dirname, '..');
 
 /** Every selector that a stylesheet rule gives an explicit `max-width`.
