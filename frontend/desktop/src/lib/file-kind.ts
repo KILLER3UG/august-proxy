@@ -45,7 +45,7 @@ export function classifyFileKind(path: string): FileKindInfo {
   if (!ext) return { kind: 'code', label: 'File', badgeText: 'F↓', badgeTone: 'code' };
 
   if (ext === 'PDF') {
-    return { kind: 'pdf', label: 'PDF', badgeText: 'PDF', badgeTone: 'pdf' };
+    return { kind: 'pdf', label: 'Document · PDF', badgeText: 'PDF', badgeTone: 'pdf' };
   }
   if (IMAGE_EXTS.has(ext)) {
     return { kind: 'image', label: `Image · ${ext}`, badgeText: 'IMG', badgeTone: 'image' };

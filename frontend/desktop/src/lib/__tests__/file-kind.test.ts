@@ -57,7 +57,10 @@ describe('classifyFileKind', () => {
     });
     expect(classifyFileKind('paper.pdf')).toMatchObject({
       kind: 'pdf',
-      label: 'PDF',
+      // `<Family> · <EXT>` is what every other arm of this function returns,
+      // and the reference's artifact row reads "Document · PDF". PDF was the
+      // lone label that dropped the family.
+      label: 'Document · PDF',
       badgeText: 'PDF',
     });
   });
