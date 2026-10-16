@@ -2215,6 +2215,7 @@ async def sendWorkbenchMessageStream(
     guardMode: str = '',
     thinking_enabled: bool = True,
     handoff_summary: str = '',
+    attachments: list[dict[str, object]] | None = None,
     emit: Callable[[dict[str, object]], None] | None = None,
     signal: asyncio.Event | None = None,
     wait: bool = True,
@@ -2282,6 +2283,7 @@ async def sendWorkbenchMessageStream(
             guardMode=guardMode,
             thinking_enabled=thinking_enabled,
             handoff_summary=handoff_summary,
+            attachments=attachments,
             emit=emit,
             signal=signal,
             trace=trace,
@@ -2337,6 +2339,7 @@ async def _sendWorkbenchMessageStreamImpl(
     guardMode: str = '',
     thinking_enabled: bool = True,
     handoff_summary: str = '',
+    attachments: list[dict[str, object]] | None = None,
     emit: Callable[[dict[str, object]], None] | None = None,
     signal: asyncio.Event | None = None,
     trace: object | None = None,
@@ -2399,7 +2402,15 @@ async def _sendWorkbenchMessageStreamImpl(
         session.status = 'idle'
         saveSessions(dirty=session.id)
         return
-    session.messages.append({'role': 'user', 'content': message})
+    userRow: dict[str, object] = {'role': 'user', 'content': message}
+    if attachments:
+        # The card, the transcript's `displayText` strip and the Artifacts
+        # gallery all key off this. Without it the row restores as the raw
+        # prompt surface — "📄 fixture.pdf" plus the extracted text in a code
+        # block — and the gallery reports nothing while the chat holds files.
+        # Stripped before the wire (message_sources.AUGUST_MESSAGE_ONLY_KEYS).
+        userRow['attachments'] = list(attachments)
+    session.messages.append(userRow)
     session.messageCount += 1
     # T16(a): a new user message resets within-run loop reminders; the past
     # turn's calls stay known so cross-turn repeats get nudged, then broken.

@@ -71,6 +71,7 @@ def _startTurnTask(
     modelProvider: str = '',
     guardMode: str = '',
     handoff_summary: str = '',
+    attachments: list[dict[str, object]] | None = None,
 ) -> int:
     """Start one workbench turn in the background.
 
@@ -105,6 +106,7 @@ def _startTurnTask(
                 modelProvider=modelProvider,
                 guardMode=guardMode,
                 handoff_summary=handoff_summary,
+                attachments=attachments,
                 emit=_log_emit(sessionId),
                 signal=cancelEvent,
             )
@@ -483,6 +485,16 @@ async def startChat(request: Request):
     model = body.get('model', '')
     modelProvider = body.get('modelProvider', '')
     guardMode = body.get('guardMode', '')
+    # The desktop sends the attachment records it already built (name, saved
+    # path, thumbnail). Persisted on the user row so a reload can rebuild the
+    # card — see workbench.sendWorkbenchMessageStream. Anything that is not a
+    # JSON object is dropped rather than stored and re-read blindly.
+    rawAttachments = body.get('attachments')
+    attachments = (
+        [a for a in rawAttachments if isinstance(a, dict)]
+        if isinstance(rawAttachments, list)
+        else []
+    )
 
     # One in-flight agent turn per session (same invariant as gateway).
     # Only key off the live task map — a stale status=='streaming' without a
@@ -496,7 +508,7 @@ async def startChat(request: Request):
             if not existing.done():
                 existing.cancel()
         else:
-            entry = wb.enqueueUserMessage(sessionId, message) if message else None
+            entry = wb.enqueueUserMessage(sessionId, message, attachments) if message else None
             return {
                 'status': 'queued',
                 'sessionId': sessionId,
@@ -539,6 +551,7 @@ async def startChat(request: Request):
         modelProvider=modelProvider,
         guardMode=guardMode,
         handoff_summary=handoff_summary,
+        attachments=attachments,
     )
     return {'status': 'started', 'sessionId': sessionId, 'sinceSeq': seq}
 
