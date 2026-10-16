@@ -344,7 +344,7 @@ export function ChatThreadMessagePane({
           strip (phase chip + sentence stack) and fades when streaming ends. */}
       <div
         className={cn(
-          'mx-auto w-full august-chat-column px-4 shrink-0 transition-[height,opacity] duration-200',
+          'mx-auto w-full august-transcript-column px-4 shrink-0 transition-[height,opacity] duration-200',
           streaming ? 'h-auto opacity-100 pointer-events-auto' : 'h-0 overflow-hidden opacity-0 pointer-events-none',
         )}
         aria-hidden={!streaming}

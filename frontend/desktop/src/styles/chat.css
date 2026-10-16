@@ -421,10 +421,17 @@ details[open] > summary .disclosure-chevron {
   background: var(--dt-background);
 }
 
+/* The readable column width, applied to the CONTENT elements only.
+ *
+ * `.august-chat-column` is deliberately absent: that class belongs to the
+ * shell's `flex-1` wrapper (ChatLayout), and capping a left-anchored flex
+ * item stops it at 58rem and leaves the remainder as dead space on the
+ * right — measured 196px off-centre in a 1600px window with a 280px sidebar.
+ * The strip that wants the transcript's width carries its own class. */
 .august-message-list,
 .august-composer-slot,
 .august-empty-state-content,
-.august-chat-column {
+.august-transcript-column {
   max-width: 58rem !important;
 }
 

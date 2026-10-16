@@ -1245,7 +1245,7 @@ export function AssistantBlockTimeline({
         <div
           key={key}
           data-testid="chat-system-notice"
-          className="mt-1 flex w-full august-chat-column items-start gap-2 text-2xs leading-relaxed text-muted-foreground/80"
+          className="mt-1 flex w-full items-start gap-2 text-2xs leading-relaxed text-muted-foreground/80"
         >
           <Settings className="mt-px size-3 shrink-0 opacity-70" aria-hidden />
           <span className="min-w-0 flex-1">{block.content}</span>
@@ -1310,7 +1310,7 @@ export function AssistantBlockTimeline({
           key={key}
           role="alert"
           data-testid="chat-error-bubble"
-          className="mt-1.5 flex w-full august-chat-column items-start gap-2.5"
+          className="mt-1.5 flex w-full items-start gap-2.5"
         >
           <span
             aria-hidden="true"
