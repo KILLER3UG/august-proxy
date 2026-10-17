@@ -5,7 +5,7 @@
 
 # API Index — every route
 
-417 routes across 344 paths,
+419 routes across 346 paths,
 grouped by family. **This file is generated.** For the prose that explains what
 these are for and when to reach for them, read
 [`API_REFERENCE.md`](./API_REFERENCE.md) — it covers the families that matter in
@@ -112,7 +112,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `PATCH` | `/api/sessions/{sessionId}/messages/enrichment` | Attach the client-authored structured transcript to one message. |
 | `GET` | `/api/sessions/search` | Full-text search across conversation messages (C8). |
 
-## Memory & brain (23)
+## Memory & brain (25)
 
 | Method | Path | Summary |
 | --- | --- | --- |
@@ -126,6 +126,8 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `POST` | `/api/brain/config/reset` | Clear ``auxiliary.cognitive.orchestrator`` and return the factory defaults. |
 | `GET` | `/api/brain/consolidation/log` | M4 consolidation log: one lifecycle row per pass plus the M5 lesson-promotion decisions. This is the analysis… |
 | `POST` | `/api/brain/consolidation/run` | Trigger one consolidation pass now (Settings → Memory → "Run now"). |
+| `GET` | `/api/brain/decisions` | 053: the decision ledger — what the harness decided and how it settled. |
+| `POST` | `/api/brain/decisions/resolve` | Run one journal resolution pass now (Settings → Learning → "Run now"). |
 | `GET` | `/api/brain/integrity` | ``PRAGMA integrity_check`` on the live DB plus what could be recovered. |
 | `GET` | `/api/brain/memory/metrics` | Phase D item 4: recall + latency instrument. |
 | `GET` | `/api/brain/memory/preview` | The literal durable-memory text a turn receives, for Settings → Memory. |
@@ -536,4 +538,4 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 
 ---
 
-Generated from `docs/api/openapi.json` (417 operations).
+Generated from `docs/api/openapi.json` (419 operations).

@@ -37,9 +37,19 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.json_narrowing import as_int as _as_int
+from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 
 logger = logging.getLogger(__name__)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _iso(dt: datetime) -> str:
+    return dt.strftime('%Y-%m-%d %H:%M:%S')
 
 _BATCH_SIZE = 5
 # A drafted skill body is the longest single reply the judge is asked for, on a
@@ -1093,6 +1103,56 @@ def _evidenceWindow(verdict: dict[str, Any], episode_id: Any, fingerprint: str =
     )[:4000]
 
 
+def _recordAppliedLabel(episode_id: object, label: str) -> None:
+    """Persist what the door DID with one verdict (054).
+
+    ``episodes.judge_verdict`` holds the judge's words; this holds the door's
+    decision. Without it, the distillation pipeline's precision is
+    unfalsifiable — "how often is a ``memory`` verdict dropped as junk or a
+    duplicate?" has no answer, so ``record_precision_run`` still has no
+    production caller and ``amendBodyEnabled`` stays false forever. Best-effort:
+    the label is already the function's return value, so losing the row costs
+    an aggregate, never a turn.
+    """
+    eid = _as_int(episode_id, 0)
+    if eid <= 0 or not label:
+        return
+    try:
+        conn = _conn()
+        conn.execute('UPDATE episodes SET applied_label = ? WHERE id = ?', (label, eid))
+        brain_commit(conn)
+    except Exception:  # noqa: BLE001
+        logger.debug('episode applied_label write failed', exc_info=True)
+
+
+def verdict_label_stats(days: int = 30) -> dict[str, object]:
+    """Counts of ``apply_verdict`` labels over ``days`` — the door's behaviour.
+
+    Reported next to the judge's own counts so the two can be compared: a judge
+    that emits 200 ``memory`` verdicts against 8 ``memory-saved`` labels is not
+    learning, it is burning calls. Empty until 054 has been applied.
+    """
+    since = _iso(_utcnow() - timedelta(days=max(1, min(int(days), 365))))
+    try:
+        rows = _conn().execute(
+            "SELECT applied_label, COUNT(*) AS n FROM episodes "
+            "WHERE (applied_label IS NOT NULL AND applied_label != '') AND created_at >= ? "
+            'GROUP BY applied_label ORDER BY n DESC',
+            (since,),
+        ).fetchall()
+    except Exception:
+        return {'days': days, 'labels': [], 'total': 0, 'error': 'unavailable'}
+    pairs: list[tuple[str, int]] = [
+        (str(r['applied_label']), int(r['n'])) for r in rows
+    ]
+    labels = [{'label': name, 'count': count} for name, count in pairs]
+    return {
+        'days': days,
+        'labels': labels,
+        'total': sum(count for _name, count in pairs),
+    }
+
+
 def apply_verdict(
     verdict: dict[str, Any], fingerprint: str, mode: str = 'propose', scope: str = ''
 ) -> str:
@@ -1104,6 +1164,16 @@ def apply_verdict(
     ``scope``: the M-2 scope of the source episode (Part 26 6.4) — a Bot's
     distilled lessons land in the Bot's own memory home instead of global.
     """
+    label = _apply_verdict_body(verdict, fingerprint, mode, scope)
+    # 054: the label is the door's whole decision, and it was previously
+    # discarded here — every caller kept a count, none kept the reason.
+    _recordAppliedLabel(verdict.get('episode'), label)
+    return label
+
+
+def _apply_verdict_body(
+    verdict: dict[str, Any], fingerprint: str, mode: str = 'propose', scope: str = ''
+) -> str:
     action = str(verdict.get('action', 'none') or 'none').strip().lower()
     episodeId = verdict.get('episode')
 

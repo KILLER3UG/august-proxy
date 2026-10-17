@@ -268,8 +268,11 @@ def record_turn_outcome(
     skills_loaded: list[str] | None = None,
     facts_injected: list[str] | None = None,
     error_families: list[str] | None = None,
-) -> None:
+) -> int | None:
     """Append one telemetry row. Best-effort: never raises into the turn.
+
+    Returns the new row's id (or None when the write failed), which is the
+    join key 053 adds to ``usage_events`` and ``decision_ledger``.
 
     Phase L (Part 17): ``ttft_ms`` + the prompt-cache token split make
     latency regressions measurable per turn — "chat feels slow" becomes
@@ -325,12 +328,13 @@ def record_turn_outcome(
             _nullable_json_list(error_families),
         ]
         try:
-            conn.execute(
+            cursor = conn.execute(
                 'INSERT INTO turn_outcomes '
                 f'({", ".join(base_cols + list(_NEW_COLUMNS))}) '
                 f'VALUES ({", ".join(["?"] * (len(base_cols) + len(_NEW_COLUMNS)))})',
                 (*base_vals, *new_vals),
             )
+            rowid = cursor.lastrowid
         except Exception as exc:  # noqa: BLE001
             # 046 not applied (fresh install whose migration budget is spent,
             # or a partially upgraded legacy DB): the verdict columns are lost,
@@ -343,7 +347,7 @@ def record_turn_outcome(
             if 'no such column' not in msg and 'has no column' not in msg:
                 raise
             logger.debug('record_turn_outcome: 046 columns absent, writing base row')
-            conn.execute(
+            cursor = conn.execute(
                 'INSERT INTO turn_outcomes '
                 f'({", ".join(base_cols)}) '
                 f'VALUES ({", ".join(["?"] * len(base_cols))})',
@@ -352,8 +356,13 @@ def record_turn_outcome(
         # P4.2: telemetry rows are never read back within the turn —
         # the commit is debounced (≤2s) instead of syncing per turn.
         defer_commit(conn)
+        # The row id is the join key every other per-turn table now carries
+        # (053: ``usage_events.turn_id``, ``decision_ledger.turn_id``). Callers
+        # that do not need it ignore the return; the turn close uses it.
+        return int(rowid) if rowid else None
     except Exception:
         logger.debug('record_turn_outcome failed', exc_info=True)
+        return None
 
 
 def guardrail_class_digest(session_id: str, sinceUtc: str) -> tuple[str | None, dict[str, str]]:

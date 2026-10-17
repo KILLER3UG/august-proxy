@@ -17,6 +17,7 @@ def register_all() -> None:
         board_tools,
         bulk_tools,
         circuit_tools,
+        decision_tools,
         desktop_tools,
         file_tools,
         harness_tools,
@@ -38,6 +39,10 @@ def register_all() -> None:
     artifact_tools.register()
     # Circuit work: component search + ngspice simulation.
     circuit_tools.register()
+    # 053: the decision journal's counterfactual half. Deliberately not in
+    # AUGUST_CORE_TOOLS — progressive disclosure can defer it, so it costs no
+    # prompt tokens on a large surface.
+    decision_tools.register()
     # Media analysis — the sanctioned reader for images/video/audio/docs
     # (read_file's media guard redirects here).
     media_tools.register()

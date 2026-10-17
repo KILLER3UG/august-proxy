@@ -252,6 +252,17 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('contextReliefRotate', 'context_relief_rotate', False, 'bool'),
     ('outcomeIntervalHours', 'outcome_interval_hours', 72, 'num'),
     ('outcomeWindowDays', 'outcome_window_days', 14, 'num'),
+    # The decision journal (learning_scheduler._journal_job): resolve open
+    # ledger rows against the turn verdicts that already exist, then summarize
+    # the day. Daily because a decision's own horizon is measured in turns and
+    # days, not hours — and because the digest is what a human reads.
+    ('journalIntervalHours', 'journal_interval_hours', 24, 'num'),
+    # 053: whether `record_decision` is promoted into the CORE tool set (the
+    # tools every turn sees regardless of progressive disclosure). Default off:
+    # a tool definition is prompt bytes, so this changes what a provider sees
+    # and moves the prefix cache. Off still logs the MECHANICAL half — one row
+    # per turn, no model call — so the ledger is complete either way.
+    ('decisionJournal', 'decision_journal', False, 'bool'),
     ('consolidationModelSummarize', 'consolidation_model_summarize', False, 'bool'),
     # M-4: episodic_timeline retention window in days — the sweep
     # in consolidation._sweep_episodic prunes rows older than this.

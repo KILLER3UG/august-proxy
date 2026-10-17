@@ -342,6 +342,48 @@ def conn() -> sqlite3.Connection:
     return _local.conn
 
 
+def checkpoint_wal(*, truncate: bool = True) -> dict[str, object]:
+    """Fold the write-ahead log back into the database (TRUNCATE by default).
+
+    A WAL larger than its database means no checkpoint has completed — usually
+    because a reader is holding an old snapshot, which makes every checkpoint
+    return BUSY. Until one succeeds, every write appends: the file grows without
+    bound and a crash forces replay of the whole log. Measured on this install
+    on 2026-10-17: a 158 MB WAL for a 154 MB database.
+
+    TRUNCATE blocks on the writer lock and cannot pass while a reader is
+    mid-read; SQLite reports that as ``busy: 1``, which is "try again later" and
+    not an error. PASSIVE is the never-blocking fallback and does the useful
+    work whenever it can.
+
+    Deliberately NOT called through the thread-local connection: this is a
+    maintenance entry point, a short-lived connection of its own, and it must
+    never be invoked inside a transaction.
+    """
+    try:
+        c = sqlite3.connect(str(db_path()), timeout=_TIMEOUT_MS / 1000)
+        try:
+            # Named columns: PRAGMA wal_checkpoint returns (busy, log,
+            # checkpointed) in that order, and reading them by name is what
+            # keeps the mapping honest if SQLite ever adds a fourth.
+            c.row_factory = sqlite3.Row
+            row = c.execute(
+                f'PRAGMA wal_checkpoint({"TRUNCATE" if truncate else "PASSIVE"})'
+            ).fetchone()
+        finally:
+            c.close()
+        payload = dict(row) if row else {}
+        return {
+            'ok': int(payload.get('busy', -1)) == 0,
+            'busy': int(payload.get('busy', -1)),
+            'logPages': int(payload.get('log', -1)),
+            'checkpointedPages': int(payload.get('checkpointed', -1)),
+        }
+    except Exception as exc:
+        logger.debug('wal checkpoint failed', exc_info=True)
+        return {'ok': False, 'error': str(exc)[:200]}
+
+
 def close() -> None:
     """Close the thread-local connection."""
     if hasattr(_local, 'conn') and _local.conn is not None:

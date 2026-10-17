@@ -42,9 +42,17 @@ def bot_agent_id(scope: str) -> str:
 
 
 def normalize_scope(scope: str) -> str:
-    """Validate a caller-supplied scope; anything unrecognized is 'global'."""
+    """Validate a caller-supplied scope; anything unrecognized is 'global'.
+
+    The vocabulary is exactly what :func:`resolve_scope` can produce —
+    ``global`` or ``bot:<agentId>``. A ``project:`` prefix used to be accepted
+    here and then refused at the write door, because nothing ever produced it:
+    per-project memory has its own home (``<workspace>/.aug/memory``, written by
+    ``project_memory``), and this store is for what travels with the user. Two
+    answers to "whose memory is this row?" was already one too many.
+    """
     s = (scope or '').strip()
-    if s == GLOBAL_SCOPE or is_bot_scope(s) or s.startswith('project:'):
+    if s == GLOBAL_SCOPE or is_bot_scope(s):
         return s
     return GLOBAL_SCOPE
 

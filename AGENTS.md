@@ -6,10 +6,14 @@ Every test file in this repo was deleted on 2026-10-17 — `backend-py/tests/`
 (1,690 files), the 235 frontend `*.test.ts(x)` files with their `__tests__`
 directories, `frontend/desktop/e2e/`, `scripts/desktop-backend-payload.test.mjs`
 and the `test_mapping` hook whose only input was the test tree. The CI jobs, npm
-scripts, `pytest` configuration, coverage floor/ratchet and the lockfile-neutral
-dev deps that served them went with them. `npm test` does not exist any more, on
-purpose; the 25 inline Rust `#[cfg(test)]` blocks in `src-tauri/` were left in
-place (they compile to nothing outside `cargo test`, and nothing runs it).
+scripts, `pytest` configuration, coverage floor/ratchet and the tooling that
+served them went with them — but NOT the dependencies: the pytest-* dev
+dependencies in `backend-py/pyproject.toml` and the vitest/playwright packages
+in the frontend `package.json` all stay, because `uv lock --check` and the npm
+lockfile gate the release job and a removed dep is a lockfile change. `npm
+test` does not exist any more, on purpose; the 25 inline Rust `#[cfg(test)]`
+blocks in `src-tauri/` were left in place (they compile to nothing outside
+`cargo test`, and nothing runs it).
 
 **Every `tests/…` path named anywhere below is historical.** A sentence that
 says a rule "is pinned by `tests/test_x.py`" is no longer pinned by anything —

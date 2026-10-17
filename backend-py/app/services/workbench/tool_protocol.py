@@ -76,14 +76,85 @@ ERROR_RECEIPT_PREFIXES: tuple[str, ...] = tuple(RECEIPT_TONE)
 
 RECEIPT_TONES: frozenset[str] = frozenset({'failure', 'denial'})
 
+# Receipts that declare failure in a SHAPE rather than a prefix. The prefix
+# list above only catches tools that begin their text with the loop's own
+# vocabulary; a shell command that loses starts with "Exit code: 1", and a tool
+# that returns a dict starts with "{". Both are failures the durable
+# ``is_error`` (and therefore episode mining) used to record as successes,
+# which is why the ledger saw ``error_families=['not_found']`` on turns whose
+# persisted transcript contained zero error blocks.
+_EXIT_CODE_MARKERS: tuple[str, ...] = ('Exit code:', 'exit code:', 'EXIT CODE:')
+
+# Keys a structured receipt uses to say "I did not succeed". ``ok``/``success``
+# are checked for a literal False; an ``error`` value is a failure when it is a
+# non-empty string or a non-empty object.
+_RECEIPT_FAILURE_KEYS: tuple[str, ...] = ('ok', 'success')
+
+
+def _exit_code_failure(text: str) -> bool:
+    """True for a receipt that begins ``Exit code: <nonzero>``.
+
+    Anchored at the start, like the prefix table: a build log that merely
+    prints "Exit code: 1" halfway down is output, not a verdict.
+    """
+    head = text.lstrip()
+    for marker in _EXIT_CODE_MARKERS:
+        if not head.startswith(marker):
+            continue
+        tail = head[len(marker) :].strip()
+        digits = ''
+        for index, ch in enumerate(tail):
+            if ch.isdigit() or (ch == '-' and index == 0):
+                digits += ch
+                continue
+            break
+        try:
+            return int(digits) != 0
+        except ValueError:
+            return False
+    return False
+
+
+def _structured_failure(text: str) -> bool:
+    """True for a JSON object receipt that declares its own failure."""
+    stripped = text.lstrip()
+    if not stripped.startswith('{'):
+        return False
+    try:
+        payload = json.loads(stripped)
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    for key in _RECEIPT_FAILURE_KEYS:
+        if payload.get(key) is False:
+            return True
+    if payload.get('isError') is True:
+        return True
+    error = payload.get('error')
+    if isinstance(error, str):
+        return bool(error.strip())
+    if isinstance(error, (dict, list)):
+        return bool(error)
+    return False
+
 
 def tool_result_failed(text: str) -> bool:
     """Whether one tool receipt declares its own call unsuccessful.
 
     One implementation on purpose: the SSE status the UI renders and the
-    durable ``is_error`` the episode miner reads must never disagree.
+    durable ``is_error`` the episode miner reads must never disagree. Three
+    shapes are recognised, in order: the loop's own receipt vocabulary
+    (:data:`RECEIPT_TONE`), an ``Exit code: N`` header, and a JSON receipt that
+    sets ``ok``/``success`` false or carries a non-empty ``error``.
     """
-    return bool(text) and text.startswith(ERROR_RECEIPT_PREFIXES)
+    if not text:
+        return False
+    return (
+        text.startswith(ERROR_RECEIPT_PREFIXES)
+        or _exit_code_failure(text)
+        or _structured_failure(text)
+    )
 
 
 def receipt_tone(text: str) -> str:
@@ -98,6 +169,8 @@ def receipt_tone(text: str) -> str:
     for prefix, tone in RECEIPT_TONE.items():
         if text.startswith(prefix):
             return tone
+    if _exit_code_failure(text) or _structured_failure(text):
+        return 'failure'
     return 'none'
 
 # Cap on a non-string payload dumped into history. A tool returning a huge
@@ -161,7 +234,7 @@ def normalize_tool_result(
     raw: object,
     *,
     tool_use_id: str = '',
-    tool_name: str = 'tool',
+    tool_name: str = '',
 ) -> dict[str, object]:
     """Coerce one collected result into a well-formed ``tool`` message.
 
@@ -197,6 +270,15 @@ def normalize_tool_result(
         'tool_call_id': callId,
         'content': text,
     }
+    # The tool's own name rides along so the DURABLE transcript can label a
+    # tool card, and so episode mining can build a ``tool-error:<name>``
+    # fingerprint. This function already received ``tool_name`` and used it
+    # only for the synthetic label, so every persisted tool row was anonymous
+    # and ``_errorReceipts`` rendered receipts as ``': <body>'``.
+    # Omitted when the caller had no name: an empty ``name`` is not valid on
+    # either wire format, and "absent" is the honest encoding of unknown.
+    if tool_name:
+        out['name'] = tool_name
     for flag in ('is_error', 'synthetic'):
         if flag in msg:
             out[flag] = msg[flag]

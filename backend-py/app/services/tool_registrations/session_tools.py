@@ -118,14 +118,16 @@ def _deriveFactKey(text: str, scope: str = 'global') -> str:
     repeated save updates rather than duplicates). Models should pass `key`
     explicitly when updating a known fact.
 
-    2.3 (Part 21 M-2 follow-up): for a non-global scope the derived key is
-    namespaced with the scope, so two Bots saving the SAME text get distinct
-    keys instead of the second silently overwriting the first's private row
-    (``fact_key`` is globally UNIQUE). Global keys are unchanged (no prefix)."""
+    No scope prefix. Before 055, ``fact_key`` was unique store-wide, so a
+    non-global key had to be namespaced to avoid one Bot silently overwriting
+    another's row — and the prefix also changed the key's consolidation slug,
+    which made the same content in two scopes two rows that could never be
+    merged. The row's key is now unique per scope (UNIQUE(scope, fact_key)), so
+    the namespacing is unnecessary and was only manufacturing duplicates.
+    The ``scope`` argument is kept for call-site compatibility and is now
+    unused; remove it with its three callers.
+    """
     slug = re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')[:48] or 'note'
-    if scope and scope != 'global':
-        ns = re.sub(r'[^a-z0-9]+', '-', scope.lower()).strip('-')[:40]
-        return f'model:{ns}:{slug}'
     return f'model:{slug}'
 
 
@@ -271,6 +273,13 @@ def _duplicateFactKey(text: str, scope: str, own_key: str) -> str:
 
     ``own_key`` is excluded because writing the same key is an update (the
     documented way to change a memory), not a duplicate.
+
+    This is the STRICTEST rung of memory_quality's dedupe ladder
+    (``EXACT_SIMILARITY``, normalized-text identity): consolidation folds at
+    0.85 and the distiller refuses at 0.55, so a fact this door accepts can
+    still be merged later. Identity, not a ratio, because a near-miss a human
+    re-phrased is the model's own way of sharpening a memory, and destroying it
+    on a 0.55 is the wrong trade — see memory_quality's own rationale.
     """
     wanted = _normalizeFactText(text)
     if not wanted:

@@ -1413,7 +1413,10 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         except Exception:
             logger.debug('tool-defs context window resolve failed', exc_info=True)
         result = assembleToolDefs(
-            all_tool_defs=tools, context_messages=contextMsgs, contextLength=contextWindow
+            all_tool_defs=tools,
+            context_messages=contextMsgs,
+            contextLength=contextWindow,
+            coreToolNames=_coreToolNames(),
         )
         if result.activated:
             session._tool_assembly = result
@@ -1526,7 +1529,10 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
                 }
             )
         result = assembleToolDefs(
-            all_tool_defs=anthShim, context_messages=contextMsgs, contextLength=contextWindow
+            all_tool_defs=anthShim,
+            context_messages=contextMsgs,
+            contextLength=contextWindow,
+            coreToolNames=_coreToolNames(),
         )
         if result.activated:
             session._tool_assembly = result
@@ -2328,6 +2334,88 @@ async def _scheduleTurnBaselineSnapshot(session_id: str, workspace: str, message
 
 
 
+def _recordPreLoopExit(
+    *,
+    session: object,
+    sessionId: str,
+    reason: str,
+    error: str | None,
+    emit: Callable[[dict[str, object]], None] | None,
+    model: str = '',
+    provider: str = '',
+    turn_start_ms: int | None = None,
+    rounds: int | None = None,
+) -> None:
+    """Close a turn that ends BEFORE the managed loop starts.
+
+    The four pre-loop exits (circuit interception, no provider, no API key,
+    session cost ceiling) each emitted ``done`` and returned, which skipped the
+    post-loop ``turnTelemetry`` / ``persistAndClose`` / ``turn_end`` block
+    entirely: no ``turn_outcomes`` row and no ``turn_end`` event. The ledger
+    was therefore blind to exactly the failures that stop a turn before it
+    begins, and any summary built on it under-counted those four classes.
+
+    This writes the same two records the loop's own terminal block writes, in
+    the same vocabulary, so there is one terminal protocol instead of five
+    hand-rolled ones. Best-effort throughout: a telemetry failure must never
+    stop the ``done`` the caller still owes the client.
+    """
+    try:
+        from app.services import turn_outcomes
+
+        turn_outcomes.record_turn_outcome(
+            model=model or '',
+            provider=provider or '',
+            task_type=as_str(getattr(session, 'agent_mode', '') or 'agent'),
+            ok=turn_outcomes.turn_ok(reason, bool(error)),
+            error_class=turn_outcomes.classify_error(error or ''),
+            duration_ms=(
+                0 if turn_start_ms is None else max(0, int(time.time() * 1000) - turn_start_ms)
+            ),
+            session_id=sessionId,
+            end_reason=reason or None,
+            rounds=rounds,
+        )
+    except Exception:
+        logger.debug('pre-loop turn outcome failed (non-fatal)', exc_info=True)
+    if emit:
+        try:
+            emit(
+                {
+                    'type': 'turn_end',
+                    'sessionId': sessionId,
+                    'reason': reason,
+                    'rounds': 0 if rounds is None else rounds,
+                    'error': error is not None,
+                }
+            )
+        except Exception:
+            logger.debug('pre-loop turn_end emit failed (non-fatal)', exc_info=True)
+
+
+def _coreToolNames() -> set[str]:
+    """The always-offered tool set — plus ``record_decision`` when asked for.
+
+    ``record_decision`` is deliberately NOT in ``AUGUST_CORE_TOOLS``: it is the
+    counterfactual half of the decision ledger, and a tool definition costs
+    prompt bytes on every turn. Promoting it into the core set is opt-in via
+    ``decisionJournal`` (default off), because that changes what a provider
+    sees and therefore the prefix cache — the same reason the memory tail's
+    ``memoryAutoInject`` default exists.
+    """
+    from app.services.tools.model_tools import AUGUST_CORE_TOOLS
+
+    names = set(AUGUST_CORE_TOOLS)
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        if bool(getRuntimeConfig().get('decisionJournal', False)):
+            names.add('record_decision')
+    except Exception:
+        logger.debug('decisionJournal config read failed', exc_info=True)
+    return names
+
+
 async def _sendWorkbenchMessageStreamImpl(
     sessionId: str,
     message: str,
@@ -2348,6 +2436,11 @@ async def _sendWorkbenchMessageStreamImpl(
     from app.lib.perf_timing import PerfTrace
 
     _trace = cast(PerfTrace, trace) if trace is not None else PerfTrace('noop')
+    # Wall clock for the pre-loop exits. The loop's own `_turnStartMs` is set
+    # further down (after session setup), so it cannot time a turn that returns
+    # before reaching it — and a NULL duration on those rows would make the
+    # four blocked classes invisible to latency aggregates too.
+    _preLoopStartMs = int(time.time() * 1000)
 
     session = getWorkbenchSession(sessionId)
     if not session:
@@ -2398,6 +2491,20 @@ async def _sendWorkbenchMessageStreamImpl(
                     'sessionId': sessionId,
                 }
             )
+        # A circuit ack is a completed turn, not a failure — but it is still a
+        # turn, and it used to be the only kind that left no trace at all.
+        _recordPreLoopExit(
+            session=session,
+            sessionId=sessionId,
+            reason='finished',
+            error=None,
+            emit=emit,
+            model=as_str(getattr(session, 'model', ''), ''),
+            provider=as_str(getattr(session, 'provider', ''), ''),
+            turn_start_ms=_preLoopStartMs,
+            rounds=0,
+        )
+        if emit:
             emit({'type': 'done', 'sessionId': sessionId})
         session.status = 'idle'
         saveSessions(dirty=session.id)
@@ -2553,16 +2660,24 @@ async def _sendWorkbenchMessageStreamImpl(
     # flags/counters can't leak across turns.
     setattr(session, '_refusal_count', 0)
     if not resolvedProvider:
+        _noProviderMsg = (
+            'No model provider is configured with an API key. '
+            'Open Settings → Model settings, add a provider, then select one of its models.'
+        )
         if emit:
-            emit(
-                {
-                    'type': 'error',
-                    'message': (
-                        'No model provider is configured with an API key. '
-                        'Open Settings → Model settings, add a provider, then select one of its models.'
-                    ),
-                }
-            )
+            emit({'type': 'error', 'message': _noProviderMsg})
+        _recordPreLoopExit(
+            session=session,
+            sessionId=sessionId,
+            reason='error',
+            error=_noProviderMsg,
+            emit=emit,
+            model=resolvedModel,
+            provider='',
+            turn_start_ms=_preLoopStartMs,
+            rounds=0,
+        )
+        if emit:
             emit({'type': 'done', 'sessionId': sessionId})
         session.status = 'idle'
         session.updatedAt = _now()
@@ -2590,16 +2705,25 @@ async def _sendWorkbenchMessageStreamImpl(
                 if apiKey:
                     break
         if not apiKey:
+            _noKeyMsg = (
+                f'API key not configured for {resolvedProvider.get("name", "unknown")}. '
+                'Open Settings → Model settings and paste a key for this provider.'
+            )
             if emit:
-                emit(
-                    {
-                        'type': 'error',
-                        'message': (
-                            f'API key not configured for {resolvedProvider.get("name", "unknown")}. '
-                            'Open Settings → Model settings and paste a key for this provider.'
-                        ),
-                    }
-                )
+                emit({'type': 'error', 'message': _noKeyMsg})
+            _recordPreLoopExit(
+                session=session,
+                sessionId=sessionId,
+                reason='error',
+                error=_noKeyMsg,
+                emit=emit,
+                model=resolvedModel,
+                provider=as_str(
+                    resolvedProvider.get('name') or resolvedProvider.get('id'), ''
+                ),
+                turn_start_ms=_preLoopStartMs,
+                rounds=0,
+            )
             session.status = 'idle'
             session.updatedAt = _now()
             try:
@@ -3219,6 +3343,24 @@ async def _sendWorkbenchMessageStreamImpl(
                 # emits `done` belongs to a different `try` — so emit the
                 # terminal `done` here (matching the circuit/other early exits)
                 # or the client waits forever on a stream that already errored.
+                # The ledger row and `turn_end` come from the same helper the
+                # other three pre-loop exits use; before it existed this path
+                # was the one failure a cost report could not see.
+                _recordPreLoopExit(
+                    session=session,
+                    sessionId=sessionId,
+                    reason='error',
+                    error=msg,
+                    emit=emit,
+                    model=resolvedModel,
+                    provider=as_str(
+                        resolvedProvider.get('name') or resolvedProvider.get('id'), ''
+                    )
+                    if isinstance(resolvedProvider, dict)
+                    else '',
+                    turn_start_ms=_turnStartMs,
+                    rounds=toolRound,
+                )
                 session.status = 'idle'
                 session.updatedAt = _now()
                 try:
@@ -3287,6 +3429,14 @@ async def _sendWorkbenchMessageStreamImpl(
     _runawayNudgeRounds, _runawayStopRounds = _runawayBudget()
     runawayRounds = 0
     runawayNudgeSent = False
+    # Model dispatches this turn, counted SEPARATELY from `toolRound`. The
+    # self-heal paths decrement `toolRound` to re-run a round
+    # (`toolRound -= 1; continue`), so the number the ledger received was the
+    # loop's budget counter, not the number of model calls — a turn that
+    # self-healed three times reported three fewer rounds than it actually
+    # made. `toolRound` keeps its meaning for the cap and the stall detector;
+    # this is what telemetry and `turn_end` report.
+    modelRounds = 0
     try:
         from app.services.skill_service import begin_turn_skill_collection
 
@@ -3295,6 +3445,7 @@ async def _sendWorkbenchMessageStreamImpl(
         logger.debug('turn skill collection open failed', exc_info=True)
     while True:
         toolRound += 1
+        modelRounds += 1
         mutationsBeforeRound = getattr(session, 'mutationCount', 0)
         # Reactive prune-then-compact may shrink the surface once
         # per round on a context-overflow error; the flag keeps it from
@@ -5636,6 +5787,7 @@ async def _sendWorkbenchMessageStreamImpl(
         turnError=turnError,
         emit=emit,
         toolRound=toolRound,
+        modelRounds=modelRounds,
         turnEndReason=_finalTurnEndReason(
             turnEndReason, errored=turnError is not None, cancelledNow=_isCancelled()
         ),
@@ -5696,7 +5848,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     'type': 'turn_end',
                     'sessionId': sessionId,
                     'reason': _endReason,
-                    'rounds': toolRound,
+                    'rounds': modelRounds,
                     'error': turnError is not None,
                 }
             )

@@ -191,8 +191,14 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
             )
             corpus.append(tokens)
     except Exception as exc:
-        logging.debug('fact index build failed: %s', exc)
-        rows, corpus = [], []
+        # A transient failure (DB locked, mid-migration, a malformed row) must
+        # NOT be cached as "there is no memory". The corpus cache is invalidated
+        # only by a fact write, so one bad moment used to disable BM25 recall
+        # AND the always-on profile lane until the next write — silently, since
+        # build_memory_block just returns ''. Degrade for THIS call and let the
+        # next one rebuild.
+        logging.warning('fact index build failed; recall degraded for this call: %s', exc)
+        return {'rows': [], 'tokens': [], 'bm25': None}
     index = {'rows': rows, 'tokens': corpus, 'bm25': BM25(corpus) if corpus else None}
     with _lock:
         _caches[scope] = index

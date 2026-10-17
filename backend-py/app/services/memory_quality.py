@@ -32,10 +32,27 @@ import re
 
 from app.services.best_effort import best_effort
 
-# One threshold for "we already know this", shared with the turn-outcome lesson
-# promotion so the two automatic doors cannot disagree about what a duplicate is.
-# BM25(A→B) / BM25(B→B), from `fact_retrieval.find_similar_facts`.
-DEDUPE_SIMILARITY = 0.55
+# ── the one dedupe ladder ──────────────────────────────────────────────────
+# Three doors decide "we already know this", and they used three unrelated
+# definitions: exact normalized text at the `remember` write door, 0.85 in
+# consolidation's merge, and 0.55 here. A fact could therefore be "already
+# known" to one door and new to another — which is how a store fills with
+# near-copies while every door reports doing its job.
+#
+# The VALUES are unchanged on purpose: each was tuned per door and nothing has
+# measured any of them yet. What changes is that they now live in one place, so
+# the first tuning pass that happens after real data exists sees all three at
+# once instead of editing one and leaving the other two to drift.
+#
+# Ratios are BM25(A→B) / BM25(B→B), from fact_retrieval.find_similar_facts.
+DUPLICATE_SIMILARITY = 0.55  # the write door: refuse as already-known
+MERGE_SIMILARITY = 0.85      # consolidation: fold the older row into the newer
+EXACT_SIMILARITY = 1.0       # normalized-text identity (the `remember` door)
+
+# The name the distiller and the turn-outcome promotion import. It is the same
+# number as DUPLICATE_SIMILARITY, kept so existing call sites do not change;
+# new code should prefer the ladder's named doors.
+DEDUPE_SIMILARITY = DUPLICATE_SIMILARITY
 
 # Below this a "lesson" is a label, not a statement anyone can act on.
 MIN_STATEMENT_CHARS = 24

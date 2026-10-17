@@ -1,8 +1,9 @@
 /* ── LearningHub — the learning loop as one work surface (/learning) ──── */
 /* Strictly ADDITIVE. Settings keeps every panel it already had, and the
- * settings registry is untouched: this route groups the same four surfaces
- * by what a human does with them — decide (Inbox), inspect what was learned
- * (Skills / Memory), watch the background passes (Scheduler).
+ * settings registry is untouched: this route groups five surfaces by what a
+ * human does with them — decide (Inbox), inspect what was learned (Skills /
+ * Memory), watch the background passes (Scheduler), and read what the
+ * journal measured (Decisions).
  *
  * Every tab renders an EXISTING section component. Nothing is forked,
  * re-implemented, or moved; there is one implementation of the review inbox,
@@ -16,16 +17,18 @@ import {
   Database,
   GraduationCap,
   HeartPulse,
+  Scale,
   type LucideIcon,
 } from 'lucide-react';
 import { WorkspaceNavLink } from '@/components/workspace/WorkspaceNavLink';
 import { useReviewInboxCount } from '@/lib/useReviewInboxCount';
+import { DecisionsSection } from '@/sections/settings/DecisionsSection';
 import { HarnessImprovementsSection } from '@/sections/settings/HarnessImprovementsSection';
 import { LearningPanel } from '@/sections/settings/LearningPanel';
 import { MemorySection } from '@/sections/settings/MemorySection';
 import { SkillsSection } from '@/sections/settings/SkillsSection';
 
-type HubTabId = 'inbox' | 'skills' | 'memory' | 'scheduler';
+type HubTabId = 'inbox' | 'skills' | 'memory' | 'scheduler' | 'decisions';
 
 interface HubTab {
   id: HubTabId;
@@ -42,6 +45,7 @@ const TABS: readonly HubTab[] = [
   { id: 'skills', label: 'Skills', Icon: BookOpen },
   { id: 'memory', label: 'Memory', Icon: Database },
   { id: 'scheduler', label: 'Scheduler', Icon: CalendarClock },
+  { id: 'decisions', label: 'Decisions', Icon: Scale },
 ];
 
 /* MemorySection keys its browse-state reset off the settings id it is handed.
@@ -87,8 +91,8 @@ export function LearningHub() {
       </aside>
 
       {/* Content pane. Panels that own their scroll (Inbox, Skills) fill it;
-          the ones that flow (Memory, the Learning panel card) ride its
-          scrollbar — one rule for all four. */}
+          the ones that flow (Memory, Decisions, the Learning panel card)
+          ride its scrollbar — one rule for all of them. */}
       <div className="h-full min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
         {tab === 'inbox' ? <HarnessImprovementsSection /> : null}
         {tab === 'skills' ? <SkillsSection /> : null}
@@ -98,6 +102,7 @@ export function LearningHub() {
             <LearningPanel defaultExpanded />
           </div>
         ) : null}
+        {tab === 'decisions' ? <DecisionsSection /> : null}
       </div>
     </div>
   );

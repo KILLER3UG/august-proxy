@@ -6642,6 +6642,93 @@
         ]
       }
     },
+    "/api/brain/decisions": {
+      "get": {
+        "description": "053: the decision ledger — what the harness decided and how it settled.\n\nRead-only diagnostics, like ``/turn-outcomes``: nothing here is injected\ninto a prompt and nothing gates an answer. Three sections:\n\n  * ``digest`` — today's activity (logged / resolved / unscorable /\n    expired), cost, and cost per resolved decision.\n  * ``stats`` — per-model and per-kind resolution, with a Brier component.\n    ``unscorableRate`` sits beside ``brier`` on purpose: a good score over\n    three resolved rows out of forty is luck, not calibration.\n  * ``rows`` — the newest ledger rows, for the Learning panel.",
+        "operationId": "getDecisions_api_brain_decisions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 20,
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Getdecisions",
+        "tags": [
+          "brain-config"
+        ]
+      }
+    },
+    "/api/brain/decisions/resolve": {
+      "post": {
+        "description": "Run one journal resolution pass now (Settings → Learning → \"Run now\").",
+        "operationId": "postDecisionsResolve_api_brain_decisions_resolve_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Postdecisionsresolve",
+        "tags": [
+          "brain-config"
+        ]
+      }
+    },
     "/api/brain/integrity": {
       "get": {
         "description": "``PRAGMA integrity_check`` on the live DB plus what could be recovered.",

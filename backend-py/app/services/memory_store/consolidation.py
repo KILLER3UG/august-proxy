@@ -24,12 +24,15 @@ from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 from app.services.memory_conn import db_path as _db_path
 from app.services.memory_conn import poison
+from app.services.memory_quality import MERGE_SIMILARITY as _MERGE_SIMILARITY
 from app.services.memory_store.rest import PROFILE_FACT_KIND
 
 logger = logging.getLogger('august.consolidation')
 
-# BM25 self-similarity above this = near-duplicate → merge.
-_MERGE_SIMILARITY = 0.85
+# BM25 self-similarity above this = near-duplicate → merge. The number now
+# lives in memory_quality's dedupe ladder (2026-10-17) alongside the write
+# door's 0.55, so the two cannot drift apart silently; the alias is kept
+# because it reads better at the comparison site than the ladder's name.
 # Pair pass is O(n) index queries; huge stores skip it rather than stall.
 _PAIR_SCAN_CAP = 500
 # VACUUM only when the DB file grows past this.
@@ -685,6 +688,34 @@ def _merge_duplicates(modelSummarize: bool = False) -> tuple[int, list[str]]:
         if cur.rowcount != 1:
             notes.append(f'skipped {older["key"]!r} -> {newerKey!r}: survivor row missing')
             continue
+        # Snapshot the absorbed row before it disappears. A merge is a
+        # HEURISTIC (slugged-key equality, or BM25 >= _MERGE_SIMILARITY), and
+        # this was the one destructive memory path with no proposal and no
+        # undo — while retiring a single unused fact required a human decision.
+        # Same store, opposite risk policies. The snapshot does not make the
+        # merge reversible on its own, but the absorbed content is recoverable
+        # from `lifecycle` instead of gone.
+        try:
+            from app.services.memory_store.rest import record_lifecycle
+
+            record_lifecycle(
+                '',
+                'fact_merged',
+                {
+                    'absorbedKey': str(older['key']),
+                    'absorbedValue': older['value'],
+                    'absorbedTitle': str(older.get('title') or ''),
+                    'absorbedKind': str(older.get('kind') or 'fact'),
+                    'absorbedScope': str(older.get('scope') or 'global'),
+                    'survivorKey': newerKey,
+                    'reason': 'slug-or-similarity',
+                },
+            )
+        except Exception:  # noqa: BLE001
+            # Never block the merge on its audit trail: the survivor already
+            # took the write, so skipping the DELETE would leave two rows that
+            # both claim the content.
+            logger.debug('fact merge snapshot failed', exc_info=True)
         conn.execute('DELETE FROM facts WHERE fact_key = ?', (older['key'],))
         removedKeys.add(str(older['key']))
         merged += 1

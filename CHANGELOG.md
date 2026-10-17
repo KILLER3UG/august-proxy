@@ -1,6 +1,117 @@
 # August Proxy — Changelog
 
+## Unreleased — the 2026-10-17 push to master (6328872b)
+
+**The test suite is gone, at the owner's request.** 627 deletions:
+`backend-py/tests/` (1,690 files), the 235 frontend `*.test.ts(x)` files with
+their `__tests__` directories, `frontend/desktop/e2e/`,
+`scripts/desktop-backend-payload.test.mjs` and `test_mapping.py` — with the CI
+steps, npm scripts, `[tool.pytest.ini_options]`, the coverage floor/ratchet and
+the `.gitignore` entries that served them unwired so nothing turns red. `npm
+test` does not exist any more, on purpose. Kept deliberately: the 25 inline
+Rust `#[cfg(test)]` blocks, `app/bench/integrity.py`'s tests/graders rule (it
+protects *target* repos), and every dependency — the pytest-* dev deps and the
+vitest/playwright packages stay because `uv lock --check` and the npm lockfile
+gate the release job. What verifies a change now: the static gates (`check:docs`,
+`check:design`, `check:naming`, `check:api`, `check:api-index`, `check:sse`,
+`check:version`, `check:doc-links`, `lint:ratchet`), ruff + mypy, tsc + eslint,
+`Type check` on every push, and a human running the app. AGENTS.md opens with a
+banner saying so.
+
+**Sidebar: working chats lead their folder, and the list groups by project.**
+A chat that is working (or streaming) sorts above the idle ones in *its own*
+pool, and among several live chats the one that moved most recently leads —
+they swap as they progress, because the order is computed before the folder
+split and the split preserves it, so the reorder never crosses a folder.
+`Session` now carries `updatedAt` from the workbench session SoT (`reconcile`
+merges it as a high-water mark), and the line that stamped backend-only rows'
+`startedAt` with `updatedAt` is fixed to read startedAt/createdAt first.
+"Group by date" is replaced by "Group by project": each pool buckets by
+normalized `workspacePath` with a project header, a trailing "No project"
+bucket, and a per-pool cap that keeps the shown/total caption honest.
+`lib/date-group.ts` stays for the History page, which really is a chronological
+archive.
+
+**Memory: gated writes, enumerable reads, nothing invisible.**
+`remember` refuses its first write of a turn until memory was read that turn
+(`list_facts` or `brain_query`), and refuses a sentence already stored under
+another key — the refusal names the existing key so the model updates instead
+of duplicating. `list_facts` pages with `offset` and reports
+`total`/`hasMore`, with `include_retired` for parked rows — the store is
+enumerable instead of showing its newest 50 forever. `brain_query` advertises
+the `memory` KV store in its enum, and the session boot index gained a Notes
+lane: up to 10 user notes (machine keys excluded) with first-line hooks and a
+`… +N more (brain_query store=memory)` receipt, so the Memory pane's hand-filed
+notes are no longer invisible to the model. The `<memory_policy>` block states
+the necessity bar: save only what a future session would act better for.
+The index's 2400-char cap now cuts at a line boundary.
+
+**Memory pane:** UTC-safe dates (SQLite's zone-less `datetime('now')` was read
+as local), hash-suffixed `slugify`, `findEntry`, memoized `loadLastModel()`,
+partial writes (`partial: true` so approving a value change cannot also clear a
+TTL or revive a retired row), store resolution for KV notes, receipts read from
+the response (`deleted`/`ok`), failed ops kept with the sentence, and an
+aria-live review strip.
+
+**Also in this push:** attachments plumbed through the chat route and stripped
+from both wire legs (`AUGUST_MESSAGE_ONLY_KEYS`); the PDF reader/pager rework
+(reading line, eviction, bounded re-render) with a `pdf-pager-math` helper; the
+math delimiters in `ChatMarkdown` (`$5 … $10` currency pairing and the
+malformed `\(…\)` capture group, both measured against marked@18.0.5); the
+model-picker `—`/`Free` price label with the 0-vs-absent distinction; a
+dev-only `DesignRoute`; the architecture flow doc + self-contained rendered
+HTML (`docs/ARCHITECTURE_FLOW.md`, `docs/architecture-flow.html`); and the
+ratchets tightened to post-deletion reality — the design baseline pruned by 63
+entries (every removed entry pointed at a deleted file, verified; 914 baselined
+now) and the lint budget tightened 296 → 166, which is exactly where the tree
+sits.
+
 ## Unreleased (working tree)
+
+**The decision ledger, and the four exits that never wrote a row.**
+Migration 053 adds `decision_ledger` (one row per decision — thesis, rejected
+alternatives, confidence, observable, cost — resolve/score/Brier, with
+`unscorable` a first-class status) and the join key `usage_events.turn_id`, so
+the five per-turn records can finally be compared. Three of the pieces feed it
+without a model call: `turn_close` writes a mechanical row per turn priced with
+the same estimator the Usage page uses, the new `journal` job resolves due rows
+and digests the day on a 24 h cadence, and `record_decision` (a tool, deliberately
+not in `AUGUST_CORE_TOOLS`) lets the model log the counterfactual — what it
+considered and rejected. `GET /api/brain/decisions` reports digest, per-model
+Brier and `unscorableRate` side by side, because a good score over three
+resolved rows out of forty is luck, not calibration.
+
+Four things the ledger was blind to are fixed on the way: the four pre-loop exits
+(circuit, no provider, no API key, cost ceiling) each emitted `done` and
+returned, writing no `turn_outcomes` row and no `turn_end` — they now go through
+one helper, `_recordPreLoopExit`. `normalize_tool_result` received `tool_name`
+and used it only for the synthetic label, so every persisted tool row was
+anonymous and mining's receipts read `': <body>'`; the name now rides along.
+`tool_result_failed` was a four-prefix `startswith` test, so a shell command
+that lost (`Exit code: 1`, the shape `code_runner` actually emits) and a JSON
+receipt with `ok: false` both counted as successes — which is why the persisted
+transcript held 322 tool blocks and zero errors while `turn_outcomes` recorded
+`error_families=['not_found']` for the same turns; the predicate now reads exit
+codes and structured receipts, and `receipt_tone` maps both to `failure`, so the
+SSE status and the durable `is_error` still come from one place. And
+`_load_index` cached a *failed* corpus build as "there is no memory", which
+turned one locked-database moment into silent amnesia for recall and the
+always-on profile lane until the next fact was written.
+
+Two smaller ones: `rounds` now counts model dispatches instead of the loop's
+budget counter, because self-heal decrements that in place to re-run a round, so
+the number under-reported every retried turn; and `_merge_duplicates` writes the
+row it is about to absorb into `lifecycle` (`event_type='fact_merged'`) before
+the DELETE, so the one destructive memory path that needed no proposal is at
+least reconstructible.
+
+Verification: ruff + mypy clean, all ten static gates pass, and the migration
+and both halves of the ledger exercised against a throwaway database (a finished
+turn resolves `outcome=1.0`; an unverifiable observable resolves `unscorable`
+with `reason=unsupported-observable`). Full write-up:
+`docs/HARNESS_AND_MEMORY_DEEP_DIVE_2026-10-17.md`.
+
+## Unreleased (working tree) — previous
 
 **P3 loop-split slice 1 — turn_close.py.** First seam cut into
 `_sendWorkbenchMessageStreamImpl` (2,780 lines): the POST-loop bookkeeping —
@@ -135,8 +246,6 @@ verified against `make_review_llm_client`), posting a single-field patch per
 change, plus a visible same-model warning if the stored pair is equal while
 auto-refine is on. `LearningPanel.refinePins.test.tsx` pins render + patch
 shape (2 tests).
-
-## Unreleased (working tree) — previous
 
 **Model dropdown completeness + lazy-crash + catalog invalidation fixes** —
 from the 2026-09-10 user reports:

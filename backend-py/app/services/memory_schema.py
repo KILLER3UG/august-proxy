@@ -12,6 +12,7 @@ runs the idempotent camel→snake migration before CREATE TABLE IF NOT EXISTS.
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 import threading
 
@@ -31,13 +32,34 @@ _CORE_SCHEMA_SQL = """
 
         CREATE TABLE IF NOT EXISTS facts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fact_key TEXT UNIQUE NOT NULL,
+            -- The scope axis lives in the base DDL, not in a follow-up ALTER:
+            -- it is part of the row's identity (UNIQUE below), and a fresh
+            -- database should be born with the constraint rather than inherit
+            -- it from a rebuild. Migration 032 still ALTERs `scope` on a legacy
+            -- DB and gets "duplicate column name", which the runner records as
+            -- already-applied — the documented double-ownership pattern.
+            fact_key TEXT NOT NULL,
             fact_value TEXT NOT NULL,
             category TEXT DEFAULT 'general',
             source TEXT DEFAULT '',
             confidence REAL DEFAULT 1.0,
             created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
+            updated_at TEXT DEFAULT (datetime('now')),
+            expires_at TEXT,
+            title TEXT DEFAULT '',
+            kind TEXT DEFAULT 'fact',
+            use_count INTEGER DEFAULT 0,
+            last_used_at TEXT,
+            status TEXT DEFAULT 'active',
+            scope TEXT NOT NULL DEFAULT 'global',
+            description TEXT DEFAULT '',
+            -- One key per SCOPE, not one key in the whole store. The old
+            -- column-level UNIQUE forced every per-scope memory to be
+            -- hand-namespaced by the caller, and the namespacing changed the
+            -- consolidation slug — so the same content saved globally and by a
+            -- Bot became two rows that could never be merged. See
+            -- `_ensure_fact_scope_key` for the rebuild on existing databases.
+            UNIQUE (scope, fact_key)
         );
 
         CREATE TABLE IF NOT EXISTS proposals (
@@ -190,6 +212,151 @@ _CORE_SCHEMA_SQL = """
         CREATE INDEX IF NOT EXISTS idx_usage_events_created ON usage_events(created_at);
         CREATE INDEX IF NOT EXISTS idx_sessions_archived ON sessions(is_archived);
     """
+
+
+def _facts_has_scope_key(conn: sqlite3.Connection) -> bool:
+    """True when `facts` already carries UNIQUE(scope, fact_key)."""
+    try:
+        for idx in conn.execute('PRAGMA index_list(facts)').fetchall():
+            # seq=1 is the autoindex a table-level UNIQUE creates; a named
+            # unique index created by hand is equivalent for this purpose.
+            if not idx[2]:
+                continue
+            cols = [r[2] for r in conn.execute(f'PRAGMA index_info("{idx[1]}")').fetchall()]
+            if cols == ['scope', 'fact_key']:
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _facts_table_columns(conn: sqlite3.Connection) -> list[tuple[str, str, int, int, object]]:
+    """``(name, decl, pk, notnull, dflt)`` for every column of ``facts``."""
+    rows = conn.execute('PRAGMA table_info(facts)').fetchall()
+    return [(r[1], r[2], r[5], r[3], r[4]) for r in rows]
+
+
+# A column default that can be emitted verbatim: a quoted string literal or a
+# plain number. Anything else (a function call such as ``datetime('now')``)
+# needs parentheses — SQLite requires ``DEFAULT (expr)``, and PRAGMA reports the
+# default WITHOUT them, so emitting it raw is a syntax error at the ``(``.
+_SIMPLE_DEFAULT_RE = re.compile(r"^(-?'[^']*'|-?\d+(?:\.\d+)?)$")
+
+
+def _default_clause(dflt: object) -> str:
+    """``DEFAULT ...`` for a column, safe for expression defaults."""
+    if dflt is None:
+        return ''
+    text = str(dflt)
+    if _SIMPLE_DEFAULT_RE.match(text):
+        return f' DEFAULT {text}'
+    return f' DEFAULT ({text})'
+
+
+def _ensure_fact_scope_key(conn: sqlite3.Connection) -> None:
+    """Rebuild `facts` with UNIQUE(scope, fact_key) — one key per scope.
+
+    Why a rebuild and not an ALTER: SQLite cannot add a constraint to a
+    column, and the old ``fact_key TEXT UNIQUE`` is exactly the constraint that
+    has to go. Nothing else in the schema can do this.
+
+    Why HERE and not in a .sql migration: ``run_migrations`` applies files
+    with ``conn.executescript``, which commits any open transaction before it
+    runs, and its own failure bookkeeping commits again afterwards — so a
+    half-applied rebuild in a .sql file could be *committed* by the runner
+    treating the failure. Holding the transaction here means a failure
+    ROLLS BACK and leaves the original table exactly as it was.
+
+    What it fixes (measured 2026-10-17): ``fact_key`` unique store-wide forced
+    the only per-scope mechanism to be caller-side key namespacing
+    (``_deriveFactKey`` prefixes non-global keys with the scope). That prefix
+    also changes the consolidation slug, so the same content stored globally and
+    by a Bot became two rows that could never be merged — the workaround
+    manufactured the near-duplicates the merge pass exists to remove. The
+    composite key makes the namespacing unnecessary.
+
+    Resumable: if a previous attempt died between DROP and RENAME (only a
+    process kill can do that, and SQLite rolls back the transaction anyway),
+    the staging table is detected and the rename is finished instead of
+    rebuilding from a missing source.
+
+    NULL scope is collapsed to 'global' on copy — the value it has always been
+    READ as (``_visibility_where``), so this removes the fourth answer to
+    "whose memory is this row?" rather than inventing one.
+    """
+    log = logging.getLogger('august.memory_schema')
+    try:
+        tables = {
+            r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+    except Exception:
+        return
+    if 'facts' not in tables:
+        return  # a fresh DB is created with the constraint in create_core_schema
+
+    if _facts_has_scope_key(conn):
+        # Already rebuilt. Drop a staging table an aborted attempt left behind
+        # (harmless: the rebuild either completed or rolled back).
+        if 'facts_v2' in tables:
+            conn.execute('DROP TABLE facts_v2')
+            conn.commit()
+        return
+
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        if 'facts_v2' in tables and 'facts' not in tables:
+            # Resume: the source is gone but the copy exists.
+            conn.execute('ALTER TABLE facts_v2 RENAME TO facts')
+        else:
+            cols = _facts_table_columns(conn)
+            if not cols:
+                conn.execute('ROLLBACK')
+                return
+            decls: list[str] = []
+            names: list[str] = []
+            selects: list[str] = []
+            has_scope = False
+            for name, decl, pk, _notnull, dflt in cols:
+                names.append(f'"{name}"')
+                if pk:
+                    decls.append(f'"{name}" INTEGER PRIMARY KEY AUTOINCREMENT')
+                else:
+                    decls.append(f'"{name}" {decl}{_default_clause(dflt)}')
+                if name == 'scope':
+                    has_scope = True
+                    selects.append("COALESCE(scope, 'global')")
+                else:
+                    selects.append(f'"{name}"')
+            if not has_scope:
+                # A database older than migration 032 with no scope column at
+                # all: every row is a global row, which is what it was read as.
+                decls.append("scope TEXT NOT NULL DEFAULT 'global'")
+                names.append('"scope"')
+                selects.append("'global'")
+            conn.execute(
+                'CREATE TABLE facts_v2 (' + ', '.join(decls) + ', UNIQUE (scope, fact_key))'
+            )
+            before = conn.execute('SELECT COUNT(*) FROM facts').fetchone()[0]
+            conn.execute(
+                f'INSERT INTO facts_v2 ({", ".join(names)}) '
+                f'SELECT {", ".join(selects)} FROM facts'
+            )
+            copied = conn.execute('SELECT COUNT(*) FROM facts_v2').fetchone()[0]
+            if copied != before:
+                raise RuntimeError(f'fact rebuild lost rows: {before} -> {copied}')
+            conn.execute('DROP TABLE facts')
+            conn.execute('ALTER TABLE facts_v2 RENAME TO facts')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_facts_updated ON facts(updated_at)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_facts_scope ON facts(scope, status)')
+        conn.commit()
+        log.info('facts rebuilt with UNIQUE(scope, fact_key)')
+    except Exception as exc:
+        try:
+            conn.execute('ROLLBACK')
+        except Exception:  # noqa: BLE001
+            pass
+        log.warning('facts scope-key rebuild skipped: %s', exc)
 
 
 def ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
@@ -961,6 +1128,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             _ensure_messages_fts(conn)
             repair_fts_sync(conn)
             _run_migrations_safe(conn)
+            _ensure_fact_scope_key(conn)
             _drop_empty_legacy_heuristics(conn)
             conn.commit()
             return
@@ -970,6 +1138,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     _ensure_messages_fts(conn)
     repair_fts_sync(conn)
     _run_migrations_safe(conn)
+    _ensure_fact_scope_key(conn)
     _drop_empty_legacy_heuristics(conn)
     conn.execute(f'PRAGMA user_version={_SCHEMA_USER_VERSION}')
     conn.commit()

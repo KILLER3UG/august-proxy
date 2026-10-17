@@ -206,6 +206,7 @@ async def turnTelemetry(
     turnError: str | None,
     emit: Emit | None,
     toolRound: int,
+    modelRounds: int | None = None,
     turnEndReason: str | None = None,
     parseFailures: int | None = None,
     surfaceDowngraded: bool | int | None = None,
@@ -335,7 +336,17 @@ async def turnTelemetry(
         # skill_lift and error_rate_by_model were blind to exactly the failure
         # modes the harness builds detection for.
         _turnOk = turn_outcomes.turn_ok(_reason, bool(turnError))
-        turn_outcomes.record_turn_outcome(
+        # MODEL DISPATCHES, not the loop's budget counter. The self-heal paths
+        # decrement `toolRound` in place to re-run a round, so the old value
+        # under-reported every retried round — the number existed to answer
+        # "this model hits the limit every day", and it was counting a budget
+        # rather than the calls that spent it.
+        _roundsCount = (
+            int(modelRounds)
+            if modelRounds is not None
+            else (None if toolRound is None else int(toolRound))
+        )
+        _turnRowId = turn_outcomes.record_turn_outcome(
             model=resolvedModel or '',
             provider=_telemetryProvider,
             task_type=as_str(getattr(session, 'agent_mode', '') or 'agent'),
@@ -350,7 +361,7 @@ async def turnTelemetry(
             # None on every one of these → SQL NULL → "not recorded". A
             # zero-measured turn and an unmeasured one stay distinguishable.
             end_reason=_reason or None,
-            rounds=None if toolRound is None else int(toolRound),
+            rounds=_roundsCount,
             malformed_tool_args=_counterValue(_malformed),
             surface_downgraded=_counterValue(_downgraded),
             edit_verify_fails=_editVerifyFails,
@@ -360,6 +371,44 @@ async def turnTelemetry(
             facts_injected=_factsInjected,
             error_families=errorFamilies,
         )
+        # The join key (053) + one MECHANICAL decision row per turn. No model
+        # call and no judgement: `chosen` is the stop reason the loop actually
+        # made, which is the one thing about the turn that can be checked later
+        # without asking a model to grade itself. Cost is priced here with the
+        # same estimator persistAndClose uses for the session total, so the
+        # ledger and the Usage page cannot disagree.
+        try:
+            setattr(session, '_last_turn_outcome_id', _turnRowId)
+        except Exception:
+            pass
+        try:
+            from app.services import decision_ledger
+            from app.services.cost_estimator import session_cost_usd
+
+            # Decisions the model declared DURING this turn were written before
+            # the verdict row existed; this is the moment they can be linked to
+            # it, which is what makes `observable='turn:finished'` resolvable.
+            decision_ledger.attach_turn(session_id=sessionId, turn_id=_turnRowId)
+            decision_ledger.record_turn(
+                session_id=sessionId,
+                turn_id=_turnRowId,
+                end_reason=_reason,
+                ok=_turnOk,
+                rounds=_roundsCount,
+                cost_usd=session_cost_usd(
+                    model_id=resolvedModel,
+                    total_in=totals.inputTokens,
+                    total_out=totals.outputTokens,
+                    cache_hit=totals.cacheHitTokens,
+                    cache_miss=totals.cacheMissTokens,
+                ),
+                tokens_in=totals.inputTokens,
+                tokens_out=totals.outputTokens,
+                model=resolvedModel,
+                provider=_telemetryProvider,
+            )
+        except Exception:
+            logger.debug('decision ledger turn row failed (non-fatal)', exc_info=True)
         # Surface the per-turn latency/cache numbers as one SSE event
         # (Observability; the transcript can show a cache-hit chip) — turns
         # the "feels slow" regression into visible numbers.
@@ -540,6 +589,9 @@ def persistAndClose(
                     contextTokens=totals.contextTokens,
                     cacheHitTokens=totals.cacheHitTokens,
                     cacheMissTokens=totals.cacheMissTokens,
+                    # 053: the join key to this turn's verdict row, set by
+                    # turnTelemetry moments earlier in the same close.
+                    turn_id=as_int(getattr(session, '_last_turn_outcome_id', 0), 0) or None,
                 )
                 session.totalInputTokens += totals.inputTokens
                 session.totalOutputTokens += totals.outputTokens

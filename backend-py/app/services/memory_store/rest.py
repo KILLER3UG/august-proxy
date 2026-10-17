@@ -57,19 +57,22 @@ def save_fact(
     """Save a structured fact. ``expires_at`` (ISO-8601 TEXT) is optional; the
     cognitive boot sweep purges facts whose expiry has passed.
 
-    Upsert over the unique ``fact_key``: an update keeps the row id,
+    Upsert over the row's identity — ``(scope, fact_key)`` since 055, when
+    ``fact_key`` stopped being unique store-wide. An update keeps the row id,
     ``created_at`` and usage counters, and only overwrites ``title``/``kind``/
     ``description`` when the caller actually supplies them (plan §3.3 — facts
     are titled, typed entries; 044 adds the ZCode-parity one-line recall
     ``description`` hook).
 
-    M-2 (Part 21): ``scope`` ('global' | 'bot:<agentId>' | 'project:<path>')
-    stamps the row's memory home on INSERT. An update never rewrites scope —
-    a fact keeps the home it was born in. Part 26 6.2 (tightened): a key has
-    exactly one home. A write is only accepted when it comes from the row's
-    own scope: a bot may update a GLOBAL fact by re-affirming it through the
-    model doors *in a global session*, but a ``bot:<id>``-scoped write against
-    a GLOBAL row is refused (it would otherwise replace the shared value while
+    M-2 (Part 21): ``scope`` ('global' | 'bot:<agentId>') stamps the row's
+    memory home on INSERT, and is normalized here — the same normalizer
+    retrieval uses — so a scope nothing can produce cannot be written either.
+    An update never rewrites scope — a fact keeps the home it was born in.
+    Part 26 6.2 (tightened): a key has exactly one home *per scope*. A write is
+    only accepted when it comes from the row's own scope: a bot may update a
+    GLOBAL fact by re-affirming it through the model doors
+    *in a global session*, but a ``bot:<id>``-scoped write against a
+    GLOBAL row is refused (it would otherwise replace the shared value while
     the row stayed ``global``), and a write against a row from a DIFFERENT
     private scope is likewise refused.
 
@@ -99,20 +102,9 @@ def save_fact(
     # until a human deletes it.
     assertPytestDataDirIsolated('memory_store.save_fact')
 
-    # 'project:<path>' is documented above as a legal home, but
-    # session_scope.resolve_scope() only ever returns 'global' or 'bot:<id>',
-    # and retrieval unions global ∪ resolved — so a project-scoped row is
-    # written, reported as saved, and can never be read back. Refuse it at the
-    # door until project scoping is actually implemented, rather than taking
-    # the user's memory and hiding it.
-    _written_scope = normalize_scope(scope)
-    if _written_scope.startswith('project:'):
-        raise ValueError(
-            f'unsupported fact scope "{_written_scope}": project-scoped memory '
-            'is not implemented — resolve_scope never produces it, so the row '
-            'would be unreadable. Use the caller\'s resolved scope, or write '
-            'the entry into workspace .aug/memory instead.'
-        )
+    # Scope is normalized here, once, by the only authority — a caller cannot
+    # write a scope retrieval could never produce (see normalize_scope).
+    scope = normalize_scope(scope)
 
     if not allow_scope_override:
         existing = get_fact(factKey)
@@ -167,7 +159,14 @@ def save_fact(
         """
         INSERT INTO facts (fact_key, fact_value, title, kind, description, category, source, confidence, expires_at, scope, updated_at)
         VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), 'fact'), ?, ?, ?, ?, ?, ?, datetime('now'))
-        ON CONFLICT(fact_key) DO UPDATE SET
+        -- The conflict target is the row's IDENTITY, scope + key, not the key
+        -- alone. `fact_key` unique store-wide (pre-055) meant one key had one
+        -- home in the whole install, which is why per-scope memory had to be
+        -- hand-namespaced — and the namespacing made the same content in two
+        -- scopes unmergeable. With UNIQUE(scope, fact_key) an update targets
+        -- the row this caller owns, so a Bot writing `model:note` updates its
+        -- own row and never the user's global one.
+        ON CONFLICT(scope, fact_key) DO UPDATE SET
             fact_value = excluded.fact_value,
             title = CASE WHEN excluded.title != '' THEN excluded.title ELSE facts.title END,
             kind = CASE WHEN excluded.kind != '' THEN excluded.kind ELSE facts.kind END,
@@ -656,6 +655,7 @@ def record_usage(
     contextTokens: int = 0,
     cacheHitTokens: int = 0,
     cacheMissTokens: int = 0,
+    turn_id: int | None = None,
 ) -> int:
     """Record a usage event against the session SoT id when known.
 
@@ -667,14 +667,42 @@ def record_usage(
     ``cacheHitTokens``/``cacheMissTokens`` carry the universal prompt-cache
     split (Anthropic cache_read/cache_creation vs OpenAI-compatible
     prompt_cache_hit/miss) so the UI can show the cache hit rate.
+
+    ``turn_id`` is the 053 join key: the ``turn_outcomes.id`` this usage belongs
+    to. It was the missing link between "what this call cost" and "how the turn
+    ended", which is why no query could rank models or tools by cost per
+    success. NULL means "no turn row" (a direct API call, or a turn whose
+    telemetry write failed), never zero.
     """
     sot_id = resolve_sot_session_id(sessionId)
     conn = _conn()
-    cursor = conn.execute(
-        'INSERT INTO usage_events (session_id, model, input_tokens, output_tokens, context_tokens, cache_hit_tokens, cache_miss_tokens) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?)',
-        (sot_id, model, inputTokens, outputTokens, contextTokens, cacheHitTokens, cacheMissTokens),
-    )
+    try:
+        cursor = conn.execute(
+            'INSERT INTO usage_events (session_id, model, input_tokens, output_tokens, '
+            'context_tokens, cache_hit_tokens, cache_miss_tokens, turn_id) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            (
+                sot_id,
+                model,
+                inputTokens,
+                outputTokens,
+                contextTokens,
+                cacheHitTokens,
+                cacheMissTokens,
+                turn_id,
+            ),
+        )
+    except Exception as exc:
+        # 053 not applied yet (a DB whose migration budget is spent): keep the
+        # usage row, lose only the join key. Same rule as 046 in turn_outcomes.
+        msg = str(exc).lower()
+        if 'no such column' not in msg and 'has no column' not in msg:
+            raise
+        cursor = conn.execute(
+            'INSERT INTO usage_events (session_id, model, input_tokens, output_tokens, context_tokens, cache_hit_tokens, cache_miss_tokens) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (sot_id, model, inputTokens, outputTokens, contextTokens, cacheHitTokens, cacheMissTokens),
+        )
     brain_commit(conn)
     return as_int(cursor.lastrowid)
 

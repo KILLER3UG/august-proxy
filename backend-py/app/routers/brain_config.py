@@ -233,6 +233,44 @@ async def getTurnOutcomes(days: int = Query(7, ge=1, le=30)):
     }
 
 
+@router.get('/decisions')
+async def getDecisions(
+    days: int = Query(30, ge=1, le=365),
+    status: str = Query('', max_length=20),
+    limit: int = Query(50, ge=1, le=500),
+):
+    """053: the decision ledger — what the harness decided and how it settled.
+
+    Read-only diagnostics, like ``/turn-outcomes``: nothing here is injected
+    into a prompt and nothing gates an answer. Three sections:
+
+      * ``digest`` — today's activity (logged / resolved / unscorable /
+        expired), cost, and cost per resolved decision.
+      * ``stats`` — per-model and per-kind resolution, with a Brier component.
+        ``unscorableRate`` sits beside ``brier`` on purpose: a good score over
+        three resolved rows out of forty is luck, not calibration.
+      * ``rows`` — the newest ledger rows, for the Learning panel.
+    """
+    from app.services import decision_ledger
+
+    return {
+        'days': days,
+        'digest': decision_ledger.digest(),
+        'stats': decision_ledger.stats(days=days),
+        'rows': decision_ledger.list_decisions(status=status, limit=limit),
+    }
+
+
+@router.post('/decisions/resolve')
+async def postDecisionsResolve():
+    """Run one journal resolution pass now (Settings → Learning → "Run now")."""
+    import asyncio
+
+    from app.services.decision_ledger import resolve_open
+
+    return {'ok': True, 'result': await asyncio.to_thread(resolve_open)}
+
+
 @router.get('/memory/metrics')
 async def getMemoryMetrics(days: int = Query(7, ge=1, le=30)):
     """Phase D item 4: recall + latency instrument.

@@ -93,6 +93,18 @@ interface SchedulerJob {
     // count that survives.
     reviewed?: number;
     kept?: number;
+    // The decision journal's row (053): how many decisions were seen, how many
+    // settled against evidence, and how many could not be settled at all.
+    // `unscorable` is deliberately NOT folded into the summary line — it sits
+    // beside the Brier score, because a good score over three resolved rows
+    // out of forty is luck, not calibration, and this row is where a human
+    // would notice the difference.
+    logged?: number;
+    resolved?: number;
+    unscorable?: number;
+    costUsd?: number;
+    costPerResolved?: number | null;
+    calibration?: Array<{ model?: string; brier?: number | null; resolved?: number }>;
     error?: string;
   };
 }
@@ -253,6 +265,21 @@ function jobOutcomeLine(j: SchedulerJob): string {
       return `${s.reviewed} message(s) read${s.kept ? ` · ${s.kept} kept` : ''}`;
     }
     return '';
+  }
+  if (j.job === 'journal') {
+    // The journal's row says what it COUNTED, not what it achieved: "12 decided
+    // · 9 resolved · 3 unscorable · Brier 0.18". An empty ledger is a truthful
+    // line, not a failure — see the Decisions section's own empty state.
+    if (typeof s.logged !== 'number') return '';
+    const parts = [
+      `${s.logged} decided`,
+      typeof s.resolved === 'number' ? `${s.resolved} resolved` : null,
+      typeof s.unscorable === 'number' ? `${s.unscorable} unscorable` : null,
+    ].filter(Boolean);
+    const brier = (s.calibration ?? [])
+      .filter((c) => typeof c?.brier === 'number')
+      .map((c) => `Brier ${(c.brier as number).toFixed(2)}`);
+    return [...parts, ...brier].join(' · ');
   }
   return s.error ? String(s.error).slice(0, 80) : '';
 }

@@ -48,6 +48,17 @@ _LEDGER_KEEP_PER_JOB = 50
 # Tick granularity. Small vs 6h/24h cadences; cheap vs a SELECT on the ledger.
 _TICK_S = 60
 
+# Storage hygiene: how long between WAL checkpoints. Six hours is far more
+# often than a WAL can usefully grow on one install, and far less often than a
+# TRUNCATE is expensive, so the constant only exists to bound the cadence.
+_WAL_CHECKPOINT_EVERY_S = 6 * 3600
+
+# ``internal_state`` key holding the last successful checkpoint attempt (the
+# ATTEMPT, stamped before the call: a skipped-and-skipped attempt is the same
+# as a successful one for cadence purposes, and stamping after would retry on
+# every tick while a reader holds the log open).
+_WAL_CHECKPOINT_KEY = 'storage:wal_last_checkpoint'
+
 
 def _conn():
     from app.services.memory_conn import conn
@@ -188,6 +199,46 @@ class Job:
 JOBS: dict[str, Job] = {}
 
 
+def _journal_job() -> dict[str, object]:
+    """Resolve the decision ledger, then summarize the day.
+
+    Deliberately NOT a model call. Resolution reads evidence that already
+    exists — the turn's own verdict row — and the digest is arithmetic. A
+    journal that needed a model to grade yesterday would be a second
+    unmeasured judge, which is the failure mode the quarantined episode
+    backlog already documents.
+
+    Every row that cannot be settled by evidence is written ``unscorable``
+    with a reason, and that count is reported next to the Brier score: a
+    calibration number over three resolved rows out of forty means nothing
+    without it.
+    """
+    from app.services import decision_ledger
+
+    resolved = decision_ledger.resolve_open()
+    summary = decision_ledger.digest()
+    stats = decision_ledger.stats(days=7)
+    by_model = stats.get('byModel')
+    calibration = [
+        {
+            'model': row.get('name'),
+            'brier': row.get('brier'),
+            'resolved': row.get('resolved'),
+            'unscorableRate': row.get('unscorableRate'),
+        }
+        for row in (by_model if isinstance(by_model, list) else [])
+    ]
+    return {
+        'resolved': resolved.get('resolved', 0),
+        'unscorable': resolved.get('unscorable', 0),
+        'expired': resolved.get('expired', 0),
+        'logged': summary.get('logged', 0),
+        'costUsd': summary.get('costUsd'),
+        'costPerResolved': summary.get('costPerResolved'),
+        'calibration': calibration,
+    }
+
+
 def _register(job: Job) -> None:
     JOBS[job.name] = job
 
@@ -304,6 +355,16 @@ def _review_job() -> dict[str, Any]:
         detail['kept'] = sum(
             1 for r in results if isinstance(r, dict) and r.get('label') in ('memory-saved', 'proposal-filed')
         )
+        # 054: `kept` is one number; these are the REASONS. Persisting the door's
+        # label is what makes "how often is a memory verdict dropped as a
+        # duplicate?" answerable, and without that answer the distiller's
+        # precision cannot be checked against anything.
+        try:
+            from app.services.skill_distiller import verdict_label_stats
+
+            detail['labels'] = verdict_label_stats(days=30)['labels']
+        except Exception:
+            logger.debug('review job label stats failed', exc_info=True)
     return detail
 
 
@@ -313,6 +374,10 @@ _register(Job('refine', _refine_job, _config_interval('refineIntervalHours', 24.
 _register(Job('reviewer', _reviewer_job, _config_interval('reviewerIntervalHours', 6.0)))
 _register(Job('outcome', _outcome_job, _config_interval('outcomeIntervalHours', 72.0)))
 _register(Job('review', _review_job, _config_interval('reviewIntervalHours', 24.0)))
+# 053: the decision journal. Not a learning pass — it is the only job that
+# settles what the harness DECIDED, so it runs after the others and reads
+# their verdicts rather than producing new ones.
+_register(Job('journal', _journal_job, _config_interval('journalIntervalHours', 24.0)))
 
 
 # ── Execution ─────────────────────────────────────────────────────────────
@@ -352,6 +417,43 @@ async def run_job_async(name: str) -> dict[str, Any]:
     return await asyncio.to_thread(run_job, name)
 
 
+async def _maybe_checkpoint_wal() -> None:
+    """Fold an uncheckpointed WAL back, at most once per ``_WAL_CHECKPOINT_EVERY_S``.
+
+    An install measured a 158 MB WAL against a 154 MB database: no checkpoint
+    had completed, so every write had been appending. The cadence guard lives
+    here rather than in ``memory_conn`` because it is bookkeeping, and this is
+    the loop that already ticks every 60 s and keeps its due-ness in
+    ``internal_state``. TRUNCATE returns BUSY (harmlessly) when a reader is
+    mid-read, so a cold attempt costs one SELECT on an idle connection.
+    """
+    from app.services.memory_conn import checkpoint_wal
+    from app.services.memory_store import get_internal_state, set_internal_state
+
+    def _due(last_stamp: object) -> bool:
+        text = str(last_stamp or '').strip()
+        if not text:
+            return True
+        try:
+            last = datetime.fromisoformat(text)
+        except ValueError:
+            return True
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        return (_utcnow() - last) >= timedelta(seconds=_WAL_CHECKPOINT_EVERY_S)
+
+    def _run() -> None:
+        try:
+            if not _due(get_internal_state(_WAL_CHECKPOINT_KEY)):
+                return
+            set_internal_state(_WAL_CHECKPOINT_KEY, _iso(_utcnow()))
+            checkpoint_wal(truncate=True)
+        except Exception:  # noqa: BLE001
+            logger.debug('wal checkpoint tick failed', exc_info=True)
+
+    await asyncio.to_thread(_run)
+
+
 async def scheduler_loop() -> None:
     """The one scheduled learning poller. Each tick: every registered job
     that is due runs once, serially (learning passes are cheap individually
@@ -362,6 +464,10 @@ async def scheduler_loop() -> None:
             for job in list(JOBS.values()):
                 if job.due():
                     await run_job_async(job.name)
+            # Storage hygiene (2026-10-17): an uncheckpointed WAL grows without
+            # bound. Rate-limited, so a calm tick is one SELECT and a busy hour
+            # is one harmless SQLITE_BUSY.
+            await _maybe_checkpoint_wal()
         except asyncio.CancelledError:
             raise
         except Exception:
