@@ -397,7 +397,8 @@ class BaseProviderClient:
 
     @staticmethod
     def wireBody(body: dict[str, object] | None) -> dict[str, object] | None:
-        """The last step before the wire: replace this install's own credentials.
+        """The last step before the wire: drop August-only message keys, then
+        replace this install's own credentials.
 
         The transport, not the serializer, is the door. The workbench builds its
         body through `dump_openai_upstream_body` and then ASSIGNS
@@ -406,12 +407,32 @@ class BaseProviderClient:
         the dump functions would cover neither, while every provider request in
         the app does reach one of the two `self.client` calls below. The auth
         header is left alone: that is where a key legitimately belongs.
+
+        `AUGUST_MESSAGE_ONLY_KEYS` has the same shape of problem, and the same
+        one answer. Only the `/v1` dump functions strip those keys, but the
+        workbench reaches a provider through `workbench/providers.py` →
+        `translateMessagesToAnthropic` (and `adapters/anthropic.py` appends the
+        user row verbatim), where a persisted user row's `attachments` and
+        `source` rode along — every base64 image re-sent on every later turn.
+        Measured before this gate existed: the anthropic leg carried
+        `{'attachments': [{'dataUrl': 'data:image/png;base64,…'}], 'source': …}`
+        while the openai leg did not. Both legs meet here.
         """
         from app.services.hooks.secret_guard import scrubOutboundBody
+        from app.services.message_sources import strip_august_message_keys
 
         if body is None:
             return None
-        return cast('dict[str, object]', scrubOutboundBody(body))
+        scrubbed = cast('dict[str, object]', scrubOutboundBody(body))
+        # `scrubOutboundBody` returns the SAME object when nothing was cached to
+        # replace, so this copies before assigning: the wire step must not edit
+        # a body the caller may still be holding.
+        out = dict(scrubbed)
+        for field in ('messages', 'input'):
+            value = out.get(field)
+            if isinstance(value, list):
+                out[field] = strip_august_message_keys(value)
+        return out
 
     async def chat_completions(self, body: dict[str, object], apiKey: str | None = None) -> ProviderResponse:
         raise NotImplementedError

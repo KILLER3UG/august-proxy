@@ -41,10 +41,10 @@ def _slug(text: str) -> str:
     return re.sub(r'[^a-z0-9]+', '-', (text or '').lower()).strip('-')
 
 
-def _fact_body_text(valueRaw: object) -> str:
+def _fact_body_text(value_raw: object) -> str:
     from app.services.memory_store.fact_retrieval import _fact_body_text as _body
 
-    return _body(valueRaw)
+    return _body(value_raw)
 
 
 def _merge_fact_value(newRaw: object, oldTitle: str, oldKey: str) -> str:

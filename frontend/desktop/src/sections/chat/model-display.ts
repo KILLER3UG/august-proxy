@@ -1,6 +1,8 @@
 /* ── Model display helpers (pure) ─────────────────────────────────────── */
 /* Pretty names, context-window labels, and variant tags for model UIs.   */
 
+import { apiFormatShortLabel } from '@/sections/workspace/models/modelSettingsShared';
+
 export interface ModelItem {
   id: string;
   name: string;
@@ -12,6 +14,25 @@ export interface ModelItem {
   pinned?: boolean;
   supportsReasoning?: boolean;
   supportsThinking?: boolean;
+  /** USD per 1M tokens, resolved server-side by the same estimator the usage
+   *  page bills with. Absent means "no price claim" (an alias row has no target
+   *  model to price) — it does NOT mean $0. `0` is a price: a local host that
+   *  charges nothing prices at exactly 0 and must not read as unknown. */
+  priceInPerM?: number;
+  priceOutPerM?: number;
+  /** True when the rate came from August's family table (or the no-match
+   *  default) rather than from a configured price or a `free` flag. Rendered as
+   *  the same `~` the usage chip uses, so a guess never reads as a bill. */
+  priceEstimated?: boolean;
+  /** Where the rate came from: env | model | free | table | unknown. */
+  priceSource?: string;
+  /** The wire format this model will ACTUALLY use: its own override when it has
+   *  one, else the provider's. Empty when neither is known. */
+  apiFormat?: string;
+  /** True when `apiFormat` is the model's own override rather than the
+   *  provider default — the difference between "all of this provider's models
+   *  go this way" and "this one was fixed on its own". */
+  apiFormatIsOverride?: boolean;
 }
 
 const VARIANT_TAGS: ReadonlyArray<readonly [RegExp, string]> = [
@@ -242,4 +263,69 @@ export function formatContextWindow(num?: number): string {
   if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(num % 1_000_000 === 0 ? 0 : 1)}M`;
   if (num >= 1000) return `${(num / 1000).toFixed(0)}k`;
   return String(num);
+}
+
+/** A rate as money, trailing zeros trimmed: 0.15 → `$0.15`, 3 → `$3`. */
+export function priceAmountLabel(value: number): string {
+  return `$${Number(value.toFixed(4))}`;
+}
+
+/** The picker row's cost chip: the rate the usage page will bill at.
+ *
+ *  - `Free` when the resolved price really is zero and is NOT a guess (a `free`
+ *    flag, or a configured 0.0). A guessed $0 would be a different claim.
+ *  - `~` prefixes an estimated rate (family table / no-match default), which is
+ *    the same mark the spend chip renders — a picker that showed `$3/$15` flat
+ *    while the Usage page showed `~$3/$15` would be presenting a guess as a
+ *    bill in exactly one of the two places.
+ *  - Empty string when the row carries no price at all (today: alias rows).
+ *    Absence is not $0.
+ */
+export function modelPriceLabel(model: ModelItem): string {
+  const inRate = model.priceInPerM;
+  const outRate = model.priceOutPerM;
+  if (inRate == null && outRate == null) return '';
+  // Both sides must be known to call it free. `(inRate ?? 0) === 0` used to
+  // answer "Free" for a half-known pair too — that is the same invention as
+  // printing the unknown half as a rate.
+  if (!model.priceEstimated && inRate === 0 && outRate === 0) return 'Free';
+  // A half-known pair prints `—` for the side that is unknown. Filling it with
+  // `?? 0` rendered `$0.15/$0 per M` — "output costs nothing" — for a row that
+  // had no output rate at all. Today the backend always sets both, so this
+  // guards the shape the type allows rather than a live row.
+  const side = (value: number | undefined) =>
+    value == null ? '—' : priceAmountLabel(value);
+  return `${model.priceEstimated ? '~' : ''}${side(inRate)}/${side(outRate)} per M`;
+}
+
+/** Where a row's price came from, in words — the tooltip behind the chip. */
+export function priceSourceNote(model: ModelItem): string {
+  switch (model.priceSource) {
+    case 'env':
+      return 'Rate from AUGUST_PRICE_IN_PER_M / AUGUST_PRICE_OUT_PER_M';
+    case 'model':
+      return 'Rate set on this model in Model settings';
+    case 'free':
+      return 'This model is marked free';
+    case 'table':
+      return "Estimated from August's family price table — set a rate in Model settings to make it exact";
+    default:
+      return 'No rate matched this model id, so estimates use the default pair — set a rate in Model settings';
+  }
+}
+
+/** The wire leaf (`chat/completions`, `v1/messages`, `responses`) this model
+ *  will actually call: the model's own override when it has one, else the
+ *  provider's. Empty when neither is known. */
+export function modelFormatLabel(model: ModelItem): string {
+  return apiFormatShortLabel(model.apiFormat);
+}
+
+/** Why that format, in words — the tooltip behind the format chip. */
+export function modelFormatNote(model: ModelItem): string {
+  const leaf = modelFormatLabel(model);
+  if (!leaf) return 'Wire format unknown for this entry';
+  return model.apiFormatIsOverride
+    ? `Wire format set on this model: August appends ${leaf} to the provider's base URL`
+    : `Provider default wire format: August appends ${leaf} to the provider's base URL`;
 }

@@ -238,7 +238,9 @@ async function extractSpreadsheetText(
  * Read a file and extract its content in a format the AI model can consume.
  *
  * - **Text files**: returns extracted plain text (code, CSV, JSON, etc.)
- * - **PDF**: extracts text page-by-page (up to 50 pages)
+ * - **PDF**: extracts text page-by-page (up to 50 pages) and keeps the original
+ *   bytes as a data URL when the file is under `INLINE_FILE_MAX_SIZE`, because
+ *   the drawer's page-by-page viewer rasterizes the document itself
  * - **DOCX**: extracts raw text via mammoth
  * - **XLSX/CSV**: extracts as CSV per sheet
  * - **Images**: returns a base64 data URL for vision analysis
@@ -270,11 +272,29 @@ export async function readFileContent(
 
   // ── PDF ─────────────────────────────────────────────────────────────
   if (ext === 'pdf' || mimeType === 'application/pdf') {
+    // The original bytes ride along when the file is inside the inline ceiling,
+    // the same way an image carries its data URL: they are what the drawer's
+    // page-by-page viewer (`PdfPager`) rasterizes. Text extraction still runs —
+    // the MODEL reads text, not bytes — but `content` alone left the viewer
+    // unreachable: no attachment ever produced a PDF data URL, so a real PDF
+    // opened as the extracted-text dump and only the design lab's fixture could
+    // exercise the pager. The two do not conflict: `content` feeds the prompt,
+    // `dataUrl` feeds the viewer, and the wire strip removes the field before a
+    // provider sees it (`AUGUST_MESSAGE_ONLY_KEYS`).
+    const keepBytes = file.size <= INLINE_FILE_MAX_SIZE;
     try {
       const { content, truncated, thumbnailUrl } = await extractPdfText(file, onProgress);
-      return { type: 'text', content, mimeType, truncated, thumbnailUrl };
+      const dataUrl = keepBytes ? await readFileAsDataUrl(file, onProgress) : undefined;
+      return { type: 'text', content, mimeType, truncated, thumbnailUrl, dataUrl };
     } catch (err) {
       console.warn('[file-reader] PDF extraction failed:', err);
+      // A PDF whose text will not extract can still be READ in the pager, so
+      // hand the bytes over rather than falling back to metadata-only.
+      if (keepBytes) {
+        try {
+          return { type: 'unsupported', dataUrl: await readFileAsDataUrl(file, onProgress), mimeType };
+        } catch { /* fall through to the metadata-only view */ }
+      }
       return { type: 'unsupported', mimeType };
     }
   }

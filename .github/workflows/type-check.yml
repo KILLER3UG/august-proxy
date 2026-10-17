@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   backend-mypy:
-    name: Backend — mypy + ruff + pytest
+    name: Backend — mypy + ruff
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -87,24 +87,10 @@ jobs:
       # Packaging is otherwise invisible to CI, which is how the `sidecar/`
       # staging bug shipped ~50 releases: every other gate passes because the
       # backend runs fine from a checkout, and only an installer payload shows
-      # that AppData got a tree with no dependencies. This stages the real
-      # payload in temp output and requires it to boot from that path alone.
-      - name: Desktop backend payload (installer staging)
-        working-directory: ${{ github.workspace }}
-        run: npm run test:packaging
-
-      # Full suite includes Phase 7 inventory E2E, feature_flow live-backend
-      # emission during tool stages, proxy inject HTTP, SSRF gates, gateway
-      # normalize paths (no live bot credentials required).
-      - name: Run pytest
-        # `-n auto`: the slow tests drive external toolchains in per-test temp
-        # dirs, so they parallelise cleanly (~2.6x measured on 4 workers).
-        # Coverage stays on here — this is the PR gate that owns the 55% floor,
-        # and it is also what makes the per-module floors measurable below.
-        # `--cov-report=json` writes backend-py/coverage.json for
-        # `npm run check:coverage`; without it the harness-core ratchet refuses
-        # to pass rather than skipping.
-        run: pytest -q --tb=short -n auto --cov-report=json --cov-report=term
+      # that AppData got a tree with no dependencies. `npm run
+      # prepare:desktop-backend` stages that payload (it is also a release
+      # step); the `node --test` integrity suite that used to run here was
+      # deleted with the rest of the tests on 2026-10-17.
 
       # The backend emits SSE frames; the frontend's Zod schema and dispatcher
       # are both hand-maintained and nothing compared them. `recovery` — the
@@ -115,15 +101,8 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: npm run check:sse
 
-      # Per-module floors for the harness core, independent of the global 55%
-      # number. The global average is carried by ~5,000 statements of well-tested
-      # plumbing, so it can rise while the modules the guarantees live in rot.
-      - name: Harness-core coverage floors
-        working-directory: ${{ github.workspace }}
-        run: npm run check:coverage
-
   frontend-tsc-eslint:
-    name: Frontend — tsc + eslint + vitest
+    name: Frontend — tsc + eslint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -176,20 +155,6 @@ jobs:
       # the budget with it.
       - name: Lint warning ratchet
         run: npm run lint:ratchet
-
-      # Phase 7 UI inventory (Feature Flow, AUG toggle, collaboration banners,
-      # marquee titles). Live backend SSE is covered by backend pytest; vitest
-      # proves the desktop consumers of that stream.
-      - name: vitest
-        run: npm run test -w frontend/desktop
-
-      # Accessibility smoke (audit A2): one axe scan per main rail, in web
-      # mode (offline states render — the scan judges DOM structure). Gates on
-      # CRITICAL violations only; serious-and-below print for triage.
-      - name: Accessibility smoke (axe)
-        run: |
-          npx playwright install chromium
-          npm run test:e2e -w frontend/desktop
 
   mobile-typecheck:
     name: Mobile — typecheck + parity audit

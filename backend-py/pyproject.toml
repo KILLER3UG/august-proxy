@@ -91,16 +91,11 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["app"]
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-python_files = ["test_*.py", "*_test.py", "test*.py"]
-python_functions = "test*"
-addopts = "--cov=app --cov-report=term-missing --cov-fail-under=55"
-# Single-file runs trip the 55% floor — use: uv run pytest tests/foo.py -q --no-cov
-timeout = 600
-# A hung subprocess must fail the suite, not hang CI forever (per-test
-# overrides stay possible: @pytest.mark.timeout(120)).
-timeout_method = "thread"
+# There is no pytest configuration because there is no test suite: the backend
+# tests were deleted on 2026-10-17 along with the CI job that ran them (see
+# AGENTS.md). The pytest-* dev dependencies below stay because `uv.lock` is
+# checked on every release (`uv lock --check`) and they are part of the locked
+# dev set.
 
 # Keep dependency-groups in sync with [project.optional-dependencies].dev
 # so `uv sync --group dev` and `pip install -e ".[dev]"` install the same set.

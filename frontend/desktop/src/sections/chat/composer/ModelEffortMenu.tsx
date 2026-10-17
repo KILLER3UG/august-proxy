@@ -22,7 +22,14 @@ import { providersApi } from '@/api/providers';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import type { ModelItem } from '../model-display';
 import { groupModelsByProvider } from '@/components/model/modelList';
-import { modelDisplayParts } from '../model-display';
+import {
+  formatContextWindow,
+  modelDisplayParts,
+  modelFormatLabel,
+  modelFormatNote,
+  modelPriceLabel,
+  priceSourceNote,
+} from '../model-display';
 import type { EffortLevel } from '../hooks/useChatSend';
 
 const EFFORT_OPTIONS: {
@@ -84,9 +91,17 @@ type PaneKind = 'models' | 'effort';
  *  above it. */
 type PanelPos = { left: number; bottom: number; maxHeight: number };
 
-const MODELS_PANEL_W = 280;
-/** Ideal heights — panels render shorter than these when room is tight. */
-const MODELS_PANEL_H = 440;
+/** 320 rather than 280 since the rows carry their own metadata line: the wire
+ *  leaf ("chat/completions") is the identifier a 400 sends people looking for,
+ *  and at 280 it truncated to "chat/completi…" — the fact the row exists to
+ *  show, cut in half. The panel is still a modest floating card. */
+const MODELS_PANEL_W = 320;
+/** Ideal heights — panels render shorter than these when room is tight. The
+ *  models panel keeps ~11 rows visible: rows are two lines since they carry
+ *  their price/wire-format metadata, so the height that used to show 13
+ *  single-line rows shows five. `anchorAbove` clamps it to the space above the
+ *  chip either way, and the list scrolls internally. */
+const MODELS_PANEL_H = 520;
 const EFFORT_PANEL_H = 150;
 const EFFORT_PANEL_W = 264;
 
@@ -422,6 +437,18 @@ export function ModelEffortMenu({
   const modelRow = (m: ModelItem, showProvider = false) => {
     const isSel = selected?.id === m.id && selected?.provider === m.provider;
     const { name, tag } = modelRowLabel(m);
+    // The row's second line: what this model will COST and what it will SAY on
+    // the wire. Both were reachable only one screen away (Model settings), which
+    // left the composer unable to answer "which format will this 400-ing model
+    // actually use?" — the question docs/TROUBLESHOOTING.md sends users to check.
+    const price = modelPriceLabel(m);
+    const format = modelFormatLabel(m);
+    // The variant tag already says "Free" for a `…-free` id; printing the cost
+    // chip's "Free" beside it reads "Free Free". Only a free model whose NAME
+    // does not say so needs the chip (a `free` flag on a plainly-named model),
+    // and a disagreement between the two is kept visible rather than hidden —
+    // in that case the chip is a number, not the word.
+    const showPrice = price !== 'Free' || !tag.includes('Free');
     return (
       <div
         key={`${m.provider}/${m.id}`}
@@ -443,10 +470,41 @@ export function ModelEffortMenu({
           }
         }}
       >
-        <span className="min-w-0 flex-1 truncate text-foreground">
-          {name}
-          {tag && (
-            <span className="ml-1.5 text-2xs text-muted-foreground/60">{tag}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-foreground">
+            {name}
+            {tag && (
+              <span className="ml-1.5 text-2xs text-muted-foreground/60">{tag}</span>
+            )}
+          </span>
+          {(price || format || m.contextWindow > 0) && (
+            <span className="mt-0.5 flex min-w-0 items-center gap-2 text-2xs leading-4 text-muted-foreground/70">
+              {price && showPrice && (
+                <span
+                  className={cn('shrink-0', price === 'Free' && 'text-success-fg')}
+                  data-testid="model-option-price"
+                  title={priceSourceNote(m)}
+                >
+                  {price}
+                </span>
+              )}
+              {m.contextWindow > 0 && (
+                <span className="shrink-0" title={`${m.contextWindow.toLocaleString()} token context window`}>
+                  {formatContextWindow(m.contextWindow)}
+                </span>
+              )}
+              {/* The wire leaf the provider will actually receive, in mono so it
+                  reads as a path and not as prose. */}
+              {format && (
+                <span
+                  className="min-w-0 truncate font-mono"
+                  data-testid="model-option-format"
+                  title={modelFormatNote(m)}
+                >
+                  {format}
+                </span>
+              )}
+            </span>
           )}
         </span>
         {showProvider && (

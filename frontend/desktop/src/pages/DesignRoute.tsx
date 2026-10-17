@@ -20,6 +20,7 @@ import { ToolStepRow } from '@/components/chat/ToolStepRow';
 import { getToolLabel } from '@/lib/tool-labels';
 import { extractCommand, extractFilename } from '@/components/chat/tool/extractors';
 import { MutationDiffCards } from '@/components/overlays/MutationDiffCards';
+import { LAB_PDF_FILE } from '@/pages/design-lab-pdf';
 // The working-strip lab renders a voice-command row, and `main.tsx:81` defers
 // this registration to idle — so the lab imports it here to make its own
 // precondition explicit instead of racing the boot order.
@@ -594,6 +595,12 @@ function WorkingStripLab() {
  */
 const ChangesCardLazy = lazy(() => import('@/components/chat/ChangesCard').then((m) => ({ default: m.ChangesCard })));
 
+/** The document viewer is its own chunk: the lab is the only place in the design
+ *  route that pulls in pdf.js, and no other lab (or the app shell) needs it. */
+const FileSectionLazy = lazy(() =>
+  import('@/components/shell/RightDrawerFileSection').then((m) => ({ default: m.RightDrawerFileSection })),
+);
+
 const LAB_NL = String.fromCharCode(10);
 const LAB_CHANGES_DIFF = {
   branch: 'master',
@@ -625,6 +632,25 @@ function ChangesCardLab() {
   );
 }
 
+/** The document viewer, on a real two-page PDF (`scripts/make-lab-pdf.cjs`).
+ *
+ *  The pager is the one surface that cannot be verified in jsdom — no 2D
+ *  canvas, and pdf.js wants a worker — so a unit test can only ever observe its
+ *  loading state. It gets a lab instead: scroll the stack, watch the chip, zoom
+ *  and compare `canvas.width` against the layout width. */
+function PdfLab() {
+  return (
+    <div
+      data-testid="lab-pdf"
+      className="h-[620px] w-[560px] overflow-hidden rounded-lg border border-border bg-background"
+    >
+      <Suspense fallback={<p className="p-4 text-xs text-muted-foreground">loading viewer…</p>}>
+        <FileSectionLazy file={LAB_PDF_FILE} />
+      </Suspense>
+    </div>
+  );
+}
+
 export function DesignRoute() {
   // The roster lab mounts a live-polling drawer section, and other e2e specs
   // (a11y smoke, scroll pin) run against this same page — measured: adding it
@@ -636,6 +662,7 @@ export function DesignRoute() {
   const showToolRowsLab = lab === 'toolrows';
   const showWorkingStripLab = lab === 'working';
   const showChangesLab = lab === 'changes';
+  const showPdfLab = lab === 'pdf';
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-6xl px-6 py-10 space-y-10">
@@ -746,6 +773,13 @@ export function DesignRoute() {
             <Suspense fallback={<p className="text-xs text-muted-foreground">loading changes card…</p>}>
               <ChangesCardLab />
             </Suspense>
+          </section>
+        )}
+
+        {showPdfLab && (
+          <section className="space-y-3">
+            <h2 className="text-2xl font-semibold tracking-display">Document viewer (PDF)</h2>
+            <PdfLab />
           </section>
         )}
 

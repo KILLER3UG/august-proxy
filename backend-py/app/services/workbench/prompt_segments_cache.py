@@ -65,6 +65,10 @@ MEMORY_BLOCK = (
     'Shape: make the `fact` a description-first one-liner (scannable in an index); put depth in '
     '`details`; cross-reference related facts as [[key]] inside details.\n'
     'Do NOT save task steps, code structure, or anything git / the codebase already records.\n'
+    'Necessity bar: before any save, ask "will a future session ACT BETTER because of this?" '
+    'If the honest answer is "interesting" or "maybe", do not save. A store padded with '
+    'restated trivia crowds out the entries that matter and teaches every future session '
+    'to ignore memory — so when in doubt, save nothing.\n'
     "Update, don't duplicate: your memory index (in context at session start) and `list_facts` "
     "show current keys — revise an existing fact under the "
     'same key instead of saving a twin; `forget` deletes one that is wrong or outdated. '
@@ -88,7 +92,9 @@ MEMORY_NUDGE_BLOCK = (
     'The previous turn did real work but saved no memory. If it produced durable knowledge '
     '(root cause + fix location, a user directive, a project constraint, a correction to a stored '
     'memory), save it now with `remember` — stable key, description-first one-liner, depth in '
-    '`details`. Skip if nothing here will matter beyond this session.\n'
+    '`details`. Read memory first (`list_facts`, or `brain_query` over a memory store): the write '
+    'door requires it once per turn, and an entry that already covers this should be UPDATED, not '
+    'restated under a second key. Skip if nothing here will matter beyond this session.\n'
     '</memory_nudge>'
 )
 

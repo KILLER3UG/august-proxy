@@ -93,6 +93,10 @@ export async function reconcileSessionsFromBackend(
           // ("Chat 2026-…", "New Session") — that was wiping auto-titles.
           title: preferSessionTitle(local.title, backend.title),
           startedAt: local.startedAt,
+          // Last activity travels with the row so the sidebar can put the
+          // session that moved most recently at the top of its folder. It is
+          // NOT a display date — `startedAt` is what the date labels read.
+          updatedAt: backend.updatedAt || local.updatedAt,
           messageCount: Math.max(backend.messageCount ?? 0, local.messageCount ?? 0),
           provider: backend.provider || local.provider,
           model: (backend.model) || local.model,
@@ -158,6 +162,7 @@ export async function reconcileSessionsFromBackend(
             ...pending,
             workbenchSessionId: bs.id,
             title: preferSessionTitle(pending.title, bs.title),
+            updatedAt: bs.updatedAt || pending.updatedAt,
             messageCount: Math.max(bs.messageCount ?? 0, pending.messageCount ?? 0),
             provider: bs.provider || pending.provider,
             model: (bs.model) || pending.model,
@@ -179,7 +184,13 @@ export async function reconcileSessionsFromBackend(
       appendRow({
         id: bs.id,
         title: (bs.title) || 'New Session',
-        startedAt: (bs.updatedAt) || now,
+        // `startedAt` is when the chat STARTED. This used to be
+        // `bs.updatedAt`, which meant a backend-only row (any chat after a
+        // localStorage wipe) reported its last activity as its start date and
+        // the sidebar's date labels silently lied. The payload carries the real
+        // stamps (`summarize_session`), so read them in order of authority.
+        startedAt: (bs.startedAt) || (bs.createdAt) || (bs.updatedAt) || now,
+        updatedAt: (bs.updatedAt) || (bs.startedAt) || (bs.createdAt) || now,
         messageCount: bs.messageCount ?? 0,
         lastMessage: 'Conversation started.',
         provider: bs.provider || '',

@@ -7,7 +7,7 @@
 
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Loader2, Undo2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, PanelRight, Undo2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { DiffView } from '@/components/chat/DiffView';
@@ -334,8 +334,15 @@ function DocumentFileRow({
         title="Open file in side panel" aria-label="Open file in side panel"
         data-testid="changes-card-open"
       >
-        Download
-        <ChevronDown className="size-3 text-muted-foreground/70" />
+        {/* This button's label said "Download", its `aria-label` said "Open file
+            in side panel", its handler opened the drawer, and its icon was a
+            chevron-down that promised a menu. The label wins what a user reads,
+            so the control announced a save that never happened — and the file's
+            own header comment has described this row as "... + Open" all along.
+            The label now names the action, and the icon is the surface the
+            action opens. */}
+        Open
+        <PanelRight className="size-3 text-muted-foreground/70" />
       </button>
     </div>
   );

@@ -141,15 +141,15 @@ def archivedMessages(session_id: str) -> list[tuple[int, dict[str, Any]]]:
     return out
 
 
-def archivedMessage(session_id: str, episodeId: int) -> dict[str, Any] | None:
+def archivedMessage(session_id: str, episode_id: int) -> dict[str, Any] | None:
     """One archived message by its synthetic id, or None if this is not one.
 
     Resolves the recorded position directly rather than by counting, so a snapshot
     the reader could not parse does not move the answer for every id after it.
     """
-    if episodeId >= 0:
+    if episode_id >= 0:
         return None
-    want = -int(episodeId) - 1
+    want = -int(episode_id) - 1
     running = 0
     for rec in load_archive(session_id):
         msgs = rec.get('messages')

@@ -50,7 +50,11 @@ export function ChatEmptyState({
                 <GitBranch className="size-3 opacity-60" />
                 Orchestrator
               </span>
-              <p className="text-[1.625rem] font-[650] tracking-[-0.03em] leading-tight text-foreground">
+              {/* The same class the chat empty state uses: one hero size for
+                  both branches (see `.august-empty-title` in chat.css). This
+                  used to be `text-[1.625rem]` inline, 6px larger than the chat
+                  branch's — the mode you were in changed the screen's scale. */}
+              <p className="august-empty-title text-foreground">
                 Plan a wave, then dispatch
               </p>
             </div>

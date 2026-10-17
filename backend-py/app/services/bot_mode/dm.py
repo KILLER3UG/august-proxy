@@ -232,7 +232,7 @@ def _turnAuthor(content: object, source: object) -> str:
     return 'human'
 
 
-def _unattendedRun(sessionId: str, ceiling: int) -> int:
+def _unattendedRun(session_id: str, ceiling: int) -> int:
     """Bot-authored turns at the tail of this chat, capped at `ceiling`.
 
     The scan stops at the first human user row — that is the reset — and reads
@@ -245,13 +245,13 @@ def _unattendedRun(sessionId: str, ceiling: int) -> int:
     (`flush_session_barrier(..., currentMessages)`), so the row this very turn is
     reacting to is already in the table, and a restart cannot launder a runaway.
     """
-    if not sessionId or ceiling <= 0:
+    if not session_id or ceiling <= 0:
         return 0
     try:
         rows = _conn().execute(
             "SELECT content, source FROM messages WHERE session_id = ? AND role = 'user' "
             'ORDER BY id DESC LIMIT ?',
-            (sessionId, ceiling),
+            (session_id, ceiling),
         ).fetchall()
     except Exception:
         logger.debug('unattended run read failed', exc_info=True)

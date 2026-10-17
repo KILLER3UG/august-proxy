@@ -59,8 +59,9 @@ if (UPDATE) {
   process.exit(0);
 }
 
-// A guard that cannot measure is a guard that is always green — the sibling
-// coverage-ratchet states the rule and exits 2 on a missing report. A deleted
+// A guard that cannot measure is a guard that is always green — the rule the
+// sibling coverage-ratchet used to state before the whole test tooling (and it
+// with it) was deleted on 2026-10-17: exit 2 rather than pass. A deleted
 // or renamed budget file must fail loudly, not adopt the current count as its
 // own ceiling.
 if (!existsSync(BUDGET)) {

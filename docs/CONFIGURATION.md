@@ -257,7 +257,12 @@ What is real:
   `list_facts`, `forget`. All three are core tools, so progressive disclosure
   cannot hide the key lookup `remember` depends on, and a downgraded model can
   still correct what it remembers. Sub-agents read and recall but never write —
-  the parent turn is the single write door.
+  the parent turn is the single write door. `remember` refuses its first write
+  of a turn until memory has been read once that turn (`list_facts`, or
+  `brain_query` over a memory store), and refuses a sentence that is already
+  stored under another key, naming that key. `list_facts` pages with `offset`
+  and reports `total`/`hasMore`; `include_retired: true` also lists the rows
+  consolidation parked, which recall skips.
 - **Automatic recall** is the BM25 `<memory>` tail, gated by brain-config
   `memoryAutoInject` (**default `false`**). Independently of that gate,
   `kind='profile'` facts ride an always-in lane (~600-char budget) — that is what

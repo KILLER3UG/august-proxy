@@ -106,6 +106,11 @@ try {
   await page.waitForTimeout(600);
   await page.screenshot({ path: join(OUT, '18-command-palette.png') });
 
+  // Document viewer lab — a real 2-page PDF from scripts/make-lab-pdf.cjs. The
+  // pager is the one surface jsdom cannot render (no 2D canvas, pdf.js wants a
+  // worker), so this capture is the only place its painted pages are visible.
+  await snap('19-pdf-lab', '/_design?lab=pdf', { waitFor: '[data-testid="pdf-page"]', wait: 1500 });
+
   console.log('\nAll screenshots saved to', OUT);
 } catch (e) {
   console.error('Screenshot capture failed:', e);

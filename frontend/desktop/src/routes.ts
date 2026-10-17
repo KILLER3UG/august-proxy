@@ -40,9 +40,13 @@ const HistoryPage = lazy(() =>
 const LearningHub = lazy(() =>
   import('@/sections/learning/LearningHub').then((m) => ({ default: m.LearningHub })),
 );
-const DesignRoute = lazy(() =>
-  import('@/pages/DesignRoute').then((m) => ({ default: m.DesignRoute })),
-);
+// Dev-only. The `lazy()` CALL lives inside the branch on purpose: at module top
+// level it is a side-effecting call Rollup cannot drop, which is how the lab —
+// base64 PDF fixture included — stayed in the production bundle as a 24,111-byte
+// chunk (`DesignRoute-*.js`) while the route below claimed to be tree-shaken.
+const DesignRoute = import.meta.env.DEV
+  ? lazy(() => import('@/pages/DesignRoute').then((m) => ({ default: m.DesignRoute })))
+  : null;
 
 function Lazy({ children }: { children: ReactNode }) {
   return React.createElement(Suspense, { fallback: React.createElement(PageLoader) }, children);
@@ -170,8 +174,9 @@ export function SettingsPageRoute(): ReactNode {
   return React.createElement(Lazy, null, React.createElement(SettingsPage));
 }
 
-/* Dev-only design token inspector — tree-shaken out of production. */
-const DEV_ROUTES: readonly SectionRoute[] = import.meta.env.DEV
+/* Dev-only design token inspector. `DesignRoute` is null in a production build
+ * (see its declaration), so neither the route nor the import survives it. */
+const DEV_ROUTES: readonly SectionRoute[] = import.meta.env.DEV && DesignRoute
   ? [
       {
         path: '/_design',

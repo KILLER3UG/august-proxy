@@ -6,7 +6,7 @@ import { getFileIcon } from '@/lib/file-icon';
 import { cn } from '@/lib/utils';
 import type { FileAttachment } from '@/types/chat';
 import { openRightDrawerFile } from '@/components/shell/RightDrawerState';
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 
 function extensionLabel(name: string): string {
   const ext = name.split('.').pop()?.toUpperCase();
@@ -23,12 +23,27 @@ export function FileAttachmentCard({
 }) {
   const thumb = file.thumbnailUrl || (file.type === 'image' ? file.dataUrl || file.previewUrl : undefined);
   const isImage = file.type === 'image' && !!thumb;
-  const isPdf = /\.pdf$/i.test(file.name) || file.name.toLowerCase().endsWith('.pdf');
   const fi = getFileIcon(file.name);
   const Icon = fi.Icon;
   const badge = extensionLabel(file.name);
   const canOpen = (file.status ?? 'ready') === 'ready';
   const [ratio, setRatio] = useState<number | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  // The ratio is a measurement, not a style decision, so it lands as a CSS
+  // variable instead of a JSX style object: that object was the only violation
+  // `check:design` reported in the tree, and the variable keeps the box's shape
+  // in the stylesheet where the utilities live
+  // (`aspect-[var(--attach-ratio,3/4)]`) — the same mechanism as PdfPager's
+  // `--pdf-page-ratio`. A layout effect rather than a render-time write, because
+  // the box only exists after mount. (Do not spell the banned JSX form in this
+  // comment: the gate's regex matches the text, not the syntax.)
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    if (ratio && ratio > 0) el.style.setProperty('--attach-ratio', String(ratio));
+    else el.style.removeProperty('--attach-ratio');
+  }, [ratio]);
 
   return (
     <button
@@ -57,8 +72,8 @@ export function FileAttachmentCard({
           centre strip. `object-contain` covers the frame before the ratio is
           known, so nothing is cropped in either state. */}
       <div
-        className="relative flex max-h-[220px] min-h-[72px] w-full items-center justify-center bg-[#1a1a1c]"
-        style={{ aspectRatio: ratio ? String(ratio) : '3 / 4' }}
+        ref={boxRef}
+        className="relative flex max-h-[220px] min-h-[72px] w-full items-center justify-center bg-[#1a1a1c] aspect-[var(--attach-ratio,3/4)]"
       >
         {thumb ? (
           <img
@@ -91,12 +106,7 @@ export function FileAttachmentCard({
 
         {/* Type badge — bottom-left (PDF / DOC / …) */}
         <span
-          className={cn(
-            'absolute bottom-1.5 left-1.5 rounded px-1.5 py-0.5 text-2xs font-bold tracking-wide shadow-sm',
-            isPdf
-              ? 'bg-zinc-800/90 text-zinc-100'
-              : 'bg-zinc-800/90 text-zinc-100',
-          )}
+          className="absolute bottom-1.5 left-1.5 rounded bg-zinc-800/90 px-1.5 py-0.5 text-2xs font-bold tracking-wide text-zinc-100 shadow-sm"
         >
           {badge}
         </span>

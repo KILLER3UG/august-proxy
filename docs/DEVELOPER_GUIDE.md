@@ -10,7 +10,7 @@ conventions, the test suite, and how to extend the codebase.
 1. [Repository layout](#repository-layout)
 2. [Dev environment setup](#dev-environment-setup)
 3. [Running the server](#running-the-server)
-4. [Running the tests](#running-the-tests)
+4. [Verifying a change](#verifying-a-change-there-are-no-tests)
 5. [Project conventions](#project-conventions)
 6. [Adding a new provider](#adding-a-new-provider)
 7. [Adding a new workbench tool](#adding-a-new-workbench-tool)
@@ -39,9 +39,8 @@ august-proxy/
 │   │   │   ├── memory_store/    # brain SQLite domain package
 │   │   │   └── memory_conn.py   # thread-local conn + PRAGMA defaults
 │   │   └── lib/                 # paths, secrets, retry, tokens, health
-│   ├── tests/                   # pytest suite (isolatedData autouse)
 │   ├── scripts/                 # one-off verification, generators, codemods
-│   └── pyproject.toml           # ruff + pytest; requires-python >=3.12
+│   └── pyproject.toml           # ruff; requires-python >=3.12
 ├── frontend/
 │   ├── desktop/                 # React + Vite + Tauri SPA
 │   └── mobile/                  # Expo companion
@@ -87,7 +86,9 @@ npm run dev:desktop    # Tauri + backend orchestration
 ```
 
 The dev extra installs `pytest`, `pytest-asyncio`, `httpx`, `watchfiles`,
-`mypy`, `ruff`, and `pre-commit`.
+`mypy`, `ruff`, and `pre-commit`. The pytest packages are locked but unused
+since the suite was deleted (2026-10-17) — they stay so `uv lock --check` keeps
+passing on the release job.
 
 ---
 
@@ -112,52 +113,51 @@ Docker: `docker compose up --build -d` (port `8085:8085`).
 
 ---
 
-## Running the tests
+## Verifying a change (there are no tests)
+
+Every test file was deleted on 2026-10-17 at the owner's request: the backend
+`tests/` tree, the frontend `*.test.ts(x)` and `e2e/` suites, the payload
+integrity test, and with them the CI jobs, npm scripts (`npm run test:backend`,
+`test:frontend`, `test`, `check:coverage`), the `pytest` configuration in
+`pyproject.toml` and the coverage floor. Nothing in this repo runs a test.
 
 ```bash
 cd backend-py
-uv run pytest -q -n auto
-uv run pytest tests/test_workbench.py --no-cov -n auto
-uv run pytest -k plan_mode --no-cov -n auto
-uv run pytest --lf
-
-# Always pass -n auto. The serial suite is ~2h across ~4,970 tests because the
-# slow ones shell out to real external toolchains (Quartus, arduino-cli, ngspice)
-# in independent temp dirs; -n auto measured 2.6x on 4 workers (8m22s on 16
-# cores). A test that only passes serially is load-sensitive — fix the test.
-#
-# Full suite applies --cov-fail-under=55. A single file will miss that floor
-# unless you pass --no-cov.
+uv run ruff check .          # the whole backend gate now
+uv run mypy app/
 
 # From repo root
-npm run test:backend
-npm run test:frontend
-npm run test
+npm run check -w frontend/desktop   # tsc + eslint
+npm run check:design && npm run check:docs && npm run check:api
+npm run check:sse && npm run check:naming && npm run check:version
 ```
 
-The suite uses `asyncio_mode = "auto"` (`pyproject.toml`), so `async def test_*`
-functions run without an explicit marker.
+`npm run test -w frontend/mobile` still exists and is not a test run: mobile's
+`test` script is its own `tsc --noEmit` plus a parity audit.
 
-### Fixtures
+The `pytest*` and `pytest-cov` dev dependencies stay in `pyproject.toml` because
+`uv lock --check` gates `release-desktop.yml` and they are part of the locked dev
+set; they are simply never invoked.
 
-- **`isolatedData` (autouse)** — every test gets a temp `AUGUST_DATA_DIR` and
-  brain SQLite path so nothing touches live `data/`. Request the fixture if you
-  need the `Path`; isolation still applies if you omit it. **Do not remove
-  `autouse=True` without a safety review.**
-- Skill isolation fixtures redirect skill roots where needed.
+### What the deleted suite used to hold (read this before changing a hot path)
 
-### Coverage notes
+The fixtures below are gone; the mechanisms they protected are not:
 
-Strong coverage on session CRUD, guard-mode, adapters, gateway concurrency,
-skill curator, memory/FTS, Phase 7 inventory gate, and many UI vitest suites.
+- **Data isolation** — every test got a temp `AUGUST_DATA_DIR` and brain SQLite
+  path so nothing touched live `data/`. `app/lib/paths.py` still carries the
+  guard that refuses a live data dir, and `memory_store` still calls
+  `assertPytestDataDirIsolated` on its internal writers — dead code today, kept
+  as the alarm if a suite ever returns.
+- **Coverage** was never evenly spread: session CRUD, guard-mode, adapters,
+  gateway concurrency, skill curator and memory/FTS were the well-covered
+  surfaces. The parts that only ever had mocks or env-gated real-LLM tests
+  (workbench streaming against a live upstream, Slack/Discord *network* bots,
+  real provider keys) are now covered by nothing at all — exercise them by
+  running the app.
 
-Gaps to be aware of:
-
-- End-to-end workbench model streaming against a live upstream needs mocks or
-  env-gated real-LLM tests.
-- Live Slack/Discord *network* bots and real provider keys are env-gated.
-- Residual camelCase **parameter** names in some snake_case modules (wire keys
-  stay camelCase by design).
+Unrelated to the suite, and still true: some snake_case modules keep residual
+camelCase **parameter** names (wire keys stay camelCase by design), which is what
+`npm run check:naming` baselines.
 
 ---
 
@@ -173,7 +173,7 @@ Gaps to be aware of:
 - Constants: `UPPER_SNAKE`.
 - Private-by-convention: leading underscore.
 - External API boundary (`adapters/`) translates formats via case helpers where needed.
-- Never rename Python dunders, pytest `test*` discovery, or env var names.
+- Never rename Python dunders or env var names.
 
 ### Structure
 
@@ -193,10 +193,12 @@ Gaps to be aware of:
 - **A swallow must be named.** New best-effort blocks go through
   `with best_effort('session.title-backfill'):` (`app/services/best_effort.py`)
   instead of a bare `except Exception: pass`, so `rg 'best_effort\['` finds
-  every one and each logs with a traceback. Set `AUGUST_STRICT_BEST_EFFORT=1`
-  in test runs and the same block re-raises instead — what production would
-  have eaten then fails the suite. The ruff `BLE001` ratchet keeps new blind
-  excepts out while the existing ones migrate file by file.
+  every one and each logs with a traceback. `AUGUST_STRICT_BEST_EFFORT=1`
+  makes the same block re-raise instead — the escape hatch that let a suite
+  assert "production would have eaten this" is gone with the suite, but the flag
+  still re-raises if you set it by hand while reproducing a silent failure. The
+  ruff `BLE001` ratchet keeps new blind excepts out while the existing ones
+  migrate file by file.
 
 ### Design conventions (enforced by `npm run check:design`)
 
@@ -254,7 +256,10 @@ There is **no template catalog**. Users configure providers fully:
 3. Bespoke HTTP behaviour only if needed: extend a client under
    `app/providers/clients/` subclassing `BaseProviderClient`; generic OpenAI /
    Anthropic clients cover most gateways via `apiFormat`.
-4. Tests: `tests/test_providers.py` style create/list with baseUrl.
+4. Verify by hand: create the provider through `POST /api/providers`, send a chat
+   turn, and confirm the wire format the host actually receives (Settings → Models
+   shows the resolved format per model). The `tests/test_providers.py` case that
+   used to do this went with the suite (2026-10-17).
 
 ### Naming boundary (intentional dual surface)
 
@@ -281,7 +286,9 @@ snake_case parameters; routers may keep camelCase path params to match URLs.
 6. Mutating tools: ensure plan/ask guards and managed tool policy cover them.
 7. Read-only tools safe for concurrency: consider `PARALLEL_SAFE_TOOLS` in
    `workbench/parallel_tools.py`.
-8. Add tests under `tests/`. Tool JSON caches invalidate via
+8. Verify by hand (there is no test suite): call the tool from a chat turn, then
+   confirm its JSON Schema reaches the model — `toolDefinitions` /
+   `openaiToolDefinitions`. Tool JSON caches invalidate via
    `tool_registry.generation()`.
 
 > **Execution state:** the `update_state` system tool
@@ -303,7 +310,10 @@ snake_case parameters; routers may keep camelCase path params to match URLs.
    so missing SDKs do not block boot.
 3. Add webhook routes if needed (Telegram pattern).
 4. Document env vars in `.env.example` and [`CONFIGURATION.md`](CONFIGURATION.md).
-5. Tests modelled on `tests/test_gateway_base.py` and `tests/test_gateway_telegram.py`.
+5. Verify by hand: boot with the env vars set and watch the gateway log line for a
+   successful connect — the `tests/test_gateway_base.py` /
+   `tests/test_gateway_telegram.py` patterns that used to do this went with the
+   suite (2026-10-17).
 
 ---
 
@@ -345,7 +355,7 @@ Note: prefer direct `memory_store` transactions for user-facing SoT.
 
 - [ ] Handler in `tool_registrations/*_tools.py`
 - [ ] `tool_registry.register(...)` with JSON Schema
-- [ ] pytest that dispatch returns expected string
+- [ ] Dispatch it from a chat turn and confirm the returned string (no test suite exists)
 - [ ] Optional `PARALLEL_SAFE_TOOLS` only if read-only
 - [ ] No edits to workbench chat loop body
 

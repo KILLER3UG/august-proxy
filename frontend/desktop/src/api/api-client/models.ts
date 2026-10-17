@@ -65,6 +65,23 @@ export interface AggregatedModel {
   supportsThinking?: boolean;
   isFree?: boolean;
   pinned?: boolean;
+  /** USD per 1M tokens as the usage page bills (env → model → free → family
+   *  table → default). Absent means the row carries no price at all — an alias
+   *  entry has no target model to price. `0` is a price, not an absence. */
+  priceInPerM?: number | null;
+  priceOutPerM?: number | null;
+  /** True when that rate is a guess (family table or the no-match default). */
+  priceEstimated?: boolean;
+  /** env | model | free | table | unknown */
+  priceSource?: string;
+  /** This model's own wire-format override, canonicalised; null → the
+   *  provider's format. */
+  apiFormat?: string | null;
+  /** The provider's own wire format, so a row can name the format in force
+   *  without a second request. */
+  providerApiFormat?: string | null;
+  /** Alias entries only: no provider model behind them, so no price. */
+  isAlias?: boolean;
 }
 
 export interface AggregatedModelsResponse {

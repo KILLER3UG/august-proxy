@@ -242,19 +242,28 @@ def get_fact(factKey: str) -> FactDict | None:
     return cast(FactDict, _row_as_wire(row))
 
 
-def _visibility_where(scope: str) -> tuple[str, list[object]]:
+def _visibility_where(
+    scope: str, *, include_retired: bool = False
+) -> tuple[str, list[object]]:
     """2.2: the shared read-visibility clause for the facts store —
     active + unexpired + the M-2 scope union (global ∪ this-scope). Every
     non-ranked facts read (list_facts / search_facts) must apply it, or a Bot
     sees every other Bot's private keys plus superseded/retired/expired rows.
+
+    ``include_retired`` drops ONLY the status clause, for the model's audit
+    door: a row parked by consolidation is still stored memory, and an actor
+    that cannot see it can neither correct it nor explain why the store looks
+    empty. Expiry and scope still apply — those describe whose memory it is,
+    not whether it is parked.
     """
     from app.services.session_scope import GLOBAL_SCOPE, normalize_scope
 
     s = normalize_scope(scope)
     parts = [
-        "(status IS NULL OR status = 'active')",
         "(expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now'))",
     ]
+    if not include_retired:
+        parts.insert(0, "(status IS NULL OR status = 'active')")
     params: list[object] = []
     if s == GLOBAL_SCOPE:
         parts.append("(scope IS NULL OR scope = 'global')")
@@ -286,24 +295,125 @@ def search_facts(query: str, category: str = '', scope: str = 'global') -> list[
     return [cast(FactDict, _row_as_wire(r)) for r in rows]
 
 
-def list_facts(category: str = '', scope: str = 'global', limit: int = 500) -> list[FactDict]:
+def list_facts(
+    category: str = '',
+    scope: str = 'global',
+    limit: int = 500,
+    offset: int = 0,
+    include_retired: bool = False,
+) -> list[FactDict]:
     """List facts visible to ``scope`` (active + unexpired — 2.2), optionally
     filtered by category. 5.3 (Part 25): the bound is pushed into SQL (was an
-    unbounded fetch capped only in Python)."""
+    unbounded fetch capped only in Python).
+
+    ``offset`` is what makes the store ENUMERABLE: a model that can only ever
+    read the newest N rows cannot audit memory it wrote earlier, so a capped
+    first page used to be the whole story. ``include_retired`` adds the rows
+    consolidation parked (see :func:`_visibility_where`).
+    """
     conn = _conn()
-    vis, visParams = _visibility_where(scope)
+    vis, visParams = _visibility_where(scope, include_retired=include_retired)
     lim = max(1, min(int(limit or 500), 2000))
+    off = max(0, int(offset or 0))
     if category:
         rows = conn.execute(
-            f'SELECT * FROM facts WHERE category = ? AND {vis} ORDER BY updated_at DESC LIMIT ?',
-            (category, *visParams, lim),
+            f'SELECT * FROM facts WHERE category = ? AND {vis} '
+            'ORDER BY updated_at DESC LIMIT ? OFFSET ?',
+            (category, *visParams, lim, off),
         ).fetchall()
     else:
         rows = conn.execute(
-            f'SELECT * FROM facts WHERE {vis} ORDER BY updated_at DESC LIMIT ?',
-            (*visParams, lim),
+            f'SELECT * FROM facts WHERE {vis} ORDER BY updated_at DESC LIMIT ? OFFSET ?',
+            (*visParams, lim, off),
         ).fetchall()
     return [cast(FactDict, _row_as_wire(r)) for r in rows]
+
+
+def count_facts(
+    category: str = '',
+    scope: str = 'global',
+    include_retired: bool = False,
+) -> int:
+    """Total rows :func:`list_facts` would page through — so a caller can say
+    "3 of 57" instead of implying its page is the store."""
+    conn = _conn()
+    vis, visParams = _visibility_where(scope, include_retired=include_retired)
+    if category:
+        row = conn.execute(
+            f'SELECT COUNT(*) FROM facts WHERE category = ? AND {vis}',
+            (category, *visParams),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            f'SELECT COUNT(*) FROM facts WHERE {vis}', tuple(visParams)
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def update_fact_value(
+    factKey: str, factValue: JsonValue, category: str = '', title: str = ''
+) -> bool:
+    """Change an EXISTING fact's value in place — the partial write door.
+
+    ``save_fact`` is an upsert, so it also rewrites what a value change has no
+    business touching: ``expires_at = excluded.expires_at`` clears a TTL, and
+    ``status = 'active'`` revives a row consolidation had parked. A door whose
+    UI shows the user the value it is about to replace may change that value
+    and nothing else. Returns ``False`` when the key is not there, so the
+    caller can fall back to a create.
+
+    The refusals ``save_fact`` makes apply here too, because this is a second
+    way into the same store: a non-global row is not writable from the settings
+    door, and secret-shaped content is refused (facts are re-injected into
+    later turns, so a credential saved here is published onward).
+    """
+    from app.lib.paths import assertPytestDataDirIsolated
+    from app.services.session_scope import GLOBAL_SCOPE
+
+    assertPytestDataDirIsolated('memory_store.update_fact_value')
+
+    existing = get_fact(factKey)
+    if existing is None:
+        return False
+    existingScope = str(existing.get('scope') or GLOBAL_SCOPE)
+    if existingScope != GLOBAL_SCOPE:
+        raise ValueError(
+            f'fact "{factKey}" belongs to scope "{existingScope}"; a partial '
+            'update from this door is refused'
+        )
+
+    hits = scan_secrets(' '.join([
+        factValue if isinstance(factValue, str) else str(factValue or ''),
+        title or '',
+    ]))
+    if hits:
+        raise ValueError(
+            f'refusing to store secret-shaped content in durable memory '
+            f'({", ".join(hits)}); keep credentials in a provider config or a '
+            'secret store, not in a fact'
+        )
+
+    stripped = (title or '').strip()
+    conn = _conn()
+    conn.execute(
+        """
+        UPDATE facts
+        SET fact_value = ?,
+            title = CASE WHEN ? != '' THEN ? ELSE title END,
+            category = CASE WHEN ? != '' THEN ? ELSE category END,
+            updated_at = datetime('now')
+        WHERE fact_key = ?
+        """,
+        (_json(factValue), stripped, stripped, category, category, factKey),
+    )
+    brain_commit(conn)
+    try:
+        from app.services.memory_store.fact_retrieval import invalidate_fact_index
+
+        invalidate_fact_index()
+    except Exception:
+        pass
+    return True
 
 
 def delete_fact(factKey: str) -> bool:

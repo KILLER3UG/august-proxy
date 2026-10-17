@@ -3,6 +3,7 @@ import { marked, type Tokens } from 'marked';
 import katex from 'katex';
 import { highlightCode } from '@/lib/code-highlight';
 import { demoteRenderedHeadings } from '@/lib/markdownHeadings';
+import { convertMathInHtml } from '@/lib/markdownMath';
 import { safeExternalHref } from '@/lib/safe-href';
 
 const COPY_PLACEHOLDER_ATTR = 'data-copy-placeholder';
@@ -178,102 +179,6 @@ function renderMath(body: string, displayMode: boolean): string {
   return html;
 }
 
-/**
- * v1.1: Convert common LaTeX-style math to unicode math symbols.
- * Skips content inside code blocks (fenced or inline) and inside
- * already-rendered KaTeX blocks. Best-effort: matches simple patterns only.
- */
-function convertLatexToUnicode(input: string): string {
-  // Split on code blocks and inline code so we never touch them.
-  // Use a placeholder strategy: replace protected regions with
-  // unique tokens, convert, then restore. Use hyphens (not underscores)
-  // in the placeholder name so the subscript regex doesn't touch it.
-  const placeholders: string[] = [];
-  const stash = (text: string): string => {
-    const idx = placeholders.length;
-    placeholders.push(text);
-    return `\u0000MATH-PROTECTED-${idx}\u0000`;
-  };
-
-  // 1) Protect fenced code blocks ```...```
-  let s = input.replace(/```[\s\S]*?```/g, (m) => stash(m));
-  // 2) Protect inline code `...`
-  s = s.replace(/`[^`\n]+`/g, (m) => stash(m));
-  // 3) Protect KaTeX-rendered blocks (already wrapped in \(...\) or \[...\])
-  s = s.replace(/\\\([\s\S]*?\\\)/g, (m) => stash(m));
-  s = s.replace(/\\\[[\s\S]*?\\\]/g, (m) => stash(m));
-  s = s.replace(/\$\$[\s\S]*?\$\$/g, (m) => stash(m));
-
-  // 4) Common LaTeX → unicode conversions
-  // Greek letters (use negative lookahead to allow _ for subscripts)
-  s = s.replace(/\\pi(?![a-zA-Z])/g, 'π');
-  s = s.replace(/\\theta(?![a-zA-Z])/g, 'θ');
-  s = s.replace(/\\alpha(?![a-zA-Z])/g, 'α');
-  s = s.replace(/\\beta(?![a-zA-Z])/g, 'β');
-  s = s.replace(/\\gamma(?![a-zA-Z])/g, 'γ');
-  s = s.replace(/\\delta(?![a-zA-Z])/g, 'δ');
-  s = s.replace(/\\epsilon(?![a-zA-Z])/g, 'ε');
-  s = s.replace(/\\lambda(?![a-zA-Z])/g, 'λ');
-  s = s.replace(/\\mu(?![a-zA-Z])/g, 'μ');
-  s = s.replace(/\\sigma(?![a-zA-Z])/g, 'σ');
-  s = s.replace(/\\omega(?![a-zA-Z])/g, 'ω');
-
-  // Operators (same lookahead pattern)
-  s = s.replace(/\\sum(?![a-zA-Z])/g, '∑');
-  s = s.replace(/\\prod(?![a-zA-Z])/g, '∏');
-  s = s.replace(/\\int(?![a-zA-Z])/g, '∫');
-  s = s.replace(/\\partial(?![a-zA-Z])/g, '∂');
-  s = s.replace(/\\infty(?![a-zA-Z])/g, '∞');
-  s = s.replace(/\\sqrt\s*\{([^}]+)\}/g, '√($1)');
-  s = s.replace(/\\cdot(?![a-zA-Z])/g, '·');
-  s = s.replace(/\\times(?![a-zA-Z])/g, '×');
-  s = s.replace(/\\div(?![a-zA-Z])/g, '÷');
-  s = s.replace(/\\pm(?![a-zA-Z])/g, '±');
-  s = s.replace(/\\leq(?![a-zA-Z])/g, '≤');
-  s = s.replace(/\\geq(?![a-zA-Z])/g, '≥');
-  s = s.replace(/\\neq(?![a-zA-Z])/g, '≠');
-  s = s.replace(/\\approx(?![a-zA-Z])/g, '≈');
-  s = s.replace(/\\rightarrow(?![a-zA-Z])/g, '→');
-  s = s.replace(/\\to(?![a-zA-Z])/g, '→');
-  s = s.replace(/\\in(?![a-zA-Z])/g, '∈');
-  s = s.replace(/\\notin(?![a-zA-Z])/g, '∉');
-
-  // Superscripts: x^2, x^n, x^{10}
-  const supMap: Record<string, string> = {
-    '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
-    '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
-  };
-  s = s.replace(/\^(\d)/g, (_m: string, d: string) => supMap[d] || _m);
-  s = s.replace(/\^\{([^}]+)\}/g, (_m: string, body: string) =>
-    body.split('').map((c: string) => supMap[c] || c).join('')
-  );
-
-  // Subscripts: x_1, x_n, x_{10}
-  const subMap: Record<string, string> = {
-    '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
-    '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
-  };
-  s = s.replace(/_(\d)/g, (_m: string, d: string) => subMap[d] || _m);
-  s = s.replace(/_\{([^}]+)\}/g, (_m: string, body: string) =>
-    body.split('').map((c: string) => subMap[c] || c).join('')
-  );
-
-  // ASCII operator shorthand (both raw and HTML-encoded forms)
-  s = s.replace(/&gt;=/g, '≥');
-  s = s.replace(/&lt;=/g, '≤');
-  s = s.replace(/>=/g, '≥');
-  s = s.replace(/<=/g, '≤');
-  s = s.replace(/!=/g, '≠');
-  s = s.replace(/->/g, '→');
-  s = s.replace(/=>/g, '⇒');
-
-  // 5) Restore protected regions
-  const nullGuard = '\u0000';
-  s = s.replace(new RegExp(nullGuard + 'MATH-PROTECTED-(\\d+)' + nullGuard, 'g'), (_m, idx) => placeholders[Number(idx)] || '');
-
-  return s;
-}
-
 const mathInlineExtension = {
   name: 'mathInline',
   level: 'inline' as const,
@@ -293,8 +198,12 @@ const mathInlineExtension = {
     return candidates.length > 0 ? Math.min(...candidates) : -1;
   },
   tokenizer(src: string) {
-    // Try \( ... \) first
-    const matchParen = /^\\(\((.*?)\\\))/s.exec(src);
+    // Try \( ... \) first. The capture is the CONTENT only: the shipped
+    // pattern (`/^\\(\((.*?)\\\))/`) let the second `\(` open a capture group
+    // instead of matching a literal paren, so the body arrived as
+    // `(x + y\)` — which KaTeX rejects, silently degrading every \(…\) span to
+    // the raw-source fallback. Measured on marked 18.0.5.
+    const matchParen = /^\\\((.*?)\\\)/s.exec(src);
     if (matchParen) {
       return {
         type: 'mathInline',
@@ -302,8 +211,14 @@ const mathInlineExtension = {
         body: matchParen[1].trim(),
       };
     }
-    // Try $ ... $ (inline, non-greedy)
-    const matchDollar = /^\$(.+?)\$/s.exec(src);
+    // Try $ ... $ (inline). The opener may not be followed by whitespace, the
+    // closer may not be preceded by whitespace or followed by a digit — the
+    // MathJax defaults, adopted because the old `/^\$(.+?)\$/` paired two
+    // prices: "I paid $5 and then $10 more." rendered "5 and then" as math,
+    // and "It costs $5. The formula is $x + y$." swallowed the real expression
+    // into "5. The formula is". Cost of the rule, stated: `$x$2` and `$ x $`
+    // no longer render as math (`$x$ 2` does).
+    const matchDollar = /^\$(?!\s)([^$]+?)(?<!\s)\$(?!\d)/s.exec(src);
     if (matchDollar) {
       return {
         type: 'mathInline',
@@ -382,7 +297,7 @@ function stabilizeLiveTables(src: string): string {
 }
 
 /**
- * A.1 cheap live markdown. While streaming, the full convertLatexToUnicode +
+ * A.1 cheap live markdown. While streaming, the full LaTeX pass +
  * marked.parse + whole-tree innerHTML replace ran on every ~32ms flush, which
  * is the main text-stutter cost on long answers. Instead, live rendering
  * splits the content at blank-line boundaries (never inside a fenced code
@@ -410,10 +325,13 @@ const LIVE_BLOCK_HTML_CACHE = new SizedCache<string, { __html: string }>(
   (k, v) => k.length + v.__html.length,
 );
 
-/** One `marked` parse, LaTeX-stabilised. Shared by the cached live path and the
- *  settle/preview path so the two cannot drift on options or on the math pass. */
+/** One `marked` parse, then the math pass on the RESULT. Shared by the cached
+ *  live path and the settle/preview path so the two cannot drift on options or
+ *  on the math pass. The conversion runs after parsing on purpose — see
+ *  `lib/markdownMath.ts` for what rewriting the source did to a document that
+ *  contained an HTML comment. */
 function parseMarkdownSource(src: string): string {
-  return marked.parse(convertLatexToUnicode(src), { async: false });
+  return convertMathInHtml(marked.parse(src, { async: false }));
 }
 
 function renderLiveBlock(block: string, demote: boolean): { __html: string } {
@@ -677,7 +595,5 @@ export function Markdown({
 // eslint-disable-next-line react-refresh/only-export-components
 export function renderMarkdown(content: string): string {
   if (!content) return '';
-  // v1.1: convert common LaTeX math to unicode before marked parsing
-  const processed = convertLatexToUnicode(content);
-  return marked.parse(processed, { async: false });
+  return parseMarkdownSource(content);
 }

@@ -1,37 +1,50 @@
-# Feature Inventory Test Matrix — Phase 7
+# Feature Inventory Test Matrix — RETIRED (Phase 7)
 
-> **Status:** **DONE — fully automated E2E proven (2026-07-14)**  
-> **Purpose:** Map Feature Inventory Summary items → automated coverage.  
-> **Live tracker:** `docs/REFACTOR_PROGRESS.md`  
-> **Permanent gate:** `backend-py/tests/test_phase7_e2e_inventory.py` (runs in CI pytest)
+> **Retired 2026-10-17.** Every test this matrix maps was deleted on 2026-10-17 at
+> the owner's request: `backend-py/tests/` (1,690 files), the 235 frontend
+> `*.test.ts(x)` files with their `__tests__` trees, `frontend/desktop/e2e/` and
+> the payload-integrity test — together with the CI jobs, npm scripts, pytest
+> configuration and coverage ratchet that ran them.
+>
+> **Nothing below is a current claim.** The "Covered" headings and the table
+> beneath them record what the suite used to exercise; they are kept because they
+> are the only inventory of which surfaces had real coverage and which were only
+> ever env-gated or mocked. Read it as history, never as verification you can run.
+>
+> The Phase 7 inventory *feature* is untouched — feature_flow emission and the
+> inventory routes still exist in the app. Only the tests around them are gone.
 
-## What “fully E2E proven” means here
+## What “fully E2E proven” meant here
 
-| Layer | Proven in CI? | How |
+**This table described 2026-07-14. Every "Yes" below is now "no suite exists".**
+
+| Layer | Was proven in CI? | How it was proven |
 |---|---|---|
-| Backend inventory surfaces | **Yes** | Full `pytest` on every push (includes Phase 7 gate) |
-| Live backend feature_flow during tool/proxy actions | **Yes** | In-process emits asserted in Phase 7 + tool stage tests |
-| Desktop UI consumers | **Yes** | `vitest` in CI (`npm run test -w frontend/desktop`) |
-| Mobile companion | **Yes** | `npm run test -w frontend/mobile` (tsc + parity audit) in CI |
-| Live Slack/Discord *network* bots | **Gated** | Normalize + connect-without-token proven; real tokens need env secrets |
-| Live upstream LLM providers | **Gated** | `v2_real_llm` / `v3_proxy_real_llm` when keys present |
+| Backend inventory surfaces | **Yes, then** | Full `pytest` on every push (included the Phase 7 gate) |
+| Live backend feature_flow during tool/proxy actions | **Yes, then** | In-process emits asserted in Phase 7 + tool stage tests |
+| Desktop UI consumers | **Yes, then** | `vitest` in CI (`npm run test -w frontend/desktop`) |
+| Mobile companion | **Yes** | `npm run test -w frontend/mobile` (tsc + parity audit) — this one still runs |
+| Live Slack/Discord *network* bots | **Gated, then** | Normalize + connect-without-token proven; real tokens needed env secrets |
+| Live upstream LLM providers | **Gated, then** | `v2_real_llm` / `v3_proxy_real_llm` when keys were present |
 
-Isolation: `isolatedData` is **autouse** — full pytest must not touch live brain.
+Isolation: `isolatedData` was **autouse** so a full pytest run could not touch the
+live brain. The guard itself (`app/lib/paths.py`, `assertPytestDataDirIsolated`)
+is still in the code; the fixture is gone with the suite.
 
 ---
 
-## Suite baselines (re-run to refresh)
+## Suite baselines (historical — none of these commands exist any more)
 
-| Suite | Command | CI job |
+| Suite | Command it used | CI job it ran in |
 |---|---|---|
 | Backend pytest | `pytest -q -n auto` in `backend-py/` | `backend-mypy` |
 | Phase 7 gate | `pytest tests/test_phase7_e2e_inventory.py -q` | (part of full pytest) |
 | Desktop vitest | `npm run test -w frontend/desktop` | `frontend-tsc-eslint` |
-| Mobile | `npm run test -w frontend/mobile` | `mobile-typecheck` |
+| Mobile | `npm run test -w frontend/mobile` | `mobile-typecheck` (still runs; it is a typecheck) |
 
 ---
 
-## Inventory → coverage (all **Covered** at automated E2E level)
+## Inventory → coverage (as audited 2026-07-14; all suites since deleted)
 
 ### 1. Multi-provider proxy / adapter translation — Covered
 
@@ -107,23 +120,31 @@ Isolation: `isolatedData` is **autouse** — full pytest must not touch live bra
 
 ---
 
-## Live backend in CI — answer
+## Live backend in CI — answer (historical)
 
-**Yes, for automated proof:** when CI runs pytest, tool stages and proxy hops **do emit** Feature Flow events in-process (`feature_flow` bus). Phase 7 asserts those events.
+**It used to be yes, for automated proof:** when CI ran pytest, tool stages and
+proxy hops **did emit** Feature Flow events in-process (`feature_flow` bus), and
+Phase 7 asserted those events. Nothing asserts them now.
 
-**No live browser/Tauri session** is started in CI. Desktop proves UI consumption via vitest (mocked/networkless EventSource where needed). That is intentional: CI must stay credential-free and non-flaky.
+**No live browser/Tauri session** was ever started in CI. Desktop proved UI
+consumption via vitest (mocked/networkless EventSource where needed).
 
 ---
 
-## How to re-verify locally
+## How to check any of this now
 
 ```bash
-# Backend (includes Phase 7 gate + full suite)
-backend-py/.venv/Scripts/python.exe -m pytest backend-py/tests -q
+# Backend: static gates only — no suite to run
+cd backend-py && uv run ruff check . && uv run mypy app/
 
-# Desktop UI
-cd frontend/desktop && npx vitest run
+# Desktop: tsc + eslint, plus the design/docs/api gates from the repo root
+npm run check -w frontend/desktop
+npm run check:design && npm run check:docs && npm run check:api
 
-# Mobile
+# Mobile (still real: tsc + parity audit, not a test run)
 npm run test -w frontend/mobile
 ```
+
+Feature Flow emission itself is exercised by using the app: run
+`npm run dev:desktop`, send a turn that calls a tool, and watch the Feature Flow
+panel — that is the only verification left for the inventory surfaces.

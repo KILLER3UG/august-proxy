@@ -425,14 +425,24 @@ details[open] > summary .disclosure-chevron {
  *
  * `.august-chat-column` is deliberately absent: that class belongs to the
  * shell's `flex-1` wrapper (ChatLayout), and capping a left-anchored flex
- * item stops it at 58rem and leaves the remainder as dead space on the
- * right — measured 196px off-centre in a 1600px window with a 280px sidebar.
- * The strip that wants the transcript's width carries its own class. */
+ * item stops it and leaves the remainder as dead space on the right —
+ * measured 196px off-centre in a 1600px window with a 280px sidebar.
+ * The strip that wants the transcript's width carries its own class.
+ *
+ * The value is `max-w-3xl` in `rem`, which is what the elements this rule
+ * targets already declare in their own class lists — `VirtualizedMessageList`
+ * and the composer slot in `ChatThread` both carry `max-w-3xl` (48rem). At
+ * 58rem the `!important` here overrode both and the transcript rendered 928px
+ * wide: about 118 characters per line at the chat size, against a ~96-character
+ * reference measure and the 45–90 a reader can track. Capping at the width the
+ * components ask for keeps the two in step — `chat_full_width_layout.test.tsx`
+ * asserts they agree, so a future change to one is not silently overridden by
+ * the other. */
 .august-message-list,
 .august-composer-slot,
 .august-empty-state-content,
 .august-transcript-column {
-  max-width: 58rem !important;
+  max-width: 48rem !important;
 }
 
 .august-message-list {
@@ -444,37 +454,41 @@ details[open] > summary .disclosure-chevron {
   background: var(--dt-background);
 }
 
-.august-empty-state h1 {
-  font-size: clamp(1.45rem, 2vw, 2rem);
-  font-weight: 600;
-  letter-spacing: -0.035em;
-}
+/* (An `.august-empty-state h1` rule with a `clamp(1.45rem, 2vw, 2rem)` hero
+   used to sit here. The title is a `<p>` — see the note on
+   `.august-empty-title` below — so the rule could never match anything, and
+   what it described was a hero 60% larger than the one the screen actually
+   renders. Deleted rather than retargeted: the size is a decision, and this
+   rule was not the place it was made.) */
 
 /* Empty-state hero title — the display step above the composer.
  *
- * This has to be a class rule, not utilities on the element: the
- * `.august-empty-state h1` selector directly above is a descendant selector,
- * so it outranks any single utility class and would silently win the
- * font-size/weight/tracking argument. Two selectors here beat it.
+ * A class rule, not utilities on the element: the title is a `<p>` in
+ * `ChatEmptyState` (deliberately — the titlebar already renders the chat's
+ * title as the page's single h1, and a screen with two h1s has no page title
+ * at all), so a `.august-empty-state h1` descendant rule could never match it.
+ * One did, until it was removed here: it declared a `clamp(1.45rem, 2vw, 2rem)`
+ * hero for an element that does not exist, which is a trap for the next person
+ * who adds a heading to this screen rather than a working default.
+ *
+ * BOTH empty states wear this class. The orchestrator branch used to carry
+ * `text-[1.625rem]` inline, so switching modes changed the type scale of the
+ * same screen — 26px against 20px — and the reference's greeting is ~2× body,
+ * which is neither.
  *
  * The values are existing tokens, not new ones: -0.04em is Tailwind's
- * `tracking-tightest` (tailwind.config.cjs letterSpacing), and 650 sits inside
- * the bundled Inter Variable 100–900 axis, so no webfont is requested.
+ * `tracking-tightest` (tailwind.config.cjs letterSpacing), 650 sits inside the
+ * bundled Inter Variable 100–900 axis (so no webfont is requested), and the
+ * size itself is `--font-display` beside `--font-ui` in tokens.css.
  *
- * The middle term is `rem + vw`, not vw alone: `data-text-size` scales the ROOT
- * font-size (tokens.css:245-248), so a pure-vw preferred value would sit inside
- * the clamp band (roughly 1154–1462px here — an ordinary maximized window) and
- * ignore the preference entirely. The rem term keeps the hero on the same scale
- * as every other size in the app while the vw term keeps it responsive.
- */
-/* 38px was marketing-hero treatment for what is a prompt, not a page title.
- * The reference's chat surface is quiet: a content column at body scale with
- * the cursor in an empty composer and nothing else. Measured, this rendered at
- * 38px in a 440x42 box — the loudest element on an empty screen, competing
- * with the composer the user is meant to type into. Dropped to the page-title
- * scale the rest of the shell uses. */
+ * 38px was marketing-hero treatment for what is a prompt, not a page title,
+ * which is why a previous pass dropped it to the page-title scale; that was an
+ * over-correction in the other direction (measured 1.28× body against the
+ * reference's ~2×). The display step is the middle: large enough to be the
+ * screen's one loud element, still under the 44–72px `.hero-display` that
+ * belongs to onboarding. */
 .august-empty-state .august-empty-title {
-  font-size: clamp(1.125rem, 1.05rem + 0.2vw, 1.25rem);
+  font-size: var(--font-display);
   font-weight: 650;
   letter-spacing: -0.04em;
   line-height: 1.1;
@@ -677,7 +691,7 @@ details[open] > summary .disclosure-chevron {
   border-bottom: none;
 }
 .activity-summary-header:focus-visible {
-  outline: 2px solid var(--dt-border);
+  outline: 2px solid var(--dt-ring);
   outline-offset: 1px;
 }
 .activity-summary-counts {
@@ -904,7 +918,7 @@ details[open] > summary .disclosure-chevron {
   background: color-mix(in srgb, var(--dt-foreground) 6%, transparent);
 }
 .process-thought-icon-btn:focus-visible {
-  outline: 2px solid var(--dt-border);
+  outline: 2px solid var(--dt-ring);
   outline-offset: 1px;
 }
 .process-thought-toggle {
@@ -1342,7 +1356,7 @@ details[open] > summary .disclosure-chevron {
   cursor: default;
 }
 .edit-rail-trigger:focus-visible {
-  outline: 2px solid var(--dt-border);
+  outline: 2px solid var(--dt-ring);
   outline-offset: 1px;
 }
 .edit-rail-desc {
@@ -1431,7 +1445,7 @@ details[open] > summary .disclosure-chevron {
   color: var(--dt-foreground);
 }
 .thought-toggle-btn:focus-visible {
-  outline: 2px solid var(--dt-border);
+  outline: 2px solid var(--dt-ring);
   outline-offset: 2px;
   border-radius: 3px;
 }
@@ -1491,7 +1505,7 @@ details[open] > summary .disclosure-chevron {
   color: var(--dt-foreground);
 }
 .thought-summary-toggle:focus-visible {
-  outline: 2px solid var(--dt-border);
+  outline: 2px solid var(--dt-ring);
   outline-offset: 2px;
   border-radius: 3px;
 }

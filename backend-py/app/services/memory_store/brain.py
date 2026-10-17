@@ -107,6 +107,32 @@ _KV_MACHINE_KEYS: tuple[str, ...] = ('agent_registry', 'agent_jobs')
 _KV_MACHINE_PREFIXES: tuple[str, ...] = ('diff_learn:', 'internal:', 'cognitive:')
 
 
+def _kv_notes_where() -> tuple[str, list[object]]:
+    """WHERE clause + params selecting the user's KV notes — the non-machine
+    rows of ``memory_store``. One definition shared by the boot index, the
+    store summary and the note count, because three copies of "exclude
+    agent_registry" is three chances to disagree about what memory holds."""
+    clauses = ['key NOT IN (' + ','.join('?' * len(_KV_MACHINE_KEYS)) + ')']
+    params: list[object] = list(_KV_MACHINE_KEYS)
+    for prefix in _KV_MACHINE_PREFIXES:
+        clauses.append('key NOT LIKE ?')
+        params.append(f'{prefix}%')
+    return 'WHERE ' + ' AND '.join(clauses), params
+
+
+def count_user_notes() -> int:
+    """Non-machine KV rows — the user's Notes, the same set the boot index
+    lists and ``brain_browse('memory')`` pages. 0 on a store whose table does
+    not exist yet (fresh install)."""
+    conn = _conn()
+    where, params = _kv_notes_where()
+    try:
+        row = conn.execute(f'SELECT COUNT(*) FROM memory_store {where}', params).fetchone()
+    except Exception:
+        return 0
+    return int(row[0]) if row else 0
+
+
 def _resolve_store(store: str) -> str:
     """Map wire/SQL aliases to a canonical ``_BRAINStores`` key."""
     if store in _BRAINStores:
@@ -507,12 +533,8 @@ def brain_store_summary() -> list[dict[str, object]]:
             # (agent_registry, diff_learn:*, …). Otherwise /api/brain/stores
             # shows a count the per-store browse can never page to.
             if name == 'memory':
-                where = (
-                    'WHERE key NOT IN (' + ','.join('?' * len(_KV_MACHINE_KEYS)) + ') AND '
-                    + ' AND '.join("key NOT LIKE ?" for _ in _KV_MACHINE_PREFIXES)
-                )
-                params = list(_KV_MACHINE_KEYS) + [f'{p}%' for p in _KV_MACHINE_PREFIXES]
-                row = conn.execute(f'SELECT COUNT(*) FROM {table} {where}', params).fetchone()
+                where, kvParams = _kv_notes_where()
+                row = conn.execute(f'SELECT COUNT(*) FROM {table} {where}', kvParams).fetchone()
             else:
                 row = conn.execute(f'SELECT COUNT(*) FROM {table}').fetchone()
             count = int(row[0]) if row else 0
@@ -663,6 +685,23 @@ def brain_browse(
         return {'error': f'brain_browse({store}): {exc}', 'rows': [], 'total': 0}
 
 
+def _kv_note_hook(value_raw: object) -> str:
+    """One-line recall hook for a KV note: the first line of its value,
+    whitespace-collapsed and clamped to 80 chars. Only a JSON *string*
+    unwraps (``save_internal`` JSON-encodes everything) — an object value
+    stays verbatim rather than being rendered as ``[object Object]`` in the
+    line a future session trusts."""
+    raw = str(value_raw or '')
+    if raw.startswith('"'):
+        try:
+            decoded = json.loads(raw)
+            if isinstance(decoded, str):
+                raw = decoded
+        except ValueError:
+            pass
+    return ' '.join(raw.split('\n', 1)[0].split())[:80]
+
+
 def brain_index_snippet(scope: str = 'global') -> str:
     """Compact boot index of durable memory for intake injection (B3).
 
@@ -674,6 +713,14 @@ def brain_index_snippet(scope: str = 'global') -> str:
     session) so the model always knows what it remembers and can pull or
     update an entry by key without a ``list_facts`` round-trip — the same
     contract as this environment's ``MEMORY.md`` index.
+
+    Notes lane (2026-10-17): the KV store the Memory pane writes is listed
+    too — up to 10 user notes (machine keys excluded), one line per key with
+    a first-line hook. ``remember`` never writes this store, so without the
+    lane everything the user filed by hand was invisible in the boot index
+    and reachable only through an unadvertised ``brain_query`` store name.
+    Ten keys, not forty: notes are an index, and ``brain_query
+    store=memory`` pages the rest with an explicit ``… +N more`` receipt.
 
     2.1 (Part 25): the facts selection is scope-filtered (global ∪ this-scope)
     — otherwise a Bot's private fact names ride into every other session's
@@ -735,6 +782,38 @@ def brain_index_snippet(scope: str = 'global') -> str:
     except Exception:
         pass
     try:
+        # Notes — the KV store the Memory pane writes. `remember` never
+        # touches this store, so without this lane the model was blind to
+        # everything the user filed by hand. Newest first, ten keys, machine
+        # keys excluded by the same rule the browse door uses.
+        where, noteParams = _kv_notes_where()
+        noteRows = conn.execute(
+            f'SELECT key, value FROM memory_store {where} ORDER BY updated_at DESC LIMIT 10',
+            noteParams,
+        ).fetchall()
+        if noteRows:
+            lines.append('Notes:')
+            for r in noteRows:
+                hook = _kv_note_hook(r['value'])
+                line = f"  - {r['key']}"
+                if hook:
+                    line += f' — {hook}'
+                lines.append(line)
+            try:
+                total = int(
+                    conn.execute(
+                        f'SELECT COUNT(*) FROM memory_store {where}', noteParams
+                    ).fetchone()[0]
+                )
+                if total > len(noteRows):
+                    lines.append(
+                        f'  … +{total - len(noteRows)} more (brain_query store=memory)'
+                    )
+            except Exception:
+                pass
+    except Exception:
+        pass
+    try:
         # Part 27 T1 (privacy): fence the timeline by the same global∪scope
         # clause the facts half uses, so a Bot's private last-user-message
         # never rides into an unrelated session's boot index.
@@ -754,7 +833,13 @@ def brain_index_snippet(scope: str = 'global') -> str:
     if not lines:
         return ''
     # ~600-token cap ≈ 2400 chars (index lines are short by construction).
-    return '\n'.join(lines)[:2400]
+    # Cut at a LINE boundary: a mid-line slice leaves half a hook that reads
+    # like a complete fact — the exact lie this index exists to avoid.
+    text = '\n'.join(lines)
+    if len(text) > 2400:
+        cut = text.rfind('\n', 0, 2400)
+        text = text[:cut] if cut > 0 else text[:2400]
+    return text
 
 
 # Per-store writable field whitelists for brain_update_row (B5). Stores absent

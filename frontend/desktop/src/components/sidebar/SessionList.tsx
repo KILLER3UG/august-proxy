@@ -12,6 +12,7 @@ import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { ChevronUp, Search, X, AlertCircle } from "lucide-react";
 import { openConversationSearch } from "@/store/conversation-search";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import { openFolderViaTauri, folderNameFromPath } from "@/api/folder";
 import { isTauri } from "@/lib/tauri-detect";
 import { t } from "@/lib/motion";
@@ -49,7 +50,6 @@ import { SessionListNav } from "./SessionListNav";
 import { SessionRow } from "./SessionRow";
 import { BotsRail } from "./BotsRail";
 import { Section, FolderHeader, UncategorizedHeader } from "./FolderTree";
-import { groupByDate } from "@/lib/date-group";
 import {
   UserDropdown,
   type UserDropdownAction,
@@ -100,28 +100,77 @@ function ShownOfTotal({ shown, total }: { shown: number; total: number }) {
   );
 }
 
-/** Date sub-heading INSIDE a leaf pool (a folder, or Unfiled).
+/** Project sub-heading INSIDE a leaf pool (a folder, or Unfiled).
  *
  *  Deliberately NOT a <Section>: `Section` gates its action buttons on the
- *  title string, so a date header rendered as one would either sprout
+ *  title string, so a project header rendered as one would either sprout
  *  irrelevant controls or force that component to learn a new title. The
  *  typography is copied from FolderTree's own heading so the two read as the
  *  same level of hierarchy.
  *
- *  Only rendered when date grouping is on, which the sort toggle controls —
- *  grouping by date is meaningless when rows are sorted by name. */
-function DateGroupHeader({ label, count }: { label: string; count: number }) {
+ *  Only rendered when project grouping is on, which the chat view menu
+ *  controls. It replaced a date sub-heading: a chat list is already ordered by
+ *  recency, so date buckets repeated what the row's own relative time said,
+ *  while the project a chat belongs to is a fact the row does not carry. */
+function ProjectGroupHeader({
+  label,
+  count,
+  path,
+}: {
+  label: string;
+  count: number;
+  path?: string;
+}) {
   return (
     <h4
       className="px-2 pt-1.5 pb-0.5 text-2xs text-sidebar-foreground/45 font-medium tracking-wide uppercase"
-      data-testid="date-group-header"
+      data-testid="project-group-header"
+      title={path || label}
     >
-      {label}
+      <span className="truncate">{label}</span>
       {count > 0 && (
         <span className="ml-1 text-sidebar-foreground/30 tabular-nums">{count}</span>
       )}
     </h4>
   );
+}
+
+/** One project bucket for the "Group by project" view: every chat whose
+ *  `workspacePath` resolves to the same directory. Chats with no workspace are
+ *  collected into a single trailing group rather than scattered — the group is
+ *  the pool's own order (active first), so the first group is always the one
+ *  holding the row that just moved.
+ *
+ *  The path is normalized (backslashes, trailing separators) because the same
+ *  workspace arrives from the backend as `C:\Dev\x` and from the folder picker
+ *  as `C:/Dev/x`. */
+interface ProjectBucket {
+  key: string;
+  label: string;
+  items: Session[];
+}
+
+function groupByProject(items: readonly Session[]): ProjectBucket[] {
+  const buckets = new Map<string, ProjectBucket>();
+  const noProject: Session[] = [];
+  for (const s of items) {
+    const path = (s.workspacePath || '').replace(/\\/g, '/').replace(/\/+$/, '');
+    if (!path) {
+      noProject.push(s);
+      continue;
+    }
+    const existing = buckets.get(path);
+    if (existing) existing.items.push(s);
+    else
+      buckets.set(path, {
+        key: path,
+        label: folderNameFromPath(path) || path,
+        items: [s],
+      });
+  }
+  const out = [...buckets.values()];
+  if (noProject.length) out.push({ key: '', label: 'No project', items: noProject });
+  return out;
 }
 
 
@@ -155,22 +204,34 @@ export function SessionList({
   onNavigate,
 }: Props) {
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set(STORAGE));
-  // Hermes (R1 §3): "Bot Mode lives in the left sidebar as a TAB next to
-  // your conversations — a Sessions | Bots tab strip — rather than a second
-  // pane stacked below the session list." Persisted per install.
-  // Read-only now: the tab strip that owned `setRailTab` is gone. `railTab`
-  // still gates the body (`bots` roster vs session list), and the persisted
-  // key is honoured so an install that last sat on Bots keeps landing there.
-  // The `terminal` variant is dropped — that tab never switched the rail.
-  const [railTab] = useState<'sessions' | 'bots'>(() =>
+  // Which list the sidebar shows. Read AND written again — see the switch's own
+  // comment below for what the read-only version cost. Persisted per install
+  // (Hermes R1 §3).
+  const [railTab, setRailTab] = useState<'sessions' | 'bots'>(() =>
     localStorage.getItem('august-sidebar-tab') === 'bots' ? 'bots' : 'sessions',
   );
+  const switchRailTab = (next: 'sessions' | 'bots') => {
+    setRailTab(next);
+    localStorage.setItem('august-sidebar-tab', next);
+  };
   // DeepSeek (R4 §3): "sort by Last updated (remembers choice)". August has
-  // no drag order yet, so the remembered choice is Updated | Name.
+  // no drag order yet, so the remembered choice is Newest | Name.
+  //
+  // "Newest" now means last activity, which is what this comment used to say it
+  // could not mean: `Session` carries `updatedAt` as of 2026-10-17 (the SoT has
+  // always sent it; the sidebar just was not reading it), so ordering by
+  // `startedAt` was the only option then and would be a quiet lie now — a chat
+  // answered this morning would sit under one opened three days ago.
   const [sortBy, setSortBy] = useState<'updated' | 'name'>(() =>
     localStorage.getItem('august-sidebar-sort') === 'name' ? 'name' : 'updated',
   );
-  const botsQuery = useQuery({ queryKey: ['bots'], queryFn: listBots });
+  // Deliberately NOT bound to a variable: the `Bots 2` tab badge that used to
+  // read it is gone (see the Sessions|Bots switch below), but the query is
+  // still worth mounting — it shares `['bots']` with `BotsRail`, so the roster
+  // is warm by the time the switch is flipped to Bots. An unassigned call says
+  // "prefetch" where `const botsQuery = useQuery(...)` said "dead code", which
+  // is what the lint budget reported every run.
+  useQuery({ queryKey: ['bots'], queryFn: listBots });
   const [sidebarWidth, setSidebarWidth] = useState(256);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -269,6 +330,55 @@ export function SessionList({
 
   const { state: confirmState, confirm: confirmStyled, handleConfirm, handleCancel } =
     useConfirmDialog();
+
+  /** One pool's rows, flat or grouped by project.
+   *
+   *  Both leaf pools (a folder's chats, and the unfiled "Tasks" pool) render
+   *  through this. The cap is applied by the caller BEFORE this, so the
+   *  shown/total caption above and the group headers describe the same set of
+   *  rows. */
+  const renderPool = (items: Session[], poolKey: string) => {
+    const buckets = groupProjects ? groupByProject(items) : [];
+    // A single "No project" bucket is every chat in the pool — a header that
+    // labels nothing. Grouping only earns its line when it splits the pool.
+    const grouped = buckets.length > 1 || (buckets.length === 1 && buckets[0].key !== '');
+    return (
+      <AnimatePresence initial={false} mode="popLayout">
+        {grouped
+          ? buckets.map((group) => (
+              <div key={`${poolKey}:${group.key || '-'}`} className="space-y-px">
+                <ProjectGroupHeader
+                  label={group.label}
+                  count={group.items.length}
+                  path={group.key || undefined}
+                />
+                {group.items.map((s) => (
+                  <SessionRow
+                    key={s.id}
+                    session={s}
+                    active={activeId === s.id}
+                    pinned={false}
+                    status={statusFor(s)}
+                    folders={folders}
+                    {...sessionRowHandlers.get(s.id)!}
+                  />
+                ))}
+              </div>
+            ))
+          : items.map((s) => (
+              <SessionRow
+                key={s.id}
+                session={s}
+                active={activeId === s.id}
+                pinned={false}
+                status={statusFor(s)}
+                folders={folders}
+                {...sessionRowHandlers.get(s.id)!}
+              />
+            ))}
+      </AnimatePresence>
+    );
+  };
 
   // Latest render values for the cached per-session row handlers. The handler
   // objects are memoized per session id (so React.memo on SessionRow can bail
@@ -430,36 +540,100 @@ export function SessionList({
   // Multi-repo sidebar groups by folderId — do not hide other folders' sessions
   // when the global current workspace changes (that made folders look empty).
   const pinned = useMemo(() => visible.filter((s) => pinnedIds.has(s.id)), [visible, pinnedIds]);
-  // DeepSeek parity: rows are ordered by the remembered choice — Last
-  // updated (default) or Name. Applied to the unpinned pool; folders and
-  // Pinned keep their own deliberate order.
+  /** Live status for a row, keyed by both id forms (the realtime bridge writes
+   *  `wb_*`). Local — `statusFor` is re-created every render, so a memo that
+   *  closed over it could never bail out. */
+  const liveStatus = useCallback(
+    (s: Session): SessionStatus | undefined =>
+      mergedSessionStates[s.id] ??
+      (s.workbenchSessionId ? mergedSessionStates[s.workbenchSessionId] : undefined),
+    [mergedSessionStates],
+  );
+  const isLive = useCallback(
+    (st: SessionStatus | undefined) => st === 'working' || st === 'streaming',
+    [],
+  );
+
+  /** When each live chat was last seen doing work, in ms.
+   *
+   *  The backend's `updatedAt` only refreshes on the 60s reconcile, which is
+   *  too coarse for "two chats are generating, which one moved last". This
+   *  stamps a row the moment it starts working (and again whenever the backend
+   *  reports newer activity), so the two swap places as they progress. A row
+   *  that is not live is ignored entirely — its place comes from the sort
+   *  preference, not from this clock. */
+  const [activeStamp, setActiveStamp] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const now = Date.now();
+    let next: Record<string, number> | null = null;
+    for (const s of sessions) {
+      if (!isLive(liveStatus(s))) continue;
+      const fromBackend = Date.parse(s.updatedAt || '') || 0;
+      const seen = activeStamp[s.id] ?? 0;
+      if (seen && fromBackend <= seen) continue;
+      (next ??= { ...activeStamp })[s.id] = Math.max(fromBackend, now);
+    }
+    if (next) setActiveStamp(next);
+  }, [sessions, liveStatus, isLive, activeStamp]);
+
+  // DeepSeek parity: rows are ordered by the remembered choice — Newest
+  // (default) or Name — applied to the unpinned pool. Folders and Pinned keep
+  // their own deliberate order.
+  //
+  // Work in progress leads its OWN pool: a chat that is generating sorts above
+  // the idle ones around it, and among several live chats the one that moved
+  // most recently leads. This comparator is global but the pool split happens
+  // afterwards (othersByFolder), which preserves relative order — so the
+  // reordering is per folder and never crosses a folder boundary.
   const others = useMemo(() => {
     const list = visible.filter((s) => !pinnedIds.has(s.id));
-    const stamp = (x: (typeof list)[number]) => {
-      const t = Date.parse(x.startedAt || '');
-      return Number.isFinite(t) ? t : 0;
-    };
-    return list.sort((a, b) =>
-      sortBy === 'name'
+    // "Newest first" is LAST ACTIVITY, not creation: a chat you replied to a
+    // minute ago belongs at the top even if you opened it last week. The three
+    // stamps are merged with max because each covers a gap in the others —
+    // `updatedAt` is the SoT but only refreshes on the 60s reconcile,
+    // `activeStamp` covers the seconds in between, and `startedAt` is all a
+    // local draft that has never synced has.
+    const recency = (x: Session) =>
+      Math.max(
+        activeStamp[x.id] ?? 0,
+        Date.parse(x.updatedAt || '') || 0,
+        Date.parse(x.startedAt || '') || 0,
+      );
+    const live = (x: Session) => isLive(liveStatus(x));
+    return list.sort((a, b) => {
+      const aLive = live(a);
+      const bLive = live(b);
+      // Work in progress leads its own pool; among live chats the one that
+      // moved most recently leads, which is what makes two generating chats
+      // swap places as they progress.
+      if (aLive !== bLive) return aLive ? -1 : 1;
+      if (aLive && bLive) {
+        const delta = recency(b) - recency(a);
+        if (delta !== 0) return delta;
+      }
+      return sortBy === 'name'
         ? (a.title || '').localeCompare(b.title || '')
-        : stamp(b) - stamp(a),
-    );
-  }, [visible, pinnedIds, sortBy]);
+        : recency(b) - recency(a);
+    });
+  }, [visible, pinnedIds, sortBy, activeStamp, liveStatus, isLive]);
 
-  /** Date headers only make sense when rows are ordered by date. Under
-   *  `sortBy === 'name'` the list is alphabetical, so a "Today" heading over
-   *  alphabetically-adjacent rows would describe nothing. Grouping is gated on
-   *  this rather than adding a second toggle the user has to keep in step.
+  /** Group each pool by project — the workspace a chat runs in — instead of by
+   *  date. Persisted per install; ON by default because the pool already
+   *  carries folders, and a project header is the one grouping the rows cannot
+   *  express themselves.
    *
-   *  OFF by default even so. Measured on a real 41-chat profile: the headers
-   *  cost ten full rows (TODAY 2 / THURSDAY, OCT 8 1 / …) to label eight
-   *  sessions, and they repeat the relative time the row already shows on its
-   *  own line. None of the four references group a chat list by date — Claude
-   *  and Haze show none, KiloCode nests sessions under a project instead. The
-   *  rows still sort by recency; only the labels are gone. Flip
-   *  `august-sidebar-date-groups` to '1' to get them back. */
-  const groupDates =
-    sortBy === 'updated' && localStorage.getItem('august-sidebar-date-groups') === '1';
+   *  What this replaced: date headers over an already-recency-ordered list. On
+   *  a real 41-chat profile they cost ten rows to label eight sessions and
+   *  repeated the relative time every row already prints. `lib/date-group.ts`
+   *  stays for the History page, which really is a chronological view. */
+  const [groupProjectsPref, setGroupProjectsPref] = useState(
+    () => localStorage.getItem('august-sidebar-group-projects') !== '0',
+  );
+  const changeGroupProjects = (next: boolean) => {
+    setGroupProjectsPref(next);
+    localStorage.setItem('august-sidebar-group-projects', next ? '1' : '0');
+  };
+  const groupProjects = groupProjectsPref;
 
   const togglePin = useCallback((id: string) => {
     const next = new Set(latest.current.pinnedIds);
@@ -710,31 +884,80 @@ export function SessionList({
           })()}
         />
 
-        {/* Sessions | Bots tab strip (Hermes) — the roster gets its own
-            surface instead of stacking into the session list. The sort toggle
-            is a sibling of the tablist, not a child of it: a `role="tablist"`
-            may only contain `role="tab"`, and axe fails the route critically
-            when anything else sits inside — which this button did. */}
-        {/* The `Sessions | Terminal | Bots` tab strip is REMOVED.
+        {/* Sessions | Bots — a two-state switch, and the WRITER for
+            `august-sidebar-tab`.
 
-            * None of the four references has a rail tab strip. Claude has
-            `+ New / Projects / Artifacts / Customize` and straight into the
-            session list; only KiloCode has tabs, and the capture file
-            explicitly exempts KiloCode from the selection rule.
+            The three-tab strip (`Sessions | Terminal | Bots`, with a `Bots 2`
+            badge) was removed here and STAYS removed: none of the four
+            references has a rail tab strip (only KiloCode has tabs, and the
+            capture file exempts it from the selection rule); `Terminal` never
+            switched the rail — it opened a bottom dock and left Sessions
+            showing — and every click threw an uncaught xterm `TypeError`;
+            `Bots 2` printed a number the roster header already printed, from
+            the same `['bots']` query; and the sort control that used to sit in
+            this tablist was not a `role="tab"`, which `d4d383f1` moved out
+            because axe fails a tablist containing anything else.
 
-            * It was not cosmetic either:
-            * - `Terminal` never switched the rail (`{railTab !== 'bots' ?
-            *   (entire session list) : null}` gated only bots), so it opened a
-            *   BOTTOM DOCK in the main column and left Sessions showing.
-            * - Every click threw an uncaught xterm `TypeError` on
-            *   `Viewport._innerRefresh` and surfaced a red error toast.
-            * - `Bots 2` printed the same number twice on one screen (tab badge
-            *   + roster header), from the same `['bots']` query.
-            *
-            * The terminal is still reachable via the Workbench drawer, which
-            * is its only other entry point; the bot roster likewise. */}
+            What the removal left behind was worse than the strip. `railTab`
+            was still READ by both branches and never written, and `BotsRail`
+            is rendered on the `bots` branch and NOWHERE else in the app (a
+            repo-wide `<BotsRail` search finds this call site and its own
+            tests). So the read-only version meant: every install whose key was
+            not already 'bots' had no door at all to the roster, its create-Bot
+            modal, its hidden-Bot toggles and its rooms — and an install that
+            HAD persisted 'bots' could never see its chats again. The previous
+            comment here claimed "the bot roster likewise" survived via the
+            Workbench drawer; that is true of the per-Bot routines pane
+            (`[bot:<name>]`), which needs a Bot id, and false of the roster.
 
-        {/* Session search — filters titles across Pinned / folders / task */}
+            Both halves are the same missing setter, and this is it: two states,
+            no Terminal, no count badge, and the session search below renders
+            only for the sessions view (the roster carries its own), so nothing
+            in either state is inert. */}
+        <div className="flex items-center gap-1 px-1.5 pt-1.5" role="tablist" aria-label="Sidebar view">
+          <Button
+            type="button"
+            role="tab"
+            variant="ghost"
+            size="sm"
+            aria-selected={railTab === 'sessions'}
+            onClick={() => switchRailTab('sessions')}
+            data-testid="sidebar-tab-sessions"
+            // `Button` for the focus ring it carries; padding and colours are
+            // overridden because a view switch is a tab, not a form action.
+            className={cn(
+              'px-2 py-1 transition-colors',
+              railTab === 'sessions'
+                ? 'bg-sidebar-accent/70 text-sidebar-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-foreground'
+                : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground',
+            )}
+          >
+            Sessions
+          </Button>
+          <Button
+            type="button"
+            role="tab"
+            variant="ghost"
+            size="sm"
+            aria-selected={railTab === 'bots'}
+            onClick={() => switchRailTab('bots')}
+            data-testid="sidebar-tab-bots"
+            className={cn(
+              'px-2 py-1 transition-colors',
+              railTab === 'bots'
+                ? 'bg-sidebar-accent/70 text-sidebar-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-foreground'
+                : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground',
+            )}
+          >
+            Bots
+          </Button>
+        </div>
+
+        {/* Session search — filters titles across Pinned / folders / task.
+            Sessions view only: `searchQuery` filters the session store, so on
+            the Bots view it would be a text box that does nothing (the roster
+            has its own). */}
+        {railTab === 'sessions' && (
         <div className="px-1.5 pt-1">
           <div className="relative">
             <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 size-3 text-tier-3 pointer-events-none" />
@@ -760,9 +983,10 @@ export function SessionList({
             )}
           </div>
         </div>
+        )}
 
         {/* Scrollable sessions area — denser, drawer-only simplicity */}
-        {railTab !== 'bots' ? (
+        {railTab === 'sessions' && (
         <div className="flex-1 overflow-y-auto px-1.5 pb-2 space-y-2">
           {searching && searchMatchCount === 0 && (
             <div className="py-4 text-center">
@@ -846,10 +1070,14 @@ export function SessionList({
           <Section
             title="Chats and tasks"
             count={searching ? shownOthers : others.length}
-            onToggleSort={() => {
-              const next = sortBy === 'updated' ? 'name' : 'updated';
-              setSortBy(next);
-              localStorage.setItem('august-sidebar-sort', next);
+            viewOptions={{
+              sortBy,
+              onSortChange: (next) => {
+                setSortBy(next);
+                localStorage.setItem('august-sidebar-sort', next);
+              },
+              groupProjects: groupProjectsPref,
+              onGroupProjectsChange: changeGroupProjects,
             }}
             onNewFolder={handleCreateFolder}
             onUploadFolder={(e) => { void handleFolderUploadClick(e); }}
@@ -886,40 +1114,11 @@ export function SessionList({
                           shown={renderable.length}
                           total={poolTotals.byFolder.get(folder.id) ?? folderSessions.length}
                         />
-                        <AnimatePresence initial={false} mode="popLayout">
-                          {/* Cap FIRST, group second: the ShownOfTotal caption
-                              above must stay honest about what is on screen,
-                              and date headers over a truncated list would
-                              describe rows that were never rendered. */}
-                          {(groupDates
-                            ? groupByDate(renderable, (s) => s.startedAt).map((g) => (
-                                <div key={g.label} className="space-y-px">
-                                  <DateGroupHeader label={g.label} count={g.items.length} />
-                                  {g.items.map((s) => (
-                                    <SessionRow
-                                      key={s.id}
-                                      session={s}
-                                      active={activeId === s.id}
-                                      pinned={false}
-                                      status={statusFor(s)}
-                                      folders={folders}
-                                      {...sessionRowHandlers.get(s.id)!}
-                                    />
-                                  ))}
-                                </div>
-                              ))
-                            : renderable.map((s) => (
-                                <SessionRow
-                                  key={s.id}
-                                  session={s}
-                                  active={activeId === s.id}
-                                  pinned={false}
-                                  status={statusFor(s)}
-                                  folders={folders}
-                                  {...sessionRowHandlers.get(s.id)!}
-                                />
-                              )))}
-                        </AnimatePresence>
+                        {/* Cap FIRST, group second: the ShownOfTotal caption
+                            above must stay honest about what is on screen, and
+                            project headers over a truncated list would describe
+                            rows that were never rendered. */}
+                        {renderPool(renderable, `folder:${folder.id}`)}
                         {/* No prose where a list is empty. Both headers carry
                             a `+` that starts a chat right there, and each row’s own
                             kebab does the rest — an italic sentence explaining it
@@ -955,39 +1154,10 @@ export function SessionList({
                           // total of 0 would hide the cap caption every time.
                           total={searching ? poolTotals.unfiled : unfiledSessions.length}
                         />
-                        <AnimatePresence initial={false} mode="popLayout">
-                          {/* Cap FIRST, group second — same rule as the folder
-                              pool above, so the caption and the headers agree
-                              about what is actually on screen. */}
-                          {(groupDates
-                            ? groupByDate(renderableUnfiled, (s) => s.startedAt).map((g) => (
-                                <div key={g.label} className="space-y-px">
-                                  <DateGroupHeader label={g.label} count={g.items.length} />
-                                  {g.items.map((s) => (
-                                    <SessionRow
-                                      key={s.id}
-                                      session={s}
-                                      active={activeId === s.id}
-                                      pinned={false}
-                                      status={statusFor(s)}
-                                      folders={folders}
-                                      {...sessionRowHandlers.get(s.id)!}
-                                    />
-                                  ))}
-                                </div>
-                              ))
-                            : renderableUnfiled.map((s) => (
-                                <SessionRow
-                                  key={s.id}
-                                  session={s}
-                                  active={activeId === s.id}
-                                  pinned={false}
-                                  status={statusFor(s)}
-                                  folders={folders}
-                                  {...sessionRowHandlers.get(s.id)!}
-                                />
-                              )))}
-                        </AnimatePresence>
+                        {/* Cap FIRST, group second — same rule as the folder
+                            pool above, so the caption and the headers agree
+                            about what is actually on screen. */}
+                        {renderPool(renderableUnfiled, 'unfiled')}
                         {/* No prose where a list is empty. Both headers carry
                             a `+` that starts a chat right there, and each row’s own
                             kebab does the rest — an italic sentence explaining it
@@ -1012,10 +1182,10 @@ export function SessionList({
             </div>
           </Section>
         </div>
-        ) : null}
+        )}
 
-        {/* Bots tab body — the roster owns the surface while its tab is
-            active (Hermes: a tab strip, not a pane stacked below the list). */}
+        {/* Bots view — the roster owns the sidebar while the switch above is
+            on Bots. It is the roster's only render site in the app. */}
         {railTab === 'bots' ? (
           <div className="flex-1 overflow-y-auto">
             <BotsRail

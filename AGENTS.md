@@ -1,5 +1,29 @@
 # Agent notes (August Proxy)
 
+## There is no test suite (removed 2026-10-17, at the owner's request)
+
+Every test file in this repo was deleted on 2026-10-17 — `backend-py/tests/`
+(1,690 files), the 235 frontend `*.test.ts(x)` files with their `__tests__`
+directories, `frontend/desktop/e2e/`, `scripts/desktop-backend-payload.test.mjs`
+and the `test_mapping` hook whose only input was the test tree. The CI jobs, npm
+scripts, `pytest` configuration, coverage floor/ratchet and the lockfile-neutral
+dev deps that served them went with them. `npm test` does not exist any more, on
+purpose; the 25 inline Rust `#[cfg(test)]` blocks in `src-tauri/` were left in
+place (they compile to nothing outside `cargo test`, and nothing runs it).
+
+**Every `tests/…` path named anywhere below is historical.** A sentence that
+says a rule "is pinned by `tests/test_x.py`" is no longer pinned by anything —
+the file it names is gone. Those sentences are the record of *why* the code has
+its shape, so they were kept rather than rewritten; verify a claim by reading the
+code it names, never by looking for a test. Nothing turns red for a missing
+test: the gates that remain are static.
+
+What verifies a change now: `npm run check:docs`, `check:design`,
+`check:naming`, `check:api`, `check:api-index`, `check:sse`, `check:version`,
+`check:doc-links`, `lint:ratchet`; `uv run ruff check .` + `uv run mypy app/`
+for the backend; `npm run check -w frontend/desktop` (tsc + eslint) for the
+desktop app; `Type check` on every push; and a human running the app.
+
 ## Product surface
 
 **The product is the Tauri desktop app** (`frontend/desktop/` + bundled `backend-py/`).
@@ -439,6 +463,20 @@ re-read `list_facts` after writing rather than trusting that index — keep the
 prompt text and that behaviour in step if either changes. Sub-agents read and
 recall but never write; the parent turn is the single memory write door.
 
+**That read is now enforced, and the read is now complete.** `remember` refuses
+its first write in a turn until `list_facts` (or `brain_query` over a memory
+store) has run once that turn — only when the store actually holds something to
+check, and never when `modelMemoryRead` is off, since a gate the model cannot
+satisfy would make memory unwritable. A sentence already stored under a
+different key is refused with that key in the result (`existingKey`), because
+"update, don't duplicate" was advice, not a mechanism. On the read side
+`list_facts` takes `offset` and reports `total`/`hasMore` — it used to be hard
+capped at the 50 newest rows, so a store the model could write to was one it
+could only partly read back — and `include_retired` exposes the rows
+consolidation parked, which recall skips but which are still stored memory.
+`brain_query` advertises the `memory` (KV notes) store for the same reason:
+reachable-but-unadvertised is a door the model has to guess at.
+
 **The loop's only positive trigger is opt-in** — every other learning pass is
 started by something going wrong (a flagged episode, a filed observation, a
 failing automation), so nothing ever read a session that went *well*.
@@ -483,11 +521,11 @@ exist — corrected Part 25 Phase 7.1.)
 
 | Area | Owns | Validate with |
 |------|------|---------------|
-| `backend-py/` | FastAPI proxy, workbench, Brain, MCP, tools | `cd backend-py && uv run pytest -q -n auto` |
-| `frontend/desktop/` | Tauri shell, React UI, Vite build | `npm run test:frontend` |
-| `frontend/mobile/` | Expo mobile app | `npm run test -w frontend/mobile` |
-| `scripts/` | Build/release orchestration (Node) | manual — no test suite |
-| `docs/` | User-facing docs, specs, troubleshooting | n/a |
+| `backend-py/` | FastAPI proxy, workbench, Brain, MCP, tools | `cd backend-py && uv run ruff check . && uv run mypy app/` |
+| `frontend/desktop/` | Tauri shell, React UI, Vite build | `npm run check -w frontend/desktop` (tsc + eslint) + `npm run check:design` |
+| `frontend/mobile/` | Expo mobile app | `npm run test -w frontend/mobile` (its own `tsc --noEmit` + parity audit — no test files, and none were there to delete) |
+| `scripts/` | Build/release orchestration (Node) | run it; `node --check <script>` for syntax |
+| `docs/` | User-facing docs, specs, troubleshooting | `npm run check:doc-links` · `npm run check:docs` |
 
 **High-risk coordination points** (touch carefully, validate both layers):
 
@@ -616,47 +654,29 @@ exist — corrected Part 25 Phase 7.1.)
 **Fast path for backend-only changes:**
 
 ```bash
-cd backend-py && uv run ruff check . && uv run mypy app/ && uv run pytest -q -n auto
+cd backend-py && uv run ruff check . && uv run mypy app/
 ```
 
-Always pass `-n auto`. The serial suite is ~2h of ~4,970 tests because the slow
-ones shell out to real external toolchains (Quartus, arduino-cli, ngspice) in
-independent temp dirs — measured 2.6x on 4 workers, 8m22s for the whole suite
-on 16 cores. A test that only passes serially is a load-sensitivity bug in that
-test (the one that was, `test_idle_kernel_is_reaped`, polled a shared-loop timer
-from synchronous code); fix the test, don't drop `-n auto`.
+That is the whole local gate for backend work. It used to be followed by
+`uv run pytest -q -n auto` — a ~2h serial suite of ~4,970 tests, of which the slow
+ones shelled out to real external toolchains (Quartus, arduino-cli, ngspice) in
+independent temp dirs. All of it, the `-n auto` advice, the 55% coverage floor
+and the harness-core ratchet were retired on 2026-10-17 (see the note at the
+top). Nothing below is a command you can run any more; it is here because it
+explains why some code is shaped defensively.
 
-**The release job builds; it does not test.** `release-desktop.yml` runs
-`uv lock --check`, ruff and mypy, then produces the signed installer. The suite
-lives in `Type check`, which runs all ~4,970 tests on every push to every branch
-and finishes in ~5 minutes on Ubuntu. Re-running it in the release job cost 45
-minutes of a ~70-minute release, and `-n auto` made it *worse* — 1h35m54s
-against 44m19s serial on the same job and runner class — because that job is the
-only one that stages ngspice first, so its slow tests are real solves contending
-for 4 vCPUs instead of skipping.
+**The release job builds; it does not test.** `release-desktop.yml` checks
+`uv lock --check`, ruff and mypy, then produces the signed installer, and `Type
+check` runs the static gate set on every push to every branch. `Type check` runs
+on the tag's commit but does not gate publication, so **confirm it is green
+before pushing the tag** — `git push origin master v0.18.16` does not wait for it.
 
-Two consequences to know rather than rediscover. `Type check` runs on the tag's
-commit but does not gate publication, so **confirm it is green before pushing the
-tag** — `git push origin master v0.18.16` does not wait for it. And the
-ngspice-dependent circuit tests now run in no CI job at all; they only execute
-locally, where the binary is staged.
-
-On a small machine `-n auto` oversubscribes, and two paths raced there rather
-than failing loudly. Both are fixed (2026-09-26), and the reason they are still
-worth knowing is that both looked like generic test flake:
-
-  * `isolatedData` hit `database is locked` swapping the per-test brain SQLite
-    out from under a leaked thread. Cause: `PRAGMA journal_mode=WAL` is the one
-    statement SQLite gives no busy handler — waiting there could deadlock two
-    connections — so `connect(timeout=)` does not cover it. Retried in
-    `memory_conn.apply_conn_pragmas`.
-  * `testMutatingRoundSnapshots` saw no `turn N start` snapshot. Cause: that
-    baseline is committed off the event loop and joined best-effort, so `done`
-    never meant it had landed. The test now waits for it.
-
-The general shape: a statement that gets no busy handler, and a contract that is
-deliberately asynchronous, both surface as load-dependent failures. Fix the
-mechanism, don't drop `-n auto`.
+Two mechanism notes the deleted suite paid for, both still true of the code:
+`PRAGMA journal_mode=WAL` is the one SQLite statement that gets no busy handler
+(so `connect(timeout=)` does not cover it — `memory_conn.apply_conn_pragmas`
+retries), and a baseline written off the event loop and joined best-effort means
+`done` never meant "landed". A statement with no busy handler and a deliberately
+asynchronous contract both surface as load-dependent failures; fix the mechanism.
 
 ## Version files to bump together on desktop ship
 

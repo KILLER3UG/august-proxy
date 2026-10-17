@@ -95,6 +95,30 @@ export function setTextSize(size: TextSize): void {
   applyTextSize(size);
 }
 
+/** The root size the surface sliders are expressed against (see `:root` in
+ * styles/tokens.css, and `:root[data-text-size=…]` beside it). */
+const REM_BASE_PX = 16;
+
+/**
+ * Write a surface preference as `rem`, not `px`.
+ *
+ * The slider stores an absolute px number (12–22), but writing it in px made
+ * these four vars the ONLY text sizes in the app that `data-text-size` could
+ * not scale: the Text size setting works by changing the ROOT font-size
+ * (×0.92 / ×1.00 / ×1.08 / ×1.18), which every `rem` in the tree follows —
+ * except the four an inline px value had already frozen. Choosing
+ * "Comfortable" therefore grew the paddings and the metadata around the text
+ * while the interface and chat text themselves stayed put.
+ *
+ * Dividing by the base converts the same preference into a rem value that is
+ * identical at the default size (15/16px → 0.9375/1rem) and participates in
+ * the scale from there. Every value is an exact binary fraction (n/16), so no
+ * rounding is introduced.
+ */
+function pxToRem(px: number): string {
+  return `${px / REM_BASE_PX}rem`;
+}
+
 export function applySurfaceFontSizes(raw: Partial<SurfaceFontSizes> | null): void {
   const next = { ...DEFAULT_SURFACE_FONT_SIZES };
   for (const key of Object.keys(next) as SurfaceFontKey[]) {
@@ -104,10 +128,10 @@ export function applySurfaceFontSizes(raw: Partial<SurfaceFontSizes> | null): vo
   useThemeStore.setState({ surfaceFontSizes: next });
   if (typeof document !== 'undefined') {
     const root = document.documentElement;
-    root.style.setProperty('--font-ui', `${next.interface}px`);
-    root.style.setProperty('--font-chat', `${next.chat}px`);
-    root.style.setProperty('--font-input', `${next.input}px`);
-    root.style.setProperty('--font-code', `${next.code}px`);
+    root.style.setProperty('--font-ui', pxToRem(next.interface));
+    root.style.setProperty('--font-chat', pxToRem(next.chat));
+    root.style.setProperty('--font-input', pxToRem(next.input));
+    root.style.setProperty('--font-code', pxToRem(next.code));
   }
   try { localStorage.setItem(SURFACE_FONT_STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
 }

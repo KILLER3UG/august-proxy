@@ -89,6 +89,20 @@ async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int
             except _json.JSONDecodeError:
                 pass
         result = _bq(store, query, filtersDict or None, as_int(limit, 10))
+        # Reading a memory store is a memory read — same gate as list_facts, so
+        # `brain_query(store=facts)` (the route the boot index points at) also
+        # satisfies `remember`'s read-before-write check.
+        if store in (
+            'facts',
+            'semantic_facts',
+            'memory',
+            'kv',
+            'memory_store',
+            'project-memory',
+            'project_memory',
+            'projectMemory',
+        ):
+            _markMemoryRead()
         return result
     except Exception as exc:
         return f'{{"error": "brain_query: {exc}"}}'
@@ -126,14 +140,39 @@ _REMEMBER_PER_TURN_LIMIT = 3
 # Per-turn counters keyed by workbench session id (ContextVar set by
 # _execute_tool); reset at turn start via reset_remember_turn_budget().
 _rememberTurnCounts: dict[str, int] = {}
+# Sessions that READ memory this turn (list_facts / brain_query over a memory
+# store). `remember` refuses the first write of a turn until this is set: the
+# store is small and durable, and a write made without looking at what is
+# already there is how a store fills with restatements of things it already
+# knows. Same lifecycle as the counter above — one turn, then forgotten.
+_memoryReadThisTurn: set[str] = set()
 
 
 def reset_remember_turn_budget(sessionId: str = '') -> None:
     """Reset the per-turn remember counter for a session (turn start)."""
     if not sessionId:
         _rememberTurnCounts.clear()
+        _memoryReadThisTurn.clear()
         return
     _rememberTurnCounts.pop(sessionId, None)
+    _memoryReadThisTurn.discard(sessionId)
+
+
+def _markMemoryRead() -> None:
+    """Record that this turn looked at stored memory."""
+    try:
+        _memoryReadThisTurn.add(_currentRememberSessionKey())
+    except Exception:
+        pass
+
+
+def memory_read_this_turn(sessionId: str = '') -> bool:
+    """True when a memory read already ran this turn for the session."""
+    try:
+        key = sessionId or _currentRememberSessionKey()
+    except Exception:
+        return False
+    return key in _memoryReadThisTurn
 
 
 def remember_used_this_turn(sessionId: str = '') -> bool:
@@ -185,6 +224,117 @@ def _currentWorkspacePath() -> str:
         return ws
     except Exception:
         return ''
+
+
+def _normalizeFactText(text: str) -> str:
+    """Comparison form for duplicate detection.
+
+    Case, punctuation and spacing are not meaning: "User prefers pnpm." and
+    "user prefers  pnpm" are the same sentence, and storing both is how a
+    memory store turns into a list of restatements.
+    """
+    return re.sub(r'[^a-z0-9]+', ' ', (text or '').lower()).strip()
+
+
+def _storedFactTexts(scope: str, limit: int = 500) -> list[tuple[str, str]]:
+    """``(key, normalized text)`` for the active facts visible to ``scope``.
+
+    Reads the fact body out of the stored JSON envelope (``{"fact","details"}``
+    or a plain string), the same unwrap `_list_facts` and the Memory page do.
+    """
+    import json as _json
+
+    from app.services import memory_store
+
+    out: list[tuple[str, str]] = []
+    try:
+        rows = memory_store.list_facts(scope=scope, limit=limit)
+    except Exception:
+        return out
+    for row in rows:
+        raw = str(row.get('factValue') or '')
+        text = raw
+        try:
+            obj = _json.loads(raw)
+            if isinstance(obj, dict) and isinstance(obj.get('fact'), str):
+                text = str(obj['fact'])
+            elif isinstance(obj, str):
+                text = obj
+        except Exception:
+            pass
+        out.append((str(row.get('factKey') or ''), _normalizeFactText(text)))
+    return out
+
+
+def _duplicateFactKey(text: str, scope: str, own_key: str) -> str:
+    """Key of an existing ACTIVE fact with the same text under a DIFFERENT key.
+
+    ``own_key`` is excluded because writing the same key is an update (the
+    documented way to change a memory), not a duplicate.
+    """
+    wanted = _normalizeFactText(text)
+    if not wanted:
+        return ''
+    for key, stored in _storedFactTexts(scope):
+        if key and key != own_key and stored == wanted:
+            return key
+    return ''
+
+
+def _memoryPreflightRefusal(ws: str) -> str:
+    """The read-before-write gate for ``remember``.
+
+    Returns a refusal JSON string, or '' when the write may proceed. It fires
+    at most once per turn, only when the store actually holds something to
+    check, and never when model memory READS are disabled (a gate the model
+    cannot satisfy would make memory unwritable).
+
+    Why this exists: `remember` is the only door that can fill the always-in
+    profile lane, and a write made without reading is how a store accumulates
+    entries that restate what it already knows. The prompt already ASKS for the
+    check; this is the part that makes it happen.
+    """
+    import json as _json
+
+    from app.services import brain_config_service, memory_store
+
+    try:
+        cfg = brain_config_service.getRuntimeConfig()
+    except Exception:
+        cfg = {}
+    if not bool(cfg.get('modelMemoryRead', True)):
+        return ''
+    if memory_read_this_turn():
+        return ''
+    from app.services import session_scope as _ss
+
+    try:
+        stored = memory_store.count_facts(scope=_ss.resolve_scope())
+    except Exception:
+        stored = 0
+    projectEntries = 0
+    if ws:
+        try:
+            from app.services import project_memory as _pm
+
+            projectEntries = len(_pm.read_entries(ws))
+        except Exception:
+            projectEntries = 0
+    if stored == 0 and projectEntries == 0:
+        # An empty store has nothing to check — the first memory is free.
+        return ''
+    total = stored + projectEntries
+    return _json.dumps(
+        {
+            'ok': False,
+            'policy': f'refused: memory already holds {total} '
+            f'{"entry" if total == 1 else "entries"}. Read it first — call '
+            'list_facts once this turn — then either update the entry that '
+            'covers this with its key, or save a genuinely new one. Do not '
+            'retry this exact call before reading; the gate is per turn and '
+            'lifts as soon as memory has been read.',
+        }
+    )
 
 
 async def _remember(
@@ -297,6 +447,12 @@ async def _remember(
         )
     # ── Part 17 Phase A: project scope (md-file workspace memory) ──────────
     ws = _currentWorkspacePath()
+    # Read-before-write: the model must have looked at stored memory once this
+    # turn before adding to it (see _memoryPreflightRefusal). Applies to BOTH
+    # scopes — a project's md memory fills with restatements just as easily.
+    _preflight = _memoryPreflightRefusal(ws)
+    if _preflight:
+        return _preflight
     scopeNorm = (scope or '').strip().lower()
     if scopeNorm == 'project' or (not scopeNorm and ws):
         if not ws:
@@ -409,6 +565,21 @@ async def _remember(
                 'ok': False,
                 'policy': f'refused: key "{factKey}" already exists in another memory '
                 'scope; pick a distinct key (this session cannot edit it).',
+            }
+        )
+    # Same sentence under a second key is not a new memory. The derived key
+    # already catches identical text saved twice with no key, but a model that
+    # supplies keys per topic ("user:editor", "user:tooling") writes the same
+    # fact into both. `ownKey` is excluded — writing the same key is an update.
+    _twin = _duplicateFactKey(text, factScope, factKey)
+    if _twin:
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': f'refused: this is already stored as "{_twin}". Update that '
+                f'entry instead (call remember again with key="{_twin}"), or forget it '
+                'first if it should be replaced. Do not create a second copy.',
+                'existingKey': _twin,
             }
         )
     try:
@@ -601,13 +772,26 @@ async def _forget(key: str) -> str:
     return _json.dumps({'ok': bool(deleted), 'deleted': bool(deleted), 'key': factKey})
 
 
-async def _list_facts(category: str = '', query: str = '', limit: int = 50) -> str:
+async def _list_facts(
+    category: str = '',
+    query: str = '',
+    limit: int = 50,
+    offset: int = 0,
+    include_retired: bool = False,
+) -> str:
     """List durable memory entries (key, title, category, source).
 
     The read half of the model's memory CRUD — this is what makes
     ``remember``'s "pass a stable key to update" and ``forget``'s key
-    argument actually usable. Gated by ``modelMemoryRead``. Bounded at 50
-    rows, newest first.
+    argument actually usable. Gated by ``modelMemoryRead``.
+
+    ENUMERABLE, not a sample: ``offset`` pages through the store and every
+    response carries ``total`` + ``hasMore``, so a model auditing its own memory
+    knows when it has seen all of it. Before this the answer was hard-capped at
+    50 newest rows with no way to ask for the rest — a store the model could
+    write to but only partly read back. ``include_retired`` adds the rows
+    consolidation parked, which are still stored memory even though recall
+    skips them.
     """
     import json as _json
 
@@ -625,9 +809,11 @@ async def _list_facts(category: str = '', query: str = '', limit: int = 50) -> s
                 'answer from the conversation context instead.',
             }
         )
-    lim = max(1, min(as_int(limit, 50), 50))
+    lim = max(1, min(as_int(limit, 50), 200))
+    off = max(0, as_int(offset, 0))
     cat = (category or '').strip().lower()
     q = (query or '').strip()
+    includeRetired = bool(include_retired)
     # 2.2: scope-filter the read so a Bot sees global ∪ its own
     # notes, never another Bot's private keys/titles.
     from app.services import session_scope as _ss
@@ -637,32 +823,50 @@ async def _list_facts(category: str = '', query: str = '', limit: int = 50) -> s
         rows = (
             memory_store.search_facts(q, cat, scope=_readScope)
             if q
-            else memory_store.list_facts(cat, scope=_readScope)
+            else memory_store.list_facts(
+                cat, scope=_readScope, limit=lim, offset=off,
+                include_retired=includeRetired,
+            )
+        )
+        # A text search is not paged (search_facts has its own bound and a
+        # relevance order); report its size so `hasMore` stays honest.
+        total = (
+            len(rows)
+            if q
+            else memory_store.count_facts(
+                cat, scope=_readScope, include_retired=includeRetired
+            )
         )
     except Exception as exc:
         return _json.dumps({'ok': False, 'error': f'list_facts failed: {exc}'})
     facts: list[dict[str, object]] = []
     # Inside a workspace, project-memory entries list first
     # (they are the remember-default scope there) with key `project:<title>`.
+    # Only on the FIRST page: repeating them on every page would make a paged
+    # audit read the same entries over and over.
     ws = _currentWorkspacePath()
+    projectCount = 0
     if ws:
         try:
             from app.services import project_memory as _pm
 
-            for e in _pm.read_entries(ws):
-                if q and q.lower() not in e.title.lower() and q.lower() not in e.body.lower():
-                    continue
-                facts.append(
-                    {
-                        'key': f'project:{e.title}',
-                        'title': e.title[:120],
-                        'category': 'project',
-                        'source': 'project-file',
-                        'kind': 'entry',
-                        'updated': e.updated or '',
-                        'file': e.file,
-                    }
-                )
+            entries = _pm.read_entries(ws)
+            projectCount = len(entries)
+            if off == 0:
+                for e in entries:
+                    if q and q.lower() not in e.title.lower() and q.lower() not in e.body.lower():
+                        continue
+                    facts.append(
+                        {
+                            'key': f'project:{e.title}',
+                            'title': e.title[:120],
+                            'category': 'project',
+                            'source': 'project-file',
+                            'kind': 'entry',
+                            'updated': e.updated or '',
+                            'file': e.file,
+                        }
+                    )
         except Exception:
             pass
     for r in rows[:lim]:
@@ -689,10 +893,28 @@ async def _list_facts(category: str = '', query: str = '', limit: int = 50) -> s
                 'category': r.get('category') or '',
                 'source': r.get('source') or '',
                 'kind': r.get('kind') or '',
+                'status': r.get('status') or '',
                 'updated': r.get('updatedAt') or '',
             }
         )
-    return _json.dumps({'ok': True, 'count': len(facts), 'facts': facts})
+    # Reading memory is what lifts the read-before-write gate on `remember`,
+    # and the page's own arithmetic is what tells the model whether it has now
+    # seen the whole store.
+    _markMemoryRead()
+    storeRows = len(rows)
+    return _json.dumps(
+        {
+            'ok': True,
+            'count': len(facts),
+            'total': total + projectCount,
+            'storeTotal': total,
+            'projectTotal': projectCount,
+            'offset': off,
+            'hasMore': bool(storeRows and off + storeRows < total),
+            'includeRetired': includeRetired,
+            'facts': facts,
+        }
+    )
 
 
 def _purge_session_everywhere(sessionId: str) -> dict[str, object]:
@@ -1042,17 +1264,25 @@ def register() -> None:
     tool_registry.register(
         'brain_query',
         "Read-only query over runtime stores (sessions, messages, blackboard, daemons, "
-        'facts, project-memory). Returns compact JSON rows. Use store=sessions to list chats '
-        'before deleting; store=project-memory reads this workspace\'s md-file entries '
-        '(BM25-ranked by query).',
+        'facts, memory, project-memory). Returns compact JSON rows. Use store=sessions to list chats '
+        "before deleting; store=project-memory reads this workspace's md-file entries "
+        '(BM25-ranked by query); store=memory reads the key-value notes table.',
         _brainQuery,
         {
             'type': 'object',
             'properties': {
                 'store': {
                     'type': 'string',
-                    'description': 'Which store to read: sessions | messages | blackboard | daemons | facts | project-memory',
-                    'enum': ['sessions', 'messages', 'blackboard', 'daemons', 'facts', 'project-memory'],
+                    'description': 'Which store to read: sessions | messages | blackboard | daemons | facts | memory | project-memory',
+                    'enum': [
+                        'sessions',
+                        'messages',
+                        'blackboard',
+                        'daemons',
+                        'facts',
+                        'memory',
+                        'project-memory',
+                    ],
                 },
                 'query': {'type': 'string', 'description': 'Search text (FTS or LIKE). Optional.'},
                 'filters': {
@@ -1067,10 +1297,13 @@ def register() -> None:
     tool_registry.register(
         'remember',
         'Save one durable memory entry (the only model write door). Use for user-stated '
-        'preferences, project constraints, and feedback that must outlive this session. Pass a stable '
-        'key to update an existing entry rather than duplicate (your boot index lists current '
-        'entries; call list_facts for the full set). Give every entry a one-line `description` — '
-        'it is the recall hook shown in the index. '
+        'preferences, project constraints, and feedback that must outlive this session. '
+        'READ MEMORY FIRST: the first write of a turn is refused until list_facts (or '
+        'brain_query over a memory store) has run once, because a write made without looking '
+        'is how the store fills with restatements — and a sentence already stored under another '
+        'key is refused with that key, so update it instead. Pass a stable '
+        'key to update an existing entry rather than duplicate. Give every entry a one-line '
+        '`description` — it is the recall hook shown in the index. '
         'Sensitive topics are refused unless enabled. Scope: inside a workspace session the default is '
         "project (this workspace's md-file memory); use scope='global' for user-level facts that "
         "apply everywhere, or scope='project' to force the project store. "
@@ -1127,9 +1360,11 @@ def register() -> None:
     )
     tool_registry.register(
         'list_facts',
-        'List durable long-term memory entries (key, title, category, source, updated). Call this '
-        'before `remember` with a stable key (update, don\'t duplicate) and before `forget` (to get '
-        'the exact key). Optional filters: category (user | feedback | project | reference | general) '
+        'List durable long-term memory entries (key, title, category, source, updated). This is the '
+        'FULL store, not a sample: page with `offset` and watch `hasMore`/`total`. Call it before '
+        '`remember` (update, don\'t duplicate — and the write door requires one read per turn) and '
+        'before `forget` (to get the exact key). `include_retired` also shows entries consolidation '
+        'parked. Optional filters: category (user | feedback | project | reference | general) '
         'and free-text query over keys/values.',
         _list_facts,
         {
@@ -1141,7 +1376,16 @@ def register() -> None:
                     'description': 'Optional category filter.',
                 },
                 'query': {'type': 'string', 'description': 'Optional text search over keys/values.'},
-                'limit': {'type': 'integer', 'description': 'Max rows (1-50). Default 50.'},
+                'limit': {'type': 'integer', 'description': 'Max rows per page (1-200). Default 50.'},
+                'offset': {
+                    'type': 'integer',
+                    'description': 'Rows to skip — page through the store when `hasMore` is true.',
+                },
+                'include_retired': {
+                    'type': 'boolean',
+                    'description': 'Also list retired entries (stored but no longer recalled). '
+                    'Use when auditing what memory actually holds.',
+                },
             },
         },
     )

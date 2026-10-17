@@ -19,7 +19,9 @@ import re
 import time
 
 from app.json_narrowing import as_dict, as_int, as_list, as_str
+from app.providers.api_format import normalize_api_format
 from app.providers.clients import getClient
+from app.services.cost_estimator import price_for_model
 from app.services.workbench.providers import supports_thinking
 
 logger = logging.getLogger(__name__)
@@ -403,6 +405,26 @@ async def _aggregateModels() -> list[dict[str, object]]:
                     or supports_thinking(entry, mid)
                     or likely_reasoning
                 )
+                # Price and wire format travel WITH the row. Both were already
+                # known here and reachable only one screen away: the price in
+                # Model settings, and the format behind a 400 that
+                # `docs/TROUBLESHOOTING.md` tells users to check — which left
+                # the composer picker unable to answer the question it is the
+                # natural place to ask.
+                #
+                # The price is resolved by the ONE estimator the usage page
+                # bills with (env → model → free → family table → default), so a
+                # picker row and the spend chip above the composer cannot
+                # disagree; `priceEstimated` carries the same fact that chip
+                # renders as `~`. 0.0 IS a price (a local host charges nothing),
+                # so nothing here may treat it as "unset".
+                price = price_for_model(mid)
+                # Canonicalised on the way out, so a row can compare the format
+                # against `anthropicMessages` without knowing the legacy
+                # spellings (`anthropic`, `messages`, `openai-chat`, …).
+                model_format = normalize_api_format(
+                    m.get('apiFormat') or m.get('api_format'), default=''
+                )
                 allModels.append(
                     {
                         'id': mid,
@@ -418,7 +440,21 @@ async def _aggregateModels() -> list[dict[str, object]]:
                         'isFree': m.get('free', False) or _isFreeModelId(mid),
                         'pinned': bool(m.get('pinned', False)),
                         # Per-model wire-format override; None → provider format.
-                        'apiFormat': as_str(m.get('apiFormat'), '') or None,
+                        'apiFormat': model_format or None,
+                        # The provider's own format, so a row can name the format
+                        # this model will ACTUALLY use (override first) without a
+                        # second request. `openaiChat` is the same default the
+                        # resolver applies.
+                        'providerApiFormat': normalize_api_format(
+                            entry.get('apiFormat') or entry.get('api_format')
+                        ),
+                        # USD per 1M tokens, as billed. Absent (not 0) means the
+                        # row carries no price at all — today that is an alias
+                        # entry, which has no target model to price.
+                        'priceInPerM': price.in_per_m,
+                        'priceOutPerM': price.out_per_m,
+                        'priceEstimated': price.estimated,
+                        'priceSource': price.source,
                     }
                 )
     except Exception as exc:

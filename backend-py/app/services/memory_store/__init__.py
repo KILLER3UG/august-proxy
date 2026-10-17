@@ -20,6 +20,7 @@ from app.services.memory_store.brain import (
     brain_query,
     brain_store_summary,
     brain_update_row,
+    count_user_notes,
 )
 from app.services.memory_store.fact_retrieval import (
     build_memory_block,
@@ -47,6 +48,7 @@ from app.services.memory_store.messages import (
 from app.services.memory_store.rest import (
     PROFILE_FACT_KIND,
     claim_proposal_decision,
+    count_facts,
     decide_proposal,
     delete_fact,
     derive_fact_title,
@@ -72,6 +74,7 @@ from app.services.memory_store.rest import (
     search_facts,
     search_sessions_by_topic,
     touch_fact_usage,
+    update_fact_value,
     write_timeline_event,
 )
 from app.services.memory_store.sessions import (
@@ -100,7 +103,9 @@ __all__ = [
     'derive_fact_title',
     'search_facts',
     'list_facts',
+    'count_facts',
     'delete_fact',
+    'update_fact_value',
     'touch_fact_usage',
     'PROFILE_FACT_KIND',
     'build_memory_block',
@@ -149,6 +154,7 @@ __all__ = [
     'brain_index_snippet',
     'brain_delete_row',
     'brain_update_row',
+    'count_user_notes',
     'write_timeline_event',
     '_conn',
     '_db_path',

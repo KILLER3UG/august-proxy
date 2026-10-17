@@ -51,7 +51,11 @@ MACHINE_SOURCES: frozenset[str] = frozenset(
 # reach an upstream provider body (the dump layer strips them per message —
 # the body-level ``session_id``/``_endpoint`` strip does not cover these).
 AUGUST_MESSAGE_ONLY_KEYS: frozenset[str] = frozenset(
-    {'_tailPatched', '_tailFrom', 'source'}
+    # `attachments` joins `source` here because the user row now carries the
+    # client's attachment records so a reload can rebuild the card. The wire
+    # text already embeds the extracted content, so forwarding the array would
+    # re-send every base64 image on every later turn.
+    {'_tailPatched', '_tailFrom', 'source', 'attachments'}
 )
 
 

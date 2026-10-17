@@ -68,6 +68,17 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
         pinned: m.pinned,
         supportsReasoning: !!(m.supportsReasoning || likely),
         supportsThinking: !!(m.supportsThinking || likely),
+        // Metadata the picker renders per row. The price is the one the usage
+        // page bills at (server-resolved, `~` when estimated); absent is not 0,
+        // so these pass `null` through untouched rather than defaulting.
+        priceInPerM: m.priceInPerM ?? undefined,
+        priceOutPerM: m.priceOutPerM ?? undefined,
+        priceEstimated: m.priceEstimated,
+        priceSource: m.priceSource,
+        // The format the row will ACTUALLY use: the model's override when it
+        // has one, else the provider's.
+        apiFormat: m.apiFormat || m.providerApiFormat || undefined,
+        apiFormatIsOverride: !!m.apiFormat,
       };
     });
   }, [aggregatedModels, availableProviderKeys, availableProvidersList]);
@@ -154,7 +165,15 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
         fromCatalog.supportsReasoning === prev.supportsReasoning &&
         fromCatalog.supportsThinking === prev.supportsThinking &&
         fromCatalog.name === prev.name &&
-        fromCatalog.provider === prev.provider
+        fromCatalog.provider === prev.provider &&
+        // Metadata that arrived after this cache key did: a selection stored
+        // before price/wire-format existed would otherwise keep rendering a
+        // chip row with neither until some unrelated field changed. `undefined`
+        // (absent in the stored blob) differs from a rate, so the first catalog
+        // refresh upgrades it.
+        fromCatalog.priceInPerM === prev.priceInPerM &&
+        fromCatalog.priceOutPerM === prev.priceOutPerM &&
+        fromCatalog.apiFormat === prev.apiFormat
       ) {
         return prev;
       }

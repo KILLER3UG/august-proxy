@@ -32,6 +32,42 @@ module.exports = {
           foreground: 'hsl(var(--dt-primary-foreground-hsl) / <alpha-value>)',
         },
         border: 'hsl(var(--dt-border-hsl) / <alpha-value>)',
+        // Neutral fill + status roles, registered as RGB TRIPLETS so their
+        // `/NN` alpha modifiers emit CSS.
+        //
+        // These five families (and the `sidebar-*` set below) were previously
+        // declared ONLY as opaque component classes in styles/tokens.css, so
+        // every `hover:bg-accent/50`, `text-sidebar-foreground/60` or
+        // `border-destructive/30` in the tree emitted nothing at all —
+        // measured 201 occurrences across 58 files, which is why the rail had
+        // no text hierarchy and destructive affordances had no red edge.
+        // A triplet is what makes `<alpha-value>` work; the hex twin in
+        // tokens.css stays for the hand-written rules that read it, and
+        // src/test/design-tokens.test.ts asserts the two never drift.
+        secondary: {
+          DEFAULT: 'rgb(var(--dt-secondary-rgb) / <alpha-value>)',
+          foreground: 'var(--dt-secondary-foreground)',
+        },
+        accent: {
+          DEFAULT: 'rgb(var(--dt-accent-rgb) / <alpha-value>)',
+          foreground: 'var(--dt-accent-foreground)',
+        },
+        destructive: {
+          DEFAULT: 'rgb(var(--dt-destructive-rgb) / <alpha-value>)',
+          foreground: 'var(--dt-destructive-foreground)',
+        },
+        input: 'rgb(var(--dt-input-rgb) / <alpha-value>)',
+        ring: 'rgb(var(--dt-ring-rgb) / <alpha-value>)',
+        sidebar: {
+          DEFAULT: 'rgb(var(--dt-sidebar-rgb) / <alpha-value>)',
+          foreground: 'rgb(var(--dt-sidebar-foreground-rgb) / <alpha-value>)',
+          primary: 'rgb(var(--dt-sidebar-primary-rgb) / <alpha-value>)',
+          'primary-foreground': 'var(--dt-sidebar-primary-foreground)',
+          accent: 'rgb(var(--dt-sidebar-accent-rgb) / <alpha-value>)',
+          'accent-foreground': 'var(--dt-sidebar-accent-foreground)',
+          border: 'rgb(var(--dt-sidebar-border-rgb) / <alpha-value>)',
+          ring: 'rgb(var(--dt-sidebar-ring-rgb) / <alpha-value>)',
+        },
         // Contrast tiers. Registered here as well as defined in styles.css so
         // that variant forms work: a plain `.text-tier-N` CSS rule cannot be
         // prefixed, so `hover:text-tier-1`, `placeholder:text-tier-3` and
@@ -110,20 +146,26 @@ module.exports = {
       },
       boxShadow: {
         // The four-rung elevation ladder (audit P2#17), defined once in
-        // src/styles/tokens.css and exposed as `shadow-elev-*` so the
-        // <Surface> primitive and a hand-written utility cannot disagree.
-        elev: {
-          flat:    'var(--elev-flat)',
-          ring:    'var(--elev-ring)',
-          raised:  'var(--elev-raised)',
-          overlay: 'var(--elev-overlay)',
-        },
-        // `soft` and `overlay` now read the elevation ladder from
+        // src/styles/tokens.css. These keys MUST stay flat:
+        //
+        // this was `elev: { flat, ring, raised, overlay }`, and Tailwind's
+        // boxShadow namespace is not one of the flattened ones (only colors
+        // and spacing are), so `shadow-elev-raised` never emitted a rule —
+        // measured 0 occurrences of `.shadow-elev` in the built stylesheet
+        // against 9 call sites, including the <Surface> primitive, which is
+        // why every "elevated" surface in the app fell back to a bare
+        // `shadow-md`/`shadow-2xl` or to nothing at all. The ladder is now
+        // spelled out key by key so the class names in the tree resolve.
+        'elev-flat': 'var(--elev-flat)',
+        'elev-ring': 'var(--elev-ring)',
+        'elev-raised': 'var(--elev-raised)',
+        'elev-overlay': 'var(--elev-overlay)',
+        // `soft` and `overlay` read the same ladder from
         // src/styles/tokens.css (audit P2#17) instead of repeating the
         // values, so a Tailwind `shadow-soft` and a
         // `<Surface elev="raised">` are the same shadow by construction.
         overlay: 'var(--elev-overlay)',
-        soft:    'var(--elev-raised)',
+        soft: 'var(--elev-raised)',
         // `ring` is the FOCUS ring (4px brand-tinted halo), not a surface
         // elevation — it is a different vocabulary from --elev-ring, which
         // is the 1px border-coloured edge.

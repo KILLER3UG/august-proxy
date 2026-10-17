@@ -71,6 +71,7 @@ def _startTurnTask(
     modelProvider: str = '',
     guardMode: str = '',
     handoff_summary: str = '',
+    attachments: list[dict[str, object]] | None = None,
 ) -> int:
     """Start one workbench turn in the background.
 
@@ -79,6 +80,14 @@ def _startTurnTask(
     both participate in the same concurrency gate (``/chat/active`` and
     the queue check see either). Returns the ``started`` event sequence
     number for resumable SSE clients.
+
+    ``attachments`` is the client's attachment records for this turn. The
+    engine persists them on the user row, which is the only way a reload can
+    rebuild the file card, the bubble and the Artifacts gallery: the wire text
+    embeds the extracted content, so without the record a restored transcript
+    shows the raw prompt surface instead. The engine strips the field before
+    anything reaches a provider (``AUGUST_MESSAGE_ONLY_KEYS``, applied at
+    ``BaseProviderClient.wireBody``).
     """
     seq = event_log.event_log.append(sessionId, 'started', {'sinceSeq': 0})
     cancelEvent = asyncio.Event()
@@ -105,6 +114,7 @@ def _startTurnTask(
                 modelProvider=modelProvider,
                 guardMode=guardMode,
                 handoff_summary=handoff_summary,
+                attachments=attachments,
                 emit=_log_emit(sessionId),
                 signal=cancelEvent,
             )
@@ -539,6 +549,11 @@ async def startChat(request: Request):
         modelProvider=modelProvider,
         guardMode=guardMode,
         handoff_summary=handoff_summary,
+        # The client's attachment records for this turn, kept on the persisted
+        # user row so a reload can rebuild the card, bubble and gallery. The
+        # body is an external boundary: only objects survive, and a missing key
+        # normalizes to [] so the engine sees one shape.
+        attachments=[a for a in (body.get('attachments') or []) if isinstance(a, dict)],
     )
     return {'status': 'started', 'sessionId': sessionId, 'sinceSeq': seq}
 

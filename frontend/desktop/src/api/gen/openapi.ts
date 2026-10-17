@@ -602,6 +602,13 @@ export interface paths {
          *     ops; the UI reviews it and applies it through the same save/delete doors
          *     the memory tools use — so the chosen model is the one that organizes and
          *     manages the memories, not a fixed parser.
+         *
+         *     ``mode='instruction'`` serves the Memory page's own composer, where the
+         *     text is one sentence ("forget my old address") rather than an export: same
+         *     ops, instruction-shaped prompt, and the existing memories are handed over
+         *     as ``key: value`` so a correction can be mapped onto the memory it
+         *     corrects. Both modes normalize through the same guard below — a phantom
+         *     delete is dropped, a phantom update becomes an add.
          */
         post: operations["import_memory_ai_api_august_memory_import_ai_post"];
         delete?: never;
@@ -7634,6 +7641,11 @@ export interface components {
             kind?: string | null;
             /** Name */
             name?: string | null;
+            /**
+             * Partial
+             * @default false
+             */
+            partial: boolean;
             /** Policy */
             policy?: string | null;
             /** Provider */
@@ -8358,8 +8370,25 @@ export interface components {
          * MemoryImportAiBody
          * @description AI-arranged import: the user-selected model reads the raw export and
          *     returns a normalized plan of add/update/delete operations.
+         *
+         *     ``mode`` picks WHICH prompt does the arranging, because the two callers
+         *     hand the model very different things:
+         *
+         *     * ``import`` (default) — a raw memory dump from another AI, to be
+         *       deduplicated against what is already stored. How it has always worked.
+         *     * ``instruction`` — one sentence the user typed into the Memory page's
+         *       composer ("actually my dog is called Mittens"), i.e. what to CHANGE.
+         *       Same op vocabulary, but the model must map the sentence onto the
+         *       existing memory it corrects instead of treating the input as new
+         *       content, so it is given the memories as ``key: value`` lines rather
+         *       than a bare key list.
          */
         MemoryImportAiBody: {
+            /**
+             * Mode
+             * @default import
+             */
+            mode: string;
             /**
              * Model
              * @default

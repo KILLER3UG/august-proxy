@@ -83,11 +83,10 @@ uv run playwright install chromium
 # Run the server with hot reload
 uv run uvicorn app.main:app --reload --port 8085
 
-# Tests (always via uv / the project venv so the interpreter is 3.12+).
-# Always pass -n auto: the serial suite is ~2h because the slow tests shell out
-# to real external toolchains; -n auto measured 2.6x faster (8m22s on 16 cores).
-uv run pytest -q -n auto
-# or from repo root: npm run test:backend
+# Verify a backend change (ruff + mypy). There is no test suite: every test file
+# was deleted on 2026-10-17, so `pytest` and `npm run test*` no longer exist.
+uv run ruff check .
+uv run mypy app/
 ```
 
 The server listens on **http://127.0.0.1:8085**. Use the **desktop app** for the
@@ -346,6 +345,5 @@ Root scripts (`package.json`):
 | `npm run dev` | Full dev app orchestrator |
 | `npm run dev:desktop` | Tauri desktop (**product UI**) |
 | `npm run build:web` | Build SPA into `web-dist/` for packaging |
-| `npm run test` | Backend pytest + desktop vitest |
 | `npm run release:desktop` | Build SPA + portable Python/backend + Tauri release |
 | `npm run prepare:desktop-backend` | Stage portable Python + wheels into Tauri resources |

@@ -75,7 +75,6 @@ august-proxy/
 │   │   ├── providers/          # HTTP clients, resolvers, api_format aliases
 │   │   ├── routers/            # /api/* and /v1/*
 │   │   └── services/           # workbench, harness, memory, skills, tools, …
-│   ├── tests/                  # pytest (isolatedData autouse)
 │   └── pyproject.toml
 ├── frontend/
 │   ├── desktop/                # Product UI: React + Vite + Tauri
@@ -94,9 +93,9 @@ august-proxy/
 
 | Area | Owns | Validate with |
 |------|------|----------------|
-| `backend-py/` | Proxy, workbench, brain, MCP, tools | `cd backend-py && uv run pytest -q -n auto` |
-| `frontend/desktop/` | Tauri UI | `npm run test:frontend` |
-| `frontend/mobile/` | Expo | `npm run test -w frontend/mobile` |
+| `backend-py/` | Proxy, workbench, brain, MCP, tools | `cd backend-py && uv run ruff check . && uv run mypy app/` |
+| `frontend/desktop/` | Tauri UI | `npm run check -w frontend/desktop` (tsc + eslint) |
+| `frontend/mobile/` | Expo | `npm run test -w frontend/mobile` (tsc + parity audit, no test files) |
 | `scripts/` | Install / release | manual |
 | Version files | Desktop ship number | `npm run check:version` |
 
@@ -205,19 +204,21 @@ Rail lives in [`settings-registry.ts`](frontend/desktop/src/settings/settings-re
 stacked hub + `tier: 'hidden'` + `railCanonicalId` so deep links still work.
 Memory / Access / Appearance already follow that pattern.
 
-### Tests
+### Verifying a change
 
 ```bash
-cd backend-py && uv run ruff check . && uv run mypy app/ && uv run pytest -q -n auto
-npm run test:frontend
+cd backend-py && uv run ruff check . && uv run mypy app/
+npm run check -w frontend/desktop   # tsc + eslint
+npm run check:design && npm run check:docs && npm run check:api
 ```
 
-Always pass `-n auto` — the serial suite is ~2h because the slow tests shell out
-to real external toolchains; parallel measured 2.6x.
-
-`pyproject.toml` sets `--cov-fail-under=55` on the **full** suite. A single
-test file will fail that floor; use `uv run pytest tests/test_foo.py -q --no-cov`
-for a focused run.
+**There is no test suite.** Every test file (backend `tests/`, the frontend
+`*.test.ts(x)` and `e2e/` suites, the payload-integrity test) was deleted on
+2026-10-17 at the owner's request, along with the CI jobs, npm scripts, pytest
+configuration and coverage ratchet that ran them. `npm test` does not exist, and
+`pyproject.toml` keeps no pytest configuration; what remains is the static gate
+set above plus `Type check` on every push (ruff, mypy, tsc, eslint, `check:api`,
+`check:design`, `lint:ratchet`, mobile typecheck) and a human running the app.
 
 ### High-risk files
 
@@ -246,13 +247,12 @@ Do not bump these unless you are shipping. Release: push the **tag**
 `v*.*.*` tag pushes, with a `workflow_dispatch` fallback that takes the version
 without the `v`. Two things to know before you push it:
 
-- The release job **builds; it does not test**. It runs `check:version`,
-  `check:docs`, `check:naming`, `check:sse`, the frontend typecheck + vitest,
-  `uv lock --check`, ruff, mypy and the payload integrity tests — but **no pytest
-  suite**, and **not `check:coverage`**: `release-desktop.yml:92-94` says that gate is
-  deliberately absent because it needs a coverage run and this job builds rather than
-  tests, and it lives in `Type check` next to pytest instead. The ~4,960 tests run in the
-  `Type check` workflow.
+- The release job **builds; it does not test** — there is nothing left to test.
+  It runs `check:version`, `check:docs`, `check:naming`, `check:sse`, the frontend
+  typecheck, `uv lock --check`, ruff and mypy, then produces the signed installer.
+  The pytest suite, the vitest suite, the payload-integrity test and
+  `check:coverage` were deleted on 2026-10-17 along with the whole test tree (see
+  "Verifying a change" above).
 - `Type check` runs on the tag's commit but **does not gate publication**, so
   confirm it is green before pushing the tag.
 

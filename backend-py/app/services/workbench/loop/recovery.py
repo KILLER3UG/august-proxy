@@ -340,7 +340,7 @@ _STUCK_BARE_NOTE = (
 )
 
 
-def _requestStuckStreak(sessionId: str) -> int:
+def _requestStuckStreak(session_id: str) -> int:
     """Consecutive recent turns on this session the provider refused on shape.
 
     Sub-agent fan-out rows share the table and the session id but never carry an
@@ -352,7 +352,7 @@ def _requestStuckStreak(sessionId: str) -> int:
     Returns 0 when nothing is recorded, including on a database without the
     table. Absent means "not stuck", never "assume stuck".
     """
-    if not sessionId:
+    if not session_id:
         return 0
     try:
         from app.services.memory_conn import conn as _brainConn
@@ -360,7 +360,7 @@ def _requestStuckStreak(sessionId: str) -> int:
         rows = _brainConn().execute(
             'SELECT ok, error_class, task_type FROM turn_outcomes '
             'WHERE session_id = ? ORDER BY id DESC LIMIT ?',
-            (sessionId, _STUCK_SCAN_ROWS),
+            (session_id, _STUCK_SCAN_ROWS),
         ).fetchall()
     except Exception:
         logger.debug('stuck-request streak read failed', exc_info=True)

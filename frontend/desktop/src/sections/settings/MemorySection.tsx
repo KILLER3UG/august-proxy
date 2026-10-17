@@ -28,13 +28,14 @@ import { BrainBackupsCard } from './BrainBackupsCard';
 import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArchiveRestore, ArrowUp, ChevronLeft, ChevronRight, Download, Pencil, RefreshCw, Search, Trash2, UserRoundCog } from 'lucide-react';
+import { ArchiveRestore, ArrowUp, ChevronLeft, ChevronRight, Download, Loader2, Pencil, RefreshCw, Search, Trash2, UserRoundCog } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
+import { loadLastModel } from '@/sections/chat/model-display';
 import { absoluteDate, cn, timeAgo } from '@/lib/utils';
 import { ImportMemoryDialog } from './ImportMemoryDialog';
 
@@ -334,11 +335,30 @@ function shortUpdated(stamp: string): string {
   if (!Number.isFinite(t)) return '';
   const d = new Date(t);
   const now = new Date();
-  const sameYear = d.getFullYear() === now.getFullYear();
-  const month = d.toLocaleString('en-US', { month: 'short' });
+  // Every getter here is the UTC one ON PURPOSE. The store writes
+  // `YYYY-MM-DD HH:MM:SS`, which `asUtc` tags as UTC; formatting that instant in
+  // the machine's zone prints the previous calendar day for every user west of
+  // Greenwich (measured: a 02:00Z stamp read "Oct 16" in America/New_York).
+  const sameYear = d.getUTCFullYear() === now.getUTCFullYear();
+  const month = d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
   return sameYear
-    ? `Updated ${month} ${d.getDate()}`
-    : `Updated ${month} ${d.getDate()}, ${d.getFullYear()}`;
+    ? `Updated ${month} ${d.getUTCDate()}`
+    : `Updated ${month} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+}
+
+/** A day, not a timestamp: the detail view's "Last updated" field, where the
+ *  reference shows "Aug 21, 2026". The store's own stamp is
+ *  `YYYY-MM-DD HH:MM:SS` (UTC, no zone marker) and used to be printed raw into
+ *  the header — a storage format in a place meant to read like a date. */
+function absoluteDay(stamp: string): string {
+  const t = Date.parse(asUtc(stamp));
+  if (!Number.isFinite(t)) return '';
+  return new Date(t).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
 }
 
 const UNIFIED_FETCH = 200;
@@ -359,13 +379,20 @@ function rowTitle(store: string, row: Row): string {
 }
 
 function slugify(text: string): string {
-  return (
+  const base =
     text
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 48) || 'note'
-  );
+      .replace(/^-+|-+$/g, '') || 'note';
+  // A truncated slug collides: "my dog is called Mittens, she is a..." and
+  // "my dog is called Mittens, she hates..." share their first 48 characters,
+  // so the second sentence-word overwrote the first through the same key. The
+  // hash only appears on slugs that were truncated, so existing keys keep
+  // their spelling.
+  if (base.length <= 48) return base;
+  let h = 5381;
+  for (let i = 0; i < text.length; i += 1) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return `${base.slice(0, 48)}-${(h >>> 0).toString(36).slice(0, 6)}`;
 }
 
 function downloadMarkdown(filename: string, content: string): void {
@@ -463,7 +490,6 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const [editing, setEditing] = useState(false);
   const [editDraft, setEditDraft] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
-  const [addText, setAddText] = useState('');
   const [importOpen, setImportOpen] = useState(false);
   const [unifiedShown, setUnifiedShown] = useState(UNIFIED_RENDER);
   // C-3/4: server-side filters + sort (persist across page navigation).
@@ -550,18 +576,6 @@ export function MemorySection({ active }: { active: { id: string } }) {
       void qc.invalidateQueries({ queryKey: ['brain-config'] });
     },
     onError: (e: Error) => toast.error(e.message || 'Could not update setting'),
-  });
-  const addMut = useMutation({
-    // The manage route lives on the august router (/api/august prefix) —
-    // posting to /api/memory/manage 404s.
-    mutationFn: (body: Record<string, unknown>) => api.post('/api/august/memory/manage', body),
-    onSuccess: () => {
-      invalidate();
-      void qc.invalidateQueries({ queryKey: ['memory-workspaces'] });
-      setAddText('');
-      toast.success('Memory saved');
-    },
-    onError: (e: Error) => toast.error(e.message || 'Could not save memory'),
   });
   const deleteMut = useMutation({
     mutationFn: (p: { store: string; id: string }) =>
@@ -859,20 +873,23 @@ export function MemorySection({ active }: { active: { id: string } }) {
     downloadMarkdown('global-memory-export.md', body);
   };
 
-  /* The bottom bar writes a fact — the store recall reads and the model can be
-   * told to forget by key. Category and expiry are per-entry edits (both are in
-   * the facts edit whitelist), so they live in the row's edit view rather than
-   * in front of every write. Project notes go through the md-file door in that
-   * project's own pane. */
-  const addGlobalMemory = () => {
-    const text = addText.trim();
-    if (!text) return;
-    addMut.mutate({
-      action: 'set',
-      key: `user:${slugify(text)}`,
-      value: text,
-      source: 'user',
-    });
+  /* The composer lives in its own component (MemoryComposeBar) because it does
+   * more than one write: it arranges a sentence into ops and then applies them
+   * through the manage route, which is the same door this page's delete and
+   * edit mutations already use. */
+  const onComposerApplied = (deletedKeys: string[]) => {
+    invalidate();
+    void qc.invalidateQueries({ queryKey: ['memory-workspaces'] });
+    // A forgotten entry must not keep its own detail view open over a row that
+    // no longer exists.
+    if (deletedKeys.length > 0 && detailOpen) {
+      const openKey =
+        activeStore === 'facts' ? str(detailRow.factKey) : activeStore === 'memory' ? str(detailRow.key) : '';
+      if (openKey && deletedKeys.includes(openKey)) {
+        setMode('list');
+        setSelected(null);
+      }
+    }
   };
 
   const cfg = configQ.data?.config;
@@ -923,46 +940,52 @@ export function MemorySection({ active }: { active: { id: string } }) {
           onBack={() => setPane({ kind: 'list' })}
           onOpenFile={(file) => setPane({ kind: 'file', workspace: pane.workspace, file })}
         />
-      ) : detailOpen ? (
-        <DetailView
-          store={activeStore}
-          row={detailRow}
-          meta={meta}
-          editing={editing}
-          editDraft={editDraft}
-          saving={editMut.isPending}
-          onDraftChange={(k, v) => setEditDraft((d) => ({ ...d, [k]: v }))}
-          onBack={() => {
-            setMode('list');
-            setSelected(null);
-            setEditing(false);
-          }}
-          onStartEdit={startEdit}
-          onSaveEdit={saveEdit}
-          onCancelEdit={() => setEditing(false)}
-          onDelete={() => requestDelete()}
-          onExport={() => exportEntry()}
-          laneLabel={
-            activeStore === KIND_EDITABLE_STORE
-              ? deriveKind(activeStore, detailRow) === 'profile'
-                ? 'Remove from the always-in-context lane'
-                : 'Always include in context'
-              : null
-          }
-          laneBusy={laneMut.isPending}
-          onToggleLane={() =>
-            laneMut.mutate({
-              store: activeStore,
-              id: str(detailRow[meta.idField]),
-              kind: deriveKind(activeStore, detailRow) === 'profile' ? 'fact' : 'profile',
-            })
-          }
-          canRestore={str(detailRow.status) === 'retired'}
-          restoreBusy={restoreMut.isPending}
-          onRestore={() => restoreMut.mutate({ store: activeStore, id: str(selected[meta.idField]) })}
-        />
       ) : (
         <>
+          {/* The composer is shared by the list and a memory's own view — the
+              reference keeps it in both, and while you are reading a memory is
+              exactly when you know what to change about it. The project panes
+              keep their own bar (they write markdown, not facts). */}
+          {detailOpen ? (
+            <DetailView
+              store={activeStore}
+              row={detailRow}
+              meta={meta}
+              editing={editing}
+              editDraft={editDraft}
+              saving={editMut.isPending}
+              onDraftChange={(k, v) => setEditDraft((d) => ({ ...d, [k]: v }))}
+              onBack={() => {
+                setMode('list');
+                setSelected(null);
+                setEditing(false);
+              }}
+              onStartEdit={startEdit}
+              onSaveEdit={saveEdit}
+              onCancelEdit={() => setEditing(false)}
+              onDelete={() => requestDelete()}
+              onExport={() => exportEntry()}
+              laneLabel={
+                activeStore === KIND_EDITABLE_STORE
+                  ? deriveKind(activeStore, detailRow) === 'profile'
+                    ? 'Remove from the always-in-context lane'
+                    : 'Always include in context'
+                  : null
+              }
+              laneBusy={laneMut.isPending}
+              onToggleLane={() =>
+                laneMut.mutate({
+                  store: activeStore,
+                  id: str(detailRow[meta.idField]),
+                  kind: deriveKind(activeStore, detailRow) === 'profile' ? 'fact' : 'profile',
+                })
+              }
+              canRestore={str(detailRow.status) === 'retired'}
+              restoreBusy={restoreMut.isPending}
+              onRestore={() => restoreMut.mutate({ store: activeStore, id: str(selected[meta.idField]) })}
+            />
+          ) : (
+            <>
       {/* The list IS the page — no "All global memories" click-through first.
           The reference's shape: one scannable column grouped into named
           sections (You / Topics / Notes / Rules), each row a name, a
@@ -1270,6 +1293,45 @@ export function MemorySection({ active }: { active: { id: string } }) {
         </div>
       )}
 
+      {/* Project memories — the reference's "Areas" in all but name: scoped,
+          durable, and browsed with the same row. They sit ABOVE the health
+          footer and the behaviour switches because they are content; the page
+          used to put them last, 1.2k pixels down a 663px window, so the one
+          group you could only reach by scrolling past every control was the
+          one about your actual projects. */}
+      <MemoryGroup
+        testId="memory-group-project"
+        title="Project memory"
+        aside={
+          projectsWithMemory.length > 0
+            ? `${projectsWithMemory.length} project${projectsWithMemory.length === 1 ? '' : 's'}`
+            : undefined
+        }
+      >
+        {projectsWithMemory.length === 0 ? (
+          <p
+            className="py-3 text-[0.71875rem] text-muted-foreground"
+            data-testid="memory-project-group-empty"
+          >
+            No project memories yet. Open a project and chat with August — its memory folder
+            appears here.
+          </p>
+        ) : (
+          <div className="divide-y divide-white/[0.06]" data-testid="memory-project-rows">
+            {projectsWithMemory.map((w) => (
+              <MemoryRow
+                key={w.path}
+                testId="memory-project-row"
+                title={w.name}
+                detail={w.path}
+                meta={`${w.sessions} session${w.sessions === 1 ? '' : 's'}`}
+                onClick={() => setPane({ kind: 'project', workspace: w })}
+              />
+            ))}
+          </div>
+        )}
+      </MemoryGroup>
+
       {/* §5.1 health footer — the consolidation surface. */}
       <HealthFooter
         consolidating={consolidateMut.isPending}
@@ -1321,56 +1383,13 @@ export function MemorySection({ active }: { active: { id: string } }) {
       </MemoryGroup>
 
       <BrainBackupsCard />
+            </>
+          )}
 
-
-      {/* One line per project that has a memory folder; the row opens that
-          project's pane. */}
-      <MemoryGroup
-        testId="memory-group-project"
-        title="Project memory"
-        aside={
-          projectsWithMemory.length > 0
-            ? `${projectsWithMemory.length} project${projectsWithMemory.length === 1 ? '' : 's'}`
-            : undefined
-        }
-      >
-        {projectsWithMemory.length === 0 ? (
-          <p
-            className="py-3 text-[0.71875rem] text-muted-foreground"
-            data-testid="memory-project-group-empty"
-          >
-            No project memories yet. Open a project and chat with August — its memory folder
-            appears here.
-          </p>
-        ) : (
-          <div className="divide-y divide-white/[0.06]" data-testid="memory-project-rows">
-            {projectsWithMemory.map((w) => (
-              <MemoryRow
-                key={w.path}
-                testId="memory-project-row"
-                title={w.name}
-                detail={w.path}
-                meta={`${w.sessions} session${w.sessions === 1 ? '' : 's'}`}
-                onClick={() => setPane({ kind: 'project', workspace: w })}
-              />
-            ))}
-          </div>
-        )}
-      </MemoryGroup>
-
-      {/* The composer — the reference's bottom bar: one line, a send arrow,
-          and the placeholder names what it is for (a natural-language memory
-          the model will store). The old bar said "Add a memory, e.g. …",
-          which read like a form field; this one reads like a sentence you
-          would say. */}
-      <BottomAddBar
-        testId="memory-add"
-        placeholder="Tell August what to remember, e.g. “My dog’s name is Beans”"
-        value={addText}
-        onChange={setAddText}
-        onSubmit={addGlobalMemory}
-        pending={addMut.isPending}
-      />
+          <MemoryComposeBar
+            onApplied={onComposerApplied}
+            findEntry={(key) => flatEntries.find((e) => e.id === key)}
+          />
         </>
       )}
 
@@ -1784,6 +1803,433 @@ function BottomAddBar({
 }
 
 
+/* ── The composer: "tell August what to change" ──────────────────────── */
+
+/** One operation the arrange door proposed. Same vocabulary the AI-arranged
+ *  import uses, so both doors write through the same two backend routes.
+ *  `previous` is the memory an update/delete would replace — the instruction
+ *  door attaches it so the strip can name what is being changed. */
+interface MemoryOp {
+  action: 'add' | 'update' | 'delete';
+  key: string;
+  value: string;
+  category: string;
+  previous: string;
+}
+
+const OP_WORD: Record<MemoryOp['action'], string> = {
+  add: 'new',
+  update: 'change',
+  delete: 'forget',
+};
+
+/** The arrange endpoint always answers with an `operations` array. Anything
+ *  else — a missing field, a non-array, a 503 from a backend that could not
+ *  resolve a model — is NOT an arrangement, and null says so: the caller then
+ *  saves the sentence as written rather than pretending a model read it. */
+function asOps(raw: unknown): MemoryOp[] | null {
+  if (!Array.isArray(raw)) return null;
+  const ops: MemoryOp[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    const action = str(rec.action).toLowerCase();
+    const key = str(rec.key).trim();
+    if (!key) continue;
+    if (action !== 'add' && action !== 'update' && action !== 'delete') continue;
+    ops.push({
+      action,
+      key,
+      value: str(rec.value),
+      category: str(rec.category) || 'general',
+      previous: str(rec.previous),
+    });
+  }
+  return ops;
+}
+
+/** The reference's bottom bar, with its "what to CHANGE" job.
+ *
+ *  The bar used to be an append-only form: whatever you typed became one more
+ *  memory under `user:<slug-of-the-sentence>`, so "actually my dog is called
+ *  Mittens" bought a second memory rather than correcting the first. This one
+ *  hands the sentence to the same arrange door the AI import uses
+ *  (`mode: 'instruction'`) and writes the ops it returns through the same
+ *  `memory/manage` routes the memory tools use — so the model organizes, and
+ *  the doors stay one.
+ *
+ *  Two deliberate safety choices, both unlike the reference (which saves
+ *  whatever the model decided, silently):
+ *
+ *  * New memories save straight away — one Enter, as before. Anything that
+ *    REWRITES or REMOVES an existing memory is shown first, as a plan you
+ *    apply or discard, because a wrong `update` silently replaces something
+ *    you wrote and a wrong `delete` is unrecoverable from this page.
+ *  * A sentence the model reads and judges to hold nothing durable is NOT
+ *    quietly dropped: the text stays in the box and a second send keeps it
+ *    verbatim. The model's judgement is a suggestion, never the last word on
+ *    what the user meant.
+ *
+ *  When nothing can arrange the sentence — no model configured, the gateway
+ *  refused, a response with no `operations` at all — the door still works
+ *  exactly as it used to: the sentence is stored as written under
+ *  `user:<slug>`, and the placeholder says which door this install has.
+ */
+function MemoryComposeBar({
+  onApplied,
+  findEntry,
+  testId = 'memory-add',
+}: {
+  /** Re-run the page's queries; `deletedKeys` lets the caller close a detail
+   *  view whose own entry was just forgotten. */
+  onApplied: (deletedKeys: string[]) => void;
+  /** The row a proposed key names, when the pane has it loaded. It answers the
+   *  two questions the write path cannot guess: which STORE the key lives in
+   *  (the pane merges the facts store with the KV notes store, and a write to
+   *  the notes store needs `store: 'memory'`), and whether an `add` is really a
+   *  create — an `add` naming a key that already exists is an overwrite, and an
+   *  overwrite is exactly what the review strip exists for. */
+  findEntry: (key: string) => FlatEntry | undefined;
+  testId?: string;
+}) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  // `said` travels with the plan: a plan belongs to the sentence that produced
+  // it, and the strip has to be able to quote that sentence back.
+  const [plan, setPlan] = useState<{ ops: MemoryOp[]; by: string; said: string } | null>(null);
+  // Set when the model read the sentence and found nothing durable: pressing
+  // send again stores it verbatim, so a model's judgement call can never eat
+  // something the user meant to keep.
+  const [verbatim, setVerbatim] = useState(false);
+  // The last model the chat used — the same resolution the AI import dialog
+  // makes. Absent, the change door is unavailable and the bar says so. Read
+  // once per mount: re-parsing localStorage on every render bought nothing,
+  // and a model picked elsewhere arrives with the next mount anyway.
+  const model = useMemo(() => loadLastModel(), []);
+
+  /** Apply a plan through the same `memory/manage` doors this page's row
+   *  actions and the memory tools use.
+   *
+   *  Three things this must get right, each one measured wrong before:
+   *
+   *  * An `update` is a PARTIAL write (`partial: true`). `manage set` is an
+   *    upsert whose SQL rewrites `expires_at` and `status`, so approving
+   *    "change the value" also cleared a TTL and revived a retired row — a
+   *    change the user never saw and could not have approved.
+   *  * The destination store is resolved from the row the key names: the pane
+   *    merges the facts store with the KV notes store, and a KV write needs
+   *    `store: 'memory'` or the "fix the note" instruction lands as a new fact.
+   *  * The receipt is read back, never assumed (`deleted`/`ok`): this endpoint
+   *    answered `ok: true` for a key that was already gone, so the toast could
+   *    report "1 forgotten" about nothing at all.
+   *
+   *  It also returns the ops that FAILED, because the caller used to clear the
+   *  box and drop the strip no matter what: a 409 (a cross-scope overwrite, or
+   *  secret-shaped text — `memory_store/rest.py` refuses both) deleted the
+   *  sentence and the plan from the only place that could retry them.
+   */
+  const writeOps = async (
+    ops: MemoryOp[],
+    lookup: (key: string) => FlatEntry | undefined,
+  ): Promise<{ failed: MemoryOp[] }> => {
+    let saved = 0;
+    let forgotten = 0;
+    let gone = 0;
+    const failed: MemoryOp[] = [];
+    const deletedKeys: string[] = [];
+    for (const op of ops) {
+      const entry = lookup(op.key);
+      const store = entry?.store === 'memory' ? 'memory' : undefined;
+      try {
+        if (op.action === 'delete') {
+          const res = await api.post<{ deleted?: boolean; ok?: boolean }>(
+            '/api/august/memory/manage',
+            { action: 'delete', key: op.key, ...(store ? { store } : {}) },
+          );
+          deletedKeys.push(op.key);
+          // `deleted` is the facts door; `ok` is the notes door's row count.
+          if ((res?.deleted ?? res?.ok ?? true) === false) gone += 1;
+          else forgotten += 1;
+        } else {
+          await api.post('/api/august/memory/manage', {
+            action: 'set',
+            key: op.key,
+            value: op.value,
+            category: op.category,
+            source: 'user',
+            ...(op.action === 'update' && entry && !store ? { partial: true } : {}),
+            ...(store ? { store } : {}),
+          });
+          saved += 1;
+        }
+      } catch {
+        failed.push(op);
+      }
+    }
+    onApplied(deletedKeys);
+    if (failed.length > 0) {
+      toast.error(
+        `${failed.length} of ${ops.length} change${ops.length === 1 ? '' : 's'} failed — nothing was cleared`,
+      );
+    } else if (saved === 1 && forgotten === 0 && gone === 0) {
+      toast.success('Memory saved');
+    } else {
+      const bits = [
+        saved ? `${saved} saved` : '',
+        forgotten ? `${forgotten} forgotten` : '',
+        gone ? `${gone} already gone` : '',
+      ].filter(Boolean);
+      toast.success(bits.join(' · ') || 'Nothing changed');
+    }
+    return { failed };
+  };
+
+  /** Store the sentence as its own memory, the way the bar always could.
+   *  `why` distinguishes the two ways the door ends up here, so the receipt
+   *  says which door actually ran — a sentence like "my dog is now called
+   *  Mittens" stored verbatim is a fact where a correction was meant, and the
+   *  user is the only one who can tell that apart from a plain note. */
+  const saveAsWritten = async (said: string, why: 'unavailable' | 'empty') => {
+    try {
+      await api.post('/api/august/memory/manage', {
+        action: 'set',
+        key: `user:${slugify(said)}`,
+        value: said,
+        source: 'user',
+      });
+      setText('');
+      setVerbatim(false);
+      onApplied([]);
+      if (why === 'unavailable') {
+        toast.warning('Saved as written — no model could arrange it');
+      } else {
+        toast.success('Kept as written');
+      }
+    } catch (e) {
+      toast.error((e as Error)?.message || 'Could not save memory');
+    }
+  };
+
+  const submit = async () => {
+    const said = text.trim();
+    if (!said || busy) return;
+    if (verbatim) {
+      setBusy(true);
+      await saveAsWritten(said, 'empty');
+      setBusy(false);
+      return;
+    }
+    setBusy(true);
+    setPlan(null);
+    let ops: MemoryOp[] | null = null;
+    let by = '';
+    try {
+      const res = await api.post<{
+        operations?: unknown;
+        model?: string;
+        provider?: string;
+        truncated?: boolean;
+      }>('/api/august/memory/import/ai', {
+        text: said,
+        mode: 'instruction',
+        model: model?.id ?? '',
+        provider: model?.provider ?? '',
+      });
+      ops = asOps(res?.operations ?? null);
+      by = [res?.model, res?.provider].filter(Boolean).join(' · ');
+      // The endpoint reads a bounded prefix (8,000 characters for one
+      // instruction). It used to cut the tail silently while this bar cleared
+      // the box, so half an instruction could vanish with no trace.
+      if (res?.truncated) {
+        toast.warning(
+          'Only the first 8,000 characters were read — the rest of that sentence was ignored.',
+        );
+      }
+    } catch {
+      ops = null;
+    }
+    if (ops === null) {
+      await saveAsWritten(said, 'unavailable');
+      setBusy(false);
+      return;
+    }
+    if (ops.length === 0) {
+      setVerbatim(true);
+      toast.message('Nothing durable in that sentence — press send again to keep it as written.');
+      setBusy(false);
+      return;
+    }
+    // Straight to the store ONLY when every op is a create. An `add` naming a
+    // key that already exists is an upsert — an overwrite of a memory the user
+    // wrote — and the backend only coerces the phantom `update` in the other
+    // direction, so the review strip has to see it.
+    if (ops.every((op) => op.action === 'add' && !findEntry(op.key))) {
+      const { failed } = await writeOps(ops, findEntry);
+      // A failed write keeps BOTH the sentence and the ops that did not land:
+      // clearing them left a toast as the only trace of what the user asked
+      // for (measured on the 409 the secret and cross-scope refusals raise).
+      if (failed.length === 0) setText('');
+      else setPlan({ ops: failed, by, said });
+      setBusy(false);
+      return;
+    }
+    setPlan({ ops, by, said });
+    setBusy(false);
+  };
+
+  return (
+    <div
+      className="sticky bottom-0 -mx-8 mt-6 border-t border-white/[0.07] bg-background/95 px-8 py-3 backdrop-blur"
+      data-testid={testId}
+    >
+      {plan && (
+        <div
+          className="mb-2 rounded-xl border border-border/60 bg-card/80 p-3"
+          data-testid="memory-plan"
+          /* The strip appears asynchronously, after a model round-trip, and
+             nothing else on the page announces it — a screen-reader user got
+             no signal that a plan was waiting for a decision. */
+          role="status"
+          aria-live="polite"
+        >
+          <p className="text-2xs text-muted-foreground/70" data-testid="memory-plan-count">
+            {plan.ops.length === 1 ? '1 change' : `${plan.ops.length} changes`} to review
+            {plan.by ? ` · arranged by ${plan.by}` : ''}
+          </p>
+          {/* The sentence the plan answers. Without it a plan that outlived a
+              retyped box looked like it belonged to whatever was typed next. */}
+          {plan.said && (
+            <p
+              className="mt-0.5 truncate text-2xs italic text-muted-foreground/55"
+              title={plan.said}
+              data-testid="memory-plan-said"
+            >
+              “{plan.said}”
+            </p>
+          )}
+          <ul className="mt-1.5 max-h-40 space-y-1.5 overflow-y-auto">
+            {plan.ops.map((op, i) => (
+              <li
+                key={`${op.action}:${op.key}:${i}`}
+                className="text-[0.71875rem]"
+                data-testid="memory-plan-op"
+                data-action={op.action}
+              >
+                <div className="flex items-baseline gap-2">
+                  <span
+                    className={cn(
+                      'shrink-0 rounded px-1 py-0.5 text-[0.65625rem] font-medium',
+                      op.action === 'delete'
+                        ? 'bg-destructive/15 text-destructive'
+                        : op.action === 'update'
+                          ? 'bg-warning/15 text-warning'
+                          : 'bg-primary/15 text-primary',
+                    )}
+                  >
+                    {OP_WORD[op.action]}
+                  </span>
+                  <span className="shrink-0 font-medium text-foreground/90">{op.key}</span>
+                </div>
+                {/* What is being replaced, struck through, above what replaces
+                    it. Without it a `delete` op is a key name and nothing else
+                    — the user would be approving "forget old-address" without
+                    seeing the memory that goes. */}
+                {op.previous && (
+                  <p
+                    className="truncate text-muted-foreground/50 line-through"
+                    title={op.previous}
+                    data-testid="memory-plan-previous"
+                  >
+                    <span className="sr-only">Replacing: </span>
+                    {op.previous}
+                  </p>
+                )}
+                {op.value && (
+                  <p className="truncate text-foreground/85" title={op.value} data-testid="memory-plan-value">
+                    <span className="sr-only">With: </span>
+                    {op.value}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setPlan(null)}
+              className="rounded-lg border border-border px-2.5 py-1 text-2xs text-foreground transition hover:bg-accent"
+              data-testid="memory-plan-discard"
+            >
+              Discard
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                const { ops, by, said } = plan;
+                setBusy(true);
+                void writeOps(ops, findEntry).then(({ failed }) => {
+                  // A partial failure keeps the ops that did not land (and the
+                  // sentence that asked for them); only a clean run clears.
+                  if (failed.length === 0) {
+                    setPlan(null);
+                    setText('');
+                  } else {
+                    setPlan({ ops: failed, by, said });
+                  }
+                  setBusy(false);
+                });
+              }}
+              className="rounded-lg bg-primary px-2.5 py-1 text-2xs font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
+              data-testid="memory-plan-apply"
+            >
+              {plan.ops.length === 1 ? 'Apply change' : `Apply ${plan.ops.length} changes`}
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-card/60 px-3 py-2">
+        <input
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setVerbatim(false);
+            // The plan belongs to the sentence that produced it; editing the
+            // text retires it, so a stale Apply cannot write ops the box no
+            // longer shows.
+            setPlan(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && text.trim() && !busy) void submit();
+          }}
+          placeholder={
+            model ? 'Tell August what to change…' : 'Tell August what to remember…'
+          }
+          aria-label="Tell August what to change"
+          title={
+            model
+              ? `Memories are arranged by ${model.id}, then saved`
+              : 'Chat once to pick a model — then this bar can also rewrite and forget memories'
+          }
+          className="min-w-0 flex-1 rounded-md bg-transparent text-[0.78125rem] text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-primary/50"
+          data-testid={`${testId}-input`}
+        />
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={busy || !text.trim()}
+          aria-label="Save memory"
+          className="rounded-lg bg-primary p-1.5 text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
+          data-testid={`${testId}-submit`}
+        >
+          {busy ? <Loader2 className="size-3 animate-spin" /> : <ArrowUp className="size-3" />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
 /* One row, the way the reference reads it: the memory's NAME, a one-line
  * description under it, "Updated <date>" at the right, and — on hover — a
  * pencil and a trash. No per-row kind chip (the section header already says
@@ -1823,7 +2269,15 @@ function FlatEntryRow({
 
   return (
     <div
-      className={cn('group relative flex items-center gap-3 py-2.5', entry.expired && 'opacity-50')}
+      className={cn(
+        // The reference's row reads as a row: a full-width highlight under the
+        // cursor is what pairs with the hover-only actions (they used to fade
+        // in over a transparent row, so nothing said which line they belonged
+        // to). The negative margin lets the highlight outrun the text column
+        // while keeping every column aligned row to row.
+        'group relative -mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 transition hover:bg-white/[0.035]',
+        entry.expired && 'opacity-50',
+      )}
       data-testid="memory-flat-row"
       data-kind={entry.kind}
       data-expired={entry.expired ? 'true' : undefined}
@@ -2039,51 +2493,92 @@ function DetailView({
   const expired = isExpired(row);
   const retired = str(row.status) === 'retired';
 
+  /* The quiet facts about the entry, as one line of separated items. This used
+   * to lead with the raw store stamp (`Last updated 2026-10-16 15:01:10`) and
+   * run four different facts together; the stamp is now the labelled field
+   * below, where the reference puts it, and this line carries the rest. */
+  const metaBits: Array<{ key: string; node: ReactNode }> = [];
+  if (category) metaBits.push({ key: 'category', node: <span>{category}</span> });
+  if (source) {
+    metaBits.push({
+      key: 'source',
+      node: <span data-testid="memory-detail-source">source: {source}</span>,
+    });
+  }
+  if (meta.legacy) metaBits.push({ key: 'legacy', node: <span>retired writer</span> });
+  if (retired) {
+    metaBits.push({
+      key: 'parked',
+      node: <span data-testid="memory-detail-retired">parked by consolidation</span>,
+    });
+  }
+  if (expiresAt) {
+    metaBits.push({
+      key: 'expiry',
+      node: (
+        <span
+          className={expired ? 'text-destructive' : 'text-warning'}
+          data-testid="memory-detail-expiry"
+        >
+          {expired ? 'expired' : 'expires'} {expiresAt.slice(0, 10)}
+        </span>
+      ),
+    });
+  }
+
   return (
     <div className="space-y-5" data-testid="memory-detail-view">
       {/* The reference's header: a "← Memory" breadcrumb, the entry's name as
-          the title, one quiet meta line (last updated · category · source),
-          and every action on the right — Edit / Export / the lane / Restore /
-          Delete. The old header was a chip row and a "Back to facts" label
-          that named the TABLE, not the page the user came from. */}
-      <div>
-        <button
-          type="button"
-          onClick={onBack}
-          className="mb-2 inline-flex items-center gap-1 text-2xs text-muted-foreground transition hover:text-foreground"
-          data-testid="memory-detail-back"
-        >
-          <ChevronLeft className="size-3" /> Memory
-        </button>
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-[1.0625rem] font-semibold leading-snug tracking-tight text-foreground [overflow-wrap:anywhere]">
-              {title}
-            </h2>
-            {entryKey && entryKey !== title && (
-              <p className="mt-0.5 truncate text-2xs text-muted-foreground/55" data-testid="memory-detail-key">
-                {entryKey}
-              </p>
-            )}
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted-foreground/60">
-              {updated && (
-                <span data-testid="memory-detail-updated-inline">Last updated {updated}</span>
-              )}
-              {category && <span>· {category}</span>}
-              {source && <span data-testid="memory-detail-source">· source: {source}</span>}
-              {meta.legacy && <span>· retired writer</span>}
-              {retired && <span data-testid="memory-detail-retired">· parked by consolidation</span>}
-              {expiresAt && (
-                <span
-                  className={expired ? 'text-destructive' : 'text-warning'}
-                  data-testid="memory-detail-expiry"
-                >
-                  · {expired ? 'expired' : 'expires'} {expiresAt.slice(0, 10)}
-                </span>
-              )}
+          the title, a quiet meta line, and the actions. The actions sit on the
+          breadcrumb's row rather than beside the title: five labelled buttons
+          (Edit / Export / the lane / Restore / Delete) measured 236px of title
+          in a 614px column, so a real entry name wrapped to three lines to make
+          room for chrome. The title now owns the full column, and the cluster
+          wraps to its own line when the column is narrow. */}
+      <div className="flex flex-col">
+        {/* DOM order is title → breadcrumb+actions, VISUAL order is the
+            reference's (breadcrumb row on top). A screen reader reads the entry's
+            name before it reads the buttons that act on it; before this, the
+            first thing announced was "Delete". `order-*` on a flex column keeps
+            both true at once, and the layout test that pinned DOM-before as a
+            proxy for visually-above is gone with the rest of the suite. */}
+        <div className="min-w-0 order-2">
+          <h2 className="text-[1.0625rem] font-semibold leading-snug tracking-tight text-foreground [overflow-wrap:anywhere]">
+            {title}
+          </h2>
+          {entryKey && entryKey !== title && (
+            <p className="mt-0.5 truncate text-2xs text-muted-foreground/55" data-testid="memory-detail-key">
+              {entryKey}
             </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          )}
+          {metaBits.length > 0 && (
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted-foreground/60">
+              {metaBits.map((bit, i) => (
+                <span key={bit.key} className="inline-flex items-center gap-2">
+                  {i > 0 && (
+                    <span aria-hidden className="text-muted-foreground/35">
+                      ·
+                    </span>
+                  )}
+                  {bit.node}
+                </span>
+              ))}
+            </p>
+          )}
+        </div>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 order-1">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-1 text-2xs text-muted-foreground transition hover:text-foreground"
+            data-testid="memory-detail-back"
+          >
+            <ChevronLeft className="size-3" /> Memory
+          </button>
+          <div
+            className="flex flex-wrap items-center justify-end gap-1.5"
+            data-testid="memory-detail-actions"
+          >
             {!meta.readOnly && meta.editable && !editing && (
               <button
                 type="button"
@@ -2189,23 +2684,38 @@ function DetailView({
           </div>
         </div>
       ) : (
-        /* Three LABELLED fields, the reference's shape:
-         *   Last updated / Summary / Details.
-         * It used to render the body as an unlabelled markdown block followed by
-         * a run-on line — `source: remember · confidence: 1.0 · created: … ·
-         * updated: …` — where four different facts of about the same importance
-         * shared one undifferentiated sentence. Labelling them is what makes a
-         * memory legible at a glance instead of merely present.
+        /* The reference's field list: Last updated / Summary / Details, as
+         * labelled fields rather than one run-on provenance line.
+         *
+         * `Last updated` was the raw store stamp inline in the header
+         * ("Last updated 2026-10-16 15:01:10"); the reference shows a date
+         * ("Aug 21, 2026") under a label, and the exact stamp still rides in
+         * the tooltip for anyone who needs the clock.
+         *
+         * Labels are sentence case at body-adjacent size. They were 10px
+         * uppercase micro-caps, the house style for a *chrome* label — but a
+         * memory's fields are content, and the reference sets them as words a
+         * person reads, not as taxonomy.
          *
          * `Summary` is skipped when it is the same string as the title (a plain
          * fact's title IS its text), because printing it twice under a heading
          * that already says it is an echo, not information. */
         <div className="space-y-4">
+          {updated && (
+            <div data-testid="memory-detail-updated">
+              <p className="text-[0.75rem] font-medium text-muted-foreground/60">Last updated</p>
+              <p
+                className="mt-0.5 text-[0.8125rem] text-foreground/90"
+                title={absoluteDate(asUtc(updated)) || updated}
+              >
+                {absoluteDay(updated) || updated}
+              </p>
+            </div>
+          )}
+
           {summary && summary !== title && (
             <div data-testid="memory-detail-summary">
-              <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">
-                Summary
-              </p>
+              <p className="text-[0.75rem] font-medium text-muted-foreground/60">Summary</p>
               <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-foreground/90">
                 {summary}
               </p>
@@ -2214,20 +2724,21 @@ function DetailView({
 
           {details && (
             <div data-testid="memory-detail-details">
-              <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">
-                Details
-              </p>
+              <p className="text-[0.75rem] font-medium text-muted-foreground/60">Details</p>
               <div className="mt-0.5">
                 <Markdown content={details} demoteHeadings />
               </div>
             </div>
           )}
 
-          <p className="text-2xs text-muted-foreground/80">
+          <p
+            className="text-2xs text-muted-foreground/80"
+            title={[str(row.createdAt), str(row.updatedAt)].filter(Boolean).join('  →  ')}
+          >
             {[
               source ? `source: ${source}` : '',
               confidence ? `confidence: ${confidence}` : '',
-              created ? `created: ${created}` : '',
+              created ? `created ${absoluteDay(created) || created}` : '',
             ]
               .filter(Boolean)
               .join('  ·  ') || 'No provenance recorded.'}

@@ -63,6 +63,15 @@ export interface WorkbenchSession {
   mutationCount: number;
   lastMutationAt: string | null;
   updatedAt: string;
+  /** When the session row was created. The list payload carries it
+   *  (`summarize_session` in backend sessions.py), and the sidebar needs it to
+   *  tell "started" from "last activity" after a localStorage wipe — before
+   *  these two fields were declared here, `reconcile.ts` had no choice but to
+   *  stamp `startedAt` with `updatedAt`. */
+  createdAt?: string;
+  /** Session start stamp from the same payload — the value `startedAt` should
+   *  actually be restored from. */
+  startedAt?: string;
   todos: WorkbenchTodo[];
   guardMode: WorkbenchGuardMode;
   /** Codex-like sandbox axis (orthogonal to guardMode). */

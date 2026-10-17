@@ -21,7 +21,7 @@
 
 | Document | Contents |
 |----------|----------|
-| [**FEATURE_INVENTORY_TEST_MATRIX.md**](FEATURE_INVENTORY_TEST_MATRIX.md) | Phase 7 inventory → coverage map (closed, still the coverage index) |
+| [**FEATURE_INVENTORY_TEST_MATRIX.md**](FEATURE_INVENTORY_TEST_MATRIX.md) | **Retired 2026-10-17** — the Phase 7 coverage map, kept as history: every suite it maps was deleted |
 | [**AUDIT_RECOMMENDATIONS_2026-08-11.md**](AUDIT_RECOMMENDATIONS_2026-08-11.md) | **Superseded** by `audit-2026-08/` + `research/` |
 | [`audit-2026-08/`](audit-2026-08/) | 12-agent August audit sweep — per-area findings, most **not** dispositioned |
 | [**HARNESS-FINDINGS-2026-09-15.md**](HARNESS-FINDINGS-2026-09-15.md) | Harness findings, same-day implementation status |
@@ -50,7 +50,7 @@ sign-off evidence; do not treat them as the product feature list.
 |----------|----------|
 | [**REFACTOR_PROGRESS.md**](REFACTOR_PROGRESS.md) | Closed tracker — phases, bug ledger, residual debt |
 | [**REFACTOR_HANDOFF_PROMPT.md**](REFACTOR_HANDOFF_PROMPT.md) | Historical handoff prompt |
-| [**FEATURE_INVENTORY_TEST_MATRIX.md**](FEATURE_INVENTORY_TEST_MATRIX.md) | Phase 7 inventory → coverage map |
+| [**FEATURE_INVENTORY_TEST_MATRIX.md**](FEATURE_INVENTORY_TEST_MATRIX.md) | **Retired 2026-10-17** — Phase 7 coverage map, history only (no suites exist) |
 | [**PHASE4_SQLITE_SCHEMA_RENAME_PLAN.md**](archive/PHASE4_SQLITE_SCHEMA_RENAME_PLAN.md) | Schema rename — **CLOSED** |
 | [**PHASE_PERF_AND_FLEXIBILITY_PLAN.md**](archive/PHASE_PERF_AND_FLEXIBILITY_PLAN.md) | Phase P — **CLOSED** |
 | [**PHASE8_FINAL_DELIVERABLES.md**](archive/PHASE8_FINAL_DELIVERABLES.md) | Final deliverables + sign-off |

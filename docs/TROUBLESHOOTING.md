@@ -156,6 +156,13 @@ an OpenAI-format request routed to a Claude model is translated to the
 Anthropic wire protocol automatically (and vice versa for `/v1/messages`).
 See [`CONFIGURATION.md`](CONFIGURATION.md) (per-model apiFormat note).
 
+**The composer's model picker shows the format each row will use**, so the check
+does not require opening Settings: each row's second line carries the resolved
+wire leaf (`chat/completions` · `v1/messages` · `responses`) — hover it to see
+whether that came from the model's override or the provider's default — plus the
+rate the Usage page would bill (`Free`, `$in/$out per M`, or `~$in/$out per M`
+when the rate is an estimate).
+
 Paste the provider base URL **exactly**. August does **not** invent `/v1` on
 the base — it only appends the API format leaf (`chat/completions`,
 `v1/messages`, `responses`, or `/models` for discovery). Anthropic’s format
@@ -349,9 +356,10 @@ For a curator *proposal* (rather than a lifecycle flag), rollback is
 ### Memory / brain search empty / no hits
 
 Confirm brain DB path (`AUGUST_DATA_DIR` / `august_brain.sqlite`). FTS requires
-correct table-level `MATCH` queries — app-path regressions are covered by
-`tests/test_fts_app_path.py`. Do not run invasive scripts against a live DB
-while the server is writing.
+correct table-level `MATCH` queries — the app-path regression case used to be
+pinned by `tests/test_fts_app_path.py`, which was deleted with the whole suite on
+2026-10-17, so check the query by hand now. Do not run invasive scripts against a
+live DB while the server is writing.
 
 ### Live STT/TTS returns 501
 
@@ -433,9 +441,11 @@ Run uvicorn without `--reload`, or avoid nested `asyncio.run` in request paths.
 Large subsystems import each other lazily. Move new cross-subsystem imports
 inside functions if you hit a cycle.
 
-### Tests fail only on Windows
+### Pre-commit / Python is blocked on Windows
 
-Use the project venv / `uv run pytest -n auto`. Prefer
+(`npm test`-era advice lived here: "tests fail only on Windows" — there is no
+suite any more, deleted 2026-10-17.) For the tooling that remains: use the
+project venv, and prefer
 `.\scripts\install-git-hooks.ps1` if Device Guard blocks
 `.venv\Scripts\python.exe` for pre-commit.
 

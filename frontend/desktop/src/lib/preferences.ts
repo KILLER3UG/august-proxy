@@ -73,16 +73,38 @@ const DEFAULTS: Omit<
   liveHtmlPreview: 'auto',
 };
 
+/**
+ * Whether the OS asks for reduced motion.
+ *
+ * `applyPreferenceAttributes` has always known how to honour this — the hooks
+ * are `:root[data-reduce-motion='1']` blanket opt-outs in `styles/motion.css` —
+ * but the flag was only ever set from the in-app toggle, so a user who had
+ * asked their OPERATING SYSTEM for less motion and never opened
+ * General → Preferences → Motion got no protection at all: ~50 CSS animations
+ * and every framer duration still ran. Reading the media query as the DEFAULT
+ * (not as an override) keeps an explicit in-app choice authoritative in both
+ * directions — someone who turns the toggle OFF has a stored `false`, which is
+ * what `??` below distinguishes from "never asked".
+ */
+function osPrefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+}
+
 function load(): typeof DEFAULTS {
   if (typeof window === 'undefined') return DEFAULTS;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULTS;
+    if (!raw) return { ...DEFAULTS, reduceMotion: osPrefersReducedMotion() };
     const parsed = JSON.parse(raw) as Partial<typeof DEFAULTS>;
     return {
       profile: { ...DEFAULTS.profile, ...(parsed.profile ?? {}) },
       chatFont: parsed.chatFont ?? DEFAULTS.chatFont,
-      reduceMotion: parsed.reduceMotion ?? DEFAULTS.reduceMotion,
+      reduceMotion: parsed.reduceMotion ?? osPrefersReducedMotion(),
       voice: { ...DEFAULTS.voice, ...(parsed.voice ?? {}) },
       notifyResponseComplete:
         parsed.notifyResponseComplete ?? DEFAULTS.notifyResponseComplete,

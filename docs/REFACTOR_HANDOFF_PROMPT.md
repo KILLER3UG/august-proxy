@@ -4,6 +4,14 @@
 > **Handoff snapshot:** 2026-07-14 · live tracker: `docs/REFACTOR_PROGRESS.md` · tip: `git rev-parse HEAD`  
 > **Phases 0–8 + Phase P COMPLETE** · sign-off: `docs/archive/PHASE8_FINAL_DELIVERABLES.md`  
 > Paste this entire document into a new session. Then **verify it against the repo** (Ground Rule 1) before coding.
+>
+> **Every test command and `tests/…` path below is void (2026-10-17).** The backend
+> pytest suite, the desktop vitest suite and the e2e specs were deleted on
+> 2026-10-17, with the CI jobs and npm scripts that ran them; `pytest`, `npm test`,
+> `test:backend` and `test:frontend` no longer exist, and neither do the test files
+> this prompt cites as characterization or gate evidence. Everything those suites
+> *covered* is still in the app. Verification now is `ruff` / `mypy` / `tsc` /
+> `eslint` plus the static gates listed at the top of `AGENTS.md`.
 
 Act as a Senior Principal Software Architect and Lead Developer for **August Proxy** — Tauri + React 19 desktop, Expo mobile, FastAPI Python backend.
 

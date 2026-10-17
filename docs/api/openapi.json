@@ -109,6 +109,11 @@
             ],
             "title": "Name"
           },
+          "partial": {
+            "default": false,
+            "title": "Partial",
+            "type": "boolean"
+          },
           "policy": {
             "anyOf": [
               {
@@ -1466,8 +1471,13 @@
         "type": "object"
       },
       "MemoryImportAiBody": {
-        "description": "AI-arranged import: the user-selected model reads the raw export and\nreturns a normalized plan of add/update/delete operations.",
+        "description": "AI-arranged import: the user-selected model reads the raw export and\nreturns a normalized plan of add/update/delete operations.\n\n``mode`` picks WHICH prompt does the arranging, because the two callers\nhand the model very different things:\n\n* ``import`` (default) — a raw memory dump from another AI, to be\n  deduplicated against what is already stored. How it has always worked.\n* ``instruction`` — one sentence the user typed into the Memory page's\n  composer (\"actually my dog is called Mittens\"), i.e. what to CHANGE.\n  Same op vocabulary, but the model must map the sentence onto the\n  existing memory it corrects instead of treating the input as new\n  content, so it is given the memories as ``key: value`` lines rather\n  than a bare key list.",
         "properties": {
+          "mode": {
+            "default": "import",
+            "title": "Mode",
+            "type": "string"
+          },
           "model": {
             "default": "",
             "title": "Model",
@@ -5472,7 +5482,7 @@
     },
     "/api/august/memory/import/ai": {
       "post": {
-        "description": "Ask the model the user picked (composer dropdown) to ARRANGE a memory\nexport into concrete operations. The model reads the raw export plus the\ncurrent memory keys and returns a deduplicated plan of add/update/delete\nops; the UI reviews it and applies it through the same save/delete doors\nthe memory tools use — so the chosen model is the one that organizes and\nmanages the memories, not a fixed parser.",
+        "description": "Ask the model the user picked (composer dropdown) to ARRANGE a memory\nexport into concrete operations. The model reads the raw export plus the\ncurrent memory keys and returns a deduplicated plan of add/update/delete\nops; the UI reviews it and applies it through the same save/delete doors\nthe memory tools use — so the chosen model is the one that organizes and\nmanages the memories, not a fixed parser.\n\n``mode='instruction'`` serves the Memory page's own composer, where the\ntext is one sentence (\"forget my old address\") rather than an export: same\nops, instruction-shaped prompt, and the existing memories are handed over\nas ``key: value`` so a correction can be mapped onto the memory it\ncorrects. Both modes normalize through the same guard below — a phantom\ndelete is dropped, a phantom update becomes an add.",
         "operationId": "import_memory_ai_api_august_memory_import_ai_post",
         "requestBody": {
           "content": {

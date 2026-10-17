@@ -1,13 +1,15 @@
-/* ── Sidebar/history date grouping ───────────────────────────────────────────
- * One date-key function shared by the sidebar and the history page so a chat
- * filed under "Today" in one place is under "Today" in the other.
+/* ── History page date grouping ──────────────────────────────────────────────
+ * The History page is a chronological archive, so it buckets by when a chat
+ * STARTED. That is a deliberate choice there, not a limitation: `Session` also
+ * carries `updatedAt` (last activity) as of 2026-10-17, and the sidebar orders
+ * by it — but an archive grouped by "last activity" would move a 2024
+ * conversation into this week because one message arrived late.
  *
- * SCOPE CAVEAT — this groups by when a chat STARTED. `Session` carries only
- * `startedAt`; there is no `updatedAt` field anywhere in the sessions store,
- * so there is nothing to group by for recency-of-activity. Any label derived
- * from this must say "started"/"by date", never "last activity" — a chat you
- * replied to this morning but opened three days ago files under three days
- * ago, and calling that "last activity" would be a lie the UI tells quietly.
+ * Any label derived from this must say "started"/"by date", never "last
+ * activity" — a chat you replied to this morning but opened three days ago
+ * files under three days ago, and calling that "last activity" would be a lie
+ * the UI tells quietly. (The sidebar no longer uses this helper; it groups by
+ * project instead.)
  */
 
 export interface DateGroup<T> {

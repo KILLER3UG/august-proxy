@@ -116,8 +116,21 @@ export function preferSessionRow(a: Session, b: Session): Session {
     workbenchAgentId: primary.workbenchAgentId || secondary.workbenchAgentId,
     workbenchProvider: primary.workbenchProvider || secondary.workbenchProvider,
     startedAt: primary.startedAt || secondary.startedAt,
+    // Last activity is a high-water mark, not a "primary wins" field: the
+    // sidebar's live ordering reads it, and a merge that kept the older stamp
+    // would put a busy chat back where it was before it moved.
+    updatedAt: newerStamp(primary.updatedAt, secondary.updatedAt),
     isArchived: !!(primary.isArchived || secondary.isArchived),
   };
+}
+
+/** The later of two ISO stamps; undefined when neither parses. */
+function newerStamp(a: string | undefined, b: string | undefined): string | undefined {
+  const ta = Date.parse(a || '');
+  const tb = Date.parse(b || '');
+  if (!Number.isFinite(ta)) return Number.isFinite(tb) ? b : (a ?? b);
+  if (!Number.isFinite(tb)) return a;
+  return tb > ta ? b : a;
 }
 
 /**

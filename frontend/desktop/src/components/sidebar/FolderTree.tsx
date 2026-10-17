@@ -12,7 +12,40 @@ import {
   ArrowUpDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Folder } from "@/store/sessions";
+
+/** The chat list's two view preferences, offered from ONE header control.
+ *
+ *  They used to be two different things: a bare icon that cycled the sort order
+ *  on click (so which order you were in was only inferable by reading the list
+ *  back), and `august-sidebar-date-groups`, a preference with no control at all
+ *  — nothing in the repo ever wrote that key, so grouping by date was reachable
+ *  only by editing localStorage by hand. A menu names both, shows which is
+ *  active, and is the writer for both keys.
+ *
+ *  The date-group half of that pair is gone (2026-10-17): it restated a
+ *  recency order the rows already carried, and what replaced it —
+ *  group-by-project — is a fact the rows do not carry. */
+export interface ChatViewOptions {
+  sortBy: 'updated' | 'name';
+  onSortChange: (next: 'updated' | 'name') => void;
+  /** Group each pool (a folder, and the unfiled Tasks pool) by the workspace a
+   *  chat runs in, with a project header. Replaced date grouping, which
+   *  restated a recency order the rows already carried. Unlike date grouping
+   *  this is meaningful under BOTH sort orders, so it is never disabled. */
+  groupProjects: boolean;
+  onGroupProjectsChange: (next: boolean) => void;
+}
 
 /** Section header for PINNED / PROJECTS with optional folder create actions. */
 export function Section({
@@ -21,7 +54,7 @@ export function Section({
   empty,
   onNewFolder,
   onUploadFolder,
-  onToggleSort,
+  viewOptions,
   children,
 }: {
   title: string;
@@ -29,7 +62,7 @@ export function Section({
   empty?: string;
   onNewFolder?: () => void;
   onUploadFolder?: (e: React.MouseEvent<HTMLButtonElement>) => void;
-  onToggleSort?: () => void;
+  viewOptions?: ChatViewOptions;
   children?: React.ReactNode;
 }) {
   return (
@@ -45,11 +78,12 @@ export function Section({
               (magnifier, sort) are kept; they are in the reference" — never
               matched the tree: this header has no magnifier (search is a
               separate textbox in `SessionList`), and it renders three optional
-              controls, `Sort chats`, `Open Workspace Folder` and `Create
-              Sidebar Folder`. The last two are the only door to those
-              capabilities, so they were left alone and the prose was corrected
-              instead. If the reference's two-icon header is the target, that is
-              a removal decision for the owner, not a documentation fix.
+              controls — the chat view menu (sort order + project grouping),
+              `Open Workspace Folder` and `Create Sidebar Folder`. The last two
+              are the only door to those capabilities, so they were left alone
+              and the prose was corrected instead. If the reference's two-icon
+              header is the target, that is a removal decision for the owner,
+              not a documentation fix.
 
               The duplicate total this section once rendered (`CHATS AND TASKS
               39` containing `Tasks 39`) is gone here; the nested `Tasks` lane
@@ -61,15 +95,43 @@ export function Section({
         </div>
         {(title === "Sessions" || title === "Recents" || title === "Projects" || title === "Chats and tasks") && (
           <div className="flex items-center gap-0.5">
-            {onToggleSort && (
-              <button
-                type="button"
-                onClick={onToggleSort}
-                className="text-sidebar-foreground/40 hover:text-sidebar-foreground p-0.5 rounded transition-colors hover:bg-white/[0.04]"
-                title="Sort chats" aria-label="Sort chats"
-              >
-                <ArrowUpDown className="size-3" />
-              </button>
+            {viewOptions && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="text-sidebar-foreground/40 hover:text-sidebar-foreground p-0.5 rounded transition-colors hover:bg-white/[0.04]"
+                    title="Sort and group chats" aria-label="Sort and group chats"
+                  >
+                    <ArrowUpDown className="size-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuLabel>Sort chats</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={viewOptions.sortBy}
+                    onValueChange={(next) => viewOptions.onSortChange(next as 'updated' | 'name')}
+                  >
+                    <DropdownMenuRadioItem value="updated">Newest first</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="name">Name (A–Z)</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuCheckboxItem
+                    checked={viewOptions.groupProjects}
+                    onCheckedChange={(next) => viewOptions.onGroupProjectsChange(next === true)}
+                  >
+                    Group by project
+                  </DropdownMenuCheckboxItem>
+                  {/* "Newest" is last activity now, not creation: `Session`
+                      carries `updatedAt` from the session SoT, so a chat you
+                      replied to a minute ago leads even if it was opened last
+                      week. Say so — the old copy promised the opposite. */}
+                  <p className="px-2 pt-1 pb-0.5 text-2xs leading-snug text-muted-foreground">
+                    “Newest first” orders by last activity. Chats that are
+                    working now sit at the top of their folder.
+                  </p>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             {onUploadFolder && (
               <button

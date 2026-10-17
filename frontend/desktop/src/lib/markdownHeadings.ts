@@ -37,22 +37,34 @@
  * then shift the tags it emitted. Code is escaped (`&lt;h1&gt;` cannot match a
  * tag), which is the same protection the fence tracking used to approximate.
  *
- * Shifting a raw, authored `<h1>` too is deliberate: it renders as a level-1
- * heading, which is the thing that must not appear.
+ * What reaches this is therefore the tags `marked` EMITTED: `Markdown` escapes raw
+ * HTML, so an authored `<h1>` in a document arrives as `&lt;h1&gt;` text and stays
+ * the literal text the file contains. Saying otherwise — as an earlier version of
+ * this comment did, claiming the shift of a raw authored `<h1>` was "deliberate" —
+ * describes a path that does not exist and stops the next person checking.
  */
 
 /** `<h1>`–`<h5>` open and close tags, one level down; `<h6>` is the floor.
  *
- *  The lookahead is what keeps `<header>`, `<hr>` and `<h1abc>` out. Case is
- *  ignored because authored raw HTML may be uppercase, and the replacement is
- *  lowercased — HTML element names are case-insensitive, so that changes nothing
+ *  The lookahead is what keeps `<header>`, `<hr>` and `<h1abc>` out, and it has to
+ *  accept `/` as well as whitespace and `>`: `<h1/>` is a valid empty h1, and the
+ *  first version's `(?=[\s>])` walked straight past it, leaving a level-1 heading
+ *  in the dialog behind a function that had already returned a changed string.
+ *  Case is ignored because authored raw HTML may be uppercase, and the replacement
+ *  is lowercased — HTML element names are case-insensitive, so that changes nothing
  *  the browser renders.
+ *
+ *  Reachability, stated honestly: `Markdown` escapes raw HTML, so an authored
+ *  `<h1>` in a document arrives here as `&lt;h1&gt;` text and is not shifted —
+ *  which is right, it renders as the literal text the file contains. The tags this
+ *  does see are the ones `marked` emitted, plus any surface that renders HTML it
+ *  did not escape.
  *
  *  Known limit: an attribute VALUE containing the literal text `<h1 ` (e.g.
  *  `<img alt="<h1 draft">`) would be rewritten inside the attribute. Marked
  *  escapes `&lt;` in text and in code, so this is reachable only through raw
  *  inline HTML with a heading spelled inside a quoted attribute value. */
-const HEADING_TAG = /<(\/?)h([1-5])(?=[\s>])/gi;
+const HEADING_TAG = /<(\/?)h([1-5])(?=[\s/>])/gi;
 
 export function demoteRenderedHeadings(html: string): string {
   return html.replace(HEADING_TAG, (_match, slash: string, level: string) => `<${slash}h${Number(level) + 1}`);

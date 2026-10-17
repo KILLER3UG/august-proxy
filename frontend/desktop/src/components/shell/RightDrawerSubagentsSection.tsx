@@ -659,7 +659,7 @@ export function RightDrawerSubagentsSection({
           </div>
 
           {(() => {
-            const list = workerTodos(selectedAgent as { todos?: WorkbenchTodo[] }, run);
+            const list = workerTodos(selectedAgent, run);
             return list?.length ? <ProgressPopover todos={list} /> : null;
           })()}
 

@@ -6,6 +6,7 @@ import {
   Check,
   Code2,
   Copy,
+  Download,
   Eye,
   FileWarning,
   Image as ImageIcon,
@@ -15,8 +16,12 @@ import {
   Plus,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
 import { getFileIcon } from '@/lib/file-icon';
 import { usePreferencesStore } from '@/lib/preferences';
+import { copyFilesToDir, revealInFolder, selectDirectory } from '@/lib/tauri-shell';
+import { isTauri } from '@/lib/tauri-detect';
 import { cn } from '@/lib/utils';
 import { backendOriginSync } from '@/api/client';
 import { PdfPager } from './PdfPager';
@@ -77,9 +82,15 @@ function describePreview(file: FileAttachment): {
   const isImage = file.type === 'image' && !!(file.dataUrl || file.previewUrl);
   // A PDF is readable page-by-page only when its bytes are in the webview
   // (data: or http(s) URL). The extracted text alone can't paginate, so a PDF
-  // with neither falls through to the text view.
+  // with neither falls through to the text view. `file-reader.ts` now keeps
+  // those bytes for any PDF under its inline ceiling — before that, nothing but
+  // the design lab's fixture ever carried a PDF data URL, so this branch was
+  // unreachable in the shipped app and every real PDF opened as its text dump.
+  // The mime test is the second door: a PDF that arrived without the extension
+  // would otherwise land in the generic `<img src={dataUrl}>` fallback below.
   const isPdf =
-    /\.pdf$/i.test(file.name || '') && !!(file.dataUrl || file.previewUrl);
+    (/\.pdf$/i.test(file.name || '') || file.mimeType === 'application/pdf') &&
+    !!(file.dataUrl || file.previewUrl);
   return { isImage, hasText, isHtml, isSvg, isMarkdown, isPdf };
 }
 
@@ -114,11 +125,20 @@ function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom:
   const liveUrl = (isHtml || isSvg) ? liveArtifactUrl(file, livePref) : null;
   const hasText = file.type === 'text' && typeof file.content === 'string';
   const pdfSrc = file.dataUrl || file.previewUrl;
+  // The PDF branch zooms by RE-RENDERING at the new width (see PdfPager): a CSS
+  // scale over an already-rasterized page magnifies the bitmap, so 200% bought
+  // softness rather than detail. Text source mode keeps the box transform — it
+  // has no raster to re-render, and shrinking the card would be the surprise.
+  const zoomsByRender = isPdf && !!pdfSrc && !showSource;
 
   return (
     <div
-      style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
-      className={zoom !== 1 ? 'h-full w-full' : 'contents'}
+      style={
+        zoomsByRender
+          ? undefined
+          : { transform: `scale(${zoom})`, transformOrigin: 'top left' }
+      }
+      className={zoomsByRender ? 'contents' : zoom !== 1 ? 'h-full w-full' : 'contents'}
     >
       {isImage ? (
         <div className="flex min-h-full items-center justify-center bg-sunken p-6">
@@ -137,7 +157,7 @@ function PreviewCanvas({ file, zoom, showSource }: { file: FileAttachment; zoom:
           {showSource ? (
             <TextPreview content={file.content ?? ''} />
           ) : (
-            <PdfPager src={pdfSrc} label={file.name} className="flex-1" />
+            <PdfPager src={pdfSrc} label={file.name} zoom={zoom} className="flex-1" />
           )}
         </div>
       ) : isHtml || isSvg ? (
@@ -284,6 +304,12 @@ function ViewModeToggle({
   );
 }
 
+/** Copy the document's text.
+ *
+ *  A `Button` primitive rather than a hand-rolled one so the strip has a focus
+ *  ring like every other control in the app: this button, and the zoom buttons
+ *  beside it, were the only ones in the drawer that a keyboard user could land
+ *  on with no visible focus. */
 function CopyFileButton({ content }: { content: string }) {
   const [copied, setCopied] = useState(false);
   const resetTimer = useRef<number | null>(null);
@@ -307,17 +333,86 @@ function CopyFileButton({ content }: { content: string }) {
   };
 
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="sm"
       onClick={() => { void copy(); }}
       title={copied ? 'Copied to clipboard' : 'Copy content'}
       aria-label="Copy content"
       data-testid="file-preview-copy"
-      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition hover:bg-muted/50 hover:text-foreground cursor-pointer"
+      className="gap-1 text-muted-foreground"
     >
-      {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
+      {copied ? <Check className="text-success" /> : <Copy />}
       <span className="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
-    </button>
+    </Button>
+  );
+}
+
+/** Save a copy of the document the viewer is showing.
+ *
+ *  The viewer's control set had truncation badge, preview/source toggle, copy,
+ *  zoom, fullscreen and close — and no save, so the only way to get a produced
+ *  file out of August was the Artifacts panel, one surface away, or the
+ *  transcript row that said "Download" and opened the drawer instead. The
+ *  desktop copy path already existed for the panel's "Download all"; this is
+ *  the same three calls for one file, so the file is copied by the Rust side
+ *  and its bytes never cross the webview.
+ *
+ *  `savedPath || path` is the ON-DISK location, never `dataUrl`/`previewUrl`:
+ *  those are base64 in the webview, and copying one would need exactly the
+ *  byte marshalling the Rust path exists to avoid. A file with neither is a
+ *  paste/upload that only exists in the transcript, and the message says so
+ *  instead of opening a picker that cannot produce anything. */
+function SaveFileButton({ file }: { file: FileAttachment }) {
+  const [saved, setSaved] = useState(false);
+  const resetTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
+    },
+    [],
+  );
+
+  const save = async () => {
+    const sourcePath = file.savedPath || file.path || '';
+    if (!sourcePath) {
+      toast.message(`“${file.name}” has no file on disk to save — it arrived inline.`);
+      return;
+    }
+    if (!isTauri) {
+      toast.message('Saving needs the desktop build — open August to copy this file into a folder.');
+      return;
+    }
+    const dest = await selectDirectory();
+    if (!dest) return; // the user cancelled the picker; silence is the answer
+    const report = await copyFilesToDir(dest, [sourcePath]);
+    if (!report || report.copied === 0) {
+      toast.error(`Could not save “${file.name}”`);
+      return;
+    }
+    setSaved(true);
+    if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
+    resetTimer.current = window.setTimeout(() => setSaved(false), 2000);
+    toast.success(`Saved ${file.name}`);
+    await revealInFolder(dest);
+  };
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      onClick={() => { void save(); }}
+      title={saved ? 'Saved to the folder you picked' : 'Save a copy to a folder you pick'}
+      aria-label="Save a copy"
+      data-testid="file-preview-save"
+      className="gap-1 text-muted-foreground"
+    >
+      {saved ? <Check className="text-success" /> : <Download />}
+      <span className="hidden sm:inline">{saved ? 'Saved' : 'Save'}</span>
+    </Button>
   );
 }
 
@@ -396,6 +491,7 @@ export function RightDrawerFileSection({ file, bare = false }: { file: FileAttac
       {hasText && file.content && (
         <CopyFileButton content={file.content} />
       )}
+      <SaveFileButton file={file} />
       <ZoomControls zoom={zoom} setZoom={setZoom} />
       <button
         type="button"
@@ -472,6 +568,7 @@ export function RightDrawerFileSection({ file, bare = false }: { file: FileAttac
               {hasText && file.content && (
                 <CopyFileButton content={file.content} />
               )}
+              <SaveFileButton file={file} />
               <ZoomControls zoom={zoom} setZoom={setZoom} />
               <button
                 type="button"

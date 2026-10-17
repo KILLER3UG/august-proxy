@@ -273,7 +273,7 @@ def _toolAllowed(agent: dict[str, object], name: str) -> bool:
 
 
 def _lineageCeiling(
-    session: object, agent: dict[str, object], childId: str
+    session: object, agent: dict[str, object], child_id: str
 ) -> set[str] | None:
     """The authority a child may not exceed, or ``None`` when its lineage declares none.
 
@@ -291,9 +291,9 @@ def _lineageCeiling(
     if not parentId:
         return None
     try:
-        derived = deriveChildPermissions(parentId, childId)
+        derived = deriveChildPermissions(parentId, child_id)
     except Exception:
-        logger.warning('subagent lineage ceiling unavailable for %s under %s', childId, parentId)
+        logger.warning('subagent lineage ceiling unavailable for %s under %s', child_id, parentId)
         return None
     if 'all' in derived:
         return None
@@ -318,7 +318,7 @@ def _workerDeniedNames(
     session: object,
     cap_filter: set[str] | None,
     restricted_names: set[str] | frozenset[str] | None,
-    lineageCeiling: set[str] | None,
+    lineage_ceiling: set[str] | None,
 ) -> frozenset[str]:
     """What this worker may not execute, whatever route it takes to ask for it."""
     universe = _allToolNames()
@@ -326,8 +326,8 @@ def _workerDeniedNames(
     denied |= set(restricted_names or ())
     if cap_filter is not None:
         denied |= universe - cap_filter
-    if lineageCeiling is not None:
-        denied |= universe - lineageCeiling
+    if lineage_ceiling is not None:
+        denied |= universe - lineage_ceiling
     if as_list(agent.get('permissions'), []):
         # Only a DECLARED list scopes: an absent one inherits (see
         # agent_registry._declaredPermissions), and inheriting must not deny the
