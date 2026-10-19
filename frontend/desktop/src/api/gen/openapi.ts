@@ -1174,6 +1174,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/brain/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Getdecisions
+         * @description 053: the decision ledger — what the harness decided and how it settled.
+         *
+         *     Read-only diagnostics, like ``/turn-outcomes``: nothing here is injected
+         *     into a prompt and nothing gates an answer. Three sections:
+         *
+         *       * ``digest`` — today's activity (logged / resolved / unscorable /
+         *         expired), cost, and cost per resolved decision.
+         *       * ``stats`` — per-model and per-kind resolution, with a Brier component.
+         *         ``unscorableRate`` sits beside ``brier`` on purpose: a good score over
+         *         three resolved rows out of forty is luck, not calibration.
+         *       * ``rows`` — the newest ledger rows, for the Learning panel.
+         */
+        get: operations["getDecisions_api_brain_decisions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/brain/decisions/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Postdecisionsresolve
+         * @description Run one journal resolution pass now (Settings → Learning → "Run now").
+         */
+        post: operations["postDecisionsResolve_api_brain_decisions_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/brain/integrity": {
         parameters: {
             query?: never;
@@ -11639,6 +11689,59 @@ export interface operations {
         };
     };
     postConsolidationRun_api_brain_consolidation_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    getDecisions_api_brain_decisions_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                status?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    postDecisionsResolve_api_brain_decisions_resolve_post: {
         parameters: {
             query?: never;
             header?: never;
