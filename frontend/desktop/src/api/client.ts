@@ -7,6 +7,47 @@ import { isTauri } from '@/lib/tauri-detect';
 let baseUrl: string | null = null;
 let fetchPatched = false;
 
+/**
+ * The per-install token the backend's sensitive local routes require.
+ *
+ * `/api/*` is the local SPA's surface and has no authentication by design —
+ * but "local" is "any process on this machine", and so is a model with
+ * `run_command` that can reach loopback. The routes that start subagent
+ * workers and approve harness proposals therefore need a credential.
+ *
+ * The desktop shell generates the token and hands it to the webview over the
+ * Tauri IPC, which is the ONLY channel to it that another local process
+ * cannot use. It is not on disk: a file in the data directory would be
+ * readable by the very model this is meant to stop.
+ *
+ * `null` outside Tauri (the browser build, the mobile app) — and the backend
+ * has no token configured in those deployments either, so the gate is a
+ * no-op there by construction.
+ */
+let resolvedLocalToken: string | null = null;
+let localTokenPromise: Promise<string | null> | null = null;
+
+function localToken(): Promise<string | null> {
+  if (resolvedLocalToken) return Promise.resolve(resolvedLocalToken);
+  if (!localTokenPromise) {
+    localTokenPromise = (async (): Promise<string | null> => {
+      if (!isTauri) return null;
+      try {
+        const token = await invoke<string>('local_api_token');
+        if (token) resolvedLocalToken = token;
+        return token || null;
+      } catch {
+        // The command is missing in an older shell build. Leave the token
+        // unset and retry on the next call rather than caching the failure.
+        return null;
+      } finally {
+        localTokenPromise = null;
+      }
+    })();
+  }
+  return localTokenPromise;
+}
+
 function rewriteApiUrl(url: string): string {
   if (!baseUrl) return url;
   if (url.startsWith('/api') || url.startsWith('/v1')) {
@@ -181,10 +222,12 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   await ensureReady();
   const url = baseUrl ? `${baseUrl}${path}` : path;
+  const token = await localToken();
   const res = await fetch(url, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { 'X-August-Local-Token': token } : {}),
       ...(init?.headers ?? {}),
     },
   });

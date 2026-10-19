@@ -48,7 +48,15 @@ for (const c of candidates) {
     if (c.cmd.includes('/') || c.cmd.includes('\\')) {
       if (!existsSync(c.cmd)) continue;
     }
-    execFileSync(c.cmd, ['-c', 'import sys; sys.exit(0)'], { stdio: 'ignore' });
+    // The check is that the interpreter can IMPORT THE BACKEND APP, not
+    // merely that it exists. `python -c 'import sys'` succeeds on a system
+    // Python with none of the backend's dependencies installed, and the
+    // script then dies at `import app.main` with a traceback instead of the
+    // "no usable interpreter" message that says what to do.
+    execFileSync(c.cmd, ['-c', 'import app.main'], {
+      stdio: 'ignore',
+      cwd: resolve(root, 'backend-py'),
+    });
     chosen = c;
     break;
   } catch {

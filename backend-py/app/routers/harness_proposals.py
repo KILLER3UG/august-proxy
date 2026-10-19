@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field
 
 from app.models.camel_base import CamelModel
 from app.services import harness_self_improve
 
 router = APIRouter(prefix='/api/harness/proposals')
+
+# Approving a proposal is a SENSITIVE local route: it promotes a change the
+# HARNESS proposed, and the harness is the model's own output. A process that
+# could approve without a credential could approve its own. The per-install
+# token is the door; see app/lib/local_api_auth.py.
+from app.lib.local_api_auth import require_local_token  # noqa: E402
 
 
 class ProposalDecision(CamelModel):
@@ -105,7 +111,11 @@ async def getProposal(pid: str):
 
 
 @router.post('/{pid}/decide')
-async def decideProposal(pid: str, body: ProposalDecision):
+async def decideProposal(
+    pid: str,
+    body: ProposalDecision,
+    _auth: bool = Depends(require_local_token),
+):
     """Approve/reject/dismiss. Approval runs the deterministic applier."""
     try:
         return harness_self_improve.decide_proposal(pid, body.decision, body.note)

@@ -9994,6 +9994,22 @@
               "title": "Pid",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
           }
         ],
         "requestBody": {
@@ -15148,6 +15164,24 @@
       "post": {
         "description": "Spawn one or more sub-agents for parallel execution.",
         "operationId": "spawnSubagents_api_subagents_spawn_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -15420,6 +15454,22 @@
               "title": "Name",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
           }
         ],
         "requestBody": {
@@ -15574,6 +15624,22 @@
               "title": "Taskid",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
           }
         ],
         "responses": {
@@ -15611,6 +15677,22 @@
             "schema": {
               "title": "Taskid",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
             }
           }
         ],

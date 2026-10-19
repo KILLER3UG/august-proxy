@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.json_narrowing import as_int, as_str
 from app.models.camel_base import CamelModel
@@ -25,6 +25,13 @@ from app.services.tools.spawn_subagents_tool import approveProposal, executeSpaw
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/subagents')
+
+# Worker control is a SENSITIVE local route: it starts model work. `/api/*` is
+# the local SPA's surface and has no authentication by design, but "local" is
+# "any process on this machine" - including a model with run_command that can
+# reach loopback. These routes require the per-install token the desktop shell
+# generates. See app/lib/local_api_auth.py for why the token is not on disk.
+from app.lib.local_api_auth import require_local_token  # noqa: E402
 
 
 class WorkItem(CamelModel):
@@ -107,7 +114,11 @@ def _makeEmit(sessionId: str):
 
 
 @router.post('/spawn')
-async def spawnSubagents(body: SpawnRequest, request: Request):
+async def spawnSubagents(
+    body: SpawnRequest,
+    request: Request,
+    _auth: bool = Depends(require_local_token),
+):
     """Spawn one or more sub-agents for parallel execution."""
     orch = _getOrchestrator(request)
     session = _getSession(request)
@@ -369,7 +380,11 @@ async def terminateSubagent(taskId: str, request: Request):
 
 
 @router.post('/{taskId}/resume')
-async def resumeSubagent(taskId: str, request: Request):
+async def resumeSubagent(
+    taskId: str,
+    request: Request,
+    _auth: bool = Depends(require_local_token),
+):
     """Re-run a finished/failed sub-agent with the same goal + agent role.
 
     Looks the run up in the persisted history and re-dispatches it through
@@ -494,7 +509,12 @@ async def listWorkstreamEpisodes(name: str, request: Request, sessionId: Optiona
 
 
 @router.post('/{taskId}/steer')
-async def steerSubagent(taskId: str, body: SteerRequest, request: Request):
+async def steerSubagent(
+    taskId: str,
+    body: SteerRequest,
+    request: Request,
+    _auth: bool = Depends(require_local_token),
+):
     """Queue a steering message for the worker's next round (does not interrupt)."""
     orch = _getOrchestrator(request)
     if not orch.enqueueMailbox(taskId, body.message):
@@ -663,7 +683,12 @@ async def deleteRoutineApi(routineId: str):
 
 
 @router.post('/workstreams/{name}/continue')
-async def continueWorkstream(name: str, body: ContinueWorkstreamRequest, request: Request):
+async def continueWorkstream(
+    name: str,
+    body: ContinueWorkstreamRequest,
+    request: Request,
+    _auth: bool = Depends(require_local_token),
+):
     """Spawn a fresh worker on a named thread with prior episodes."""
     orch = _getOrchestrator(request)
     session = _getSession(request)

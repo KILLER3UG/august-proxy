@@ -344,6 +344,38 @@ def _agent_state_reason(match_form: str) -> str | None:
     return None
 
 
+def _store_match_forms(path: str) -> list[str]:
+    """Every form of `path` the store tables must be matched against.
+
+    TWO forms, and BOTH have to be checked:
+
+      * the LITERAL form — the spelling the command used. A path that does
+        not exist still has to be matched, and a path that resolves to
+        somewhere unexpected must still be matched on what was asked for.
+      * the RESOLVED form — what the path really points at. This is the one
+        that catches a LINK: a junction or a symlink under the workspace,
+        with a perfectly innocent name, pointing into a credential store or
+        at the app's own state. Matching only the literal form walked
+        straight past it, because the NAME says nothing about the TARGET.
+        The file-tool door was never exposed to this because `bind_path`
+        resolves before the guard sees the path; the SHELL door was.
+
+    The resolved form is best-effort: `resolve()` can fail on a path with
+    characters the platform dislikes, and a relative path resolves against
+    the BACKEND's working directory rather than the shell's, which can put
+    the extra form in the wrong place. Both are safe, because the literal
+    form is still checked.
+    """
+    forms = [_store_match_form(path)]
+    try:
+        resolved = _strip_dangling_dots(_canonical(str(Path(path).resolve()))).lower()
+    except (OSError, ValueError, RuntimeError):
+        resolved = ''
+    if resolved and resolved not in forms:
+        forms.append(resolved)
+    return forms
+
+
 def _store_match_form(path: str) -> str:
     """The form of a path the store tables are matched against.
 
@@ -435,18 +467,18 @@ def _secret_store_reason(path: str) -> str | None:
     Reads land in the conversation transcript and go upstream to the provider,
     so this is refused in every mode — the same immunity the two patterns have.
     """
-    canonical = _store_match_form(path)
-    store = _credential_store(canonical)
-    if store:
-        return f'credential store {store}'
-    subtree = _credential_store_subtree_reason(canonical)
-    if subtree:
-        return subtree
-    member = _ssh_member_reason(canonical)
-    if member:
-        return member
-    if canonical in _august_secret_files():
-        return "August's own credential store"
+    for canonical in _store_match_forms(path):
+        store = _credential_store(canonical)
+        if store:
+            return f'credential store {store}'
+        subtree = _credential_store_subtree_reason(canonical)
+        if subtree:
+            return subtree
+        member = _ssh_member_reason(canonical)
+        if member:
+            return member
+        if canonical in _august_secret_files():
+            return "August's own credential store"
     return None
 
 
@@ -806,9 +838,10 @@ def check_hardline_command(command: str) -> str | None:
         if write_intent and _PROTECTED_WRITE_PATTERN.search(tok) and not _is_env_template(tok):
             return f'hardline protected path in command: {raw_tok}'
         if write_intent:
-            state = _agent_state_reason(_store_match_form(raw_tok))
-            if state:
-                return f'hardline protected {state} in command: {raw_tok}'
+            for form in _store_match_forms(raw_tok):
+                state = _agent_state_reason(form)
+                if state:
+                    return f'hardline protected {state} in command: {raw_tok}'
         if not write_intent and _CREDENTIAL_READ_PATTERN.search(tok):
             return f'hardline credential read blocked: {raw_tok}'
     return None
@@ -832,9 +865,10 @@ def check_hardline_path(path: str, *, for_write: bool) -> str | None:
         # `write_file` to `<dataDir>/skills/x/SKILL.md` resolved with its drive
         # letter and directory case intact and bound clean. The command door
         # above already normalizes this way; the two doors disagreed.
-        state = _agent_state_reason(_store_match_form(path))
-        if state:
-            return f'hardline protected {state}: {path}'
+        for form in _store_match_forms(path):
+            state = _agent_state_reason(form)
+            if state:
+                return f'hardline protected {state}: {path}'
     if not for_write and _CREDENTIAL_READ_PATTERN.search(canonical):
         return f'hardline credential read blocked: {path}'
     return None

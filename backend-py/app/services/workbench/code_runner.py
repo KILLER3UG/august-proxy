@@ -541,6 +541,35 @@ def _hardline_store_form(path):
     return canon.lower()
 
 
+def _hardline_store_forms(path):
+    """Port of hardline._store_match_forms: the LITERAL form and the RESOLVED
+    form, both of which the tables must be matched against.
+
+    The resolved form is the one that catches a LINK: a junction or a symlink
+    under the workspace, with an innocent name, pointing into a credential
+    store or at August's own state. The name says nothing about the target,
+    so matching only the literal spelling walked straight past it. Code mode
+    has its own `write_file`, so the port has to carry the rule rather than
+    leaving it on the typed door.
+
+    Both forms are checked: the literal one for a path that does not exist
+    (and does not resolve to anything), the resolved one for a path that
+    points somewhere else.
+    """
+    forms = [_hardline_store_form(path)]
+    try:
+        from pathlib import Path as _P
+
+        resolved = _hardline_strip_dots(
+            _hardline_canonical(str(_P(str(path).strip('"' + chr(39))).resolve()))
+        ).lower()
+        if resolved and resolved not in forms:
+            forms.append(resolved)
+    except (OSError, ValueError, RuntimeError):
+        pass
+    return forms
+
+
 def _hardline_agent_state_reason(canon):
     """Port of hardline._agent_state_reason: August's own instruction and
     execution state, write-only refusal.
@@ -632,20 +661,20 @@ def _hardline_store_reason(token):
     the deliberate exception; a file inside a FOLDER inside the store is not, and
     the original refuses `~/.ssh/keys/deploy_token` while this port read it.
     """
-    _canon = _hardline_store_form(token)
-    _p = '/' + _canon.strip('/') + '/'
-    for _store in _STORE_DIRS:
-        if '/' + _store + '/' in _p:
-            return _store
-    _segs = [s for s in _canon.split('/') if s]
-    for _i, _seg in enumerate(_segs):
-        if _seg in _CRED_DIRS and _i + 2 < len(_segs):
-            return 'credential store ' + _seg + ' subdirectory'
-    _member = _hardline_ssh_member_reason(_canon)
-    if _member:
-        return _member
-    if _canon in _AUGUST_SECRETS:
-        return "August's own credential store"
+    for _canon in _hardline_store_forms(token):
+        _p = '/' + _canon.strip('/') + '/'
+        for _store in _STORE_DIRS:
+            if '/' + _store + '/' in _p:
+                return _store
+        _segs = [s for s in _canon.split('/') if s]
+        for _i, _seg in enumerate(_segs):
+            if _seg in _CRED_DIRS and _i + 2 < len(_segs):
+                return 'credential store ' + _seg + ' subdirectory'
+        _member = _hardline_ssh_member_reason(_canon)
+        if _member:
+            return _member
+        if _canon in _AUGUST_SECRETS:
+            return "August's own credential store"
     return None
 
 
@@ -737,9 +766,10 @@ def _hardline_check_command(command):
         if _write and _PROTECTED_WRITE_RE.search(_tok) and not (_ENV_TEMPLATE_RE.search(_tok) and '.env' in _lower):
             return 'hardline protected path in command: ' + _raw
         if _write:
-            _state = _hardline_agent_state_reason(_hardline_store_form(_tok))
-            if _state:
-                return 'hardline protected ' + _state + ' in command: ' + _raw
+            for _form in _hardline_store_forms(_tok):
+                _state = _hardline_agent_state_reason(_form)
+                if _state:
+                    return 'hardline protected ' + _state + ' in command: ' + _raw
         if not _write and _CREDENTIAL_READ_RE.search(_tok):
             return 'hardline credential read blocked: ' + _raw
         _store = _hardline_store_reason(_tok)
@@ -758,9 +788,10 @@ def _hardline_check_path(path, for_write):
     if for_write and _PROTECTED_WRITE_RE.search(_canon) and not (_ENV_TEMPLATE_RE.search(_canon) and '.env' in _lower):
         return 'hardline protected path: ' + str(path)
     if for_write:
-        _state = _hardline_agent_state_reason(_hardline_store_form(str(path)))
-        if _state:
-            return 'hardline protected ' + _state + ': ' + str(path)
+        for _form in _hardline_store_forms(str(path)):
+            _state = _hardline_agent_state_reason(_form)
+            if _state:
+                return 'hardline protected ' + _state + ': ' + str(path)
     if not for_write and _CREDENTIAL_READ_RE.search(_canon):
         return 'hardline credential read blocked: ' + str(path)
     _store = _hardline_store_reason(str(path))

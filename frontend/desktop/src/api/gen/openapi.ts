@@ -14424,7 +14424,9 @@ export interface operations {
     decideProposal_api_harness_proposals__pid__decide_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path: {
                 pid: string;
             };
@@ -18574,7 +18576,9 @@ export interface operations {
     spawnSubagents_api_subagents_spawn_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -18790,7 +18794,9 @@ export interface operations {
     continueWorkstream_api_subagents_workstreams__name__continue_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path: {
                 name: string;
             };
@@ -18891,7 +18897,9 @@ export interface operations {
     resumeSubagent_api_subagents__taskId__resume_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path: {
                 taskId: string;
             };
@@ -18922,7 +18930,9 @@ export interface operations {
     steerSubagent_api_subagents__taskId__steer_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path: {
                 taskId: string;
             };
