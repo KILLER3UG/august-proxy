@@ -47,6 +47,60 @@ static UPDATE_HOLDOFF: AtomicBool = AtomicBool::new(false);
 /// exit fires `ExitRequested`, and the orphan sweep would kill the *first*
 /// instance's uvicorn mid-request — the exact failure the guard exists to stop.
 static INSTANCE_LOCK_OWNED: AtomicBool = AtomicBool::new(false);
+
+/// The per-install token that authenticates the desktop shell to the
+/// backend's SENSITIVE local routes.
+///
+/// The management API on `/api/*` has no authentication by design: it is the
+/// local SPA's surface, and the SPA is a browser page on the same machine.
+/// But "same machine" is not "same user": any local process can reach
+/// `127.0.0.1:<port>`, and so can a model that has `run_command` and can
+/// `curl` loopback. The routes that spawn and steer subagent workers, and the
+/// routes that APPROVE a harness proposal, are not the same as "read a
+/// setting" — a model that could reach them could approve its own proposal
+/// and start a worker fleet outside the tool restrictions of its turn.
+///
+/// So those routes require this token. It is generated here, in the SHELL,
+/// and reaches the backend through the environment and the webview through
+/// the Tauri IPC. Neither channel is reachable by another local process:
+/// the IPC is bound to the webview, and another process cannot read this
+/// process's environment on Windows without process-access rights.
+///
+/// The token is NOT written to disk. A file in the app's data directory would
+/// be readable by a model with `run_command`, which is exactly the threat
+/// this is here to stop.
+///
+/// `RandomState`'s per-process keys are seeded by the OS (on Windows, from
+/// `RtlGenRandom`), and each `RandomState::new()` derives a different value
+/// from them, so two of them make 128 bits that another process cannot
+/// predict — without pulling in a dependency.
+fn local_api_token() -> &'static str {
+    static TOKEN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    TOKEN.get_or_init(|| {
+        use std::collections::hash_map::RandomState;
+        use std::hash::{BuildHasher, Hasher};
+        let a = RandomState::new().build_hasher().finish();
+        let b = RandomState::new().build_hasher().finish();
+        format!(
+            "{:016x}{:016x}{:016x}{:016x}",
+            a,
+            b,
+            std::process::id() as u64,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0)
+        )
+    })
+}
+
+/// Hand the token to the webview. This is the ONLY path by which the token
+/// reaches the frontend, and the Tauri IPC is not reachable from another
+/// local process — which is the whole point.
+#[tauri::command]
+pub fn local_api_token() -> String {
+    local_api_token().to_string()
+}
 /// Set by the UI when the user cancels the visible installer download.
 static UPDATE_DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
 
@@ -1524,6 +1578,11 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                         .env("AUGUST_PROXY_ROOT", &repoRoot)
                         .env("AUGUST_DATA_DIR", &dataDir)
                         .env("AUGUST_PROXY_DESKTOP", "1")
+                        // The token that authenticates the shell to the
+                        // backend's sensitive local routes. In-memory only:
+                        // it is never written to the data directory, where a
+                        // model with run_command could read it.
+                        .env("AUGUST_LOCAL_API_TOKEN", local_api_token())
                         .env("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
                         .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
                             File::create(devNullPath()).expect("failed to open null")
@@ -1684,6 +1743,7 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
             .env("AUGUST_PROXY_ROOT", &projectRoot)
             .env("AUGUST_DATA_DIR", &dataDir)
             .env("AUGUST_PROXY_DESKTOP", "1")
+            .env("AUGUST_LOCAL_API_TOKEN", local_api_token())
             .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
                 File::create(devNullPath()).expect("failed to open null")
             })))
@@ -1870,25 +1930,42 @@ pub fn schedule_post_update_relaunch() -> Result<String, String> {
         // and PREINSTALL taskkill (which only targets August / python / node).
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
         const DETACHED_PROCESS: u32 = 0x00000008;
+        // The process that schedules this waiter — August.exe itself, which is
+        // about to exit. The waiter waits for THIS pid to go away, because
+        // "August is not running" is not a usable condition: at the moment
+        // the waiter starts, August is ALWAYS running. An earlier version of
+        // this waiter treated "August is running" as "an update is not in
+        // progress" and exited on the first iteration — which is every
+        // iteration, because the old app has not exited yet. The installer's
+        // own relaunch is suppressed under /UPDATE, so nothing else brought
+        // the app back and the update simply left a dead app.
+        let old_pid = std::process::id();
+        // A marker left by an EARLIER update would make the waiter relaunch
+        // before this install had finished. Delete it before the installer
+        // can write a new one — the waiter must not do this, because by the
+        // time the waiter starts, the installer may already have written a
+        // FRESH marker that the waiter would then delete.
+        let marker_path = dir.join(".august-update-complete");
+        let _ = std::fs::remove_file(&marker_path);
         // Poll up to ~3 minutes for large Python resource bundles.
         let script = format!(
             "$ErrorActionPreference='SilentlyContinue'; \
              $exe = '{exe_str}'; \
              $dir = '{dir_str}'; \
              $marker = Join-Path $dir '.august-update-complete'; \
+             $oldPid = {old_pid}; \
              $deadline = (Get-Date).AddSeconds(180); \
              while ((Get-Date) -lt $deadline) {{ \
-               if (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue) {{ \
-                 if (Test-Path -LiteralPath $marker) {{ Remove-Item -LiteralPath $marker -Force }}; \
-                 exit 0 \
-               }}; \
-               $installerBusy = @(Get-Process | Where-Object {{ \
-                 $_.ProcessName -match '^(Aug|august).*-setup' -or \
-                 $_.Path -like '*nsis*' -or \
-                 ($_.Path -and $_.Path -like '*\\AppData\\Local\\Temp\\*' -and $_.ProcessName -match '^(Aug|august)') \
-               }}); \
-               if ($installerBusy.Count -gt 0) {{ Start-Sleep -Seconds 2; continue }}; \
-               if ((Test-Path -LiteralPath $marker) -and (Test-Path -LiteralPath $exe)) {{ \
+               if (-not (Get-Process -Id $oldPid -ErrorAction SilentlyContinue)) {{ break }}; \
+               Start-Sleep -Milliseconds 250 \
+             }}; \
+             while ((Get-Date) -lt $deadline) {{ \
+               if (Test-Path -LiteralPath $marker) {{ \
+                 $installerBusy = @(Get-Process | Where-Object {{ \
+                   $_.ProcessName -match '^(Aug|august).*-setup' -or \
+                   ($_.Path -and $_.Path -like '*\\AppData\\Local\\Temp\\*' -and $_.ProcessName -match '^(Aug|august)') \
+                 }}); \
+                 if ($installerBusy.Count -gt 0) {{ Start-Sleep -Seconds 2; continue }}; \
                  Start-Sleep -Milliseconds 600; \
                  if (-not (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue)) {{ \
                    Start-Process -FilePath $exe \
@@ -1919,8 +1996,9 @@ pub fn schedule_post_update_relaunch() -> Result<String, String> {
             .spawn()
             .map_err(|e| e.to_string())?;
         log::info!(
-            "[update] scheduled post-update relaunch waiter for {}",
-            exe.display()
+            "[update] scheduled post-update relaunch waiter for {} (waiting on pid {})",
+            exe.display(),
+            old_pid
         );
         return Ok("scheduled".into());
     }

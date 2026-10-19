@@ -132,6 +132,7 @@ pub fn run() {
             backend::downloaded_installer,
             backend::cancel_update_download,
             backend::launch_installer_and_exit,
+            backend::local_api_token,
             confirm_quit,
         ])
         .build(tauri::generate_context!())
