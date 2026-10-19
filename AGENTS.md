@@ -533,7 +533,7 @@ exist — corrected Part 25 Phase 7.1.)
 
 **High-risk coordination points** (touch carefully, validate both layers):
 
-- Version files (see below) — must stay in sync across all 8 checked desktop sources.
+- Version files (see below) — must stay in sync across all 9 checked desktop sources.
 - `dump_openai_upstream_body` / `dump_anthropic_upstream_body` — upstream serialization; a wrong key breaks all chat.
 - **File-read ceilings** — `read_file` refuses a file over `_MAXFileSize` (**20 MB**)
   and tells you to page it. Paging is the documented escape hatch and works up
@@ -684,7 +684,7 @@ asynchronous contract both surface as load-dependent failures; fix the mechanism
 
 ## Version files to bump together on desktop ship
 
-All 8 sources must match (`scripts/check-version-sync.mjs` verifies):
+All 9 sources must match (`scripts/check-version-sync.mjs` verifies):
 
 - `package.json`
 - `frontend/desktop/package.json`
@@ -692,3 +692,19 @@ All 8 sources must match (`scripts/check-version-sync.mjs` verifies):
 - `frontend/desktop/src-tauri/Cargo.toml`
 - `frontend/desktop/src-tauri/Cargo.lock` (august-desktop entry)
 - `package-lock.json` (root + `packages['frontend/desktop']`)
+- `docs/api/openapi.json` (`info.version`)
+
+**The OpenAPI spec is a version source because the app serves it.** The schema's
+`info.version` is `backend_version()` (`backend-py/app/version.py`), which reads
+the root `package.json` in a checkout — so a bump moves the served schema too.
+Regenerate it in this order, or the release's own drift gate fails:
+
+```bash
+npm run gen:openapi   # docs/api/openapi.json from the app
+npm run gen:api       # frontend/desktop/src/api/gen/openapi.ts from the spec
+```
+
+`npm run gen:api` is a no-op for a version-only bump (the version is not in the
+typed client), but the spec must be regenerated first or `npm run check:api`
+fails with a one-line version diff. The `check-version-sync.mjs` gate now
+catches it before the release job does.

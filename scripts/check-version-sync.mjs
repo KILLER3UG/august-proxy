@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * check-version-sync.mjs — Verify all 8 version sources are in sync.
+ * check-version-sync.mjs — Verify all 9 version sources are in sync.
  *
  * Usage: node scripts/check-version-sync.mjs
  * Exit 0: all versions match.
@@ -68,6 +68,20 @@ const sources = [
     label: 'package-lock.json (frontend/desktop)',
     file: resolve(root, 'package-lock.json'),
     extract: (content) => JSON.parse(content).packages?.['frontend/desktop']?.version,
+  },
+  {
+    // The app's OpenAPI `info.version` is `backend_version()`
+    // (backend-py/app/version.py), which reads the root package.json in a
+    // checkout. So a version bump moves the served schema too, and the
+    // committed spec has to be regenerated with it — `npm run gen:openapi`
+    // followed by `npm run gen:api` for the typed client.
+    //
+    // This was missed on the 0.18.18 bump and the release's own drift gate
+    // caught it: the spec still said 0.18.17 while the app served 0.18.18.
+    // A bump is not a bump until the spec says the same thing.
+    label: 'docs/api/openapi.json (info.version)',
+    file: resolve(root, 'docs/api/openapi.json'),
+    extract: (content) => JSON.parse(content).info?.version,
   },
 ];
 
