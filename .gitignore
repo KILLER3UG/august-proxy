@@ -132,6 +132,12 @@ skills/**/.usage.json
 # Scratch scans and one-off scripts
 .hermes-scan-*.log
 tmp_rename_camel.py
+# A scratch scanner written into scripts/ to answer a question for the
+# current session. It is not a gate and must not be mistaken for one — the
+# real ones are check-*.mjs and are tracked. A scratch script that DOES
+# become a gate should be renamed and committed, not left matching this.
+scripts/_tmp_*.mjs
+scripts/_tmp_*.py
 
 # Local worktree/branch backup bundles (a `git bundle` is a whole repo in one
 # file — 54 MB here). Backups belong outside the repository, not in history.

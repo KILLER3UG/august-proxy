@@ -11,7 +11,7 @@ served them went with them — but NOT the dependencies: the pytest-* dev
 dependencies in `backend-py/pyproject.toml` and the vitest/playwright packages
 in the frontend `package.json` all stay, because `uv lock --check` and the npm
 lockfile gate the release job and a removed dep is a lockfile change. `npm
-test` does not exist any more, on purpose; the 25 inline Rust `#[cfg(test)]`
+test` does not exist any more, on purpose; the 5 inline Rust `#[cfg(test)]`
 blocks in `src-tauri/` were left in place (they compile to nothing outside
 `cargo test`, and nothing runs it).
 
@@ -62,6 +62,37 @@ every other gate, and each has already caught a live bug:
 - Prefer `npm run dev:desktop` / packaged MSI·NSIS installs when checking UI + workbench behavior.
 - Installed production builds copy bundled `backend-py` into AppData from the installer stamp — **desktop releases must include backend changes**, not UI-only rebuilds.
 - **Two guards carry the whole install/update promise** (don't relax either to make a build pass): a new download must start with an empty memory, and an update must keep everything. `{appData}/data` holds everything a user owns (brain DB, `providers.json`, learned skills, sessions, backups) and `{appData}/backend-runtime` holds the re-extractable copy of the payload — siblings, never nested. `scripts/desktop-backend-payload.mjs` therefore refuses to stage runtime user state (`data/`, `*.sqlite*`, `providers.json`, `config.json`, `.env`, `.usage.json`), because staging reads from a working checkout and one stray `AUGUST_DATA_DIR` run would otherwise ship a developer's memory and API keys to every user. And `wipeStaleTree` in `backend.rs` — the only recursive delete the update path performs — refuses any target that is not inside `backend-runtime/`. Uninstall deleting app data is deliberately opt-in AND suppressed under `/UPDATE`.
+- **An update is an IN-PLACE, SILENT replace, and the app restarts itself.**
+  The Windows update path is a custom one (`backend.rs::launch_installer_and_exit`),
+  not the plugin's, because the desktop release must carry backend changes.
+  Three things have to line up or the app never comes back: the installer is
+  launched with `/UPDATE /S` (silent, and routed to `reinst_done` so the OLD
+  uninstaller is never run — the user sees no uninstall wizard); the app
+  schedules the detached waiter (`schedule_post_update_relaunch`) BEFORE
+  launching the installer; and the NSIS POSTINSTALL writes the completion
+  marker UNCONDITIONALLY and skips its own `ExecShell` under `/UPDATE`, so the
+  waiter is the single owner of the relaunch. The POSTINSTALL's 800 ms sleep
+  and the waiter's 600 ms would otherwise race each other into two Augusts.
+  The waiter always relaunches at its 180 s deadline, so a failed update
+  leaves a dead app rather than an app that never returns. The DOWNLOAD is
+  automatic (Settings → About → "Download updates automatically", on by
+  default, 60 s after launch); the RESTART never is — it interrupts whatever
+  is running, so it stays the user's click. `npm run check:minisign` proves
+  the published signature verifies under the `pubkey` in `tauri.conf.json`;
+  nothing else compared the two, and a mismatch is invisible until a user
+  tries to update.
+- **A run of tool calls is ONE line in the transcript, not N.** The
+  reference transcript collapses consecutive tool calls into an activity line
+  — a warm dot, one phrase ("Ran 4 commands"), the elapsed time, a chevron —
+  and reveals them in a bordered card. That grouping is a RENDER-TIME
+  arrangement (`components/chat/ActivityGroup.tsx` + `lib/tool-summary.ts`),
+  not a new persisted block kind: the transcript still stores one block per
+  tool call, so a reload produces the same grouping and the backend knows
+  nothing about it. A command that FAILED, is waiting for approval, or
+  carries an action widget stays on its own — a group collapses to a single
+  line, and a failure hidden behind a collapsed line is one nobody sees.
+  The live indicator (`WorkingIndicator`) and the persisted activity line are
+  BOTH kept: one is what is happening, the other is what happened.
 - Provider **baseUrl** is used exactly as pasted; August only appends the API format leaf (`chat/completions` / `v1/messages` / `responses` / `models`). It never invents `/v1` on the base — Anthropic’s format already includes `v1` in the leaf; OpenAI-compatible hosts include `/v1` in the paste when needed.
 
 ## Recent desktop fix (0.12.21)
@@ -211,8 +242,15 @@ ceiling can never be disarmed. The ceiling guards the **model's** send door, not
 the store: `POST /api/agents/dm` delivers what a human asked for and a human send
 is the reset, so gating it would be a lockout. A new numeric brain key needs all
 three of `numKeys`, a `fieldTable` entry defaulting to `None` (absent, not 0) and
-an explicit range branch — the validator's fallback range starts at 1 — which is
-what `tests/test_turn_limits_fields.py` pins against the Settings panel.
+an explicit range branch — the validator's fallback branch is
+`maxWorkbenchLoopsRange` (0–500), so a key that means "0 = off" must name its
+own branch rather than inherit that one. `npm run check:brain-config` is what
+now holds this: it asks the backend which keys it accepts and what ranges they
+take, and fails when the Settings panel writes a key the backend rejects or
+offers a value outside the backend's range. It has already caught a key with a
+`fieldTable` entry but no writable-set entry (`decisionJournal` — every PUT
+naming it was rejected, so the switch that promotes `record_decision` into the
+core tool set could never be moved).
 **The outbound body is scrubbed of this install's own credentials.** A key that
 rides into the transcript once — pasted by the user, quoted by a log line, printed
 by a command whose path looked harmless — is re-sent to whichever gateway is
@@ -696,9 +734,11 @@ explains why some code is shaped defensively.
 
 **The release job builds; it does not test.** `release-desktop.yml` checks
 `uv lock --check`, ruff and mypy, then produces the signed installer, and `Type
-check` runs the static gate set on every push to every branch. `Type check` runs
-on the tag's commit but does not gate publication, so **confirm it is green
-before pushing the tag** — `git push origin master v0.18.16` does not wait for it.
+check` runs the static gate set on every push to every BRANCH. A tag push does
+NOT trigger `Type check` — the workflow filters on `branches`, not `tags` — so
+the tag's commit was checked when it was pushed to the branch, and publication
+does not wait for that check. **Confirm it is green before pushing the tag** —
+`git push origin master v0.18.16` does not wait for it.
 
 Two mechanism notes the deleted suite paid for, both still true of the code:
 `PRAGMA journal_mode=WAL` is the one SQLite statement that gets no busy handler
