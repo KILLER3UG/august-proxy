@@ -6,7 +6,6 @@ import { ToolIcon } from '@/components/ui/ToolIcon';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { type ProgressEntry } from '@/lib/tool-progress';
 import { getToolLabel } from '@/lib/tool-labels';
-import { formatToolContext } from '@/lib/tool-context-format';
 import { classifyTool } from '@/lib/tool-classify';
 import { useLiveBackendAction } from '@/hooks/useLiveBackendAction';
 import { extractFilename, extractCommand, extractAgentId } from './extractors';
@@ -24,9 +23,9 @@ function formatTimer(ms: number): string {
   return `${pad(minutes)}:${pad(seconds)}`;
 }
 
-// Above this length the per-character shimmer animation becomes visually
-// noisy and slow. Used to decide between the animated "thinking-text" path
-// and the plain monospace fallback.
+// Above this length the label is a multi-flag shell command or a long path,
+// and monospace reads better than the proportional label font. The label is
+// one line either way — it truncates, with the full text on the tooltip.
 const LONG_LABEL_THRESHOLD = 40;
 function isLongLabel(label: string): boolean {
   return label.length > LONG_LABEL_THRESHOLD;
@@ -35,9 +34,11 @@ function isLongLabel(label: string): boolean {
 /**
  * ToolCallItem — renders one tool call like the Thinking disclosure.
  *
- * Uses DisclosureRow + char-glow animation (thinking-text) instead of
- * a bordered card. The tool name animates while running, same as the
- * "Thinking" label in ThinkingDisclosure.
+ * One line: an icon, the label (truncated, with the full text on the
+ * tooltip), the running dots, and a status chip in the DisclosureRow's
+ * `trailing` slot — OUTSIDE the trigger button, so it is not swallowed into
+ * the button's accessible name and a click on it does not toggle the row.
+ * The result lives in the expanded body.
  */
 export const ToolCallItem = memo(function ToolCallItem({
   tool,
@@ -112,6 +113,16 @@ export const ToolCallItem = memo(function ToolCallItem({
   // result event, treat it as stalled — show a warning so the user knows
   // something went wrong rather than seeing an infinite spinner.
   const toolStalled = isRunning && startedAtMs !== undefined && (now - startedAtMs) > 120_000;
+  // Whether the status chip has anything to say. It renders in the
+  // DisclosureRow's `trailing` slot, which sits OUTSIDE the trigger button —
+  // as a child of the button it was part of the button's accessible name and
+  // a click on it toggled the disclosure.
+  const showStatus =
+    (isRunning && !!liveBackend.label) ||
+    toolStalled ||
+    tool.status === 'done' ||
+    tool.status === 'error' ||
+    (tool.status === 'running' && !!tool.pendingApproval);
   const isCommand = tool.name.startsWith('@run_command') || tool.name.startsWith('run_command');
   // Strip the @ prefix that the workbench sometimes prepends so the icon
   // mapper matches the canonical tool name (e.g. "read_file" not "@read_file").
@@ -138,15 +149,13 @@ export const ToolCallItem = memo(function ToolCallItem({
     : undefined;
   const displayLabel = (elapsed !== undefined && elapsed >= 100) ? `${label} · ${formatTimer(elapsed)}` : label;
 
-  // Always-visible friendly context line: prefer the humanized summary from
-  // formatToolContext; fall back to a single-line truncation of the raw
-  // JSON args when no formatter matches.
-  const friendlyCtx = tool.context ? formatToolContext(tool.name, tool.context) : null;
-  const inlineContextText =
-    friendlyCtx?.summary ??
-    (tool.context && tool.context.length > 80
-      ? `${tool.context.slice(0, 77).trimEnd()}…`
-      : tool.context ?? null);
+  // The row's second line. A view/read tool has no expanded body (its
+  // payload IS the file, and the label already carries the basename), so the
+  // full path is the one thing the row can still add. Every other tool shows
+  // its humanised context in the expanded body, where the raw args live too
+  // — a wall of `{"filePath":"…"}` under the label was noise, and it
+  // duplicated what the body renders.
+  const inlineContextText = isView ? filename : null;
 
   return (
     <div
@@ -156,6 +165,42 @@ export const ToolCallItem = memo(function ToolCallItem({
       <DisclosureRow
         onToggle={hasBody ? () => setUserOverride(!open) : undefined}
         open={open && hasBody}
+        trailing={
+          showStatus ? (
+            <span className="flex items-center gap-1.5 shrink-0">
+              {isRunning && liveBackend.label && (
+                <span
+                  className="tool-row-meta text-info max-w-[7.5rem] truncate"
+                  data-testid="tool-live-backend"
+                  title={liveBackend.label}
+                >
+                  {liveBackend.active?.stage || 'backend'}
+                </span>
+              )}
+              {toolStalled ? (
+                <span className="inline-flex items-center gap-1">
+                  <AlertCircle className="size-3 text-warning" />
+                  <span className="tool-row-meta text-warning">stalled</span>
+                </span>
+              ) : tool.status === 'done' ? (
+                <span className="inline-flex items-center gap-1">
+                  <span className="inline-block size-1.5 rounded-full bg-success" />
+                  <span className="tool-row-meta text-success">done</span>
+                </span>
+              ) : tool.status === 'error' ? (
+                <span className="inline-flex items-center gap-1">
+                  <AlertCircle className="size-3 text-danger" />
+                  <span className="tool-row-meta text-danger">failed</span>
+                </span>
+              ) : tool.status === 'running' && tool.pendingApproval ? (
+                <span className="inline-flex items-center gap-1">
+                  <CircleDot className="size-3 text-warning animate-pulse" />
+                  <span className="tool-row-meta text-warning">awaiting</span>
+                </span>
+              ) : null}
+            </span>
+          ) : undefined
+        }
       >
         <span className="flex min-w-0 items-center gap-2">
           {filename ? (
@@ -163,76 +208,31 @@ export const ToolCallItem = memo(function ToolCallItem({
           ) : (
             <ToolIcon name={toolNameForIcon} kind={isCommand ? 'command' : 'tool'} size={14} className="shrink-0" />
           )}
+          {/* One line, one span. The label used to be split into a <span>
+            per character with a staggered animationDelay — but
+            `.thinking-char` declares no `animation`, and motion.css holds
+            every @keyframes in the app, so the shimmer never ran. The only
+            surviving effect was one DOM node per character for every tool
+            row in every transcript, and a permanent 60% opacity on every
+            label, running or not. The full text is on the tooltip and in
+            the expanded body. */}
           <span
             className={cn(
-              'text-xs font-medium leading-5 min-w-0 flex-1',
-              isRunning && !isLongLabel(label) && 'text-foreground/85'
+              'min-w-0 truncate text-xs font-medium leading-5',
+              isLongLabel(label) && 'font-mono text-[0.71875rem]',
+              isRunning && 'text-foreground/85',
             )}
             title={labelTitle}
           >
-            {isLongLabel(label) ? (
-              // Long labels (typically a multi-flag shell command) bypass the
-              // per-character shimmer animation: animating 100+ chars with a
-              // 100ms stagger is visually noisy. Render as a plain monospace
-              // span with a `title` tooltip for the full text.
-              <span className="font-mono text-[0.71875rem] text-foreground/85 wrap-anywhere break-words">
-                {displayLabel}
-              </span>
-            ) : (
-              <span className="thinking-text">
-                <span className="thinking-label">
-                  {Array.from(displayLabel.replace(/ /g, '\u00A0')).map((ch, i) => (
-                    <span
-                      key={i}
-                      className={cn('thinking-char', i === 0 && 'thinking-cap')}
-                      style={{ animationDelay: `${i * 100}ms` }}
-                    >
-                      {ch}
-                    </span>
-                  ))}
-                </span>
-                {isRunning && (
-                  <span className="thinking-dots">
-                    <span className="dot" style={{ animationDelay: '0ms' }}>.</span>
-                    <span className="dot" style={{ animationDelay: '200ms' }}>.</span>
-                    <span className="dot" style={{ animationDelay: '400ms' }}>.</span>
-                  </span>
-                )}
-              </span>
-            )}
+            {displayLabel}
           </span>
-          <span className="flex items-center gap-1.5 shrink-0 ml-auto pl-2">
-            {isRunning && liveBackend.label && (
-              <span
-                className="tool-row-meta text-info max-w-[7.5rem] truncate"
-                data-testid="tool-live-backend"
-                title={liveBackend.label}
-              >
-                {liveBackend.active?.stage || 'backend'}
-              </span>
-            )}
-            {toolStalled ? (
-              <span className="inline-flex items-center gap-1">
-                <AlertCircle className="size-3 text-warning" />
-                <span className="tool-row-meta text-warning">stalled</span>
-              </span>
-            ) : tool.status === 'done' ? (
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block size-1.5 rounded-full bg-success" />
-                <span className="tool-row-meta text-success">done</span>
-              </span>
-            ) : tool.status === 'error' ? (
-              <span className="inline-flex items-center gap-1">
-                <AlertCircle className="size-3 text-danger" />
-                <span className="tool-row-meta text-danger">failed</span>
-              </span>
-            ) : tool.status === 'running' && tool.pendingApproval ? (
-              <span className="inline-flex items-center gap-1">
-                <CircleDot className="size-3 text-warning animate-pulse" />
-                <span className="tool-row-meta text-warning">awaiting</span>
-              </span>
-            ) : null}
-          </span>
+          {isRunning && (
+            <span className="thinking-dots" aria-hidden>
+              <span className="dot" style={{ animationDelay: '0ms' }}>.</span>
+              <span className="dot" style={{ animationDelay: '200ms' }}>.</span>
+              <span className="dot" style={{ animationDelay: '400ms' }}>.</span>
+            </span>
+          )}
         </span>
       </DisclosureRow>
 

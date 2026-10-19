@@ -153,6 +153,15 @@ details[open] > summary .disclosure-chevron {
 }
 
 /* 5. Thinking indicator animations */
+/* `.thinking-text` / `.thinking-label` / `.thinking-dots` are the live ones
+ * (ThinkingDisclosure and the tool rows).
+ *
+ * There was once a per-character variant here: `.thinking-char` with an
+ * opacity transition, driven by an inline `animationDelay` per character. It
+ * never animated — no `animation` was declared and motion.css holds every
+ * @keyframes in the app — so all it did was dim every label to 60% and cost
+ * one DOM node per character. The rules are gone with the split that used
+ * them. */
 .thinking-text {
   display: inline-flex;
   align-items: center;
@@ -162,16 +171,6 @@ details[open] > summary .disclosure-chevron {
 .thinking-label {
   display: inline-flex;
   white-space: pre;
-}
-
-.thinking-char {
-  opacity: 0.6;
-  transition: opacity 0.3s ease;
-}
-
-.thinking-cap {
-  font-size: 1em;
-  font-weight: inherit;
 }
 
 .thinking-dots {
