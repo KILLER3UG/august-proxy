@@ -29,6 +29,7 @@
     "eval:harness": "cd backend-py && uv run python scripts/harness_eval.py",
     "download:node-binaries": "node scripts/download-node-binaries.mjs",
     "download:node-binaries:all": "node scripts/download-node-binaries.mjs --all",
+    "e2e:smoke": "node scripts/run-python.mjs e2e_smoke.py",
     "gen:api": "openapi-typescript docs/api/openapi.json -o frontend/desktop/src/api/gen/openapi.ts",
     "lint:ratchet": "node scripts/lint-ratchet.mjs",
     "prepare:desktop-backend": "node scripts/prepare-desktop-backend.mjs",

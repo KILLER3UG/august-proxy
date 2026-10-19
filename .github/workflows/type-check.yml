@@ -91,6 +91,19 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: npm run check:brain-config
 
+      # Does the app START? A module that fails to import, a migration that
+      # does not apply, a lifespan hook that raises and a router that fails
+      # to register are all invisible to a linter and fatal at launch — and
+      # the test suite that would have caught them was deleted on 2026-10-17.
+      #
+      # This is the floor under that, and it is deliberately NOT a behaviour
+      # test: it starts the app against a THROWAWAY data directory and asks
+      # a handful of read-only doors a question. It never touches the user's
+      # data directory — that holds their brain database and their keys.
+      - name: App smoke check (scratch data)
+        working-directory: ${{ github.workspace }}
+        run: npm run e2e:smoke
+
       - name: Version sync (4 manifests + lockfile)
         working-directory: ${{ github.workspace }}
         run: node scripts/check-version-sync.mjs

@@ -27,7 +27,18 @@ What verifies a change now: `npm run check:docs`, `check:design`,
 `check:doc-links`, `check:minisign`, `check:truncate`, `check:brain-config`,
 `lint:ratchet`; `uv run ruff check .` + `uv run mypy app/`
 for the backend; `npm run check -w frontend/desktop` (tsc + eslint) for the
-desktop app; `Type check` on every push; and a human running the app.
+desktop app; `npm run e2e:smoke`, which starts the backend against a
+THROWAWAY data directory and asks its basic doors a question; `Type check` on
+every push; and a human running the app.
+
+The static gates cannot see whether the app **starts** — a module that fails
+to import, a migration that does not apply, a lifespan hook that raises and a
+router that fails to register are all invisible to a linter and fatal at
+launch. `e2e:smoke` is the floor under that, and it is deliberately not a
+behaviour test: it imports the real app, runs its lifespan, and asks six
+read-only doors plus two writes a question. It never touches the user's data
+directory — that holds their brain database and their keys — and it points
+`AUGUST_DATA_DIR` at a temp directory that is removed afterwards.
 
 Three of those gates exist because the defect they catch is INVISIBLE to
 every other gate, and each has already caught a live bug:
