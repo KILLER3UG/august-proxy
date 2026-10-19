@@ -94,20 +94,42 @@ def main() -> int:
     _quiet_logs()
 
     results: list[dict] = []
+    section = ''
 
     def check(name: str, ok: bool, detail: str = '') -> None:
-        results.append({'name': name, 'ok': ok, 'detail': detail})
+        results.append({'section': section, 'name': name, 'ok': ok, 'detail': detail})
+
+    def begin(title: str) -> None:
+        """Open a section. The report is grouped, because a flat list of
+        ten checks is a list, and a list does not say whether the app came
+        up or only its side doors answered."""
+        nonlocal section
+        section = title
 
     with TestClient(app) as client:
-        # 1. The doors the desktop shell opens on launch.
-        for name, path in (
-            ('health', '/api/health'),
-            ('config', '/api/config/safe'),
-            ('brain-config', '/api/brain/config'),
-            ('agents', '/api/agents'),
-            ('skills-suggestions', '/api/brain/skills/suggestions'),
-            ('memory-metrics', '/api/brain/memory/metrics'),
-        ):
+        # ── Section 1 · Startup ─────────────────────────────────────────
+        # The app is up, and it says so. If this fails, nothing below it
+        # means anything.
+        begin('startup')
+        try:
+            response = client.get('/api/health')
+            ok = response.status_code == 200
+            check(
+                'GET /api/health',
+                ok,
+                '' if ok else f'status {response.status_code}: {response.text[:200]}',
+            )
+        except Exception as exc:  # noqa: BLE001 — a failure IS the result
+            check('GET /api/health', False, f'{type(exc).__name__}: {exc}')
+
+        # ── Section 2 · Configuration ───────────────────────────────────
+        # The two doors the Settings panel reads, and the one it writes.
+        # The write matters: the brain-config panel's own keys must be
+        # WRITABLE. This is the class of bug the static gate catches,
+        # checked here too because it is cheap and it exercises the live
+        # route rather than the validator in isolation.
+        begin('configuration')
+        for path in ('/api/config/safe', '/api/brain/config'):
             try:
                 response = client.get(path)
                 ok = response.status_code == 200
@@ -116,13 +138,9 @@ def main() -> int:
                     ok,
                     '' if ok else f'status {response.status_code}',
                 )
-            except Exception as exc:  # noqa: BLE001 — a failure IS the result
+            except Exception as exc:  # noqa: BLE001
                 check(f'GET {path}', False, f'{type(exc).__name__}: {exc}')
 
-        # 2. The brain-config panel's own keys must be WRITABLE. This is the
-        #    class of bug the static gate catches, checked here as well
-        #    because it is cheap and it exercises the live route rather than
-        #    the validator in isolation.
         try:
             response = client.put(
                 '/api/brain/config',
@@ -137,9 +155,31 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             check('PUT /api/brain/config', False, f'{type(exc).__name__}: {exc}')
 
-        # 3. /mcp/harness must be CLOSED while external access is off. The
-        #    route dispatches real model calls and real tool execution, and
-        #    the browser origin guard does not cover a local script.
+        # ── Section 3 · Memory and skills ───────────────────────────────
+        # The surfaces that read the brain database. If the brain will not
+        # open, these are the doors that say so.
+        begin('memory and skills')
+        for path in (
+            '/api/brain/memory/metrics',
+            '/api/brain/skills/suggestions',
+            '/api/agents',
+        ):
+            try:
+                response = client.get(path)
+                ok = response.status_code == 200
+                check(
+                    f'GET {path}',
+                    ok,
+                    '' if ok else f'status {response.status_code}',
+                )
+            except Exception as exc:  # noqa: BLE001
+                check(f'GET {path}', False, f'{type(exc).__name__}: {exc}')
+
+        # ── Section 4 · The harness door ────────────────────────────────
+        # /mcp/harness must be CLOSED while external access is off. The
+        # route dispatches real model calls and real tool execution, and
+        # the browser origin guard does not cover a local script.
+        begin('the harness door')
         try:
             response = client.post('/mcp/harness', json={'method': 'tools/list'})
             ok = response.status_code == 403
@@ -163,10 +203,14 @@ def main() -> int:
     if args.json:
         print(json.dumps(report, indent=2))
     else:
+        current = None
         for r in results:
+            if r['section'] != current:
+                current = r['section']
+                print(f'\n{current}')
             mark = 'ok  ' if r['ok'] else 'FAIL'
             detail = f'  ({r["detail"]})' if r['detail'] else ''
-            print(f'{mark} {r["name"]}{detail}')
+            print(f'  {mark} {r["name"]}{detail}')
         print(
             f'\n{len(results) - len(failures)}/{len(results)} smoke check(s) passed '
             f'({"scratch data" if scratch else "EXPLICIT data dir"}).'
