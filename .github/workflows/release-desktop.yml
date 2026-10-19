@@ -14,9 +14,22 @@ on:
 permissions:
   contents: write
 
+# Two tags pushed in quick succession must not publish at the same time —
+# and a release is NEVER cancelled: cancelling after the installer is signed
+# but before it is published leaves a tag with no asset, which is worse than
+# a queue.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest
+    # A cold Tauri build on a windows runner is 15–25 minutes; the node
+    # sidecar download and the NSIS packaging are on top of that. The
+    # default 6-hour ceiling means a hung build holds the runner and the
+    # release tag for six hours before it is killed.
+    timeout-minutes: 120
     outputs:
       version: ${{ steps.version.outputs.version }}
 
@@ -171,6 +184,9 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch'
     needs: build
+    # One `gh release edit`. A minute is generous; the default 6-hour
+    # ceiling means a hung `gh` call holds a published-looking release open.
+    timeout-minutes: 10
     permissions:
       contents: write
     env:
