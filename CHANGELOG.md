@@ -1,5 +1,33 @@
 # August Proxy — Changelog
 
+## Unreleased — the decision ledger and the fact scope (e6369c10)
+
+**A fact lives in one place, and a scope is a column rather than a spelling.**
+The facts table held three different answers to "where does a fact live", and a
+unique index on `fact_key` alone forced per-scope keyspacing — so the same
+sentence had to be re-spelled to live in two scopes, which manufactured
+duplicates the merge pass could never see, because two rows with different keys
+are simply two rows. The schema now keys on `(scope, fact_key)`, the dead
+`project:` vocabulary is retired, and the rework is done in Python with an
+explicit rollback, so a half-applied rebuild cannot be committed by
+`executescript`.
+
+**The decision ledger is a page, not a table.** Migration 053 writes one row
+per decision the harness made and how it settled. The Learning hub gained a
+**Decisions** tab reading `/api/brain/decisions`: today's digest (logged /
+resolved / unscorable / expired, cost, and cost per resolved decision),
+per-model and per-kind resolution with its Brier component — where
+`unscorableRate` sits beside `brier` on purpose, because a good score over
+three resolved rows out of forty is luck, not calibration — and the newest
+ledger rows. A "Run now" action drives one journal resolution pass. The
+Background-jobs ledger gained a `Summary:journal` outcome line, and a
+default-off `decisionJournal` brain knob puts the tool where a model can reach
+it: off by default, because arming it changes what a provider sees.
+
+**Turn outcomes are rows, not log lines.** Every turn writes one row to
+`turn_outcomes`, and the stuck-request ladder and the lesson-promotion path now
+read that row instead of re-deriving what happened from the transcript.
+
 ## Unreleased — the 2026-10-17 push to master (6328872b)
 
 **The test suite is gone, at the owner's request.** 627 deletions:
