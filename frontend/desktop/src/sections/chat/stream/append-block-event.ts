@@ -63,8 +63,14 @@ export function appendBlockEvent(
   if (event.type === 'system') {
     // Harness notice (retry warning / context pressure / info) — its own
     // block kind. The thinking block holds ONLY model chain-of-thought.
+    //
+    // `event.id` is honoured when one is given. The recovery notice derives
+    // its id from the SSE frame id, which is stable across a cursor replay,
+    // so a re-delivered frame maps to the SAME block id and the caller's
+    // twin guard can drop it. Without an id the block gets a random one —
+    // which is what a re-delivered warning still does.
     blocks.push({
-      id: `b_sys_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      id: event.id || `b_sys_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       type: 'system',
       content: event.content || '',
     });

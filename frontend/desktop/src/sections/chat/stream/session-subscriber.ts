@@ -141,6 +141,12 @@ export function ensureSessionSubscriber(sessionOrWorkbenchId: string): void {
       // (makeStreamHandlers); the background subscriber acknowledges
       // them so the SSE stream stays healthy.
     },
+    onRecovery: (_data) => {
+      // Same as compaction: the per-turn handler renders the recovery
+      // notice. The background subscriber only acknowledges the frame so
+      // the SSE stream stays healthy — rendering here would double-render,
+      // because the subscriber attaches to a turn that is already running.
+    },
     onWarning: (data) => {
       console.warn('[chat-stream-manager] warning:', data?.message || data);
     },

@@ -253,7 +253,7 @@ export function dispatchWorkbenchEvent(
         attempt: typeof p?.attempt === 'number' ? p.attempt : undefined,
         outcome: typeof p?.outcome === 'string' ? p.outcome : undefined,
         degraded: typeof p?.degraded === 'boolean' ? p.degraded : undefined,
-      });
+      }, seq);
       break;
     case 'warning':
       handlers.onWarning?.({

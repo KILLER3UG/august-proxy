@@ -466,7 +466,11 @@ export interface WorkbenchEventHandlers {
    *  The Zod schema has always accepted this frame and the dispatcher had no
    *  case for it, so every rescue the harness performed was invisible in the
    *  UI — the user saw a normal-looking answer that had actually been rescued
-   *  under them. `scripts/check-sse-parity.mjs` is what caught it. */
+   *  under them. `scripts/check-sse-parity.mjs` is what caught it.
+   *
+   *  `seq` is the SSE frame id. It is stable across a cursor replay, so a
+   *  re-delivered frame maps to the same notice id and the handler can drop
+   *  the twin — the same contract `onCompaction` has. */
   onRecovery?: (data: {
     /** 'budget' | 'context-reduction' | 'auto-compact' | 'length-continuation' | 'runaway' */
     kind?: string;
@@ -476,7 +480,7 @@ export interface WorkbenchEventHandlers {
     outcome?: string;
     /** True when the answer shipped truncated or into a reduced surface. */
     degraded?: boolean;
-  }) => void;
+  }, seq?: number) => void;
   /** Informational messages (auto-memory sync, guideline updates, etc.).
    *  Unknown fields go into `extras` for the same reason as onWarning. */
   onInfo?: (data: {

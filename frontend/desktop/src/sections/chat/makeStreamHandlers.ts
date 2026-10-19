@@ -37,6 +37,7 @@ import { classifyTool } from '@/lib/tool-classify';
 import { commandErrorOneLiner } from '@/lib/command-error-line';
 import { friendlyError } from '@/lib/error-copy';
 import { pathBasename } from '@/lib/tool-labels';
+import { recoveryMessage } from '@/lib/recovery-copy';
 import { pushBrowserAction } from '@/lib/browser-store';
 import { playReceiveChime } from '@/lib/chat-chime';
 import { OsNotifyService } from '@/lib/os-notify';
@@ -885,6 +886,23 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // A 'system' block — the thinking pack holds ONLY model CoT, and a
       // system notice must not demote the real final answer either.
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'system', content: warning });
+      scheduleUpdate();
+    },
+    onRecovery: (data, seq) => {
+      // The harness rescued the turn mid-flight (budget ladder, context
+      // reduction, auto-compact, length continuation, runaway backstop,
+      // stuck request). Until now this frame was dispatched and dropped, so
+      // a rescued turn shipped as a normal-looking answer.
+      //
+      // `seq` is the SSE frame id: stable across a cursor replay, so a
+      // re-delivered frame derives the SAME block id and the guard below
+      // drops the twin — the same contract the compaction notice uses.
+      const id = seq !== undefined ? `recovery-${seq}` : undefined;
+      if (id && streamBlocks.some((b) => b.id === id)) return;
+      const notice = recoveryMessage(data.kind, data.attempt, data.outcome, data.degraded);
+      // A 'system' block, like the warning notice: it persists with the
+      // transcript, so the user still sees it after a reload.
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'system', content: notice, id });
       scheduleUpdate();
     },
     onContextPressure: ({ contextUsedPct, attentionPressure, totalTokens, maxContext, remainingTokens, promptCache, contextSections }) => {
