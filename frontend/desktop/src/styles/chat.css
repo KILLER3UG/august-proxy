@@ -188,6 +188,28 @@ details[open] > summary .disclosure-chevron {
 .thinking-dots .dot:nth-child(2) { animation-delay: 0.2s; }
 .thinking-dots .dot:nth-child(3) { animation-delay: 0.4s; }
 
+/* The activity line's dot trio. The reference marks WORK with a warm dot
+ * that pulses, and a settled run goes quiet and shows a single muted dot.
+ * Same pulse as the thinking dots — the difference is the colour and that
+ * these are real dots rather than periods. */
+.activity-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.activity-dots .dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background-color: var(--dt-warning);
+  animation: dotPulse 1.4s infinite ease-in-out;
+}
+
+.activity-dots .dot:nth-child(1) { animation-delay: 0s; }
+.activity-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+.activity-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+
 /* Smooth expand/collapse for reasoning block using CSS Grid */
 .grid-transition {
   display: grid;

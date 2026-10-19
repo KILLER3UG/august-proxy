@@ -116,8 +116,8 @@ function SubagentToolBody({ tool }: { tool: ToolEntry }) {
 /**
  * Expanded tool-call body — context, progress, diffs, search hits, errors,
  * approval. Shared by ToolStepRow (transcript), ToolCallItem (subagent
- * rows) and ToolSummary drill-down. Progress entries render HERE — the
- * single owner — so no caller needs to suppress them.
+ * rows) and the activity-group drill-down. Progress entries render HERE —
+ * the single owner — so no caller needs to suppress them.
  */
 export function ToolCallItemBody({
   tool,

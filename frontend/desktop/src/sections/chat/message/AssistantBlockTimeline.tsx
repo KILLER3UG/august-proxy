@@ -23,6 +23,8 @@ import { SearchResultsTask } from '@/components/chat/SearchResultsCard';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { SubagentDelegateRow } from '@/components/chat/SubagentDelegateRow';
 import { ExploreGroup } from '@/components/chat/ExploreGroup';
+import { ActivityGroup } from '@/components/chat/ActivityGroup';
+import { summarizeToolRun } from '@/lib/tool-summary';
 import { collectSnapshots, fromSnapshot, readSnapshot } from '../stream/subagent-blocks';
 import { classifyTool, normalizeToolName } from '@/lib/tool-classify';
 import { Markdown } from '../ChatMarkdown';
@@ -76,6 +78,25 @@ function isFinalOutput(block: DisplayBlock): boolean {
   return (
     block.type === 'finalOutput' &&
     !!(block.content && String(block.content).trim())
+  );
+}
+
+/**
+ * A command block that can join an activity group.
+ *
+ * A command that FAILED, is waiting for approval, or carries an action
+ * widget stays on its own. A group collapses to a single line, so a failure
+ * or a prompt hidden behind a collapsed line is one nobody sees — and the
+ * whole point of the run grouping is that the transcript stays quiet, which
+ * is only safe while everything in it succeeded.
+ */
+function isGroupableCommand(block: DisplayBlock): boolean {
+  return (
+    block.type === 'command' &&
+    !!block.tool &&
+    block.tool.status !== 'error' &&
+    !block.tool.pendingApproval &&
+    !block.tool.actionNeeded
   );
 }
 
@@ -789,6 +810,72 @@ export function AssistantBlockTimeline({
           }
           ti++;
           continue;
+        }
+
+        // A run of consecutive commands collapses into ONE activity line —
+        // the reference's "Ran 4 commands" — with the individual commands
+        // inside a bordered card when it is opened.
+        //
+        // The grouping is a RENDER-TIME arrangement, not a new persisted
+        // block kind: the transcript still stores one block per command, so
+        // a reload produces the same grouping and the backend needs to know
+        // nothing about it. Reads keep their own Explore group, edits and
+        // memory writes keep their rail rows, and a search keeps its results
+        // card.
+        if (isCommand && isGroupableCommand(block)) {
+          let tj = ti;
+          while (tj < blocks.length && isGroupableCommand(blocks[tj])) tj += 1;
+          if (tj - ti >= 2) {
+            const runTools = blocks
+              .slice(ti, tj)
+              .map((b) => b.tool)
+              .filter((t): t is NonNullable<typeof t> => !!t);
+            const anyRunning = runTools.some((t) => t.status === 'running');
+            const elapsedMs = runTools.reduce(
+              (sum, t) => sum + (typeof t.duration === 'number' ? t.duration : 0),
+              0,
+            );
+            const groupKey = `activity_${toolId}`;
+            const groupOpen =
+              groupKey in expandOverrides ? expandOverrides[groupKey] : anyRunning;
+            tagged.push({
+              kind: 'block',
+              node: (
+                <ActivityGroup
+                  key={groupKey}
+                  groupKey={groupKey}
+                  summary={summarizeToolRun(runTools)}
+                  elapsedMs={elapsedMs}
+                  running={anyRunning}
+                  expanded={groupOpen}
+                  onToggle={(next) => toggleExpand(groupKey, next)}
+                >
+                  {runTools.map((rt, ri) => {
+                    const rtId = rt.id || `activity_child_${ti + ri}`;
+                    return (
+                      <ToolStepRow
+                        key={rtId}
+                        tool={rt}
+                        label={getToolLabel(rt.name, {
+                          command: extractCommand(rt.context) ?? undefined,
+                          status: rt.status,
+                        })}
+                        isCommand
+                        expanded={rtId in expandOverrides ? expandOverrides[rtId] : false}
+                        verbose={verbose}
+                        onToggle={(next) => toggleExpand(rtId, next)}
+                        progress={rt.id ? toolProgress?.get(rt.id) : undefined}
+                      >
+                        <ToolCallItemBody tool={rt} verbose={verbose} />
+                      </ToolStepRow>
+                    );
+                  })}
+                </ActivityGroup>
+              ),
+            });
+            ti = tj;
+            continue;
+          }
         }
 
         // update_state bookkeeping is represented by the phase marker

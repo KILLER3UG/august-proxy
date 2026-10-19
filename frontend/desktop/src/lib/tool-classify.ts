@@ -1,5 +1,8 @@
 /**
- * Classify tool names into activity buckets for the chat ToolSummary header.
+ * Classify tool names into activity buckets for the chat activity summary.
+ *
+ * The phrase each bucket contributes lives in `lib/tool-summary.ts`; this
+ * module only decides which bucket a name belongs to.
  *
  * Buckets:
  *   view        — reads, greps, lists, web fetch/search

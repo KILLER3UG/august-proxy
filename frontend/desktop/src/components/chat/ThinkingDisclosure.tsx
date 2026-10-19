@@ -20,7 +20,8 @@ interface ThinkingDisclosureProps {
   elapsed?: number;
   icon?: ReactNode;
   label?: string;
-  /** When true, skip the "Thought for Xs" suffix (ToolSummary already counts thoughts). */
+  /** When true, skip the "Thought for Xs" suffix (the activity summary
+   *  already counts thoughts in its own total). */
   omitDurationLabel?: boolean;
 }
 
