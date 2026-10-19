@@ -37,16 +37,40 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SCHEMA_FILE = 'frontend/desktop/src/api/schemas/workbench.ts';
 const DISPATCH_FILE = 'frontend/desktop/src/api/workbench/streamEvents.ts';
 
-/** Backend files that emit workbench SSE frames. */
-const BACKEND_EMITTERS = [
-  'backend-py/app/services/workbench/workbench.py',
-  'backend-py/app/services/workbench/subagent.py',
-  'backend-py/app/services/workbench/subagent_fanout.py',
-  'backend-py/app/services/workbench/loop/events.py',
-  'backend-py/app/services/workbench/loop/recovery.py',
-  'backend-py/app/services/workbench/loop/exec.py',
-  'backend-py/app/services/workbench/loop/guards.py',
-];
+/**
+ * Backend files that emit workbench SSE frames are DISCOVERED, not listed.
+ *
+ * This used to be a hand-written array of seven files, and that is exactly how
+ * `recovery` hid for so long: the list was the truth about what the backend
+ * emits, and the list was incomplete. `spawn_subagents_tool.py` was missing
+ * from it, so the `subagentFanout` frame it emits was invisible to this
+ * check — a hand-maintained list is a fourth list to keep in step, and the
+ * one you forget.
+ *
+ * A file is an emitter when it CALLS `emit({... 'type': 'x' ...})`. That is
+ * the shape, not a guess: a file that only mentions a frame name in a
+ * docstring is not an emitter.
+ */
+function discoverEmitters() {
+  const found = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        if (entry === '__pycache__') continue;
+        walk(full);
+      } else if (entry.endsWith('.py')) {
+        const text = readFileSync(full, 'utf8');
+        // emit( { ... 'type': 'x' ... } — the dict may span lines.
+        if (/emit\s*\(\s*\{[^}]{0,600}?['"]type['"]\s*:\s*f?['"][A-Za-z_]/.test(text)) {
+          found.push(full);
+        }
+      }
+    }
+  };
+  walk(resolve(root, 'backend-py/app'));
+  return found;
+}
 
 /**
  * `'type': 'x'` literals that are NOT SSE frames: JSON-Schema type keywords,
@@ -73,6 +97,15 @@ const SCHEMA_ONLY = new Map([
     'subagentTodos',
     'Carried on the subagent block; routed by apply-subagent-event, not by this switch.',
   ],
+  [
+    'subagentFanout',
+    'On the wire and documented in API_REFERENCE, and the backend persists it in the ' +
+      'session event log — where the per-turn `turn_outcomes` row has no column for the ' +
+      'children cap, the applied concurrency and the observed peak. The desktop ' +
+      'transcript renders the subagent LANE and not the fanout budget readout, so the ' +
+      'desktop UI drops it; that gap is tracked in docs/GAPS_AND_BUGS.md. An API ' +
+      'consumer reading the SSE stream still receives it.',
+  ],
 ]);
 
 function read(rel) {
@@ -82,15 +115,12 @@ function read(rel) {
 /** Every `'type': 'x'` literal the given Python emits. */
 function backendFrames() {
   const out = new Map();
-  for (const rel of BACKEND_EMITTERS) {
-    if (!existsSync(resolve(root, rel))) continue;
-    const text = read(rel);
-    const re = /['"]type['"]\s*:\s*f?['"]([A-Za-z_][A-Za-z0-9_]*)['"]/g;
-    let m;
-    while ((m = re.exec(text)) !== null) {
-      if (NOT_SSE_FRAMES.has(m[1])) continue;
-      if (!out.has(m[1])) out.set(m[1], new Set());
-      out.get(m[1]).add(rel);
+  for (const full of discoverEmitters()) {
+    const rel = full.slice(root.length + 1).replace(/\\/g, '/');
+    for (const name of frameLiteralsIn(readFileSync(full, 'utf8'))) {
+      if (NOT_SSE_FRAMES.has(name)) continue;
+      if (!out.has(name)) out.set(name, new Set());
+      out.get(name).add(rel);
     }
   }
   // _emitRecovery/_emitCompactionEvent pass `kind`/`type` as arguments, not a
@@ -103,6 +133,41 @@ function backendFrames() {
     }
   }
   return out;
+}
+
+/**
+ * The frame names inside the dicts that are actually PASSED TO `emit`.
+ *
+ * The literal has to be read from INSIDE the call, not from anywhere in the
+ * file: a file that emits one frame usually also builds other dictionaries,
+ * and a file-wide scan reads the provider wire shapes in it — Anthropic's
+ * thinking block is `{'type': 'enabled', ...}`, which is not an SSE frame
+ * and which a file-wide scan reported as one.
+ */
+function frameLiteralsIn(text) {
+  const names = [];
+  const re = /emit\s*\(\s*\{/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const open = text.indexOf('{', m.index);
+    let depth = 0;
+    let end = -1;
+    for (let i = open; i < text.length; i++) {
+      if (text[i] === '{') depth++;
+      else if (text[i] === '}') {
+        depth--;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    if (end === -1) continue;
+    const body = text.slice(open, end + 1);
+    const literal = body.match(/['"]type['"]\s*:\s*f?['"]([A-Za-z_][A-Za-z0-9_]*)['"]/);
+    if (literal) names.push(literal[1]);
+  }
+  return names;
 }
 
 /** Every frame name the Zod schema accepts, from z.literal AND z.enum. */
@@ -195,6 +260,10 @@ const errors = [];
 // 1. Emitted and neither schematised nor dispatched — a silent drop.
 for (const [name, files] of backend) {
   if (schema.has(name) || dispatch.has(name)) continue;
+  if (SCHEMA_ONLY.has(name)) {
+    console.log(`OK   deliberately undispatched '${name}': ${SCHEMA_ONLY.get(name)}`);
+    continue;
+  }
   errors.push(
     `backend emits '${name}' (${[...files].join(', ')}) but the frontend neither ` +
       'schemas nor dispatches it — the frame is dropped at runtime with no error'
