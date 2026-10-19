@@ -82,6 +82,12 @@ numKeys: tuple[str, ...] = (
     'reviewerIntervalHours',
     'reviewIntervalHours',
     'outcomeIntervalHours',
+    # The decision journal's cadence. It had a fieldTable entry (24 = daily)
+    # and the runtime reads it (learning_scheduler._journal_job), but it was
+    # missing from numKeys, so `allowedKeys` excluded it and validatePatch
+    # rejected every PUT naming it — the cadence was settable only by hand-
+    # editing config.json, and the Settings UI could not express it at all.
+    'journalIntervalHours',
     'outcomeWindowDays',
     'escalationBudgetPerDay',
     'autoApplyPerDay',
@@ -120,9 +126,18 @@ strKeys: tuple[str, ...] = (
 )
 allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys + floatKeys + strKeys)
 maxAgentDepthRange = (1, 5)
-maxWorkbenchLoopsRange = (1, 500)
+# The tool-round cap. 0 = unlimited is the SHIPPED DEFAULT (the old 25-round
+# cap killed long legitimate runs), and the Settings panel's "Turn everything
+# off" writes 0 — so 0 must be a VALID value here. The range started at 1,
+# which made the disarming write fail validation: the panel's primary control
+# 400'd for every user who had ever set a cap, and the default itself was
+# unrepresentable. Same rule as the runaway keys and maxUnattendedTurns: a
+# control that cannot express its own default is a broken control.
+maxWorkbenchLoopsRange = (0, 500)
 minSamplesRange = (1, 20)
 consolidationIntervalRange = (1, 168)
+# The decision journal's cadence: hourly at the floor, weekly at the ceiling.
+journalIntervalRange = (1, 168)
 escalationBudgetRange = (0, 50)
 flagRateCapRange = (0.0, 0.5)
 # Subagent delegation limits (Settings → Subagents panel, routers/subagent.py)
@@ -579,12 +594,20 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 return (False, f'{key!r} must be an integer (got {type(value).__name__})')
             if key == 'maxAgentDepth':
                 lo, hi = maxAgentDepthRange
+            elif key == 'maxWorkbenchToolLoops':
+                # 0 = uncapped is the shipped default and the value the
+                # Settings panel writes for "Turn everything off", so the
+                # disarming write must be valid. (The fallback range below
+                # used to start at 1, which made it invalid.)
+                lo, hi = maxWorkbenchLoopsRange
             elif key == 'autoRouteMinSamples':
                 lo, hi = minSamplesRange
             elif key == 'consolidationIntervalHours' or key == 'introspectionIntervalHours':
                 lo, hi = consolidationIntervalRange
             elif key in ('refineIntervalHours', 'outcomeIntervalHours', 'reviewerIntervalHours', 'reviewIntervalHours'):
                 lo, hi = consolidationIntervalRange
+            elif key == 'journalIntervalHours':
+                lo, hi = journalIntervalRange
             elif key == 'outcomeWindowDays':
                 lo, hi = (3, 90)
             elif key == 'escalationBudgetPerDay':

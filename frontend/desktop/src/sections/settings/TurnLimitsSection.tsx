@@ -47,10 +47,19 @@ type FieldSpec = {
  * work that keeps going with no human in the loop.
  *
  * This table is the ONE place these are described. It is hand-written because
- * the label and hint are product copy, not metadata the backend can supply —
- * but the KEYS are pinned to what the backend actually accepts by
- * `tests/test_turn_limits_fields.py`, so a key renamed or removed server-side
- * fails that test instead of rendering a control that silently 400s. */
+ * the label and hint are product copy, not metadata the backend can supply.
+ *
+ * The KEYS are pinned to what the backend actually accepts by
+ * `npm run check:brain-config` — a static gate that reads
+ * `brain_config_service.py` and fails when a key in this table is missing from
+ * `numKeys`, or has no fieldTable entry, or has no explicit range branch. It
+ * replaced `tests/test_turn_limits_fields.py`, which was deleted with the rest
+ * of the suite on 2026-10-17; a key renamed or removed server-side now fails
+ * that gate instead of rendering a control that silently 400s.
+ *
+ * The RANGES below are the panel's own bounds and must match the backend's:
+ * `maxWorkbenchToolLoops` accepts 0 (uncapped) through 500, and the runaway
+ * and unattended keys accept 0 (off) so a bound can always be disarmed. */
 const TURN_FIELDS: FieldSpec[] = [
   {
     key: 'maxWorkbenchToolLoops',
@@ -87,7 +96,7 @@ const TURN_FIELDS: FieldSpec[] = [
   {
     key: 'runawayNudgeRounds',
     label: 'Runaway warning after',
-    hint: 'Warn the model when a turn has run this long without changing anything. Leave at 0 to follow half the hard stop below.',
+    hint: 'Warn the model when a turn has run this long without changing anything. Only active once a hard stop is set below: left untouched it warns at 25 rounds, setting 0 warns immediately (round 0).',
     min: 0,
     max: 100000,
     unit: 'rounds',
@@ -125,6 +134,7 @@ export function TurnLimitsSection() {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const configQ = useQuery<BrainConfigResponse>({
     queryKey: ['brain-config'],
@@ -137,11 +147,16 @@ export function TurnLimitsSection() {
     onSuccess: () => {
       setDraft({});
       setSaved(true);
+      setSaveError(null);
       void qc.invalidateQueries({ queryKey: ['brain-config'] });
     },
     onError: (err: Error) => {
       setSaved(false);
-      window.alert(`Could not save the turn limits: ${err.message}`);
+      // An inline, announced error — not a native dialog. A modal alert over a
+      // settings form is the only window.alert left in this surface, and it
+      // put the failure in a separate window the user had to dismiss before
+      // they could see which input was rejected.
+      setSaveError(err.message);
     },
   });
 
@@ -217,13 +232,16 @@ export function TurnLimitsSection() {
                     min={spec.min}
                     max={spec.max}
                     aria-label={spec.label}
+                    aria-invalid={saveError ? true : undefined}
+                    aria-describedby={saveError ? 'turn-limits-save-error' : undefined}
                     data-testid={`turn-limit-input-${spec.key}`}
                     value={draft[spec.key] ?? String(shown)}
                     onChange={(e) => {
                       setSaved(false);
+                      setSaveError(null);
                       setDraft((d) => ({ ...d, [spec.key]: e.target.value }));
                     }}
-                    className="w-28 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-right text-xs text-foreground outline-none focus:border-primary/40"
+                    className="w-28 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-right text-xs text-foreground outline-none focus:border-primary/40 aria-[invalid=true]:border-danger/60"
                   />
                   <p className="mt-1 text-2xs text-muted-foreground">
                     {formatValue(spec, shown)}
@@ -278,6 +296,16 @@ export function TurnLimitsSection() {
             Turn everything off
           </Button>
         </div>
+        {saveError ? (
+          <p
+            id="turn-limits-save-error"
+            role="alert"
+            className="mt-3 text-2xs text-danger-fg"
+            data-testid="turn-limits-save-error"
+          >
+            Could not save the turn limits: {saveError}
+          </p>
+        ) : null}
         {saved ? (
           <p className="mt-3 text-2xs text-primary" data-testid="turn-limits-saved">
             Saved.
