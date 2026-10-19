@@ -430,12 +430,16 @@ _READER_CMDS = frozenset(__READERS__)
 _CRED_DIRS = tuple(__CRED_DIRS__)
 _STORE_DIRS = tuple(__STORE_DIRS__)
 _SSH_PUBLIC = tuple(__SSH_PUBLIC__)
-# The data directory and the two names inside it that decide what August RUNS.
+# The data directory, the names inside it that decide what August RUNS, and the
+# directories and files inside it that hold August's own durable state (the
+# self-improvement proposal inbox, the refinement ledger, the agent board).
 # Injected because this file cannot import `app` — the runner is a separate
 # process, and `_august_secret_files()` is the only other consumer of the same
 # anchor on the live side.
 _DATA_DIR = __DATA_DIR__
 _POLICY_NAMES = tuple(__POLICY_NAMES__)
+_AGENT_STATE_DIRS = tuple(__AGENT_STATE_DIRS__)
+_AGENT_STATE_FILES = tuple(__AGENT_STATE_FILES__)
 _BRAIN_PREFIXES = tuple(__BRAIN_PREFIXES__)
 _AUGUST_SECRETS = tuple(__AUGUST_SECRETS__)
 _ENUM_CMDS = frozenset(__ENUM_CMDS__)
@@ -552,6 +556,12 @@ def _hardline_agent_state_reason(canon):
     that venv's interpreter, so a module dropped into its `site-packages` runs
     on the next cell — and code mode is the path most likely to be used to drop
     it.
+
+    The data directory also holds August's own durable state: the
+    self-improvement proposal inbox, the refinement ledger and the agent
+    board. A model that can write those is writing the product's records with
+    nothing behind it — and a proposal inbox a model can write is a proposal
+    inbox it can approve.
     """
     parts = [p for p in canon.split('/') if p]
     for _i in range(1, len(parts)):
@@ -572,6 +582,11 @@ def _hardline_agent_state_reason(canon):
         return 'agent skill layer (data directory)'
     if inner and inner[-1] in _POLICY_NAMES:
         return 'August execution policy (' + inner[-1] + ')'
+    for _d in _AGENT_STATE_DIRS:
+        if _d in inner:
+            return 'August own state (' + _d + ')'
+    if inner and inner[-1] in _AGENT_STATE_FILES:
+        return 'August own state (' + inner[-1] + ')'
     return None
 
 
@@ -824,6 +839,8 @@ def build_runner_source(
         .replace('__SSH_PUBLIC__', repr(sorted(_hardline._SSH_PUBLIC_MEMBERS)))
         .replace('__DATA_DIR__', repr(_hardline._data_dir_form()))
         .replace('__POLICY_NAMES__', repr(sorted(_hardline._POLICY_FILE_NAMES)))
+        .replace('__AGENT_STATE_DIRS__', repr(sorted(_hardline._AGENT_STATE_DIRS)))
+        .replace('__AGENT_STATE_FILES__', repr(sorted(_hardline._AGENT_STATE_FILES)))
         .replace('__BRAIN_PREFIXES__', repr(sorted(_hardline._brain_db_prefixes())))
         .replace('__AUGUST_SECRETS__', repr(sorted(_hardline._august_secret_files())))
         .replace('__ENUM_CMDS__', repr(sorted(_hardline._ENUMERATING_COMMANDS)))

@@ -34,7 +34,27 @@ def build_schema() -> dict:
     return app.openapi()
 
 
+def _force_utf8_stdout() -> None:
+    """Make stdout emit UTF-8 whatever the console code page is.
+
+    The schema carries non-ASCII — a route docstring contains an arrow
+    (U+2194) — and the Windows console default is cp1252, which has no
+    glyph for it. Writing the drift diff to stdout then raises
+    UnicodeEncodeError, the child dies, and `check-api.mjs` prints the
+    traceback in place of the diff: the one output that says WHAT changed
+    is the output that breaks.
+
+    This only bites on the `--check` path, because that is the only one that
+    prints the schema — which is why it went unnoticed for as long as the
+    committed spec matched the app.
+    """
+    reconfigure = getattr(sys.stdout, 'reconfigure', None)
+    if reconfigure is not None:
+        reconfigure(encoding='utf-8', errors='replace')
+
+
 def main() -> int:
+    _force_utf8_stdout()
     target = REPO / 'docs' / 'api' / 'openapi.json'
     check = '--check' in sys.argv
     schema = build_schema()

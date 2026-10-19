@@ -1,13 +1,37 @@
-"""MCP JSON-RPC surface so outer agents can run August as a slow loop."""
+"""MCP JSON-RPC surface so outer agents can run August as a slow loop.
+
+This surface is for OUTER agents, so it is gated exactly like the ``/v1/*``
+proxy endpoints: ``require_gateway_key`` puts it behind
+``Authorization: Bearer <GATEWAY_API_KEY>`` and closes it entirely unless the
+user has enabled external access (Settings → API Access).
+
+The gate matters here more than on ``/v1/*``. ``harness_spawn`` and
+``harness_continue`` dispatch real model calls and real tool execution as
+background workers, and the ``sessionId`` is caller-supplied — the synthetic
+session they run under carries no guard mode, agent identity or model
+binding, so session-scoped policy does not apply to them. The browser
+``TrustedOriginGuard`` covers ``/mcp/``, but it only rejects requests
+carrying a foreign ``Origin`` or a cross-site ``Sec-Fetch-Site``; a request
+with neither header — curl, any local script, any other program on the
+machine — passed straight through. Before this gate, any local process
+could spawn worker fleets in arbitrary sessions, steer them and cancel
+harness jobs, with no credential at all.
+
+    Disabled → 403
+    Enabled + no key  → 503
+    Enabled + header missing/wrong → 401
+    Enabled + valid key → the call runs
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from app.json_narrowing import as_dict, as_list, as_str
+from app.lib.gateway_auth import require_gateway_key
 
 router = APIRouter()
 
@@ -139,7 +163,7 @@ async def _call_tool(name: str, args: dict[str, Any], request: Request) -> objec
 
 
 @router.post('/mcp/harness')
-async def harness_mcp(request: Request):
+async def harness_mcp(request: Request, _auth: bool = Depends(require_gateway_key)):
     body = await request.json()
     if not isinstance(body, dict):
         return JSONResponse(_err(None, -32600, 'invalid request'))
@@ -154,6 +178,11 @@ async def harness_mcp(request: Request):
                     'protocolVersion': '2024-11-05',
                     'capabilities': {'tools': {}},
                     'serverInfo': {'name': 'august-harness', 'version': '1'},
+                    'instructions': (
+                        'Every request must carry "Authorization: Bearer <GATEWAY_API_KEY>". '
+                        'External access must be enabled in Settings → API Access; without it '
+                        'this surface is closed (403).'
+                    ),
                 },
             )
         )

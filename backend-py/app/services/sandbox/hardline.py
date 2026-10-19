@@ -193,11 +193,35 @@ def _data_dir_form() -> str:
 #
 # `mcp-servers.json` (`tools/mcp_client.py:32`) launches a process per entry;
 # `automations.json` (`automations_store.py:33`) carries `jobType: 'shell'` with
-# its command. With `<dataDir>/hooks.json` these are the three files where a
+# its command. With `<dataDir>/hooks.json` these are the files where a
 # write is a command injection with a persistent payload, and the data directory
 # is an allowed root for an absolute `write_file` path — which is precisely how
 # the hook file was escalable.
-_POLICY_FILE_NAMES = ('mcp-servers.json', 'automations.json')
+#
+# `scheduled-jobs.json` (`scheduler.py:26`) is the same class: `scheduler.py:201`
+# still fires it as cron jobs, so a write to it installs a command that runs on
+# a timer. It is the legacy file — `automations.json` is the current one — but
+# the scheduler reads both, so the door closes on both.
+_POLICY_FILE_NAMES = ('mcp-servers.json', 'automations.json', 'scheduled-jobs.json')
+
+# August's own durable state under the data directory. Not secrets (they stay
+# readable) and not policy either — but a model that can write them is writing
+# the product's own records with no proposal, no approval and no rail behind
+# it, and the humans who review those records are exactly the people the
+# proposal route exists for.
+#
+#   * `harness_proposals/` — the self-improvement proposal inbox
+#     (`harness_self_improve.py:73`). A `prop_*.json` in it is what a human
+#     reviews before a learned skill or a memory change is applied, so a model
+#     that can write the inbox can approve its own proposal.
+#   * `refine_store/` — the refinement ledger (`refine_store.py:110`).
+#   * `kanban.json` — the agent board (`kanban_store.py:33`).
+#
+# The sanctioned writers use `Path.write_text` / `write_json_atomic` and are
+# NOT behind this door, which is the point: closing the tool door leaves the
+# pipeline route as the only one the model can take.
+_AGENT_STATE_DIRS = ('harness_proposals', 'refine_store')
+_AGENT_STATE_FILES = ('kanban.json',)
 
 # The durable memory itself. Writing it bypasses the proposal door, the retire
 # machinery and the backup integrity check in one line, and SQLite's journal
@@ -285,6 +309,12 @@ def _agent_state_reason(match_form: str) -> str | None:
     installed application payload or a developer's checkout, editing it is
     ordinary development work, and a human reviews it in a diff — the same reason
     a workspace's own `AGENTS.md` stays writable and the app's state files do not.
+
+    The data directory also carries August's own durable state — the
+    self-improvement proposal inbox, the refinement ledger and the agent board.
+    Those are not secrets and not policy, but a model that can write them is
+    writing the product's own records with nothing behind it, and a proposal
+    inbox a model can write is a proposal inbox it can approve.
     """
     parts = [p for p in match_form.split('/') if p]
     for i in range(1, len(parts)):
@@ -306,6 +336,11 @@ def _agent_state_reason(match_form: str) -> str | None:
         return 'agent skill layer (data directory)'
     if inner and inner[-1] in _POLICY_FILE_NAMES:
         return f'August execution policy ({inner[-1]})'
+    for state_dir in _AGENT_STATE_DIRS:
+        if state_dir in inner:
+            return f'August own state ({state_dir})'
+    if inner and inner[-1] in _AGENT_STATE_FILES:
+        return f'August own state ({inner[-1]})'
     return None
 
 
