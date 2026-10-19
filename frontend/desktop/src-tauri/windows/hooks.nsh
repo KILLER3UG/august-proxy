@@ -126,14 +126,33 @@
   ; 1) Write a completion marker so the pre-scheduled safety-net waiter
   ;    knows the file copy finished (it must NOT relaunch mid-install).
   ; 2) Start August via ShellExecute after a short settle delay.
-  IfSilent 0 august_postinstall_skip
-  DetailPrint "Starting August…"
+  ;
+  ; The marker is written UNCONDITIONALLY, silent or not. The detached waiter
+  ; (backend.rs::schedule_post_update_relaunch) polls for it, and under
+  ; /UPDATE it is the ONLY thing that brings the app back — the installer's
+  ; own relaunch below is skipped in update mode. Writing it only in the
+  ; non-silent branch meant a silent update wrote nothing at all, and the
+  ; app never came back.
   FileOpen $R9 "$INSTDIR\.august-update-complete" w
   FileWrite $R9 "ok$\r$\n"
   FileClose $R9
-  ; Let file handles / AV scanners settle before launch.
-  Sleep 800
-  ; ShellExecute is more reliable than Exec for GUI apps after silent NSIS.
-  ExecShell "open" "$INSTDIR\August.exe" "" SW_SHOWNORMAL
-  august_postinstall_skip:
+  ;
+  ; Under /UPDATE the waiter owns the relaunch. Starting the app here as
+  ; well would RACE it: this block sleeps 800ms before ExecShell, while the
+  ; waiter sleeps 600ms after it sees the marker, so with both active the
+  ; waiter can win and start a second August. /UPDATE is only ever passed by
+  ; August itself (backend.rs::launch_installer_and_exit), and the app
+  ; always schedules the waiter before launching the installer.
+  ;
+  ; A manual install has no waiter behind it, so the installer starts the
+  ; app itself.
+  ${If} $UpdateMode = 0
+    IfSilent 0 august_postinstall_skip
+    DetailPrint "Starting August…"
+    ; Let file handles / AV scanners settle before launch.
+    Sleep 800
+    ; ShellExecute is more reliable than Exec for GUI apps after silent NSIS.
+    ExecShell "open" "$INSTDIR\August.exe" "" SW_SHOWNORMAL
+    august_postinstall_skip:
+  ${EndIf}
 !macroend

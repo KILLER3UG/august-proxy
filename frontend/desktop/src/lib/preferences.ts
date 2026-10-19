@@ -46,12 +46,17 @@ interface PreferencesState {
   voice: VoicePrefs;
   notifyResponseComplete: boolean;
   liveHtmlPreview: LiveHtmlPreview;
+  /** Download a new build in the background instead of waiting for the user
+   *  to ask for it. On by default: the app is expected to pick up a new
+   *  version on its own, and the user still chooses when to APPLY it. */
+  autoDownloadUpdates: boolean;
   setProfile: (patch: Partial<ProfilePrefs>) => void;
   setChatFont: (font: ChatFont) => void;
   setReduceMotion: (on: boolean) => void;
   setVoice: (patch: Partial<VoicePrefs>) => void;
   setNotifyResponseComplete: (on: boolean) => void;
   setLiveHtmlPreview: (mode: LiveHtmlPreview) => void;
+  setAutoDownloadUpdates: (on: boolean) => void;
 }
 
 const STORAGE_KEY = 'august.preferences';
@@ -64,6 +69,7 @@ const DEFAULTS: Omit<
   | 'setVoice'
   | 'setNotifyResponseComplete'
   | 'setLiveHtmlPreview'
+  | 'setAutoDownloadUpdates'
 > = {
   profile: { callYou: '', workDescription: '', instructions: '' },
   chatFont: 'default',
@@ -71,6 +77,7 @@ const DEFAULTS: Omit<
   voice: { language: 'en', style: 'Neutral', speed: 'normal' },
   notifyResponseComplete: false,
   liveHtmlPreview: 'auto',
+  autoDownloadUpdates: true,
 };
 
 /**
@@ -109,6 +116,7 @@ function load(): typeof DEFAULTS {
       notifyResponseComplete:
         parsed.notifyResponseComplete ?? DEFAULTS.notifyResponseComplete,
       liveHtmlPreview: parsed.liveHtmlPreview ?? DEFAULTS.liveHtmlPreview,
+      autoDownloadUpdates: parsed.autoDownloadUpdates ?? DEFAULTS.autoDownloadUpdates,
     };
   } catch {
     return DEFAULTS;
@@ -126,6 +134,7 @@ function persist(state: PreferencesState): void {
         voice: state.voice,
         notifyResponseComplete: state.notifyResponseComplete,
         liveHtmlPreview: state.liveHtmlPreview,
+        autoDownloadUpdates: state.autoDownloadUpdates,
       }),
     );
   } catch {
@@ -173,6 +182,10 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
   },
   setLiveHtmlPreview: (mode) => {
     set({ liveHtmlPreview: mode });
+    persist(get());
+  },
+  setAutoDownloadUpdates: (on) => {
+    set({ autoDownloadUpdates: on });
     persist(get());
   },
 }));

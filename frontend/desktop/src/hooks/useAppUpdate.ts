@@ -1,11 +1,12 @@
 /* ── useAppUpdate — shared Tauri update check for settings + notifications ─ */
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from '@/lib/tauri-detect';
 import { toast } from 'sonner';
 import type { Update } from '@tauri-apps/plugin-updater';
+import { usePreferencesStore } from '@/lib/preferences';
 import {
   IDLE_UPDATE_PROGRESS,
   setUpdateLaterVersion,
@@ -27,6 +28,15 @@ export interface AppUpdateInfo {
 let pendingInstallerPath: string | null = null;
 let pendingNativeUpdate: Update | null = null;
 let cancelRequested = false;
+
+/** Versions whose download the user explicitly cancelled. The automatic
+ *  background download must not start one of them again — "cancel" means no.
+ *  Kept per version, so a NEW release can still download itself. */
+const cancelledVersions = new Set<string>();
+
+/** How long the app waits before pulling a new build by itself. A launch the
+ *  user immediately closes should not cost ~200 MB of bandwidth. */
+const AUTO_DOWNLOAD_DELAY_MS = 60_000;
 
 /** Windows desktop builds ship an NSIS `August_<version>_x64-setup.exe`. */
 function isWindowsDesktop(): boolean {
@@ -168,15 +178,17 @@ export function useAppUpdate() {
     };
   }, [query.data?.version, setInstalling, setProgress]);
 
-  const install = useCallback(async () => {
+  const install = useCallback(async (mode: 'download' | 'apply' = 'apply') => {
     if (!isTauri || !query.data) return;
 
     const state = useAppUpdateInstallStore.getState();
     if (state.installing && state.progress.phase !== 'ready') return;
 
     // The second click is intentionally the explicit "Restart to update"
-    // action shown after the installer has finished downloading.
-    if (state.installing && state.progress.phase === 'ready') {
+    // action shown after the installer has finished downloading. The
+    // automatic background download passes 'download', so it can never
+    // apply an update on its own — the user decides when to restart.
+    if (mode === 'apply' && state.installing && state.progress.phase === 'ready') {
       try {
         if (isWindowsDesktop()) {
           // The in-memory handle is gone after a restart; ask Rust for the
@@ -188,12 +200,19 @@ export function useAppUpdate() {
           if (!installerPath) throw new Error('Downloaded installer is no longer available');
           pendingInstallerPath = installerPath;
           await stopBackendBeforeInstall();
+          // The installer runs SILENTLY (backend.rs::launch_installer_and_exit
+          // passes /S), and the installer's own relaunch is skipped in update
+          // mode — so this detached waiter is what brings August back. It has
+          // to be scheduled BEFORE the installer is launched: the waiter polls
+          // for the completion marker, and without it the app exits with
+          // nothing watching for it.
+          await schedulePostUpdateRelaunch();
           setProgress({ ...state.progress, phase: 'restarting' });
           await new Promise<void>((resolve) => {
             requestAnimationFrame(() => window.setTimeout(resolve, 450));
           });
           await invoke<string>('launch_installer_and_exit', { path: installerPath });
-          toast.success('Update started — the installer will guide you through the final step.');
+          toast.success('Updating — August will restart in a moment.');
         } else {
           if (!pendingNativeUpdate) throw new Error('Downloaded update is no longer available');
           await stopBackendBeforeInstall();
@@ -326,8 +345,52 @@ export function useAppUpdate() {
     }
   }, [query.data, queryClient, setInstalling, setProgress, resetInstall, failInstall, markCancelled]);
 
+  // The auto-download effect keys on the VERSION, not on `install` — whose
+  // identity changes on every refetch of the check. Keying on it would mean
+  // a window the user focuses every few minutes kept resetting the timer and
+  // the download would never start.
+  const installRef = useRef(install);
+  installRef.current = install;
+  const autoDownloadUpdates = usePreferencesStore((s) => s.autoDownloadUpdates);
+
+  /**
+   * Automatic background download.
+   *
+   * The update CHECK already runs on launch and on window focus, so the
+   * download follows it: August picks up a new build on its own, and the user
+   * is left with one decision — when to apply it. Applying is never automatic
+   * (it restarts the app and interrupts whatever is running), so the download
+   * is the part that can be automatic and the restart is the part that must
+   * not be.
+   *
+   * "Later" deliberately does NOT block this: "later" is about the PROMPT,
+   * and the download is the expensive half of the work. An explicit Cancel
+   * does block it, and is remembered per version.
+   */
+  useEffect(() => {
+    if (!isTauri) return;
+    const version = query.data?.version;
+    if (!version) return;
+    if (!autoDownloadUpdates) return;
+    if (cancelledVersions.has(version)) return;
+    const state = useAppUpdateInstallStore.getState();
+    if (state.installing) return;
+    if (state.progress.phase === 'ready') return;
+    const timer = window.setTimeout(() => {
+      const s = useAppUpdateInstallStore.getState();
+      if (s.installing || s.progress.phase === 'ready') return;
+      if (cancelledVersions.has(version)) return;
+      void installRef.current('download');
+    }, AUTO_DOWNLOAD_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [query.data?.version, autoDownloadUpdates]);
+
   const cancelDownload = useCallback(() => {
     cancelRequested = true;
+    // Remember the refusal: the automatic background download must not start
+    // this version again the next time the window gets focus.
+    const version = query.data?.version;
+    if (version) cancelledVersions.add(version);
     if (isWindowsDesktop()) {
       void invoke<string>('cancel_update_download').catch(() => undefined);
     }
@@ -336,7 +399,7 @@ export function useAppUpdate() {
     pendingInstallerPath = null;
     reportTaskbarProgress('none');
     markCancelled();
-  }, [markCancelled]);
+  }, [markCancelled, query.data?.version]);
 
   const check = useCallback(async () => {
     useAppUpdateInstallStore.getState().setProgress({

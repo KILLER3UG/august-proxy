@@ -12,7 +12,7 @@
 ; (`register_template_string` → `handlebars.render`).
 ;
 ; ─── LOCAL EDITS (search for "AUGUST-EDIT") ────────────────────────────
-; Update flow = UNINSTALL wizard first, then INSTALL wizard:
+; Update flow = an IN-PLACE replace, with no uninstall wizard:
 ;
 ; 1. `Function PageReinstall` auto-skips the maintenance radio page under
 ;    update mode (`$UpdateMode = 1`) in addition to passive mode:
@@ -21,28 +21,31 @@
 ;          Call PageLeaveReinstall
 ;        ${Else} ...
 ; 2. `Function PageLeaveReinstall` routes `$UpdateMode = 1` to
-;    `reinst_uninstall` (upstream sent it to `reinst_done`), so the previous
-;    version's `uninstall.exe` IS invoked via `ExecWait` — its confirm +
-;    instfiles pages show as a real uninstall wizard. `/UPDATE` is appended
-;    to it, which (a) keeps its "delete app data" section disabled and
-;    (b) hides its app-data checkbox (see `un.ConfirmShow` edit below).
-;    If the user cancels that uninstall, the whole update quits (there is
-;    no radio page to return to).
+;    `reinst_done` — the upstream behaviour. The previous version's
+;    `uninstall.exe` is NOT invoked, so the user never sees an uninstall
+;    confirm page or an uninstall progress page.
 ;
-; Why: `launch_installer_and_exit` (see `src/backend.rs`) passes `/UPDATE`
-; to the setup .exe. `$PassiveMode` stays 0, so `SkipIfPassive` (which only
-; checks `$PassiveMode`) leaves the install pages (welcome / directory /
-; instfiles / finish) fully visible AFTER the uninstall wizard completes.
-; Net result: the user sees the uninstall wizard pop up, then the install
-; wizard — a clean replace with the latest version.
+; Why it changed: the update used to route to `reinst_uninstall`, so the old
+; uninstaller ran via `ExecWait` and its wizard popped up before the install
+; pages — the user saw "uninstall, then install" for what is a plain upgrade.
+; Nothing needed it. The install hook (windows/hooks.nsh) already kills
+; August and any orphan python/node, renames the locked python trees aside
+; and retries — which is what the in-place copy actually needed. And because
+; the uninstaller no longer runs, the app-data guarantee is STRUCTURAL rather
+; than conditional: the "delete app data" section and its checkbox are not
+; suppressed by a flag, there is simply no uninstaller to run them.
+;
+; `/UPDATE` is still parsed, and still keeps the uninstaller's app-data
+; delete off and its app-data checkbox hidden (see `un.ConfirmShow` below),
+; for the case where the uninstaller is run directly with that flag.
 ;
 ; ─── UPGRADING TAURI ─────────────────────────────────────────────────────
 ; When you bump `@tauri-apps/cli`, re-download the upstream file at the new
 ; tag, diff against this one, and re-apply the "AUGUST-EDIT" blocks.
 ; Tauri may add new double-brace tokens, resource loops, or webview2 logic that
-; a stale template would silently miss. Intentional divergences from upstream
-; are the `${OrIf} $UpdateMode = 1` page skip, the `$UpdateMode = 1` route to
-; `reinst_uninstall` (+ quit-on-cancel), and the hidden app-data checkbox.
+; a stale template would silently miss. The intentional divergence from
+; upstream is now only the `${OrIf} $UpdateMode = 1` page skip and the
+; hidden app-data checkbox.
 ; ─────────────────────────────────────────────────────────────────────────
 
 Unicode true
@@ -361,13 +364,21 @@ Function PageLeaveReinstall
     Goto reinst_uninstall
   ${EndIf}
 
-  ; AUGUST-EDIT: in update mode, run the previous version's uninstaller
-  ; FIRST (its wizard pops up), then continue with the install wizard.
-  ; Upstream skipped straight to reinst_done here. `/UPDATE` is appended
-  ; to the uninstaller command in reinst_uninstall below, which keeps the
-  ; app-data deletion off and hides that checkbox.
+  ; AUGUST-EDIT: in update mode, go straight to `reinst_done` — the upstream
+  ; behaviour. The previous version's uninstaller is NOT run, so the user
+  ; sees no uninstall wizard: no confirm page, no uninstall progress page.
+  ; Nothing needed it. The install hook (windows/hooks.nsh) already kills
+  ; August and any orphan python/node, renames the locked python trees
+  ; aside and retries — which is what the in-place copy actually needed.
+  ; And not running the uninstaller is what makes the app-data guarantee
+  ; structural rather than flag-dependent: there is no uninstaller to run
+  ; the "delete app data" section, so the data cannot be deleted.
+  ;
+  ; The Wix-migration branch above still routes to `reinst_uninstall`, and
+  ; the `/UPDATE` append below still keeps that uninstaller's app-data
+  ; delete off — so a Wix-migrated install is still safe.
   ${If} $UpdateMode = 1
-    Goto reinst_uninstall
+    Goto reinst_done
   ${EndIf}
 
   ; $R0 holds whether same(0)/upgrading(1)/downgrading(-1) version

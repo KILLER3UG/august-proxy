@@ -19,6 +19,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { verifyMinisign } from './minisign-verify.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const releaseDir = resolve(root, 'releases/desktop');
@@ -29,6 +30,7 @@ const packageJsonPath = resolve(root, 'package.json');
 const manifestPath = join(releaseDir, 'august-desktop-manifest.json');
 const latestPath = join(releaseDir, 'latest.json');
 const tauriBundleDir = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
+const tauriConfPath = resolve(root, 'frontend/desktop/src-tauri/tauri.conf.json');
 const repository = process.env.GITHUB_REPOSITORY || 'KILLER3UG/august-proxy';
 
 const rawArgs = process.argv.slice(2);
@@ -350,6 +352,39 @@ export async function readUpdaterSignature(signaturePath) {
     return signature;
 }
 
+/** The updater public key the INSTALLED app trusts (`tauri.conf.json`). */
+async function updaterPublicKey() {
+    const conf = JSON.parse(await readFile(tauriConfPath, 'utf8'));
+    const pubkey = conf?.plugins?.updater?.pubkey;
+    if (!pubkey) throw new Error('tauri.conf.json has no plugins.updater.pubkey');
+    return pubkey;
+}
+
+/**
+ * Prove the updater signature verifies under the key the app trusts.
+ *
+ * The release job signs with the private key from the `TAURI_SIGNING_PRIVATE_KEY`
+ * secret, and `tauri.conf.json` pins the matching public key — but NOTHING
+ * compared the two. A mismatch is invisible until a user tries to update: the
+ * download succeeds, the app's own signature check rejects the installer, and
+ * the failure points at their machine instead of at the pipeline. Every user,
+ * every release.
+ *
+ * So the release proves it here, with the same bytes the app will hash.
+ */
+async function assertUpdaterSignatureVerifies(artifactPath, signatureText) {
+    const pubkey = await updaterPublicKey();
+    const message = await readFile(artifactPath);
+    const result = verifyMinisign(pubkey, message, signatureText);
+    if (!result.ok) {
+        throw new Error(
+            `the updater signature does not verify under the pinned public key (${result.reason}). ` +
+                'The release would install and then fail its own signature check on every user machine.',
+        );
+    }
+    console.log(`[release] updater signature verifies under the pinned key (key id ${result.keyId})`);
+}
+
 async function validateLatestManifest(path, nextVersion, nsis) {
     await assertNonEmptyFile(path);
     const latest = JSON.parse(await readFile(path, 'utf8'));
@@ -366,6 +401,7 @@ async function validateLatestManifest(path, nextVersion, nsis) {
     if (platform.signature !== expectedSignature) {
         throw new Error('updater manifest signature does not match the base64-encoded NSIS signature file');
     }
+    await assertUpdaterSignatureVerifies(nsis.path, expectedSignature);
 }
 
 async function buildLatestJsonFromSignatures(nextVersion) {

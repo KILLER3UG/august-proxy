@@ -2209,18 +2209,19 @@ pub fn downloaded_installer(app: AppHandle, version: String) -> Option<String> {
 /// Launch the downloaded installer in **update mode**, then exit August so the
 /// installer can replace files.
 ///
-/// Passes `/UPDATE` (no `/S`, no `/P`) so that:
-///   - NSIS `PageLeaveReinstall` hits `${If} $UpdateMode = 1` → `Goto
-///     reinst_uninstall` and `ExecWait`s the OLD `uninstall.exe` — the
-///     uninstall wizard pops up first (confirm + progress pages). `/UPDATE`
-///     is forwarded to it so it never deletes app data, and its app-data
-///     checkbox is hidden in update mode.
-///   - `$PassiveMode` stays 0, so `SkipIfPassive` does NOT hide the install
-///     pages — after the uninstall wizard finishes, the user sees the install
-///     wizard (welcome / directory / instfiles) exactly like a first-time
-///     install. See the checked-in `windows/installer.nsi` template, which
-///     also auto-skips the maintenance radio page under `$UpdateMode = 1`
-///     and quits the update if the uninstall is cancelled.
+/// Passes `/UPDATE /S`:
+///   - `/UPDATE` sets `$UpdateMode = 1`, which sends NSIS straight to
+///     `reinst_done` — the previous version's uninstaller is NOT run, so the
+///     user sees no uninstall wizard. The checked-in `windows/installer.nsi`
+///     template carries that routing; see its AUGUST-EDIT header.
+///   - `/S` is NSIS's silent flag, so the install pages (welcome / directory /
+///     instfiles / finish) do not appear either. The update is a background
+///     operation the user opted into with one click, so it should not open a
+///     window.
+///
+/// The app is expected to come back on its own: `schedule_post_update_relaunch`
+/// must have been called BEFORE this, because the installer's own relaunch is
+/// skipped in silent mode (see `windows/hooks.nsh`).
 ///
 /// NSIS PREINSTALL (in `windows/hooks.nsh`) still sweeps stray August/python
 /// processes so locked `resources/python/*.pyd` files don't abort the copy.
@@ -2262,6 +2263,9 @@ pub fn launch_installer_and_exit(app: AppHandle, path: String) -> Result<String,
     stopBackendForUpdate(&app);
     Command::new(&installer)
         .arg("/UPDATE")
+        // NSIS silent: no install pages. The update is a background operation
+        // the user opted into with one click.
+        .arg("/S")
         .spawn()
         .map_err(|e| format!("could not launch the installer: {e}"))?;
     log::info!(

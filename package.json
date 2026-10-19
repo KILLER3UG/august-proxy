@@ -16,6 +16,7 @@
     "check:design": "node scripts/check-design.mjs",
     "check:doc-links": "node scripts/check-doc-links.mjs",
     "check:docs": "node scripts/check-docs-sync.mjs",
+    "check:minisign": "node scripts/check-minisign.mjs",
     "check:naming": "node scripts/check-naming.mjs",
     "check:sse": "node scripts/check-sse-parity.mjs",
     "check:version": "node scripts/check-version-sync.mjs",

@@ -16,12 +16,14 @@ import {
   Asterisk,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SettingsToggle } from '@/components/settings/SettingsToggle';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { UpdateProgressBar } from '@/components/ui/UpdateProgressBar';
 import { useBackendStatus } from '@/hooks/useBackendStatus';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { isTauri } from '@/lib/tauri-detect';
 import { openExternal } from '@/lib/tauri-shell';
+import { usePreferencesStore } from '@/lib/preferences';
 import { UPDATE_FAILURE_COPY } from '@/store/app-update-install';
 
 const RELEASES_URL = 'https://github.com/KILLER3UG/august-proxy/releases';
@@ -44,6 +46,8 @@ export function UpdateSection() {
     useAppUpdate();
   const { status: backend, sync, isTauri: backendTauri } = useBackendStatus();
   const [currentVersion, setCurrentVersion] = useState<string>('…');
+  const autoDownloadUpdates = usePreferencesStore((s) => s.autoDownloadUpdates);
+  const setAutoDownloadUpdates = usePreferencesStore((s) => s.setAutoDownloadUpdates);
 
   useEffect(() => {
     if (!isTauri) {
@@ -204,6 +208,14 @@ export function UpdateSection() {
             August checks for updates automatically in the background and lets you know when one
             is ready.
           </p>
+          <div className="mt-3">
+            <SettingsToggle
+              checked={autoDownloadUpdates}
+              onCheckedChange={setAutoDownloadUpdates}
+              label="Download updates automatically"
+              description="Fetch a new build in the background as soon as one is published, so it is ready when you want it. Applying it is still your call — August never restarts on its own."
+            />
+          </div>
         </div>
       )}
 

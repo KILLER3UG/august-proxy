@@ -101,6 +101,18 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: npm run check:sse
 
+      # The updater signature is the only thing standing between a published
+      # release and an installer the app would refuse. The release job signs
+      # with a private key from a secret and the app verifies with a public
+      # key pinned in tauri.conf.json; nothing compared the two, so a
+      # mismatch was invisible until a user tried to update. This checks the
+      # VERIFIER that now does that comparison, against a keypair it
+      # generates — a verifier that accepted everything would be worse than
+      # none. Pure static: one node process, no build.
+      - name: Updater signature verifier self-test
+        working-directory: ${{ github.workspace }}
+        run: npm run check:minisign
+
   frontend-tsc-eslint:
     name: Frontend — tsc + eslint
     runs-on: ubuntu-latest
