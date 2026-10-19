@@ -291,7 +291,10 @@ function AllModelCard({ row }: { row: AllModelRow }) {
       >
         <Pin className="size-3" />
       </button>
-      <p className="text-sm font-medium font-mono text-foreground break-all leading-snug pr-6">
+      <p
+        className="text-sm font-medium font-mono text-foreground break-words leading-snug pr-6"
+        title={row.name || row.id}
+      >
         {row.name || row.id}
       </p>
       {row.name && row.name !== row.id && (

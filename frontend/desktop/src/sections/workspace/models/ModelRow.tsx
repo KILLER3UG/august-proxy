@@ -541,12 +541,20 @@ if (editing) {
   return (
     <div className="px-3 py-2.5 text-sm transition-colors hover:bg-muted/20">
       <div className="flex items-center gap-2">
-        <div className="flex-1 min-w-0">
-          <span className="font-medium truncate">
-            {model.pinned && (
-              <Pin className="size-3 inline mr-1 -mt-0.5 text-primary" aria-label="Pinned" />
-            )}
-            <span className="font-mono text-[0.8125rem]">{model.name || model.id}</span>
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          {model.pinned && (
+            <Pin className="size-3 shrink-0 text-primary" aria-label="Pinned" />
+          )}
+          {/* `truncate` needs a BLOCK-level box: `overflow:hidden` and
+            `text-overflow:ellipsis` do not apply to an inline element, so
+            the id used to overflow this cell and paint over the context
+            badge, the source badge and the action buttons beside it. A
+            flex item is blockified, so this span is one either way. */}
+          <span
+            className="block min-w-0 truncate font-mono text-[0.8125rem]"
+            title={model.name || model.id}
+          >
+            {model.name || model.id}
           </span>
         </div>
         {ctxLabel && (
