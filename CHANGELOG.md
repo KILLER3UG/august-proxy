@@ -1,5 +1,67 @@
 # August Proxy — Changelog
 
+## Unreleased (2026-10-20 — the deep review round)
+
+**The update is one click, not a wizard.** A Windows update used to run the
+OLD uninstaller: the user saw an uninstall wizard and then an install wizard.
+It is now an in-place, silent replace — the installer is launched with
+`/UPDATE /S`, the NSIS route is `reinst_done`, and the app restarts itself
+through a detached waiter that is armed BEFORE the installer starts. The
+POSTINSTALL writes its completion marker unconditionally and suppresses its own
+`ExecShell` under `/UPDATE`, so the waiter is the single owner of the relaunch
+instead of racing a second one. The **download** is automatic (Settings → About,
+60 seconds after a check finds a build); the **restart** is still the user's
+click, because a restart interrupts whatever is running. The updater signature
+is now compared with the key the app actually trusts — `npm run check:minisign`
+proves the verifier, and the release refuses to publish a manifest that does
+not verify.
+
+**A rescue the user cannot see is a rescue the user was told nothing about.**
+The `recovery` frame — the harness's own signal that it adjusted a turn
+mid-flight, with `degraded: true` meaning the answer may be incomplete — was
+emitted, schematised, dispatched, and DROPPED. Every self-correction the
+harness performed shipped as a normal-looking answer. It renders now.
+
+**The gate that was supposed to catch that had its own blind spot.**
+`check:sse` hand-listed the backend files that emit frames, and the list was
+missing one — which is how a frame the backend emits was invisible to the
+check that exists to find exactly that. The emitters are discovered now, by
+looking for the `emit({...})` call itself rather than for a hand-kept list.
+
+**Three more gates, for the defect classes that were invisible.** `check:truncate`
+reads the source with the TypeScript compiler API and fails when a `truncate`
+sits on an element that cannot truncate — because `overflow: hidden` does not
+apply to an inline box, and an inline `truncate` is inert and paints over
+whatever is beside it. `check:brain-config` asks the backend which keys it
+accepts and what ranges they take, and fails when the Settings panel writes a
+key it does not or offers a value it refuses. `check:docs` grew from six
+claims to eleven, and can now assert a count, a range, a flag and a list of
+names, not just a number.
+
+**Other fixes.** A long model id painted over the badges beside it (a
+`truncate` on an inline `<span>`). A run of tool calls rendered as N rows; it
+is now one activity line and a bordered card. The tool label animated nothing
+and was dimmed by a CSS rule that matched nothing. `/mcp/harness` was
+reachable with no key while external access was off. Four data-directory
+paths were writable by the model. `journalIntervalHours` and
+`maxWorkbenchToolLoops` could not be written at all — the turn cap's range
+started at 1 and rejected its own "off" value of 0. `decisionJournal` had a
+`fieldTable` entry and no writable-set entry, so every PUT naming it was
+rejected.
+
+**And the docs caught up.** The AGENTS.md said there were 25 inline Rust test
+blocks (there are 5), that the brain-config fallback range started at 1 (it
+starts at 0), and that a tag push runs `Type check` (it does not — the
+workflow filters on branches). The update section of TROUBLESHOOTING described
+the wizard flow this release removed. `docs/ROADMAP.md` records what was
+deliberately NOT done, and why. `docs/UPDATE_VERIFICATION.md` is the manual
+matrix for the one flow no static gate can verify.
+
+**Also:** the app now has a smoke check that it STARTS — `npm run e2e:smoke`
+imports the real app, runs its lifespan and asks its basic doors a question,
+against a throwaway data directory. Three foreign files from another product
+were removed from the tree, one of which was a skill that appeared in every
+agent session's catalogue.
 ## Unreleased — the decision ledger and the fact scope (e6369c10)
 
 **A fact lives in one place, and a scope is a column rather than a spelling.**

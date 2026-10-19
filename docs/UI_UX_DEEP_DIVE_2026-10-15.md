@@ -1,3 +1,14 @@
+<!--
+  HISTORICAL - a point-in-time audit, kept as a record.
+
+  Seven read-only auditors audited the desktop UI on 2026-10-15. The items
+  marked done were done in the round that followed; the rest are tracked in
+  GAPS_AND_BUGS.md. Read the code before working from any of it.
+
+  Current guidance lives in the index in DOCUMENTATION.md.
+-->
+
+
 # August Trading — UI/UX & App-Flow Deep Dive (2026-10-15)
 
 **Scope:** the desktop product (`frontend/desktop/` + bundled `backend-py/`), audited against the
@@ -21,7 +32,7 @@ of token-level corrections that make the whole shell read as one design instead 
 
 | # | Move | Slice | Impact | Effort |
 |---|------|-------|--------|--------|
-| 1 | **Consume the `recovery` frame.** Six rescue kinds (incl. the new `stuck-request` ladder) carry `degraded: true` and render nowhere, live or after reload. | Flow | High | S |
+| 1 | ~~**Consume the `recovery` frame.**~~ **DONE 2026-10-20.** Six rescue kinds (incl. the new `stuck-request` ladder) carry `degraded: true` and rendered nowhere, live or after reload. The frame now renders as a notice in the transcript — "the agent adjusted this turn mid-flight", plus "the answer may be incomplete" when `degraded` is set. | Flow | High | S |
 | 2 | **Fix the elevation ladder.** `shadow-elev-*` emits no CSS, so the `Surface` primitive has never drawn a shadow. **[verified]** | Design | High | S |
 | 3 | **Restore the 197 dead alpha classes.** `text-sidebar-foreground/60`, `border-destructive/30`, `hover:bg-accent/50` … emit nothing, which is why the sidebar has no text hierarchy and danger states have no red edge. **[verified]** | Design | High | S |
 | 4 | **One navigation shell.** Five product surfaces (Runs, Live, History, Learning, Board) exist only behind ⌘K. | IA | High | L |

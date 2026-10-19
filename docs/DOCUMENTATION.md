@@ -14,6 +14,8 @@
 | [**TROUBLESHOOTING.md**](TROUBLESHOOTING.md) | All users | Common issues and fixes |
 | [**SKILL_AUTHORING.md**](SKILL_AUTHORING.md) | Agents / contributors | How skills are structured: SKILL.md frontmatter, canonical body sections, the description-as-trigger rule, the learning pipeline |
 | [**GAPS_AND_BUGS.md**](GAPS_AND_BUGS.md) | Maintainers | Closed ledger + the open/deferred list |
+| [**ROADMAP.md**](ROADMAP.md) | Everyone | What was deliberately **not** done and why — the reference-app features deferred, and the decisions still open |
+| [**UPDATE_VERIFICATION.md**](UPDATE_VERIFICATION.md) | Maintainers | The manual matrix for the update flow: the one thing no static gate can verify |
 | [**CHANGELOG.md**](../CHANGELOG.md) | Everyone | Release history (root file) |
 | [**settings-audit.md**](settings-audit.md) | UI contributors | **Superseded** 2026-08-28 Settings IA — registry is SoT |
 

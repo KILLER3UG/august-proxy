@@ -4,6 +4,25 @@ Living list. Prefer fixing code first, then ticking items off here.
 
 ---
 
+## Closed (2026-10-20 — the deep review round)
+
+| Item | Resolution |
+|------|------------|
+| Windows updates ran the OLD uninstaller, so an update showed an uninstall wizard and an install wizard | The NSIS update route is `reinst_done`, the installer is launched with `/UPDATE /S`, and the app relaunches itself through a detached waiter. The download is automatic; the restart is the user's click. Matrix: `docs/UPDATE_VERIFICATION.md` |
+| The update's relaunch waiter was never armed on Windows | `useAppUpdate.ts` now calls `schedulePostUpdateRelaunch()` BEFORE `launch_installer_and_exit`, and the NSIS POSTINSTALL writes the completion marker unconditionally and suppresses its own `ExecShell` under `/UPDATE` — one relaunch owner, not two |
+| The updater's signature was never compared with the key the app trusts | `npm run check:minisign` proves the verifier; `scripts/release-desktop.mjs` refuses to publish a manifest whose signature does not verify under the pinned `pubkey` |
+| `/mcp/harness` was reachable with no key while external access was off | The route is behind `require_gateway_key`; a local script is not covered by the browser origin guard |
+| Four data-directory paths were writable by the model | `mcp-servers.json`, `automations.json`, `scheduled-jobs.json`, plus the `harness_proposals` / `refine_store` dirs and `kanban.json` — closed in `sandbox/hardline.py` and ported into the code-mode runner |
+| The `recovery` frame was emitted, schematised, dispatched — and dropped | `onRecovery` now renders a notice in the transcript saying the turn was adjusted and the answer may be incomplete. `seq` is threaded through so the persisted block id is stable across a replay |
+| A long model id painted over the badges beside it | `truncate` was on an inline `<span>`, and `overflow`/`text-overflow` do not apply to an inline box. The name cell is a flex item now |
+| A run of tool calls rendered as N rows | One activity line ("Ran 4 commands") and a bordered card. Render-time grouping — the transcript still stores one block per call |
+| The tool label animated nothing and was dimmed by an inert CSS rule | One `<span>`, one real animation, the status chip moved to the disclosure's trailing slot |
+| `journalIntervalHours` and `maxWorkbenchToolLoops` could not be written | `journalIntervalHours` joined `numKeys`; the turn cap's range started at 1 and rejected its own "off" value of 0 |
+| `decisionJournal` had a `fieldTable` entry and no writable-set entry, so every PUT naming it was rejected | Added to `boolKeys` |
+| The harness's own gate had a blind spot: `check:sse` hand-listed the backend emitter files | The emitters are DISCOVERED now. The hand-list was missing `spawn_subagents_tool.py`, which is why the `subagentFanout` frame was invisible to the gate that exists to find exactly that |
+| `export_openapi.py --check` crashed on a cp1252 stdout instead of printing the drift | stdout is forced to UTF-8, so the one output that says what changed is the output that works |
+| Three foreign files from another product were tracked in the repo | `.agents/skills/fc-nginx-website/` (an AutoClaw hosting skill that appeared in every agent session's skill catalogue), `.opencode/config.json` and `config/mcporter.json` (AutoClaw MCP servers on port 19681) — removed |
+
 ## Closed (2026-09-27 — docs audit against the tree)
 
 A full sweep of `docs/`, `README.md`, `CHANGELOG.md` and the scattered markdown
@@ -132,6 +151,20 @@ not a regex pass. Since 2026-08-01 a guardrail (`scripts/check-naming.mjs`,
 wired into CI) blocks **new** camelCase params, and small modules are renamed
 incrementally with tests green after each (`terminal_service`, `validator`,
 `delta_engine` done).
+
+### The desktop UI does not show the fanout budget readout — **OPEN**
+
+The backend emits `subagentFanout` (`spawn_subagents_tool.py`) with the
+children cap, the applied concurrency and the observed peak, and the backend
+persists it in the session event log — a `turn_outcomes` row has no column for
+those numbers. The frame is on the SSE wire, so an API consumer receives it.
+**The desktop transcript does not:** it renders the subagent lane, not the
+fanout readout, so the frame is dropped by the dispatcher. Recorded in the
+SSE gate's `SCHEMA_ONLY` list with that reason, so the next person to add an
+undispatched frame has to write one down too.
+
+Effort S, risk S: add the case, route it onto the subagent block, and show
+"4 children · concurrency 2 (peak 2)".
 
 ### Mobile companion docs — partial
 

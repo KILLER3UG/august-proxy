@@ -174,7 +174,10 @@ is the primary entry point:
    awaiting-input`); read that before auditing code for "why did it stop". Each
    mid-flight rescue emits a `recovery {kind, attempt, outcome, degraded}` frame
    first, and `degraded: true` is the trust signal that the answer shipped
-   truncated or on a reduced tool surface.
+   truncated or on a reduced tool surface. The frame is **shown to the user**,
+   not just logged: the transcript renders a notice saying the turn was
+   adjusted and that the answer may be incomplete. A rescue the user cannot
+   see is a rescue the user was told nothing about.
 
 **Orchestrator / harness:** when `agent_mode` is `orchestrator`, the loop
 exposes Plan → Dispatch, named workstreams, and a spawn DAG. Sub-agent SSE
@@ -614,9 +617,15 @@ Use [`app/atomic_write.py::write_json_atomic`](../backend-py/app/atomic_write.py
 | `backend-py/scripts/_spotcheck_schema.py` | Schema inventory |
 | `backend-py/scripts/p0_explain_plans.py` | EXPLAIN QUERY PLAN pack |
 
-**Tests must not touch the live brain.** `tests/conftest.py` makes `isolatedData`
-**autouse** (temp `AUGUST_DATA_DIR` + brain SQLite). Do not remove without a
-safety review.
+**Nothing may touch the live brain.** Every script that opens the brain
+database points `AUGUST_DATA_DIR` at a throwaway directory first —
+`backend-py/scripts/e2e_smoke.py` does this, and so does every gate that
+probes the backend. The fixture that used to enforce it (`tests/conftest.py`,
+an **autouse** `isolatedData` with a temp `AUGUST_DATA_DIR` + brain SQLite)
+went with the suite on 2026-10-17, so the rule is now a rule every caller has
+to remember rather than one the framework enforces. **If you write a script
+that opens the brain, point `AUGUST_DATA_DIR` at a temp directory.** The real
+data directory holds everything a user owns.
 
 ### Runtime kill switches / measurement flags
 

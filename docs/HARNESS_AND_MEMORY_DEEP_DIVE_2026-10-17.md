@@ -1,3 +1,15 @@
+<!--
+  HISTORICAL - a point-in-time deep dive, kept as a record.
+
+  Read on 2026-10-17 against the tree of that day. Much has changed since,
+  including the compaction policy it analyses - the five compaction paths were
+  reconciled into one call site afterwards. Read the code before working from
+  any of it.
+
+  Current guidance lives in the index in DOCUMENTATION.md.
+-->
+
+
 # Harness & Memory — Deep Dive and Improvement Plan
 
 Date: 2026-10-17 · Scope: `backend-py/app` (turn loop, memory, learning loop) · Evidence: code read + read-only query of `data/august_brain.sqlite`

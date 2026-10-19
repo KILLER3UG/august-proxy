@@ -1,3 +1,14 @@
+<!--
+  HISTORICAL - a roadmap with a progress log, not current guidance.
+
+  Every item below was either shipped or explicitly deferred on 2026-09-27.
+  The file is kept so the record of what was decided, and of what was not,
+  survives.
+
+  Current guidance lives in the index in DOCUMENTATION.md.
+-->
+
+
 # August harness — enhancement roadmap (2026-09-27)
 
 Companion to [DEEP_SCAN_FINDINGS_2026-09-27.md](./DEEP_SCAN_FINDINGS_2026-09-27.md).

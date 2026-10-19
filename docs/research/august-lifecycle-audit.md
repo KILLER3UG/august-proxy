@@ -178,9 +178,13 @@ The failures are concentrated in three places:
 - The updater public key in `tauri.conf.json:58` and the embedded copy in `backend.rs:28` are the same key; the base64 payload decodes to an "untrusted comment" public key.
 - `.part` files are removed on every error branch including verification (`2006-2008`), and cancel is honoured mid-stream (`1957-1960`, `2030-2034`).
 
-- **Weakness (P2): `schedule_post_update_relaunch` is never called on Windows.** The function exists to arm a detached PowerShell waiter that polls for the NSIS completion marker (`backend.rs:1729-1816`), and `useAppUpdate.ts:122` calls it only on the **non-Windows** branch. The Windows branch (`110-118`) goes straight to `launch_installer_and_exit`. The waiter therefore only ever matters for macOS/Linux, where the comment at `backend.rs:1732-1738` describes a Windows problem. In practice the non-silent NSIS POSTINSTALL does the relaunch, so the net behaviour is correct — but the documented safety net is not armed, and if `ExecShell` fails the user is never relaunched and nothing waits.
-- **Weakness (P2): POSTINSTALL's relaunch and the (non-Windows) waiter can both fire.** The single-instance lock absorbs the second launch (`lib.rs:53-56`), so the outcome is safe, but the reliance is implicit.
-- **Weakness (P2): the silent-install relaunch path is broken but currently unreachable.** `hooks.nsh:129` (`IfSilent 0 august_postinstall_skip`) skips both the marker write and the relaunch for silent installs. The waiter's 180 s loop only relaunches early when the marker exists, so a silent install would wait out the full 3 minutes before the deadline branch fires. Nothing on Windows takes that path today (`tauri.conf.json:63` sets updater `installMode: "quiet"`, but the Windows UI never calls the native updater), so this is a latent trap for whoever wires it up. **Effort S, risk S** — either write the marker before the `IfSilent` or shorten the deadline.
+- ~~**Weakness (P2): `schedule_post_update_relaunch` is never called on Windows.**~~ **FIXED 2026-10-20.** The Windows branch of `useAppUpdate.ts` now calls `schedulePostUpdateRelaunch()` BEFORE `launch_installer_and_exit`, so the documented safety net is armed exactly where the comment says the problem is.
+- ~~**Weakness (P2): POSTINSTALL's relaunch and the (non-Windows) waiter can both fire.**~~ **FIXED 2026-10-20.** The POSTINSTALL's `ExecShell` is now suppressed under `$UpdateMode = 1`, so the waiter is the single owner of the relaunch. The reliance on the single-instance lock is gone, not merely safe.
+- ~~**Weakness (P2): the silent-install relaunch path is broken but currently unreachable.**~~ **FIXED 2026-10-20, and it is now REACHED.** The POSTINSTALL writes the completion marker UNCONDITIONALLY — above the `IfSilent` — and the update is launched with `/UPDATE /S`, so the silent path is the only path. The waiter's 600 ms poll now finds the marker and relaunches immediately instead of waiting out the full 3 minutes.
+
+  These three were the whole of the update path's latent failure modes, and
+  the fix is the one that made the update invisible to the user: no uninstall
+  wizard, no install wizard, and the app comes back by itself.
 
 ### 4.2 Bundling and stamping — SOLID
 

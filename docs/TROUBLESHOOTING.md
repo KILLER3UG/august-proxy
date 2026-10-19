@@ -490,14 +490,37 @@ Dependency install is not run synchronously on every Tauri start — use
 `install.ps1` / `install.sh` once, or the background sync when the version stamp
 is stale.
 
-### Auto-update downloads the full installer (Windows)
+### Updating on Windows (silent, in place)
 
-Desktop **0.12.x** on Windows updates by downloading the full GitHub-release
-NSIS setup (`August_<version>_x64-setup.exe`) and launching it — the user
-walks through the setup wizard like a first install. This deliberately
-replaced the earlier quiet in-place patch, which could miss bundled backend
-changes. The download streams via the `download_release_installer` Tauri
-command with `update-download-progress` events; the app then stops the backend
-and calls `launch_installer_and_exit`. Non-Windows keeps the in-place
-`@tauri-apps/plugin-updater` path. If the download stalls, check the GitHub
-Releases URL in `frontend/desktop/src/hooks/useAppUpdate.ts`.
+Desktop updates on Windows by downloading the full GitHub-release NSIS setup
+(`August_<version>_x64-setup.exe`) and running it **silently and in place** —
+there is no uninstall wizard and no install wizard, and you do not reinstall
+anything by hand. The app restarts itself afterwards.
+
+The sequence, and the three things that have to line up or the app never
+comes back:
+
+1. **The download is automatic.** The app checks for a new build on launch and
+   whenever it is brought back into focus (a 30-minute stale time), and starts
+   downloading 60 seconds after a check finds one. Turn it off under Settings →
+   About → "Download updates automatically". The download streams via the
+   `download_release_installer` Tauri command with `update-download-progress`
+   events.
+2. **The restart is your click.** When the download finishes the app offers
+   "Restart to update". It never restarts on its own — a restart interrupts
+   whatever turn is running. If you cancel a download, that version is not
+   fetched again.
+3. **The replace is silent.** The app launches the installer with `/UPDATE /S`
+   and exits; the installer replaces the app in place, and a detached waiter
+   relaunches August a few seconds later.
+
+If the update does not come back, comes back **twice**, or asks you to
+uninstall something first, the matrix in
+[`UPDATE_VERIFICATION.md`](UPDATE_VERIFICATION.md) says which of those it is
+and exactly what to capture.
+
+The full installer is deliberate: a quiet in-place patch could miss bundled
+backend changes, and a desktop release has to carry them. If the download
+stalls, check the GitHub Releases URL in
+`frontend/desktop/src/hooks/useAppUpdate.ts`. Non-Windows keeps the in-place
+`@tauri-apps/plugin-updater` path.

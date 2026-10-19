@@ -133,8 +133,9 @@ table changes no existing request; only entries you add do.
 Owned by `app.providers.model_params`; consumed by
 `app.services.workbench.effort` and `app.services.workbench.providers`.
 Restart the backend after editing (or call `model_params.invalidate()`);
-parity against the retired heuristics is pinned by
-`backend-py/tests/test_model_params_parity.py`.
+parity against the retired heuristics was pinned by
+`backend-py/tests/test_model_params_parity.py`, which went with the suite on
+2026-10-17 — the parity case that file held is now a manual check.
 
 ### `subAgentFallback`
 
@@ -738,6 +739,23 @@ variables were read by the backend but never reached it, so a desktop user
 setting `AUGUST_CONTAINER_SANDBOX=1` silently got soft enforcement.
 Forwarded values are logged at launch and the resulting state is shown in
 Settings → Tool reach.
+
+### Desktop app: updates
+
+The desktop shell keeps a few preferences of its own, in one JSON blob in
+`localStorage` under `august.preferences` — **not** in `data/config.json`,
+because they belong to the window and not to the install.
+
+| Preference | Default | What it does |
+|---|---|---|
+| `autoDownloadUpdates` | `true` | When a check finds a new build, start downloading it 60 seconds later, without asking. Turn it off under Settings → About. |
+
+The **restart** is never automatic, whatever this says. A restart interrupts
+whatever turn is running, so it stays the user's click even though the
+download is not. Turning the download off does not stop the app from
+*offering* an update; it only stops the fetch. See
+[`TROUBLESHOOTING.md`](TROUBLESHOOTING.md#updating-on-windows-silent-in-place)
+for the whole sequence.
 
 ### Arena & Debate routing evidence
 

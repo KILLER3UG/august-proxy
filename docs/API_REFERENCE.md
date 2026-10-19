@@ -649,7 +649,7 @@ Common event types:
 | `subagentStart` · `subagentText` · `subagentToolCall` · `subagentToolResult` · `subagentDone` | Per-worker lane updates | worker/task fields |
 | `subagentFanout` | One per dispatch: the concurrency / children / round budgets that **were** applied, and whether any bound the run | cap fields |
 | `turn_end` | Terminal turn diagnostic, emitted just before `done` | `{reason, rounds, error}` — `reason` is `finished \| length \| cap \| stall-stop \| budget \| error \| interrupted \| awaiting-input` |
-| `recovery` | One frame per mid-flight rescue (length continuation, reactive context reduction, auto-compact, the budget ladder) | `{kind, attempt, outcome, degraded}` — `degraded: true` means the answer shipped truncated or on a reduced tool surface |
+| `recovery` | One frame per mid-flight rescue. `kind` is one of `length-continuation`, `context-reduction`, `auto-compact`, `budget`, `runaway`, `stuck-request` | `{kind, attempt, outcome, degraded}` — `degraded: true` means the answer shipped truncated or on a reduced tool surface. **The transcript renders this**: a rescue now shows the user a notice saying the turn was adjusted and that the answer may be incomplete. Before that, the frame was emitted, schematised and dispatched — and dropped, so every self-correction the harness performed shipped as a normal-looking answer. |
 | `error` | Error | `{message}` |
 | `aborted` | Cancelled | `{}` |
 | `done` | Generation complete | `{sessionId, usage?}` — `usage` is `{inputTokens, outputTokens, contextTokens}` when token tracking is on |

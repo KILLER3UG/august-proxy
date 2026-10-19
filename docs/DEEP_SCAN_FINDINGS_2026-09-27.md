@@ -1,3 +1,15 @@
+<!--
+  HISTORICAL - a point-in-time audit, kept as a record.
+
+  34 read-only auditors swept the repository on 2026-09-27 and produced this
+  register. Every item is marked as of THAT day; read the code before working
+  from any of it. The companion roadmap (HARNESS_ENHANCEMENTS_2026-09-27.md)
+  records what was built from it.
+
+  Current guidance lives in the index in DOCUMENTATION.md.
+-->
+
+
 # Deep-scan findings — August Proxy (2026-09-27)
 
 A read-only audit of the whole repository: 16 parallel auditor tracks over the
@@ -658,8 +670,16 @@ A green local hook means ~30 migration/maintenance scripts have had no lint chec
 at all.
 
 ### 52. `recovery` and `subagentFanout` frames are accepted by the schema but have no dispatcher case — `streamEvents.ts:40`
-Documentation drift only — every degraded emit site already ships an adjacent
-warning frame, so no degraded turn renders as clean. *`weakened`*
+**HALF FIXED 2026-10-20.** `recovery` now has a dispatcher case and renders in
+the transcript — it was not merely documentation drift: every rescue the
+harness performed was invisible to the user, and the frame is the trust signal
+(`degraded: true`) that says the answer may be incomplete. `subagentFanout` is
+still undispatched; it is recorded in the SSE gate's `SCHEMA_ONLY` list with
+the reason (the backend persists it in the session event log, and the desktop
+transcript renders the subagent lane rather than the fanout budget readout).
+The UI gap is tracked as OPEN in `docs/GAPS_AND_BUGS.md`.
+
+*`weakened`*
 
 ---
 
