@@ -64,6 +64,13 @@ boolKeys: tuple[str, ...] = (
     'projectSkills',
     'fileMemory',
     'contextReliefRotate',
+    # Whether `record_decision` is promoted into the CORE tool set
+    # (`workbench._coreToolNames` reads it). It had a fieldTable entry and a
+    # reader, but was missing from `boolKeys` — so `allowedKeys` excluded it
+    # and `validatePatch` rejected every PUT naming it, which made the switch
+    # impossible to move. The same shape as the `budgetSoftUsd` mistake the
+    # comment above records.
+    'decisionJournal',
 )
 numKeys: tuple[str, ...] = (
     'maxAgentDepth',

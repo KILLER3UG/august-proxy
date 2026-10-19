@@ -28,8 +28,8 @@
  *         allowlist still names something that is no longer true.
  */
 
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -124,6 +124,68 @@ function dispatchFrames() {
   return out;
 }
 
+/**
+ * Every handler the dispatcher INVOKES.
+ *
+ * `handlers.onX?.(...)` is an optional call, so a handler nobody supplies is a
+ * no-op rather than a crash.
+ */
+function calledHandlers() {
+  const text = read(DISPATCH_FILE);
+  const out = new Set();
+  for (const m of text.matchAll(/handlers\.(on[A-Za-z0-9]+)\?\./g)) out.add(m[1]);
+  return out;
+}
+
+/** Files that DECLARE or CALL handlers rather than supply them. */
+const NOT_A_SUPPLY = new Set([
+  'frontend/desktop/src/types/workbench.ts',
+  'frontend/desktop/src/api/workbench/streamEvents.ts',
+]);
+
+/** Every `.ts`/`.tsx` file under a directory. */
+function sourceFiles(dir) {
+  const out = [];
+  const walk = (d) => {
+    for (const entry of readdirSync(d)) {
+      const full = join(d, entry);
+      const st = statSync(full);
+      if (st.isDirectory()) {
+        if (entry === 'node_modules' || entry === 'gen') continue;
+        walk(full);
+      } else if (/\.tsx?$/.test(entry) && !entry.endsWith('.d.ts')) {
+        out.push(full);
+      }
+    }
+  };
+  walk(dir);
+  return out;
+}
+
+/**
+ * Every handler name that at least one object literal SUPPLIES.
+ *
+ * A supply is `onX:` as an object property — NOT `onX?:`, which is how the
+ * interface declares an optional handler. The two are one character apart and
+ * the difference is the whole point: the declaration says "this may be
+ * provided", the supply says "this IS provided".
+ */
+function suppliedHandlers() {
+  const out = new Map();
+  const base = resolve(root, 'frontend/desktop/src');
+  for (const file of sourceFiles(base)) {
+    const rel = file.slice(root.length + 1).split('\\').join('/');
+    if (NOT_A_SUPPLY.has(rel)) continue;
+    const text = readFileSync(file, 'utf8');
+    for (const m of text.matchAll(/(?<![.\w])on([A-Z][A-Za-z0-9]*)\s*:/g)) {
+      const name = `on${m[1]}`;
+      if (!out.has(name)) out.set(name, new Set());
+      out.get(name).add(rel);
+    }
+  }
+  return out;
+}
+
 const backend = backendFrames();
 const schema = schemaFrames();
 const dispatch = dispatchFrames();
@@ -202,6 +264,28 @@ for (const [name] of SCHEMA_ONLY) {
         'for it. Remove the entry — the allowlist has to describe the code, not intent.'
     );
   }
+}
+
+// 7. A handler the dispatcher CALLS but nobody SUPPLIES — a silent no-op.
+//
+// The six checks above are all about the frame VOCABULARY, and none of them
+// can see this. `recovery` was emitted, schematised AND dispatched — the
+// dispatcher called `handlers.onRecovery?.(...)` — and the call did nothing,
+// because no object anywhere passed an `onRecovery`. The optional call is a
+// no-op, and a no-op typed as optional cannot be a compile error. The frame
+// validated, reached the handler, and vanished.
+//
+// So: every handler the dispatcher invokes must be supplied by at least one
+// object in the app. This is the check that would have caught it.
+const called = calledHandlers();
+const supplied = suppliedHandlers();
+for (const name of called) {
+  if (supplied.has(name)) continue;
+  errors.push(
+    `streamEvents.ts calls 'handlers.${name}?.(...)' but nothing in the app supplies ` +
+      `'${name}:' — the call is a no-op, so the frame validates, reaches the ` +
+      'handler and disappears. Supply the handler, or remove the call.'
+  );
 }
 
 if (errors.length > 0) {

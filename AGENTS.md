@@ -24,9 +24,34 @@ test: the gates that remain are static.
 
 What verifies a change now: `npm run check:docs`, `check:design`,
 `check:naming`, `check:api`, `check:api-index`, `check:sse`, `check:version`,
-`check:doc-links`, `lint:ratchet`; `uv run ruff check .` + `uv run mypy app/`
+`check:doc-links`, `check:minisign`, `check:truncate`, `check:brain-config`,
+`lint:ratchet`; `uv run ruff check .` + `uv run mypy app/`
 for the backend; `npm run check -w frontend/desktop` (tsc + eslint) for the
 desktop app; `Type check` on every push; and a human running the app.
+
+Three of those gates exist because the defect they catch is INVISIBLE to
+every other gate, and each has already caught a live bug:
+
+- **`check:sse` also checks handler SUPPLY.** The frame-parity checks are
+  about the frame vocabulary and cannot see a dispatcher that calls
+  `handlers.onX?.(...)` when nothing supplies `onX` — the optional call is a
+  no-op, so the frame validates, reaches the handler and vanishes. That is
+  exactly what `recovery` did: emitted, schematised, dispatched, and
+  invisible, so every self-correction the harness performed shipped as a
+  normal-looking answer.
+- **`check:truncate`** reads the source with the TypeScript compiler API
+  and fails when a `truncate` sits on an element that cannot truncate.
+  `overflow: hidden` and `text-overflow: ellipsis` do not apply to an inline
+  box, so `truncate` on a bare `<span>` is inert and the text paints over
+  whatever is beside it. Only the AST can tell a flex CONTAINER from a flex
+  ITEM (`flex-1` is item sizing, not a container) and can see a className
+  written as a template literal or a `cn(...)` call.
+- **`check:brain-config`** asks the backend which keys it accepts and what
+  ranges they take, and fails when the Settings panel writes a key it does
+  not, or offers a value it refuses. It has caught a key with a
+  `fieldTable` entry but no writable-set entry (every PUT naming it was
+  rejected) and a backend range that started at 1 while the panel's own
+  default was 0.
 
 ## Product surface
 

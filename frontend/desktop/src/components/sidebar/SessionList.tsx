@@ -123,13 +123,18 @@ function ProjectGroupHeader({
 }) {
   return (
     <h4
-      className="px-2 pt-1.5 pb-0.5 text-2xs text-sidebar-foreground/45 font-medium tracking-wide uppercase"
+      className="flex items-center gap-1 px-2 pt-1.5 pb-0.5 text-2xs text-sidebar-foreground/45 font-medium tracking-wide uppercase"
       data-testid="project-group-header"
       title={path || label}
     >
-      <span className="truncate">{label}</span>
+      {/* `truncate` needs a BLOCK CONTAINER: `overflow` and `text-overflow`
+          do not apply to an inline box, so on the bare span it was inert and
+          a long group name ran past the sidebar edge. The h4 is a flex row,
+          so the label is a flex item — blockified — and the count stays
+          beside it. */}
+      <span className="min-w-0 truncate">{label}</span>
       {count > 0 && (
-        <span className="ml-1 text-sidebar-foreground/30 tabular-nums">{count}</span>
+        <span className="shrink-0 text-sidebar-foreground/30 tabular-nums">{count}</span>
       )}
     </h4>
   );

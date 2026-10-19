@@ -67,6 +67,20 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: npm run check:api-index
 
+      # The brain-config keys the Settings panel writes must be keys the
+      # backend accepts, at values the backend accepts. It lives in the
+      # BACKEND job for the same reason as the OpenAPI gate: it imports the
+      # app to read the real key set and the real ranges, so it needs the
+      # interpreter and the dependencies this job already has.
+      #
+      # It has already caught two live bugs of the same shape — a key with a
+      # fieldTable entry but no writable-set entry, so every PUT naming it
+      # was rejected, and a backend range that started at 1 while the panel's
+      # own default was 0.
+      - name: Brain-config keys and ranges match the backend
+        working-directory: ${{ github.workspace }}
+        run: npm run check:brain-config
+
       - name: Version sync (4 manifests + lockfile)
         working-directory: ${{ github.workspace }}
         run: node scripts/check-version-sync.mjs
@@ -128,6 +142,20 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Every `truncate` has to be on an element that CAN truncate.
+      # `overflow: hidden` and `text-overflow: ellipsis` do not apply to an
+      # inline box, so a `truncate` on a bare `<span>` is inert: the text is
+      # not clipped and not ellipsised, it just runs on and paints over
+      # whatever sits beside it. That is what a long model id did in the
+      # model list.
+      #
+      # The gate reads the source with the TypeScript compiler API rather
+      # than a regex, because only the AST can tell a flex CONTAINER from a
+      # flex ITEM (`flex-1` is item sizing, not a container) and can see a
+      # className written as a template literal or a `cn(...)` call.
+      - name: Truncated text is actually truncated
+        run: npm run check:truncate
 
       - name: Build web (tsc + vite)
         run: npm run build:web

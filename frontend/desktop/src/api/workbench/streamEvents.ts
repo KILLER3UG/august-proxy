@@ -139,17 +139,12 @@ export function dispatchWorkbenchEvent(
         contextWindow: Number(p?.contextWindow) || undefined,
       }, seq);
       break;
-    case 'prompt':
-      handlers.onPrompt?.({
-        content: typeof p?.content === 'string' ? p.content : JSON.stringify(p?.content ?? ''),
-        systemPrompt: p?.systemPrompt as string | undefined,
-        userMessage: p?.userMessage as string | undefined,
-        tokens: p?.tokens as number | undefined,
-        toolUseId: p?.toolUseId as string | undefined,
-        subagentId: p?.subagentId as string | undefined,
-        jobId: p?.jobId as string | undefined,
-      });
-      break;
+    // The legacy 'prompt' frame is GONE. The backend never emitted it (the
+    // sub-agent prompt is carried on `subagentStart` plus the live
+    // subagentText / ToolCall / ToolResult stream), and the case that used to
+    // dispatch it called an optional handler that no caller supplied — so it
+    // was a no-op waiting for a frame that could not arrive. It is removed
+    // rather than left as dead code.
     case 'started':
       handlers.onStarted?.({ sinceSeq: p?.sinceSeq as number | undefined });
       break;

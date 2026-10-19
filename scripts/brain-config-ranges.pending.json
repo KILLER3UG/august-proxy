@@ -1,0 +1,4 @@
+{
+  "_comment": "Backend fieldTable keys that the config API refuses to write. Each one is a key the backend DESCRIBES but cannot be PUT — the same shape as the bug this gate exists for. The list is an exception list, not a to-do list: a key that becomes writable must be removed from here, and the gate fails if it is not. An empty list means there are none.",
+  "notWritable": []
+}

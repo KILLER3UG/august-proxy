@@ -10,6 +10,7 @@
   "scripts": {
     "build:web": "npm run build -w frontend/desktop",
     "check:api": "node scripts/check-api.mjs",
+    "check:brain-config": "node scripts/check-brain-config.mjs",
     "gen:api-index": "node scripts/gen-api-index.mjs",
     "check:api-index": "node scripts/gen-api-index.mjs --check",
     "gen:openapi": "node scripts/check-api.mjs --write",
@@ -19,6 +20,7 @@
     "check:minisign": "node scripts/check-minisign.mjs",
     "check:naming": "node scripts/check-naming.mjs",
     "check:sse": "node scripts/check-sse-parity.mjs",
+    "check:truncate": "node scripts/check-truncate.mjs",
     "check:version": "node scripts/check-version-sync.mjs",
     "dev": "node scripts/dev-app.mjs",
     "dev:desktop": "node scripts/dev-tauri.mjs",

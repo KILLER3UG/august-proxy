@@ -334,21 +334,6 @@ export interface WorkbenchEventHandlers {
     scrolled?: string;
     status: 'success' | 'error';
   }) => void;
-  onPrompt?: (data: {
-    content: string;
-    systemPrompt?: string;
-    userMessage?: string;
-    tokens?: number;
-    /** ID of the parent toolUse block (august__spawn_subagent / august__run_team)
-     *  that triggered the sub-agent whose prompt is being disclosed. Used by
-     *  the chat thread to attach the disclosure to the right tool call card. */
-    toolUseId?: string;
-    /** Sub-agent profile id (e.g. "general", "researcher") that this prompt
-     *  was assembled for. */
-    subagentId?: string;
-    /** Durable job id of the sub-agent run, if available. */
-    jobId?: string;
-  }) => void;
   /**
    * Emitted exactly once when the backend registers a new chat turn for
    * the session. The `sinceSeq` is the seq the live SSE stream will start

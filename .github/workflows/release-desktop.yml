@@ -99,6 +99,8 @@ jobs:
           npm run check:naming
           npm run check:sse
           npm run check:minisign
+          npm run check:truncate
+          npm run check:brain-config
 
       - name: Verify release version against package sources
         shell: pwsh

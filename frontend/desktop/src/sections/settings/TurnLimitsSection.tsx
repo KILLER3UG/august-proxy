@@ -50,12 +50,15 @@ type FieldSpec = {
  * the label and hint are product copy, not metadata the backend can supply.
  *
  * The KEYS are pinned to what the backend actually accepts by
- * `npm run check:brain-config` — a static gate that reads
- * `brain_config_service.py` and fails when a key in this table is missing from
- * `numKeys`, or has no fieldTable entry, or has no explicit range branch. It
- * replaced `tests/test_turn_limits_fields.py`, which was deleted with the rest
- * of the suite on 2026-10-17; a key renamed or removed server-side now fails
- * that gate instead of rendering a control that silently 400s.
+ * `npm run check:brain-config` — a gate that ASKS the backend (it imports
+ * `brain_config_service.py` and reads each key's range out of the
+ * validator's own error message, so it cannot disagree with the validator
+ * about what the range is) and fails when a key in this table is missing
+ * from `numKeys`, or has no fieldTable entry, or has no explicit range
+ * branch, or when the range below is wider than the backend's. It replaced
+ * `tests/test_turn_limits_fields.py`, which was deleted with the rest of the
+ * suite on 2026-10-17; a key renamed or removed server-side now fails that
+ * gate instead of rendering a control that silently 400s.
  *
  * The RANGES below are the panel's own bounds and must match the backend's:
  * `maxWorkbenchToolLoops` accepts 0 (uncapped) through 500, and the runaway
