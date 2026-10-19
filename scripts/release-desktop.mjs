@@ -361,6 +361,39 @@ async function updaterPublicKey() {
 }
 
 /**
+ * The updater public key the WINDOWS PATH trusts.
+ *
+ * The desktop app does not use the plugin's updater on Windows: it downloads
+ * the full NSIS installer and verifies it itself, in `backend.rs`, against a
+ * key hardcoded in the binary (`UPDATER_PUBLIC_KEY_B64`). So there are TWO
+ * sources of truth for "the key the user trusts", and nothing held them
+ * together — rotating one would pass this release gate and break every
+ * Windows update, with the failure pointing at the user's machine.
+ */
+async function windowsUpdaterPublicKey() {
+    const rs = await readFile(join(root, 'frontend', 'desktop', 'src-tauri', 'src', 'backend.rs'), 'utf8');
+    const match = rs.match(/UPDATER_PUBLIC_KEY_B64:\s*&str\s*=\s*"([^"]+)"/);
+    if (!match) {
+        throw new Error('backend.rs no longer defines UPDATER_PUBLIC_KEY_B64 — the Windows download path cannot verify its own installer');
+    }
+    return match[1];
+}
+
+/** The two key sources must be ONE key before anything is published. */
+async function assertUpdaterKeysAgree() {
+    const pinned = await updaterPublicKey();
+    const windows = await windowsUpdaterPublicKey();
+    if (pinned !== windows) {
+        throw new Error(
+            'the updater public key in tauri.conf.json and the one hardcoded in backend.rs ' +
+                'are DIFFERENT. The release signs against one and every Windows update verifies ' +
+                'against the other, so every Windows update would fail its own signature check.',
+        );
+    }
+    return pinned;
+}
+
+/**
  * Prove the updater signature verifies under the key the app trusts.
  *
  * The release job signs with the private key from the `TAURI_SIGNING_PRIVATE_KEY`
@@ -373,7 +406,7 @@ async function updaterPublicKey() {
  * So the release proves it here, with the same bytes the app will hash.
  */
 async function assertUpdaterSignatureVerifies(artifactPath, signatureText) {
-    const pubkey = await updaterPublicKey();
+    const pubkey = await assertUpdaterKeysAgree();
     const message = await readFile(artifactPath);
     const result = verifyMinisign(pubkey, message, signatureText);
     if (!result.ok) {
