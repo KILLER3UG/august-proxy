@@ -111,7 +111,15 @@ function ShownOfTotal({ shown, total }: { shown: number; total: number }) {
  *  Only rendered when project grouping is on, which the chat view menu
  *  controls. It replaced a date sub-heading: a chat list is already ordered by
  *  recency, so date buckets repeated what the row's own relative time said,
- *  while the project a chat belongs to is a fact the row does not carry. */
+ *  while the project a chat belongs to is a fact the row does not carry.
+ *
+ *  Its label is SENTENCE CASE, like the section header it sits under. It used
+ *  to be `uppercase tracking-wide`, which shouted a group label in a rail
+ *  whose every other group label is quiet — the reference measures those
+ *  labels as "small, muted, sentence case — NOT uppercase"
+ *  (docs/plans/2026-10-11-ui-reference-capture.md §5, "Left nav"), and
+ *  `FolderTree`'s own `Section` heading was already sentence case, so the
+ *  project label was the one voice in the rail that did not match. */
 function ProjectGroupHeader({
   label,
   count,
@@ -123,7 +131,7 @@ function ProjectGroupHeader({
 }) {
   return (
     <h4
-      className="flex items-center gap-1 px-2 pt-1.5 pb-0.5 text-2xs text-sidebar-foreground/45 font-medium tracking-wide uppercase"
+      className="flex items-center gap-1 px-2 pt-1.5 pb-0.5 text-2xs text-sidebar-foreground/45 font-medium"
       data-testid="project-group-header"
       title={path || label}
     >
@@ -1013,7 +1021,7 @@ export function SessionList({
               aria-label="Sessions needing attention"
               data-testid="needs-attention-lane"
             >
-              <div className="flex items-center gap-1.5 px-1 pb-1 text-2xs font-semibold uppercase tracking-wider text-warning-fg">
+              <div className="flex items-center gap-1.5 px-1 pb-1 text-2xs font-medium text-warning-fg">
                 <AlertCircle className="size-3" aria-hidden />
                 Needs attention
                 <span className="tabular-nums">{attentionSessions.length}</span>

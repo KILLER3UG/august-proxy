@@ -28,6 +28,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { RightDrawerDropdown } from "./RightDrawerLauncher";
+import { BackgroundJobsButton } from "./BackgroundJobsButton";
 import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
 import { useSessionStream } from '@/sections/chat/hooks/useSessionStream';
 import { collectArtifacts } from '@/lib/artifacts';
@@ -241,6 +242,9 @@ export function ChatTitlebar({
       </div>
 
       <div className="flex items-center gap-1">
+        {/* The global door to the background job tray. It renders nothing when
+            there is no job, so the chrome stays quiet. */}
+        <BackgroundJobsButton />
         <RightDrawerDropdown
           drawerOpen={rightDrawerOpen}
           workersBadge={workersBadge}

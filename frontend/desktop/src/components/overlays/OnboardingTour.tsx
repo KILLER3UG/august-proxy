@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Bot, Check, Gavel, Rocket, Asterisk, X } from 'lucide-react';
 import { useSessionsStore } from '@/store/sessions';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
+import { MODAL_LAYER, modalLayerClass, useUserOwnedPanelOpen } from '@/components/overlays/modal-layers';
 
 const DONE_KEY = 'august_onboarding_done';
 
@@ -81,7 +82,14 @@ export function OnboardingTour() {
   const [step, setStep] = useState(0);
   const navigate = useNavigate();
   const sessionCount = useSessionsStore((s) => s.sessions.length);
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
+  /* The tour is APP-OWNED and the Settings panel is USER-OWNED, so the tour
+   * steps aside while the panel is open — the same rule the setup checklist
+   * follows (`modal-layers.ts`). Two of the tour's own steps navigate to a
+   * /settings route, and the tour used to paint over the page it had just
+   * sent the user to. The tour is not dismissed: its step state survives, so
+   * coming back lands on the step the user was on. */
+  const yields = useUserOwnedPanelOpen();
+  const trapRef = useFocusTrap<HTMLDivElement>(open && !yields);
 
   useEffect(() => {
     // Show when the app is truly fresh: no sessions yet and not dismissed.
@@ -92,7 +100,7 @@ export function OnboardingTour() {
     return undefined;
   }, [sessionCount]);
 
-  if (!open) return null;
+  if (!open || yields) return null;
 
   const finish = () => {
     try {
@@ -109,7 +117,7 @@ export function OnboardingTour() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
+      className={`fixed inset-0 ${modalLayerClass(MODAL_LAYER.appOwned)} flex items-center justify-center bg-scrim p-4`}
       role="dialog"
       aria-modal="true"
       aria-label="Welcome"

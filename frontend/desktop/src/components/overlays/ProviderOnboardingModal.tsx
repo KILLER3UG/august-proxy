@@ -20,6 +20,7 @@ import { useProviderOnboardingState } from '@/hooks/useProviderOnboardingState';
 import { providersApi } from '@/api/providers';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import { Backdrop } from '@/components/overlays/Backdrop';
+import { MODAL_LAYER, useUserOwnedPanelOpen } from '@/components/overlays/modal-layers';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { cn } from '@/lib/utils';
 
@@ -42,7 +43,20 @@ export function ProviderOnboardingModal() {
   } = useProviderOnboardingState();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const trapRef = useFocusTrap<HTMLDivElement>();
+  /* The checklist is APP-OWNED: the app put it up, the user did not ask for
+   * it. The Settings panel is USER-OWNED — the user navigated there on
+   * purpose — and it sits on a higher rung of the modal ladder
+   * (`modal-layers.ts`). So the checklist steps aside while Settings is open:
+   * it stops painting over the panel and releases its focus trap. It is NOT
+   * dismissed — it comes back when the user leaves, and its rows recompute
+   * from live state, so a step that led here reads "done" on the way back.
+   *
+   * Before this, the checklist's own provider / doctor / google rows all
+   * navigate to a /settings route, and the checklist — mounted after the
+   * routes, at the same z-index as the panel — painted over the page it had
+   * just sent the user to, swallowing every click in it. */
+  const yields = useUserOwnedPanelOpen();
+  const trapRef = useFocusTrap<HTMLDivElement>(!yields);
   const [showImport, setShowImport] = useState(false);
   const [importJson, setImportJson] = useState('');
   const [importError, setImportError] = useState('');
@@ -50,7 +64,7 @@ export function ProviderOnboardingModal() {
   // One first-run surface at a time: the tour owns the screen first.
   const sessionCount = useSessionsStore((s) => s.sessions.length);
 
-  if (!shouldShow || isLoading || tourPending(sessionCount)) return null;
+  if (!shouldShow || isLoading || tourPending(sessionCount) || yields) return null;
 
   const handleImport = async () => {
     setImportError('');
@@ -85,7 +99,7 @@ export function ProviderOnboardingModal() {
   return (
     // Deliberately NOT backdrop-dismissible: a stray click must not close the
     // setup checklist mid-flow — use Skip / the X button.
-    <Backdrop>
+    <Backdrop layer={MODAL_LAYER.appOwned}>
       <div
         ref={trapRef}
         className="relative w-full max-w-md rounded-2xl border border-white/[0.06] bg-card p-6 shadow-2xl"

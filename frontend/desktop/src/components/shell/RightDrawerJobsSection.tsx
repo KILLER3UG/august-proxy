@@ -37,7 +37,10 @@ function useTicker(active: boolean): void {
   }, [active]);
 }
 
-function JobRow({ task, onDismiss }: { task: BackgroundTask; onDismiss?: () => void }) {
+/** One job row. Exported so the global tray (`BackgroundJobsButton.tsx`)
+ *  renders the SAME row the drawer does — one rendering of a job, not two
+ *  that can drift. */
+export function JobRow({ task, onDismiss }: { task: BackgroundTask; onDismiss?: () => void }) {
   const Glyph = STATUS_GLYPH[task.status] ?? Circle;
   const running = task.status === 'running';
   const settled = !ACTIVE.has(task.status);

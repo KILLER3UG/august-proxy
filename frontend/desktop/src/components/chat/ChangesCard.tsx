@@ -253,6 +253,25 @@ function CodeFileRow({
               )}
             </span>
           }
+          /* The body belongs to the disclosure, not to a sibling the trigger
+             knows nothing about: this is the last of the five `DisclosureRow`
+             call sites, and the other four pass their body this way. The
+             trigger then advertises a real `aria-controls` and the body a real
+             hidden state, in BOTH states — the closed row is the one a screen
+             reader navigates.
+
+             A row with no diff passes `undefined` and gets no region at all
+             (the established pattern: `tool/ToolCallItem.tsx`). The body is
+             mounted whether the row is open or closed, which is what
+             `forceMount` means; `DiffView` measures nothing, so a hidden
+             region renders it exactly as a visible one would. */
+          content={
+            hasDiff ? (
+              <div className="pl-4 pr-1 pt-1.5" data-testid="changes-card-inline-diff">
+                <DiffView diff={file.diff} maxLines={32} />
+              </div>
+            ) : undefined
+          }
         >
           <span className="flex min-w-0 items-center gap-2">
             <FileIcon name={path} size={13} className="shrink-0" />
@@ -283,11 +302,6 @@ function CodeFileRow({
           {busy ? <Loader2 className="size-3 animate-spin" /> : 'Open'}
         </button>
       </div>
-      {diffOpen && hasDiff && (
-        <div className="pl-4 pr-1 pt-1.5" data-testid="changes-card-inline-diff">
-          <DiffView diff={file.diff} maxLines={32} />
-        </div>
-      )}
     </div>
   );
 }

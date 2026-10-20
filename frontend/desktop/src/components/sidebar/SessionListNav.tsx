@@ -103,7 +103,7 @@ export function SessionListNav({
         </button>
       </div>
 
-      <div className="px-2 pt-2 pb-1">
+      <div className="px-2 pt-1.5 pb-0.5">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -142,8 +142,14 @@ export function SessionListNav({
           border and a shadow sitting above three quiet nav rows, which made it
           read as the app's main action and pushed every chat below the fold.
           Claude, Haze and KiloCode all draw it as one more nav row; the only
-          thing that makes it primary is the + glyph. */}
-      <div className="p-2 pb-1">
+          thing that makes it primary is the + glyph.
+
+          The three blocks above the list (workspace switcher, this row, the
+          destinations) are one tight stack: the reference's rail spends its
+          vertical space on the LIST, and the chat list is the thing the
+          sidebar is for. The padding between them was 8px+4px per block, which
+          is 24px of chrome above the first chat for three rows of controls. */}
+      <div className="px-2 pt-0.5 pb-0.5">
         <motion.button
           type="button"
           onClick={onNew}
@@ -162,7 +168,7 @@ export function SessionListNav({
 
       {/* Keep the primary work destinations visible; the full route set remains
           available from the command palette. Artifacts live in the right drawer. */}
-      <div className="px-2 space-y-0.5 pb-1" role="navigation" aria-label="Workspace">
+      <div className="px-2 space-y-0.5 pb-0.5" role="navigation" aria-label="Workspace">
         {PRIMARY_DESTINATIONS.map(({ to, label, Icon }) => (
           <button
             key={to}

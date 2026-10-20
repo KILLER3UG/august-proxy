@@ -36,6 +36,7 @@ import { loadComposerDraft } from "@/sections/chat/message-storage";
 import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { isUserOwnedPanelRoute } from "@/components/overlays/modal-layers";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 
@@ -561,7 +562,7 @@ export function ChatLayout() {
   // so `/Settings/general` matched a route, failed this check, and the overlay
   // <Routes> never mounted — a blank main column with no dialog and no error.
   // Same URL, two verdicts, one of them silent.
-  const isSettings = location.pathname.toLowerCase().startsWith("/settings");
+  const isSettings = isUserOwnedPanelRoute(location.pathname);
   const backgroundRef = useRef<{ pathname: string; search: string } | null>(null);
   if (isSettings && backgroundRef.current === null) {
     // Cold boot straight onto a settings deep link: the last non-settings

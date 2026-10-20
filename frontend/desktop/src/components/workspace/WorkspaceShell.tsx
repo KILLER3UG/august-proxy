@@ -19,6 +19,7 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 import { WorkspaceNavLink } from './WorkspaceNavLink';
 import { SettingsSearch } from '@/components/settings/SettingsSearch';
+import { MODAL_LAYER, modalLayerClass } from '@/components/overlays/modal-layers';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { useAccountStore } from '@/store/account';
 import { useReviewInboxCount } from '@/lib/useReviewInboxCount';
@@ -274,19 +275,33 @@ export function WorkspaceShell({
      * replaces it: the chat stays behind, and the panel owns its own scroll so
      * no section can stretch the frame.
      *
-     * The backdrop carries NO tint. The reference settings modal floats over a
-     * completely unchanged app — sidebar, transcript and composer all stay at
-     * full brightness — and `bg-scrim` here was `rgb(0 0 0 / 0.55)`, which
-     * visibly darkened every one of them. Modality is still enforced by what
-     * actually enforces it: `aria-modal` and the focus trap. The dialog's own
-     * hairline border and shadow are what separate it visually, which is the
-     * affordance the reference uses. Click-outside-to-close still works — this
-     * element is the hit target either way.
+     * The backdrop DIMS what is behind it, because the reference does. The
+     * captured Claude settings modal is "a centred modal on a DIMMED chat
+     * behind it" (docs/plans/2026-10-11-ui-reference-capture.md:20) and the
+     * captured Haze settings panel says the same — "The chat is dimmed behind
+     * it" (the same file, :252). `bg-scrim` is the app's own scrim token
+     * (--dt-overlay-scrim: 32% over the light ground, 55% over the dark one),
+     * the same veil the responsive sidebar and drawer overlays already use.
      *
-     * Click handling is unchanged and still safe with a transparent fill: the
-     * dialog stops propagation, so only a click on the exposed app dismisses. */
+     * This backdrop used to carry NO tint, and the comment that sat here
+     * claimed the reference agreed — it did not, and the claim is what kept
+     * the behaviour in place. The panel is 920×680 and centred, so the dimmed
+     * app reads around it exactly as the captured reference shows.
+     *
+     * The panel sits on the USER-OWNED rung of the modal ladder
+     * (`components/overlays/modal-layers.ts`): above the app-owned first-run
+     * surfaces, which step aside while it is open. Those surfaces used to
+     * share this z-index with the panel, so the winner was decided by mount
+     * order — the first-run setup checklist painted over this whole panel and
+     * swallowed every click in it.
+     *
+     * Click-outside-to-close still works: the dialog stops propagation, so
+     * only a click on the exposed app dismisses. */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-8"
+      className={cn(
+        'fixed inset-0 flex items-center justify-center bg-scrim p-3 sm:p-8',
+        modalLayerClass(MODAL_LAYER.userOwned),
+      )}
       onClick={closeToWorkspace}
       data-testid="settings-backdrop"
     >
