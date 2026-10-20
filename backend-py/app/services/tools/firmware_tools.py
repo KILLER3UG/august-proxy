@@ -157,6 +157,43 @@ _FQBN_GUESSES: dict[str, str] = {
     'unor4': 'arduino:renesas_uno:unor4',
 }
 
+
+def board_fqbn(board: str) -> str:
+    """The FQBN a board argument names, or '' when the name is not one we know.
+
+    ONE rule for every tool that takes a board. ``board=uno`` and
+    ``board=arduino:avr:uno`` are the same board, and the compile path, the
+    flash path and the stimulus path each re-derived that on their own — so
+    the third one to be written is the one that decides which board a
+    3.3 V part is measured against. The FQBN is what arduino-cli takes AND
+    what the pin map is filed under, so it is the join between the two.
+    """
+    raw = str(board or '').strip()
+    if ':' in raw:
+        return raw
+    return _FQBN_GUESSES.get(raw.lower(), '')
+
+
+def board_short_name(board: str) -> str:
+    """The short name a board is filed under in the pin and logic-level tables.
+
+    ``uno`` -> ``uno``; the ``r4`` alias -> ``unor4`` (the name
+    ``_FQBN_GUESSES`` maps it to); a full FQBN -> its last segment
+    (``arduino:renesas_uno:unor4`` -> ``unor4``). A name we do not know
+    comes back as it was given, so a board outside the tables (esp32) still
+    resolves to itself.
+    """
+    raw = str(board or '').strip().lower()
+    if not raw:
+        return 'uno'
+    if ':' in raw:
+        return raw.rsplit(':', 1)[-1]
+    fqbn = _FQBN_GUESSES.get(raw)
+    if fqbn:
+        return fqbn.rsplit(':', 1)[-1].lower()
+    return raw
+
+
 _SKETCH_RE = re.compile(r'setup\s*\(\s*\)|loop\s*\(\s*\)', re.S)
 
 
@@ -309,9 +346,7 @@ async def firmware_compile(
             if cli is None:
                 return {'installed': False, 'error': _ARDUINO_CLI_HINT}
 
-            fqbn = board if ':' in board else _FQBN_GUESSES.get(
-                board.strip().lower(), 'arduino:avr:uno'
-            )
+            fqbn = board_fqbn(board) or 'arduino:avr:uno'
             rc, log, build_dir = await _build_sketch(
                 cli, tmpdir, base, src_text, sketch_dir, src_file, fqbn,
             )
@@ -572,6 +607,18 @@ _BOARD_LOGIC_LEVELS = {
 }
 
 
+def board_logic_level(board: str) -> float:
+    """Volts at logic 1 for a board — ``_BOARD_LOGIC_LEVELS`` is the map.
+
+    The map is keyed by the board's SHORT name, so a full FQBN is resolved
+    through ``board_short_name`` first: ``arduino:renesas_uno:unor4`` is a
+    3.3 V board, and reading it as 5 V set every PWL step to the wrong rail
+    — a stimulus that looked right and was not. A board with no entry here
+    is 5 V, the Arduino default.
+    """
+    return float(_BOARD_LOGIC_LEVELS.get(board_short_name(board), 5.0))
+
+
 def _pwl_points(
     edges: list[object], simulated_ms: float, level: float,
 ) -> tuple[list[tuple[float, float]], int]:
@@ -617,6 +664,23 @@ def _pwl_points(
     return pts, real_edges
 
 
+def _stimulus_node(board: str, pin: object) -> str:
+    """The deck node a timeline pin drives: the BOARD's name for that pin.
+
+    ``D5`` for Arduino pin 5 on a board we have a pin map for, so the deck
+    names the board's pin and the board component's own pin is the same
+    node — one name, one pin, no second spelling to keep in step. A board
+    with no pin map here (esp32 and friends) falls back to the numeric
+    ``N<pin>``, which is what this tool always used.
+    """
+    text = str(pin).strip()
+    try:
+        number = int(text)
+    except (TypeError, ValueError):
+        return text
+    return board_pin_name(board, number) or f'N{number}'
+
+
 def firmware_stimulus(
     timeline: str,
     netlist: str = '',
@@ -631,16 +695,24 @@ def firmware_stimulus(
 
     ``timeline`` is the ``<name>_pins.json`` artifact firmware_run persists
     (pass ``timeline=<name>`` there). Each toggling pin becomes a SPICE
-    voltage source card ``Vp<pin> N<pin> 0 PWL(...)`` — 0/.logic-level
+    voltage source card ``Vp<pin> <node> 0 PWL(...)`` — 0/.logic-level
     steps at the real edge times (ms → seconds). When ``netlist`` is given
     (inline text or a workspace deck path) the PWL cards are injected
     before the analysis card of a copy saved as ``<name>.cir`` — hand that
     straight to circuit_simulate (e.g. PWM pin → RC filter .tran). Without
     a netlist the tool just returns the cards for inspection.
 
-    Each pin drives deck node ``N<pin>`` (N13 = Arduino pin 13) against
-    ground — connect the analog load between ``N<pin>`` and 0 (e.g. an RC
-    filter: ``R1 N13 out 1k`` / ``C1 out 0 100n``).
+    The node a pin drives is the BOARD's name for that pin — ``D5`` for
+    Arduino pin 5 — so the deck says "D5 drives this filter" instead of
+    naming a node the user invented. The names come from the board's pin
+    map (``_BOARD_PINS``), the same table the board component is built
+    from, and the logic level from the same board→level map the board
+    component reports. A board we have no pin map for falls back to the
+    numeric node ``N<pin>``.
+
+    Each pin drives that node against ground — connect the analog load
+    between it and 0 (e.g. an RC filter: ``R1 D13 out 1k`` /
+    ``C1 out 0 100n``).
     """
     import json as _json
 
@@ -675,7 +747,7 @@ def firmware_stimulus(
             'error': 'timeline contains no pin data — rerun firmware_run with timeline=<name>',
         }
 
-    level = _BOARD_LOGIC_LEVELS.get((board or 'uno').lower(), 5.0)
+    level = board_logic_level(board)
 
     wanted: list[str] | None = None
     if pins is not None:
@@ -686,6 +758,7 @@ def firmware_stimulus(
 
     cards: list[str] = []
     used_pins: dict[str, object] = {}
+    driven: list[tuple[str, str]] = []
     for pin, t in pins_data.items():
         if wanted is not None and str(pin) not in wanted:
             continue
@@ -696,10 +769,13 @@ def firmware_stimulus(
             continue
         pts, real_edges = _pwl_points(edges, simulated_ms, level)
         pairs = ' '.join(f'{t_ * 1e-3:.6g}s {v:.4g}' for t_, v in pts)
-        cards.append(f'Vp{pin} N{pin} 0 PWL({pairs})')
+        node = _stimulus_node(board, pin)
+        cards.append(f'Vp{pin} {node} 0 PWL({pairs})')
+        driven.append((str(pin), node))
         used_pins[str(pin)] = {
             'count': t.get('count'),
             'edges': real_edges,
+            'node': node,
         }
 
     if not cards:
@@ -743,6 +819,24 @@ def firmware_stimulus(
             out_path.write_text('\n'.join(merged) + '\n', encoding='utf-8')
             result['savedTo'] = str(out_path)
         result['deck'] = '\n'.join(merged)
+        # A deck written against the OLD numeric node names (N13) leaves its
+        # load on a node the source never drives: the source follows the
+        # BOARD's pin name (D13), so the old name is now a floating node and
+        # the filter reads 0 V with no error anywhere. Name the mismatch
+        # rather than let the number be quietly wrong.
+        stale = [
+            (pin, node, f'N{pin}')
+            for pin, node in driven
+            if node != f'N{pin}'
+            and re.search(rf'(?<![\w.])N{re.escape(pin)}(?![\w.])', text, re.I)
+        ]
+        if stale:
+            result['note'] = (
+                'the deck names '
+                + ', '.join(f'{old} (the board\'s pin is {node})' for _pin, node, old in stale)
+                + ' — the PWL source drove the board\'s pin, so those nodes are '
+                'not driven. Rename them to the board\'s pin names.'
+            )
     return result
 
 
@@ -780,6 +874,60 @@ _BOARD_PINS: dict[str, dict[str, object]] = {
 def _board_pins(fqbn: str) -> dict[str, object]:
     """The pin map for a board, or an empty map for one we do not know."""
     return dict(_BOARD_PINS.get(fqbn, {}))
+
+
+def board_pin_list(board: str) -> list[dict[str, object]]:
+    """The board's pins, from ``_BOARD_PINS`` — the ONE pin table.
+
+    One entry per pin: ``name`` (D0..Dn, A0..Am — the label on the
+    silkscreen, and the name a deck names the node by), ``number`` (the
+    Arduino pin number the firmware timeline speaks in), ``kind``, and
+    ``led`` on the pin the on-board LED sits on.
+
+    The numbers follow the Arduino convention: the digital pins are 0..n-1
+    and the analog pins continue the count (A0 is digital pin n). That is
+    exact for every AVR8 board in the table — Uno, Nano, Mega, Pro, Micro —
+    and the firmware bridge is AVR8-only anyway, because the emulator's pin
+    map is the ATmega328P's. The 32u4 (Leonardo) and the Renesas R4 number
+    their analog pins differently; they are not the boards this bridge
+    emulates, and the tool says which board it was asked about rather than
+    quietly renumbering a pin.
+    """
+    pins = _BOARD_PINS.get(board_fqbn(board))
+    if not pins:
+        return []
+    digital = pins.get('digital')
+    analog = pins.get('analog')
+    digital_count = digital if isinstance(digital, int) else 0
+    analog_count = analog if isinstance(analog, int) else 0
+    led = pins.get('led')
+    out: list[dict[str, object]] = []
+    for i in range(digital_count):
+        out.append({'name': f'D{i}', 'number': i, 'kind': 'digital', 'led': i == led})
+    for j in range(analog_count):
+        out.append({'name': f'A{j}', 'number': digital_count + j, 'kind': 'analog', 'led': False})
+    return out
+
+
+def board_pin_name(board: str, number: int) -> str | None:
+    """The board's name for an Arduino pin number ('D5'), or None.
+
+    None means this board has no pin map here, so the caller falls back to
+    the numeric node name instead of inventing one.
+    """
+    for pin in board_pin_list(board):
+        if pin.get('number') == number:
+            return str(pin.get('name'))
+    return None
+
+
+def board_fqbns() -> list[str]:
+    """The FQBNs that have a pin map — the boards a deck can name.
+
+    The one table, listed rather than re-described: a second list of
+    boards would be a second place for a board to be added to and missed.
+    """
+    return sorted(_BOARD_PINS)
 
 
 def _as_board_list(value: object) -> list[dict[str, object]]:
@@ -913,9 +1061,7 @@ async def board_flash(
     if not src_text:
         raise ValueError('source is empty — pass inline sketch text or a workspace .ino path')
 
-    fqbn = board if ':' in board else _FQBN_GUESSES.get(
-        board.strip().lower(), 'arduino:avr:uno'
-    )
+    fqbn = board_fqbn(board) or 'arduino:avr:uno'
 
     # Which board? The attached list is the truth about what is plugged in.
     listing = await board_list()

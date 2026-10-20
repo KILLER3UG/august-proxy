@@ -139,10 +139,22 @@ The compile → emulate → bridge chain:
    assertions, and with `timeline=<name>` a pin-edge timeline persisted
    as `<name>_pins.json`.
 3. `firmware_stimulus` — convert that timeline into ngspice PWL sources
-   (`Vp<pin> N<pin> 0 PWL(...)`, board-aware logic level 5V/3.3V) and
+   (`Vp<pin> <node> 0 PWL(...)`, board-aware logic level 5V/3.3V) and
    optionally inject them into a deck copy (`<name>.cir`) → hand to
-   `circuit_simulate` for PWM-into-RC-filter mixed-signal runs.
-4. `circuit_lint_diagram` — validate a diagram.json breadboard-wiring
+   `circuit_simulate` for PWM-into-RC-filter mixed-signal runs. The node
+   is the BOARD's name for that pin (`D5` for Arduino pin 5), so the
+   source lands on the board's own pin.
+4. `circuit_board` / `circuit_add_board` — put the BOARD in the deck, so
+   the thing being simulated is a board you recognise. The board's own
+   pin map is the source of the pin list — `D0..D13`, `A0..A5` per
+   FQBN, plus the LED pin and the logic level — so the deck names the
+   board's pins instead of a name you invented: `R1 D5 out 1k` is the
+   board's D5 pin driving the filter. `circuit_board` reports the pins
+   (read it first); `circuit_add_board` writes the board into a deck as
+   a `.subckt` block plus an `X` instance, and the schematic then draws
+   the board as a labelled component with every pin. `ref` must start
+   with `X` — a SPICE subcircuit instance, not `U1`.
+5. `circuit_lint_diagram` — validate a diagram.json breadboard-wiring
    artifact (Wokwi-compatible parts + `"part:pin"` connections) when the
    task involves wiring around the MCU; netlists stay the SPICE source
    of truth, the diagram describes the breadboard and pins the co-sim
@@ -169,6 +181,10 @@ When the task is about the REAL board, three more tools:
 The engine is `arduino-cli` (the Arduino IDE's own toolchain, so a board
 the IDE can flash is a board this can flash). Install guidance when it is
 absent; `circuit_env` reports availability.
+
+Those three are the desk half. The board in the DECK is the other half:
+`circuit_board` / `circuit_add_board` (§4) put the same board into the
+schematic, and none of that needs the hardware either.
 
 ## 6. HDL + FPGA
 
@@ -213,6 +229,13 @@ absent; `circuit_env` reports availability.
 - Treating a `firmware_run` GPIO toggle count as proof the circuit
   works — the analog half needs the `firmware_stimulus` →
   `circuit_simulate` chain (or bench measurement) for that claim.
+- Naming a node the board does not own. With the board in the deck the
+  node IS the pin (`D5`), and the PWL source drives that node; a load
+  wired to a hand-made `N5` sits on a floating node and the filter
+  reads 0 V. Take the node names from `circuit_board`.
+- Expecting the board block to simulate the MCU. It is an interface —
+  an empty `.subckt` whose pins are the deck's nodes. The firmware
+  drives the pins from outside; the board does not model the chip.
 
 ## Verification
 
@@ -227,5 +250,9 @@ absent; `circuit_env` reports availability.
   + `assertionsOk` flag (expect/fail text), and for mixed-signal claims
   the `firmware_stimulus` deck's simulated waveform (e.g. RC-filter
   output that actually settles toward the rail, not a pass-through).
+- For a board-driven claim, the receipt is the board's pin IN the deck
+  (`R1 D5 out 1k`, not `R1 N5 out 1k`) plus the measured filter output
+  (e.g. `vout_max` below the rail), and the schematic that shows the
+  board as a labelled component — not the tool's own `ok` flag.
 - For FPGA claims, the receipt is `fpga_compile`'s parsed `fit`
   utilization + `.sof` artifact path — not "the tool ran".

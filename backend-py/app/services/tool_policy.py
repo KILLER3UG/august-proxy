@@ -41,6 +41,11 @@ _PROMPT_READ = frozenset({
     # Circuit workbench lookups — read-only datasheet/board facts.
     'list_boards', 'search_component', 'circuit_list_boards',
     'circuit_search_component', 'circuit_read_netlist', 'circuit_list_netlists',
+    # The board as a schematic element — the board's own pin map (D0..D13,
+    # A0..A5 per FQBN), its FQBN, its logic level and the LED pin, read
+    # from the one pin table in firmware_tools. It touches no deck, writes
+    # nothing and spawns nothing.
+    'circuit_board',
     # Schematic read — merges the netlist (SoT) with its layout sidecar and
     # returns the renderable graph; reads two files, writes nothing.
     'circuit_read_schematic',
@@ -116,6 +121,12 @@ _PROMPT_WRITE = frozenset({
     'create_pptx', 'render_chart', 'render_video', 'draw_circuit',
     # Circuit workbench mutations — netlist files + rendered PNG output.
     'circuit_create_netlist', 'circuit_update_netlist', 'circuit_render_3d',
+    # The board as a schematic element, written into a deck: the board's
+    # pins become the deck's nodes. It writes a netlist file, so it is a
+    # mutation — and it is in _PLAN_BLOCKED_EXACT below, which is the set
+    # that actually gates. Being in this bucket alone would only DESCRIBE
+    # it as a write, which is the mistake this file already made once.
+    'circuit_add_board',
     # Schematic sidecar — writes only <name>.layout.json (positions/routes);
     # never touches the netlist, so a schematic edit cannot change a value.
     'circuit_edit_schematic',
@@ -222,6 +233,16 @@ _PLAN_BLOCKED_EXACT = frozenset({
     # Circuit netlist CRUD — workspace file writes/edits behind the
     # /circuit workbench gate (still plan-mode mutations).
     'circuit_create_netlist', 'circuit_update_netlist',
+    # The board written into a deck (the board's pins become the deck's
+    # nodes). A workspace file write, so the modes a user picks to keep the
+    # agent off the machine must see it as a mutation.
+    #
+    # The name carries none of the _PLAN_BLOCKED_MARKERS ('write', 'edit',
+    # 'delete', ...), so WITHOUT this entry is_mutating() said False and
+    # plan mode waved a netlist write through. The prompt bucket
+    # (_PROMPT_WRITE) only DESCRIBES a tool as a write; this set is what
+    # gates one.
+    'circuit_add_board',
     # Schematic sidecar edits — a workspace file write (layout only).
     'circuit_edit_schematic',
     # Flashing a physical board. It changes the state of a real thing and

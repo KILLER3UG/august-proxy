@@ -122,9 +122,14 @@ CIRCUIT_HINT = (
     'and returns serial output, GPIO state, expect/fail assertions, and '
     'the pin-edge timeline that seeds PWL stimulus for ngspice decks. '
     'firmware_stimulus turns that <name>_pins.json timeline into ngspice '
-    'PWL source cards (Vp<pin> N<pin> 0 PWL(...)) — optionally injected '
-    'into a deck copy as <name>.cir, the firmware→SPICE bridge for '
-    'PWM-into-RC-filter runs. hdl_lint is the HDL netlist-lint (ghdl -a '
+    'PWL source cards (Vp<pin> <the board\'s pin name> 0 PWL(...)) — '
+    'optionally injected into a deck copy as <name>.cir, the firmware→SPICE '
+    'bridge for PWM-into-RC-filter runs. circuit_board reports a board as a '
+    'schematic element (its named pins D0..D13/A0..A5, the FQBN, the logic '
+    'level, the LED pin) and circuit_add_board puts that board in a deck, so '
+    'the deck\'s nodes ARE the board\'s pins ("R1 D5 out 1k" is the board\'s '
+    'D5 pin) and the schematic draws the board as a labelled component; '
+    'hdl_lint is the HDL netlist-lint (ghdl -a '
     'for VHDL, verilator --lint-only for Verilog — file:line diagnostics, '
     'zero-cost after every edit); hdl_simulate runs HDL testbenches '
     '(ghdl --elab-run --wave / iverilog+vvp) and persists the .vcd for '
@@ -797,6 +802,255 @@ def render_schematic(
         'components': len(graph['components']),
         'wires': len(graph['wires']),
         'svgBytes': len(svg.encode('utf-8')),
+    }
+
+
+# ── The board as a schematic element ──────────────────────────────────────
+#
+# The board workbench already compiles a sketch, emulates it, and turns the
+# pin timeline into PWL sources — but the DECK could only name nodes the
+# user invented ("N13"), so a sketch's PWM on pin 5 drove a node nobody
+# could trace back to a pin. SimulIDE's appeal is that the thing you are
+# simulating is a board you recognise; this is that, in SPICE.
+#
+# The board lands in the deck as a `.subckt` whose formal pins are the
+# board's own (D0..D13, A0..A5) plus an `X` instance that names those pins
+# as the deck's nodes — so `R1 D5 out 1k` IS the board's D5 pin driving the
+# filter, and the schematic draws the board as a labelled component with
+# every one of those pins.
+#
+# The block body is EMPTY on purpose. A board in a mixed-signal deck is an
+# interface, not a model: the analog world hangs off its pins and the
+# firmware drives them from the outside. An empty body is electrically a
+# no-op, so the board contributes no element, no convergence risk and no
+# source of its own — and ngspice merges a formal pin with the caller's
+# node, so the board's pins ARE the deck's nodes, not a copy of them.
+#
+# The pin list is NOT written here. It comes from `firmware_tools`, which
+# owns the one pin table (`_BOARD_PINS`) and the one board→logic-level map
+# (`_BOARD_LOGIC_LEVELS`) — the same two the firmware→SPICE bridge reads,
+# so the deck's node names and the board's pin names cannot drift apart.
+
+
+def _board_block_name(fqbn: str) -> str:
+    """The board's SPICE block name: the FQBN's last segment, upper-cased.
+
+    ``arduino:avr:uno`` -> ``ARDUINO_UNO``. A block name has to be a legal
+    SPICE identifier and the FQBN's segments already are.
+    """
+    tail = (fqbn or '').rsplit(':', 1)[-1]
+    return re.sub(r'[^A-Za-z0-9_]', '_', tail).upper() or 'BOARD'
+
+
+def _board_pin_filter(pins: object) -> list[str] | None:
+    """A pin-name filter as a list of upper-cased names, or None for "all"."""
+    if pins is None:
+        return None
+    if isinstance(pins, str):
+        return [p.strip().upper() for p in re.split(r'[,\s]+', pins) if p.strip()]
+    if isinstance(pins, (list, tuple)):
+        return [str(p).strip().upper() for p in pins if str(p).strip()]
+    return None
+
+
+def board_component(board: str = 'uno', pins=None) -> dict[str, object]:
+    """The board as a schematic element: its named pins, FQBN, logic level.
+
+    READ-ONLY: the board's facts, no deck touched and nothing written.
+
+    The pin list is the board's own — D0..D13, A0..A5 and so on — taken
+    from the one pin table in ``firmware_tools``, and each pin's ``node``
+    is the name a deck uses for it. The logic level is the board's, from
+    the same board→level map the PWL stimulus drives it at, so the deck
+    and the stimulus can never disagree about the rail.
+    """
+    from app.services.tools import firmware_tools
+
+    fqbn = firmware_tools.board_fqbn(board)
+    short = firmware_tools.board_short_name(board)
+    every = firmware_tools.board_pin_list(board)
+    if not every:
+        return {
+            'ok': False,
+            'error': (
+                f'no pin map for board {board!r} — the boards that have one: '
+                + ', '.join(firmware_tools.board_fqbns())
+            ),
+        }
+    wanted = _board_pin_filter(pins)
+    selected = [
+        p for p in every
+        if wanted is None or str(p.get('name', '')).upper() in wanted
+    ]
+    if wanted is not None and not selected:
+        return {
+            'ok': False,
+            'error': (
+                f'none of {wanted} are pins of {short} — it has '
+                + ', '.join(str(p.get('name')) for p in every)
+            ),
+        }
+    level = firmware_tools.board_logic_level(board)
+    led = next((str(p.get('name')) for p in every if p.get('led')), '')
+    nodes = [str(p.get('name')) for p in selected]
+    return {
+        'ok': True,
+        'board': board,
+        'name': short,
+        'fqbn': fqbn,
+        'block': _board_block_name(fqbn),
+        'logicLevel': level,
+        'logic': f'{level:g}V',
+        'ledPin': led,
+        'digital': sum(1 for p in every if p.get('kind') == 'digital'),
+        'analog': sum(1 for p in every if p.get('kind') == 'analog'),
+        'pins': [{**p, 'node': str(p.get('name'))} for p in selected],
+        'nodes': nodes,
+    }
+
+
+def _board_lines(spec: dict[str, object], ref: str) -> list[str]:
+    """The board's deck lines: the comment, the block, and the instance.
+
+    The instance's nets ARE the board's pin names, in the board's pin
+    order, so the instance maps pin i to pin i. The block body is empty
+    (see the section comment): a board in a mixed-signal deck is an
+    interface, not a model.
+    """
+    block = str(spec.get('block') or 'BOARD')
+    raw_nodes = spec.get('nodes')
+    nodes = [str(n) for n in raw_nodes] if isinstance(raw_nodes, list) else []
+    raw_level = spec.get('logicLevel')
+    level = float(raw_level) if isinstance(raw_level, (int, float)) else 5.0
+    led = str(spec.get('ledPin') or '')
+    # The comment names the block, so the strip below can recognise THIS
+    # board's marker and leave a comment the user wrote alone.
+    note = (
+        f'* board {block}: {spec.get("fqbn")} ({spec.get("name")}) - '
+        f'{level:g}V logic'
+    )
+    if led:
+        note += f', LED on {led}'
+    return [
+        note,
+        f'.subckt {block} ' + ' '.join(nodes),
+        '.ends',
+        f'{ref} ' + ' '.join(nodes) + f' {block}',
+    ]
+
+
+def _strip_board_block(lines: list[str], block: str) -> list[str]:
+    """Drop a board block already in the deck, so the tool is re-runnable.
+
+    Three things go: the ``.subckt`` definition, any instance card that
+    calls it, and the comment that names the board. Removing only the
+    definition would leave an instance calling a block that is no longer
+    there, and ngspice answers that with "unknown subckt" — the deck would
+    stop running after a second call. Leaving the comment behind put the
+    board's name in the deck twice, which reads as two boards.
+    """
+    out: list[str] = []
+    i = 0
+    marker = f'* board {block.lower()}:'
+    while i < len(lines):
+        stripped = lines[i].strip()
+        parts = stripped.split()
+        low = stripped.lower()
+        if low.startswith(marker):
+            i += 1
+            continue
+        if low.startswith('.subckt ') and len(parts) > 1 and parts[1].lower() == block.lower():
+            i += 1
+            while i < len(lines) and lines[i].strip().lower() != '.ends':
+                i += 1
+            i += 1  # the `.ends` line itself
+            continue
+        if parts and parts[-1].lower() == block.lower() and parts[0][:1].upper() == 'X':
+            i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    return out
+
+
+def add_board_to_netlist(
+    netlist: str,
+    board: str = 'uno',
+    ref: str = 'X1',
+    pins=None,
+    name: str = 'board',
+    workspace: str = '',
+) -> dict[str, object]:
+    """Put a board in a deck, so the deck's nodes ARE the board's pins.
+
+    The board is written into the deck as a ``.subckt`` block plus an ``X``
+    instance, so ``R1 D5 out 1k`` is the board's D5 pin driving the filter,
+    and ``circuit_read_schematic`` / ``circuit_render_schematic`` draw the
+    board as a labelled component with every one of its pins.
+
+    ``netlist`` is a workspace deck path (edited in place) or inline SPICE
+    text (written out as ``<name>.cir``). ``ref`` is the instance's
+    reference designator and must start with ``X`` — a SPICE subcircuit
+    instance; ``U1`` would be an unknown device to ngspice. ``pins``
+    narrows the board to the pins the design uses; the default is all of
+    them, from the board's own pin map.
+    """
+    spec = board_component(board, pins)
+    if not spec.get('ok'):
+        return dict(spec)
+
+    instance = str(ref or 'X1').strip()
+    if not instance.lower().startswith('x'):
+        raise ValueError(
+            f'ref must start with X (a SPICE subcircuit instance): {instance!r} '
+            'would be an unknown device to ngspice'
+        )
+
+    stripped = (netlist or '').strip()
+    if not stripped:
+        raise ValueError('netlist is empty — pass a deck path or inline SPICE text')
+    target = None
+    if _looks_like_deck_path(stripped):
+        target = _bind(stripped, workspace, for_write=True)
+        if not target.is_file():
+            raise ValueError(f'File not found: {netlist}')
+        text = target.read_text(encoding='utf-8', errors='replace')
+    else:
+        text = stripped
+
+    block = str(spec.get('block') or 'BOARD')
+    lines = _strip_board_block(text.splitlines(), block)
+    text = _ensure_deck_title('\n'.join(lines))
+    lines = text.splitlines()
+    board_lines = _board_lines(spec, instance)
+    merged = lines[:1] + board_lines + lines[1:]
+    if not re.search(r'^\.end\s*$', '\n'.join(merged), re.M | re.I):
+        merged.append('.end')
+    deck = '\n'.join(merged) + '\n'
+
+    saved = ''
+    if target is not None:
+        target.write_text(deck, encoding='utf-8')
+        saved = str(target)
+    else:
+        stem = re.sub(r'\.(cir|net|ckt|sp)?$', '', str(name or '').strip()) or 'board'
+        out_path = _bind(f'{stem}.cir', workspace, for_write=True)
+        out_path.write_text(deck, encoding='utf-8')
+        saved = str(out_path)
+
+    return {
+        'ok': True,
+        'board': spec.get('board'),
+        'fqbn': spec.get('fqbn'),
+        'logicLevel': spec.get('logicLevel'),
+        'ledPin': spec.get('ledPin'),
+        'ref': instance,
+        'block': block,
+        'pins': spec.get('pins'),
+        'nodes': spec.get('nodes'),
+        'spice': '\n'.join(board_lines),
+        'deck': deck,
+        'savedTo': saved,
     }
 
 

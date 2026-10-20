@@ -99,7 +99,7 @@ are simulating is a board you recognise.
 | `board_list` | Enumerate the boards attached to this machine, with their FQBN, port, protocol, VID/PID, **pin map** and the installed cores | **shipped** |
 | `board_flash` | Build a sketch for a chosen FQBN and flash it to the attached board | **shipped** — confirm-gated and plan-blocked |
 | `board_monitor` | Read the board's serial output for a bounded window | **shipped** |
-| **The board's pin map feeding the deck** | The board's pins become named ngspice nodes, so a sketch's PWM output drives a real filter in the sim | **not built** — this is the piece that makes it SimulIDE rather than a compiler, and it is the next one |
+| **The board's pin map feeding the deck** | The board's pins become named ngspice nodes, so a sketch's PWM output drives a real filter in the sim | **shipped** — `circuit_board` (the board as a component) and `circuit_add_board` (it lands in the deck as a `.subckt` + `X` instance whose nets ARE the board's pins). `firmware_stimulus` now names the node `D5`, not `N5`. The remaining piece: the board is drawn with the GENERIC subckt symbol, because a real board outline lives in `services/tools/schematic.py` |
 
 The naming is `board_flash`, not `board_upload`: the tool does the whole
 journey (resolve the source → materialise the sketch → compile for the FQBN
@@ -110,7 +110,7 @@ different name.
 
 The pin map is what is still missing, and it is the interesting half.
 `firmware_stimulus` already turns a pin timeline into PWL sources
-(`Vp13 N13 0 PWL(...)`), so the wiring exists — what does not is the other
+(`Vp13 D13 0 PWL(...)` - the node is the BOARD's pin), so the wiring exists — what does not is the other
 direction: taking a **board's** pins and laying them out as a schematic
 element, so the deck says "D5 drives this filter" and the filter's input
 is the board's pin, not a name the user invented. That is a

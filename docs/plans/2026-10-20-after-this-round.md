@@ -61,7 +61,7 @@ roughly an order of magnitude.
 
 **Not built, and it is the interesting half:** the board's pin map feeding
 the deck. `firmware_stimulus` already turns a pin timeline into PWL
-sources (`Vp13 N13 0 PWL(...)`), so the wiring exists; what does not is
+sources (`Vp13 D13 0 PWL(...)` - the node is the BOARD's pin), so the wiring exists; what does not is
 the other direction — taking a **board's** pins and laying them out as a
 schematic element, so the deck says "D5 drives this filter" and the
 filter's input is the board's pin rather than a name the user invented.

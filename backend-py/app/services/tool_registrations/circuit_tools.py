@@ -147,6 +147,29 @@ async def _renderSchematic(netlist: str = '', name: str = 'schematic') -> str:
         return _err(exc)
 
 
+async def _board(board: str = 'uno', pins=None) -> str:
+    """The board as a schematic element: its named pins, FQBN, logic level."""
+    try:
+        return json.dumps(circuit_tools.board_component(board, pins))
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _addBoard(
+    netlist: str = '',
+    board: str = 'uno',
+    ref: str = 'X1',
+    pins=None,
+    name: str = 'board',
+) -> str:
+    try:
+        return json.dumps(circuit_tools.add_board_to_netlist(
+            netlist, board=board, ref=ref, pins=pins, name=name, workspace=_ws(),
+        ))
+    except Exception as exc:
+        return _err(exc)
+
+
 async def _renderLogic(source: str = '', name: str = 'logic',
                        truthTable: bool = True) -> str:
     try:
@@ -408,6 +431,7 @@ CIRCUIT_MODE_HINT = (
     'circuit_inject_fault, circuit_export_vcd, circuit_symbolic, '
     'circuit_annotate, circuit_lint_diagram, firmware_compile, firmware_run, '
     'firmware_stimulus, board_list, board_flash, board_monitor, '
+    'circuit_board, circuit_add_board, '
     'hdl_lint, hdl_simulate, vcd_parse, hdl_test, '
     'hdl_timing_diagram, fpga_compile, kicad_checks, kicad_render, '
     'circuit_search_component, circuit_integrate_component, circuit_detect_ic, '
@@ -420,6 +444,11 @@ CIRCUIT_MODE_HINT = (
     'FQBN, pin map), board_flash builds a sketch and flashes it onto one '
     '(CONFIRM-GATED: it changes real hardware), and board_monitor reads what '
     'the board printed; '
+    'circuit_board reports a board as a schematic element (its named pins '
+    'D0..D13/A0..A5, the FQBN, the logic level, the LED pin) and '
+    'circuit_add_board puts that board in a deck, so the deck\'s nodes ARE '
+    'the board\'s pins — "R1 D5 out 1k" is the board\'s D5 pin — and the '
+    'schematic draws the board as a labelled component; '
     'circuit_export_vcd dumps digital (.tran + XSPICE) node waveforms to a '
     'workspace .vcd logic-analyzer file; '
     'circuit_symbolic derives H(s), poles/zeros, and V(t) to explain and '
@@ -442,8 +471,8 @@ CIRCUIT_MODE_HINT = (
     'returns the serial monitor capture, GPIO state, expect/fail serial '
     'assertions, and a pin-edge timeline (timeline=<name>) that seeds PWL '
     'stimulus for ngspice decks; firmware_stimulus converts that '
-    '<name>_pins.json timeline into ngspice PWL sources (Vp<pin> N<pin> '
-    '0 PWL(...)) and can inject them into a deck — the firmware→SPICE '
+    '<name>_pins.json timeline into ngspice PWL sources (Vp<pin> <the board\'s '
+    'pin name> 0 PWL(...)) and can inject them into a deck — the firmware→SPICE '
     'bridge for PWM-into-RC-filter style mixed-signal runs; '
     'hdl_lint checks VHDL/Verilog syntax instantly (ghdl/verilator, '
     'file:line diagnostics); hdl_simulate runs HDL testbenches and '
@@ -641,6 +670,67 @@ def register() -> None:
             'properties': {
                 'netlist': {'type': 'string', 'description': 'Inline SPICE text or deck path'},
                 'name': {'type': 'string', 'description': 'Artifact basename (default "schematic")'},
+            },
+            'required': ['netlist'],
+        },
+    )
+    tool_registry.register(
+        'circuit_board',
+        'The board as a schematic element: its named pins (D0..D13, A0..A5 and '
+        'so on, per FQBN), the Arduino pin number each one is, the FQBN, the '
+        'logic level (5V / 3.3V) and the pin the on-board LED sits on. The pin '
+        'list is the board\'s own — the same table the firmware→SPICE bridge '
+        'reads — so the node a deck names is the board\'s pin, not a name the '
+        'user invented. Read-only: it touches no deck and writes nothing. '
+        'Call it before writing a deck that a sketch\'s output drives, then '
+        'use circuit_add_board to put the board in the deck.',
+        _board,
+        {
+            'type': 'object',
+            'properties': {
+                'board': {
+                    'type': 'string',
+                    'description': 'Board: uno/nano/mega/leonardo/unor4, or a full FQBN (default "uno")',
+                },
+                'pins': {
+                    'anyOf': [{'type': 'string'}, {'type': 'array', 'items': {'type': 'string'}}],
+                    'description': 'Pin names to report (e.g. "D5,A0"); default = every pin the board has',
+                },
+            },
+        },
+    )
+    tool_registry.register(
+        'circuit_add_board',
+        'Put a board in a netlist so the deck\'s nodes ARE the board\'s pins: '
+        'the board is written as a .subckt block plus an X instance, so '
+        '"R1 D5 out 1k" is the board\'s D5 pin driving the filter, and the '
+        'schematic draws the board as a labelled component with every one of '
+        'its pins. The block body is empty on purpose — a board in a '
+        'mixed-signal deck is an interface, not a model. netlist is a deck '
+        'path (edited in place) or inline SPICE text (written as <name>.cir); '
+        'ref is the instance refdes and must start with X (a SPICE subcircuit '
+        'instance); pins narrows the board to the pins the design uses.',
+        _addBoard,
+        {
+            'type': 'object',
+            'properties': {
+                'netlist': {
+                    'type': 'string',
+                    'description': 'Inline SPICE text or a workspace deck path to put the board in',
+                },
+                'board': {
+                    'type': 'string',
+                    'description': 'Board: uno/nano/mega/leonardo/unor4, or a full FQBN (default "uno")',
+                },
+                'ref': {
+                    'type': 'string',
+                    'description': 'The board instance\'s refdes; must start with X (default "X1")',
+                },
+                'pins': {
+                    'anyOf': [{'type': 'string'}, {'type': 'array', 'items': {'type': 'string'}}],
+                    'description': 'Pin names to expose (e.g. "D5,D13"); default = every pin the board has',
+                },
+                'name': {'type': 'string', 'description': 'Basename for the written deck (default "board")'},
             },
             'required': ['netlist'],
         },
@@ -933,8 +1023,11 @@ def register() -> None:
         'firmware_stimulus',
         'Convert a firmware_run pin timeline (<name>_pins.json — pass '
         'timeline=<name> to firmware_run) into ngspice PWL sources: each '
-        'toggling pin becomes Vp<pin> N<pin> 0 PWL(...) stepping 0 → '
+        'toggling pin becomes Vp<pin> <node> 0 PWL(...) stepping 0 → '
         'logic-level at the real edge times (board=uno 5V / unor4·esp32 3.3V). '
+        'The node is the BOARD\'s name for that pin (D5 for Arduino pin 5), '
+        'so the deck says "D5 drives this filter" and lands on the board '
+        'component\'s own pin; a board with no pin map falls back to N<pin>. '
         'Pass netlist (inline SPICE or a deck path) to inject the PWL cards '
         'before the analysis card and save <name>.cir — hand that to '
         'circuit_simulate for firmware-in-the-loop analog runs (e.g. PWM '
