@@ -1,4 +1,25 @@
-"""Service connection credentials (Google / GitHub / Slack) stored in config.json."""
+"""Service connection credentials (Google / GitHub / Slack).
+
+The NON-secret half of a connection (email, facets, scopes, status) lives in
+``config.json``; the TOKENS live in the encrypted store
+(``app/services/secret_store.py`` — Windows DPAPI, in the user's data
+directory, beside ``providers.json``). This module splits the two on the way
+out and merges them back on the way in, so every reader below keeps working
+on one shape and no token is ever written to ``config.json`` again.
+
+Two plaintext copies of a Google token still exist OUTSIDE this module, and
+neither can be closed from here:
+
+  * ``~/.google_workspace_mcp/credentials/<account>.json`` — written for the
+    external ``workspace-mcp`` process, which cannot decrypt DPAPI. Its
+    format is that tool's contract, not ours, so the file stays plaintext.
+    It is at least a DERIVED copy: August can rewrite it from the encrypted
+    store at any time (``sync_google_tokens_to_workspace_mcp``), so it can be
+    deleted without losing the connection. While it exists, it is plaintext,
+    and no change here pretends otherwise.
+  * ``mcpGlobalEnv`` in ``config.json`` — a different store with different
+    consumers (MCP subprocess environments). Out of scope for this track.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +37,7 @@ from typing import Any
 import httpx
 
 from app.json_narrowing import as_dict, as_str
+from app.services import secret_store
 from app.services.config_service import getConfig, saveConfig
 
 logger = logging.getLogger(__name__)
@@ -148,15 +170,192 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# The fields of a service connection that are CREDENTIALS, per service.
+#
+# The second element says whether the value is JSON rather than a plain
+# string: ``google.tokens`` is a legacy nested token object, and it has to
+# come back out of the store as the object it went in as.
+#
+# These are the fields that used to sit in `config.json` in PLAINTEXT. The
+# store key is `serviceConnections.<service>.<field>` — stable, greppable,
+# and the prefix the pruning in `_pruneStore` works on.
+_SECRET_FIELDS: dict[str, tuple[tuple[str, bool], ...]] = {
+    'google': (('refreshToken', False), ('accessToken', False), ('tokens', True)),
+    'github': (('token', False),),
+    'slack': (('botToken', False),),
+}
+
+
+def _secretKey(service: str, field: str) -> str:
+    return f'serviceConnections.{service}.{field}'
+
+
+def _splitSecrets(sc: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str], set[str]]:
+    """Split connections into (public copy, store entries, cleared keys).
+
+    The public copy is what may be written to ``config.json``: the same
+    connections with every credential field removed. The store entries are
+    ``{storeKey: plaintext}``. A credential that is present but EMPTY is a
+    deliberate clear, and its key is reported separately so the stored copy
+    can be deleted rather than left behind.
+    """
+    public: dict[str, Any] = {}
+    entries: dict[str, str] = {}
+    cleared: set[str] = set()
+    for service, entry in sc.items():
+        fields = _SECRET_FIELDS.get(service)
+        if not fields or not isinstance(entry, dict):
+            public[service] = entry
+            continue
+        copied = dict(entry)
+        for field, isJson in fields:
+            if field not in copied:
+                continue
+            value = copied.pop(field)
+            key = _secretKey(service, field)
+            if value is None or value == '' or value == {}:
+                cleared.add(key)
+                continue
+            if isJson:
+                try:
+                    entries[key] = json.dumps(value)
+                except (TypeError, ValueError):
+                    # Not serialisable — leave it in the public copy rather
+                    # than lose a value we cannot store.
+                    copied[field] = value
+                continue
+            text = as_str(value)
+            if not text:
+                cleared.add(key)
+                continue
+            entries[key] = text
+        public[service] = copied
+    return public, entries, cleared
+
+
+def _mergeSecrets(sc: dict[str, Any]) -> dict[str, Any]:
+    """The connections with the stored credentials put back in.
+
+    ``config.json`` wins where it speaks: a field still present there is a
+    plaintext value this process has not been able to move into the store
+    yet (a failed migration, or a deliberate clear), and it is the freshest
+    thing we have. A field that is ABSENT there is the store's to fill.
+    """
+    merged: dict[str, Any] = {
+        service: (dict(entry) if isinstance(entry, dict) else entry)
+        for service, entry in sc.items()
+    }
+    for service, fields in _SECRET_FIELDS.items():
+        entry = merged.get(service)
+        if not isinstance(entry, dict):
+            continue
+        for field, isJson in fields:
+            if field in entry:
+                continue
+            value = secret_store.getSecret(_secretKey(service, field))
+            if value is None:
+                continue
+            if isJson:
+                try:
+                    entry[field] = json.loads(value)
+                except (TypeError, ValueError):
+                    continue
+            else:
+                entry[field] = value
+    return merged
+
+
+def _migratePlaintextSecrets(cfg: dict[str, Any], sc: dict[str, Any]) -> dict[str, Any] | None:
+    """Move plaintext service-connection credentials out of ``config.json``.
+
+    Returns the rewritten (public) connections, or ``None`` when there was
+    nothing to move — or when the move FAILED. A failure leaves the
+    plaintext exactly where it was: a user must never be left with no token
+    because an encryption call went wrong. The migration is idempotent —
+    once the plaintext is gone there is nothing left to move.
+    """
+    public, entries, cleared = _splitSecrets(sc)
+    if not entries and not cleared:
+        return None
+    try:
+        secret_store.setSecrets(entries)
+        for key in cleared:
+            secret_store.deleteSecret(key)
+    except Exception as exc:  # noqa: BLE001 — the fail-safe below is the point
+        logger.error(
+            'service connection secret migration failed; the plaintext stays in config.json: %s', exc
+        )
+        return None
+    cfg['serviceConnections'] = public
+    saveConfig(cfg)
+    try:
+        from app.config import settings
+
+        settings.reload()
+    except Exception:
+        pass
+    logger.info('moved %d service connection secret(s) into the encrypted store', len(entries))
+    return public
+
+
+def _pruneStore(public: dict[str, Any]) -> None:
+    """Drop the stored credentials of a service that is no longer connected."""
+    for service in _SECRET_FIELDS:
+        if service in public:
+            continue
+        try:
+            secret_store.pruneSecrets(f'serviceConnections.{service}.', keep=())
+        except Exception as exc:  # noqa: BLE001 — a stale token is not fatal
+            logger.warning('could not prune the stored secrets of %s: %s', service, exc)
+
+
 def _sc() -> dict[str, Any]:
+    """The service connections, with the stored credentials merged back in.
+
+    ``config.json`` holds the public half; the encrypted store holds the
+    tokens. Any plaintext token still sitting in ``config.json`` is moved
+    into the store on the way through — the migration is idempotent, and a
+    failure leaves the plaintext in place rather than losing the token.
+    """
     cfg = getConfig()
     raw = cfg.get('serviceConnections')
-    return as_dict(raw) if raw is not None else {}
+    sc = as_dict(raw) if raw is not None else {}
+    migrated = _migratePlaintextSecrets(cfg, sc)
+    if migrated is not None:
+        sc = migrated
+    return _mergeSecrets(sc)
 
 
 def _save_sc(sc: dict[str, Any]) -> None:
+    """Persist the service connections, with the credentials split out.
+
+    The tokens go to the encrypted store FIRST, and ``config.json`` is only
+    rewritten without them once the store has them. If the store write
+    fails, the plaintext is written to ``config.json`` instead — a degraded
+    but WORKING state, never a lost token.
+    """
+    public, entries, cleared = _splitSecrets(sc)
+    stored = True
+    if entries:
+        try:
+            secret_store.setSecrets(entries)
+        except Exception as exc:  # noqa: BLE001 — the fail-safe below is the point
+            logger.error('secret store write failed; keeping the token in config.json: %s', exc)
+            stored = False
+    if stored:
+        for key in cleared:
+            try:
+                secret_store.deleteSecret(key)
+            except Exception as exc:  # noqa: BLE001 — a stale token is not fatal
+                logger.warning('could not clear the stored secret %s: %s', key, exc)
+        _pruneStore(public)
+    else:
+        # Fail-safe: the whole thing, plaintext included, so the user keeps
+        # a working connection. config.json wins over the store on the read
+        # path, so this value is the one that is used.
+        public = sc
     cfg = getConfig()
-    cfg['serviceConnections'] = sc
+    cfg['serviceConnections'] = public
     saveConfig(cfg)
     try:
         from app.config import settings
@@ -969,20 +1168,24 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
             pass
     # Bridge tokens into workspace-mcp's credential store so Google MCP tools
     # stop forcing a second (broken) browser sign-in after Integrations connect.
+    # That file is PLAINTEXT (an external tool's format) — so it is only
+    # written when workspace-mcp is actually installed. See
+    # `_write_workspace_mcp_credentials` for what this does and does not fix.
     try:
-        _write_workspace_mcp_credentials(
-            email=email,
-            access_token=access_token,
-            refresh_token=refresh_token,
-            client_id=client_id,
-            client_secret=client_secret,
-            scopes=as_str(tokens.get('scope')),
-            expiry=(
-                (datetime.now(timezone.utc) + timedelta(seconds=int(tokens['expires_in']))).isoformat()
-                if tokens.get('expires_in')
-                else None
-            ),
-        )
+        if _workspace_mcp_present():
+            _write_workspace_mcp_credentials(
+                email=email,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                client_id=client_id,
+                client_secret=client_secret,
+                scopes=as_str(tokens.get('scope')),
+                expiry=(
+                    (datetime.now(timezone.utc) + timedelta(seconds=int(tokens['expires_in']))).isoformat()
+                    if tokens.get('expires_in')
+                    else None
+                ),
+            )
     except Exception:
         pass
 
@@ -1070,6 +1273,35 @@ async def sync_google_tokens_to_workspace_mcp(preferred_email: str | None = None
     return email
 
 
+def _workspace_mcp_present() -> bool:
+    """True when the workspace-mcp tool is installed, or has been used before.
+
+    The eager write of the MCP credential file exists so a user who HAS
+    installed workspace-mcp does not have to sign in twice. A user who has
+    not installed it has no reason to have a plaintext token file on disk
+    at all, so the eager write is skipped for them. Anything inconclusive
+    writes the file anyway — the old behaviour, and the safe direction.
+    """
+    try:
+        from app.services.tools import mcp_client
+
+        for server in mcp_client.listRegisteredServers():
+            name = ' '.join(
+                str(server.get(field, '')) for field in ('id', 'name', 'packageName')
+            ).lower()
+            if 'workspace' in name:
+                return True
+    except Exception as exc:  # noqa: BLE001 — inconclusive means "write it"
+        logger.warning('could not read the MCP server registry: %s', exc)
+        return True
+    try:
+        if os.path.isdir(_workspace_mcp_credentials_dir()):
+            return True
+    except OSError:
+        pass
+    return False
+
+
 def _write_workspace_mcp_credentials(
     email: str,
     access_token: str,
@@ -1079,7 +1311,31 @@ def _write_workspace_mcp_credentials(
     scopes: str = '',
     expiry: str | None = None,
 ) -> bool:
-    """Persist Google tokens in the format workspace-mcp LocalDirectoryCredentialStore reads."""
+    """Persist Google tokens in the format workspace-mcp LocalDirectoryCredentialStore reads.
+
+    THIS IS A PLAINTEXT COPY, AND IT STAYS ONE. The file is the contract of
+    an EXTERNAL process (``workspace-mcp``), which cannot decrypt DPAPI and
+    would refuse a blob it did not write itself. The encrypted store
+    therefore cannot reach this path: the tokens have to be readable by a
+    third party as text.
+
+    What was done about it, and what was not:
+
+      * It is now DERIVED, not authoritative. August holds the real token in
+        the encrypted store and can rewrite this file from it at any time
+        (``sync_google_tokens_to_workspace_mcp``), so the file can be
+        deleted without losing the connection and a stale copy is replaced
+        rather than trusted.
+      * It is only written when the tool is actually here — a registered
+        workspace-mcp server, or a credential directory that already
+        exists. A user who never installs workspace-mcp gets no plaintext
+        copy at all.
+      * It could NOT be encrypted. Closing this properly needs the tool to
+        read its credentials from somewhere that is not a plaintext file (a
+        keyring, or a token broker August serves), which is upstream work in
+        ``workspace-mcp`` and a change to the install recipe — see the
+        report for who owns that.
+    """
     if not email or not (access_token or refresh_token):
         return False
     base = _workspace_mcp_credentials_dir()

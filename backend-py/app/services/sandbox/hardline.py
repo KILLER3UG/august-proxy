@@ -257,11 +257,19 @@ def _august_secret_files() -> tuple[str, ...]:
     one that holds `serviceConnections.github.token` and a Google `accessToken`,
     so the rule is the data directory, never the filename. `providers.json`
     beside it is already blocked by name, being a key store by definition.
+
+    `secrets.json` beside them is the ENCRYPTED store the service-connection
+    tokens moved into (`app/services/secret_store.py`): DPAPI ciphertext at
+    rest on Windows. It is still a credential store, and the rule that makes
+    a store a store is that the agent may neither read it, write it, nor have
+    it NAMED in a listing — so it is refused here, by the same absolute-path
+    rule as `config.json`. The code-mode port injects this table at runtime
+    (`code_runner.py`), so the cell door moves with it.
     """
     data = _data_dir_form()
     if not data:
         return ()
-    return (f'{data}/config.json',)
+    return (f'{data}/config.json', f'{data}/secrets.json')
 
 
 def _agent_state_reason(match_form: str) -> str | None:
