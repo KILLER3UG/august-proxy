@@ -161,7 +161,7 @@ export function ComputerAccessSettings() {
           <Camera className="size-4 text-foreground/70" />
           <h2 className="text-base font-medium">Computer security</h2>
         </div>
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-4">
+        <div className="rounded-xl border border-border/60 bg-card/60 p-4 space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="text-sm font-medium">Capture post-observation screenshots</div>
@@ -177,7 +177,7 @@ export function ComputerAccessSettings() {
               label={postObs ? 'enabled' : 'disabled'}
             />
           </div>
-          <div className="flex items-center justify-between border-t border-white/[0.06] pt-3">
+          <div className="flex items-center justify-between border-t border-border/60 pt-3">
             <div className="text-xs text-muted-foreground">
               {observationCount === 0
                 ? 'No observations captured yet.'
@@ -191,7 +191,7 @@ export function ComputerAccessSettings() {
               <Eye className="size-3" /> View observation gallery →
             </Link>
           </div>
-          <div className="flex items-start justify-between gap-4 border-t border-white/[0.06] pt-3">
+          <div className="flex items-start justify-between gap-4 border-t border-border/60 pt-3">
             <div className="min-w-0">
               <div className="text-sm font-medium">Allow camera capture</div>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -219,7 +219,7 @@ export function ComputerAccessSettings() {
           <ShieldCheck className="size-4 text-foreground/70" />
           <h2 className="text-base font-medium">Filesystem scope</h2>
         </div>
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-3">
+        <div className="rounded-xl border border-border/60 bg-card/60 p-4 space-y-3">
           <label className="flex items-center gap-3">
             <input
               type="radio"
@@ -262,7 +262,7 @@ export function ComputerAccessSettings() {
           <FolderTree className="size-4 text-foreground/70" />
           <h2 className="text-base font-medium">Allowed filesystem roots</h2>
         </div>
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-3">
+        <div className="rounded-xl border border-border/60 bg-card/60 p-4 space-y-3">
           <ul className="space-y-1">
             {roots.length === 0 && (
               <li className="text-xs text-muted-foreground italic">
@@ -288,7 +288,7 @@ export function ComputerAccessSettings() {
               value={newRoot}
               onChange={e => setNewRoot(e.target.value)}
               placeholder="C:\Users\me\Projects"
-              className="flex-1 rounded-md border border-white/[0.08] bg-background/40 px-3 py-1.5 text-sm"
+              className="flex-1 rounded-md border border-border/60 bg-background/40 px-3 py-1.5 text-sm"
             />
             <button
               className="rounded-md bg-foreground/10 px-3 py-1.5 text-sm hover:bg-foreground/15"
@@ -306,7 +306,7 @@ export function ComputerAccessSettings() {
           <Cpu className="size-4 text-foreground/70" />
           <h2 className="text-base font-medium">Computer-use app policy</h2>
         </div>
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-3">
+        <div className="rounded-xl border border-border/60 bg-card/60 p-4 space-y-3">
           <p className="text-xs text-muted-foreground">
             Per-app policy, enforced before August clicks, types, presses a key or opens
             a link — matched against the window in front. Apps you have not listed
@@ -344,7 +344,7 @@ export function ComputerAccessSettings() {
               value={newApp}
               onChange={e => setNewApp(e.target.value)}
               placeholder="notepad.exe"
-              className="flex-1 rounded-md border border-white/[0.08] bg-background/40 px-3 py-1.5 text-sm"
+              className="flex-1 rounded-md border border-border/60 bg-background/40 px-3 py-1.5 text-sm"
             />
             <SettingsSelect
               size="sm"

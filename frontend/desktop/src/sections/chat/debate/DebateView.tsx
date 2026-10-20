@@ -307,7 +307,7 @@ export function DebateView({
         </div>
 
         {finished && !winnerRecorded ? (
-          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-white/[0.06]">
+          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-border/60">
             <span className="text-2xs text-muted-foreground/70">Who made the better case?</span>
             {run.models.map((m) => (
               <button

@@ -68,7 +68,7 @@ export function SettingsSelect({
         aria-controls={listId}
         onClick={() => !disabled && setOpen((v) => !v)}
         className={cn(
-          'flex w-full items-center justify-between gap-2 rounded-lg border border-white/[0.08]',
+          'flex w-full items-center justify-between gap-2 rounded-lg border border-border/60',
           'bg-card text-foreground shadow-none outline-none transition',
           'focus:border-primary/40 focus:ring-1 focus:ring-primary/30',
           'disabled:cursor-not-allowed disabled:opacity-50',
@@ -90,7 +90,7 @@ export function SettingsSelect({
           role="listbox"
           aria-label={ariaLabel}
           className={cn(
-            'absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-white/[0.1]',
+            'absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-border/70',
             'bg-popover py-1 text-popover-foreground shadow-lg',
           )}
         >

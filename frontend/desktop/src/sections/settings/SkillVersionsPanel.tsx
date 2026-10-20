@@ -96,7 +96,7 @@ export function SkillVersionsPanel({ name, workspace }: SkillVersionsPanelProps)
         </p>
       ) : (
         <div className="space-y-3">
-          <ul className="divide-y divide-white/[0.06] border-y border-white/[0.06]" data-testid="skill-version-list">
+          <ul className="divide-y divide-white/[0.06] border-y border-border/60" data-testid="skill-version-list">
             {versions.map((v) => (
               <li key={v.ts}>
                 <VersionRow
@@ -237,7 +237,7 @@ function VersionDiff({
         // The server returns '' for a snapshot identical to the live file.
         // Saying "no changes" here is the answer, not a blank panel.
         <p
-          className="rounded-md border border-white/[0.06] bg-black/20 px-2.5 py-2 text-2xs leading-relaxed text-muted-foreground"
+          className="rounded-md border border-border/60 bg-black/20 px-2.5 py-2 text-2xs leading-relaxed text-muted-foreground"
           data-testid="skill-version-identical"
         >
           No differences — this snapshot is exactly what the current file says.

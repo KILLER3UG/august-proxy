@@ -322,21 +322,21 @@ async def listHarnessJobs(request: Request, sessionId: Optional[str] = None):
 
 
 @router.post('/jobs/{jobId}/cancel-wave')
-async def cancelHarnessWave(jobId: str, wave: int = 0):
+async def cancelHarnessWave(jobId: str, wave: int = 0, _auth: bool = Depends(require_local_token)):
     from app.services.harness_jobs import cancel_wave
 
     return await cancel_wave(jobId, wave)
 
 
 @router.post('/jobs/{jobId}/cancel')
-async def cancelHarnessJob(jobId: str):
+async def cancelHarnessJob(jobId: str, _auth: bool = Depends(require_local_token)):
     from app.services.harness_jobs import cancel_job
 
     return await cancel_job(jobId)
 
 
 @router.post('/stop-all')
-async def stopAllSubagents(request: Request):
+async def stopAllSubagents(request: Request, _auth: bool = Depends(require_local_token)):
     """Terminate every active sub-agent for a session (or all, when no
     session is given). Returns how many were stopped."""
     orch = _getOrchestrator(request)
@@ -417,7 +417,11 @@ async def resumeSubagent(
 
 
 @router.post('/propose-breakdown')
-async def proposeBreakdown(body: ProposeBreakdownRequest, request: Request):
+async def proposeBreakdown(
+    body: ProposeBreakdownRequest,
+    request: Request,
+    _auth: bool = Depends(require_local_token),
+):
     """Approve or reject a proposed sub-agent breakdown."""
     if not body.approved:
         from app.services.tools.spawn_subagents_tool import _mark_proposal_decided
@@ -620,7 +624,7 @@ async def saveRoutineApi(body: SaveRoutineBody, request: Request):
 
 
 @router.post('/routines/{routineId}/run')
-async def runRoutineApi(routineId: str, request: Request):
+async def runRoutineApi(routineId: str, request: Request, _auth: bool = Depends(require_local_token)):
     orch = _getOrchestrator(request)
     session = _getSession(request)
     sessionId = str(getattr(session, 'id', '') or request.headers.get('X-Session-Id', '') or '')
@@ -638,7 +642,7 @@ async def runRoutineApi(routineId: str, request: Request):
 
 
 @router.post('/routines/{routineId}/schedule')
-async def scheduleRoutineApi(routineId: str, body: dict):
+async def scheduleRoutineApi(routineId: str, body: dict, _auth: bool = Depends(require_local_token)):
     from app.services.harness_ops import set_routine_schedule
 
     try:

@@ -30,7 +30,7 @@ type Mode = 'catalog' | 'detail';
  * white). The shape is a PILL: the reference's search is a pill-shaped input
  * with a border, not a rounded box. */
 export const INTEGRATION_FIELD_CLASS =
-  'rounded-full border border-white/[0.08] bg-white/[0.06] text-foreground placeholder:text-muted-foreground ' +
+  'rounded-full border border-border/60 bg-white/[0.06] text-foreground placeholder:text-muted-foreground ' +
   'focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30 shadow-none';
 
 export function IntegrationsSection() {

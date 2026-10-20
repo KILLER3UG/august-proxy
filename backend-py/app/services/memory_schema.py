@@ -417,6 +417,32 @@ def _ensure_fact_signal_columns(conn: sqlite3.Connection) -> None:
     # not a lock.
 
 
+def _ensure_episodes_source_index(conn: sqlite3.Connection) -> None:
+    """Guarantee ``idx_episodes_source`` on warm and fresh databases.
+
+    Migration 055 creates it, but on a database that already recorded 055 as
+    applied (including every install that booted before the migration runner
+    learned to continue past a duplicate ALTER) the file never runs again.
+    A check-first CREATE is a read on every boot after the first, so this
+    does not reintroduce the schema-lock race the helper comment warns about.
+    """
+    try:
+        table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='episodes' LIMIT 1"
+        ).fetchone()
+        if table is None:
+            return
+        index = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_episodes_source' LIMIT 1"
+        ).fetchone()
+        if index is not None:
+            return
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_episodes_source ON episodes(source)')
+        conn.commit()
+    except sqlite3.OperationalError as exc:
+        logging.warning('episodes source index skipped: %s', exc)
+
+
 def ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
     """Add a column to a table if it does not already exist (idempotent).
 
@@ -1195,6 +1221,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             # itself never hits a "duplicate column name" abort (which
             # would skip the REST of its statements).
             _ensure_fact_signal_columns(conn)
+            _ensure_episodes_source_index(conn)
             _ensure_fact_scope_key(conn)
             _drop_empty_legacy_heuristics(conn)
             conn.commit()
@@ -1207,6 +1234,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     _run_migrations_safe(conn)
     # 055: after the runner, for the same reason as the warm path above.
     _ensure_fact_signal_columns(conn)
+    _ensure_episodes_source_index(conn)
     _ensure_fact_scope_key(conn)
     _drop_empty_legacy_heuristics(conn)
     conn.execute(f'PRAGMA user_version={_SCHEMA_USER_VERSION}')

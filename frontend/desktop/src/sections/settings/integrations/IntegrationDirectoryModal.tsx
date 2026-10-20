@@ -102,7 +102,7 @@ export function IntegrationDirectoryModal({
       role="presentation"
     >
       <div
-        className="flex h-[min(780px,92vh)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#121214] shadow-2xl"
+        className="flex h-[min(780px,92vh)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-border/60 bg-[#121214] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -134,7 +134,7 @@ export function IntegrationDirectoryModal({
         )}
 
         {!selected && mode === 'directory' && (
-          <div className="mx-5 mt-3 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-2xs leading-relaxed text-muted-foreground">
+          <div className="mx-5 mt-3 rounded-lg border border-border/60 bg-white/[0.03] px-3 py-2 text-2xs leading-relaxed text-muted-foreground">
             <Info className="mb-1 inline size-3" />
             {directory.data?.note || CURATED_DIRECTORY_NOTE}
           </div>

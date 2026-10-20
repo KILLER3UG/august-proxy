@@ -756,7 +756,7 @@ export function SkillsSection({ host = 'settings' }: { host?: LearningHost } = {
               stacked under the grid is the "N bordered cards" the reference
               rules out. The Learning panel drops its own frame here and
               keeps it in the Learning hub, where it stands alone. */}
-          <div className="mt-4 overflow-hidden rounded-xl border border-white/[0.06] bg-card/60">
+          <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-card/60">
             {/* Part 16 Phase E: Learning (curator report + drafts). */}
             <LearningPanel framed={false} />
             {/* Skill packs: install-from-remote. */}

@@ -37,10 +37,15 @@ _PROTECTED_PATH_PATTERNS = re.compile(
 )
 
 _WRITE_TOOLS = (
-    'write_file|write_files|edit_file|create_file|create_files|run_command|'
-    'str_replace|str_replace_editor|apply_patch|patch_file|bulk'
+    'write_file|write_files|edit_file|edit_lines|create_file|create_files|'
+    'delete_file|move_file|mkdir|run_command|'
+    'str_replace|str_replace_editor|apply_patch|patch_file|bulk|'
+    'mcp__*|august__mcp__*'
 )
-_READ_TOOLS = 'read_file|read_files|list_directory|search_files|bulk'
+_READ_TOOLS = (
+    'read_file|read_files|list_directory|search_files|bulk|'
+    'mcp__*|august__mcp__*'
+)
 
 
 def scan_secrets(text: str) -> list[str]:

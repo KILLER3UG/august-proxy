@@ -102,7 +102,7 @@ export function ProviderOnboardingModal() {
     <Backdrop layer={MODAL_LAYER.appOwned}>
       <div
         ref={trapRef}
-        className="relative w-full max-w-md rounded-2xl border border-white/[0.06] bg-card p-6 shadow-2xl"
+        className="relative w-full max-w-md rounded-2xl border border-border/60 bg-card p-6 shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-label="Setup checklist"
@@ -137,7 +137,7 @@ export function ProviderOnboardingModal() {
               onChange={(e) => setImportJson(e.target.value)}
               placeholder='{"name": "My Provider", "baseUrl": "https://...", "apiKey": "sk-..."}'
               rows={6}
-              className="w-full rounded-lg border border-white/[0.06] bg-black/20 p-3 text-xs font-mono text-foreground placeholder:text-muted-foreground/40 focus:border-primary outline-none resize-none"
+              className="w-full rounded-lg border border-border/60 bg-black/20 p-3 text-xs font-mono text-foreground placeholder:text-muted-foreground/40 focus:border-primary outline-none resize-none"
             />
             {importError && (
               <p className="text-xs text-destructive">{importError}</p>
@@ -146,7 +146,7 @@ export function ProviderOnboardingModal() {
               <button
                 type="button"
                 onClick={() => setShowImport(false)}
-                className="flex-1 rounded-lg border border-white/[0.06] px-4 py-2 text-sm hover:bg-white/[0.06]"
+                className="flex-1 rounded-lg border border-border/60 px-4 py-2 text-sm hover:bg-white/[0.06]"
               >
                 Back
               </button>
@@ -176,7 +176,7 @@ export function ProviderOnboardingModal() {
                         'flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition-colors',
                         item.done
                           ? 'border-success/25 bg-success/5'
-                          : 'border-white/[0.06] bg-black/20 hover:bg-white/[0.06]',
+                          : 'border-border/60 bg-black/20 hover:bg-white/[0.06]',
                       )}
                     >
                       {item.done ? (
@@ -210,7 +210,7 @@ export function ProviderOnboardingModal() {
               <button
                 type="button"
                 onClick={() => setShowImport(true)}
-                className="flex w-full items-center gap-3 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3 text-left hover:bg-white/[0.06] transition-colors"
+                className="flex w-full items-center gap-3 rounded-xl border border-border/60 bg-black/20 px-4 py-3 text-left hover:bg-white/[0.06] transition-colors"
               >
                 <Upload className="size-5 text-primary shrink-0" />
                 <div>

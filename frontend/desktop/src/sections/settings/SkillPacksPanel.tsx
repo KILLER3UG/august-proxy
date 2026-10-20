@@ -78,7 +78,7 @@ export function SkillPacksPanel() {
      * lower surfaces in, so it carries the hairline that separates it from
      * the panel above and no frame of its own. */
     <div
-      className="shrink-0 space-y-2 border-t border-white/[0.06] px-4 py-3"
+      className="shrink-0 space-y-2 border-t border-border/60 px-4 py-3"
       data-testid="skill-packs-panel"
     >
       {/* A section label: small, muted, SENTENCE CASE. The reference's group

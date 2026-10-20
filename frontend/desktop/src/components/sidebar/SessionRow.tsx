@@ -264,7 +264,7 @@ function SessionRowInner({
           }}
           onBlur={handleSaveRename}
           onClick={(e) => e.stopPropagation()}
-          className="bg-white/[0.04] border border-white/[0.08] px-1.5 py-0.5 rounded text-xs w-full outline-none text-sidebar-foreground"
+          className="bg-white/[0.04] border border-border/60 px-1.5 py-0.5 rounded text-xs w-full outline-none text-sidebar-foreground"
         />
       </motion.div>
     );

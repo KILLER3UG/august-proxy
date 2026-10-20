@@ -7,7 +7,7 @@ import { SettingsSelect } from '@/components/settings/SettingsSelect';
 import { cn } from '@/lib/utils';
 
 const FIELD =
-  'w-full rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 py-2 text-sm ' +
+  'w-full rounded-lg border border-border/60 bg-white/[0.06] px-3 py-2 text-sm ' +
   'text-foreground placeholder:text-muted-foreground focus:border-primary/40 ' +
   'focus:outline-none focus:ring-1 focus:ring-primary/30 shadow-none';
 

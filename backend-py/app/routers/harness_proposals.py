@@ -124,7 +124,7 @@ async def decideProposal(
 
 
 @router.post('/promotion/run')
-async def runPromotionPass(force: bool = False):
+async def runPromotionPass(force: bool = False, _auth: bool = Depends(require_local_token)):
     """Run the cross-project promotion judge now.
 
     Files ``promote`` proposals into this same review queue (≥2-project

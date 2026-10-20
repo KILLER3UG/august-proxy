@@ -1,8 +1,8 @@
 /* ── System & Health — workspace-style chrome over Health + Connections */
 /* Migrated to the new visual style: big h1, `px-8 py-6`, dark
- * `border-white/[0.06]` rounded-xl cards. Same data fetching, same
+ * `border-border/60` rounded-xl cards. Same data fetching, same
  * fields. The old `SettingsCard` / `SettingsTooltip` modal primitives
- * are replaced with plain `border-white/[0.06]` divs for visual
+ * are replaced with plain `border-border/60` divs for visual
  * consistency with the rest of the panel. */
 
 import { useState } from 'react';
@@ -77,7 +77,7 @@ function StatCard({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4">
+    <div className="rounded-xl border border-border/60 bg-card/60 p-4">
       <div className="flex items-start justify-between gap-3 mb-2">
         <div className="flex items-center gap-2">
           <Icon className="size-4 text-muted-foreground" />
@@ -108,7 +108,7 @@ function EndpointRow({
     setTimeout(() => setCopied(false), 1200);
   }
   return (
-    <div className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+    <div className="rounded-md border border-border/60 bg-white/[0.02] px-3 py-2.5">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-muted-foreground shrink-0">{icon}</span>
@@ -116,7 +116,7 @@ function EndpointRow({
         </div>
         <button
           onClick={copy}
-          className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-background px-2 py-1 text-2xs font-mono hover:bg-accent transition shrink-0"
+          className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-background px-2 py-1 text-2xs font-mono hover:bg-accent transition shrink-0"
           title="Copy URL" aria-label="Copy URL"
         >
           {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
@@ -239,7 +239,7 @@ export function SystemHealthSection() {
         </StatCard>
       </div>
 
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-3">
+      <div className="rounded-xl border border-border/60 bg-card/60 p-5 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Link2 className="size-4 text-muted-foreground" />
@@ -281,7 +281,7 @@ export function SystemHealthSection() {
         </StatCard>
       </div>
 
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-3" data-testid="platform-gateways-card">
+      <div className="rounded-xl border border-border/60 bg-card/60 p-5 space-y-3" data-testid="platform-gateways-card">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Plug className="size-4 text-muted-foreground" />
@@ -301,7 +301,7 @@ export function SystemHealthSection() {
             {platforms.map((p) => (
               <li
                 key={p.platform}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-black/20 px-3 py-2"
                 data-testid={`gateway-platform-${p.platform}`}
               >
                 <div className="min-w-0">

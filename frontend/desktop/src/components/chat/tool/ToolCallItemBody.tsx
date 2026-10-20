@@ -78,7 +78,7 @@ function SubagentToolBody({ tool }: { tool: ToolEntry }) {
       <div className="mt-2 space-y-2">
         {prompt && (
           <div
-            className="tool-result-scroll rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 max-h-56 overflow-y-auto overscroll-contain"
+            className="tool-result-scroll rounded-lg border border-border/60 bg-white/[0.02] px-3 py-2 max-h-56 overflow-y-auto overscroll-contain"
             onWheel={(e) => {
               if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) e.stopPropagation();
             }}
@@ -94,7 +94,7 @@ function SubagentToolBody({ tool }: { tool: ToolEntry }) {
 
         {output && (
           <div
-            className="tool-result-scroll rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 max-h-56 overflow-y-auto overscroll-contain"
+            className="tool-result-scroll rounded-lg border border-border/60 bg-white/[0.02] px-3 py-2 max-h-56 overflow-y-auto overscroll-contain"
             onWheel={(e) => {
               if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) e.stopPropagation();
             }}

@@ -67,7 +67,9 @@ export function classifyFileKind(path: string): FileKindInfo {
   }
   // Code rows normally show a FileIcon instead of a badge; this text is only
   // used when a code file temporarily renders document-style (no diff yet).
-  return { kind: 'code', label: ext, badgeText: ext.slice(0, 3), badgeTone: 'code' };
+  // "V" alone is an identifier, not a kind — the artifact card's subline must
+  // read as a human phrase.
+  return { kind: 'code', label: `Source · ${ext}`, badgeText: ext.slice(0, 3), badgeTone: 'code' };
 }
 
 /**

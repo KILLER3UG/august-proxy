@@ -41,7 +41,7 @@ function FeatureFlowSkeleton() {
         <Skeleton className="h-4 w-full max-w-md" />
       </div>
       <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
-        <div className="space-y-2 rounded-xl border border-white/[0.06] bg-card/40 p-3">
+        <div className="space-y-2 rounded-xl border border-border/60 bg-card/40 p-3">
           <Skeleton className="h-3 w-20 mb-2" />
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full rounded-md" />
@@ -168,7 +168,7 @@ export function FeatureFlowSection() {
 
       <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
         <aside
-          className="space-y-2 rounded-xl border border-white/[0.06] bg-card/40 p-3"
+          className="space-y-2 rounded-xl border border-border/60 bg-card/40 p-3"
           data-testid="feature-inventory-directory"
         >
           <div className="flex items-center gap-1.5 px-1 pb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -222,7 +222,7 @@ export function FeatureFlowSection() {
               type="button"
               onClick={() => setPaused((p) => !p)}
               data-testid="feature-flow-pause"
-              className="px-2 py-1 text-xs rounded border border-white/[0.06] hover:bg-white/[0.06] flex items-center gap-1"
+              className="px-2 py-1 text-xs rounded border border-border/60 hover:bg-white/[0.06] flex items-center gap-1"
             >
               {paused ? <Play className="size-3" /> : <Pause className="size-3" />}
               {paused ? 'Resume' : 'Pause'}
@@ -235,7 +235,7 @@ export function FeatureFlowSection() {
                 'px-2 py-1 text-xs rounded border flex items-center gap-1',
                 errorsOnly
                   ? 'border-danger/40 bg-danger/10 text-danger'
-                  : 'border-white/[0.06] text-muted-foreground hover:bg-white/[0.04]',
+                  : 'border-border/60 text-muted-foreground hover:bg-white/[0.04]',
               )}
             >
               <AlertTriangle className="size-3" />
@@ -266,7 +266,7 @@ export function FeatureFlowSection() {
           )}
 
           {filtered.length === 0 ? (
-            <div className="text-xs text-muted-foreground text-center py-14 border border-dashed border-white/[0.06] rounded-lg">
+            <div className="text-xs text-muted-foreground text-center py-14 border border-dashed border-border/60 rounded-lg">
               <Asterisk className="size-4 inline-block mr-2 opacity-40" />
               No feature-flow events yet — use the proxy or workbench to light up the pipeline.
             </div>
@@ -289,7 +289,7 @@ export function FeatureFlowSection() {
                         ? 'border-danger/40 bg-danger/10 shadow-[inset_0_0_0_1px_rgba(239,68,68,0.15)]'
                         : e.status === 'running'
                           ? 'border-sky-500/30 bg-sky-500/5'
-                          : 'border-white/[0.06] bg-card/50',
+                          : 'border-border/60 bg-card/50',
                     )}
                   >
                     <span className="text-muted-foreground/70 font-mono shrink-0 w-[4.5rem]">

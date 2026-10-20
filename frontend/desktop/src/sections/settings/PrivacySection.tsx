@@ -58,7 +58,7 @@ function fmtBytes(b?: number): string {
 
 function StatCard({ label, value, icon: Icon }: { label: string; value: string; icon: typeof Database }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4">
+    <div className="rounded-xl border border-border/60 bg-card/60 p-4">
       <div className="flex items-center gap-1.5 text-2xs uppercase tracking-wider text-muted-foreground">
         <Icon className="size-3" />
         {label}
@@ -86,7 +86,7 @@ function ActionRow({
   onClick: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-card/60 p-4">
+    <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card/60 p-4">
       <Icon className={`size-4 shrink-0 ${destructive ? 'text-danger-fg' : 'text-primary'}`} />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-foreground">{title}</p>

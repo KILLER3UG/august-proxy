@@ -28,7 +28,7 @@ export function ProviderListRail({
 }) {
   return (
     <div className="flex flex-col overflow-hidden md:max-h-[calc(100vh-9rem)]">
-      <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between shrink-0">
+      <div className="px-3 py-2 border-b border-border/60 flex items-center justify-between shrink-0">
         <p className="text-2xs font-semibold text-muted-foreground/70">Providers</p>
         <button
           onClick={onRefresh}
@@ -68,11 +68,11 @@ export function ProviderListRail({
           ))
         )}
       </div>
-      <div className="border-t border-white/[0.06] p-2 shrink-0">
+      <div className="border-t border-border/60 p-2 shrink-0">
         <button
           type="button"
           onClick={onAdd}
-          className="w-full flex items-center justify-center gap-1.5 rounded-md border border-white/[0.08] px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition"
+          className="w-full flex items-center justify-center gap-1.5 rounded-md border border-border/60 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition"
         >
           <Plus className="size-3" />
           Add provider

@@ -48,7 +48,7 @@ function ObservationCard({ item, onOpen }: { item: PostObservation; onOpen: () =
         <button
             type="button"
             onClick={onOpen}
-            className="text-left rounded-xl border border-white/[0.06] bg-card/60 overflow-hidden hover:border-white/20 transition group"
+            className="text-left rounded-xl border border-border/60 bg-card/60 overflow-hidden hover:border-white/20 transition group"
         >
             <div className="aspect-video bg-black/30 overflow-hidden">
                 <img
@@ -90,9 +90,9 @@ function ObservationModal({ item, onClose }: { item: PostObservation; onClose: (
                 role="dialog"
                 aria-modal="true"
                 aria-label={item.focusedApp ? `Observation — ${item.focusedApp}` : 'Observation'}
-                className="relative max-w-5xl w-[92vw] max-h-[90vh] rounded-2xl border border-white/[0.08] bg-card shadow-2xl overflow-hidden flex flex-col"
+                className="relative max-w-5xl w-[92vw] max-h-[90vh] rounded-2xl border border-border/60 bg-card shadow-2xl overflow-hidden flex flex-col"
             >
-                <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
                     <div className="flex items-center gap-2 min-w-0">
                         {item.focusedApp && <StatusPill label={item.focusedApp} variant={variantForAppPolicy('ask')} />}
                         {item.audit?.action && <Badge variant="outline">{item.audit.action}</Badge>}
@@ -117,7 +117,7 @@ function ObservationModal({ item, onClose }: { item: PostObservation; onClose: (
                     />
                 </div>
                 {item.audit && (
-                    <div className="px-4 py-3 border-t border-white/[0.06] grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div className="px-4 py-3 border-t border-border/60 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                         <Detail k="Result" v={item.audit.result || '—'} />
                         <Detail k="Target" v={item.audit.target || '—'} />
                         <Detail k="Audit ID" v={item.audit.id} />

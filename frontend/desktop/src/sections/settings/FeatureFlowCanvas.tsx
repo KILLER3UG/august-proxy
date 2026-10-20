@@ -286,7 +286,7 @@ export function FeatureFlowCanvas({
     <div className="space-y-3" data-testid="feature-flow-trace">
       {/* Office room */}
       <div
-        className="relative w-full overflow-hidden rounded-2xl border border-white/[0.08] shadow-inner"
+        className="relative w-full overflow-hidden rounded-2xl border border-border/60 shadow-inner"
         style={{
           minHeight: height,
           background: dept.floor,
@@ -417,7 +417,7 @@ export function FeatureFlowCanvas({
 
       {/* Legend — clean job list (not on characters) */}
       <div
-        className="rounded-xl border border-white/[0.06] bg-card/50 px-3 py-2.5"
+        className="rounded-xl border border-border/60 bg-card/50 px-3 py-2.5"
         data-testid="feature-flow-legend"
       >
         <div className="mb-2 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -437,7 +437,7 @@ export function FeatureFlowCanvas({
                       ? 'border-success/30 bg-success/10 text-success'
                       : st === 'error'
                         ? 'border-danger/40 bg-danger/10 text-danger'
-                        : 'border-white/[0.06] bg-white/[0.02] text-muted-foreground',
+                        : 'border-border/60 bg-white/[0.02] text-muted-foreground',
                 )}
               >
                 <span

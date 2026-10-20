@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { create } from 'zustand';
 import { getRecentLogs, type LogEvent } from '@/api/api-client';
-import { whenReady } from '@/api/client';
+import { whenReady, getLocalToken, LOCAL_TOKEN_URL_PARAM } from '@/api/client';
 
 const MAX_EVENTS = 10_000;
 const BACKFILL_LIMIT = 500;
@@ -100,6 +100,14 @@ async function connect() {
     } else {
         const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         wsUrl = `${proto}//${window.location.host}/api/logs/stream`;
+    }
+    // A browser socket cannot set the per-install header. The backend's log
+    // stream now refuses a socket without the token when one is configured,
+    // so it rides in the query, like the terminal and pairing URLs.
+    const token = await getLocalToken();
+    if (token) {
+        const sep = wsUrl.includes('?') ? '&' : '?';
+        wsUrl += `${sep}${LOCAL_TOKEN_URL_PARAM}=${encodeURIComponent(token)}`;
     }
     let ws: WebSocket;
     try {

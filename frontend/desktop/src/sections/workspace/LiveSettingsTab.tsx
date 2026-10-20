@@ -136,7 +136,7 @@ export function LiveSettingsTab() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
+      <div className="rounded-xl border border-border/60 bg-card/60 p-5 space-y-4">
         <div>
           <p className="text-sm font-semibold">Live (STT/TTS) settings</p>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -189,7 +189,7 @@ export function LiveSettingsTab() {
                     value={typeof active[key] === 'string' ? active[key] : ''}
                     onChange={(e) => handleFieldChange(key, e.target.value)}
                     data-testid={`${testid}-input`}
-                    className="w-full bg-black/20 border border-white/[0.06] rounded px-3 py-1.5 text-sm text-foreground focus:border-primary outline-none"
+                    className="w-full bg-black/20 border border-border/60 rounded px-3 py-1.5 text-sm text-foreground focus:border-primary outline-none"
                   >
                     {providerOptions.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -214,7 +214,7 @@ export function LiveSettingsTab() {
                             : ''
                     }
                     data-testid={`${testid}-input`}
-                    className="w-full bg-black/20 border border-white/[0.06] rounded px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-primary outline-none"
+                    className="w-full bg-black/20 border border-border/60 rounded px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-primary outline-none"
                   />
                 )}
               </WorkspaceField>

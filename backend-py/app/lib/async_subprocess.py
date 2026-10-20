@@ -91,6 +91,23 @@ def noninteractive_env(base: dict[str, str] | None = None) -> dict[str, str]:
     return env
 
 
+def terminal_env() -> dict[str, str]:
+    """Environment for the user's interactive/external terminal.
+
+    The terminal is a normal shell, so it keeps the user's environment — but
+    it must not inherit THIS app's own credentials. The PTY is a child of the
+    backend, and its output is served by ``GET /api/terminal/buffer``; a
+    secret inherited here can be printed by a shell and read back by any
+    local caller. That is how ``AUGUST_LOCAL_API_TOKEN`` turned the
+    per-install token into a token the model could fetch from its own
+    terminal. Remove the same credential-shaped names a noninteractive agent
+    child loses, while keeping TERM/COLORTERM for a real interactive shell.
+    """
+    env = {k: v for k, v in os.environ.items() if not _CREDENTIAL_ENV_RE.match(k)}
+    env.update({'TERM': 'xterm-256color', 'COLORTERM': 'truecolor'})
+    return env
+
+
 def agent_subprocess_kwargs(
     *, cwd: str | None = None, extra_env: dict[str, str] | None = None
 ) -> dict[str, Any]:

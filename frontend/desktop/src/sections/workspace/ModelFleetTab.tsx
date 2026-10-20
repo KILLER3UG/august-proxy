@@ -134,7 +134,7 @@ export function ModelFleetTab() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
+      <div className="rounded-xl border border-border/60 bg-card/60 p-5 space-y-4">
         <div>
           <p className="text-sm font-semibold">Model Fleet</p>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -212,7 +212,7 @@ export function ModelFleetTab() {
           })}
         </div>
 
-        <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
+        <div className="flex items-center justify-between pt-2 border-t border-border/60">
           <button
             type="button"
             onClick={handleReset}
@@ -226,7 +226,7 @@ export function ModelFleetTab() {
               type="button"
               onClick={() => setEditFleet(null)}
               disabled={!dirty}
-              className="px-3 py-1.5 text-xs rounded border border-white/[0.06] hover:bg-white/[0.06] disabled:opacity-50"
+              className="px-3 py-1.5 text-xs rounded border border-border/60 hover:bg-white/[0.06] disabled:opacity-50"
               data-testid="fleet-cancel"
             >
               Cancel

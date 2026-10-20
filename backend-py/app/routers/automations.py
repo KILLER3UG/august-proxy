@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import hmac
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from app.json_narrowing import as_str
+from app.lib.local_api_auth import require_local_token
 from app.models.camel_base import CamelModel
 from app.services import automations_store as store
 from app.services.automations_schedule import compute_next_run_at, system_local_timezone
@@ -267,7 +268,7 @@ async def patch_automation(job_id: str, body: PatchBody):
 
 
 @router.post('/run')
-async def run_automation(body: RunBody):
+async def run_automation(body: RunBody, _auth: bool = Depends(require_local_token)):
     try:
         result = await store.run_job_async(body.id, approved=body.approved, trigger='manual')
     except KeyError:

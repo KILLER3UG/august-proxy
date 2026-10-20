@@ -18,7 +18,7 @@ export function WorkspaceEmptyState({ icon: Icon, title, description, action, cl
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] bg-card/40 px-6 py-12 text-center',
+        'flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 bg-card/40 px-6 py-12 text-center',
         className,
       )}
     >

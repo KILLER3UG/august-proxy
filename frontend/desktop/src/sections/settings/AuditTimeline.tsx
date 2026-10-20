@@ -74,7 +74,7 @@ export function AuditTimeline() {
                         value={actor}
                         onChange={e => setActor(e.target.value)}
                         placeholder="actor (e.g. august)"
-                        className="rounded-md border border-white/[0.08] bg-secondary px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground"
+                        className="rounded-md border border-border/60 bg-secondary px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground"
                     />
                     <SettingsSelect
                         size="sm"
@@ -188,7 +188,7 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
 
 function JsonBlock({ label, value }: { label: string; value: unknown }) {
     return (
-        <div className="rounded-md border border-white/[0.06] bg-background/40 p-2">
+        <div className="rounded-md border border-border/60 bg-background/40 p-2">
             <div className="text-2xs uppercase tracking-widest text-muted-foreground mb-1">{label}</div>
             <pre className="text-2xs leading-snug whitespace-pre-wrap break-all font-mono">
                 {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}

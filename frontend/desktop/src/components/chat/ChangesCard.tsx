@@ -205,7 +205,7 @@ export function ChangesCard({
       </div>
 
       {expanded && (
-        <div className="space-y-1.5 border-t border-white/[0.045] px-3 py-2">
+        <div className="space-y-1.5 border-t border-border/50 px-3 py-2">
           {visible.map((path) => {
             const hit = diffMap.get(path);
             const info = classifyFileKind(path);

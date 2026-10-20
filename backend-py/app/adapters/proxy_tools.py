@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Callable
+from typing import Any, Callable, cast
 
 from app.adapters.proxy_tool_defs import (
     anthropic_to_openai_tool_definition,
@@ -369,8 +369,12 @@ async def execute_managed_proxy_tool(
             normalized.setdefault('cwd', workspace_path)
 
     try:
+        import uuid
+        from types import SimpleNamespace
+
         from app.services import tool_registry
         from app.services.tool_registrations import register_all
+        from app.services.workbench.loop.exec import _executeTool
 
         if not tool_registry.get(registry_name):
             register_all()
@@ -378,7 +382,25 @@ async def execute_managed_proxy_tool(
         if onProgress:
             onProgress(f'Executing {registry_name}')
         _log_activity('TOOL', f'{toolName} → registry:{registry_name}')
-        result = await tool_registry.dispatch(registry_name, normalized)
+        # The proxy used to call `tool_registry.dispatch` directly, which
+        # skipped the PRE/POST hook engine (secret_guard, sensitive_code,
+        # blast_radius), the stale-write hash gate and the tool timeout. Route
+        # it through the same `_executeTool` the chat loop uses, with a
+        # synthetic session because this surface has no workbench session.
+        # `raw_result` preserves the structured web/bash payloads the proxy
+        # formatter needs; the strings the hooks produce stay strings.
+        proxy_session = SimpleNamespace(
+            id=f'proxy-{uuid.uuid4().hex[:12]}',
+            workspacePath=workspace_path or '',
+            guardMode='full',
+            _pendingBaselineSnapshot=None,
+        )
+        result = await _executeTool(
+            registry_name,
+            normalized,
+            cast(Any, proxy_session),
+            raw_result=True,
+        )
         if isinstance(result, str) and result.startswith('Error: Tool "') and 'not found' in result:
             raise RuntimeError(result)
         return result

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse
 
 from app.json_narrowing import as_dict, as_list, as_str
+from app.lib.local_api_auth import require_local_token
 from app.lib.paths import dataPath
 from app.models.camel_base import CamelModel
 from app.services import host_agent
@@ -177,7 +178,7 @@ async def observability_overview(range: str = Query('30d')):
 
 
 @router.post('/api/system/restart')
-async def system_restart():
+async def system_restart(_auth: bool = Depends(require_local_token)):
     """Signal a soft restart intent — process managers (or the desktop shell) act on it."""
     flag = dataPath('restart.requested')
     flag.parent.mkdir(parents=True, exist_ok=True)

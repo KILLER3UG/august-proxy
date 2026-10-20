@@ -224,7 +224,7 @@ export function UpdateSection() {
 
       {/* Install progress */}
       {installing && (
-        <div className="mt-4 rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-3">
+        <div className="mt-4 rounded-xl border border-border/60 bg-card/60 p-5 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium text-foreground">
@@ -313,7 +313,7 @@ function BackendDepsCard({
   }
 
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5">
+    <div className="rounded-xl border border-border/60 bg-card/60 p-5">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <p className="text-sm font-medium text-foreground flex items-center gap-2">

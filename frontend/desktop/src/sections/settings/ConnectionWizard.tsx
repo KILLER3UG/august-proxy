@@ -119,7 +119,7 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
   return (
     <form
       onSubmit={(e) => { void submit(e); }}
-      className="w-full max-w-md space-y-3 rounded-xl border border-white/[0.08] bg-black/20 p-3"
+      className="w-full max-w-md space-y-3 rounded-xl border border-border/60 bg-black/20 p-3"
       data-testid={`${provider}-connection-wizard`}
     >
       <div className="flex items-center justify-between gap-2">
@@ -149,7 +149,7 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
           <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
             Scopes checklist
           </p>
-          <ul className="max-h-36 space-y-1 overflow-auto rounded-md border border-white/[0.06] p-2">
+          <ul className="max-h-36 space-y-1 overflow-auto rounded-md border border-border/60 p-2">
             {scopes.map((scope) => (
               <li key={scope}>
                 <label className="flex cursor-pointer items-center gap-2 text-2xs">
@@ -180,7 +180,7 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
         value={token}
         onChange={(e) => setToken(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
+        className="w-full rounded-md border border-border/60 bg-white/[0.06] px-2.5 py-1.5 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
         autoComplete="new-password"
       />
 
@@ -191,14 +191,14 @@ export function ConnectionWizard({ provider, onConnected }: Props) {
             value={teamId}
             onChange={(e) => setTeamId(e.target.value)}
             placeholder="Team ID (optional)"
-            className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-xs"
+            className="w-full rounded-md border border-border/60 bg-white/[0.06] px-2.5 py-1.5 font-mono text-xs"
           />
           <input
             type="text"
             value={channel}
             onChange={(e) => setChannel(e.target.value)}
             placeholder="Test send channel (e.g. #general or C0…)"
-            className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-xs"
+            className="w-full rounded-md border border-border/60 bg-white/[0.06] px-2.5 py-1.5 font-mono text-xs"
           />
         </>
       )}

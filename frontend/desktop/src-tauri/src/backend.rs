@@ -2059,8 +2059,9 @@ pub fn stop_backend_for_update(app: AppHandle) -> Result<String, String> {
 ///
 /// Important: do **not** use a fixed short sleep — large `resources/python`
 /// copies often take longer than 8s. Relaunching mid-copy causes file-lock
-/// errors and half-written binaries. Wait for `.august-update-complete`
-/// (written in NSIS POSTINSTALL) or a long timeout with the exe present.
+/// errors and half-written binaries. Wait for the OLD PID to exit, then for
+/// the installer PROCESS to finish (the marker is written at its end); the
+/// fallback never launches while an installer is still running.
 #[tauri::command]
 pub fn schedule_post_update_relaunch() -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -2102,30 +2103,32 @@ pub fn schedule_post_update_relaunch() -> Result<String, String> {
              $dir = '{dir_str}'; \
              $marker = Join-Path $dir '.august-update-complete'; \
              $oldPid = {old_pid}; \
-             $deadline = (Get-Date).AddSeconds(180); \
-             while ((Get-Date) -lt $deadline) {{ \
+             $exitDeadline = (Get-Date).AddSeconds(120); \
+             while ((Get-Date) -lt $exitDeadline) {{ \
                if (-not (Get-Process -Id $oldPid -ErrorAction SilentlyContinue)) {{ break }}; \
                Start-Sleep -Milliseconds 250 \
              }}; \
-             while ((Get-Date) -lt $deadline) {{ \
-               if (Test-Path -LiteralPath $marker) {{ \
-                 $installerBusy = @(Get-Process | Where-Object {{ \
-                   $_.ProcessName -match '^(Aug|august).*-setup' -or \
-                   ($_.Path -and $_.Path -like '*\\AppData\\Local\\Temp\\*' -and $_.ProcessName -match '^(Aug|august)') \
-                 }}); \
-                 if ($installerBusy.Count -gt 0) {{ Start-Sleep -Seconds 2; continue }}; \
-                 Start-Sleep -Milliseconds 600; \
-                 if (-not (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue)) {{ \
+             $installDeadline = (Get-Date).AddSeconds(600); \
+             while ((Get-Date) -lt $installDeadline) {{ \
+               $installerBusy = @(Get-Process | Where-Object {{ \
+                 $_.ProcessName -match '^(Aug|august).*-setup' -or \
+                 ($_.Path -and $_.Path -like '*\\AppData\\Local\\Temp\\*' -and $_.ProcessName -match '^(Aug|august)') \
+               }}); \
+               if ($installerBusy.Count -eq 0) {{ \
+                 if (Test-Path -LiteralPath $marker) {{ \
+                   Start-Sleep -Milliseconds 600; \
+                   if (-not (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue)) {{ \
+                     Start-Process -FilePath $exe \
+                   }}; \
+                   Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue; \
+                   exit 0 \
+                 }}; \
+                 if ((Test-Path -LiteralPath $exe) -and -not (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue)) {{ \
                    Start-Process -FilePath $exe \
                  }}; \
-                 Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue; \
                  exit 0 \
                }}; \
                Start-Sleep -Seconds 2 \
-             }}; \
-             if (-not (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue) \
-                 -and (Test-Path -LiteralPath $exe)) {{ \
-               Start-Process -FilePath $exe \
              }}; \
              if (Test-Path -LiteralPath $marker) {{ Remove-Item -LiteralPath $marker -Force }}"
         );

@@ -191,7 +191,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                   className={`grid size-5 shrink-0 place-items-center rounded-full text-2xs font-semibold border ${
                     current ? 'border-primary/50 bg-primary/15'
                     : done ? 'border-success/40 bg-success/15'
-                    : 'border-white/[0.08] bg-muted/30'
+                    : 'border-border/60 bg-muted/30'
                   }`}
                   data-testid={`wizard-step-${s.id}`}
                 >
@@ -206,7 +206,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
       </ol>
 
       {/* Step body */}
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-6 space-y-4" data-testid="wizard-body">
+      <div className="rounded-xl border border-border/60 bg-card/60 p-6 space-y-4" data-testid="wizard-body">
         {step === 'provider' && (
           <div className="space-y-4">
             <h2 className="text-base font-semibold">1 · Connect an AI provider</h2>
@@ -326,7 +326,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
               </span>
             </div>
             {models.length > 0 ? (
-              <ul className="max-h-40 overflow-y-auto rounded-lg border border-white/[0.06] bg-muted/20 divide-y divide-white/[0.04]">
+              <ul className="max-h-40 overflow-y-auto rounded-lg border border-border/60 bg-muted/20 divide-y divide-white/[0.04]">
                 {models.slice(0, 40).map((m) => (
                   <li key={m.id} className="px-3 py-1.5 text-xs font-mono text-foreground/80">{m.id}</li>
                 ))}
@@ -353,7 +353,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                       className={`w-full flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition ${
                         (defaultModel?.id ?? selectedModel?.id) === m.id
                           ? 'border-primary/40 bg-primary/10 text-foreground'
-                          : 'border-white/[0.06] bg-muted/20 text-muted-foreground hover:text-foreground'
+                          : 'border-border/60 bg-muted/20 text-muted-foreground hover:text-foreground'
                       }`}
                       data-testid={`wizard-model-${m.id}`}
                     >
@@ -383,7 +383,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                   className={`w-full flex items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition ${
                     sandboxMode === opt.id
                       ? 'border-primary/40 bg-primary/10'
-                      : 'border-white/[0.06] bg-muted/20 hover:bg-muted/30'
+                      : 'border-border/60 bg-muted/20 hover:bg-muted/30'
                   }`}
                   data-testid={`wizard-sandbox-${opt.id}`}
                 >
@@ -395,7 +395,7 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
                 </button>
               ))}
             </div>
-            <div className="rounded-lg border border-white/[0.06] bg-muted/20 p-3">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
               <div className="flex items-center gap-2">
                 <FolderOpen className="size-4 text-primary shrink-0" />
                 <span className="text-xs text-muted-foreground">

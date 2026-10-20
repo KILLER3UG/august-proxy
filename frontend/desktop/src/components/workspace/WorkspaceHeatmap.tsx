@@ -21,7 +21,7 @@ interface Props {
 }
 
 const LEVELS = [
-  'bg-white/[0.035] border border-white/[0.02]',
+  'bg-white/[0.035] border border-border/40',
   'bg-blue-900/60 border border-blue-800/40 text-blue-300',
   'bg-blue-700/80 border border-blue-600/50 text-blue-200',
   'bg-blue-600 border border-blue-500/60 text-white',

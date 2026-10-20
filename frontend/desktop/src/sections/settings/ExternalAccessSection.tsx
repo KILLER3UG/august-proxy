@@ -58,7 +58,7 @@ function CopyButton({ value, label = 'copy' }: { value: string; label?: string }
   return (
     <button
       onClick={copy}
-      className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-background px-2 py-1 text-2xs font-mono hover:bg-accent transition shrink-0"
+      className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-background px-2 py-1 text-2xs font-mono hover:bg-accent transition shrink-0"
       title="Copy" aria-label="Copy"
     >
       {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
@@ -69,8 +69,8 @@ function CopyButton({ value, label = 'copy' }: { value: string; label?: string }
 
 function CodeBlock({ code, language = 'bash' }: { code: string; language?: string }) {
   return (
-    <div className="rounded-md border border-white/[0.06] bg-black/40 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-white/[0.06] bg-white/[0.02]">
+    <div className="rounded-md border border-border/60 bg-black/40 overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/60 bg-white/[0.02]">
         <span className="text-2xs uppercase tracking-wider text-muted-foreground font-mono">
           {language}
         </span>
@@ -190,7 +190,7 @@ export function ExternalAccessSection() {
           <Plug className="size-4 text-foreground/70" />
           <h2 className="text-base font-medium">External API Access</h2>
         </div>
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-3">
+        <div className="rounded-xl border border-border/60 bg-card/60 p-4 space-y-3">
           <SettingsToggle
             checked={enabled}
             onCheckedChange={(next) => mutation.mutate(next)}
@@ -202,7 +202,7 @@ export function ExternalAccessSection() {
             }
             disabled={mutation.isPending}
           />
-          <div className="border-t border-white/[0.06] pt-3">
+          <div className="border-t border-border/60 pt-3">
             <SettingsToggle
               checked={Boolean(augQuery.data?.enabled)}
               onCheckedChange={(next) => augMutation.mutate(next)}
@@ -233,10 +233,10 @@ export function ExternalAccessSection() {
           <KeyRound className="size-4 text-foreground/70" />
           <h2 className="text-base font-medium">Gateway API Key</h2>
         </div>
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-3">
+        <div className="rounded-xl border border-border/60 bg-card/60 p-4 space-y-3">
           {hasKey ? (
             <>
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2.5">
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-white/[0.03] px-3 py-2.5">
                 <code className="text-sm font-mono break-all">
                   {revealedKey ?? cfg.keyPreview}
                 </code>
@@ -250,7 +250,7 @@ export function ExternalAccessSection() {
               )}
             </>
           ) : (
-            <div className="flex items-start gap-2 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-3 text-xs text-muted-foreground">
+            <div className="flex items-start gap-2 rounded-lg border border-border/60 bg-white/[0.02] px-3 py-3 text-xs text-muted-foreground">
               <KeyRound className="size-3 mt-0.5 shrink-0 text-primary" />
               <div>
                 No gateway key yet. Generate one to open external API access for Claude Code,
@@ -288,7 +288,7 @@ export function ExternalAccessSection() {
           <Radio className="size-4 text-foreground/70" />
           <h2 className="text-base font-medium">Connection Status</h2>
         </div>
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-2">
+        <div className="rounded-xl border border-border/60 bg-card/60 p-4 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Proxy gateway</span>
             <Badge variant="success">OPEN</Badge>
@@ -330,7 +330,7 @@ export function ExternalAccessSection() {
           <Link2 className="size-4 text-foreground/70" />
           <h2 className="text-base font-medium">Proxy Endpoints</h2>
         </div>
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-3">
+        <div className="rounded-xl border border-border/60 bg-card/60 p-4 space-y-3">
           <EndpointRow
             url={cfg.endpoints.anthropic}
             label="Anthropic Messages"
@@ -355,7 +355,7 @@ export function ExternalAccessSection() {
           <Code2 className="size-4 text-foreground/70" />
           <h2 className="text-base font-medium">Usage Examples</h2>
         </div>
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-4">
+        <div className="rounded-xl border border-border/60 bg-card/60 p-4 space-y-4">
           <div className="space-y-1.5">
             <div className="flex items-center gap-1.5">
               <Asterisk className="size-3 text-muted-foreground" />
@@ -365,7 +365,7 @@ export function ExternalAccessSection() {
             <CodeBlock code={pythonExample} language="python" />
             <CodeBlock code={jsExample} language="javascript" />
           </div>
-          <div className="space-y-1.5 pt-2 border-t border-white/[0.06]">
+          <div className="space-y-1.5 pt-2 border-t border-border/60">
             <div className="flex items-center gap-1.5">
               <Asterisk className="size-3 text-muted-foreground" />
               <span className="text-xs font-medium">Anthropic (Messages)</span>
@@ -388,7 +388,7 @@ export function ExternalAccessSection() {
 
 function EndpointRow({ url, label, hint }: { url: string; label: string; hint: string }) {
   return (
-    <div className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+    <div className="rounded-md border border-border/60 bg-white/[0.02] px-3 py-2.5">
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-medium">{label}</span>
         <CopyButton value={url} />

@@ -46,7 +46,7 @@ export function PromptDisclosure({ content, tokens, label = 'PROMPT', className 
       </button>
       {open && (
         <pre
-          className="mt-1 max-h-96 overflow-auto rounded-md border border-white/[0.06] bg-black/30 px-3 py-2 text-2xs leading-relaxed font-mono whitespace-pre-wrap wrap-break-word text-muted-foreground/85"
+          className="mt-1 max-h-96 overflow-auto rounded-md border border-border/60 bg-black/30 px-3 py-2 text-2xs leading-relaxed font-mono whitespace-pre-wrap wrap-break-word text-muted-foreground/85"
         >
           {content}
         </pre>

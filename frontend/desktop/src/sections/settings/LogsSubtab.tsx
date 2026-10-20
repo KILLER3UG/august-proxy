@@ -86,7 +86,7 @@ export function LogsSubtab({ showPeriod = true }: { showPeriod?: boolean }) {
     return (
         <div className="space-y-3">
             {showPeriod ? (
-            <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-white/[0.06] bg-card/60">
+            <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-border/60 bg-card/60">
                 <FilterChips items={PERIODS} value={period} onChange={setPeriod} label="Period" />
             </div>
             ) : null}

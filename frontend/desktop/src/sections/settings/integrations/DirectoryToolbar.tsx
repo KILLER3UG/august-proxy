@@ -29,8 +29,8 @@ export function DirectoryToolbar({
   onClearError,
 }: DirectoryToolbarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.06] px-5 py-3">
-      <div className="flex rounded-lg border border-white/[0.08] p-0.5 bg-white/[0.03]">
+    <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-5 py-3">
+      <div className="flex rounded-lg border border-border/60 p-0.5 bg-white/[0.03]">
         {(
           [
             ['directory', 'Directory'],

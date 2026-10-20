@@ -87,7 +87,7 @@ export function KernelVenvSection() {
           value={workspace}
           onChange={(e) => setWorkspace(e.target.value)}
           placeholder="Workspace path (the folder whose sessions share this venv)"
-          className="min-w-[20rem] flex-1 rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-xs"
+          className="min-w-[20rem] flex-1 rounded-md border border-border/60 bg-white/[0.06] px-2.5 py-1.5 font-mono text-xs"
         />
         <Button size="sm" onClick={() => void provision()} disabled={running || !workspace.trim()}>
           {running ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
@@ -96,7 +96,7 @@ export function KernelVenvSection() {
       </div>
 
       {result && (
-        <div className="space-y-2 rounded-xl border border-white/[0.08] bg-black/30 p-3 text-xs font-mono">
+        <div className="space-y-2 rounded-xl border border-border/60 bg-black/30 p-3 text-xs font-mono">
           <div className={result.ok ? 'text-success-fg' : 'text-destructive'}>
             {result.ok ? 'Ready' : 'Error'}
             {result.version ? ` · python ${result.version}` : ''}

@@ -124,16 +124,15 @@ async function stopBackendBeforeInstall(): Promise<void> {
 
 /**
  * Windows: `update.install()` quits the process before JS can `relaunch()`.
- * Schedule a detached waiter first (polls for NSIS completion marker — never
- * a fixed short sleep that can relaunch mid-copy). NSIS POSTINSTALL also
- * starts August when the install succeeds.
+ * Schedule a detached waiter first (it waits for the old pid and the
+ * installer, never a fixed short sleep that can relaunch mid-copy).
+ *
+ * A failure here is NOT swallowed: the installer quits this app before JS
+ * can act, so an update without a waiter is a dead app. The caller aborts
+ * the install and surfaces the failure instead.
  */
 async function schedulePostUpdateRelaunch(): Promise<void> {
-  try {
-    await invoke<string>('schedule_post_update_relaunch');
-  } catch (err) {
-    console.warn('[update] schedule_post_update_relaunch failed', err);
-  }
+  await invoke<string>('schedule_post_update_relaunch');
 }
 
 export function useAppUpdate() {
@@ -199,14 +198,16 @@ export function useAppUpdate() {
             null;
           if (!installerPath) throw new Error('Downloaded installer is no longer available');
           pendingInstallerPath = installerPath;
-          await stopBackendBeforeInstall();
           // The installer runs SILENTLY (backend.rs::launch_installer_and_exit
           // passes /S), and the installer's own relaunch is skipped in update
           // mode — so this detached waiter is what brings August back. It has
           // to be scheduled BEFORE the installer is launched: the waiter polls
           // for the completion marker, and without it the app exits with
-          // nothing watching for it.
+          // nothing watching for it. Schedule it before stopping the backend
+          // too, so a scheduling failure leaves a working app rather than a
+          // UI with no API behind it.
           await schedulePostUpdateRelaunch();
+          await stopBackendBeforeInstall();
           setProgress({ ...state.progress, phase: 'restarting' });
           await new Promise<void>((resolve) => {
             requestAnimationFrame(() => window.setTimeout(resolve, 450));
@@ -215,8 +216,8 @@ export function useAppUpdate() {
           toast.success('Updating — August will restart in a moment.');
         } else {
           if (!pendingNativeUpdate) throw new Error('Downloaded update is no longer available');
-          await stopBackendBeforeInstall();
           await schedulePostUpdateRelaunch();
+          await stopBackendBeforeInstall();
           setProgress({ ...state.progress, phase: 'restarting' });
           await new Promise<void>((resolve) => {
             requestAnimationFrame(() => window.setTimeout(resolve, 450));

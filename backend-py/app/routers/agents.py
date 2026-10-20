@@ -10,9 +10,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.json_narrowing import as_str
+from app.lib.local_api_auth import require_local_token
 from app.models.camel_base import CamelModel
 from app.services.memory_conn import commit as brain_commit
 from app.services.tools import agent_registry
@@ -289,7 +290,7 @@ async def getRoom(room_id: int):
 
 
 @router.post('/rooms/{room_id}/send')
-async def sendToRoom(room_id: int, body: RoomSend):
+async def sendToRoom(room_id: int, body: RoomSend, _auth: bool = Depends(require_local_token)):
     """Post a user message and run the deterministic round driver (≤3 rounds /
     ≤10 messages, G-1 review rounds, G-2 escalation). Returns the summary +
     the fresh log so the UI renders without a second fetch."""

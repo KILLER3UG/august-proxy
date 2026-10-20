@@ -120,12 +120,12 @@ export function ActivityGroup({
         </Button>
 
         {expanded && rows.length > 0 ? (
-          <div className="border-t border-white/[0.06] px-2.5 py-1" data-testid="activity-group-body">
+          <div className="border-t border-border/60 px-2.5 py-1" data-testid="activity-group-body">
             {/* The header's own left padding is px-2.5; the body used px-2,
                 which put the rows 2px off the header's text - a hairline
                 misalignment in the one place the eye checks alignment. */}
             {rows.map((row, i) => (
-              <div key={i} className={cn(i > 0 && 'border-t border-white/[0.05]')}>
+              <div key={i} className={cn(i > 0 && 'border-t border-border/50')}>
                 {row}
               </div>
             ))}

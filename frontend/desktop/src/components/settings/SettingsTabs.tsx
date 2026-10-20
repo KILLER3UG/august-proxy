@@ -101,7 +101,7 @@ export function SettingsTabs({
         aria-orientation="vertical"
         onKeyDown={onKeyDown}
         className={cn(
-          // `border-white/[0.06]` is INVISIBLE over a light background -- the
+          // `border-border/60` is INVISIBLE over a light background -- the
           // hairline simply did not exist there. `border-border/60` is
           // theme-aware, which is what the rest of the app's hairlines use.
           'flex flex-col gap-0.5 rounded-xl border border-border/60 bg-card/40 p-1.5 min-w-[11rem]',

@@ -10198,7 +10198,9 @@ export interface operations {
     sendToRoom_api_agents_rooms__room_id__send_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path: {
                 room_id: number;
             };
@@ -10846,7 +10848,9 @@ export interface operations {
     decide_memory_proposal_api_august_memory_proposals__proposal_id__decide_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path: {
                 proposal_id: number;
             };
@@ -11258,7 +11262,9 @@ export interface operations {
     run_automation_api_automations_run_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -13856,7 +13862,9 @@ export interface operations {
     pairingApprove_api_gateway_pairing_approve_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -14401,7 +14409,9 @@ export interface operations {
             query?: {
                 force?: boolean;
             };
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -14969,7 +14979,9 @@ export interface operations {
     liveTurn_api_live_turn_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -15450,7 +15462,9 @@ export interface operations {
     startServer_api_mcp_servers__serverId__start_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path: {
                 serverId: string;
             };
@@ -15481,7 +15495,9 @@ export interface operations {
     stopServer_api_mcp_servers__serverId__stop_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path: {
                 serverId: string;
             };
@@ -15933,7 +15949,9 @@ export interface operations {
     approve_api_preview_approve_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -18249,7 +18267,9 @@ export interface operations {
     cancelHarnessJob_api_subagents_jobs__jobId__cancel_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path: {
                 jobId: string;
             };
@@ -18282,7 +18302,9 @@ export interface operations {
             query?: {
                 wave?: number;
             };
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path: {
                 jobId: string;
             };
@@ -18353,7 +18375,9 @@ export interface operations {
     proposeBreakdown_api_subagents_propose_breakdown_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -18481,7 +18505,9 @@ export interface operations {
     runRoutineApi_api_subagents_routines__routineId__run_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path: {
                 routineId: string;
             };
@@ -18512,7 +18538,9 @@ export interface operations {
     scheduleRoutineApi_api_subagents_routines__routineId__schedule_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path: {
                 routineId: string;
             };
@@ -18780,7 +18808,9 @@ export interface operations {
     stopAllSubagents_api_subagents_stop_all_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -18793,6 +18823,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -19068,7 +19107,9 @@ export interface operations {
     system_restart_api_system_restart_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -19081,6 +19122,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -19277,7 +19327,9 @@ export interface operations {
     approveRequest_api_terminal_approve_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -19312,7 +19364,9 @@ export interface operations {
             query: {
                 id: string;
             };
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -19341,7 +19395,9 @@ export interface operations {
     runCommand_api_terminal_command_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -19374,7 +19430,9 @@ export interface operations {
     writeInput_api_terminal_input_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -19407,7 +19465,9 @@ export interface operations {
     openExternal_api_terminal_open_external_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -19440,7 +19500,9 @@ export interface operations {
     resizeTerminal_api_terminal_resize_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -19473,7 +19535,9 @@ export interface operations {
     getSessions_api_terminal_sessions_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -19488,12 +19552,23 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     createSession_api_terminal_sessions_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -19526,7 +19601,9 @@ export interface operations {
     deleteSession_api_terminal_sessions__sessionId__delete: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path: {
                 sessionId: string;
             };
@@ -20039,7 +20116,9 @@ export interface operations {
     startChat_api_workbench_chat_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -20052,6 +20131,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -20337,7 +20425,9 @@ export interface operations {
     confirmMutationAlias_api_workbench_confirm_mutation_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -20350,6 +20440,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -20521,7 +20620,9 @@ export interface operations {
     respondMutation_api_workbench_mutations_respond_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -20534,6 +20635,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -20561,7 +20671,9 @@ export interface operations {
     approvePlan_api_workbench_plan_approve_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -20576,12 +20688,23 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     rejectPlan_api_workbench_plan_reject_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -20594,6 +20717,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

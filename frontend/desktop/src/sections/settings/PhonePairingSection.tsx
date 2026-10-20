@@ -283,7 +283,7 @@ export function PhonePairingSection() {
 
       {/* ONE container: the four blocks below are hairline-separated
           children, not N bordered cards. */}
-      <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-card/60 divide-y divide-white/[0.06]">
+      <div className="overflow-hidden rounded-xl border border-border/60 bg-card/60 divide-y divide-white/[0.06]">
         {/* ── Reachability — the honest verdict, above the URL ─────────── */}
         <section className="p-5 space-y-3">
           <div className="flex items-center justify-between gap-3">
@@ -319,7 +319,7 @@ export function PhonePairingSection() {
           {token ? (
             <>
               <div className="flex items-center gap-2">
-                <code className="min-w-0 flex-1 break-all rounded-md border border-white/[0.06] bg-black/30 px-3 py-2 text-2xs font-mono text-foreground">
+                <code className="min-w-0 flex-1 break-all rounded-md border border-border/60 bg-black/30 px-3 py-2 text-2xs font-mono text-foreground">
                   {revealed ? token : '•'.repeat(32)}
                 </code>
                 <Button
@@ -402,7 +402,7 @@ export function PhonePairingSection() {
               <span className="text-xs font-medium text-muted-foreground">Pairing URL</span>
               <CopyButton value={pairingUrl} label="pairing URL" />
             </div>
-            <code className="block break-all rounded-md border border-white/[0.06] bg-black/30 px-3 py-2 text-2xs font-mono text-foreground">
+            <code className="block break-all rounded-md border border-border/60 bg-black/30 px-3 py-2 text-2xs font-mono text-foreground">
               {pairingUrl || 'no token — nothing to pair yet'}
             </code>
           </div>

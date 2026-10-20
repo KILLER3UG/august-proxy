@@ -134,7 +134,7 @@ export function CatalogDetail({
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <div className="flex items-start gap-4">
-        <div className="grid size-14 shrink-0 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.06]">
+        <div className="grid size-14 shrink-0 place-items-center rounded-xl border border-border/60 bg-white/[0.06]">
           <Icon className="size-7" style={brandIconStyle(entry.brand)} />
         </div>
         <div className="min-w-0 flex-1">
@@ -161,7 +161,7 @@ export function CatalogDetail({
       {/* What this entry actually gives the user — said in words, not only
        * in a badge. Every entry is a sign-in slot or an install recipe;
        * none of them is a capability August ships with. */}
-      <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3">
+      <div className="rounded-xl border border-border/60 bg-white/[0.03] px-4 py-3">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
           <Info className="size-3" /> What you get
           <span className="font-normal text-muted-foreground">
@@ -201,7 +201,7 @@ export function CatalogDetail({
         Developed by <span className="text-foreground/80">{entry.developer}</span>
       </p>
 
-      <div className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-2xs leading-relaxed text-muted-foreground">
+      <div className="rounded-lg border border-border/60 bg-white/[0.04] px-3 py-2 text-2xs leading-relaxed text-muted-foreground">
         <AlertTriangle className="mb-1 inline size-3 text-warning-fg" /> Only use extensions
         from developers you trust. August does not control third-party MCP tools.
       </div>
@@ -225,7 +225,7 @@ export function CatalogDetail({
             {shown.map((t) => (
               <li
                 key={t}
-                className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 font-mono text-2xs text-foreground/90"
+                className="rounded-md border border-border/60 bg-white/[0.04] px-2 py-0.5 font-mono text-2xs text-foreground/90"
               >
                 {t}
               </li>
@@ -265,7 +265,7 @@ export function CatalogDetail({
       )}
 
       {envFields.length > 0 && !installed && (
-        <div className="space-y-3 rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+        <div className="space-y-3 rounded-xl border border-border/60 bg-white/[0.03] p-4">
           <p className="text-xs font-semibold text-foreground">Configuration</p>
           <p className="text-2xs text-muted-foreground">
             These are saved to the MCP server env and to the shared MCP env, so the server — and

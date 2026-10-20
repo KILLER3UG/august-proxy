@@ -75,7 +75,7 @@ export function PythonSandboxSection() {
         onChange={(e) => setCode(e.target.value)}
         rows={12}
         spellCheck={false}
-        className="w-full rounded-xl border border-white/[0.08] bg-black/40 p-3 font-mono text-xs text-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
+        className="w-full rounded-xl border border-border/60 bg-black/40 p-3 font-mono text-xs text-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -83,7 +83,7 @@ export function PythonSandboxSection() {
           value={cwd}
           onChange={(e) => setCwd(e.target.value)}
           placeholder="Optional cwd (must exist)"
-          className="min-w-[16rem] flex-1 rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-xs"
+          className="min-w-[16rem] flex-1 rounded-md border border-border/60 bg-white/[0.06] px-2.5 py-1.5 font-mono text-xs"
         />
         <Button size="sm" onClick={() => void run()} disabled={running || !code.trim()}>
           {running ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
@@ -92,7 +92,7 @@ export function PythonSandboxSection() {
       </div>
 
       {result && (
-        <div className="space-y-2 rounded-xl border border-white/[0.08] bg-black/30 p-3 text-xs font-mono">
+        <div className="space-y-2 rounded-xl border border-border/60 bg-black/30 p-3 text-xs font-mono">
           <div className={result.ok ? 'text-success-fg' : 'text-destructive'}>
             {result.ok ? 'OK' : 'Error'}
             {result.elapsedMs != null ? ` · ${result.elapsedMs}ms` : ''}

@@ -30,7 +30,7 @@ export function DocumentBadge({
   return (
     <span
       className={cn(
-        'grid shrink-0 place-items-center rounded-xl border border-white/[0.06] font-semibold tracking-tight',
+        'grid shrink-0 place-items-center rounded-xl border border-border/60 font-semibold tracking-tight',
         TONE_CLASSES[tone],
         text.length > 2 ? 'text-[0.8125rem]' : 'text-[1.0625rem]',
         className,

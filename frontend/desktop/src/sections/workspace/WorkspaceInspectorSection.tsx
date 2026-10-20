@@ -102,8 +102,8 @@ export function WorkspaceInspectorSection() {
         aria-labelledby={`inspector-tab-${tab}`}
       >
         {/* Left rail: request list */}
-        <aside className="w-72 shrink-0 rounded-xl border border-white/[0.06] bg-card/60 overflow-hidden flex flex-col">
-          <div className="p-2 border-b border-white/[0.06]">
+        <aside className="w-72 shrink-0 rounded-xl border border-border/60 bg-card/60 overflow-hidden flex flex-col">
+          <div className="p-2 border-b border-border/60">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
               <input
@@ -111,7 +111,7 @@ export function WorkspaceInspectorSection() {
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder="Filter by id, client, model…"
                 aria-label="Filter requests"
-                className="w-full pl-7 pr-2 py-1.5 text-xs bg-white/[0.04] rounded-md border border-white/[0.06] outline-none focus:border-primary/60"
+                className="w-full pl-7 pr-2 py-1.5 text-xs bg-white/[0.04] rounded-md border border-border/60 outline-none focus:border-primary/60"
               />
             </div>
           </div>

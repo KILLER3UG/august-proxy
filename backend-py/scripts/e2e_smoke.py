@@ -166,16 +166,31 @@ def main() -> int:
         # route rather than the validator in isolation.
         begin('configuration')
         for path in ('/api/config/safe', '/api/brain/config'):
-            try:
-                response = client.get(path)
-                ok = response.status_code == 200
-                check(
-                    f'GET {path}',
-                    ok,
-                    '' if ok else f'status {response.status_code}',
-                )
-            except Exception as exc:  # noqa: BLE001
-                check(f'GET {path}', False, f'{type(exc).__name__}: {exc}')
+            # Same Windows flake as the write below: a scanner or indexer can
+            # hold the freshly created config.json for a moment. A retry that
+            # RECOVERS is reported as recovered, so the flake stays visible.
+            read_attempts = 0
+            read_detail = ''
+            read_ok = False
+            for attempt in range(3):
+                read_attempts += 1
+                try:
+                    response = client.get(path)
+                    read_ok = response.status_code == 200
+                    read_detail = (
+                        '' if read_ok else f'status {response.status_code}'
+                    )
+                    if read_ok:
+                        break
+                except Exception as exc:  # noqa: BLE001
+                    read_detail = f'{type(exc).__name__}: {exc}'
+                    time.sleep(0.5 * (attempt + 1))
+            check(
+                f'GET {path}',
+                read_ok,
+                read_detail
+                + ('' if read_attempts == 1 else f' (took {read_attempts} attempts)'),
+            )
 
         # The write is retried: on Windows a virus scanner or a file indexer
         # can hold the freshly created config.json for a moment, and a
@@ -286,6 +301,85 @@ def main() -> int:
             )
         except Exception as exc:  # noqa: BLE001
             check('POST /api/subagents steer (with token)', False, f'{type(exc).__name__}: {exc}')
+
+        # ── Section 6 · Policy and secret boundaries ──────────────────
+        # These are static checks, but they belong with "does the app hold
+        # together" rather than in a linter: a tool that writes a file but
+        # is not classified as mutating runs without approval in plan/ask
+        # mode, and a secret in a child environment is readable by any local
+        # caller. Both classes were live defects.
+        begin('policy and secret boundaries')
+        try:
+            from app.services import tool_policy
+
+            unguarded = [
+                name
+                for name in tool_policy.FILE_WRITING_TOOLS
+                if not tool_policy.is_mutating(name)
+            ]
+            check(
+                'every file/config-writing tool is plan/ask mutating',
+                not unguarded,
+                ', '.join(sorted(unguarded)),
+            )
+        except Exception as exc:  # noqa: BLE001
+            check('tool policy probe', False, f'{type(exc).__name__}: {exc}')
+
+        try:
+            from app.lib.async_subprocess import terminal_env
+
+            env = terminal_env()
+            leaked = [
+                key
+                for key in env
+                if key.upper().startswith('AUGUST_')
+                or 'TOKEN' in key.upper()
+                or 'SECRET' in key.upper()
+                or 'API_KEY' in key.upper()
+            ]
+            check(
+                'terminal env carries no app credential',
+                not leaked,
+                ', '.join(sorted(leaked)),
+            )
+        except Exception as exc:  # noqa: BLE001
+            check('terminal env probe', False, f'{type(exc).__name__}: {exc}')
+
+        try:
+            from app.lib.local_api_auth import LOCAL_AUTH_ENV
+
+            check(
+                'the local token is not left in os.environ for children',
+                LOCAL_AUTH_ENV not in os.environ,
+                '' if LOCAL_AUTH_ENV not in os.environ else LOCAL_AUTH_ENV,
+            )
+        except Exception as exc:  # noqa: BLE001
+            check('local token env probe', False, f'{type(exc).__name__}: {exc}')
+
+        # The workbench chat is the app's own start-work door; the terminal
+        # REST list is the route that led to the token leak. Both must be
+        # behind the same per-install credential as the subagent steer route.
+        try:
+            response = client.post('/api/workbench/chat', json={'message': 'smoke'})
+            ok = response.status_code == 401
+            check(
+                'POST /api/workbench/chat without the token is refused (401)',
+                ok,
+                '' if ok else f'status {response.status_code}',
+            )
+        except Exception as exc:  # noqa: BLE001
+            check('POST /api/workbench/chat (no token)', False, f'{type(exc).__name__}: {exc}')
+
+        try:
+            response = client.get('/api/terminal/sessions')
+            ok = response.status_code == 401
+            check(
+                'GET /api/terminal/sessions without the token is refused (401)',
+                ok,
+                '' if ok else f'status {response.status_code}',
+            )
+        except Exception as exc:  # noqa: BLE001
+            check('GET /api/terminal/sessions (no token)', False, f'{type(exc).__name__}: {exc}')
 
     failures = [r for r in results if not r['ok']]
     report = {

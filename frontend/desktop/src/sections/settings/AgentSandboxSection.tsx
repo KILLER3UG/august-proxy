@@ -84,7 +84,7 @@ export function AgentSandboxSection() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-white/[0.08] bg-black/20 p-3 text-xs text-muted-foreground space-y-1.5 max-w-2xl">
+      <div className="rounded-xl border border-border/60 bg-black/20 p-3 text-xs text-muted-foreground space-y-1.5 max-w-2xl">
         <div>
           <span className="text-foreground/90 font-medium">Agent mode</span> — approvals &amp; plans
           (composer chip next to +).
@@ -95,7 +95,7 @@ export function AgentSandboxSection() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3 text-sm space-y-1">
+      <div className="rounded-xl border border-border/60 bg-black/30 p-3 text-sm space-y-1">
         <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
           Active backend
         </div>
@@ -154,7 +154,7 @@ export function AgentSandboxSection() {
         </div>
         <ul className="space-y-2 text-sm">
           {modes.map((m) => (
-            <li key={m.id} className="rounded-lg border border-white/[0.06] px-3 py-2">
+            <li key={m.id} className="rounded-lg border border-border/60 px-3 py-2">
               <div className="font-medium">{m.label}</div>
               <div className="text-xs text-muted-foreground mt-0.5">{m.description}</div>
             </li>

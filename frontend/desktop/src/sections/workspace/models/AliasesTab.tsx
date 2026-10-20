@@ -123,7 +123,7 @@ export function AliasesTab() {
 
   return (
     <div className="space-y-3 h-full flex flex-col">
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-3 flex-1 overflow-auto">
+      <div className="rounded-xl border border-border/60 bg-card/60 p-5 space-y-3 flex-1 overflow-auto">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <p className="text-sm font-semibold">User-defined model aliases</p>
@@ -169,8 +169,8 @@ export function AliasesTab() {
             className="py-6"
           />
         ) : (
-          <div className="rounded-lg border border-white/[0.06] overflow-hidden">
-            <div className="grid grid-cols-[1fr_2fr_120px_36px] gap-2 px-3 py-2 text-2xs uppercase tracking-wider text-muted-foreground border-b border-white/[0.06] font-mono">
+          <div className="rounded-lg border border-border/60 overflow-hidden">
+            <div className="grid grid-cols-[1fr_2fr_120px_36px] gap-2 px-3 py-2 text-2xs uppercase tracking-wider text-muted-foreground border-b border-border/60 font-mono">
               <span>Alias name</span>
               <span>Target model</span>
               <span>Provider</span>

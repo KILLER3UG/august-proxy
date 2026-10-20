@@ -104,7 +104,7 @@ export function BackgroundReflectionTab() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
+      <div className="rounded-xl border border-border/60 bg-card/60 p-5 space-y-4">
         <div>
           <p className="text-sm font-semibold">Background review & reflection</p>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -113,7 +113,7 @@ export function BackgroundReflectionTab() {
           </p>
         </div>
 
-        <div className="flex items-center justify-between p-3 rounded-lg border border-white/[0.06] bg-black/10">
+        <div className="flex items-center justify-between p-3 rounded-lg border border-border/60 bg-black/10">
           <div>
             <p className="text-xs font-semibold">Enable background tasks</p>
             <p className="text-2xs text-muted-foreground">Route background tasks to the models configured below.</p>
@@ -126,7 +126,7 @@ export function BackgroundReflectionTab() {
         </div>
 
         {noModels ? (
-          <div className="p-3 rounded-lg border border-white/[0.06] bg-black/10 text-xs text-muted-foreground">
+          <div className="p-3 rounded-lg border border-border/60 bg-black/10 text-xs text-muted-foreground">
             No models available. Please add a provider first.
           </div>
         ) : (

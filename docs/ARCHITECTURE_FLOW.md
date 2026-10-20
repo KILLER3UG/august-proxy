@@ -185,24 +185,24 @@ flowchart TB
   SUB --> RESULT
   SELFCFG --> RESULT
 
-  NOWIRE["tool_policy.py:needs_approval_in :339<br/>DEFINED AND NEVER CALLED — guard modes are stored<br/>on the session (routers/workbench.py:setGuardMode)<br/>but no code path consults this predicate"]
-  NOWIRE -.->|"documented, not wired"| DISP
+  NOWIRE["workbench._checkToolGuard is the live approval authority<br/>plan/ask → is_mutating, edit → is_shell_mutation<br/>(tool_policy.needs_approval_in was dead and was removed)"]
+  NOWIRE -.->|"enforced at the call site"| DISP
 ```
 
 **Not what it looks like**
 
-- `_executeTool` is the one door every tool call passes (`loop/exec.py:58`), and
-  it ends in `tool_registry.dispatch` (`tool_registry.py:625`, imported at
+- `_executeTool` is the one door every chat tool call passes (`loop/exec.py:58`),
+  and it ends in `tool_registry.dispatch` (`tool_registry.py:625`, imported at
   `exec.py:73`). There is no second dispatch path for aliases: `bulk` routes
   `operation=<x>` to the same handlers from inside `dispatch`.
-- **`tool_policy.needs_approval_in` (`tool_policy.py:339`) has no call site.**
-  Guard modes are normalized and stored (`routers/workbench.py:setGuardMode`,
-  `normalizeGuardMode`), and every Bot DM / room session is created with
-  `guardMode='full'` — but the predicate that would ask for approval is never
-  consulted, so "ask" and "full" behave the same at execution time. Drawn
-  dashed above because it is a real, documented, *unwired* function. This is the
-  honest state; wiring it is a product decision (which tools ask, where the
-  prompt renders), not a rename.
+- **Approval policy lives in `workbench._checkToolGuard`, not in
+  `tool_policy.needs_approval_in`.** That predicate had no call site and was
+  removed; `_checkToolGuard` is called by the workbench loop, the subagent
+  runner and the kernel, and it uses `is_mutating` for plan/ask and
+  `is_shell_mutation` for edit. `ask` and `full` do NOT behave the same:
+  `full` returns early, while `ask` queues a pending mutation that the user
+  must accept. (The old text here concluded the opposite from the dead
+  predicate and was wrong.)
 - The hardline rules are not one implementation. `sandbox/hardline.py` is the
   source, `workbench/code_runner.py:420-746` is a **port** rendered into every
   code cell (it cannot import `app`), and `terminal_service.py` calls the

@@ -244,10 +244,13 @@ function withLocalToken(init: RequestInit | undefined, token: string): RequestIn
  * `api/liveClient.ts` never sent the header. A phone could open August and
  * browse it, and could not have a conversation.
  *
- * The token goes on a request only when the backend is NOT on loopback --
- * the same rule the backend itself applies (`_is_loopback_peer`), so the
- * desktop pays nothing: it adds no header, and a cross-origin GET that had
- * no preflight does not grow one.
+ * The token goes on every management request, loopback included. The
+ * backend exempts a loopback peer from the LAN gate, but the routes that
+ * START WORK require the token from every peer (the workbench chat, the
+ * live turn, the terminal, the routine runner and the proposal doors).
+ * Sending it locally is what makes those routes reachable by the app
+ * itself; it is the same header `request()` already sends, and a
+ * same-origin request does not grow a preflight because of it.
  *
  * The patch is installed in BOTH hosts. In Tauri it also rewrites the URL
  * (a relative `/api` would hit the asset origin); outside Tauri -- the
@@ -262,7 +265,7 @@ function installFetchPatch(): void {
     const rawUrl =
       typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     const url = rewriteApiUrl(rawUrl);
-    const wantsToken = isManagementRequest(url) && !isLoopbackHost(url);
+    const wantsToken = isManagementRequest(url);
 
     const send = (token: string | null): Promise<Response> => {
       const withToken = token && wantsToken ? withLocalToken(init, token) : init;

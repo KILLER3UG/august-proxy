@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from app.lib.local_api_auth import require_local_token
 from app.models.camel_base import CamelModel
 from app.services.gateway.base import BasePlatformAdapter
 from app.services.gateway.runner import GatewayRunner, registerAdapter
@@ -137,7 +138,7 @@ class PairingApproveBody(CamelModel):
 
 
 @router.post('/pairing/approve')
-async def pairingApprove(body: PairingApproveBody) -> dict[str, object]:
+async def pairingApprove(body: PairingApproveBody, _auth: bool = Depends(require_local_token)) -> dict[str, object]:
     """Consume a pairing code → append its user to the allowlist (live)."""
     from app.services.gateway.pairing import getStore, grantUser
 

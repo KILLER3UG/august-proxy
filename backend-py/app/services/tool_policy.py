@@ -203,6 +203,21 @@ _PROMPT_BUCKETS = {
 # ── Guard: plan-mode blocked (mutating) tools ─────────────────────────────
 # Transcribed from workbench.isPlanModeBlocked.
 
+#: Tools whose handler writes a workspace file or a credential/config store.
+#:
+#: A separate declaration from ``_PROMPT_WRITE`` (which only DESCRIBES a tool
+#: to the model) so the gate and the prompt cannot silently diverge. Every
+#: member must also be ``is_mutating``; ``e2e_smoke.py`` asserts that, which is
+#: how the file-producing renderers below stopped being ungated.
+FILE_WRITING_TOOLS = frozenset({
+    'board_flash',
+    'create_pptx', 'pptx_comment', 'render_chart', 'render_video',
+    'create_html_artifact', 'draw_circuit',
+    'circuit_render_3d', 'circuit_render_logic', 'circuit_render_schematic',
+    'firmware_stimulus', 'hdl_timing_diagram', 'kicad_render',
+    'setup_provider', 'customize_ui',
+})
+
 _PLAN_BLOCKED_EXACT = frozenset({
     'write_file', 'edit_file', 'create_file', 'str_replace', 'str_replace_editor',
     'strreplaceeditttool', 'apply_patch', 'patch_file', 'delete_file',
@@ -254,7 +269,7 @@ _PLAN_BLOCKED_EXACT = frozenset({
     # gate would make it edit-mode-blocked too, and the spawn it does is
     # part of the action rather than the action itself.
     'board_flash',
-})
+}) | FILE_WRITING_TOOLS
 
 _PLAN_BLOCKED_BULK_PLURALS = frozenset({
     'write_files', 'delete_sessions', 'rename_sessions', 'kill_daemons',
@@ -353,6 +368,14 @@ def is_mutating(name: str, args: dict[str, object] | None = None) -> bool:
     if not name:
         return False
     n = name.lower()
+    if n.startswith('august__'):
+        n = n[len('august__'):]
+    # MCP tools carry no static classification. Treat every one as mutating:
+    # a server can write, delete or drive a device, and the alternative is a
+    # write that plan and ask modes wave through. This is deliberately a
+    # prefix rule, so a new server/tool is covered by construction.
+    if n.startswith('mcp__'):
+        return True
     if n in _RENAME_SESSION_EXEMPT:
         return False
     if n in _PLAN_BLOCKED_EXACT:
@@ -383,27 +406,8 @@ def is_shell_mutation(name: str, args: dict[str, object] | None = None) -> bool:
     return any(m in n for m in _SHELL_SUBSTRINGS)
 
 
-def needs_approval_in(
-    mode: str,
-    name: str,
-    args: dict[str, object] | None = None,
-) -> bool:
-    """Whether the tool requires user approval in the given guard mode.
-
-    Matches the old ``_checkToolGuard`` mode dispatch (excluding the
-    read-only-sandbox pre-check and plan-file-write exception, which are
-    path/sandbox-specific and stay in the guard).
-
-    Returns True when the tool should be blocked / queued for approval.
-    The caller is responsible for checking ``planApproved`` and
-    ``is_plan_file_write`` before acting on a plan-mode block.
-    """
-    if mode == 'full':
-        return False
-    if mode == 'plan':
-        return is_mutating(name, args)
-    if mode == 'edit':
-        return is_shell_mutation(name, args)
-    if mode == 'ask':
-        return is_mutating(name, args)
-    return False
+# `needs_approval_in` was REMOVED on 2026-10-21. It had zero call sites; the
+# live approval authority is `workbench._checkToolGuard`, which uses
+# `is_mutating` for plan/ask and `is_shell_mutation` for edit. Keeping a
+# second, uncalled predicate made readers conclude (wrongly) that guard modes
+# were unwired.

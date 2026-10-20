@@ -73,7 +73,7 @@ export function RollbackHistory() {
                     <CardContent className="p-0">
                         <table className="w-full text-sm">
                             <thead>
-                                <tr className="text-2xs uppercase tracking-widest text-muted-foreground border-b border-white/[0.06]">
+                                <tr className="text-2xs uppercase tracking-widest text-muted-foreground border-b border-border/60">
                                     <th className="text-left px-3 py-2 font-medium">Type</th>
                                     <th className="text-left px-3 py-2 font-medium">Target</th>
                                     <th className="text-left px-3 py-2 font-medium">When</th>
@@ -130,7 +130,7 @@ function RollbackRow({ entry, expanded, onToggle, onUndo, undoing }: {
         <>
             <tr
                 onClick={onToggle}
-                className="border-b border-white/[0.04] hover:bg-white/[0.03] cursor-pointer"
+                className="border-b border-border/50 hover:bg-white/[0.03] cursor-pointer"
             >
                 <td className="px-3 py-2 font-mono text-xs">{entry.type}</td>
                 <td className="px-3 py-2"><code className="text-xs">{entry.target}</code></td>
@@ -165,7 +165,7 @@ function RollbackRow({ entry, expanded, onToggle, onUndo, undoing }: {
 
 function JsonBlock({ label, value }: { label: string; value: unknown }) {
     return (
-        <div className="rounded-md border border-white/[0.06] bg-background/40 p-2">
+        <div className="rounded-md border border-border/60 bg-background/40 p-2">
             <div className="text-2xs uppercase tracking-widest text-muted-foreground mb-1">{label}</div>
             <pre className="text-2xs leading-snug whitespace-pre-wrap break-all font-mono">
                 {value === null || value === undefined ? '—' :

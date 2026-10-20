@@ -22,7 +22,7 @@ changes, and what the phone panel needs to know.
 | Trusted origins | loopback + the desktop shell | the above **plus this machine's LAN addresses** |
 | `/api/health` | open | open |
 | Everything else under `/api/` and `/mcp/` | open to this machine | **token required from the network** |
-| The two WebSocket doors | open to this machine | **token or trusted browser origin** |
+| The two WebSocket doors | open to this machine | **token (query for a browser, header for a native client)** |
 
 ## The switch
 
@@ -63,7 +63,7 @@ non-browser client — curl, an SDK, a script on the next desk — and it passes
 through untouched. The origin guard stops a **drive-by webpage**; it does not
 stop a **neighbour on the same network**. So when LAN access is on, **the
 per-install token is the boundary**, and it covers the whole management API
-(`/api/*`, `/mcp/*`) — not only the five routes that start work. A neighbour
+(`/api/*`, `/mcp/*`) — not only the routes that start work. A neighbour
 with the token can read the brain and run tools. That is the warning the
 switch must carry.
 
@@ -127,63 +127,61 @@ on this machine — the desktop shell, or another local program — which is
 exactly the client population the management API has always served without a
 credential.
 
-It has to be an exemption. The desktop shell's own workbench surface does not
-send the token: `api/workbench/stream.ts` and `api/workbench.ts` call
-`fetch()` directly, and only `api/client.ts` attaches the header. Requiring
-the token from loopback would break the chat, BTW and brain-config surfaces
-of the user's own app the moment LAN access was switched on.
+It has to be an exemption. The desktop shell's own workbench surface used to
+call `fetch()` directly and only `api/client.ts` attached the header; the
+fetch patch now attaches it on loopback too, which is what lets the
+work-starting routes below require it from every peer without breaking the
+chat.
 
-The five routes that *start work* (`POST /api/subagents/spawn`, `/steer`,
-`/resume`, `/workstreams/{name}/continue`, `POST /api/harness/proposals/{pid}/decide`)
-keep their own per-route token requirement, from every peer, loopback
-included. That gate predates LAN access and is unchanged by it.
+The routes that *start work* or *approve something* keep their own per-route
+token requirement, from every peer, loopback included: `POST
+/api/subagents/spawn`, `/steer`, `/resume`, `/workstreams/{name}/continue`,
+`/routines/{routineId}/run`, the harness proposal decide and promotion
+doors, `POST /api/workbench/chat`, `/plan/approve`, `/mutations/respond`,
+`POST /api/live/turn`, `POST /api/agents/rooms/{room_id}/send`, `POST
+/api/automations/run`, the terminal REST doors (`/sessions`, `/buffer`,
+`/input`, `/command`, `/approve`), and the preview/MCP/restart/pairing
+approvals.
 
-## The two WebSocket doors are different
+## The two WebSocket doors
 
 `/api/logs/stream` and `/api/terminal/connect` are the two endpoints where
 an unauthenticated socket is worst: the log stream leaks prompt bodies and
 the terminal writes to the user's shell on every frame.
 
-They are also the two doors a phone could never authenticate to, because **a
-browser's WebSocket handshake cannot carry a custom header**. Gating them on
-the token alone would leave the phone with no terminal and no log stream.
+Both now require the per-install token. A browser's WebSocket handshake
+cannot set a custom header, so the token rides in the same `august-token`
+query parameter the pairing URL and the live-stream EventSources use. The
+desktop terminal dock and Backend Monitor send it; a native client can send
+the `X-August-Local-Token` header instead. A trusted `Origin` alone is no
+longer enough: a local script can forge that header, and these are exactly
+the sockets a local model must not read.
 
-So a socket from the network must present **either** the token (a
-non-browser client *can* set a header on a handshake — only a browser cannot)
-**or** a trusted browser origin (a browser always sends `Origin`, and the
-allowlist is exact). A socket with neither is refused.
+The HTTP half of the terminal (`/api/terminal/sessions`, `/buffer`, `/input`,
+`/command`, `/approve`) was already behind the token, and the interactive
+terminal's environment is scrubbed of `AUGUST_*` credentials, so a shell
+cannot print the token for a model to read back.
 
-The residual hole, stated plainly: a script that **forges** a trusted
-`Origin` can open those two sockets. That is the same trust the origin guard
-has always given a browser request — the guard stops a drive-by webpage, not
-a determined script — and it is why the HTTP half of the terminal (the
-`/api/terminal/input`, `/command`, `/sessions` and `/buffer` routes) is
-behind the token, not behind the origin.
-
-## Known gap: a phone cannot chat yet
+## The phone can chat
 
 The phone's WebView loads the app from `http://<lan-ip>:<port>` and takes the
-token from the pairing URL. `api/client.ts` sends it on every request it
-makes — but the **raw** `fetch()` calls in `api/workbench/stream.ts`,
-`api/workbench.ts` and `api/liveClient.ts` do not, and the chat, BTW,
-brain-config and mutation-respond surfaces go through those. A phone can
-therefore open August and browse it, but those four calls get a `401` while
-LAN access is on.
-
-The fix belongs in the frontend: `installFetchPatch()` in `api/client.ts`
-already wraps `window.fetch` to rewrite the URL, and adding the token header
-there would cover every raw call at once. It was out of scope for the
-backend half of this feature, so it is recorded here rather than done.
+token from the pairing URL. `api/client.ts`'s fetch patch now attaches the
+token on every management request, including loopback and the raw `fetch()`
+calls in `api/workbench/stream.ts`, `api/workbench.ts` and
+`api/liveClient.ts`; the chat, BTW, brain-config and mutation-respond
+surfaces are covered by that one patch.
 
 ## What a LAN peer cannot do
 
 * Read the brain, the file tree, the session transcripts, the providers list
   — every one of those is behind the token now.
-* Drive the five routes that start work — they have always required the
-  token, from every peer.
+* Drive the routes that start work — the chat, live turn, subagent, routine,
+  room-send, automation, proposal and terminal doors — they require the
+  token from every peer.
 * Use the terminal over HTTP (`/api/terminal/input`, `/command`,
   `/sessions`, `/buffer`) — behind the token.
-* Open a WebSocket with no credential at all — a socket must present the
-  token or a trusted origin.
+* Open a WebSocket with no credential — the terminal and log sockets require
+  the per-install token (query parameter for a browser, header for a native
+  client).
 * Reach `/v1/*` — that is the external proxy, closed by default and gated by
   the gateway bearer key, not by the local token.

@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from typing import Any
 
 from app.json_narrowing import as_bool, as_dict, as_list, as_str
 from app.services.workbench.loop.guards import _bulk_paths_from_args
@@ -56,8 +57,12 @@ async def _awaitBaselineSnapshot(fut: 'asyncio.Future[str] | None') -> str:
 
 
 async def _executeTool(
-    toolName: str, args: dict[str, object], session: WorkbenchSession, toolUseId: str = ''
-) -> str:
+    toolName: str,
+    args: dict[str, object],
+    session: WorkbenchSession,
+    toolUseId: str = '',
+    raw_result: bool = False,
+) -> Any:
     """Execute a workbench tool by dispatching to the correct handler.
 
     Two dispatch paths:
@@ -76,25 +81,8 @@ async def _executeTool(
     token = currentSessionId.set(session.id)
     toolToken = currentToolUseId.set(toolUseId or '')
     try:
+        from app.services.harness_mode import is_mutating_tool
         from app.services.tools.mcp_client import executeMcpToolCall, isMcpToolName
-
-        if isMcpToolName(toolName):
-            try:
-                return str(
-                    await asyncio.wait_for(
-                        executeMcpToolCall(toolName, args), timeout=_TOOL_EXEC_TIMEOUT_S
-                    )
-                )
-            except asyncio.TimeoutError:
-                # Roadmap #7: a tool the harness killed mid-flight. That is an
-                # interception, not a tool that merely returned an error, and it
-                # used to return a string and vanish — so a model whose calls
-                # keep timing out was invisible to the guardrail digest and the
-                # failure-lesson path.
-                _record_interception(
-                    session.id, toolName, INTERCEPTION_MCP_TIMEOUT
-                )
-                return f'Error: MCP tool {toolName} timed out after {_TOOL_EXEC_TIMEOUT_S}s.'
 
         # Hash-anchored edits (surpass #5): mutating tools may carry the
         # sha256 of the file as read (the read tool reports it). A mismatch
@@ -106,8 +94,6 @@ async def _executeTool(
         # fileHash-carrying tools). That silently disabled both the stale-write
         # hash gate AND the pre-mutation baseline join below. Use the canonical
         # args-aware predicate instead (same authority the worker + tracker use).
-        from app.services.harness_mode import is_mutating_tool
-
         if is_mutating_tool(toolName, args):
             # Latency fix (2026-09-02): the turn-start shadow-git baseline runs
             # OFF the event loop; the FIRST mutating tool joins it here so the
@@ -185,19 +171,40 @@ async def _executeTool(
             logger.warning('PRE_TOOL_USE hook failed for %s — denying: %s', toolName, exc)
             return f'[BLOCKED by hook] Pre-tool hook failed to evaluate the call: {exc}'
 
-        try:
-            # The command runner's own max timeout equals _TOOL_EXEC_TIMEOUT_S
-            # (300s) — give run_command-style tools grace past the harness cap
-            # so a legitimately long command isn't cancelled mid-write at the
-            # exact moment its own timeout expires (audit finding).
-            toolTimeout = _TOOL_EXEC_TIMEOUT_S
-            if toolName in ('run_command', 'bash', 'safe_python', 'terminal_command'):
-                toolTimeout = _TOOL_EXEC_TIMEOUT_S + 30
-            result = await asyncio.wait_for(dispatchTool(toolName, args), timeout=toolTimeout)
-        except asyncio.TimeoutError:
-            _record_interception(session.id, toolName, INTERCEPTION_TOOL_TIMEOUT)
-            return f'Error: tool {toolName} timed out after {toolTimeout}s.'
-        result_str = str(result)
+        if isMcpToolName(toolName):
+            # MCP calls take the SAME lifecycle hooks and timeout as a
+            # registered tool. The early return that used to sit at the top of
+            # this function skipped PRE/POST hooks (secret_guard,
+            # sensitive_code, blast_radius) and the whole guard stack, so an
+            # MCP server was the one tool surface with neither a hook nor an
+            # approval. The call is dispatched here, after the hooks, so a
+            # deny/modify sees it before it reaches the server.
+            try:
+                result_str = str(
+                    await asyncio.wait_for(
+                        executeMcpToolCall(toolName, args), timeout=_TOOL_EXEC_TIMEOUT_S
+                    )
+                )
+            except asyncio.TimeoutError:
+                _record_interception(session.id, toolName, INTERCEPTION_MCP_TIMEOUT)
+                result_str = (
+                    f'Error: MCP tool {toolName} timed out after {_TOOL_EXEC_TIMEOUT_S}s.'
+                )
+            result = result_str
+        else:
+            try:
+                # The command runner's own max timeout equals _TOOL_EXEC_TIMEOUT_S
+                # (300s) — give run_command-style tools grace past the harness cap
+                # so a legitimately long command isn't cancelled mid-write at the
+                # exact moment its own timeout expires (audit finding).
+                toolTimeout = _TOOL_EXEC_TIMEOUT_S
+                if toolName in ('run_command', 'bash', 'safe_python', 'terminal_command'):
+                    toolTimeout = _TOOL_EXEC_TIMEOUT_S + 30
+                result = await asyncio.wait_for(dispatchTool(toolName, args), timeout=toolTimeout)
+                result_str = str(result)
+            except asyncio.TimeoutError:
+                _record_interception(session.id, toolName, INTERCEPTION_TOOL_TIMEOUT)
+                return f'Error: tool {toolName} timed out after {toolTimeout}s.'
 
         # Lifecycle hooks: POST_TOOL_USE (can modify result)
         try:
@@ -229,7 +236,7 @@ async def _executeTool(
             await capture_after_tool(toolName, result_str)
         except Exception:
             pass
-        return result_str
+        return result if raw_result else result_str
     except Exception as exc:
         import traceback as _tb
 

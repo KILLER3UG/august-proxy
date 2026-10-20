@@ -37,7 +37,7 @@ function FindingRow({
   return (
     <div
       data-testid="review-finding-row"
-      className="space-y-1 rounded-md border border-white/[0.06] bg-black/20 p-2"
+      className="space-y-1 rounded-md border border-border/60 bg-black/20 p-2"
     >
       <div className="flex items-start gap-1.5">
         <TagBadge tag={finding.tag} />

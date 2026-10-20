@@ -5,13 +5,20 @@ local SPA's surface, and the SPA is a browser page on the same machine. That
 is a reasonable default for reading a setting.
 
 It is not a reasonable default for the routes that **start work** or
-**approve something**:
+**approve something**. Those routes require the token from every peer,
+loopback included:
 
-    POST /api/subagents/spawn
-    POST /api/subagents/{taskId}/steer
-    POST /api/subagents/workstreams/{name}/continue
-    POST /api/subagents/{taskId}/resume
-    POST /api/harness/proposals/{pid}/decide
+    POST /api/subagents/spawn, /steer, /resume, /workstreams/{name}/continue
+    POST /api/subagents/routines/{routineId}/run, /propose-breakdown,
+         /jobs/{jobId}/cancel, /stop-all
+    POST /api/harness/proposals/{pid}/decide, /promotion/run
+    POST /api/workbench/chat, /plan/approve, /mutations/respond
+    POST /api/live/turn
+    POST /api/agents/rooms/{room_id}/send
+    POST /api/automations/run
+    *    /api/terminal/* (REST; the socket keeps its trusted-origin door)
+    POST /api/preview/approve, /api/mcp/servers/{id}/start|stop,
+         /api/api/system/restart, /api/gateway/pairing/approve
 
 ``/api/*`` listens on ``127.0.0.1``, which means "any local process" — not
 "the August app". ``curl http://127.0.0.1:8085/api/subagents/spawn`` works
@@ -24,9 +31,17 @@ on itself.
 So those routes require a per-install token. The desktop shell generates it
 (``backend.rs::local_api_token``), hands it to the backend through
 ``AUGUST_LOCAL_API_TOKEN`` in the environment, and hands it to the webview
-through the Tauri IPC. Neither channel is reachable by another local process:
-the IPC is bound to the webview, and another process cannot read this
-process's environment on Windows without process-access rights.
+through the Tauri IPC. The backend POPS the token out of ``os.environ`` at
+import, so a child process — ``run_command``, the kernel, an MCP server, the
+terminal, a circuit binary — cannot inherit it. The IPC is bound to the
+webview, and another process cannot read this process's environment on
+Windows without process-access rights.
+
+A child process is the reason the pop matters: it inherits the environment.
+``run_command``, the warm kernel and MCP servers also scrub ``AUGUST_*``
+before spawning, and the terminal uses ``async_subprocess.terminal_env``;
+those are defense in depth for the data-dir pointers, not the token's only
+guard.
 
 The token is deliberately **not** written to disk. A file under the app's data
 directory would be readable by a model with ``run_command``, which is exactly
@@ -98,6 +113,17 @@ LOCAL_AUTH_HEADER = 'X-August-Local-Token'
 #: The environment variable the shell passes the token to the backend in.
 LOCAL_AUTH_ENV = 'AUGUST_LOCAL_API_TOKEN'
 
+#: The token, moved OUT of ``os.environ`` at import.
+#:
+#: A child process inherits its parent's environment, and the backend spawns
+#: many children (run_command, the kernel, MCP servers, the terminal, the
+#: circuit/firmware binaries). Scrubbing each spawn is a checklist that can
+#: be forgotten; popping the token here means NO child can inherit it at all.
+#: The terminal env scrub in ``async_subprocess.terminal_env`` remains as
+#: defense in depth for the other ``AUGUST_*`` pointers (the data dir, the
+#: bind host), which are not credentials but should not reach a shell either.
+_TOKEN_VALUE = (os.environ.pop(LOCAL_AUTH_ENV, '') or '').strip()
+
 #: Routes that stay OPEN even in LAN mode. Named, and each one justified:
 #:
 #: ``/api/health``
@@ -138,7 +164,7 @@ LAN_QUERY_TOKEN_PATHS = frozenset({
 
 
 def _expected_token() -> str:
-    return (os.environ.get(LOCAL_AUTH_ENV) or '').strip()
+    return _TOKEN_VALUE
 
 
 def local_token_configured() -> bool:
@@ -197,16 +223,18 @@ def _is_loopback_peer(conn: HTTPConnection) -> bool:
     were written to constrain (they keep their own per-route requirement,
     from every peer, loopback included).
 
-    It has to be an exemption. The desktop shell's own workbench surface
-    does not send the token: ``api/workbench/stream.ts`` and
-    ``api/workbench.ts`` call ``fetch()`` directly, and only
-    ``api/client.ts`` attaches the header. Requiring the token from
-    loopback would break the chat, BTW and brain-config surfaces of the
-    user's own app the moment LAN access was switched on.
+    It has to be an exemption for the LAN gate. The desktop's own workbench
+    surface now sends the token on loopback too (``api/client.ts``'s fetch
+    patch), but the LAN gate's job is the NETWORK, and a local read from a
+    surface that has no token in hand must keep working. The routes that
+    start work or approve something carry their own per-route requirement
+    (``require_local_token``), from every peer, loopback included — so this
+    exemption does not reopen the door the token exists to close.
 
-    The token's job in LAN mode is to authenticate the NETWORK — the new
-    exposure the owner opted into. It is not a redesign of the local trust
-    model, and it must not become one by accident.
+    A request that arrives this way came from a program on THIS machine —
+    the desktop shell, or another local program — which is exactly the
+    client population the management API has always served without a
+    credential for reads and ordinary settings.
     """
     client = conn.client
     if not client:
@@ -257,6 +285,28 @@ async def require_local_token(
             },
         )
     return True
+
+
+def ws_token_ok(conn: HTTPConnection) -> bool:
+    """True when a local WebSocket may open.
+
+    A browser's WebSocket handshake cannot set a custom header, so the
+    token rides in the ``august-token`` query parameter; a native client may
+    still use the header. No token configured → no gate, the same rule the
+    HTTP dependency follows. Unlike the LAN gate, a trusted Origin is NOT
+    enough here: a local script can forge it, and these two sockets (the
+    terminal and the backend log stream) are exactly the surfaces a local
+    model must not read.
+    """
+    expected = _expected_token()
+    if not expected:
+        return True
+    presented = (
+        conn.query_params.get(LOCAL_AUTH_QUERY_PARAM)
+        or conn.headers.get(LOCAL_AUTH_HEADER)
+        or ''
+    ).strip()
+    return bool(presented) and hmac.compare_digest(presented, expected)
 
 
 async def require_lan_token(conn: HTTPConnection) -> bool:

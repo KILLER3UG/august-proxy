@@ -4766,6 +4766,22 @@
               "title": "Room Id",
               "type": "integer"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
           }
         ],
         "requestBody": {
@@ -5605,6 +5621,22 @@
               "title": "Proposal Id",
               "type": "integer"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
           }
         ],
         "requestBody": {
@@ -6042,6 +6074,24 @@
     "/api/automations/run": {
       "post": {
         "operationId": "run_automation_api_automations_run_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -9207,6 +9257,24 @@
       "post": {
         "description": "Consume a pairing code → append its user to the allowlist (live).",
         "operationId": "pairingApprove_api_gateway_pairing_approve_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -9919,6 +9987,22 @@
               "title": "Force",
               "type": "boolean"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
           }
         ],
         "responses": {
@@ -10555,6 +10639,24 @@
       "post": {
         "description": "Run a Live turn through the workbench chat path (non-stream summary).",
         "operationId": "liveTurn_api_live_turn_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -11092,6 +11194,22 @@
               "title": "Serverid",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
           }
         ],
         "responses": {
@@ -11129,6 +11247,22 @@
             "schema": {
               "title": "Serverid",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
             }
           }
         ],
@@ -11712,6 +11846,24 @@
     "/api/preview/approve": {
       "post": {
         "operationId": "approve_api_preview_approve_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -14707,6 +14859,22 @@
               "title": "Jobid",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
           }
         ],
         "responses": {
@@ -14753,6 +14921,22 @@
               "default": 0,
               "title": "Wave",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
             }
           }
         ],
@@ -14817,6 +15001,24 @@
       "post": {
         "description": "Approve or reject a proposed sub-agent breakdown.",
         "operationId": "proposeBreakdown_api_subagents_propose_breakdown_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -14977,6 +15179,22 @@
               "title": "Routineid",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
           }
         ],
         "responses": {
@@ -15013,6 +15231,22 @@
             "schema": {
               "title": "Routineid",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
             }
           }
         ],
@@ -15383,6 +15617,24 @@
       "post": {
         "description": "Terminate every active sub-agent for a session (or all, when no\nsession is given). Returns how many were stopped.",
         "operationId": "stopAllSubagents_api_subagents_stop_all_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -15391,6 +15643,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Stopallsubagents"
@@ -15819,6 +16081,24 @@
       "post": {
         "description": "Signal a soft restart intent — process managers (or the desktop shell) act on it.",
         "operationId": "system_restart_api_system_restart_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -15827,6 +16107,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "System Restart"
@@ -16053,6 +16343,24 @@
       "post": {
         "description": "Approve or reject a pending terminal request.",
         "operationId": "approveRequest_api_terminal_approve_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -16099,6 +16407,22 @@
               "title": "Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
           }
         ],
         "responses": {
@@ -16128,6 +16452,24 @@
       "post": {
         "description": "Submit a one-shot command for execution.",
         "operationId": "runCommand_api_terminal_command_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -16165,6 +16507,24 @@
       "post": {
         "description": "Write input to a terminal session.",
         "operationId": "writeInput_api_terminal_input_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -16202,6 +16562,24 @@
       "post": {
         "description": "Open Windows Terminal / system terminal in a real OS window.",
         "operationId": "openExternal_api_terminal_open_external_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -16246,6 +16624,24 @@
       "post": {
         "description": "Resize a terminal session.",
         "operationId": "resizeTerminal_api_terminal_resize_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -16283,6 +16679,24 @@
       "get": {
         "description": "List all terminal sessions and pending approvals.",
         "operationId": "getSessions_api_terminal_sessions_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -16291,6 +16705,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Getsessions"
@@ -16298,6 +16722,24 @@
       "post": {
         "description": "Create a new terminal session.",
         "operationId": "createSession_api_terminal_sessions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -16350,6 +16792,22 @@
             "schema": {
               "title": "Sessionid",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
             }
           }
         ],
@@ -16981,6 +17439,24 @@
       "post": {
         "description": "Start a chat generation.\n\nReturns sessionId immediately; actual events stream through the\nSSE endpoint using the event log.\n\nIf a turn is already streaming for this session, the message is\n**queued** (not run concurrently) so transcripts cannot race.",
         "operationId": "startChat_api_workbench_chat_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -16989,6 +17465,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Startchat"
@@ -17305,6 +17791,24 @@
       "post": {
         "description": "Alias for POST /mutations/respond (legacy frontend path).",
         "operationId": "confirmMutationAlias_api_workbench_confirm_mutation_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -17313,6 +17817,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Confirmmutationalias"
@@ -17505,6 +18019,24 @@
       "post": {
         "description": "Respond to a pending mutation (accept/reject — pre-apply).\n\nBody: { token, reject?, scope?: 'once'|'session'|'always', continue?: bool,\n        instructions?: str }\n\nOn **accept**: records a grant, **executes the tool with the stored args**,\nthen optionally starts a continuation turn that feeds the real tool result\nto the model (no blind retry).\n\nOn **reject**: discards the pending change without running the tool.\nWhen `instructions` accompanies a reject, the continuation turn carries\nthe user's free-form instructions instead of the generic rejection notice.",
         "operationId": "respondMutation_api_workbench_mutations_respond_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -17513,6 +18045,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Respondmutation"
@@ -17539,6 +18081,24 @@
       "post": {
         "description": "Approve a pending plan.",
         "operationId": "approvePlan_api_workbench_plan_approve_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -17547,6 +18107,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Approveplan"
@@ -17556,6 +18126,24 @@
       "post": {
         "description": "Reject a pending plan.",
         "operationId": "rejectPlan_api_workbench_plan_reject_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -17564,6 +18152,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Rejectplan"

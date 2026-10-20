@@ -34,6 +34,23 @@ def normalize_client_message_id(value: object) -> str | None:
     return trimmed[:MAX_CLIENT_MESSAGE_ID_CHARS]
 
 
+def _scrub_persisted(value: object) -> object:
+    """Remove this install's credential values before they reach the DB.
+
+    Tool arguments are persisted even when the tool call was DENIED, and the
+    outbound scrubber only covers provider traffic. A key that rides into a
+    tool-call argument would otherwise be durable in the brain database and
+    re-read into later turns. Matched by value, never pattern, so ordinary
+    prose is untouched.
+    """
+    try:
+        from app.services.hooks.secret_guard import scrubOutboundBody
+
+        return scrubOutboundBody(value)
+    except Exception:  # noqa: BLE001 — a scrub failure must not block a message write
+        return value
+
+
 def save_message(
     sessionId: str,
     role: str,
@@ -64,13 +81,16 @@ def save_message(
     elif isinstance(blocks, dict):
         for key, value in blocks.items():
             source[key] = value
+    scrubbed_source = _scrub_persisted(source)
+    if isinstance(scrubbed_source, dict):
+        source = scrubbed_source
     cursor = conn.execute(
         'INSERT INTO messages (session_id, role, content, blocks_json, client_message_id)'
         ' VALUES (?, ?, ?, ?, ?)',
         (
             sessionId,
             role,
-            _json(content),
+            _scrub_persisted(_json(content)),
             encode_blocks(source),
             normalize_client_message_id(client_message_id),
         ),
@@ -106,13 +126,16 @@ def upsert_client_message(
     if not cid:
         raise ValueError('client_message_id required')
     conn = _conn()
-    content_text = _json(content)
+    content_text = _scrub_persisted(_json(content))
     source: dict[str, object] = {'role': role, 'content': content}
     if isinstance(blocks, list):
         source['blocks'] = blocks
     elif isinstance(blocks, dict):
         for key, value in blocks.items():
             source[key] = value
+    scrubbed_source = _scrub_persisted(source)
+    if isinstance(scrubbed_source, dict):
+        source = scrubbed_source
     encoded = encode_blocks(source)
 
     row = conn.execute(
@@ -179,6 +202,9 @@ def enrich_client_message(
     fields = sanitize_enrichment(blocks, structured)
     if not fields:
         return {'ok': False, 'reason': 'empty'}
+    scrubbed_fields = _scrub_persisted(fields)
+    if isinstance(scrubbed_fields, dict):
+        fields = scrubbed_fields
     fitted = fit_enrichment(fields)
     if fitted is None:
         return {'ok': False, 'reason': 'too_large'}

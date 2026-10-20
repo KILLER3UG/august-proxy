@@ -52,7 +52,7 @@ export function AddProviderForm({
 
   return (
     <div className="flex flex-col min-h-0 h-full max-h-full">
-      <div className="px-5 pt-4 pb-3 border-b border-white/[0.06] flex items-center justify-between gap-3 shrink-0">
+      <div className="px-5 pt-4 pb-3 border-b border-border/60 flex items-center justify-between gap-3 shrink-0">
         <div>
           {/* A bare label. The reference's section headers carry a count or
               nothing; this one carried a sentence under the title. */}

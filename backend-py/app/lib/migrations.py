@@ -167,6 +167,43 @@ def _snapshot_before_migration(conn: sqlite3.Connection, versions: list[int]) ->
         logger.warning('Pre-migration snapshot skipped: %s', exc)
 
 
+def _execute_migration_statements(conn: sqlite3.Connection, sql: str, version: int) -> None:
+    """Execute one migration statement at a time.
+
+    ``executescript`` ABORTS at the first failing statement and commits the
+    statements before it. That made a multi-statement migration whose first
+    ALTER was already satisfied (the ``ensure_column`` fast path) skip its
+    ENTIRE tail while the caller recorded the whole file as applied — 055's
+    ``CREATE INDEX idx_episodes_source`` never ran on any boot.
+
+    Executing statement-by-statement makes the "already present" tolerance
+    apply to the statement that is already present, not to every statement
+    after it. ``sqlite3.complete_statement`` is used rather than a naive
+    ``split(';')`` because several migrations create TRIGGERs whose bodies
+    contain semicolons.
+    """
+    buffer = ''
+    for line in sql.splitlines(keepends=True):
+        buffer += line
+        if not sqlite3.complete_statement(buffer):
+            continue
+        statement = buffer.strip()
+        buffer = ''
+        if not statement:
+            continue
+        try:
+            conn.execute(statement)
+        except sqlite3.OperationalError as exc:
+            if _is_already_applied_error(exc):
+                logger.info(
+                    'Migration %03d statement already applied: %s', version, exc
+                )
+                continue
+            raise
+    if buffer.strip():
+        conn.execute(buffer.strip())
+
+
 def run_migrations(conn: sqlite3.Connection) -> int:
     """Apply pending migrations in order. Returns count of newly applied.
 
@@ -187,7 +224,12 @@ def run_migrations(conn: sqlite3.Connection) -> int:
     for version, name, path in pending:
         sql = path.read_text(encoding='utf-8')
         try:
-            conn.executescript(sql)
+            # Start a clean transaction: a failure must roll back this
+            # migration's statements, not leave half of them behind. The old
+            # executescript call committed before it ran, which made that
+            # impossible.
+            conn.commit()
+            _execute_migration_statements(conn, sql, version)
             conn.execute(
                 'INSERT INTO schema_migrations (version, name) VALUES (?, ?)',
                 (version, name),
@@ -198,6 +240,10 @@ def run_migrations(conn: sqlite3.Connection) -> int:
             newly_applied += 1
             logger.info('Applied migration %03d: %s', version, name)
         except Exception as exc:
+            try:
+                conn.rollback()
+            except sqlite3.Error:
+                pass
             if _is_already_applied_error(exc):
                 # Benign double-ownership: the column/index this migration adds
                 # is already present (added by the ensure_column fast path). The

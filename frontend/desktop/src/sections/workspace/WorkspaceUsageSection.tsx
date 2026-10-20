@@ -138,7 +138,7 @@ export function WorkspaceUsageSection() {
         <>
       {/* ONE container: the metric strip and the panels below it are
           hairline-separated children, not N bordered cards. */}
-      <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-card/60">
+      <div className="overflow-hidden rounded-xl border border-border/60 bg-card/60">
       {/* Metric strip */}
       <div className="flex divide-x divide-white/[0.06]">
         <div className="p-4 text-center flex flex-col justify-center min-w-0 flex-1">
@@ -169,10 +169,10 @@ export function WorkspaceUsageSection() {
       </div>
 
       {/* Token activity */}
-      <div className="border-t border-white/[0.06] p-5 space-y-4">
+      <div className="border-t border-border/60 p-5 space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <span className="text-xs text-muted-foreground">Token activity</span>
-          <div className="flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5 border border-white/[0.06]">
+          <div className="flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5 border border-border/60">
             {(['daily', 'weekly', 'cumulative'] as ActivityMode[]).map((mode) => (
               <button
                 key={mode}
@@ -204,9 +204,9 @@ export function WorkspaceUsageSection() {
       </div>
 
       {/* Time range */}
-      <div className="flex items-center justify-between gap-4 flex-wrap border-t border-white/[0.06] px-5 py-3">
+      <div className="flex items-center justify-between gap-4 flex-wrap border-t border-border/60 px-5 py-3">
         <span className="text-xs text-muted-foreground">Time range</span>
-        <div className="flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5 border border-white/[0.06]">
+        <div className="flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5 border border-border/60">
           {RANGES.map((r) => (
             <button
               key={r.key}
@@ -225,7 +225,7 @@ export function WorkspaceUsageSection() {
       </div>
 
       {/* Daily token trend chart */}
-      <div className="border-t border-white/[0.06] p-5 space-y-4">
+      <div className="border-t border-border/60 p-5 space-y-4">
         <div className="text-xs text-muted-foreground">Daily token trend chart</div>
         {trendFailed ? (
           <QueryErrorState
@@ -246,7 +246,7 @@ export function WorkspaceUsageSection() {
       </div>
 
       {/* Model usage */}
-      <div className="border-t border-white/[0.06] p-5 space-y-2">
+      <div className="border-t border-border/60 p-5 space-y-2">
         <div className="text-xs text-muted-foreground">Model usage</div>
         {modelFailed ? (
           <QueryErrorState

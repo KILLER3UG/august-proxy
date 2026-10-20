@@ -12,8 +12,9 @@ keys on dumped dicts — use ``model_dump(by_alias=True)`` at that boundary.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 
+from app.lib.local_api_auth import require_local_token, ws_token_ok
 from app.models.camel_base import CamelModel
 from app.services.workbench import terminal_service
 
@@ -75,13 +76,13 @@ class ApproveBody(CamelModel):
 
 
 @router.get('/sessions')
-async def getSessions():
+async def getSessions(_auth: bool = Depends(require_local_token)):
     """List all terminal sessions and pending approvals."""
     return {'sessions': terminal_service.listTerminalSessions(), 'approvals': terminal_service.listTerminalApprovals()}
 
 
 @router.post('/sessions')
-async def createSession(body: CreateSessionBody | None = None):
+async def createSession(body: CreateSessionBody | None = None, _auth: bool = Depends(require_local_token)):
     """Create a new terminal session."""
     params = {}
     if body:
@@ -91,7 +92,7 @@ async def createSession(body: CreateSessionBody | None = None):
 
 
 @router.post('/open-external')
-async def openExternal(body: OpenExternalBody | None = None):
+async def openExternal(body: OpenExternalBody | None = None, _auth: bool = Depends(require_local_token)):
     """Open Windows Terminal / system terminal in a real OS window."""
     cwd = body.cwd if body else ''
     result = terminal_service.openExternalTerminal(cwd=cwd or '')
@@ -101,7 +102,7 @@ async def openExternal(body: OpenExternalBody | None = None):
 
 
 @router.get('/buffer')
-async def getBuffer(id: str = Query(...)):
+async def getBuffer(id: str = Query(...), _auth: bool = Depends(require_local_token)):
     """Get the terminal buffer for a session."""
     try:
         return terminal_service.readTerminalBuffer(id)
@@ -110,7 +111,7 @@ async def getBuffer(id: str = Query(...)):
 
 
 @router.post('/input')
-async def writeInput(body: InputBody):
+async def writeInput(body: InputBody, _auth: bool = Depends(require_local_token)):
     """Write input to a terminal session."""
     result = await terminal_service.writeTerminalInput(body.id, body.input, body.approved)
     if 'error' in result:
@@ -119,13 +120,13 @@ async def writeInput(body: InputBody):
 
 
 @router.post('/resize')
-async def resizeTerminal(body: ResizeBody):
+async def resizeTerminal(body: ResizeBody, _auth: bool = Depends(require_local_token)):
     """Resize a terminal session."""
     return await terminal_service.resizeTerminalSession(body.session_id, body.cols, body.rows)
 
 
 @router.post('/command')
-async def runCommand(body: CommandBody):
+async def runCommand(body: CommandBody, _auth: bool = Depends(require_local_token)):
     """Submit a one-shot command for execution."""
     # Service reads timeoutMs / camelCase keys from the dumped dict.
     result = await terminal_service.submitTerminalCommand(body.model_dump(by_alias=True))
@@ -135,7 +136,7 @@ async def runCommand(body: CommandBody):
 
 
 @router.post('/approve')
-async def approveRequest(body: ApproveBody):
+async def approveRequest(body: ApproveBody, _auth: bool = Depends(require_local_token)):
     """Approve or reject a pending terminal request."""
     result = await terminal_service.approveTerminalRequest(body.request_id, body.approve)
     if 'error' in result:
@@ -144,7 +145,7 @@ async def approveRequest(body: ApproveBody):
 
 
 @router.delete('/sessions/{sessionId}')
-async def deleteSession(sessionId: str):
+async def deleteSession(sessionId: str, _auth: bool = Depends(require_local_token)):
     """Close and delete a terminal session."""
     if not await terminal_service.closeTerminalSession(sessionId):
         raise HTTPException(status_code=404, detail='Session not found')
@@ -163,6 +164,9 @@ async def terminalWebsocket(
     broadcast stream) lets a reconnecting client resume without re-receiving
     the whole buffer — first connects send 0 and get the full buffer.
     """
+    if not ws_token_ok(websocket):
+        await websocket.close(code=4401)
+        return
     await websocket.accept()
     try:
         await terminal_service.handleTerminalConnection(websocket, id, offset=offset)

@@ -28,7 +28,7 @@ export function SettingsSearch({
         aria-label="Search settings"
         className={
           'h-8 rounded-full pl-8 pr-7 text-xs shadow-none ' +
-          'border-white/[0.08] bg-white/[0.06] text-foreground ' +
+          'border-border/60 bg-muted/40 text-foreground ' +
           'placeholder:text-muted-foreground ' +
           'focus-visible:ring-primary/30 ' +
           '[&::-webkit-search-cancel-button]:appearance-none'
@@ -39,7 +39,7 @@ export function SettingsSearch({
           type="button"
           aria-label="Clear search"
           onClick={() => onChange('')}
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 grid size-5 place-items-center rounded text-muted-foreground transition hover:bg-white/[0.08] hover:text-foreground"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 grid size-5 place-items-center rounded text-muted-foreground transition hover:bg-muted/60 hover:text-foreground"
         >
           <X className="size-3" />
         </button>

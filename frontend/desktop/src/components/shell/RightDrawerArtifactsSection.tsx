@@ -35,7 +35,7 @@ function Tile({ a }: { a: SessionArtifact }) {
           src={src}
           alt=""
           loading="lazy"
-          className="size-11 shrink-0 rounded-xl border border-white/[0.06] bg-muted/50 object-cover"
+          className="size-11 shrink-0 rounded-xl border border-border/60 bg-muted/50 object-cover"
         />
       );
     }

@@ -325,6 +325,16 @@ def save_workbench_session_sot(
                 tailFrom = as_int(msg.get('_tailFrom'), -1)
                 if 0 <= tailFrom < len(content_str):
                     content_str = content_str[:tailFrom].rstrip()
+            # Tool arguments ride in `tool_calls` and are persisted even when
+            # the call was denied. Scrub this install's credential VALUES here,
+            # at the durability boundary, so the brain database never becomes
+            # the durable copy the transport scrub was meant to prevent.
+            try:
+                from app.services.hooks.secret_guard import scrubOutboundText
+
+                content_str = scrubOutboundText(content_str)
+            except Exception:
+                pass
             # 047: the structured timeline (blocks / thinking / tools /
             # attachments / todos …) rides beside `content`, which stays the
             # FTS-indexed text. NULL for a message with nothing structured.

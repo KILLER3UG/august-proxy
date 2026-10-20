@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { backendOriginSync } from '@/api/client';
+import { backendOriginSync, getLocalToken, LOCAL_TOKEN_URL_PARAM } from '@/api/client';
 import { toast } from 'sonner';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
@@ -191,7 +191,7 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
     window.addEventListener('resize', syncSize);
 
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    const connectSocket = () => {
+    const connectSocket = async () => {
       if (!activeId || disposed) return;
       // The ONLY terminal websocket the backend exposes is
       // `/api/terminal/connect?id=&offset=` (terminal_routes.py). This used to
@@ -199,7 +199,15 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
       // upgrade, onclose fires, and the retry loop spun forever behind
       // "Connecting to shell…" with keystrokes going nowhere. offset=0 asks for
       // the full buffer, which is what a dock that tracks no watermark wants.
-      const termPath = `/api/terminal/connect?id=${encodeURIComponent(activeId)}&offset=0`;
+      //
+      // A browser socket cannot set the per-install header, so the token rides
+      // in the query — the same name the pairing URL and the LAN gate use. The
+      // backend refuses the handshake without it when a token is configured.
+      const token = await getLocalToken();
+      const auth = token
+        ? `&${LOCAL_TOKEN_URL_PARAM}=${encodeURIComponent(token)}`
+        : '';
+      const termPath = `/api/terminal/connect?id=${encodeURIComponent(activeId)}&offset=0${auth}`;
       // WebSocket bypasses the window.fetch rewrite; in Tauri it must target
       // the proxy origin (the only ws:// the desktop CSP allows), not the
       // asset/dev origin that window.location.host points at.
@@ -242,7 +250,7 @@ export function BottomTerminalDock({ onClose }: { onClose: () => void }) {
         if (disposed) return;
         reconnectAttemptRef.current += 1;
         const delay = Math.min(8000, 500 * 2 ** Math.min(4, reconnectAttemptRef.current));
-        retryTimer = setTimeout(connectSocket, delay);
+        retryTimer = setTimeout(() => { void connectSocket(); }, delay);
       };
       sock.addEventListener('error', () => {
         connectedRef.current = false;

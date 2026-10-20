@@ -80,7 +80,7 @@ export function HealthSimulatorSection() {
       {isLoading || !providers ? (
         <PageLoader label="Loading providers…" variant="card" className="py-10" />
       ) : providers.length === 0 ? (
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-8 text-center">
+        <div className="rounded-xl border border-border/60 bg-card/60 p-8 text-center">
           <p className="text-sm text-muted-foreground">No providers yet — add one in Models &amp; Providers first.</p>
         </div>
       ) : (
@@ -147,7 +147,7 @@ export function HealthSimulatorSection() {
               {result.checks.map((c) => {
                 const Icon = CHECK_ICONS[c.id] ?? Zap;
                 return (
-                  <div key={c.id} className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-card/60 p-4">
+                  <div key={c.id} className="flex items-start gap-3 rounded-xl border border-border/60 bg-card/60 p-4">
                     <Icon className={`size-4 shrink-0 mt-0.5 ${c.success ? 'text-success' : 'text-danger-fg'}`} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">

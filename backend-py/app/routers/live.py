@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import base64
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from app.json_narrowing import as_int, as_list
+from app.lib.local_api_auth import require_local_token
 from app.models.camel_base import CamelModel
 from app.services.workbench import workbench as wb
 
@@ -85,7 +86,7 @@ async def liveSession(body: LiveSessionBody) -> dict[str, object]:
 
 
 @router.post('/turn')
-async def liveTurn(body: LiveTurnBody) -> dict[str, object]:
+async def liveTurn(body: LiveTurnBody, _auth: bool = Depends(require_local_token)) -> dict[str, object]:
     """Run a Live turn through the workbench chat path (non-stream summary)."""
     transcript = (body.transcript or '').strip()
     if not transcript:

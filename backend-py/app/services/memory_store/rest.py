@@ -56,6 +56,7 @@ def save_fact(
     scope: str = 'global',
     allow_scope_override: bool = False,
     description: str = '',
+    verified: bool = False,
 ) -> None:
     """Save a structured fact. ``expires_at`` (ISO-8601 TEXT) is optional; the
     cognitive boot sweep purges facts whose expiry has passed.
@@ -180,15 +181,12 @@ def save_fact(
             expires_at = excluded.expires_at,
             status = 'active',
             -- M-8: a RE-STATEMENT is the only verification this store can
-            -- observe. Today an update and a verification are the same
-            -- event, so nothing recorded either; `verified_at` separates
-            -- them: an INSERT leaves it NULL (nothing has confirmed this
-            -- fact yet) and re-stating an existing key stamps it. A model
-            -- writing the key is a re-statement, not a human confirmation —
-            -- the column says WHEN the fact was last restated, and the
-            -- contradiction flag (M-8) is what says whether it is in
-            -- dispute.
-            verified_at = datetime('now'),
+            -- observe. `verified` is the caller's claim that a HUMAN
+            -- restated the fact (the Settings write and the bulk import
+            -- pass it); a model's `remember`, a consolidation merge and a
+            -- rollback restore leave the existing stamp alone. An INSERT
+            -- leaves it NULL — nothing has confirmed the fact yet.
+            verified_at = CASE WHEN ? THEN datetime('now') ELSE facts.verified_at END,
             updated_at = datetime('now')
         """,
         (
@@ -202,6 +200,7 @@ def save_fact(
             confidence,
             expires_at,
             normalize_scope(scope),
+            1 if verified else 0,
         ),
     )
     brain_commit(conn)
@@ -363,7 +362,11 @@ def count_facts(
 
 
 def update_fact_value(
-    factKey: str, factValue: JsonValue, category: str = '', title: str = ''
+    factKey: str,
+    factValue: JsonValue,
+    category: str = '',
+    title: str = '',
+    verified: bool = False,
 ) -> bool:
     """Change an EXISTING fact's value in place — the partial write door.
 
@@ -413,10 +416,19 @@ def update_fact_value(
         SET fact_value = ?,
             title = CASE WHEN ? != '' THEN ? ELSE title END,
             category = CASE WHEN ? != '' THEN ? ELSE category END,
+            verified_at = CASE WHEN ? THEN datetime('now') ELSE verified_at END,
             updated_at = datetime('now')
         WHERE fact_key = ?
         """,
-        (_json(factValue), stripped, stripped, category, category, factKey),
+        (
+            _json(factValue),
+            stripped,
+            stripped,
+            category,
+            category,
+            1 if verified else 0,
+            factKey,
+        ),
     )
     brain_commit(conn)
     try:

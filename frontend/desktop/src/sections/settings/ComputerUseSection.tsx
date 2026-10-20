@@ -48,7 +48,7 @@ export function ComputerUseSection() {
           health panel, the configuration and the explainer were four bordered
           boxes (and a box inside a box); the reference's shape is one rounded
           container with hairline children. */}
-      <div className="rounded-xl border border-white/[0.06] bg-card/60">
+      <div className="rounded-xl border border-border/60 bg-card/60">
         {/* Status */}
         <div className="flex flex-col divide-y divide-white/[0.06] sm:flex-row sm:divide-y-0 sm:divide-x">
           <StatusCell
@@ -84,7 +84,7 @@ export function ComputerUseSection() {
         </div>
 
         {/* Health Checks */}
-        <section className="border-t border-white/[0.06] p-5">
+        <section className="border-t border-border/60 p-5">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-foreground">Health Checks</h3>
             <button
@@ -130,7 +130,7 @@ export function ComputerUseSection() {
         </section>
 
         {/* Configuration */}
-        <section className="border-t border-white/[0.06] p-5">
+        <section className="border-t border-border/60 p-5">
           <h3 className="text-sm font-semibold text-foreground">Configuration</h3>
           <div className="mt-3 divide-y divide-white/[0.04]">
             <div className="flex items-center justify-between gap-4 py-2">
@@ -151,7 +151,7 @@ export function ComputerUseSection() {
         </section>
 
         {/* How it works */}
-        <section className="border-t border-white/[0.06] p-5">
+        <section className="border-t border-border/60 p-5">
           <h3 className="text-sm font-semibold text-foreground">How it works</h3>
           <ul className="mt-2 space-y-1 list-disc list-inside text-sm text-muted-foreground">
             <li>Computer use captures your screen and identifies interactable elements</li>

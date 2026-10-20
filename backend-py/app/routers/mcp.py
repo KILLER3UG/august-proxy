@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import shutil
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.json_narrowing import as_dict, as_list
+from app.lib.local_api_auth import require_local_token
 from app.models.camel_base import CamelModel
 from app.services.tools import mcp_client
 
@@ -258,7 +259,7 @@ def _resolve_server(server_id: str) -> dict[str, object] | None:
 
 
 @router.post('/servers/{serverId}/start')
-async def startServer(serverId: str):
+async def startServer(serverId: str, _auth: bool = Depends(require_local_token)):
     """Start an MCP server subprocess and discover its tools."""
     server = _resolve_server(serverId)
     if not server:
@@ -292,7 +293,7 @@ async def startServer(serverId: str):
 
 
 @router.post('/servers/{serverId}/stop')
-async def stopServer(serverId: str):
+async def stopServer(serverId: str, _auth: bool = Depends(require_local_token)):
     """Stop an MCP server subprocess."""
     server = next((s for s in mcp_client.listRegisteredServers() if s.get('id') == serverId), None)
     if not server:

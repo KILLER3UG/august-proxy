@@ -34,13 +34,13 @@ export function DirectoryCard({
       type="button"
       onClick={onSelect}
       className={cn(
-        'group flex w-full flex-col rounded-xl border border-white/[0.06] bg-white/[0.03] p-4 text-left transition',
-        'hover:border-white/[0.12] hover:bg-white/[0.05]',
+        'group flex w-full flex-col rounded-xl border border-border/60 bg-white/[0.03] p-4 text-left transition',
+        'hover:border-border/70 hover:bg-white/[0.05]',
         'focus:outline-none focus:ring-1 focus:ring-primary/40',
       )}
     >
       <div className="flex items-start gap-3">
-        <div className="grid size-10 shrink-0 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.06]">
+        <div className="grid size-10 shrink-0 place-items-center rounded-lg border border-border/60 bg-white/[0.06]">
           <Icon className="size-5" style={brandIconStyle(entry.brand)} />
         </div>
         <div className="min-w-0 flex-1">

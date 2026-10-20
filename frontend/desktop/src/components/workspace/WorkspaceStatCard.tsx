@@ -34,7 +34,7 @@ export function WorkspaceStatCard({
   return (
     <div
       className={cn(
-        'rounded-xl border border-white/[0.06] bg-card/60 p-4 flex flex-col gap-1.5',
+        'rounded-xl border border-border/60 bg-card/60 p-4 flex flex-col gap-1.5',
         className,
       )}
     >

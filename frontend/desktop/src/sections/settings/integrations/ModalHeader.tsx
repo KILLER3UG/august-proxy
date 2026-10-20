@@ -17,7 +17,7 @@ export function ModalHeader({
   onClose,
 }: ModalHeaderProps) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-white/[0.06] px-5 py-4">
+    <div className="flex items-start justify-between gap-4 border-b border-border/60 px-5 py-4">
       <div>
         {selected ? (
           <button

@@ -78,7 +78,7 @@ export function FallbackTab() {
 
   return (
     <div className="space-y-3 h-full flex flex-col">
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4 flex-1 overflow-auto">
+      <div className="rounded-xl border border-border/60 bg-card/60 p-5 space-y-4 flex-1 overflow-auto">
         <div>
           <p className="text-sm font-semibold">Sub-agent fallback settings</p>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -86,7 +86,7 @@ export function FallbackTab() {
           </p>
         </div>
 
-        <div className="flex items-center justify-between p-3 rounded-lg border border-white/[0.06] bg-black/10">
+        <div className="flex items-center justify-between p-3 rounded-lg border border-border/60 bg-black/10">
           <div>
             <p className="text-xs font-semibold">Enable fallback</p>
             <p className="text-2xs text-muted-foreground">Route unknown/non-alias model requests to the fallback model.</p>

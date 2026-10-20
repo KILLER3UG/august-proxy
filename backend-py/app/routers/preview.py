@@ -12,8 +12,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.lib.local_api_auth import require_local_token
 from app.models.camel_base import CamelModel
 from app.services.workbench import terminal_service as term
 
@@ -140,7 +141,7 @@ async def stop_session(sessionId: str):
 
 
 @router.post('/approve')
-async def approve(body: ApproveBody):
+async def approve(body: ApproveBody, _auth: bool = Depends(require_local_token)):
     appr = _pending.pop(body.request_id, None)
     if not appr:
         raise HTTPException(status_code=404, detail='Approval request not found')

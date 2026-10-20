@@ -29,7 +29,7 @@ export const WorkspaceSelect = forwardRef<HTMLSelectElement, Props>(function Wor
         ref={ref}
         {...rest}
         className={cn(
-          // `border-white/[0.08]` was invisible over a light background; the
+          // `border-border/60` was invisible over a light background; the
           // theme-aware hairline is what every other bordered control uses.
           'h-9 w-full appearance-none rounded-md border border-border/60 bg-card px-3 pr-9 text-sm text-foreground outline-none transition',
           'focus:border-primary/60 focus:ring-2 focus:ring-primary/20',

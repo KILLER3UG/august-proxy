@@ -371,7 +371,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
                 value={clientIdDraft}
                 onChange={(e) => setClientIdDraft(e.target.value)}
                 placeholder="….apps.googleusercontent.com"
-                className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-2xs text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                className="w-full rounded-md border border-border/60 bg-white/[0.06] px-2.5 py-1.5 font-mono text-2xs text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
               />
               {conn?.redirectUri && (
                 <p className="break-all font-mono text-2xs text-muted-foreground">
@@ -418,7 +418,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
                     value={clientIdDraft}
                     onChange={(e) => setClientIdDraft(e.target.value)}
                     placeholder="….apps.googleusercontent.com"
-                    className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-2xs text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                    className="w-full rounded-md border border-border/60 bg-white/[0.06] px-2.5 py-1.5 font-mono text-2xs text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
                   />
                   <Button
                     size="sm"
@@ -672,6 +672,6 @@ function McpServerDetails({ server }: { server: McpServer }) {
 }
 
 const MCP_EDIT_FIELD =
-  'mt-1 w-full rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 py-1.5 text-xs ' +
+  'mt-1 w-full rounded-lg border border-border/60 bg-white/[0.06] px-3 py-1.5 text-xs ' +
   'text-foreground placeholder:text-muted-foreground focus:border-primary/40 ' +
   'focus:outline-none focus:ring-1 focus:ring-primary/30 shadow-none';

@@ -66,7 +66,7 @@ export function ToolGrantsSection() {
       {loading ? (
         <PageLoader label="Loading grants…" className="px-0 py-2" />
       ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-white/[0.08] p-6 text-sm text-muted-foreground">
+        <div className="rounded-xl border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
           No always-grants yet. Approve a mutating tool with “Always here” while in Ask mode.
         </div>
       ) : (
@@ -74,9 +74,9 @@ export function ToolGrantsSection() {
           {rows.map((ws) => (
             <div
               key={ws.workspacePath}
-              className="rounded-xl border border-white/[0.08] bg-black/20 overflow-hidden"
+              className="rounded-xl border border-border/60 bg-black/20 overflow-hidden"
             >
-              <div className="border-b border-white/[0.06] px-3 py-2 text-xs font-mono text-muted-foreground truncate">
+              <div className="border-b border-border/60 px-3 py-2 text-xs font-mono text-muted-foreground truncate">
                 {ws.workspacePath}
               </div>
               <ul className="divide-y divide-white/[0.04]">

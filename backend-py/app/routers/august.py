@@ -14,8 +14,9 @@ from __future__ import annotations
 
 from typing import Sequence, cast
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.lib.local_api_auth import require_local_token
 from app.models.camel_base import CamelModel
 from app.services import alias_service
 from app.services.memory_conn import commit as brain_commit
@@ -595,6 +596,7 @@ async def manage_memory(body: ActionBody):
                     cast(JsonValue, stored_value),
                     category=body.category or '',
                     title=fact_title,
+                    verified=True,
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -627,7 +629,7 @@ async def manage_memory(body: ActionBody):
             memory_store.save_fact(
                 key, cast(JsonValue, stored_value), category=body.category or 'general',
                 source=source, title=fact_title, kind=(body.kind or '').strip().lower(),
-                expires_at=expires_param,
+                expires_at=expires_param, verified=True,
             )
         except ValueError as exc:
             # The row belongs to a non-global scope this write
@@ -802,6 +804,7 @@ async def import_memory(body: MemoryImportBody):
             memory_store.save_fact(
                 key, cast(JsonValue, valueIn), category=category, source=source,
                 confidence=confidence, title=fact_title, kind=fact_kind,
+                verified=True,
             )
         except Exception as exc:  # noqa: BLE001 — surface to the caller
             failed.append({'index': index, 'error': f'save_fact failed: {exc}'})
@@ -1124,7 +1127,11 @@ async def list_memory_proposals(status: str = 'pending'):
 
 
 @router.post('/memory/proposals/{proposal_id}/decide')
-async def decide_memory_proposal(proposal_id: int, body: ProposalDecideBody):
+async def decide_memory_proposal(
+    proposal_id: int,
+    body: ProposalDecideBody,
+    _auth: bool = Depends(require_local_token),
+):
     """Approve/reject a memory proposal. For a retirement proposal, approving
     flips the fact's status to 'retired' (reversible — the row survives);
     rejecting keeps it. See consolidation.apply_retire_decision."""

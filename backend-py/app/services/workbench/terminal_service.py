@@ -90,11 +90,14 @@ def openExternalTerminal(cwd: str = '', shell: str = '') -> dict[str, object]:
     import shutil
     import subprocess
 
+    from app.lib.async_subprocess import terminal_env
+
     workdir = cwd.strip() if cwd else os.getcwd()
     if not os.path.isdir(workdir):
         workdir = os.getcwd()
     shell_cmd = shell.strip() or _getShell()
     system = platform.system()
+    env = terminal_env()
     try:
         if system == 'Windows':
             wt = shutil.which('wt.exe') or shutil.which('wt')
@@ -103,6 +106,7 @@ def openExternalTerminal(cwd: str = '', shell: str = '') -> dict[str, object]:
                 subprocess.Popen(
                     [wt, '-d', workdir],
                     cwd=workdir,
+                    env=env,
                     creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0),
                 )
                 return {'ok': True, 'via': 'windows-terminal', 'cwd': workdir}
@@ -113,12 +117,14 @@ def openExternalTerminal(cwd: str = '', shell: str = '') -> dict[str, object]:
                 subprocess.Popen(
                     [shell_cmd, '-NoLogo', '-NoExit', '-Command', f"Set-Location -LiteralPath '{workdir}'"],
                     cwd=workdir,
+                    env=env,
                     creationflags=creation,
                 )
             else:
                 subprocess.Popen(
                     [shell_cmd],
                     cwd=workdir,
+                    env=env,
                     creationflags=creation,
                 )
             return {'ok': True, 'via': 'console', 'cwd': workdir, 'shell': shell_cmd}
@@ -146,13 +152,13 @@ def openExternalTerminal(cwd: str = '', shell: str = '') -> dict[str, object]:
             if not path:
                 continue
             if 'gnome' in term or term == 'x-terminal-emulator':
-                subprocess.Popen([path, '--working-directory', workdir])
+                subprocess.Popen([path, '--working-directory', workdir], env=env)
             elif term == 'konsole':
-                subprocess.Popen([path, '--workdir', workdir])
+                subprocess.Popen([path, '--workdir', workdir], env=env)
             elif 'xfce' in term:
-                subprocess.Popen([path, f'--working-directory={workdir}'])
+                subprocess.Popen([path, f'--working-directory={workdir}'], env=env)
             else:
-                subprocess.Popen([path], cwd=workdir)
+                subprocess.Popen([path], cwd=workdir, env=env)
             return {'ok': True, 'via': term, 'cwd': workdir}
         return {'ok': False, 'error': 'No terminal emulator found on PATH'}
     except Exception as exc:
@@ -401,7 +407,12 @@ async def createTerminalSession(params: dict[str, object] | None = None) -> dict
     }
     explicit_args = [as_str(a) for a in as_list(params.get('args'))]
     args = explicit_args if explicit_args else _defaultShellArgs(shell)
-    env = {**os.environ, 'TERM': 'xterm-256color', 'COLORTERM': 'truecolor'}
+    # The terminal keeps the user's environment, but NOT this app's own
+    # credentials: a child that inherits AUGUST_LOCAL_API_TOKEN can print it,
+    # and GET /api/terminal/buffer hands the buffer to a local caller.
+    from app.lib.async_subprocess import terminal_env
+
+    env = terminal_env()
     try:
         await pty.spawn(
             shell=shell,

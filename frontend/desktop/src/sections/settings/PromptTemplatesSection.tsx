@@ -155,7 +155,7 @@ export function PromptTemplatesSection() {
           drawn when there is nothing in it — an empty container is a stray
           hairline, not a list. */}
       {templates.length > 0 && (
-        <div className="divide-y divide-white/[0.04] overflow-hidden rounded-xl border border-white/[0.06] bg-card/60">
+        <div className="divide-y divide-white/[0.04] overflow-hidden rounded-xl border border-border/60 bg-card/60">
           {templates.map(t => (
             <div
               key={t.id}

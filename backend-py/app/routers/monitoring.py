@@ -30,6 +30,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 
 from app.json_narrowing import as_dict, as_int
+from app.lib.local_api_auth import ws_token_ok
 from app.services.host_agent import getHostInfo
 from app.services.logger import (
     addLogWsClient,
@@ -282,6 +283,9 @@ async def logsStream(websocket: WebSocket):
     On connect we send a ``{type: 'snapshot', events: [...]}`` frame with
     the most recent buffered events, then register the socket for live frames.
     """
+    if not ws_token_ok(websocket):
+        await websocket.close(code=4401)
+        return
     await websocket.accept()
     try:
         recent = getRecentLogEvents(500) or []

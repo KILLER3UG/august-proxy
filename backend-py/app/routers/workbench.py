@@ -15,10 +15,11 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.json_narrowing import as_dict, as_float, as_int, as_list, as_str
+from app.lib.local_api_auth import require_local_token
 from app.services import event_log
 from app.services.workbench import workbench as wb
 
@@ -473,7 +474,7 @@ async def sessionStatusSingular(sessionId: str):
 
 
 @router.post('/chat')
-async def startChat(request: Request):
+async def startChat(request: Request, _auth: bool = Depends(require_local_token)):
     """Start a chat generation.
 
     Returns sessionId immediately; actual events stream through the
@@ -1178,7 +1179,7 @@ async def _readSessionId(request: Request) -> str:
 
 
 @router.post('/plan/approve')
-async def approvePlan(request: Request):
+async def approvePlan(request: Request, _auth: bool = Depends(require_local_token)):
     """Approve a pending plan."""
     sessionId = await _readSessionId(request)
     if not wb.approveWorkbenchPlan(sessionId):
@@ -1194,7 +1195,7 @@ async def approvePlan(request: Request):
 
 
 @router.post('/plan/reject')
-async def rejectPlan(request: Request):
+async def rejectPlan(request: Request, _auth: bool = Depends(require_local_token)):
     """Reject a pending plan."""
     sessionId = await _readSessionId(request)
     if not wb.rejectWorkbenchPlan(sessionId):
@@ -1250,7 +1251,7 @@ async def updateTodosRoute(request: Request):
 
 
 @router.post('/mutations/respond')
-async def respondMutation(request: Request):
+async def respondMutation(request: Request, _auth: bool = Depends(require_local_token)):
     """Respond to a pending mutation (accept/reject — pre-apply).
 
     Body: { token, reject?, scope?: 'once'|'session'|'always', continue?: bool,
@@ -1441,7 +1442,7 @@ async def respondMutation(request: Request):
 
 
 @router.post('/confirm-mutation')
-async def confirmMutationAlias(request: Request):
+async def confirmMutationAlias(request: Request, _auth: bool = Depends(require_local_token)):
     """Alias for POST /mutations/respond (legacy frontend path)."""
     return await respondMutation(request)
 

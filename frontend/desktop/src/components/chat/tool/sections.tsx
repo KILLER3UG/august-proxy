@@ -50,7 +50,7 @@ export function Section({
           'rounded-md border px-2.5 py-1.5',
           tone === 'error'
             ? 'border-destructive/30 bg-destructive/10'
-            : 'border-white/[0.05] bg-white/[0.02]',
+            : 'border-border/50 bg-white/[0.02]',
         )}
       >
         <div
@@ -101,7 +101,7 @@ export function FormattedSection({
       <div
         className={cn(
           'rounded-md border px-2.5 py-1.5',
-          isSuccess ? 'border-success/25 bg-success/5' : 'border-white/[0.05] bg-white/[0.02]',
+          isSuccess ? 'border-success/25 bg-success/5' : 'border-border/50 bg-white/[0.02]',
         )}
       >
         <div

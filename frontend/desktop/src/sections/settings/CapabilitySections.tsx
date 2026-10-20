@@ -100,7 +100,7 @@ function NumInput({
 
 function Card({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5">
+    <div className="rounded-xl border border-border/60 bg-card/60 p-5">
       <p className="flex items-center gap-2 text-sm font-medium text-foreground">
         {icon}
         {title}
@@ -331,7 +331,7 @@ export function PluginsSection() {
           </button>
         </Card>
 
-        <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-card/60 p-4">
+        <div className="flex items-center justify-between rounded-xl border border-border/60 bg-card/60 p-4">
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">Plugin directory</p>
             <p className="mt-0.5 text-xs text-muted-foreground">

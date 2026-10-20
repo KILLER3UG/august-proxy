@@ -302,7 +302,7 @@ export function TurnLimitsSection() {
       {/* ONE container with hairline-separated children. The reference's
           settings panel is a single rounded box whose rows are divided by
           hairlines — not a stack of bordered cards. */}
-      <div className="mt-5 overflow-hidden rounded-xl border border-white/[0.06] bg-card/60">
+      <div className="mt-5 overflow-hidden rounded-xl border border-border/60 bg-card/60">
         <div className="divide-y divide-white/[0.04]">
           {rows.map(({ spec, shown, isDefault }) => (
             <div
@@ -348,7 +348,7 @@ export function TurnLimitsSection() {
         </div>
 
         {/* Context relief — the same container, one hairline down. */}
-        <div className="border-t border-white/[0.04] px-5 py-3">
+        <div className="border-t border-border/50 px-5 py-3">
           <div className="flex items-center gap-2">
             <Shuffle className="size-4 text-primary" />
             <h3 className="text-sm font-semibold text-foreground">Context relief</h3>

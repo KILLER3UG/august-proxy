@@ -280,7 +280,7 @@ export function DecisionsSection() {
       {/* The two knobs. The cadence is a number because the backend's range
           is 1..168 hours; the switch is a switch because it is a boolean. */}
       <div
-        className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-white/[0.06] bg-card/40 px-3 py-2.5"
+        className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-border/60 bg-card/40 px-3 py-2.5"
         data-testid="decisions-controls"
       >
         <SettingsToggle
@@ -307,7 +307,7 @@ export function DecisionsSection() {
               cfgMut.mutate({ journalIntervalHours: journalHours });
             }}
             aria-label="Journal interval in hours"
-            className="w-16 rounded border border-white/[0.08] bg-transparent px-1.5 py-0.5 text-xs text-foreground tabular-nums"
+            className="w-16 rounded border border-border/60 bg-transparent px-1.5 py-0.5 text-xs text-foreground tabular-nums"
           />
           <span>hours</span>
         </label>
