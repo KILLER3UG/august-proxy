@@ -57,7 +57,8 @@ into the code.
 ## NEXT — after this round: the mobile companion
 
 **Once the work in this round has shipped, the next build is the mobile
-companion.** This is stated here so it is not lost between rounds.
+companion.** This is stated here so it is not lost between rounds. The
+plan for it is `docs/plans/2026-10-20-after-this-round.md`.
 
 The mobile app already exists in the tree — `frontend/mobile/` is an Expo
 app with its own `tsc --noEmit` and a parity audit (`npm run test -w
@@ -93,13 +94,29 @@ What it does NOT have is the **board**: a physical Arduino with a port, an
 FQBN, a pin map and a serial line. SimulIDE's appeal is that the thing you
 are simulating is a board you recognise.
 
-| Piece | What it does | Why it is wanted |
+| Piece | What it does | State |
 |---|---|---|
-| `board_list` | Enumerate the boards attached to this machine, with their FQBN, port and protocol, and the installed cores | "Which board do I have plugged in?" is the first question, and `arduino-cli board list` answers it |
-| `board_compile` | Compile a sketch **for a chosen FQBN**, not for a default | `firmware_compile` compiles for one hard-wired target; a Mega and an Uno need different builds |
-| `board_upload` | Flash the compiled artifact to the attached board | The gap between "simulated" and "on my desk". **Confirm-gated** — it is a hardware action, exactly like `fpga_program` |
-| `board_monitor` | Read the board's serial output for a bounded window | The other half of "it works": what the board actually printed |
-| **A board's pin map feeding the deck** | The board's pins become named ngspice nodes, so a sketch's PWM output drives a real filter in the sim | This is the thing that makes it SimulIDE rather than a compiler: the board is the schematic |
+| `board_list` | Enumerate the boards attached to this machine, with their FQBN, port, protocol, VID/PID, **pin map** and the installed cores | **shipped** |
+| `board_flash` | Build a sketch for a chosen FQBN and flash it to the attached board | **shipped** — confirm-gated and plan-blocked |
+| `board_monitor` | Read the board's serial output for a bounded window | **shipped** |
+| **The board's pin map feeding the deck** | The board's pins become named ngspice nodes, so a sketch's PWM output drives a real filter in the sim | **not built** — this is the piece that makes it SimulIDE rather than a compiler, and it is the next one |
+
+The naming is `board_flash`, not `board_upload`: the tool does the whole
+journey (resolve the source → materialise the sketch → compile for the FQBN
+→ upload), and a name that says "upload" would suggest it takes a prebuilt
+artifact. There is no separate `board_compile`: `firmware_compile` already
+takes a board, and a second compile tool would be the same tool with a
+different name.
+
+The pin map is what is still missing, and it is the interesting half.
+`firmware_stimulus` already turns a pin timeline into PWL sources
+(`Vp13 N13 0 PWL(...)`), so the wiring exists — what does not is the other
+direction: taking a **board's** pins and laying them out as a schematic
+element, so the deck says "D5 drives this filter" and the filter's input
+is the board's pin, not a name the user invented. That is a
+`circuit_read_schematic` shape (a board as a component with named pins),
+and it is the piece that would make August's circuit workbench read like
+SimulIDE rather than like a compiler with a simulator bolted on.
 
 The engine choice is `arduino-cli`, for the same reason ngspice was chosen
 for the analog half: it is scriptable, it is what `firmware_compile` already
