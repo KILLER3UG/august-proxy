@@ -730,3 +730,68 @@ always meant to be and the artifact card owns the deliverables.
   (1.58 GB in this checkout). Nothing in this round read from it or wrote to
   it, and the `AUGUST_DATA_DIR` overrides in the gates point at throwaway
   temp directories.
+
+## The round after that: the reference's OWN capture of the same job
+
+The owner sent more captures - Claude doing exactly what August does,
+writing a decoder and presenting the files - and this is the round that
+matches them rather than the reference's general shape.
+
+**A PRODUCED FILE ONLY GOT A CARD WHEN THE TOOL WAS EDIT-CLASSIFIED.**
+The collector read the tool's ARGUMENTS, so a file a tool said it had
+saved was invisible. There is a RESULT-side collector now, the way the
+circuit family did it: the path is read out of the tool's RESULT, never
+out of its arguments, so a `read_file` can never become an artifact. A
+result that carries the file's CONTENT is a read whatever else it says
+- and the circuit collector had the same hole, turning a circuit READ
+into a deliverable.
+
+**AND A TOOL THAT REPORTS A FILE IS DELIVERING IT.** The result side
+is not kind-filtered: a tool that says "I saved decoder_3to8.v" is
+delivering that file, whatever the extension list knows about .v. The
+argument side still is - a path in an edit call is a diff as often as
+it is a deliverable, and a source file the agent edited stays the
+changes card's row.
+
+**THE TILE IS A FILLED ACCENT SQUARE WITH A WHITE GLYPH** - purple for
+an image, blue for a document - so the accent belongs in the FILL, not
+in the glyph. **"DOWNLOAD ALL"** sits above the cards when a turn
+produced two or more. **THE ACTIVITY PHRASE NAMES THE FILES** - "Ran 4
+commands, shared files" - and "shared" means a DELIVERABLE, so a turn
+that edited a source file does not claim to have shared it. **THE TWO
+MOUNTS ARE TOGETHER**, so a turn's artifacts read as one list. **THE
+PREVIEW PANEL CAN CARRY A CAPTION**, which is the producing tool's own
+prose, and nothing is invented when the tool wrote none.
+
+**AND THE ROUTER WAS BROKEN IN A WAY NOBODY NOTICED.** An unknown URL
+- a stale bookmark, a mistyped path - loaded the app shell with NO chat
+in it. React Router had been warning about it the whole time ("the
+parent won't match anymore and therefore the child routes will never
+render"), and it was right twice: the catch-all was nested under a
+route whose element never renders (ChatLayout has no `<Outlet/>` - the
+surfaces come from its own `<Routes>`), and the descendant `<Routes>`
+could not match deeper locations because the parent's path did not end
+in a splat. The catch-all is in the `<Routes>` that actually render, the
+layout route's path ends in `*` and its children are relative, and an
+unknown URL goes home.
+
+### Still open, and named after this round
+
+- **The settled activity line carries an elapsed time; the reference's
+  settled line does not.** Every duration in the reference's captures is
+  on a LIVE line ("Running a command  1m 18s") - a completed run reads
+  "Ran 4 commands, read a file" with no time. This repo's own rule says
+  the line is "a warm dot, one phrase, the elapsed time, a chevron", and
+  the component's own doc puts the elapsed on the right of the
+  completion bar, so the time stays until that rule is changed
+  deliberately.
+- **"Presented N files"** - the reference's expanded card carries a row
+  naming how many files the turn presented. The count is one rule away
+  (`countSharedFiles`), and the row belongs in the activity card.
+- **A `.v` file written by `write_file` gets no card.** The kind is
+  'code' and the argument side is kind-filtered, so a Verilog
+  deliverable is a diff. A tool that REPORTS the file gets a card; one
+  that merely names it in its input does not.
+- **`lib/produced-files.ts` and `lib/produced-artifacts.ts` hold two
+  copies of "a path in an edit-classified call's input".** They agree
+  today; one of them should delegate to the other.
