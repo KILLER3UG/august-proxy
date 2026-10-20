@@ -34,6 +34,7 @@ import { ComposerCommandsDropdown } from './composer/ComposerCommandsDropdown';
 import { ComposerToolbar } from './composer/ComposerToolbar';
 import { ComposerWorkspaceChips } from './composer/ComposerWorkspaceChips';
 import { ComposerVoiceListening } from './composer/ComposerVoiceListening';
+import { ContextUsageReadout } from './composer/ContextUsageReadout';
 import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 import { useFocusedSubagent } from '@/components/chat/focused-subagent';
@@ -580,7 +581,8 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
         )}
       </div>
 
-      {/* Footer line under the card: disclaimer left, model + effort right.
+      {/* Footer line under the card: disclaimer left, model + effort right,
+          and the context percentage at the far right of the row.
 
           This renders `ModelEffortMenu`, whose own header already says it:
           "Claude draws this as plain text on its footer line — model at normal
@@ -596,21 +598,47 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
 
           The only deviation from the reference is the chevron, which is hidden
           at rest and shown on hover/focus: the reference screenshot is a
-          non-hovered state, but a control with no affordance at all is worse. */}
-      <div className="mt-1.5 flex items-baseline justify-between gap-3 px-1 select-none">
-        <p className="truncate text-2xs text-muted-foreground/60">
+          non-hovered state, but a control with no affordance at all is worse.
+
+          The percentage goes at the END of this line — the reference puts it
+          there ("Below the card, a single row: `+`, then a bordered model pill
+          … and right-aligned a context percentage `3%`"), so it is the last
+          thing in the row rather than part of the model cluster.
+
+          The number is the LIVE one: the backend measures the turn's context
+          occupancy server-side and ships it on the per-turn
+          `contextPressure` event, which `store/contextLive.ts` keeps per
+          session. It is deliberately NOT the persisted session-usage figure
+          the cost chip reads — that poll is an aggregate over the session and
+          its denominator was the hardcoded 128k fallback whenever a model
+          carried no contextWindow of its own. The two readouts measure
+          different things (money spent vs. window occupied), so they never
+          contradict each other; and because the live number is keyed per
+          session, switching chats cannot leave the previous session's
+          percentage on screen.
+
+          Before a session's first turn there is no measurement, and the
+          readout renders nothing at all rather than a confident `0%`. */}
+      <div
+        className="mt-1.5 flex items-baseline justify-between gap-3 px-1 select-none"
+        data-testid="composer-footer-row"
+      >
+        <p className="min-w-0 flex-1 truncate text-2xs text-muted-foreground/60">
           August is an AI assistant and can make mistakes. Please double-check responses.
         </p>
-        <ModelEffortMenu
-          visibleModels={visibleModels}
-          selected={selectedModel}
-          onSelect={onSelectModel}
-          onEditModels={onEditModels}
-          effort={effort}
-          onEffortChange={onEffortChange}
-          thinkingEnabled={thinkingEnabled}
-          onThinkingChange={onThinkingChange}
-        />
+        <div className="flex shrink-0 items-baseline gap-2">
+          <ModelEffortMenu
+            visibleModels={visibleModels}
+            selected={selectedModel}
+            onSelect={onSelectModel}
+            onEditModels={onEditModels}
+            effort={effort}
+            onEffortChange={onEffortChange}
+            thinkingEnabled={thinkingEnabled}
+            onThinkingChange={onThinkingChange}
+          />
+          <ContextUsageReadout sessionId={sessionId} />
+        </div>
       </div>
 
       {debateOpen ? (

@@ -6,6 +6,13 @@
  * hitRate }`). This store takes that split the moment the turn's event lands,
  * instead of waiting for the aggregated session-usage poll. Keyed per session
  * so concurrent chats do not overwrite each other.
+ *
+ * It is READ by exactly one surface: `sections/chat/composer/
+ * ContextUsageReadout.tsx`, the detail panel behind the composer's context
+ * percentage. The split itself is the session's CUMULATIVE cache counters
+ * (the backend accumulates them onto the session); what this store adds is
+ * FRESHNESS — the number arrives with the turn's event instead of waiting
+ * for the aggregated session-usage poll.
  */
 
 import { create } from 'zustand';

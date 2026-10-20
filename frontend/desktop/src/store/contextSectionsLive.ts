@@ -3,9 +3,15 @@
  *
  * The backend measures the volatile tail blocks it injects each turn (memory
  * recall, relevant skills, session state, habit nudge) and reports their byte
- * sizes on the `contextPressure` event. Before that, the composer's context
- * breakdown had no producer for the skills/memory row and displayed a
- * confident `0` for something that had never been measured.
+ * sizes on the `contextPressure` event. Before that producer existed, the
+ * composer's context readout had no source for the skills/memory row and
+ * would have displayed a confident `0` for something that had never been
+ * measured.
+ *
+ * It is READ by exactly one surface: `sections/chat/composer/
+ * ContextUsageReadout.tsx`, the detail panel behind the composer's context
+ * percentage. That panel shows the MEASURED byte sizes — the row is a
+ * measurement, not an estimate.
  *
  * This is deliberately NOT folded into `promptCacheLive.ts`: that store's
  * setter drops the update when a turn has no cache tokens, which is most
@@ -78,28 +84,13 @@ export function clearContextSectionsLive(sessionId?: string | null): void {
   });
 }
 
-/** Bytes of skills + memory injected into the current turn, or null if the
- *  backend has not reported this turn yet — null keeps "unknown" distinct
- *  from a measured zero. */
-export function selectSkillsMemoryBytes(
+/** The measured section sizes for one session, or null when the backend has
+ *  not reported this session yet — null keeps "unknown" distinct from a
+ *  measured zero. */
+export function selectContextSections(
   state: ContextSectionsState,
   sessionId: string | null | undefined,
-): number | null {
+): ContextSections | null {
   if (!sessionId) return null;
-  const entry = state.bySession[sessionId];
-  if (!entry) return null;
-  return entry.skillsBytes + entry.memoryBytes;
-}
-
-/** Stable empty object: a selector that returned a fresh `{}` every call would
- *  re-render its subscribers on unrelated store writes. */
-const NO_SKILLS: Record<string, number> = {};
-
-/** Bytes each skill contributed to this turn's `<relevant_skills>` block. */
-export function selectSkillsByName(
-  state: ContextSectionsState,
-  sessionId: string | null | undefined,
-): Record<string, number> {
-  if (!sessionId) return NO_SKILLS;
-  return state.bySession[sessionId]?.skillsByName ?? NO_SKILLS;
+  return state.bySession[sessionId] ?? null;
 }
