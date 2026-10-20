@@ -1,6 +1,7 @@
 /* ── Add Integrations modal — 3-column card directory ──────────────── */
 
 import { useMemo, useState } from 'react';
+import { Info } from 'lucide-react';
 import {
   INTEGRATION_DIRECTORY,
   type IntegrationCatalogEntry,
@@ -17,6 +18,7 @@ import {
   type DirectoryMode,
 } from './DirectoryToolbar';
 import { ModalHeader } from './ModalHeader';
+import { CURATED_DIRECTORY_NOTE, useMcpDirectory } from './useMcpDirectory';
 
 interface Props {
   open: boolean;
@@ -45,6 +47,22 @@ export function IntegrationDirectoryModal({
   const [mode, setMode] = useState<DirectoryMode>('directory');
   const [selected, setSelected] = useState<IntegrationCatalogEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /* The backend's curated recipe list. It is used for ONE thing here: to
+   * know whether a recipe's launcher exists on this machine, so a recipe
+   * that cannot start is labelled as such instead of offering an install
+   * that is guaranteed to fail. */
+  const directory = useMcpDirectory(open);
+  const launcherById = useMemo(() => {
+    const map = new Map<string, { command?: string; launcherAvailable?: boolean }>();
+    for (const entry of directory.data?.entries ?? []) {
+      map.set(entry.id, {
+        command: entry.command,
+        launcherAvailable: entry.launcherAvailable,
+      });
+    }
+    return map;
+  }, [directory.data]);
 
   const list = useMemo(() => {
     const ql = q.trim().toLowerCase();
@@ -115,6 +133,13 @@ export function IntegrationDirectoryModal({
           </div>
         )}
 
+        {!selected && mode === 'directory' && (
+          <div className="mx-5 mt-3 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-2xs leading-relaxed text-muted-foreground">
+            <Info className="mb-1 inline size-3" />
+            {directory.data?.note || CURATED_DIRECTORY_NOTE}
+          </div>
+        )}
+
         <div className="min-h-0 flex-1 overflow-auto p-5">
           {selected ? (
             <CatalogDetail
@@ -122,6 +147,7 @@ export function IntegrationDirectoryModal({
               entry={selected}
               installed={installedIds.has(selected.id)}
               busy={busyId === selected.id}
+              launcher={launcherById.get(selected.id)}
               onAdd={(env) => void add(selected, env)}
             />
           ) : mode === 'custom' && onCreateCustom ? (
@@ -150,6 +176,7 @@ export function IntegrationDirectoryModal({
                   entry={entry}
                   installed={installedIds.has(entry.id)}
                   busy={busyId === entry.id}
+                  launcher={launcherById.get(entry.id)}
                   onSelect={() => setSelected(entry)}
                 />
               ))}

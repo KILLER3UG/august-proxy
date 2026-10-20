@@ -40,7 +40,7 @@ export function ModalHeader({
             ? selected.tagline
             : mode === 'custom'
               ? 'Register your own MCP server by command or URL.'
-              : 'Browse extensions for August. Add only what you need — Gmail and Calendar are separate.'}
+              : 'A curated list of sign-in slots and MCP install recipes — not a live registry search.'}
         </p>
       </div>
       <button

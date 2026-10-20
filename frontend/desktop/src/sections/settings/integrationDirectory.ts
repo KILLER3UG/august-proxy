@@ -1,7 +1,15 @@
 /* ── Integration directory catalog ─────────────────────────────────── */
 /* Browseable list of things the user can add to August.
  * Account facets (Gmail vs Calendar vs Drive) are separate so users
- * only enable what they need. MCP extensions install as real servers. */
+ * only enable what they need. MCP extensions install as real servers.
+ *
+ * HONESTY CONTRACT — this list is a set of SIGN-IN SLOTS and INSTALL
+ * RECIPES, not a capability registry. August ships no built-in Gmail,
+ * Calendar, Drive, GitHub or Slack tools, so an entry here never means
+ * "the agent can now do this". Every entry says which of the three it
+ * is (`capability`), states in words what the user does and does not
+ * get (`capabilityNote`), and — for a recipe — names the tools the
+ * THIRD-PARTY server exposes once it is running. */
 
 export type CatalogBrand =
   | 'google'
@@ -13,6 +21,38 @@ export type CatalogBrand =
   | 'generic';
 
 export type CatalogKind = 'account-facet' | 'mcp-extension';
+
+/**
+ * What a catalog entry actually gives the user today.
+ *
+ * The catalog is a set of SIGN-IN SLOTS and INSTALL RECIPES, not a
+ * capability registry. August has no built-in Gmail, Calendar, Drive,
+ * GitHub or Slack tools, so an entry that connects an account is NOT the
+ * same thing as an entry that gives the agent something to do. Every
+ * entry states which of the three it is.
+ */
+export type CatalogCapability =
+  /** August has its own tools for this — the agent can act on it. */
+  | 'capability'
+  /** Connecting only stores a credential. No August tool calls the API. */
+  | 'sign-in'
+  /**
+   * A third-party MCP server August can launch. Its tools exist only
+   * while that server is running, and they are the SERVER's tools, not
+   * August's.
+   */
+  | 'recipe';
+
+/** Short human label for an entry's capability — shown in words, not just a badge. */
+const CAPABILITY_LABELS: Record<CatalogCapability, string> = {
+  capability: 'Capability',
+  'sign-in': 'Sign-in only',
+  recipe: 'Install recipe',
+};
+
+export function catalogCapabilityLabel(capability: CatalogCapability): string {
+  return CAPABILITY_LABELS[capability];
+}
 
 /** Env field collected in the install modal before registering an MCP server. */
 export interface CatalogEnvField {
@@ -43,6 +83,22 @@ export interface IntegrationCatalogEntry {
   /** Optional package metadata for MCP extensions. */
   packageName?: string;
   packageVersion?: string;
+  /** What this entry gives the user today — see CatalogCapability. */
+  capability: CatalogCapability;
+  /**
+   * One plain sentence saying what the user gets — and what they do NOT
+   * get. Rendered in full on the card and the detail page, so the real
+   * state is never carried by a badge alone.
+   */
+  capabilityNote: string;
+  /**
+   * Tool names, when the entry has any.
+   *
+   * For `recipe` entries these are the tools the THIRD-PARTY MCP server
+   * exposes once it is installed and running — they are not August tools
+   * and they do not exist before the server starts. An entry that exposes
+   * no tools of its own omits the field entirely.
+   */
   tools?: string[];
   /** MCP install recipe (stdio). */
   mcp?: {
@@ -95,81 +151,116 @@ export function disableIntegrationId(id: string): string[] {
 /**
  * Full directory — what appears in the Add Integrations modal.
  * Google is split so calendar/email/drive can be added independently.
+ *
+ * NOTE the absence of `tools:` on every account facet below. Those
+ * arrays used to name Gmail / Calendar / Drive / GitHub / Slack tools in
+ * a dotted `service.action` shape — none of which was ever a registered
+ * August tool (the only Google entry point is `connect_google`, which
+ * stores a token). They were display metadata for a capability that does
+ * not exist, and a user reading them reasonably concluded that mail
+ * worked.
  */
 export const INTEGRATION_DIRECTORY: readonly IntegrationCatalogEntry[] = [
   {
     id: 'google-gmail',
     kind: 'account-facet',
     name: 'Gmail',
-    tagline: 'Read and send email from Gmail.',
+    tagline: 'Sign in to Gmail — August has no Gmail tools yet.',
     description:
-      'Connect Gmail so August can read threads, draft replies, and send mail with your permission. Uses your Google account sign-in; only enable Gmail if you need email tools.',
+      'Adds a Gmail slot to your integrations and starts Google sign-in (PKCE, browser consent), ' +
+      'requesting only the Gmail scopes. The token is stored in August and refreshed for you.\n\n' +
+      'What this does NOT give you: August exposes no built-in Gmail tool, so connecting this ' +
+      'does not let the agent read, search or send mail. It is a working sign-in, not a capability.',
     developer: 'Google',
     categories: ['Email', 'Productivity'],
     brand: 'google',
     verified: true,
     accountProvider: 'google',
-    tools: ['gmail.read', 'gmail.send', 'gmail.search'],
-    helpUrl: 'https://console.cloud.google.com/apis/library/gmail.googleapis.com',
+    capability: 'sign-in',
+    capabilityNote:
+      'Sign-in only. Stores a Gmail-scoped Google token — August exposes no Gmail tools, so nothing can read or send mail yet.',
+    helpUrl: 'https://console.cloud.google.com/apis/credentials',
   },
   {
     id: 'google-calendar',
     kind: 'account-facet',
     name: 'Google Calendar',
-    tagline: 'Create and list calendar events.',
+    tagline: 'Sign in to Google Calendar — August has no Calendar tools yet.',
     description:
-      'Connect Google Calendar so August can check availability and create events. Independent from Gmail — add only if you want calendar tools.',
+      'Adds a Calendar slot and starts Google sign-in for the Calendar scope only, independent ' +
+      'of Gmail. The token is stored in August and refreshed for you.\n\n' +
+      'What this does NOT give you: August exposes no built-in Calendar tool, so connecting this ' +
+      'does not let the agent check availability or create events. The calendar August shows ' +
+      'today lists only its own automations and reminders.',
     developer: 'Google',
     categories: ['Calendar', 'Productivity'],
     brand: 'google',
     verified: true,
     accountProvider: 'google',
-    tools: ['calendar.list', 'calendar.create', 'calendar.update'],
-    helpUrl: 'https://console.cloud.google.com/apis/library/calendar-json.googleapis.com',
+    capability: 'sign-in',
+    capabilityNote:
+      'Sign-in only. Stores a Calendar-scoped Google token — August exposes no Calendar tools, so nothing can list or create events yet.',
+    helpUrl: 'https://console.cloud.google.com/apis/credentials',
   },
   {
     id: 'google-drive',
     kind: 'account-facet',
     name: 'Google Drive',
-    tagline: 'Search and open files in Drive.',
+    tagline: 'Sign in to Google Drive — August has no Drive tools yet.',
     description:
-      'Connect Drive so August can search files and open Docs/Sheets links. Separate from Gmail and Calendar so you can limit access.',
+      'Adds a Drive slot and starts Google sign-in for the Drive scope only, separate from ' +
+      'Gmail and Calendar so you can limit access. The token is stored in August and refreshed ' +
+      'for you.\n\n' +
+      'What this does NOT give you: August exposes no built-in Drive tool, so connecting this ' +
+      'does not let the agent search or open files.',
     developer: 'Google',
     categories: ['Files', 'Productivity'],
     brand: 'google',
     verified: true,
     accountProvider: 'google',
-    tools: ['drive.search', 'drive.read_meta'],
-    helpUrl: 'https://console.cloud.google.com/apis/library/drive.googleapis.com',
+    capability: 'sign-in',
+    capabilityNote:
+      'Sign-in only. Stores a Drive-scoped Google token — August exposes no Drive tools, so nothing can search or open files yet.',
+    helpUrl: 'https://console.cloud.google.com/apis/credentials',
   },
   {
     id: 'github',
     kind: 'account-facet',
     name: 'GitHub',
-    tagline: 'Repositories, issues, pull requests, and code search.',
+    tagline: 'Connect GitHub with a token — August has no GitHub tools yet.',
     description:
-      'Connect GitHub with a personal access token so August can search code, read issues and PRs, and open reviews without leaving your session.',
+      'Stores a GitHub personal access token. August validates it against GitHub so you can see ' +
+      'that it works and which account it belongs to.\n\n' +
+      'What this does NOT give you: August exposes no built-in GitHub tool, so connecting this ' +
+      'does not let the agent search code, read issues or PRs, or open reviews.',
     developer: 'GitHub',
     categories: ['Developer', 'Code'],
     brand: 'github',
     verified: true,
     accountProvider: 'github',
-    tools: ['repos', 'issues', 'pull_requests', 'code_search'],
+    capability: 'sign-in',
+    capabilityNote:
+      'Sign-in only. Stores a GitHub personal access token — August exposes no repository, issue or pull-request tools.',
     helpUrl: 'https://github.com/settings/tokens',
   },
   {
     id: 'slack',
     kind: 'account-facet',
     name: 'Slack',
-    tagline: 'Channels, messages, threads, and reactions.',
+    tagline: 'Connect Slack with a bot token — August has no Slack tools yet.',
     description:
-      'Connect Slack with a bot token so August can read channels, post messages, and react from inside the agent.',
+      'Stores a Slack bot token. August validates it against Slack, and can send a single ' +
+      'connectivity test message if you give it a channel.\n\n' +
+      'What this does NOT give you: August exposes no built-in Slack tool, so connecting this ' +
+      'does not let the agent read channels, post messages or react.',
     developer: 'Slack',
     categories: ['Chat', 'Productivity'],
     brand: 'slack',
     verified: true,
     accountProvider: 'slack',
-    tools: ['channels.list', 'chat.post', 'reactions.add'],
+    capability: 'sign-in',
+    capabilityNote:
+      'Sign-in only. Stores a Slack bot token — August exposes no channel, message or reaction tools.',
     helpUrl: 'https://api.slack.com/apps',
   },
   {
@@ -186,6 +277,9 @@ export const INTEGRATION_DIRECTORY: readonly IntegrationCatalogEntry[] = [
     isNew: true,
     packageName: '@modelcontextprotocol/server-filesystem',
     packageVersion: '2026.7.4',
+    capability: 'recipe',
+    capabilityNote:
+      'Install recipe. Starts the official @modelcontextprotocol/server-filesystem server; its file tools reach the agent only while that server is running.',
     tools: [
       'read_file',
       'read_text_file',
@@ -222,6 +316,9 @@ export const INTEGRATION_DIRECTORY: readonly IntegrationCatalogEntry[] = [
     verified: true,
     packageName: '@modelcontextprotocol/server-memory',
     packageVersion: 'latest',
+    capability: 'recipe',
+    capabilityNote:
+      'Install recipe. Starts the official MCP memory server; its knowledge-graph tools reach the agent only while that server is running.',
     tools: ['create_entities', 'create_relations', 'add_observations', 'search_nodes', 'open_nodes', 'read_graph'],
     mcp: {
       command: 'npx',
@@ -244,6 +341,9 @@ export const INTEGRATION_DIRECTORY: readonly IntegrationCatalogEntry[] = [
     isCommunity: false,
     packageName: '@modelcontextprotocol/server-fetch',
     packageVersion: 'latest',
+    capability: 'recipe',
+    capabilityNote:
+      'Install recipe. Starts the official MCP fetch server; its fetch tool reaches the agent only while that server is running.',
     tools: ['fetch'],
     mcp: {
       command: 'npx',
@@ -266,6 +366,9 @@ export const INTEGRATION_DIRECTORY: readonly IntegrationCatalogEntry[] = [
     isCommunity: true,
     packageName: '@modelcontextprotocol/server-github',
     packageVersion: 'latest',
+    capability: 'recipe',
+    capabilityNote:
+      'Install recipe. Starts the GitHub MCP server; its repository and issue tools reach the agent only while that server is running.',
     tools: ['create_or_update_file', 'search_repositories', 'create_issue', 'list_issues', 'create_pull_request'],
     mcp: {
       command: 'npx',
@@ -290,13 +393,17 @@ export const INTEGRATION_DIRECTORY: readonly IntegrationCatalogEntry[] = [
     id: 'mcp-google-workspace',
     kind: 'mcp-extension',
     name: 'Google Workspace MCP',
-    tagline: 'Gmail, Calendar, Drive, Docs, Sheets — sign in with Google in the browser.',
+    tagline: 'A third-party Google Workspace server (workspace-mcp) — needs uv/uvx on PATH.',
     description:
-      'Installs workspace-mcp so August can use Gmail, Calendar, Drive, and other Google Workspace APIs.\n\n' +
-      'After install: open Gmail / Calendar / Drive (or this card) and click Sign in with Google. ' +
-      'Your browser opens Google consent — same pattern as Claude Desktop’s Google Workspace extension.\n\n' +
-      'You need a free Google Cloud OAuth client (Client ID + Secret) once. Create a Desktop app or Web app ' +
-      'and enable Gmail / Calendar / Drive APIs. Add yourself as a test user while the consent screen is in Testing.',
+      'Installs workspace-mcp — a separate third-party program that August launches as a ' +
+      'subprocess. It is NOT an August feature, and August ships none of these tools itself.\n\n' +
+      'What this does NOT give you: August has no built-in Gmail, Calendar or Drive tools. ' +
+      '"Sign in with Google" stores a Google token and adds no mail, calendar or file ' +
+      'capability on its own. The Workspace tools exist only if this server is installed ' +
+      'and running.\n\n' +
+      'On this machine the recipe needs uv/uvx on PATH. If the launcher is missing, August ' +
+      'cannot start the server and you get no tools from it — the Install button says so ' +
+      'rather than pretending the recipe worked.',
     developer: 'workspace-mcp (taylorwilsdon)',
     categories: ['Email', 'Calendar', 'Files', 'MCP', 'Google'],
     brand: 'google',
@@ -304,9 +411,15 @@ export const INTEGRATION_DIRECTORY: readonly IntegrationCatalogEntry[] = [
     isNew: true,
     packageName: 'workspace-mcp',
     packageVersion: 'latest',
+    capability: 'recipe',
+    capabilityNote:
+      'Install recipe for a THIRD-PARTY server (workspace-mcp). It needs uv/uvx on PATH. August has no Gmail, Calendar or Drive tools of its own — anything you get comes from that server, and only while it runs.',
     tools: [
-      // Auth is native August OAuth (Settings → Sign in with Google), not MCP.
-      // start_google_auth only exists in workspace-mcp --tool-tier complete.
+      // These are workspace-mcp's OWN tools, not August tools. They exist
+      // only once the third-party server is installed and running — which
+      // needs uv/uvx on PATH. Auth is native August OAuth (Settings →
+      // Sign in with Google); start_google_auth only exists in
+      // workspace-mcp --tool-tier complete.
       'search_gmail_messages',
       'get_gmail_message_content',
       'send_gmail_message',
@@ -349,8 +462,9 @@ export const INTEGRATION_DIRECTORY: readonly IntegrationCatalogEntry[] = [
       },
     ],
     requirements:
-      'Python 3.10+ and uv/uvx on PATH. Google Cloud Desktop OAuth client recommended (PKCE — Client ID only). ' +
-      'Enable Gmail/Calendar/Drive APIs. Redirect for August Sign in: ' +
+      'Python 3.10+ and uv/uvx on PATH — without uvx the server never starts and no tool arrives. ' +
+      'Google Cloud Desktop OAuth client recommended (PKCE — Client ID only), used by August\'s own ' +
+      'Sign in with Google. Redirect for August Sign in: ' +
       'http://127.0.0.1:8085/api/service-connections/google/callback',
     helpUrl: 'https://github.com/taylorwilsdon/google_workspace_mcp',
   },

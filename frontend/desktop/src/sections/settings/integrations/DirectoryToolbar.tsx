@@ -63,7 +63,7 @@ export function DirectoryToolbar({
             <input
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
-              placeholder="Search directory…"
+              placeholder="Filter this list…"
               className={cn('w-full py-2 pl-9 pr-3 text-sm', FIELD)}
             />
           </div>

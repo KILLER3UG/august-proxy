@@ -118,10 +118,16 @@ def _detect_entry(root: Path) -> str | None:
     return None
 
 
-def _npm_install(root: Path) -> None:
-    """Best-effort dependency install for package-based plugins."""
+def _npm_install(root: Path) -> str:
+    """Best-effort dependency install for package-based plugins.
+
+    Returns a human-readable warning when the install did NOT succeed, and
+    an empty string otherwise. The caller must be able to say so: a plugin
+    whose dependencies were never installed still reports ``ok`` and then
+    fails on start, so a clean install result has to carry the failure.
+    """
     if not (root / 'package.json').is_file():
-        return
+        return ''
     try:
         r = subprocess.run(
             ['npm', 'install', '--omit=dev', '--no-audit', '--no-fund'],
@@ -132,9 +138,24 @@ def _npm_install(root: Path) -> None:
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0,
         )
         if r.returncode != 0:
-            logger.warning('plugin npm install failed: %s', (r.stderr or r.stdout)[:400])
-    except (OSError, subprocess.SubprocessError):
+            detail = (r.stderr or r.stdout)[:400]
+            logger.warning('plugin npm install failed: %s', detail)
+            return f'npm install failed: {detail}'
+    except (OSError, subprocess.SubprocessError) as exc:
         logger.warning('plugin npm install unavailable — dependencies may be missing')
+        return f'npm install could not run: {exc}'
+    return ''
+
+
+def _missing_dependencies(root: Path) -> str:
+    """Warn when a package-based plugin has no installed dependencies.
+
+    Offline check only — no network, no install. Used on the "already
+    installed" path, which never runs ``npm install``.
+    """
+    if (root / 'package.json').is_file() and not (root / 'node_modules').is_dir():
+        return 'Dependencies are not installed (no node_modules) — the server will not start.'
+    return ''
 
 
 def _safe_dir_name(name: str) -> str:
@@ -146,6 +167,9 @@ async def install_from_github(name: str, source: str) -> dict[str, object]:
     """Install a GitHub plugin source into ``data/plugins/<name>``.
 
     Returns ``{ok, dir, entry, command, args, method}`` or an error dict.
+    A successful result also carries ``versionResolved`` / ``signatureChecked``
+    (both False — this installer pins nothing and verifies nothing) and a
+    ``warning`` string when the plugin's dependencies are not usable.
     """
     try:
         from app.lib.paths import dataPath
@@ -162,7 +186,7 @@ async def install_from_github(name: str, source: str) -> dict[str, object]:
                         '(dist/index.js / index.js). Delete it or pick another name.'
                     ),
                 }
-            return {
+            result: dict[str, object] = {
                 'ok': True,
                 'dir': str(dest),
                 'entry': entry,
@@ -171,6 +195,10 @@ async def install_from_github(name: str, source: str) -> dict[str, object]:
                 'method': 'existing',
                 'note': 'Already installed — reusing the existing copy.',
             }
+            warning = _missing_dependencies(dest)
+            if warning:
+                result['warning'] = warning
+            return result
         dest.parent.mkdir(parents=True, exist_ok=True)
         method = 'git'
         try:
@@ -191,7 +219,9 @@ async def install_from_github(name: str, source: str) -> dict[str, object]:
                     '(looked for dist/index.js, index.js, index.mjs, src/index.js).'
                 ),
             }
-        _npm_install(dest)
+        dep_warning = _npm_install(dest)
+        if not dep_warning:
+            dep_warning = _missing_dependencies(dest)
         return {
             'ok': True,
             'dir': str(dest),
@@ -199,6 +229,15 @@ async def install_from_github(name: str, source: str) -> dict[str, object]:
             'command': 'node',
             'args': [str(dest / entry)],
             'method': method,
+            # What this installer does NOT do, stated in the result rather
+            # than implied by a bare `ok: True`: the ref is never resolved
+            # to a pinned commit, the fetched bytes are never checked
+            # against a signature or checksum, and the plugin is never
+            # validated after install — the only check on what was fetched
+            # is that an entry point exists.
+            'versionResolved': False,
+            'signatureChecked': False,
+            'warning': dep_warning,
         }
     except PluginInstallError as exc:
         return {'ok': False, 'error': f'Plugin install failed: {exc}'}

@@ -6,12 +6,16 @@ import {
   BadgeCheck,
   Wrench,
   AlertTriangle,
+  Info,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import type { IntegrationCatalogEntry } from '../integrationDirectory';
+import {
+  catalogCapabilityLabel,
+  type IntegrationCatalogEntry,
+} from '../integrationDirectory';
 import { brandIconStyle, resolveBrandIcon } from './brandIcons';
 import { FIELD } from './styles';
 
@@ -19,17 +23,21 @@ interface CatalogDetailProps {
   entry: IntegrationCatalogEntry;
   installed: boolean;
   busy: boolean;
+  /** Backend view of this recipe: which launcher it needs, and whether it exists here. */
+  launcher?: { command?: string; launcherAvailable?: boolean };
   onAdd: (env?: Record<string, string>) => void;
 }
 
 /**
- * Full catalog entry view: description, tools list, optional env config form,
- * install action, and post-install MCP smoke test against /api/mcp/servers.
+ * Full catalog entry view: description, what the entry actually gives you,
+ * tools list, optional env config form, install action, and post-install MCP
+ * smoke test against /api/mcp/servers.
  */
 export function CatalogDetail({
   entry,
   installed,
   busy,
+  launcher,
   onAdd,
 }: CatalogDetailProps) {
   const tools = entry.tools ?? [];
@@ -37,6 +45,12 @@ export function CatalogDetail({
   const more = Math.max(0, tools.length - shown.length);
   const Icon = resolveBrandIcon(entry.brand);
   const envFields = entry.requiredEnv ?? [];
+
+  /* A recipe whose launcher is missing cannot start on this machine. The
+   * Install button is disabled and says why — an install that is guaranteed
+   * to fail must not look like a working one. */
+  const launcherMissing = launcher?.launcherAvailable === false;
+  const launcherCommand = launcher?.command || entry.mcp?.command || '';
 
   const [envValues, setEnvValues] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
@@ -55,6 +69,14 @@ export function CatalogDetail({
 
   const handleInstall = () => {
     setFormError(null);
+    if (launcherMissing) {
+      setFormError(
+        `Cannot install here — ${launcherCommand} is not on PATH on this machine, so the server ` +
+          'cannot start. Install it and reopen August, or register the server yourself with ' +
+          'Create custom.',
+      );
+      return;
+    }
     if (missingRequired.length > 0) {
       setFormError(
         `Fill in: ${missingRequired.map((f) => f.label).join(', ')}`,
@@ -86,7 +108,9 @@ export function CatalogDetail({
         setSmoke(
           installed
             ? 'Installed, but not listed in MCP registry yet — try Start from Integrations detail.'
-            : 'Not installed yet. Install first, then re-run smoke test.',
+            : launcherMissing
+              ? `Not installed: ${launcherCommand} is not on PATH on this machine, so this server cannot start here.`
+              : 'Not installed yet. Install first, then re-run smoke test.',
         );
       } else {
         const running =
@@ -134,6 +158,34 @@ export function CatalogDetail({
         {entry.description}
       </p>
 
+      {/* What this entry actually gives the user — said in words, not only
+       * in a badge. Every entry is a sign-in slot or an install recipe;
+       * none of them is a capability August ships with. */}
+      <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+          <Info className="size-3" /> What you get
+          <span className="font-normal text-muted-foreground">
+            {catalogCapabilityLabel(entry.capability)}
+          </span>
+        </div>
+        <p className="mt-1 text-2xs leading-relaxed text-muted-foreground">
+          {entry.capabilityNote}
+        </p>
+      </div>
+
+      {launcherMissing && (
+        <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-2xs leading-relaxed text-destructive">
+          <AlertTriangle className="mt-0.5 size-3 shrink-0" />
+          <span>
+            This machine has no{' '}
+            <span className="font-mono">{launcherCommand}</span> on PATH, so this recipe cannot
+            start here — installing it would give you a server that never runs. Put{' '}
+            <span className="font-mono">{launcherCommand}</span> on PATH and reopen August, or
+            register the server yourself with <span className="font-medium">Create custom</span>.
+          </span>
+        </div>
+      )}
+
       {entry.packageName && (
         <p className="text-xs text-muted-foreground">
           Under the hood it uses{' '}
@@ -157,9 +209,18 @@ export function CatalogDetail({
       {tools.length > 0 && (
         <div>
           <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-foreground">
-            <Wrench className="size-3" /> Tools
+            <Wrench className="size-3" />
+            {entry.capability === 'recipe'
+              ? 'Tools this server exposes once running'
+              : 'Tools'}
             <span className="font-mono font-normal text-muted-foreground">{tools.length}</span>
           </div>
+          {entry.capability === 'recipe' && (
+            <p className="mb-2 text-2xs leading-relaxed text-muted-foreground">
+              These are the third-party server&rsquo;s tools, not August&rsquo;s. They reach the
+              agent only while that server is installed and running.
+            </p>
+          )}
           <ul className="flex flex-wrap gap-1.5">
             {shown.map((t) => (
               <li
@@ -178,6 +239,13 @@ export function CatalogDetail({
         </div>
       )}
 
+      {tools.length === 0 && entry.capability === 'sign-in' && (
+        <p className="text-2xs leading-relaxed text-muted-foreground">
+          No tools: this entry adds a credential, not something the agent can call. August
+          exposes no built-in tool for this service yet.
+        </p>
+      )}
+
       {entry.requirements && (
         <div>
           <p className="mb-1 text-xs font-semibold text-foreground">Requirements</p>
@@ -185,12 +253,23 @@ export function CatalogDetail({
         </div>
       )}
 
+      {entry.helpUrl && (
+        <a
+          href={entry.helpUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex w-fit text-2xs text-primary hover:underline"
+        >
+          Setup guide →
+        </a>
+      )}
+
       {envFields.length > 0 && !installed && (
         <div className="space-y-3 rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
           <p className="text-xs font-semibold text-foreground">Configuration</p>
           <p className="text-2xs text-muted-foreground">
-            These are saved to the MCP server env and shared MCP env so Sign in with Google
-            can open a browser immediately after install.
+            These are saved to the MCP server env and to the shared MCP env, so the server — and
+            August&rsquo;s own sign-in flows — can read them.
           </p>
           {envFields.map((field) => (
             <div key={field.key} className="space-y-1">
@@ -215,16 +294,6 @@ export function CatalogDetail({
               )}
             </div>
           ))}
-          {entry.helpUrl && (
-            <a
-              href={entry.helpUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex text-2xs text-primary hover:underline"
-            >
-              Setup guide →
-            </a>
-          )}
         </div>
       )}
 
@@ -243,7 +312,7 @@ export function CatalogDetail({
       <div className="flex flex-wrap items-center gap-2 pt-1">
         <Button
           onClick={handleInstall}
-          disabled={installed || busy}
+          disabled={installed || busy || launcherMissing}
           className="min-w-[140px]"
         >
           {busy ? (
@@ -253,7 +322,13 @@ export function CatalogDetail({
           ) : (
             <Plus className="size-3" />
           )}
-          {installed ? 'Already added' : entry.kind === 'mcp-extension' ? 'Install' : 'Add'}
+          {installed
+            ? 'Already added'
+            : launcherMissing
+              ? 'Cannot install here'
+              : entry.kind === 'mcp-extension'
+                ? 'Install'
+                : 'Add'}
         </Button>
         {entry.kind === 'mcp-extension' && (
           <Button

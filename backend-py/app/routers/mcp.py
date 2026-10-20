@@ -7,6 +7,8 @@ subprocess start/stop, and tool discovery share one in-process registry
 
 from __future__ import annotations
 
+import shutil
+
 from fastapi import APIRouter, HTTPException
 
 from app.json_narrowing import as_dict, as_list
@@ -35,40 +37,97 @@ async def listServers():
     return {'servers': [mcp_client.redactedServerRow(s) for s in mcp_client.listRegisteredServers()]}
 
 
+def _launcher_available(command: str) -> bool:
+    """True when the recipe's launcher is on PATH on THIS machine.
+
+    A recipe whose launcher is missing cannot start here, so the UI says so
+    instead of offering an install that is guaranteed to fail.
+    """
+    return bool(command) and shutil.which(command) is not None
+
+
+def _recipe(
+    entry_id: str,
+    name: str,
+    package_name: str,
+    command: str,
+    args: list[str],
+    package_version: str = '',
+) -> dict[str, object]:
+    """One curated install recipe.
+
+    A recipe is a LAUNCH INSTRUCTION for a third-party MCP server, not a
+    capability August has: the tools it exposes exist only once that server
+    is installed and running. `launcherAvailable` says whether the launcher
+    is even present on this host.
+    """
+    return {
+        'id': entry_id,
+        'name': name,
+        'packageName': package_name,
+        'packageVersion': package_version,
+        'kind': 'install-recipe',
+        'command': command,
+        'args': args,
+        'launcherAvailable': _launcher_available(command),
+    }
+
+
 @router.get('/directory')
 async def mcpDirectory():
     """Static MCP install recipes for the Integrations add modal (frontend also ships a catalog)."""
     return {
+        'source': 'curated-recipes',
+        'discovered': False,
+        'note': (
+            'A curated list of install RECIPES baked into August — not a discovered registry. '
+            'August does not query the MCP registry, npm, PyPI or GitHub: there is no search, no '
+            'pagination and no version resolution behind this list. An entry says how to launch a '
+            'third-party MCP server; it is not a capability August has. The tools a recipe exposes '
+            'exist only once that server is installed and running.'
+        ),
         'entries': [
-            {
-                'id': 'mcp-filesystem',
-                'name': 'Filesystem',
-                'packageName': '@modelcontextprotocol/server-filesystem',
-                'packageVersion': '2026.7.4',
-            },
-            {
-                'id': 'mcp-memory',
-                'name': 'Knowledge Graph Memory',
-                'packageName': '@modelcontextprotocol/server-memory',
-            },
-            {
-                'id': 'mcp-fetch',
-                'name': 'Fetch',
-                'packageName': '@modelcontextprotocol/server-fetch',
-            },
-            {
-                'id': 'mcp-github',
-                'name': 'GitHub MCP',
-                'packageName': '@modelcontextprotocol/server-github',
-            },
-            {
-                'id': 'mcp-google-workspace',
-                'name': 'Google Workspace MCP',
-                'packageName': 'workspace-mcp',
-                'command': 'uvx',
-                'args': ['workspace-mcp', '--tool-tier', 'core'],
-            },
-        ]
+            _recipe(
+                'mcp-filesystem',
+                'Filesystem',
+                '@modelcontextprotocol/server-filesystem',
+                'npx',
+                ['-y', '@modelcontextprotocol/server-filesystem@2026.7.4', '.'],
+                '2026.7.4',
+            ),
+            _recipe(
+                'mcp-memory',
+                'Knowledge Graph Memory',
+                '@modelcontextprotocol/server-memory',
+                'npx',
+                ['-y', '@modelcontextprotocol/server-memory'],
+                'latest',
+            ),
+            _recipe(
+                'mcp-fetch',
+                'Fetch',
+                '@modelcontextprotocol/server-fetch',
+                'npx',
+                ['-y', '@modelcontextprotocol/server-fetch'],
+                'latest',
+            ),
+            _recipe(
+                'mcp-github',
+                'GitHub MCP',
+                '@modelcontextprotocol/server-github',
+                'npx',
+                ['-y', '@modelcontextprotocol/server-github'],
+                'latest',
+            ),
+            _recipe(
+                'mcp-google-workspace',
+                'Google Workspace MCP',
+                'workspace-mcp',
+                'uvx',
+                ['workspace-mcp', '--tool-tier', 'core'],
+                'latest',
+            ),
+        ],
     }
 
 
