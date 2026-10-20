@@ -16,6 +16,7 @@ import { qk } from '@/lib/query-keys';
 import { invalidateReviewInboxCount } from '@/lib/useReviewInboxCount';
 import { turnEndPhrase } from '@/lib/turn-end';
 import { CuratorSuggestionBar } from '@/sections/chat/CuratorSuggestionBar';
+import { cn } from '@/lib/utils';
 
 interface Rubric {
   score?: number;
@@ -346,7 +347,14 @@ function describeEpisode(ep: FlaggedEpisode): string {
     : `${kindPhrase} · ${outcome}`;
 }
 
-export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: boolean } = {}) {
+/* `framed` is the panel's own border. The Skills page puts this panel and
+ * the skill-packs panel inside ONE container with hairline children, so there
+ * it is frameless; the Learning hub renders it on its own and keeps the
+ * frame. */
+export function LearningPanel({
+  defaultExpanded = false,
+  framed = true,
+}: { defaultExpanded?: boolean; framed?: boolean } = {}) {
   const qc = useQueryClient();
   // The Skills page keeps the collapsed-by-default card; /learning's
   // Scheduler tab opens it, because the background-job ledger inside IS that
@@ -501,7 +509,7 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
 
   return (
     <div
-      className="shrink-0 rounded-xl border border-border/60 bg-card/40"
+      className={cn('shrink-0', framed && 'rounded-xl border border-border/60 bg-card/40')}
       data-testid="learning-panel"
     >
       <button

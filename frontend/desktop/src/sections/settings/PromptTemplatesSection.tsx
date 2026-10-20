@@ -5,6 +5,8 @@ import { useState, useCallback } from 'react';
 import { Plus, Pencil, Trash2, Copy, X, Check } from 'lucide-react';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
+import { SectionHeader } from '@/components/SectionHeader';
+import { Button } from '@/components/ui/button';
 import {
   listTemplates,
   createTemplate,
@@ -76,12 +78,22 @@ export function PromptTemplatesSection() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-medium">Prompt Templates</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Save reusable prompt templates. Use {'{{variableName}}'} for placeholders.
-        </p>
-      </div>
+      {/* The standard panel header, and the ONE primary action in its
+          actions slot — a filled button at the top right, the way the
+          reference's catalogue puts it. */}
+      <SectionHeader
+        className="mb-0"
+        title="Prompt Templates"
+        subtitle={'Save reusable prompt templates. Use {{variableName}} for placeholders.'}
+        actions={
+          !showForm ? (
+            <Button onClick={() => setShowForm(true)}>
+              <Plus className="size-4" />
+              New template
+            </Button>
+          ) : null
+        }
+      />
 
       {/* Add / Edit form */}
       {showForm && (
@@ -138,65 +150,62 @@ export function PromptTemplatesSection() {
         </div>
       )}
 
-      <div className="space-y-2">
-        {templates.map(t => (
-          <div
-            key={t.id}
-            className="border border-border rounded-lg p-3 hover:bg-muted/30 transition group"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium">{t.name}</div>
-                <div className="text-xs text-muted-foreground mt-1 line-clamp-2 font-mono">
-                  {t.content.slice(0, 120)}{t.content.length > 120 ? '…' : ''}
-                </div>
-                {t.variables.length > 0 && (
-                  <div className="flex gap-1 mt-1.5 flex-wrap">
-                    {t.variables.map(v => (
-                      <span key={v} className="text-2xs px-1 py-0.5 bg-muted rounded">
-                        {'{{' + v + '}}'}
-                      </span>
-                    ))}
+      {/* ONE container whose rows are hairline-separated. A list of bordered
+          cards is the "N bordered cards" the reference rules out. It is not
+          drawn when there is nothing in it — an empty container is a stray
+          hairline, not a list. */}
+      {templates.length > 0 && (
+        <div className="divide-y divide-white/[0.04] overflow-hidden rounded-xl border border-white/[0.06] bg-card/60">
+          {templates.map(t => (
+            <div
+              key={t.id}
+              className="p-3 hover:bg-muted/30 transition group"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium">{t.name}</div>
+                  <div className="text-xs text-muted-foreground mt-1 line-clamp-2 font-mono">
+                    {t.content.slice(0, 120)}{t.content.length > 120 ? '…' : ''}
                   </div>
-                )}
-              </div>
-              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition">
-                <button
-                  onClick={() => handleCopy(t.content)}
-                  className="p-1 rounded hover:bg-muted text-muted-foreground"
-                  title="Copy template"
-                >
-                  <Copy className="size-3" />
-                </button>
-                <button
-                  onClick={() => handleEdit(t)}
-                  className="p-1 rounded hover:bg-muted text-muted-foreground"
-                  title="Edit template"
-                >
-                  <Pencil className="size-3" />
-                </button>
-                <button
-                  onClick={() => handleDelete(t.id)}
-                  className="p-1 rounded hover:bg-muted text-destructive"
-                  title="Delete template"
-                >
-                  <Trash2 className="size-3" />
-                </button>
+                  {t.variables.length > 0 && (
+                    <div className="flex gap-1 mt-1.5 flex-wrap">
+                      {t.variables.map(v => (
+                        <span key={v} className="text-2xs px-1 py-0.5 bg-muted rounded">
+                          {'{{' + v + '}}'}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition">
+                  <button
+                    onClick={() => handleCopy(t.content)}
+                    className="p-1 rounded hover:bg-muted text-muted-foreground"
+                    title="Copy template"
+                  >
+                    <Copy className="size-3" />
+                  </button>
+                  <button
+                    onClick={() => handleEdit(t)}
+                    className="p-1 rounded hover:bg-muted text-muted-foreground"
+                    title="Edit template"
+                  >
+                    <Pencil className="size-3" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(t.id)}
+                    className="p-1 rounded hover:bg-muted text-destructive"
+                    title="Delete template"
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
-
-      {!showForm && (
-        <button
-          onClick={() => setShowForm(true)}
-          className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted transition"
-        >
-          <Plus className="size-3" />
-          New Template
-        </button>
+          ))}
+        </div>
       )}
+
       <ConfirmDialog
         open={confirmState.open}
         title={confirmState.title}

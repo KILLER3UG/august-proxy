@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   FolderTree,
   Info,
+  Layers,
   Loader2,
   Pencil,
   Plus,
@@ -35,7 +36,7 @@ import { QueryErrorState } from '@/components/QueryErrorState';
 import { SectionHeader } from '@/components/SectionHeader';
 import { SettingsTabs } from '@/components/settings/SettingsTabs';
 import { settingsTabPanelId } from '@/components/settings/settingsTabIds';
-import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
+import { ValuePill, type ValuePillOption } from '@/components/ui/ValuePill';
 import { LearningPanel } from '@/sections/settings/LearningPanel';
 import { SkillPacksPanel } from '@/sections/settings/SkillPacksPanel';
 import { SkillVersionsPanel } from '@/sections/settings/SkillVersionsPanel';
@@ -104,6 +105,18 @@ const EMPTY_FORM = { name: '', description: '', body: '', trigger: '', category:
  *  detail's "Review inbox" has to land on the inbox in the host the reader
  *  is in, or the Learning hub throws you into the Settings overlay. That is
  *  `inboxRoute(host)` and it is the whole of the difference. */
+type SkillSort = 'name' | 'recent' | 'usage' | 'effect';
+
+/* The sort is a VALUE, and the reference's value control is a pill. A native
+ * <select> draws the platform's own dropdown and ignores the theme, which is
+ * why every other select in Settings moved to the app's own listbox. */
+const SORT_OPTIONS: ValuePillOption<SkillSort>[] = [
+  { value: 'name', label: 'Name' },
+  { value: 'recent', label: 'Recently used' },
+  { value: 'usage', label: 'Most used' },
+  { value: 'effect', label: 'Measured effect' },
+];
+
 export function SkillsSection({ host = 'settings' }: { host?: LearningHost } = {}) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -215,7 +228,7 @@ export function SkillsSection({ host = 'settings' }: { host?: LearningHost } = {
 
   // Sort: rows were grouped by scope but ordered by whatever the server sent
   // (spec §10.2 — "rows are grouped by scope but ordered by server response").
-  const [sort, setSort] = useState<'name' | 'recent' | 'usage' | 'effect'>('name');
+  const [sort, setSort] = useState<SkillSort>('name');
   const grouped = useMemo(() => {
     const out: Record<SkillScopeKey, SkillSummary[]> = { project: [], agent: [], bundled: [], other: [] };
     for (const s of skills) out[skillScopeKey(s)].push(s);
@@ -489,18 +502,14 @@ export function SkillsSection({ host = 'settings' }: { host?: LearningHost } = {
                   className="h-8 w-full rounded-full border border-border/60 bg-card/60 pl-9 pr-3 text-xs placeholder:text-muted-foreground/70 focus:border-primary/40 focus:outline-none"
                 />
               </div>
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value as typeof sort)}
-                aria-label="Sort skills"
-                className="h-8 rounded-lg border border-border/60 bg-card/60 px-2 text-xs text-foreground/90 outline-none focus:border-primary/40"
-                data-testid="skills-sort"
-              >
-                <option value="name">Name</option>
-                <option value="recent">Recently used</option>
-                <option value="usage">Most used</option>
-                <option value="effect">Measured effect</option>
-              </select>
+              <div data-testid="skills-sort">
+                <ValuePill
+                  ariaLabel="Sort skills"
+                  value={sort}
+                  options={SORT_OPTIONS}
+                  onChange={(v) => setSort(v)}
+                />
+              </div>
               {/* The ONE primary action on this surface. */}
               <Button onClick={startCreate}>
                 <Plus className="size-4" /> New
@@ -629,14 +638,12 @@ export function SkillsSection({ host = 'settings' }: { host?: LearningHost } = {
                     other filters. */}
                 <div className="ml-auto flex min-w-0 items-center gap-2" data-testid="skills-scope-row">
                   <FolderTree className="size-3 shrink-0 text-muted-foreground/70" aria-hidden="true" />
-                  <div className="w-56 shrink-0">
-                    <WorkspaceSelect
+                  <div className="shrink-0" data-testid="skills-scope-select">
+                    <ValuePill
+                      ariaLabel="Skills scope"
                       value={wsScope}
-                      onChange={(e) => setWsScope(e.target.value)}
                       options={scopeOptions}
-                      data-testid="skills-scope-select"
-                      aria-label="Skills scope"
-                      className="h-8 text-xs"
+                      onChange={(v) => setWsScope(v)}
                     />
                   </div>
                 </div>
@@ -743,10 +750,15 @@ export function SkillsSection({ host = 'settings' }: { host?: LearningHost } = {
           )}
 
           {/* The secondary surfaces sit BELOW the catalogue now. The list is
-              what this page is for, and a packs form used to sit above it. */}
-          <div className="mt-4 space-y-3">
+              what this page is for, and a packs form used to sit above it.
+
+              ONE container with hairline children: two bordered boxes
+              stacked under the grid is the "N bordered cards" the reference
+              rules out. The Learning panel drops its own frame here and
+              keeps it in the Learning hub, where it stands alone. */}
+          <div className="mt-4 overflow-hidden rounded-xl border border-white/[0.06] bg-card/60">
             {/* Part 16 Phase E: Learning (curator report + drafts). */}
-            <LearningPanel />
+            <LearningPanel framed={false} />
             {/* Skill packs: install-from-remote. */}
             <SkillPacksPanel />
           </div>
@@ -1218,6 +1230,15 @@ function SkillCard({
           data-testid={`skill-select-${skill.name}`}
           className="mt-1 size-3 shrink-0 accent-[var(--dt-primary)]"
         />
+        {/* The reference's catalogue cell opens with a rounded icon TILE.
+            The Plugins tab's copy of this same grid still has it, so without
+            the tile the two tabs' cells stop looking like the same thing. */}
+        <span
+          className="grid size-8 shrink-0 place-items-center rounded-md bg-muted/60 text-primary"
+          aria-hidden="true"
+        >
+          <Layers className="size-4" />
+        </span>
         <div className="min-w-0 flex-1 text-left">
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="truncate text-[0.8125rem] font-medium text-foreground/90">

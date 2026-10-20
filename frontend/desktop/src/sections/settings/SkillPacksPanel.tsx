@@ -74,18 +74,19 @@ export function SkillPacksPanel() {
   };
 
   return (
+    /* The panel is a CHILD of the one container the Skills page puts its
+     * lower surfaces in, so it carries the hairline that separates it from
+     * the panel above and no frame of its own. */
     <div
-      className="shrink-0 rounded-xl border border-white/[0.06] bg-card/60 p-3 space-y-2"
+      className="shrink-0 space-y-2 border-t border-white/[0.06] px-4 py-3"
       data-testid="skill-packs-panel"
     >
+      {/* A section label: small, muted, SENTENCE CASE. The reference's group
+          labels are never uppercase, and a label carries no sentence — the
+          field below says what it wants. */}
       <div className="flex items-center gap-2">
         <Package className="size-3 text-muted-foreground/70" />
-        <span className="text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">
-          Skill packs
-        </span>
-        <span className="text-[0.65625rem] text-muted-foreground/70">
-          install skill folders from a GitHub repo or an https zip
-        </span>
+        <span className="text-2xs font-medium text-muted-foreground/70">Skill packs</span>
       </div>
       <div className="flex items-center gap-2">
         <input

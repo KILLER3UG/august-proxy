@@ -10,8 +10,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { SectionHeader } from '@/components/SectionHeader';
 import { openExternal } from '@/lib/tauri-shell';
 import { IntegrationCard } from './IntegrationCard';
 import { IntegrationDetail } from './IntegrationDetail';
@@ -26,9 +26,11 @@ import { cn } from '@/lib/utils';
 
 type Mode = 'catalog' | 'detail';
 
-/** Shared theme-aware field styles — blend into dark settings chrome (no pure white). */
+/* Shared theme-aware field styles — blend into dark settings chrome (no pure
+ * white). The shape is a PILL: the reference's search is a pill-shaped input
+ * with a border, not a rounded box. */
 export const INTEGRATION_FIELD_CLASS =
-  'rounded-lg border border-white/[0.08] bg-white/[0.06] text-foreground placeholder:text-muted-foreground ' +
+  'rounded-full border border-white/[0.08] bg-white/[0.06] text-foreground placeholder:text-muted-foreground ' +
   'focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30 shadow-none';
 
 export function IntegrationsSection() {
@@ -219,7 +221,6 @@ export function IntegrationsSection() {
 
         <Section
           title="Connected services"
-          subtitle="Gmail, Calendar, Drive, GitHub, and Slack — add only the ones you need from the directory."
           icon={<Network className="size-4 text-muted-foreground" />}
           count={`${accounts.filter((a) => a.connected).length}/${accounts.length}`}
         >
@@ -252,7 +253,6 @@ export function IntegrationsSection() {
 
         <Section
           title="MCP extensions"
-          subtitle="Local MCP servers that extend August with tools (filesystem, memory, fetch, …)."
           icon={<Plug className="size-4 text-muted-foreground" />}
           count={`${mcpServers.filter((s) => s.connected).length}/${mcpServers.length} running`}
         >
@@ -333,27 +333,29 @@ function Header({
   mcpRunningCount: number;
   onAdd: () => void;
 }) {
+  /* The standard panel header — one title, one subtitle, and the panel's
+   * actions in the header's own slot. A panel that wants a different header
+   * does not roll its own <h2> with its own size. */
   return (
-    <header className="flex items-end justify-between gap-4">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Integrations</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Services and MCP extensions for August. Add only what you need — email and calendar are separate.
-        </p>
-      </div>
-      <div className="flex items-center gap-2">
-        <Badge variant="outline" className="font-mono text-xs">
-          {connectedCount} connected
-        </Badge>
-        <Badge variant="outline" className="font-mono text-xs">
-          {mcpRunningCount} MCP running
-        </Badge>
-        <Button size="sm" onClick={onAdd} data-testid="integrations-add">
-          <Plus className="size-3" />
-          Add
-        </Button>
-      </div>
-    </header>
+    <SectionHeader
+      className="mb-0"
+      title="Integrations"
+      subtitle="Services and MCP extensions for August. Add only what you need — email and calendar are separate."
+      actions={
+        <div className="flex items-center gap-3">
+          {/* Metadata is MUTED, not badged. The reference's header carries a
+              title, a subtitle and its actions — an outlined chip around a
+              count is the loudest thing in a row the reference keeps quiet. */}
+          <span className="text-xs text-muted-foreground">
+            {connectedCount} connected · {mcpRunningCount} MCP running
+          </span>
+          <Button size="sm" onClick={onAdd} data-testid="integrations-add">
+            <Plus className="size-3" />
+            Add
+          </Button>
+        </div>
+      }
+    />
   );
 }
 
@@ -380,33 +382,28 @@ function SearchAndFilters({
   );
 }
 
+/* A section header is a BOLD TITLE and a MUTED COUNT — the reference carries
+ * no sentence under one, and the count is plain text, not a chip. */
 function Section({
   title,
-  subtitle,
   icon,
   count,
   children,
 }: {
   title: string;
-  subtitle?: string;
   icon?: React.ReactNode;
   count?: string;
   children: React.ReactNode;
 }) {
   return (
     <section className="space-y-3">
-      <div className="flex items-end justify-between gap-3">
-        <div className="flex items-center gap-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="flex items-baseline gap-2">
           {icon}
           <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-          {count && (
-            <span className="rounded-full border border-border bg-muted/40 px-1.5 py-0.5 text-2xs font-mono text-muted-foreground">
-              {count}
-            </span>
-          )}
+          {count && <span className="text-2xs text-muted-foreground">{count}</span>}
         </div>
       </div>
-      {subtitle && <p className="text-xs text-muted-foreground -mt-1">{subtitle}</p>}
       {children}
     </section>
   );
@@ -422,7 +419,10 @@ function Empty({
   onAction?: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
+    /* No box. A dashed border is not a hairline, and an empty state is not
+     * content that needs containing — the reference's rule is that borders
+     * are hairlines, never boxes. */
+    <div className="flex flex-wrap items-center gap-3 py-2 text-sm text-muted-foreground">
       <CircleSlash className="size-4 shrink-0" />
       <span className="flex-1">{message}</span>
       {actionLabel && onAction && (

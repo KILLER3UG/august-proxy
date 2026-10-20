@@ -22,9 +22,10 @@
 
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Gauge, Loader2, RotateCcw, Shuffle } from 'lucide-react';
+import { AlertTriangle, Loader2, RotateCcw, Shuffle } from 'lucide-react';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
+import { SectionHeader } from '@/components/SectionHeader';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
 
 interface BrainConfigResponse {
@@ -68,15 +69,15 @@ const TURN_FIELDS: FieldSpec[] = [
   {
     key: 'maxWorkbenchToolLoops',
     label: 'Tool-round cap',
-    hint: 'Stop a turn after this many tool calls. 0 (the default) means unlimited — stall detection still stops a genuinely stuck turn.',
+    hint: 'Stop a turn after this many tool calls. 0 = unlimited.',
     min: 0,
     max: 500,
     unit: 'rounds',
   },
   {
     key: 'budgetSoftUsd',
-    label: 'Soft cost budget',
-    hint: "Degrade the turn when this turn's estimated cost passes the mark — it drops to a bare tool surface, then compacts, then answers without tools. 0 = off.",
+    label: 'Soft cost budget (USD)',
+    hint: 'Degrade the turn past this cost — bare tools, then compaction. 0 = off.',
     min: 0,
     max: 10000,
     unit: 'USD',
@@ -91,24 +92,24 @@ const TURN_FIELDS: FieldSpec[] = [
   },
   {
     key: 'budgetWallClockSec',
-    label: 'Soft time budget',
-    hint: 'Same degradation ladder, measured on the wall clock. 0 = off.',
+    label: 'Soft time budget (seconds)',
+    hint: 'Same degradation ladder, on the wall clock. 0 = off.',
     min: 0,
     max: 86400,
     unit: 'seconds',
   },
   {
     key: 'runawayNudgeRounds',
-    label: 'Runaway warning after',
-    hint: 'Warn the model when a turn has run this long without changing anything. Only active once a hard stop is set below: left untouched it warns at 25 rounds, setting 0 warns immediately (round 0).',
+    label: 'Runaway warning after (rounds)',
+    hint: 'Warn when a turn runs this long without changing anything. Needs a hard stop below. 0 = off.',
     min: 0,
     max: 100000,
     unit: 'rounds',
   },
   {
     key: 'runawayStopRounds',
-    label: 'Runaway hard stop after',
-    hint: 'The only backstop for a turn that calls something different every round: stall detection deliberately resets when the arguments change, so this one counts changes instead. Leave it at 0 (off) unless you want turns ended — leaving it unset warns first.',
+    label: 'Runaway hard stop after (rounds)',
+    hint: 'Ends a turn that keeps calling different things. 0 = off.',
     min: 0,
     max: 100000,
     unit: 'rounds',
@@ -116,7 +117,7 @@ const TURN_FIELDS: FieldSpec[] = [
   {
     key: 'maxUnattendedTurns',
     label: 'Unattended Bot turns',
-    hint: 'How long a Bot chat may keep running on teammate messages before a human has to speak again. Once a chat has taken this many Bot-authored turns with no reply from you, its Bot can no longer message a teammate — it has to report where things stand and ask. Your reply resets it. 0 (the default) means no ceiling: a Bot team can then pass one ask around indefinitely, because every individual turn ends cleanly and the runaway stop above only sees one turn at a time.',
+    hint: 'Bot-authored turns a chat may run before a human must reply. 0 = off.',
     min: 0,
     max: 500,
     unit: 'turns',
@@ -245,161 +246,154 @@ export function TurnLimitsSection() {
 
   return (
     <div className="px-8 py-6">
-      <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
-        <Gauge className="size-6 text-primary" /> Turn Limits
-      </h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Optional bounds on a single turn. All of these are off by default — a limit that ends
-        your work early is your call, not the default.
-      </p>
+      {/* The standard panel header: ONE title, ONE subtitle, and the
+          panel's actions in the header's own slot. The reference's settings
+          modal has no footer bar, so the actions live at the top right. */}
+      <SectionHeader
+        title="Turn Limits"
+        subtitle="Optional bounds on a single turn. All of these are off by default — a limit that ends your work early is your call, not the default."
+        actions={
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={atDefaults || mutate.isPending}
+              onClick={() => {
+                const next: Record<string, number> = {};
+                for (const { spec, isDefault } of rows) {
+                  if (!isDefault) next[spec.key] = 0;
+                }
+                mutate.mutate(next);
+              }}
+            >
+              <RotateCcw className="size-3" />
+              Turn everything off
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!pending || mutate.isPending}
+              onClick={() => {
+                setDraft({});
+                setSaved(false);
+              }}
+            >
+              Discard
+            </Button>
+            <Button
+              size="sm"
+              disabled={!pending || mutate.isPending}
+              onClick={() => {
+                const next: Record<string, number> = {};
+                for (const { spec, shown } of rows) {
+                  if (draft[spec.key] !== undefined) {
+                    next[spec.key] = Math.max(spec.min, Math.min(spec.max, Math.round(shown)));
+                  }
+                }
+                mutate.mutate(next);
+              }}
+            >
+              {mutate.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </>
+        }
+      />
 
-      <div className="mt-5 rounded-xl border border-white/[0.06] bg-card/60 p-5">
+      {/* ONE container with hairline-separated children. The reference's
+          settings panel is a single rounded box whose rows are divided by
+          hairlines — not a stack of bordered cards. */}
+      <div className="mt-5 overflow-hidden rounded-xl border border-white/[0.06] bg-card/60">
         <div className="divide-y divide-white/[0.04]">
           {rows.map(({ spec, shown, isDefault }) => (
-            <div key={spec.key} className="py-3" data-testid={`turn-limit-${spec.key}`}>
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="flex items-center gap-2 text-sm text-foreground">
-                    {spec.label}
-                    {!isDefault ? (
-                      <span className="rounded-full border border-primary/30 px-1.5 py-0.5 text-2xs text-primary">
-                        changed
-                      </span>
-                    ) : null}
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{spec.hint}</p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <input
-                    type="number"
-                    min={spec.min}
-                    max={spec.max}
-                    aria-label={spec.label}
-                    aria-invalid={rejectedKeys.has(spec.key) ? true : undefined}
-                    aria-describedby={
-                      rejectedKeys.has(spec.key) ? 'turn-limits-save-error' : undefined
-                    }
-                    data-testid={`turn-limit-input-${spec.key}`}
-                    value={draft[spec.key] ?? String(shown)}
-                    onChange={(e) => {
-                      setSaved(false);
-                      setSaveError(null);
-                      setDraft((d) => ({ ...d, [spec.key]: e.target.value }));
-                    }}
-                    className="w-28 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-right text-xs text-foreground outline-none focus:border-primary/40 aria-[invalid=true]:border-danger/60"
-                  />
-                  <p className="mt-1 text-2xs text-muted-foreground">
-                    {formatValue(spec, shown)}
-                    {shown !== 0 && spec.unit ? ` ${spec.unit}` : ''}
-                  </p>
-                </div>
+            <div
+              key={spec.key}
+              className="flex items-start justify-between gap-6 px-5 py-3"
+              data-testid={`turn-limit-${spec.key}`}
+            >
+              {/* NAME — the label and ONE short line, and nothing else. */}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-foreground">{spec.label}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{spec.hint}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                {/* The marker is metadata: muted, not a chip, and not in the
+                    name column. */}
+                {!isDefault ? (
+                  <span className="text-2xs text-muted-foreground">changed</span>
+                ) : null}
+                {/* VALUE — ONE value, at the name's type size, and the
+                    control sits at the row's right edge. */}
+                <input
+                  type="number"
+                  min={spec.min}
+                  max={spec.max}
+                  aria-label={spec.label}
+                  aria-invalid={rejectedKeys.has(spec.key) ? true : undefined}
+                  aria-describedby={
+                    rejectedKeys.has(spec.key) ? 'turn-limits-save-error' : undefined
+                  }
+                  data-testid={`turn-limit-input-${spec.key}`}
+                  title={`${formatValue(spec, shown)}${shown !== 0 && spec.unit ? ` ${spec.unit}` : ''}`}
+                  value={draft[spec.key] ?? String(shown)}
+                  onChange={(e) => {
+                    setSaved(false);
+                    setSaveError(null);
+                    setDraft((d) => ({ ...d, [spec.key]: e.target.value }));
+                  }}
+                  className="w-24 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-right text-sm text-foreground outline-none focus:border-primary/40 aria-[invalid=true]:border-danger/60"
+                />
               </div>
             </div>
           ))}
         </div>
 
-        <div className="mt-4 flex items-center gap-2">
-          <Button
-            size="sm"
-            disabled={!pending || mutate.isPending}
-            onClick={() => {
-              const next: Record<string, number> = {};
-              for (const { spec, shown } of rows) {
-                if (draft[spec.key] !== undefined) {
-                  next[spec.key] = Math.max(spec.min, Math.min(spec.max, Math.round(shown)));
-                }
-              }
-              mutate.mutate(next);
-            }}
-          >
-            {mutate.isPending ? 'Saving…' : 'Save'}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={!pending || mutate.isPending}
-            onClick={() => {
-              setDraft({});
-              setSaved(false);
-            }}
-          >
-            Discard
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={atDefaults || mutate.isPending}
-            onClick={() => {
-              const next: Record<string, number> = {};
-              for (const { spec, isDefault } of rows) {
-                if (!isDefault) next[spec.key] = 0;
-              }
-              mutate.mutate(next);
-            }}
-          >
-            <RotateCcw className="size-3" />
-            Turn everything off
-          </Button>
+        {/* Context relief — the same container, one hairline down. */}
+        <div className="border-t border-white/[0.04] px-5 py-3">
+          <div className="flex items-center gap-2">
+            <Shuffle className="size-4 text-primary" />
+            <h3 className="text-sm font-semibold text-foreground">Context relief</h3>
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            How August makes room when a conversation outgrows the model&rsquo;s context window.
+          </p>
+          <div className="mt-1">
+            <SettingsToggle
+              checked={Boolean(config.contextReliefRotate)}
+              onCheckedChange={(next) => reliefMut.mutate({ contextReliefRotate: next })}
+              label="Rotate onto a handoff note"
+              description="Off is the shipped behaviour; on, a long chat re-anchors onto its first handoff note."
+              disabled={configQ.isLoading || reliefMut.isPending}
+              data-testid="context-relief-rotate-toggle"
+            />
+          </div>
+          {reliefMut.isError ? (
+            <p role="alert" className="mt-2 text-2xs text-danger-fg" data-testid="context-relief-error">
+              Could not save the context-relief setting: {reliefMut.error?.message}
+            </p>
+          ) : null}
         </div>
-        {saveError ? (
-          <p
-            id="turn-limits-save-error"
-            role="alert"
-            className="mt-3 text-2xs text-danger-fg"
-            data-testid="turn-limits-save-error"
-          >
-            Could not save the turn limits: {saveError}
-          </p>
-        ) : null}
-        {saved ? (
-          <p className="mt-3 text-2xs text-primary" data-testid="turn-limits-saved">
-            Saved.
-          </p>
-        ) : null}
       </div>
 
-      <div className="mt-4 flex items-start gap-2 text-xs text-muted-foreground">
+      {saveError ? (
+        <p
+          id="turn-limits-save-error"
+          role="alert"
+          className="mt-3 text-2xs text-danger-fg"
+          data-testid="turn-limits-save-error"
+        >
+          Could not save the turn limits: {saveError}
+        </p>
+      ) : null}
+      {saved ? (
+        <p className="mt-3 text-2xs text-muted-foreground" data-testid="turn-limits-saved">
+          Saved.
+        </p>
+      ) : null}
+
+      <p className="mt-4 flex items-start gap-2 text-xs text-muted-foreground">
         <AlertTriangle className="mt-0.5 size-3 shrink-0" />
-        <p>
-          A stopped turn is always explained in the transcript — expand the reason under the
-          amber badge to see what to do next.
-        </p>
-      </div>
-
-      {/* Context relief — the SECOND route, and the only one that is a choice.
-          Everything above is a bound; this is a different way to make room.
-          Off (the default) a long chat is compacted in place: the first few
-          messages stay verbatim forever and everything after them is folded
-          into a running summary, so from the second relief onward the
-          summary describes a follow-up rather than the original ask. On, a
-          relief that already has a note RE-ANCHORS the chat onto that note
-          instead of stacking another one — the opening is claimed back
-          verbatim and the newest turns keep the room. */}
-      <div className="mt-6 rounded-xl border border-white/[0.06] bg-card/60 p-5">
-        <div className="flex items-center gap-2">
-          <Shuffle className="size-4 text-primary" />
-          <h3 className="text-sm font-semibold text-foreground">Context relief</h3>
-        </div>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          How August makes room when a conversation outgrows the model&rsquo;s context
-          window. Off is the shipped behaviour and nothing changes unless you turn it on.
-        </p>
-        <div className="mt-3">
-          <SettingsToggle
-            checked={Boolean(config.contextReliefRotate)}
-            onCheckedChange={(next) => reliefMut.mutate({ contextReliefRotate: next })}
-            label="Rotate onto a handoff note"
-            description="After the first summary exists, a long chat re-anchors onto that note instead of stacking a new summary on top of it. The original ask is claimed back verbatim, and the newest turns keep the room. Your chat keeps its history either way."
-            disabled={configQ.isLoading || reliefMut.isPending}
-            data-testid="context-relief-rotate-toggle"
-          />
-        </div>
-        {reliefMut.isError ? (
-          <p role="alert" className="mt-2 text-2xs text-danger-fg" data-testid="context-relief-error">
-            Could not save the context-relief setting: {reliefMut.error?.message}
-          </p>
-        ) : null}
-      </div>
+        A stopped turn is always explained in the transcript.
+      </p>
     </div>
   );
 }
