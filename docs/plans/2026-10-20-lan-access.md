@@ -136,6 +136,114 @@ false.
 
 ---
 
+---
+
+## Three facts that changed the design (added 2026-10-20, after the
+mobile-pairing agent read the routers)
+
+### 1. A BROWSER WEBSOCKET CANNOT SET CUSTOM HEADERS
+
+This is the most important fact in the whole feature, and it came from
+reading the routers rather than from the design.
+
+The terminal WebSocket (`backend-py/app/routers/terminal_routes.py:154`,
+`/api/terminal/connect`) writes to the user's shell on every frame. A
+browser's WebSocket handshake cannot carry a custom header, so **the
+per-install token CANNOT gate that door at all.** The same is true of the
+log stream (`backend-py/app/routers/monitoring.py:277`,
+`/api/logs/stream`) — a live log stream leaks prompt bodies.
+
+So the shape is not "the token guards everything":
+
+- the token guards every **HTTP** route;
+- those two **WebSocket** doors stay origin-gated only.
+
+If the phone's origin is trusted, the phone's terminal socket is trusted
+too, and there is no credential in front of it. That has to be said in the
+code, in this document, and in the phone panel's warning — a panel that
+implies the token covers the socket is lying.
+
+### 2. The health payload has a contract, and the phone panel is already written against it
+
+The phone panel reads these three field names, at the top level of the
+health payload or under a `network` key:
+
+| Field | Meaning |
+|---|---|
+| `network.bindHost` | the address uvicorn is bound to (`127.0.0.1` today) |
+| `network.lanAddress` | this machine's LAN address |
+| `network.lanEnabled` | whether LAN access is on |
+
+Until they appear, the panel falls back to the loopback truth and says
+LAN access is off. **The panel needs no change when they appear.**
+
+`/api/health/detailed` has an `externalAccess` block — that is the
+`/v1` GATEWAY for Claude Code / OpenAI SDKs, **not** the `/api`
+management surface. Do not reuse that name: a reader would confuse the
+two, and the gateway's reachability is a different question from the
+management API's.
+
+### 3. Bind the SPECIFIC LAN ADDRESS, not 0.0.0.0
+
+The origin allowlist entry is EXACT (scheme + host + port, lowercased),
+and the phone's address is DHCP-assigned — a static entry breaks when
+the address changes.
+
+Binding one specific LAN address keeps the machine's other interfaces
+closed AND makes the trusted origin exact. The shell can find the
+address with no dependency (enumerate the interfaces, take the first
+private IPv4) and set `AUGUST_CORS_ORIGINS` to the matching origin at
+spawn time, which solves the DHCP problem for free.
+
+Binding `0.0.0.0` instead would need a CIDR or private-range rule in
+`local_api_guard.py` — a structural change to a security-critical
+middleware — and it would leave every other interface open.
+
+**No structural change to the origin guard is needed** for the
+specific-address shape: the guard is a membership test
+(`local_api_guard.py:157-165` -> `resolve_origins()` at `:218-232`), and
+`AUGUST_CORS_ORIGINS` is the existing operator escape hatch that feeds
+it. One subtlety worth honouring: a same-origin GET carries **no**
+`Origin` header, so the guard falls through to the `Sec-Fetch-Site` check
+and `same-origin` is already in `_SAFE_SEC_FETCH_SITES` (`:54`) — the
+phone's READS pass with no configuration at all, and only the WRITES
+(which carry `Origin`) need the entry.
+
+### 4. What a LAN client could do if the token is NOT widened
+
+Read from the routers, not guessed:
+
+- **an unauthenticated REMOTE SHELL** — `POST /api/terminal/input`
+  (`terminal_routes.py:112`), `POST /api/terminal/command` (`:127`),
+  `POST /api/terminal/sessions` (`:83`), `GET /api/terminal/buffer`
+  (`:103`) — plus the terminal WebSocket that also writes to it.
+- **the user's WORKSPACE, byte for byte** — `GET /api/workbench/files/raw`
+  (`workbench.py:909`), `/files/read` (`:744`).
+- **the user's MEMORY** — `GET /api/brain/memory/preview`
+  (`brain_config.py:339`), `/state-lookup` (`:411`), and
+  `POST /api/privacy/export` (`privacy.py:114`), which exports everything
+  the user owns in one call.
+- **DESTRUCTIVE doors** — purge-memories, clear-logs, delete-sessions,
+  `POST /api/hooks/reload`, `POST /api/system/restart`,
+  `POST /api/mcp/servers/:id/start`, skill install, automations create and
+  trigger.
+- **REDIRECTING August's own outbound traffic** — `PUT /api/providers/{id}`
+  (`providers.py:513`) can replace a provider's key or baseUrl. The keys
+  are masked on read (`providers.py:90-91,147-149`), so the key itself is
+  not readable — but the REDIRECTION is, and every prompt August sends
+  would go to the attacker's server. `POST /api/august/settings/update`
+  (`august.py:153`) can change the GATEWAY KEY.
+- **CHANGING THE SAFETY KNOBS** — guard-mode, sandbox-mode, the
+  approval policy, tool grants — and approving mutations and harness
+  proposals.
+- **SPENDING THE USER'S MONEY** — `POST /api/workbench/chat` (`:475`).
+
+So: with the token widened, the LAN exposure is "one credential, held in
+memory, on a phone the user owns" — which is defensible. Without it, it
+is "August's entire local API, with a remote shell, on the coffee-shop
+wifi". Those are very different decisions, and the owner's ruling of
+2026-10-20 needs both halves.
+
 ## The licence and safety shape, in one place
 
 - **Off by default.** A local app that holds a brain and a set of

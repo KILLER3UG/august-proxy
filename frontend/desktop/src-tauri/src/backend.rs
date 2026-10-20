@@ -74,7 +74,7 @@ static INSTANCE_LOCK_OWNED: AtomicBool = AtomicBool::new(false);
 /// `RtlGenRandom`), and each `RandomState::new()` derives a different value
 /// from them, so two of them make 128 bits that another process cannot
 /// predict — without pulling in a dependency.
-fn local_api_token() -> &'static str {
+fn local_api_token_value() -> &'static str {
     static TOKEN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     TOKEN.get_or_init(|| {
         use std::collections::hash_map::RandomState;
@@ -99,7 +99,7 @@ fn local_api_token() -> &'static str {
 /// local process — which is the whole point.
 #[tauri::command]
 pub fn local_api_token() -> String {
-    local_api_token().to_string()
+    local_api_token_value().to_string()
 }
 /// Set by the UI when the user cancels the visible installer download.
 static UPDATE_DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
@@ -1050,6 +1050,72 @@ fn appDataDir(app: &AppHandle) -> PathBuf {
     appDataRoot(app).join(DATA_DIR_LEAF)
 }
 
+// ── LAN access (opt-in, off by default) ─────────────────────────────────
+//
+// August binds 127.0.0.1 by default: the management API holds a brain
+// database, a providers file with API keys, and a set of file-writing
+// tools, and "reachable from the local network" is not a property a local
+// app should acquire by accident. The owner ruled on 2026-10-20 that LAN
+// access is available, but OPT-IN.
+//
+// The switch is a two-line file the shell reads at SPAWN time, because a
+// bind address cannot change in a running process. The backend is TOLD
+// (AUGUST_LAN_BIND in the environment) rather than asked: the shell owns
+// the decision, and a backend that could also decide for itself would be a
+// second place the two could disagree — in the permissive direction.
+
+/// The file holding the LAN-access switch: `{appData}/lan-access`.
+///
+/// It lives in the app-data ROOT, NOT in `{appData}/data` (the user's data
+/// directory). A model with `write_file` and Full access can write inside
+/// the data directory, and a switch kept there would let that model turn
+/// LAN access on and have the watchdog respawn the backend with the
+/// network open. The app-data root is outside every write root the tools
+/// know about.
+const LAN_ACCESS_FILE: &str = "lan-access";
+
+fn lanAccessPath(app: &AppHandle) -> PathBuf {
+    appDataRoot(app).join(LAN_ACCESS_FILE)
+}
+
+/// Is LAN access switched on?
+///
+/// Read at spawn time. A missing file, an unreadable file, or any content
+/// that is not one of the "on" spellings means OFF: the switch fails
+/// closed, because the safe reading of an unreadable opt-in is "the user
+/// did not ask for this".
+fn lanAccessEnabled(app: &AppHandle) -> bool {
+    let path = lanAccessPath(app);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    matches!(
+        text.trim().to_ascii_lowercase().as_str(),
+        "on" | "1" | "true" | "yes"
+    )
+}
+
+/// The `--host` the backend is bound to. Loopback unless the user turned
+/// LAN access on; `0.0.0.0` is every interface.
+///
+/// Why every interface and not the one specific LAN address: the desktop
+/// app talks to `127.0.0.1:<port>` — the webview's base URL is built from
+/// `proxy_status` (`http://127.0.0.1:<port>`) and so is this file's own
+/// health probe — and uvicorn's CLI here has a single `--host` and no
+/// `--bind`, so a LAN-only bind would leave the user's own app unable to
+/// reach its own backend. The reach that LAN access adds is closed by the
+/// per-install token and by an EXACT trusted-origin allowlist, not by the
+/// bind address: a neighbour on another interface of this machine still
+/// has to present the token, and an origin that is not in the allowlist is
+/// refused.
+fn lanBindHost(lan: bool) -> &'static str {
+    if lan {
+        "0.0.0.0"
+    } else {
+        "127.0.0.1"
+    }
+}
+
 fn killChild(child: &mut Child) {
     let pid = child.id();
     // Kill the whole process tree — uvicorn/python often leave children that
@@ -1108,10 +1174,10 @@ fn stopBackend(app: &AppHandle, reason: &str) {
     }
     // Prevent watchBackend from respawning while we tear down.
     UPDATE_HOLDOFF.store(true, Ordering::SeqCst);
-    let detail = if reason == "quit" {
-        "Stopping backend…"
-    } else {
-        "Stopping backend for update…"
+    let detail = match reason {
+        "quit" => "Stopping backend…",
+        "lan-access" => "Restarting backend for LAN access…",
+        _ => "Stopping backend for update…",
     };
     setSetupPhase(app, "updating", Some(detail.into()));
     killStoredChild(app);
@@ -1550,6 +1616,20 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                 let _ = std::fs::create_dir_all(&logDir);
                 let logPath = logDir.join("backend.log");
 
+                // LAN access: read the switch ONCE, here, and use it for
+                // both the bind address and the flag the backend is told
+                // with. The two must never disagree — a backend that bound
+                // to 0.0.0.0 while believing LAN access was off would be
+                // reachable with the loopback-only origin allowlist.
+                let lan = lanAccessEnabled(app);
+                if lan {
+                    log::warn!(
+                        "[backend] LAN access is ON — the backend will bind {} and the \
+                         whole management API will require the per-install token",
+                        lanBindHost(lan)
+                    );
+                }
+
                 for port in portCandidates() {
                     if updateHoldoffActive() {
                         return false;
@@ -1572,17 +1652,25 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                         .arg("--port")
                         .arg(port.to_string())
                         .arg("--host")
-                        .arg("127.0.0.1")
+                        .arg(lanBindHost(lan))
                         .current_dir(&backendPyRoot)
                         .env("AUGUST_PROXY_PORT", port.to_string())
                         .env("AUGUST_PROXY_ROOT", &repoRoot)
                         .env("AUGUST_DATA_DIR", &dataDir)
                         .env("AUGUST_PROXY_DESKTOP", "1")
+                        // The backend is TOLD that LAN access is on rather
+                        // than asked: it widens the token's scope to the
+                        // whole management API and adds this machine's LAN
+                        // addresses to the trusted-origin allowlist.
+                        .env("AUGUST_LAN_BIND", if lan { "1" } else { "0" })
+                        // The host we actually bound, so `/api/health` can
+                        // report the truth instead of guessing.
+                        .env("AUGUST_BIND_HOST", lanBindHost(lan))
                         // The token that authenticates the shell to the
                         // backend's sensitive local routes. In-memory only:
                         // it is never written to the data directory, where a
                         // model with run_command could read it.
-                        .env("AUGUST_LOCAL_API_TOKEN", local_api_token())
+                        .env("AUGUST_LOCAL_API_TOKEN", local_api_token_value())
                         .env("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
                         .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
                             File::create(devNullPath()).expect("failed to open null")
@@ -1743,7 +1831,7 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
             .env("AUGUST_PROXY_ROOT", &projectRoot)
             .env("AUGUST_DATA_DIR", &dataDir)
             .env("AUGUST_PROXY_DESKTOP", "1")
-            .env("AUGUST_LOCAL_API_TOKEN", local_api_token())
+            .env("AUGUST_LOCAL_API_TOKEN", local_api_token_value())
             .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
                 File::create(devNullPath()).expect("failed to open null")
             })))
@@ -1894,6 +1982,66 @@ pub async fn restart_proxy(app: AppHandle) -> String {
         Ok(s) => s,
         Err(e) => format!("restart_failed: {e}"),
     }
+}
+
+/// What `set_lan_access` reports back: the switch's new state, and whether
+/// the backend came back on the new bind address.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LanAccessState {
+    /// The switch as it is now on disk.
+    pub enabled: bool,
+    /// False when the backend did not come back — the switch is written
+    /// either way, so the NEXT launch binds the new way.
+    pub restarted: bool,
+}
+
+/// Turn LAN access on or off.
+///
+/// Two things happen, in this order, and both matter:
+///
+/// 1. the switch file (`{appData}/lan-access`, holding `on` / `off`) is
+///    written, and
+/// 2. the backend is RESTARTED, because a bind address cannot change in a
+///    running process — a `--host` that is already bound stays bound until
+///    the process is replaced.
+///
+/// The restart is the same path the app already uses to start the backend
+/// (`stopBackend` → `ensureRunning`), so the LAN switch cannot produce a
+/// backend the rest of the app does not know how to supervise.
+#[tauri::command]
+pub async fn set_lan_access(app: AppHandle, enabled: bool) -> Result<LanAccessState, String> {
+    let path = lanAccessPath(&app);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
+    }
+    std::fs::write(&path, if enabled { "on\n" } else { "off\n" })
+        .map_err(|e| format!("could not write {}: {e}", path.display()))?;
+    log::info!(
+        "[backend] LAN access switch written: {} (enabled={enabled})",
+        path.display()
+    );
+
+    let app2 = app.clone();
+    // The kill + ensureRunning path can take up to ~65s (killChild wait +
+    // 45s health poll) — never block the Tauri main thread on it.
+    let restarted = tokio::task::spawn_blocking(move || {
+        stopBackend(&app2, "lan-access");
+        // `stopBackend` raises the holdoff so the watchdog does not race the
+        // teardown; clear it before the respawn, or `ensureRunning` would
+        // skip the spawn and the backend would stay down until the user
+        // pressed Retry.
+        UPDATE_HOLDOFF.store(false, Ordering::SeqCst);
+        ensureRunning(&app2)
+    })
+    .await
+    .map_err(|e| format!("restart_failed: {e}"))?;
+
+    if !restarted {
+        log::error!("[backend] LAN access switched but the backend did not come back");
+    }
+    Ok(LanAccessState { enabled, restarted })
 }
 
 /// Kill the backend (and Windows orphans locking bundled Python) before NSIS runs.

@@ -1361,6 +1361,12 @@ export interface paths {
          *     not, over the retention window. ``lift`` is the difference — the honest
          *     number a demotion suggestion or a transcript provenance chip would quote.
          *     Rows predating 050 (NULL columns) never enter the aggregate.
+         *
+         *     The aggregation is ``turn_outcomes.skill_lift_detail`` — the SAME
+         *     function the per-turn demotion prior reads (``capabilities_prompt``).
+         *     This route used to carry its own copy of the SQL with ``COUNT(*)`` where
+         *     the ledger used ``COUNT(ok)``, so the Skills UI and the ranker could
+         *     disagree about the same skill's lift; one statement now backs both.
          */
         get: operations["getSkillSuggestions_api_brain_skills_suggestions_get"];
         put?: never;
@@ -3043,6 +3049,16 @@ export interface paths {
          *     store (frontend/desktop/src/store/gateway.ts). The monitoring router's
          *     /health handler was removed to avoid a first-match-wins collision that
          *     dropped the `python` field.
+         *
+         *     The `network` block is what a phone panel needs to be HONEST: it says
+         *     whether the backend is reachable from the network at all, which host it
+         *     is bound to, and which `http://<ip>:<port>` origins answer. A panel that
+         *     prints a LAN URL while the backend is loopback-only teaches the user to
+         *     believe something false, which is worse than no panel at all.
+         *
+         *     The field names are the phone panel's contract — `network.bindHost`,
+         *     `network.lanAddress`, `network.lanEnabled` — so the panel needs no
+         *     change when the backend starts answering them.
          */
         get: operations["health_api_health_get"];
         put?: never;

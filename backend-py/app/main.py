@@ -13,12 +13,14 @@ import os
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.lib.lan_access import lan_enabled, lan_origins, lan_status
+from app.lib.local_api_auth import LOCAL_AUTH_ENV, local_token_configured, require_lan_token
 from app.version import backend_version
 
 
@@ -53,6 +55,24 @@ def _cors_allow_origins() -> list[str]:
         'https://app.surfer-project.org',
     ]
     origins.extend(_cors_extra_origins())
+    # LAN access: when the shell has bound the backend to the network, this
+    # machine's LAN addresses become trusted origins — a phone's WebView
+    # loads the app from `http://<lan-ip>:<port>` and the browser then
+    # sends THAT origin on every request.
+    #
+    # ONE place, on purpose. `local_api_guard.resolve_origins()` is built
+    # from this function plus `_cors_extra_origins()`, so adding the LAN
+    # origins here covers the CORS middleware AND the origin guard at once,
+    # and the two can never disagree. A second allowlist would be exactly
+    # the defect `resolve_origins()` was written to prevent.
+    #
+    # The CORS middleware takes its list ONCE, at import; the guard resolves
+    # it per request. That is not a disagreement in practice: the LAN flag is
+    # fixed for the lifetime of the process (the shell restarts the backend
+    # when the switch is flipped, because a bind address cannot change in a
+    # running process), so both views are computed from the same flag.
+    if lan_enabled():
+        origins.extend(lan_origins(port))
     # Preserve order, drop duplicates
     return list(dict.fromkeys(origins))
 
@@ -117,6 +137,30 @@ async def lifespan(app: FastAPI):
     from app.lib.logging_config import setup_logging
 
     setup_logging()
+
+    # LAN access — say it out loud, at boot, in the log the user can read.
+    # Turning the switch on is the one action in August that changes who can
+    # reach the management API, so the process says so on every boot rather
+    # than leaving the user to remember.
+    if lan_enabled():
+        origins = lan_origins(settings.port)
+        logger.warning(
+            '[lan] LAN access is ON — August is reachable from this network at %s. '
+            'Anyone on the network who has the per-install token can read your memory '
+            'and run tools.',
+            ', '.join(origins) if origins else 'no LAN address discovered',
+        )
+        if not local_token_configured():
+            # Fail closed: without a token there is nothing to check against,
+            # so the network gets nothing at all. Say it loudly, because this
+            # is the difference between "LAN access is on" and "LAN access is
+            # on and wide open".
+            logger.error(
+                '[lan] LAN access is ON but %s is not set — every management-API request '
+                'from the network will be REFUSED (fail closed). The desktop shell always '
+                'sets it; a hand-started backend in LAN mode does not.',
+                LOCAL_AUTH_ENV,
+            )
 
     # Register lifecycle hooks (secret guard, blast radius, test mapping, sensitive code).
     try:
@@ -391,6 +435,12 @@ app = FastAPI(
     docs_url='/docs' if _docs_enabled() else None,
     openapi_url='/openapi.json' if _docs_enabled() else None,
     redoc_url=None,
+    # The LAN gate. A no-op unless the shell turned LAN access on, in which
+    # case the WHOLE management API needs the per-install token — not just
+    # the five routes that start work. It is a global dependency on purpose:
+    # one place decides the token's scope, so a route added next year
+    # cannot be reachable from the network by accident.
+    dependencies=[Depends(require_lan_token)],
 )
 app.add_middleware(
     CORSMiddleware,
@@ -554,6 +604,16 @@ async def health():
     store (frontend/desktop/src/store/gateway.ts). The monitoring router's
     /health handler was removed to avoid a first-match-wins collision that
     dropped the `python` field.
+
+    The `network` block is what a phone panel needs to be HONEST: it says
+    whether the backend is reachable from the network at all, which host it
+    is bound to, and which `http://<ip>:<port>` origins answer. A panel that
+    prints a LAN URL while the backend is loopback-only teaches the user to
+    believe something false, which is worse than no panel at all.
+
+    The field names are the phone panel's contract — `network.bindHost`,
+    `network.lanAddress`, `network.lanEnabled` — so the panel needs no
+    change when the backend starts answering them.
     """
     return {
         'status': 'ok',
@@ -561,6 +621,7 @@ async def health():
         'python': True,
         'port': settings.port,
         'uptime': time.time() - _startedAt,
+        'network': lan_status(),
     }
 
 

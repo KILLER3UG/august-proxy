@@ -6990,7 +6990,7 @@
     },
     "/api/brain/skills/suggestions": {
       "get": {
-        "description": "Per-skill measured effect from the turn ledger (audit D1, migration 050).\n\nThe ``routing_evidence`` pattern applied to skills: turn_outcomes rows are\nthe event records (``skills_injected`` JSON per turn), and this read\naggregates them with json_each — no second store, no writer to keep in\nsync. Per skill: resolved rate on turns that carried it vs turns that did\nnot, over the retention window. ``lift`` is the difference — the honest\nnumber a demotion suggestion or a transcript provenance chip would quote.\nRows predating 050 (NULL columns) never enter the aggregate.",
+        "description": "Per-skill measured effect from the turn ledger (audit D1, migration 050).\n\nThe ``routing_evidence`` pattern applied to skills: turn_outcomes rows are\nthe event records (``skills_injected`` JSON per turn), and this read\naggregates them with json_each — no second store, no writer to keep in\nsync. Per skill: resolved rate on turns that carried it vs turns that did\nnot, over the retention window. ``lift`` is the difference — the honest\nnumber a demotion suggestion or a transcript provenance chip would quote.\nRows predating 050 (NULL columns) never enter the aggregate.\n\nThe aggregation is ``turn_outcomes.skill_lift_detail`` — the SAME\nfunction the per-turn demotion prior reads (``capabilities_prompt``).\nThis route used to carry its own copy of the SQL with ``COUNT(*)`` where\nthe ledger used ``COUNT(ok)``, so the Skills UI and the ranker could\ndisagree about the same skill's lift; one statement now backs both.",
         "operationId": "getSkillSuggestions_api_brain_skills_suggestions_get",
         "parameters": [
           {
@@ -10047,7 +10047,7 @@
     },
     "/api/health": {
       "get": {
-        "description": "Single source of truth for /api/health.\n\nReturns both the app-health fields (status/version/python) asserted by\ntests and the gateway fields (port/uptime) polled by the desktop gateway\nstore (frontend/desktop/src/store/gateway.ts). The monitoring router's\n/health handler was removed to avoid a first-match-wins collision that\ndropped the `python` field.",
+        "description": "Single source of truth for /api/health.\n\nReturns both the app-health fields (status/version/python) asserted by\ntests and the gateway fields (port/uptime) polled by the desktop gateway\nstore (frontend/desktop/src/store/gateway.ts). The monitoring router's\n/health handler was removed to avoid a first-match-wins collision that\ndropped the `python` field.\n\nThe `network` block is what a phone panel needs to be HONEST: it says\nwhether the backend is reachable from the network at all, which host it\nis bound to, and which `http://<ip>:<port>` origins answer. A panel that\nprints a LAN URL while the backend is loopback-only teaches the user to\nbelieve something false, which is worse than no panel at all.\n\nThe field names are the phone panel's contract — `network.bindHost`,\n`network.lanAddress`, `network.lanEnabled` — so the panel needs no\nchange when the backend starts answering them.",
         "operationId": "health_api_health_get",
         "responses": {
           "200": {
