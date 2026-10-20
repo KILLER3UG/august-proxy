@@ -4,8 +4,10 @@
 /* renders a filename.                                                  */
 /*                                                                       */
 /* Coverage: 60+ kinds grouped by category. Brand logos come from        */
-/* react-icons/si (Simple Icons, official CC0 SVGs). No-brand formats    */
-/* fall back to themed lucide-react File* variants.                      */
+/* lib/icons.tsx — the project's own copy of the Simple Icons artwork    */
+/* (official CC0 SVGs), extracted so the app does not import the        */
+/* react-icons/si barrel. No-brand formats fall back to themed          */
+/* lucide-react File* variants.                                          */
 
 import type { ComponentType, SVGProps } from 'react';
 import {
@@ -26,7 +28,7 @@ import {
   SiDocker, SiApachemaven, SiGradle,
   // VCS / meta
   SiGitignoredotio,
-} from 'react-icons/si';
+} from '@/lib/icons';
 import {
   FileText, FileCode, FileCog, FileJson, FileImage, FileVideo, FileMusic,
   FileType, FileArchive, FileSpreadsheet, FileLock, File as FileGeneric,

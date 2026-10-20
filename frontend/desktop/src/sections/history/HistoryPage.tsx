@@ -1,13 +1,21 @@
 /* ── HistoryPage ── browse past conversations, grouped by day ─────────── */
 /* Sessions are searchable by title / last message / model; clicking a row
  * opens the session. Data comes from the local sessions store (the same
- * source the sidebar uses), so it works offline and matches the sidebar. */
+ * source the sidebar uses), so it works offline and matches the sidebar.
+ *
+ * Density note: this list used to be a stack of bordered cards, each with a
+ * per-row icon, a permanently visible delete button and an uppercase group
+ * heading. The reference's own list views are borderless rows separated by a
+ * hairline, a bold sentence-case section header, a muted summary column, and
+ * a delete affordance that appears at the far right on hover — so that is
+ * what this is now. */
 
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, MessageSquare, Plus, Trash2, History } from 'lucide-react';
+import { History, Plus, Search, Trash2 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { Button } from '@/components/ui/button';
 import { deleteSession, useSessionsStore, type Session } from '@/store/sessions';
 import { groupByDate } from '@/lib/date-group';
 
@@ -54,85 +62,105 @@ export function HistoryPage() {
     return groupByDate(sorted, (s) => s.startedAt);
   }, [filtered]);
 
+  const searching = query.trim().length > 0;
+
   return (
-    <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden p-6 max-w-3xl mx-auto space-y-5" data-testid="history-page">
+    <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden p-6 max-w-3xl mx-auto space-y-4" data-testid="history-page">
       <div className="flex items-center gap-3">
         <History className="size-5 text-muted-foreground" />
         {/* h2, not h1: the titlebar already renders this route's single h1. */}
         <h2 className="text-base font-semibold">Conversation history</h2>
-        <button
-          type="button"
+        <Button
+          className="ml-auto"
+          size="sm"
           onClick={() => void navigate('/')}
-          className="ml-auto inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground"
           data-testid="history-new-chat"
         >
           <Plus className="size-3" />
           New chat
-        </button>
+        </Button>
       </div>
+      {/* Search is a pill-shaped input with a border — the reference's own
+          search affordance, not a bare magnifier that hides one on click. */}
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+        <Search className="absolute left-3 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by title, message, or model…"
-          className="w-full rounded-lg border border-border/60 bg-card/60 py-2 pl-8 pr-3 text-xs outline-none placeholder:text-muted-foreground/60 focus:border-primary/40"
+          className="w-full rounded-full border border-border/60 bg-card/60 py-2 pl-8 pr-3 text-xs outline-none placeholder:text-muted-foreground/60 focus:border-primary/40"
           data-testid="history-search"
         />
       </div>
       {sessions.length === 0 ? (
-        <div className="rounded-xl border border-border/60 bg-card/40 p-8 text-center text-xs text-muted-foreground">
+        <p className="p-8 text-center text-xs text-muted-foreground">
           No conversations yet — start one and it will appear here.
-        </div>
+        </p>
       ) : filtered.length === 0 ? (
-        <div className="rounded-xl border border-border/60 bg-card/40 p-8 text-center text-xs text-muted-foreground">
+        <p className="p-8 text-center text-xs text-muted-foreground">
           No conversations match “{query}”.
-        </div>
+        </p>
       ) : (
         groups.map((g) => (
-          <section key={g.label}>
-            <h2 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">
-              {g.label} · {g.items.length}
-            </h2>
-            <ul className="space-y-1">
+          /* Today and Yesterday start open; older days are collapsed. A
+             search opens every group, because a collapsed group would hide
+             the very rows the search found. */
+          <details
+            key={g.label}
+            open={searching || g.label === 'Today' || g.label === 'Yesterday'}
+            className="group/day"
+          >
+            <summary
+              className="flex cursor-pointer list-none items-center gap-2 border-b border-border/60 pb-1.5 [&::-webkit-details-marker]:hidden"
+              data-testid={`history-group-${g.label}`}
+            >
+              <span className="text-sm font-semibold text-foreground">{g.label}</span>
+            </summary>
+            <ul className="mt-1 divide-y divide-border/60">
               {g.items.map((s) => (
-                <li key={s.id}>
-                  <div className="group flex items-center gap-3 rounded-lg border border-border/50 bg-card/50 px-3 py-2 transition hover:border-primary/30 hover:bg-card">
-                    <button
-                      type="button"
-                      onClick={() => void navigate(`/c/${s.id}`)}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                      data-testid={`history-session-${s.id}`}
-                    >
-                      <MessageSquare className="size-3 shrink-0 text-muted-foreground/70" />
-                      <span className="min-w-0">
-                        <span className="block truncate text-xs font-medium text-foreground">
-                          {s.title || 'Untitled chat'}
-                        </span>
-                        <span className="block truncate text-xs text-muted-foreground/80">
-                          {s.lastMessage || 'No messages yet'}
-                        </span>
+                <li
+                  key={s.id}
+                  className="group relative flex items-center gap-3 px-2 py-2 transition-colors hover:bg-muted/40"
+                >
+                  <button
+                    type="button"
+                    onClick={() => void navigate(`/c/${s.id}`)}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    data-testid={`history-session-${s.id}`}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-foreground">
+                        {s.title || 'Untitled chat'}
                       </span>
-                      <span className="ml-auto shrink-0 text-right text-xs text-muted-foreground/60">
-                        <span className="block">{s.model || s.provider || '—'}</span>
-                        <span className="block">{`${s.messageCount ?? 0} ${s.messageCount === 1 ? 'msg' : 'msgs'}`}</span>
+                      <span className="block truncate text-xs text-muted-foreground/80">
+                        {s.lastMessage || 'No messages yet'}
                       </span>
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Delete ${s.title || 'Untitled chat'} conversation`}
-                      title="Delete conversation"
-                      className="rounded p-1 text-tier-2 opacity-100 transition hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/60"
-                      onClick={() => void requestDelete(s)}
-                      data-testid={`history-delete-${s.id}`}
-                    >
-                      <Trash2 className="size-3" />
-                    </button>
-                  </div>
+                    </span>
+                    {/* Muted, right-aligned metadata column. The delete button
+                        takes its place on hover, the way the reference's rows
+                        do — the reserved slot keeps the row from shifting. */}
+                    <span className="mr-8 shrink-0 text-right text-2xs text-muted-foreground/70 transition-opacity group-hover:opacity-0">
+                      <span className="block">{s.model || s.provider || '—'}</span>
+                      <span className="block tabular-nums">
+                        {`${s.messageCount ?? 0} ${s.messageCount === 1 ? 'msg' : 'msgs'}`}
+                      </span>
+                    </span>
+                  </button>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={`Delete ${s.title || 'Untitled chat'} conversation`}
+                    title="Delete conversation"
+                    className="absolute right-1 text-muted-foreground opacity-0 transition-opacity hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"
+                    onClick={() => void requestDelete(s)}
+                    data-testid={`history-delete-${s.id}`}
+                  >
+                    <Trash2 className="size-3" />
+                  </Button>
                 </li>
               ))}
             </ul>
-          </section>
+          </details>
         ))
       )}
       <ConfirmDialog

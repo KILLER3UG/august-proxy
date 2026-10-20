@@ -6,6 +6,7 @@ import { LiveCaptions } from './LiveCaptions';
 import { LiveToolRail } from './LiveToolRail';
 import { LiveApprovalCard } from './LiveApprovalCard';
 import { LiveControls } from './LiveControls';
+import { Button } from '@/components/ui/button';
 import { useReducedMotion } from '@/lib/motion';
 import { liveClient } from '@/api/liveClient';
 import { getLiveConfig } from '@/api/api-client';
@@ -121,10 +122,13 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
       className="h-full w-full flex flex-col bg-background"
       data-testid="live-surface"
     >
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+      {/* Top bar. This is a MODE, not a page (the chat stays visible behind
+          it), so it keeps its own bar rather than taking a page header —
+          see the header grammar note in sections/learning/LearningHub.tsx.
+          The bar itself is muted: a quiet label, a borderless icon button. */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">Live voice</span>
+          <span className="text-xs text-muted-foreground">Live voice</span>
           {/* Mute is a mic-only state (capture stops; TTS playback is separate)
               and used to be visible ONLY as the Mute/Unmute label swap on the
               small bottom button — while looking at the orb you could not tell
@@ -139,14 +143,14 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
             </span>
           )}
         </div>
-        <button
-          type="button"
+        <Button
+          size="icon-sm"
+          variant="ghost"
           aria-label="Close"
           onClick={onSwitchToChat}
-          className="p-1 rounded hover:bg-muted"
         >
           <X className="size-4" />
-        </button>
+        </Button>
       </div>
 
       {/* Body: tool rail | main */}
@@ -160,15 +164,15 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
           <LiveCaptions partial={session.partialTranscript} transcript={session.transcript} />
 
           {session.state === 'idle' && (
-            <button
-              type="button"
+            <Button
+              size="lg"
+              className="rounded-full"
               data-testid="start-listening"
               onClick={() => { void startListening(); }}
-              className="px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm hover:opacity-90"
             >
-              <Mic className="size-4 inline mr-2" />
+              <Mic className="size-4" />
               Start listening
-            </button>
+            </Button>
           )}
 
           {session.pendingMutations.length > 0 && (

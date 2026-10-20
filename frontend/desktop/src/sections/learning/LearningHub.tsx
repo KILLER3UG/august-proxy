@@ -53,6 +53,20 @@ const TABS: readonly HubTab[] = [
  * last-opened entry. */
 const HUB_MEMORY_ID = 'learning-hub-memory';
 
+/* Header grammar — decided ONCE, here, because three surfaces used to each
+ * invent their own and the plan asked for a single ruling:
+ *
+ *   • A ROUTE page owns the header under the titlebar: an icon, the page
+ *     name, one muted line saying what the page is for. Runs, History and
+ *     the Agent Board are shaped this way.
+ *   • A SECTION inside a panel uses `SectionHeader` — no icon (the nav
+ *     already carries it) and a smaller title.
+ *   • A RAIL keeps its own rail header. A rail is navigation, not content,
+ *     so it does not take SectionHeader.
+ *   • A full-screen MODE surface keeps its own top bar (see LiveSurface).
+ *     It is not a page — the chat stays visible behind it, and a page
+ *     header would claim the whole window for a mode. */
+
 export function LearningHub() {
   // Tab state is local, not a route segment: the hub is one nav destination
   // and each tab is a view inside it, the way the settings rail is a view
@@ -63,8 +77,9 @@ export function LearningHub() {
 
   return (
     <div className="flex h-full min-h-0" data-testid="learning-hub">
-      {/* Left rail — same shape and row component as the settings rail. */}
-      <aside className="flex h-full w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+      {/* Left rail — same shape, width and row component as the settings
+          rail, so the two read as the same instrument. */}
+      <aside className="flex h-full w-44 shrink-0 flex-col border-r border-sidebar-border bg-sidebar sm:w-60">
         <div className="flex items-center gap-2 px-4 py-3">
           <GraduationCap className="size-4 text-primary" aria-hidden="true" />
           <span className="text-[0.8125rem] font-semibold text-sidebar-foreground">
@@ -75,7 +90,10 @@ export function LearningHub() {
           className="min-h-0 flex-1 overflow-y-auto pb-3"
           aria-label="Learning sections"
         >
-          <div className="mx-2 flex flex-col gap-0.5 rounded-xl bg-sidebar-accent/40 py-1">
+          {/* Borderless rows, like the settings rail: the tinted panel this
+              used to wrap them in changed the grouping metaphor of the same
+              list, and the reference's nav rows have no background. */}
+          <div className="flex flex-col gap-0.5 px-2 py-1">
             {TABS.map(({ id, label, Icon, countsDecisions }) => (
               <WorkspaceNavLink
                 key={id}

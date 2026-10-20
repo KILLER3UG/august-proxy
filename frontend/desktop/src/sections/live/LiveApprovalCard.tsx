@@ -1,4 +1,5 @@
 import { ShieldAlert } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import type { PendingMutation } from './useLiveSession';
 
 interface LiveApprovalCardProps {
@@ -11,7 +12,7 @@ interface LiveApprovalCardProps {
 export function LiveApprovalCard({ mutation, onApprove, onDeny, onVoiceConfirm }: LiveApprovalCardProps) {
   return (
     <div
-      className="bg-card border-2 border-warning rounded-lg p-4 shadow-xl max-w-md mx-auto"
+      className="bg-card border border-warning/60 rounded-lg p-4 shadow-md max-w-md mx-auto"
       role="alertdialog"
       aria-live="assertive"
       data-testid="live-approval-card"
@@ -25,31 +26,24 @@ export function LiveApprovalCard({ mutation, onApprove, onDeny, onVoiceConfirm }
               spoken: "{mutation.spokenPrompt}"
             </div>
           )}
+          {/* The shared Button primitive: one primary action (approve), one
+              quiet secondary (deny), one placeholder kept out of the way. */}
           <div className="flex gap-2 mt-3">
-            <button
-              type="button"
-              onClick={() => onApprove(mutation.id)}
-              className="px-3 py-1.5 text-xs rounded bg-success text-success-foreground hover:opacity-90"
-              data-testid="approve"
-            >
+            <Button size="sm" onClick={() => onApprove(mutation.id)} data-testid="approve">
               Approve
-            </button>
-            <button
-              type="button"
-              onClick={() => onDeny(mutation.id)}
-              className="px-3 py-1.5 text-xs rounded bg-muted text-foreground hover:opacity-90"
-              data-testid="deny"
-            >
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => onDeny(mutation.id)} data-testid="deny">
               Deny
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground"
               onClick={() => onVoiceConfirm(mutation.id)}
-              className="px-3 py-1.5 text-xs rounded text-muted-foreground hover:text-foreground"
               data-testid="voice-confirm"
             >
               voice confirm (placeholder)
-            </button>
+            </Button>
           </div>
         </div>
       </div>

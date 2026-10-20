@@ -5,6 +5,7 @@ import { highlightCode } from '@/lib/code-highlight';
 import { demoteRenderedHeadings } from '@/lib/markdownHeadings';
 import { convertMathInHtml } from '@/lib/markdownMath';
 import { safeExternalHref } from '@/lib/safe-href';
+import { COPY_ICON_SVG } from '@/lib/icons';
 
 const COPY_PLACEHOLDER_ATTR = 'data-copy-placeholder';
 const COPY_CODE_ATTR = 'data-copy-code';
@@ -63,14 +64,11 @@ function renderCode(token: Tokens.Code): string {
     : highlightCode(token.text, rawLang);
 
   // The code block renderer returns raw HTML (marked), so the copy glyph
-  // cannot be a React component. These are lucide's official `copy` paths —
-  // keep byte-identical with the lucide-react Copy icon so every copy
-  // affordance in the app renders the same glyph.
-  const copyIconSvg =
-    `<svg class="size-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
-      `<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>` +
-      `<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>` +
-    `</svg>`;
+  // cannot be a React component. It comes from lib/icons.tsx instead of being
+  // hand-copied in here — the glyph is lucide's `Copy`, kept next to the
+  // brand marks so every copy affordance in the app renders the same shape
+  // and there is one place to regenerate it.
+  const copyIconSvg = COPY_ICON_SVG;
 
   return (
     `<div class="markdown-code-block relative group">` +

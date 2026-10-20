@@ -3,7 +3,12 @@
  * kanban board now lives at /board, with a team launcher that spawns one
  * sub-agent per goal, auto-creates a card per goal, and live-syncs card
  * columns to run status (running → doing, completed → done, failed →
- * backlog). The board itself stays in localStorage (KanbanSection). */
+ * backlog). The board itself stays in localStorage (KanbanSection).
+ *
+ * Density note: the board page used to stack its own "Agent Board" header
+ * on top of the board component's own "Agent board" header, and the team
+ * launcher sat open on every visit. There is now ONE header (the board
+ * component's is switched off here) and the launcher is a disclosure. */
 
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,6 +19,9 @@ import { useKanbanStore, type KanbanCard } from '@/store/kanban-board';
 import { useSessionsStore } from '@/store/sessions';
 import { api } from '@/api/client';
 import { spawn, terminate } from '@/api/subagents';
+import { Button } from '@/components/ui/button';
+import { PageLoader } from '@/components/PageLoader';
+import { QueryErrorState } from '@/components/QueryErrorState';
 
 interface RunRecord {
   id: number;
@@ -30,11 +38,11 @@ interface RunRecord {
 
 const RUN_TONES: Record<string, string> = {
   pending: 'bg-muted text-muted-foreground',
-  running: 'bg-sky-500/15 text-sky-400 animate-pulse',
+  running: 'bg-info/15 text-info',
   completed: 'bg-success/15 text-success-fg',
   partial: 'bg-warning/15 text-warning-fg',
   failed: 'bg-danger/15 text-danger-fg',
-  cancelled: 'bg-zinc-500/15 text-zinc-400',
+  cancelled: 'bg-muted text-muted-foreground',
 };
 
 export function BoardPage() {
@@ -42,8 +50,18 @@ export function BoardPage() {
   const [goals, setGoals] = useState('');
   const [agentId, setAgentId] = useState('general');
   const [launching, setLaunching] = useState(false);
+  // The launcher is a disclosure: a board visit is a look at the board, not
+  // a form to fill in.
+  const [launcherOpen, setLauncherOpen] = useState(false);
 
-  const { data: runs } = useQuery<{ runs: RunRecord[] }>({
+  const {
+    data: runs,
+    isLoading: runsLoading,
+    isError: runsFailed,
+    error: runsError,
+    refetch: refetchRuns,
+    isRefetching: runsRefetching,
+  } = useQuery<{ runs: RunRecord[] }>({
     queryKey: ['subagent-runs'],
     queryFn: () => api.get<{ runs: RunRecord[] }>('/api/subagents/runs?limit=50'),
     refetchInterval: (query) => {
@@ -145,65 +163,93 @@ export function BoardPage() {
   );
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden p-6 max-w-6xl mx-auto space-y-6" data-testid="board-page">
-      <div className="flex items-center gap-3">
-        <Kanban className="size-7 text-muted-foreground" />
-        <div>
-          {/* h2, not h1: the titlebar already renders this route's single h1. */}
-          <h2 className="text-2xl font-semibold">Agent Board</h2>
+    <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden p-6 max-w-6xl mx-auto space-y-5" data-testid="board-page">
+      <div className="flex flex-wrap items-center gap-3">
+        <Kanban className="size-5 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          {/* h2, not h1: the titlebar already renders this route's single h1.
+              This is the page's ONLY header — the board component's own
+              header is switched off below. */}
+          <h2 className="text-2xl font-semibold">Agent board</h2>
           <p className="text-sm text-muted-foreground">
-            Durable multi-agent work surface — launch a team, track every agent on the board
+            Launch a team and track every agent on one board
           </p>
         </div>
+        <Button
+          variant="outline"
+          onClick={() => setLauncherOpen((v) => !v)}
+          aria-expanded={launcherOpen}
+          aria-controls="board-team-launcher"
+          data-testid="board-launch-toggle"
+        >
+          <Rocket className="size-3" />
+          Launch a team
+        </Button>
       </div>
 
-      {/* Team launcher */}
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <Rocket className="size-4 text-muted-foreground" />
-          <h2 className="text-sm font-medium text-foreground">Launch a team</h2>
-          <span className="text-2xs text-muted-foreground/60 ml-auto">
-            one agent per goal line — runs in parallel, cards advance as they finish
-          </span>
-        </div>
-        <textarea
-          value={goals}
-          onChange={(e) => setGoals(e.target.value)}
-          rows={3}
-          className="w-full rounded-md border border-border bg-muted/40 px-3 py-2 text-xs resize-none"
-          placeholder={'One goal per line, e.g.\nAudit the backend for unhandled exceptions\nWrite tests for the privacy router'}
-          aria-label="Team goals"
-          data-testid="board-goals"
-        />
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-muted-foreground shrink-0">Agent</label>
-          <input
-            value={agentId}
-            onChange={(e) => setAgentId(e.target.value)}
-            className="w-32 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs"
-            aria-label="Agent id"
-            data-testid="board-agent"
+      {/* Team launcher — behind the disclosure above. */}
+      {launcherOpen && (
+        <div
+          id="board-team-launcher"
+          className="rounded-xl border border-border/60 bg-card/60 p-4 space-y-3"
+        >
+          <div className="flex items-center gap-2">
+            <Rocket className="size-4 text-muted-foreground" />
+            <h3 className="text-sm font-medium text-foreground">Launch a team</h3>
+            <span className="text-2xs text-muted-foreground/60 ml-auto">
+              one agent per goal line — runs in parallel, cards advance as they finish
+            </span>
+          </div>
+          <textarea
+            value={goals}
+            onChange={(e) => setGoals(e.target.value)}
+            rows={3}
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs resize-none"
+            placeholder={'One goal per line, e.g.\nAudit the backend for unhandled exceptions\nWrite tests for the privacy router'}
+            aria-label="Team goals"
+            data-testid="board-goals"
           />
-          <button
-            type="button"
-            disabled={launching || goals.trim().split('\n').filter((g) => g.trim()).length === 0}
-            onClick={() => void launch()}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs text-primary-foreground disabled:opacity-50"
-            data-testid="board-launch"
-          >
-            {launching ? <Loader2 className="size-3 animate-spin" /> : <Rocket className="size-3" />}
-            Launch {goals.trim().split('\n').filter((g) => g.trim()).length || ''} agent
-            {goals.trim().split('\n').filter((g) => g.trim()).length === 1 ? '' : 's'}
-          </button>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-muted-foreground shrink-0">Agent</label>
+            <input
+              value={agentId}
+              onChange={(e) => setAgentId(e.target.value)}
+              className="w-32 rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+              aria-label="Agent id"
+              data-testid="board-agent"
+            />
+            <Button
+              disabled={launching || goals.trim().split('\n').filter((g) => g.trim()).length === 0}
+              onClick={() => void launch()}
+              data-testid="board-launch"
+            >
+              {launching ? <Loader2 className="size-3 animate-spin" /> : <Rocket className="size-3" />}
+              Launch {goals.trim().split('\n').filter((g) => g.trim()).length || ''} agent
+              {goals.trim().split('\n').filter((g) => g.trim()).length === 1 ? '' : 's'}
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Active agents strip */}
-      {active.length > 0 ? (
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-2">
+      {/* Active agents strip. The run list is the only thing here that comes
+          from the network, so it is the only thing that needs a loading and
+          a failure state — the board below renders from local storage and
+          must not be replaced by a skeleton. */}
+      {runsLoading ? (
+        <PageLoader label="Loading agent runs…" className="py-4" />
+      ) : runsFailed ? (
+        <QueryErrorState
+          error={runsError}
+          onRetry={() => void refetchRuns()}
+          retrying={runsRefetching}
+          title="Couldn't load agent runs"
+          note="The board below is still live — only the run list is missing."
+        />
+      ) : active.length > 0 ? (
+        <div className="rounded-xl border border-border/60 bg-card/60 p-4 space-y-2">
           <div className="flex items-center gap-2">
             <Bot className="size-4 text-muted-foreground" />
-            <h2 className="text-sm font-medium text-foreground">Working now</h2>
+            <h3 className="text-sm font-medium text-foreground">Working now</h3>
             <span className="rounded-full bg-primary/15 px-2 py-0.5 text-2xs text-primary">{active.length}</span>
           </div>
           <ul className="space-y-1.5">
@@ -214,25 +260,27 @@ export function BoardPage() {
                 </span>
                 <span className="font-medium truncate">{r.goal || r.agentId || 'agent'}</span>
                 <span className="text-muted-foreground/60 font-mono text-2xs">{r.agentId}</span>
-                <button
-                  type="button"
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
                   onClick={() => r.taskId && void kill(r.taskId)}
-                  className="ml-auto p-1 text-muted-foreground hover:text-danger"
                   title="Terminate"
+                  aria-label="Terminate agent"
+                  className="ml-auto size-6 text-muted-foreground hover:text-danger"
                   data-testid={`board-kill-${r.taskId}`}
                 >
                   <Square className="size-3" />
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
         </div>
       ) : null}
 
-      {/* The board itself */}
-      <KanbanSection />
+      {/* The board itself — its own header is off, this page owns the title. */}
+      <KanbanSection showHeader={false} />
 
-      {(runs?.runs ?? []).length === 0 ? (
+      {!runsLoading && !runsFailed && (runs?.runs ?? []).length === 0 ? (
         <p className="text-2xs text-muted-foreground/60 flex items-center gap-1.5">
           <X className="size-3" />
           No agent runs yet — spawn one from the composer, from chat tool use, or launch a team above.

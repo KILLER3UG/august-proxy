@@ -9,8 +9,10 @@
 /*   • 60+ brand-specific tools/CLIs/services                             */
 /*   • Compound-command + wrapper-stripping parser                        */
 /*                                                                       */
-/* Brand logos come from react-icons/si (Simple Icons, CC0). No-brand    */
-/* formats fall back to themed lucide-react icons.                        */
+/* Brand logos come from lib/icons.tsx — the project's own copy of the   */
+/* Simple Icons artwork (CC0), extracted so the app does not import the */
+/* react-icons/si barrel. No-brand formats fall back to themed         */
+/* lucide-react icons.                                                  */
 
 import type { ComponentType, SVGProps } from 'react';
 import {
@@ -34,7 +36,7 @@ import {
   SiOpenai, SiHuggingface,
   SiPytorch, SiTensorflow,
   SiFfmpeg,
-} from 'react-icons/si';
+} from '@/lib/icons';
 import {
   // Lucide fallbacks for brands that have no Simple Icons export
   Cloud, Drama,

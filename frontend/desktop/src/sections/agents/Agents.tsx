@@ -2,13 +2,19 @@ import { useQuery } from '@tanstack/react-query';
 import { SectionHeader } from '@/components/SectionHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ShieldCheck, ShieldAlert, Inbox, Users, GitBranch } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Inbox, Users, GitBranch, ChevronRight } from 'lucide-react';
 import { listWorkbenchAgents } from '@/api/workbench';
 
 /**
  * Agent registry view. Reads /api/workbench/agents (roles, modes, scopes,
  * team skills). Read-only here; editing stays in backend config. Approval
  * gate / capabilities surface as a summary; live approval is in chat.
+ *
+ * Density note: a card used to carry a badge per scope, an uppercase label
+ * per group, and a pretty-printed permissions JSON block. The scopes are one
+ * muted line now, the group labels are the reference's small muted
+ * sentence-case labels, and the permissions are a collapsed summary you
+ * open when you want them.
  */
 export function Agents() {
   const { data: registry, isLoading } = useQuery({
@@ -35,14 +41,16 @@ export function Agents() {
         }
       />
 
-      {/* Approval gate summary */}
+      {/* Approval gate summary. The warning is still a warning, but it is a
+          quiet one: a hairline edge and a muted glyph instead of a filled
+          panel, so the registry below keeps the attention. */}
       {registry && (
-        <Card className="border-warning/30 bg-warning/5">
+        <Card className="border-warning/30">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <ShieldCheck className="size-5 text-warning shrink-0 mt-0.5" />
+              <ShieldCheck className="size-4 text-warning/70 shrink-0 mt-0.5" />
               <div>
-                <h3 className="text-sm font-semibold">Approval gate</h3>
+                <h3 className="text-sm font-medium">Approval gate</h3>
                 <p className="text-xs text-muted-foreground mt-1">
                   {registry?.agents?.[0]?.permissions
                     ? 'Mutating tools require an approved plan before execution. Read/search/inspect tools remain available.'
@@ -117,12 +125,11 @@ function AgentCard({ agent }: { agent: AgentData }) {
       <CardContent className="space-y-3 text-xs">
         {scopes.length > 0 && (
           <div>
-            <p className="text-2xs uppercase tracking-wider text-muted-foreground mb-1">Scopes</p>
-            <div className="flex flex-wrap gap-1">
-              {scopes.map((s: string) => (
-                <Badge key={s} variant="outline" className="text-2xs">{s}</Badge>
-              ))}
-            </div>
+            {/* One muted line instead of a badge per scope. */}
+            <p className="text-2xs text-muted-foreground mb-1">Scopes</p>
+            <p className="text-2xs text-muted-foreground/90 font-mono break-words">
+              {scopes.join(' · ')}
+            </p>
           </div>
         )}
 
@@ -135,7 +142,7 @@ function AgentCard({ agent }: { agent: AgentData }) {
 
         {teamSkills.length > 0 && (
           <div>
-            <p className="text-2xs uppercase tracking-wider text-muted-foreground mb-1">Team skills</p>
+            <p className="text-2xs text-muted-foreground mb-1">Team skills</p>
             <div className="space-y-1">
               {teamSkills.slice(0, 4).map((sk: { name: string; description: string; trigger?: string; category?: string }, i: number) => (
                 <div key={sk.name || i} className="text-2xs">
@@ -148,19 +155,23 @@ function AgentCard({ agent }: { agent: AgentData }) {
         )}
 
         {Object.keys(effectivePerms).length > 0 && (
-          <div>
-            <p className="text-2xs uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">
-              <ShieldAlert className="size-2.5" /> Effective permissions
-            </p>
-            <pre className="text-2xs font-mono whitespace-pre-wrap break-all bg-muted/40 rounded p-2">
+          /* The permissions object is a summary, not a document: it opens
+             when you ask for it. */
+          <details className="group/perm">
+            <summary className="flex cursor-pointer list-none items-center gap-1 text-2xs text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <ChevronRight className="size-3 transition-transform group-open/perm:rotate-90" />
+              <ShieldAlert className="size-2.5" />
+              Effective permissions ({Object.keys(effectivePerms).length})
+            </summary>
+            <pre className="mt-1 text-2xs font-mono whitespace-pre-wrap break-all bg-muted/40 rounded p-2">
               {JSON.stringify(effectivePerms, null, 2)}
             </pre>
-          </div>
+          </details>
         )}
 
         {tools.length > 0 && (
           <div>
-            <p className="text-2xs uppercase tracking-wider text-muted-foreground mb-1">{tools.length} tools</p>
+            <p className="text-2xs text-muted-foreground mb-1">{tools.length} tools</p>
             <p className="text-2xs text-muted-foreground font-mono truncate">
               {tools.slice(0, 6).join(', ')}{tools.length > 6 ? ` +${tools.length - 6}` : ''}
             </p>

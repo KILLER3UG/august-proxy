@@ -2,29 +2,28 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SectionHeader } from '@/components/SectionHeader';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { StatusPill } from '@/components/workspace/StatusPill';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { StatusPill, type StatusPillVariant } from '@/components/workspace/StatusPill';
 import {
   Play,
-  Trash2,
-  Pause,
-  PlayCircle,
-  Clock,
-  Cpu,
-  Bot,
   Inbox,
   Plus,
-  Pencil,
-  ShieldCheck,
   Copy,
   RefreshCw,
-  ChevronDown,
+  MoreHorizontal,
   ChevronRight,
   ExternalLink,
   FolderOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import {
   getAutomations,
   upsertAutomation,
@@ -55,6 +54,12 @@ import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { useNavigate } from 'react-router-dom';
 import { OsNotifyService } from '@/lib/os-notify';
 import { openFolderViaTauri } from '@/api/folder';
+
+/** The one field class every control in this form uses. It was written out
+ *  fourteen times as a literal, which is how a form ends up half-restyled:
+ *  a change to the border or the padding had to be made in fourteen places
+ *  and one of them was always missed. */
+const FIELD = 'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm';
 
 const SCHEDULE_PRESETS: Array<{ label: string; value: string }> = [
   { label: 'Every hour', value: '0 * * * *' },
@@ -113,7 +118,22 @@ export function Automations() {
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
     queryKey: ['automations'],
     queryFn: () => getAutomations(),
-    refetchInterval: 5_000,
+    /* The list used to be re-fetched every 5 s, forever, which re-rendered
+     * every job card twice a second's worth of nothing. It now follows the
+     * same shape the Runs page uses: fast while a job is actually running,
+     * and slow when nothing is enabled — a list of paused/disabled/finished
+     * jobs cannot change on its own, so there is nothing to poll for. The
+     * 5 s cadence is kept whenever a job could still fire, because the
+     * completion toast depends on the UI observing the running → settled
+     * transition. */
+    refetchInterval: (query) => {
+      const jobs = query.state.data?.jobs ?? [];
+      if (jobs.some((j) => j.status === 'running')) return 3_000;
+      if (jobs.length > 0 && jobs.every((j) => !j.enabled || j.paused || j.limitReached)) {
+        return 30_000;
+      }
+      return 5_000;
+    },
   });
 
   // A failed list query is not an empty list: the "No automations yet" card
@@ -473,7 +493,7 @@ function AutomationForm({
         <label className="block space-y-1">
           <span className="text-xs text-muted-foreground">Name</span>
           <input
-            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+            className={cn(FIELD)}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Morning standup brief"
@@ -511,7 +531,7 @@ function AutomationForm({
           <label className="block space-y-1">
             <span className="text-xs text-muted-foreground">Prompt</span>
             <textarea
-              className="w-full min-h-[88px] rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+              className={cn(FIELD, 'min-h-[88px]')}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="What should the agent do each run?"
@@ -524,7 +544,7 @@ function AutomationForm({
             <label className="block space-y-1">
               <span className="text-xs text-muted-foreground">Model (optional)</span>
               <select
-                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+                className={cn(FIELD)}
                 value={modelKey}
                 onChange={(e) => setModelKey(e.target.value)}
               >
@@ -546,7 +566,7 @@ function AutomationForm({
             <label className="block space-y-1">
               <span className="text-xs text-muted-foreground">Agent (optional)</span>
               <select
-                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+                className={cn(FIELD)}
                 value={agentId}
                 onChange={(e) => setAgentId(e.target.value)}
               >
@@ -569,7 +589,7 @@ function AutomationForm({
             <label className="block space-y-1">
               <span className="text-xs text-muted-foreground">Approvals</span>
               <select
-                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+                className={cn(FIELD)}
                 value={guardMode}
                 onChange={(e) => setGuardMode(e.target.value as WorkbenchGuardMode)}
                 aria-label="Approval mode for this run"
@@ -584,7 +604,7 @@ function AutomationForm({
             <label className="block space-y-1">
               <span className="text-xs text-muted-foreground">Tool reach</span>
               <select
-                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+                className={cn(FIELD)}
                 value={sandboxMode}
                 onChange={(e) => setSandboxMode(e.target.value as WorkbenchSandboxMode | '')}
                 aria-label="Tool reach for this run"
@@ -608,7 +628,7 @@ function AutomationForm({
           <label className="block space-y-1">
             <span className="text-xs text-muted-foreground">Command</span>
             <textarea
-              className="w-full min-h-[72px] rounded-md border border-border bg-background px-2.5 py-1.5 text-sm font-mono"
+              className={cn(FIELD, 'min-h-[72px] font-mono')}
               value={command}
               onChange={(e) => setCommand(e.target.value)}
               placeholder="npm test"
@@ -621,7 +641,7 @@ function AutomationForm({
             <label className="block space-y-1">
               <span className="text-xs text-muted-foreground">Method</span>
               <select
-                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+                className={cn(FIELD)}
                 value={method}
                 onChange={(e) => setMethod(e.target.value)}
               >
@@ -635,7 +655,7 @@ function AutomationForm({
             <label className="block space-y-1">
               <span className="text-xs text-muted-foreground">URL</span>
               <input
-                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm font-mono"
+                className={cn(FIELD, 'font-mono')}
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://example.com/hook"
@@ -645,7 +665,7 @@ function AutomationForm({
               <label className="block space-y-1 sm:col-span-2">
                 <span className="text-xs text-muted-foreground">Body (optional)</span>
                 <textarea
-                  className="w-full min-h-[64px] rounded-md border border-border bg-background px-2.5 py-1.5 text-sm font-mono"
+                  className={cn(FIELD, 'min-h-[64px] font-mono')}
                   value={httpBody}
                   onChange={(e) => setHttpBody(e.target.value)}
                   placeholder='{"ok":true}'
@@ -659,7 +679,7 @@ function AutomationForm({
           <label className="block space-y-1">
             <span className="text-xs text-muted-foreground">Schedule</span>
             <select
-              className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+              className={cn(FIELD)}
               value={preset}
               onChange={(e) => setPreset(e.target.value)}
             >
@@ -674,7 +694,7 @@ function AutomationForm({
             <label className="block space-y-1">
               <span className="text-xs text-muted-foreground">Cron or every Nm / Nh</span>
               <input
-                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm font-mono"
+                className={cn(FIELD, 'font-mono')}
                 value={customSchedule}
                 onChange={(e) => setCustomSchedule(e.target.value)}
                 placeholder="0 9 * * * or every 2h"
@@ -686,7 +706,7 @@ function AutomationForm({
             <input
               type="number"
               min={0}
-              className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+              className={cn(FIELD)}
               value={maxRuns}
               onChange={(e) => setMaxRuns(e.target.value)}
               placeholder="0 = keep running"
@@ -698,7 +718,7 @@ function AutomationForm({
             </span>
             <div className="flex items-center gap-2">
               <input
-                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm font-mono"
+                className={cn(FIELD, 'w-auto min-w-0 flex-1 font-mono')}
                 value={workspacePath}
                 onChange={(e) => setWorkspacePath(e.target.value)}
                 placeholder="C:\\Dev\\my-project"
@@ -781,7 +801,6 @@ function AutomationCard({
   busy: boolean;
 }) {
   const navigate = useNavigate();
-  const [openRuns, setOpenRuns] = useState(false);
   const jobType = job.jobType || job.type || 'workbench';
   const runs = job.runs ?? [];
   const detail =
@@ -793,6 +812,37 @@ function AutomationCard({
     void navigate(`/c/${sessionId}`);
   };
 
+  /* ONE status pill for the job. It used to be four badges (type, paused,
+   * limit reached, needs approval) plus a pill plus a "running" badge — six
+   * pieces of chrome, of which one was a type name and three were states the
+   * meta line can carry. The most urgent state wins the pill; the rest of
+   * the facts are one quiet line. */
+  const status: { variant: StatusPillVariant; label: string } = (() => {
+    if (job.status === 'running') return { variant: 'ok', label: 'running' };
+    if (job.failureStop) return { variant: 'danger', label: 'stopped' };
+    if (job.limitReached) return { variant: 'warn', label: 'limit reached' };
+    if (job.paused) return { variant: 'muted', label: 'paused' };
+    if (job.enabled) return { variant: 'ok', label: 'enabled' };
+    return { variant: 'muted', label: 'disabled' };
+  })();
+
+  /* The quiet meta line. Every fact the card used to show is still here —
+   * the four little icons that introduced them were decoration, and the
+   * type name is a fact, not a badge. */
+  const meta: string[] = [jobType];
+  if (job.schedule) {
+    meta.push(scheduleLabel(job.schedule) + (job.timezone ? ` (${job.timezone})` : ''));
+  }
+  if (job.model) {
+    const provider = job.provider || job.modelProvider;
+    meta.push(provider ? `${job.model} (${provider})` : job.model);
+  }
+  if (job.agentId || job.agent) meta.push(String(job.agentId || job.agent));
+  if (job.approvalRequired) meta.push('needs approval');
+  if (policyLabel(job)) meta.push(policyLabel(job));
+  if (job.lastRunAt) meta.push(`last: ${shortDate(job.lastRunAt)}`);
+  if (job.nextRunAt && !job.paused) meta.push(`next: ${shortDate(job.nextRunAt)}`);
+
   return (
     <Card className={job.enabled && !job.paused ? '' : 'opacity-70'}>
       <CardContent className="p-3 space-y-2">
@@ -800,141 +850,60 @@ function AutomationCard({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-semibold">{job.name || job.id}</span>
-              <Badge variant="secondary" className="text-2xs">
-                {jobType}
-              </Badge>
-              {job.paused && (
-                <Badge variant="outline" className="text-2xs">
-                  paused
-                </Badge>
-              )}
-              {/* The runner disables the job itself when the cap is spent; say
-                  so, or it just looks like the user turned it off. */}
-              {job.limitReached && (
-                <Badge
-                  variant="outline"
-                  className="text-2xs border-warning/50 text-warning"
-                  title={`Stopped after ${job.maxRuns} runs`}
-                >
-                  limit reached
-                </Badge>
-              )}
-              {job.approvalRequired && (
-                <Badge
-                  variant="outline"
-                  className="text-2xs border-info/50 text-info"
-                  title="A human confirms each run of this job"
-                >
-                  needs approval
-                </Badge>
-              )}
-              {job.status === 'running' && (
-                <Badge variant="outline" className="text-2xs border-info/50 text-info">
-                  running
-                </Badge>
-              )}
+              <StatusPill variant={status.variant} label={status.label} />
             </div>
 
-            <div className="flex items-center gap-3 mt-1.5 text-2xs text-muted-foreground font-mono flex-wrap">
-              <StatusPill
-                variant={job.enabled && !job.paused && !job.limitReached && !job.failureStop ? 'ok' : 'muted'}
-                label={
-                  job.failureStop
-                    ? 'stopped — failing'
-                    : job.limitReached
-                      ? 'limit reached'
-                      : job.paused
-                        ? 'paused'
-                        : job.enabled
-                          ? 'enabled'
-                          : 'disabled'
-                }
-              />
-              {job.failureStop && job.failureStopReason && (
-                /* The scheduler stopped a job that kept failing; without the
-                 * reason this is a job that silently stopped running. */
-                <span
-                  className="inline-flex items-center text-2xs text-warning"
-                  data-testid="automation-failure-stop"
-                  title={job.failureStopReason}
-                >
-                  {job.failureStopReason}
-                </span>
-              )}
-              {job.schedule && (
-                <span className="inline-flex items-center gap-1" title={job.schedule}>
-                  <Clock className="size-2.5" /> {scheduleLabel(job.schedule)}
-                  {job.timezone ? ` · ${job.timezone}` : ''}
-                </span>
-              )}
-              {(job.model || job.agentId || job.agent) && (
-                <span className="inline-flex items-center gap-2">
-                  {job.model ? (
-                    <span className="inline-flex items-center gap-1" title="Runs on this model">
-                      <Cpu className="size-2.5" /> {job.model}
-                      {job.provider || job.modelProvider ? ` (${job.provider || job.modelProvider})` : ''}
-                    </span>
-                  ) : null}
-                  {job.agentId || job.agent ? (
-                    <span className="inline-flex items-center gap-1" title="Agent target">
-                      <Bot className="size-2.5" /> {job.agentId || job.agent}
-                    </span>
-                  ) : null}
-                </span>
-              )}
-              {job.lastRunAt && <span>last: {shortDate(job.lastRunAt)}</span>}
-              {policyLabel(job) && (
-                <span
-                  className="inline-flex items-center gap-1"
-                  title="Execution policy for this unattended run"
-                >
-                  <ShieldCheck className="size-2.5" /> {policyLabel(job)}
-                </span>
-              )}
-              {job.nextRunAt && !job.paused && (
-                <span className="text-warning">next: {shortDate(job.nextRunAt)}</span>
-              )}
-            </div>
+            <p className="mt-1 text-2xs text-muted-foreground">{meta.join(' · ')}</p>
+            {job.failureStop && job.failureStopReason && (
+              /* The scheduler stopped a job that kept failing; without the
+               * reason this is a job that silently stopped running. */
+              <p
+                className="mt-0.5 text-2xs text-warning"
+                data-testid="automation-failure-stop"
+                title={job.failureStopReason}
+              >
+                {job.failureStopReason}
+              </p>
+            )}
 
             {detail && (
-              <pre className="text-2xs font-mono whitespace-pre-wrap break-all text-muted-foreground/70 mt-1.5 bg-muted/40 rounded px-2 py-1 max-h-20 overflow-auto">
+              <pre className="mt-1.5 max-h-20 overflow-auto whitespace-pre-wrap break-all text-2xs font-mono text-muted-foreground/70">
                 {detail}
               </pre>
             )}
           </div>
 
-          <div className="flex items-center gap-1 shrink-0">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onPause}
-              disabled={busy}
-              title={job.limitReached ? 'Re-arm automation' : job.paused ? 'Resume' : 'Pause'}
-            >
-              {job.limitReached ? (
-                <RefreshCw className="size-3" />
-              ) : job.paused ? (
-                <PlayCircle className="size-3" />
-              ) : (
-                <Pause className="size-3" />
-              )}
-            </Button>
-            <Button size="sm" variant="outline" onClick={onRun} disabled={busy} title="Run now">
+          {/* Run is the one primary action and stays visible; everything else
+              moved into one menu. The card used to carry four buttons. */}
+          <div className="flex shrink-0 items-center gap-1">
+            <Button size="sm" onClick={onRun} disabled={busy} title="Run now">
               <Play className="size-3" /> Run
             </Button>
-            <Button
-              size="icon-sm"
-              variant="outline"
-              onClick={onEdit}
-              disabled={busy}
-              title="Edit"
-              aria-label="Edit automation"
-            >
-              <Pencil className="size-3" />
-            </Button>
-            <Button size="icon-sm" variant="outline" onClick={onDelete} disabled={busy} title="Delete">
-              <Trash2 className="size-3 text-destructive" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon-sm"
+                  variant="outline"
+                  disabled={busy}
+                  title="More actions"
+                  aria-label="More actions"
+                >
+                  <MoreHorizontal className="size-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={onPause} className="text-xs">
+                  {job.limitReached ? 'Re-arm automation' : job.paused ? 'Resume' : 'Pause'}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onEdit} className="text-xs">
+                  Edit…
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={onDelete} className="text-xs text-destructive">
+                  Delete…
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -981,16 +950,17 @@ function AutomationCard({
           </div>
         )}
 
-        <button
-          type="button"
-          className="flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground"
-          onClick={() => setOpenRuns((v) => !v)}
-        >
-          {openRuns ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-          Recent runs ({runs.length})
-        </button>
-        {openRuns && (
-          <div className="space-y-1 pl-1">
+        {/* The runs disclosure is the standard collapsible group now: a
+            native <details>, so it needs no state and is keyboard-usable. */}
+        <details className="group/runs">
+          <summary
+            className="flex cursor-pointer list-none items-center gap-1 text-2xs text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden"
+            data-testid="automation-runs-toggle"
+          >
+            <ChevronRight className="size-3 transition-transform group-open/runs:rotate-90" />
+            Recent runs ({runs.length})
+          </summary>
+          <div className="space-y-1 pl-1 pt-1">
             {runs.length === 0 ? (
               <div className="text-2xs text-muted-foreground">No runs yet.</div>
             ) : (
@@ -1022,7 +992,7 @@ function AutomationCard({
               ))
             )}
           </div>
-        )}
+        </details>
       </CardContent>
     </Card>
   );

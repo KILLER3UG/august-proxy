@@ -1,18 +1,23 @@
 /* ── Runs — workbench session runs as a tracker ─────────────────────── */
 /* Status, model, tokens, cost, and duration for every workbench run,
  * with one-click jump back into the chat. Fed by GET /api/workbench/sessions
- * (backend `summarize_session`); polls fast while anything is active. */
+ * (backend `summarize_session`); polls fast while anything is active.
+ *
+ * Density note: this page was the one page-local outlier — four stat CARDS
+ * across the top, a filled status PILL per row, a five-item stat cluster
+ * with three icons on every row, and a per-row bordered card. It now reads
+ * like the reference's list views instead: one muted line of totals, a
+ * borderless hairline-separated row, a status DOT instead of a pill, one
+ * muted mono meta line, and one always-reachable action. */
 
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  Clock,
-  Coins,
+  ChevronRight,
   ExternalLink,
   History,
-  MessageSquare,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -21,6 +26,8 @@ import {
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
 import { QueryErrorState } from '@/components/QueryErrorState';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   startChatStream,
   stopChatStream,
@@ -60,23 +67,39 @@ const FILTERS: readonly { id: Filter; label: string }[] = [
   { id: 'completed', label: 'Completed' },
 ];
 
-/** Presentational status: live status → tone + label + completed flag. */
+/** The three status groups the list is organised into. `open` is the initial
+ *  disclosure state: the two groups that need attention start open, the
+ *  backlog of finished runs does not. */
+const GROUPS: readonly { id: Exclude<Filter, 'all'>; label: string; open: boolean }[] = [
+  { id: 'working', label: 'Working', open: true },
+  { id: 'awaiting', label: 'Awaiting approval', open: true },
+  { id: 'completed', label: 'Completed', open: false },
+];
+
+/** Presentational status: live status → dot + label + completed flag. */
 function runPhase(run: WorkbenchRun): {
   label: string;
-  tone: string;
+  dot: string;
   live: boolean;
   done: boolean;
 } {
   if (run.status === 'streaming') {
-    return { label: 'Working', tone: 'bg-sky-500/15 text-sky-400 animate-pulse', live: true, done: false };
+    return { label: 'Working', dot: 'bg-info animate-pulse', live: true, done: false };
   }
   if (run.status === 'awaiting_approval') {
-    return { label: 'Awaiting approval', tone: 'bg-warning/15 text-warning-fg', live: true, done: false };
+    return { label: 'Awaiting approval', dot: 'bg-warning', live: true, done: false };
   }
   if (run.messageCount > 0 || run.turnCount > 0) {
-    return { label: 'Completed', tone: 'bg-success/15 text-success-fg', live: false, done: true };
+    return { label: 'Completed', dot: 'bg-success', live: false, done: true };
   }
-  return { label: 'Empty', tone: 'bg-zinc-500/15 text-zinc-400', live: false, done: true };
+  return { label: 'Empty', dot: 'bg-muted-foreground/40', live: false, done: true };
+}
+
+/** Which group a run belongs to. */
+function runGroup(run: WorkbenchRun): Exclude<Filter, 'all'> {
+  if (run.status === 'awaiting_approval') return 'awaiting';
+  if (run.status === 'streaming') return 'working';
+  return 'completed';
 }
 
 function fmtDurationMs(ms: number): string {
@@ -112,21 +135,6 @@ function fmtCost(c?: number): string {
   const v = Number(c ?? 0);
   if (v <= 0) return '—';
   return `$${v < 0.01 ? v.toFixed(4) : v.toFixed(3)}`;
-}
-
-function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  /* Borderless: four of these sat side by side as four hairline boxes, which
-   * is exactly the "N bordered cards" shape reference rule 2 bans — spacing
-   * does the work (ChatGPT's installed grid is the same move). The label is
-   * sentence case: the reference's section labels are muted and small, and
-   * UPPERCASE tracking was the old admin-panel signature. */
-  return (
-    <div className="bg-card/60 p-3.5" data-testid="runs-stat">
-      <p className="text-2xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-foreground">{value}</p>
-      {hint ? <p className="mt-0.5 text-2xs text-muted-foreground/70">{hint}</p> : null}
-    </div>
-  );
 }
 
 export function RunsPage() {
@@ -239,44 +247,47 @@ export function RunsPage() {
     [runs, filter],
   );
 
+  /** The visible runs, grouped by status. Empty groups are dropped — a
+   *  "Completed (0)" heading is chrome the user did not ask for. */
+  const groups = useMemo(() => {
+    const buckets = new Map<string, WorkbenchRun[]>();
+    for (const g of GROUPS) buckets.set(g.id, []);
+    for (const run of visible) buckets.get(runGroup(run))!.push(run);
+    return GROUPS.map((g) => ({
+      ...g,
+      runs: buckets.get(g.id)!,
+      // A narrowed filter is an explicit request for that group, so it opens.
+      open: filter === 'all' ? g.open : true,
+    })).filter((g) => g.runs.length > 0);
+  }, [visible, filter]);
+
   return (
     <div
-      className="h-full min-h-0 overflow-y-auto overflow-x-hidden p-6 max-w-6xl mx-auto space-y-6"
+      className="h-full min-h-0 overflow-y-auto overflow-x-hidden p-6 max-w-6xl mx-auto space-y-5"
       data-testid="runs-page"
     >
       <div className="flex items-center gap-3">
-        <History className="size-7 text-muted-foreground" />
-        <div className="flex-1">
+        <History className="size-5 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
           {/* h2, not h1: the titlebar already renders this route's single h1. */}
           <h2 className="text-2xl font-semibold">Runs</h2>
           <p className="text-sm text-muted-foreground">
-            Workbench sessions — status, tokens, cost, and jump-back-into-chat
+            Status, tokens, cost, and a way back into the chat
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => navigate('/')}
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs text-primary-foreground shrink-0"
-          data-testid="runs-new"
-        >
+        <Button onClick={() => navigate('/')} data-testid="runs-new">
           <Plus className="size-3" />
           New run
-        </button>
+        </Button>
       </div>
 
-      {/* Stat strip — suppressed when the list request failed, so a failure
-          never reads as "0 total runs · 0 tokens · $0". */}
+      {/* Totals — one muted line. Four stat CARDS used to sit here, which is
+          the "N bordered boxes" shape the reference's list views do not use. */}
       {!listFailed && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Total runs" value={String(stats.total)} hint="Across all workspaces" />
-          <StatCard
-            label="Active now"
-            value={String(stats.active + stats.awaiting)}
-            hint={`${stats.active} working · ${stats.awaiting} awaiting approval`}
-          />
-          <StatCard label="Completed" value={String(stats.done)} />
-          <StatCard label="Tokens · cost" value={`${fmtTokens(stats.tokens)} · ${fmtCost(stats.cost)}`} />
-        </div>
+        <p className="text-2xs text-muted-foreground" data-testid="runs-stat">
+          {stats.total} runs · {stats.active + stats.awaiting} active · {stats.done} done ·{' '}
+          {fmtTokens(stats.tokens)} tokens · {fmtCost(stats.cost)}
+        </p>
       )}
 
       {/* Filter chips */}
@@ -314,7 +325,7 @@ export function RunsPage() {
       ) : !data ? (
         <PageLoader label="Loading runs…" variant="card" className="py-8" />
       ) : visible.length === 0 ? (
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-8 text-center">
+        <div className="p-8 text-center">
           <History className="mx-auto size-6 text-muted-foreground/50" />
           <p className="mt-2 text-sm text-muted-foreground">
             {runs.length === 0
@@ -323,96 +334,135 @@ export function RunsPage() {
           </p>
         </div>
       ) : (
-        <ul className="space-y-2">
-          {visible.map((run) => {
-            const phase = runPhase(run);
-            const start = run.startedAt || run.createdAt;
-            const durationMs =
-              new Date(run.updatedAt || start).getTime() - new Date(start).getTime();
-            return (
-              <li
-                key={run.id}
-                className="rounded-xl border border-white/[0.06] bg-card/60 p-3.5 flex flex-wrap items-center gap-x-4 gap-y-2"
-                data-testid={`run-row-${run.id}`}
+        <div className="space-y-4">
+          {groups.map((group) => (
+            /* A native <details> is the disclosure: no state machinery, and
+               it is keyboard-reachable and screen-reader-labelled for free. */
+            <details key={group.id} open={group.open} className="group/details">
+              <summary
+                className="flex cursor-pointer list-none items-center gap-1.5 text-2xs text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden"
+                data-testid={`runs-group-${group.id}`}
               >
-                <span
-                  className={`text-2xs px-2 py-0.5 rounded-full shrink-0 ${phase.tone}`}
-                  data-testid={`run-status-${run.id}`}
-                >
-                  {phase.label}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate">
-                    {run.title || 'Untitled run'}
-                    {run.model ? (
-                      <span className="ml-2 text-2xs text-muted-foreground font-mono">
-                        {run.model}
-                        {run.provider ? ` @ ${run.provider}` : ''}
-                      </span>
-                    ) : null}
-                  </p>
-                  <p className="text-2xs text-muted-foreground/80 truncate">
-                    {run.goal || run.workspacePath || `${run.messageCount} messages · ${run.turnCount} turns`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-4 text-2xs text-muted-foreground shrink-0">
-                  <span className="inline-flex items-center gap-1" title="Messages / turns">
-                    <MessageSquare className="size-3" />
-                    {run.messageCount} / {run.turnCount}
-                  </span>
-                  <span className="inline-flex items-center gap-1" title="Tokens">
-                    <Coins className="size-3" />
-                    {fmtTokens(run.totalInputTokens + run.totalOutputTokens)}
-                  </span>
-                  <span className="inline-flex items-center gap-1" title="Cost">
-                    {fmtCost(run.totalCost)}
-                  </span>
-                  <span className="inline-flex items-center gap-1" title="Duration">
-                    <Clock className="size-3" />
-                    {fmtDurationMs(durationMs)}
-                  </span>
-                  <span title="Last updated">{fmtTime(run.updatedAt)}</span>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {phase.live ? (
-                    <button
-                      type="button"
-                      onClick={() => cancelRun(run)}
-                      className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-2xs text-foreground hover:bg-danger/15 hover:text-danger-fg"
-                      title="Stop the active stream"
-                      data-testid={`run-cancel-${run.id}`}
-                    >
-                      <Square className="size-3" />
-                      Cancel
-                    </button>
-                  ) : run.messageCount > 0 ? (
-                    <button
-                      type="button"
-                      disabled={retryingId === run.id}
-                      onClick={() => void retryRun(run)}
-                      className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-2xs text-foreground hover:bg-muted disabled:opacity-50"
-                      title="Re-send the last user message"
-                      data-testid={`run-retry-${run.id}`}
-                    >
-                      <RotateCcw className={`size-3 ${retryingId === run.id ? 'animate-spin' : ''}`} />
-                      {retryingId === run.id ? 'Retrying…' : 'Retry'}
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/c/${resolveUiSessionId(run.id)}`)}
-                    className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2.5 py-1.5 text-2xs text-foreground hover:bg-muted"
-                    data-testid={`run-open-${run.id}`}
-                  >
-                    <ExternalLink className="size-3" />
-                    Open
-                  </button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                <ChevronRight className="size-3 transition-transform group-open/details:rotate-90" />
+                {group.label} · {group.runs.length}
+              </summary>
+              <ul className="mt-1 divide-y divide-border/60">
+                {group.runs.map((run) => (
+                  <RunRow
+                    key={run.id}
+                    run={run}
+                    retrying={retryingId === run.id}
+                    onCancel={() => cancelRun(run)}
+                    onRetry={() => void retryRun(run)}
+                    onOpen={() => navigate(`/c/${resolveUiSessionId(run.id)}`)}
+                  />
+                ))}
+              </ul>
+            </details>
+          ))}
+        </div>
       )}
     </div>
+  );
+}
+
+/** One run. Borderless, hairline-separated, hover-filled — the reference's
+ *  list row. The row carries a status DOT, the title, one muted summary
+ *  line, ONE muted mono meta line, and one always-reachable action; the
+ *  destructive-ish extras (Cancel / Retry) are revealed on hover or focus
+ *  so they are still reachable from the keyboard. */
+function RunRow({
+  run,
+  retrying,
+  onCancel,
+  onRetry,
+  onOpen,
+}: {
+  run: WorkbenchRun;
+  retrying: boolean;
+  onCancel: () => void;
+  onRetry: () => void;
+  onOpen: () => void;
+}) {
+  const phase = runPhase(run);
+  const start = run.startedAt || run.createdAt;
+  const durationMs = new Date(run.updatedAt || start).getTime() - new Date(start).getTime();
+  const summary = run.goal || run.workspacePath || `${run.messageCount} messages · ${run.turnCount} turns`;
+
+  return (
+    <li
+      className="group flex items-center gap-3 px-2 py-2 transition-colors hover:bg-muted/40"
+      data-testid={`run-row-${run.id}`}
+    >
+      <span
+        className="flex w-32 shrink-0 items-center gap-1.5 text-2xs text-muted-foreground"
+        data-testid={`run-status-${run.id}`}
+      >
+        <span className={cn('size-1.5 shrink-0 rounded-full', phase.dot)} aria-hidden />
+        {phase.label}
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm text-foreground">
+          {run.title || 'Untitled run'}
+          {run.model ? (
+            <span className="ml-2 font-mono text-2xs text-muted-foreground">
+              {run.model}
+              {run.provider ? ` @ ${run.provider}` : ''}
+            </span>
+          ) : null}
+        </p>
+        <p className="truncate text-2xs text-muted-foreground/80">{summary}</p>
+      </div>
+
+      {/* One muted meta line: tokens · cost · duration. The old row carried a
+          five-item cluster with three icons; the icons were decoration. */}
+      <span
+        className="hidden shrink-0 font-mono text-2xs text-muted-foreground sm:inline"
+        title={`Last updated ${fmtTime(run.updatedAt)}`}
+      >
+        {fmtTokens(run.totalInputTokens + run.totalOutputTokens)} · {fmtCost(run.totalCost)} ·{' '}
+        {fmtDurationMs(durationMs)}
+      </span>
+
+      <div className="flex shrink-0 items-center gap-1">
+        {phase.live ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onCancel}
+            title="Stop the active stream"
+            className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 hover:text-danger-fg"
+            data-testid={`run-cancel-${run.id}`}
+          >
+            <Square className="size-3" />
+            Cancel
+          </Button>
+        ) : run.messageCount > 0 ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={retrying}
+            onClick={onRetry}
+            title="Re-send the last user message"
+            className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+            data-testid={`run-retry-${run.id}`}
+          >
+            <RotateCcw className={cn('size-3', retrying && 'animate-spin')} />
+            {retrying ? 'Retrying…' : 'Retry'}
+          </Button>
+        ) : null}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onOpen}
+          title="Open this run in the chat"
+          data-testid={`run-open-${run.id}`}
+        >
+          <ExternalLink className="size-3" />
+          Open
+        </Button>
+      </div>
+    </li>
   );
 }

@@ -6,13 +6,11 @@ import type { ReactNode } from 'react';
 import { AlertCircle, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getFileIcon } from '@/lib/file-icon';
+import { ProgressRing } from '@/lib/icons';
 import type { FileAttachment } from '@/types/chat';
 import { openRightDrawerFile } from '@/components/shell/RightDrawerState';
 
 const RING_SIZE = 44;
-const STROKE = 3;
-const RADIUS = (RING_SIZE - STROKE) / 2;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 function UploadProgressRing({
   progress,
@@ -27,7 +25,6 @@ function UploadProgressRing({
   // FileReader often skips progress events for small files — use an
   // indeterminate arc until we have a real percentage.
   const determinate = pct > 0;
-  const offset = determinate ? CIRCUMFERENCE * (1 - pct / 100) : CIRCUMFERENCE * 0.75;
 
   return (
     <div
@@ -39,41 +36,11 @@ function UploadProgressRing({
       aria-valuemax={100}
       aria-label={determinate ? `Uploading ${Math.round(pct)}%` : 'Uploading'}
     >
-      <svg
-        width={RING_SIZE}
-        height={RING_SIZE}
-        className={cn(
-          'absolute inset-0 -rotate-90',
-          !determinate && 'animate-spin',
-        )}
-        style={!determinate ? { animationDuration: '0.9s' } : undefined}
-        aria-hidden
-      >
-        <circle
-          cx={RING_SIZE / 2}
-          cy={RING_SIZE / 2}
-          r={RADIUS}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={STROKE}
-          className="text-muted-foreground/25"
-        />
-        <circle
-          cx={RING_SIZE / 2}
-          cy={RING_SIZE / 2}
-          r={RADIUS}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={STROKE}
-          strokeLinecap="round"
-          strokeDasharray={CIRCUMFERENCE}
-          strokeDashoffset={offset}
-          className={cn(
-            'text-primary',
-            determinate && 'transition-[stroke-dashoffset] duration-150 ease-out',
-          )}
-        />
-      </svg>
+      <ProgressRing
+        size={RING_SIZE}
+        progress={determinate ? pct : undefined}
+        style={determinate ? undefined : { animationDuration: '0.9s' }}
+      />
       <div className="absolute inset-[5px] flex items-center justify-center overflow-hidden rounded-full bg-muted/80">
         {children ?? (
           <span className="text-2xs font-semibold tabular-nums text-foreground/80">

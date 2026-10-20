@@ -1,4 +1,5 @@
 import { MicOff, Mic, PhoneOff, MessageSquare } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface LiveControlsProps {
   isMuted: boolean;
@@ -18,36 +19,33 @@ export function LiveControls({
       className="bg-card border border-border rounded-full px-3 py-2 flex items-center gap-2 shadow-lg"
       data-testid="live-controls"
     >
-      <button
-        type="button"
+      {/* The three controls are the shared Button primitive, not hand-rolled
+          pills: the focus ring, the variant scale and the icon sizing are
+          the same everywhere else in the app. */}
+      <Button
+        variant="ghost"
         onClick={onToggleMute}
         aria-pressed={isMuted}
         aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
-        className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted"
       >
         {isMuted ? <MicOff className="size-3" /> : <Mic className="size-3" />}
         <span>{isMuted ? 'Unmute' : 'Mute'}</span>
-      </button>
+      </Button>
 
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         onClick={onEnd}
         aria-label="End session"
-        className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-danger/20 text-danger"
+        className="text-danger hover:bg-danger/20"
       >
         <PhoneOff className="size-3" />
         <span>End</span>
-      </button>
+      </Button>
 
-      <button
-        type="button"
-        onClick={onSwitchToChat}
-        aria-label="Switch to chat"
-        className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted"
-      >
+      <Button variant="ghost" onClick={onSwitchToChat} aria-label="Switch to chat">
         <MessageSquare className="size-3" />
         <span>Switch to chat</span>
-      </button>
+      </Button>
     </div>
   );
 }
