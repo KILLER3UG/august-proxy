@@ -54,6 +54,67 @@ into the code.
 | **Update on a schedule, not on launch.** | The download starts 60 s after launch. | A scheduled check (nightly) would find builds published while the app was closed. It needs a task scheduler, which the app does not have on the desktop. |
 | **`/mcp/harness` by default.** | It is closed unless the user enables external access. | An outer agent that drives August needs the key. If August is meant to be a harness for other agents, closing it by default is wrong — and the default is a one-line change. |
 
+## NEXT — after this round: the mobile companion
+
+**Once the work in this round has shipped, the next build is the mobile
+companion.** This is stated here so it is not lost between rounds.
+
+The mobile app already exists in the tree — `frontend/mobile/` is an Expo
+app with its own `tsc --noEmit` and a parity audit (`npm run test -w
+frontend/mobile`) — and it is currently the smallest of the three frontends.
+What the desktop round changes that the mobile app has to pick up:
+
+- **The per-install token.** The desktop shell generates it and hands it to
+  the backend over the Tauri IPC. A phone has no Tauri IPC, so it needs its
+  own way to authenticate to the backend it talks to. The gate is a no-op
+  where no token is configured, so the mobile app keeps working — but if it
+  ever talks to a token-configured backend, it needs a token.
+- **The activity-line grouping** is a render-time arrangement, so the mobile
+  transcript can adopt the same contract from the same block stream.
+- **The recovery notice** is a persisted system block, so it survives a
+  reload and a phone's backgrounding.
+
+The decision that is still open: **is the mobile app a second client of the
+user's own backend** (the phone drives the desktop install over the network,
+and the token decides who may), **or a full local install** (the phone runs
+its own backend and its own brain)? The first is a remote-control surface
+and is much smaller; the second is a second August. The second is the one
+that needs a per-install token on a phone.
+
+## NEXT — the board workbench (SimulIDE's idea, August's tools)
+
+The circuit workbench already has the loop that matters:
+`firmware_compile` (arduino-cli → HEX) → `firmware_run` (avr8js emulation)
+→ `firmware_stimulus` (pin timeline → ngspice PWL sources) →
+`circuit_simulate` (the real engine). That is firmware-in-the-schema, and it
+works without a board on the desk.
+
+What it does NOT have is the **board**: a physical Arduino with a port, an
+FQBN, a pin map and a serial line. SimulIDE's appeal is that the thing you
+are simulating is a board you recognise.
+
+| Piece | What it does | Why it is wanted |
+|---|---|---|
+| `board_list` | Enumerate the boards attached to this machine, with their FQBN, port and protocol, and the installed cores | "Which board do I have plugged in?" is the first question, and `arduino-cli board list` answers it |
+| `board_compile` | Compile a sketch **for a chosen FQBN**, not for a default | `firmware_compile` compiles for one hard-wired target; a Mega and an Uno need different builds |
+| `board_upload` | Flash the compiled artifact to the attached board | The gap between "simulated" and "on my desk". **Confirm-gated** — it is a hardware action, exactly like `fpga_program` |
+| `board_monitor` | Read the board's serial output for a bounded window | The other half of "it works": what the board actually printed |
+| **A board's pin map feeding the deck** | The board's pins become named ngspice nodes, so a sketch's PWM output drives a real filter in the sim | This is the thing that makes it SimulIDE rather than a compiler: the board is the schematic |
+
+The engine choice is `arduino-cli`, for the same reason ngspice was chosen
+for the analog half: it is scriptable, it is what `firmware_compile` already
+drives, and its output is machine-readable. The Arduino **IDE** (`arduino.exe`)
+is a GUI around the same toolchain, so `arduino-cli` is the one to drive —
+but the IDE's board list and its core installs are the same files, so a
+board the IDE can flash is a board `board_upload` can flash.
+
+**The licence and safety shape matters more here than the feature does:**
+flashing a board is a physical side effect, so `board_upload` is
+confirm-gated and never auto-run by the harness loop. And a board is not a
+credential store, but `board_monitor` reads a serial line that a sketch may
+be printing a WiFi password on — so the monitor's output is subject to the
+same outbound scrub as anything else the transcript carries.
+
 ## Deliberately not done
 
 - **No test suite was restored.** The suite was removed on 2026-10-17 at the

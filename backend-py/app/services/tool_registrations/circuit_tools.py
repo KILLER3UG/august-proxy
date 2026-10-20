@@ -317,6 +317,46 @@ async def _firmwareStimulus(
         return _err(exc)
 
 
+async def _boardList() -> str:
+    try:
+        from app.services.tools import firmware_tools
+
+        result = await firmware_tools.board_list()
+        return json.dumps(result)
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _boardFlash(
+    source: str = '',
+    board: str = 'uno',
+    port: str = '',
+    name: str = 'firmware',
+) -> str:
+    try:
+        from app.services.tools import firmware_tools
+
+        result = await firmware_tools.board_flash(
+            source, board=board, port=port, name=name,
+            workspace=_ws(), session=_session(),
+        )
+        return json.dumps(result)
+    except Exception as exc:
+        return _err(exc)
+
+
+async def _boardMonitor(port: str = '', baud: int = 9600, duration_ms: int = 3000) -> str:
+    try:
+        from app.services.tools import firmware_tools
+
+        result = await firmware_tools.board_monitor(
+            port=port, baud=baud, duration_ms=duration_ms,
+        )
+        return json.dumps(result)
+    except Exception as exc:
+        return _err(exc)
+
+
 async def _searchComponent(query: str = '') -> str:
     try:
         result = await circuit_tools.search_component(query)
@@ -367,7 +407,8 @@ CIRCUIT_MODE_HINT = (
     '(netlist create/read/update/delete/list, circuit_simulate, circuit_test, '
     'circuit_inject_fault, circuit_export_vcd, circuit_symbolic, '
     'circuit_annotate, circuit_lint_diagram, firmware_compile, firmware_run, '
-    'firmware_stimulus, hdl_lint, hdl_simulate, vcd_parse, hdl_test, '
+    'firmware_stimulus, board_list, board_flash, board_monitor, '
+    'hdl_lint, hdl_simulate, vcd_parse, hdl_test, '
     'hdl_timing_diagram, fpga_compile, kicad_checks, kicad_render, '
     'circuit_search_component, circuit_integrate_component, circuit_detect_ic, '
     'circuit_render_3d, circuit_env). Use SPICE netlists; '
@@ -375,6 +416,10 @@ CIRCUIT_MODE_HINT = (
     'assertions ({measure, expect, tolerance} or {measure, min, max}); '
     'fault decks with circuit_inject_fault (open/short/drift) for '
     'troubleshooting exercises; '
+    'board_list shows the Arduino boards plugged into this machine (port, '
+    'FQBN, pin map), board_flash builds a sketch and flashes it onto one '
+    '(CONFIRM-GATED: it changes real hardware), and board_monitor reads what '
+    'the board printed; '
     'circuit_export_vcd dumps digital (.tran + XSPICE) node waveforms to a '
     'workspace .vcd logic-analyzer file; '
     'circuit_symbolic derives H(s), poles/zeros, and V(t) to explain and '
@@ -915,6 +960,66 @@ def register() -> None:
                 'name': {'type': 'string', 'description': 'Basename for the merged .cir deck (default "stim")'},
             },
             'required': ['timeline'],
+        },
+    )
+    tool_registry.register(
+        'board_list',
+        'List the Arduino boards attached to this machine, with the port, the '
+        'protocol, the FQBN arduino-cli matched, the VID/PID, and the board\'s '
+        'pin map (digital/analog counts, the LED pin, the logic level) — so a '
+        'board can be used as a schematic element and not just a name. Also '
+        'reports the installed cores, which are the FQBNs that can be built '
+        'for. Read-only: it probes the USB/serial table and writes nothing. '
+        'Install guidance when arduino-cli is absent (circuit_env reports '
+        'availability).',
+        _boardList,
+        {
+            'type': 'object',
+            'properties': {},
+        },
+    )
+    tool_registry.register(
+        'board_flash',
+        'Build an Arduino sketch and flash it onto an attached board '
+        '(arduino-cli compile + upload). THIS FLASHES REAL HARDWARE: it is '
+        'confirm-gated and blocked in plan mode, and there is no undo. '
+        'source is inline sketch text or a workspace .ino folder; board is a '
+        'friendly name (uno/nano/mega/...) or a full FQBN; port is the '
+        'serial port (leave it empty when exactly one board is attached, '
+        'and pass it when several are). Use board_list to see what is '
+        'plugged in, and board_monitor to read what it printed.',
+        _boardFlash,
+        {
+            'type': 'object',
+            'properties': {
+                'source': {
+                    'type': 'string',
+                    'description': 'Inline sketch text OR a workspace .ino sketch-folder path',
+                },
+                'board': {'type': 'string', 'description': 'Board: uno, nano, mega, leonardo, unor4, or a full FQBN'},
+                'port': {'type': 'string', 'description': 'Serial port (e.g. COM3). Omit when exactly one board is attached'},
+                'name': {'type': 'string', 'description': 'Build basename (default "firmware")'},
+            },
+            'required': ['source'],
+        },
+    )
+    tool_registry.register(
+        'board_monitor',
+        "Read an attached board's serial output for a bounded window (default "
+        '3 s) and return what it printed — the other half of "it works". The '
+        'read is stopped after the window, so a board that never goes quiet '
+        'does not hang the turn. port is the serial port (omit when exactly '
+        'one board is attached); baud is the serial speed (default 9600). The '
+        'serial line is whatever the sketch prints, so it can carry a '
+        'credential — treat it like any other tool output.',
+        _boardMonitor,
+        {
+            'type': 'object',
+            'properties': {
+                'port': {'type': 'string', 'description': 'Serial port (e.g. COM3). Omit when exactly one board is attached'},
+                'baud': {'type': 'number', 'description': 'Serial speed (default 9600)'},
+                'duration_ms': {'type': 'number', 'description': 'How long to read, in milliseconds (default 3000, max 30000)'},
+            },
         },
     )
     tool_registry.register(

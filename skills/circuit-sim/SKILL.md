@@ -148,7 +148,29 @@ The compile → emulate → bridge chain:
    of truth, the diagram describes the breadboard and pins the co-sim
    mapping.
 
-## 5. HDL + FPGA
+## 5. The board on the desk
+
+The chain above never needs the hardware — that is the point of emulating.
+When the task is about the REAL board, three more tools:
+
+- `board_list` — the boards plugged into this machine: port, protocol, the
+  FQBN arduino-cli matched, VID/PID, and the board's pin map (digital and
+  analog counts, the LED pin, the logic level). Also the installed cores,
+  which are the FQBNs that can be built for. Call it FIRST: it is the only
+  way to know what is actually attached, and a board whose core is missing
+  cannot be compiled for.
+- `board_flash` — build the sketch and flash it onto the board. **This
+  changes real hardware and is confirm-gated**; there is no undo. Leave
+  `port` empty when exactly one board is attached, and pass it when several
+  are — the tool refuses to guess.
+- `board_monitor` — read what the board printed, for a bounded window
+  (default 3 s). The other half of "it works".
+
+The engine is `arduino-cli` (the Arduino IDE's own toolchain, so a board
+the IDE can flash is a board this can flash). Install guidance when it is
+absent; `circuit_env` reports availability.
+
+## 6. HDL + FPGA
 
 - `hdl_lint` — instant file:line syntax/semantic check (ghdl for VHDL,
   verilator/iverilog for Verilog); run it after every HDL edit, before

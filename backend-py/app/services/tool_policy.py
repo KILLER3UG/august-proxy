@@ -83,6 +83,12 @@ _PROMPT_READ = frozenset({
     # Memory CRUD read door — lists durable fact keys/titles (gated by
     # modelMemoryRead in the handler).
     'list_facts',
+    # Board workbench reads: what is plugged in, and what it printed.
+    # board_list spawns arduino-cli's read-only port probe (the same shape
+    # as circuit_env, which is also ungated). board_monitor reads a serial
+    # line for a bounded window — it spawns a process, so it is shell-gated
+    # below, but it mutates nothing.
+    'board_list', 'board_monitor',
 })
 
 _PROMPT_WRITE = frozenset({
@@ -137,6 +143,12 @@ _PROMPT_WRITE = frozenset({
     'job_notes',
     # Unified-diff patch application — a file write (plan-blocked via markers).
     'apply_patch',
+    # Flashing a physical board. It changes the state of a real thing and
+    # there is no undo, so the modes a user picks to keep the agent off the
+    # machine must see it as a mutation. Deliberately NOT in _SHELL_EXACT:
+    # a blanket shell gate would make it edit-mode-blocked, and the spawn it
+    # does is part of the action rather than the action itself.
+    'board_flash',
 })
 
 _PROMPT_DESTRUCTIVE = frozenset({
@@ -149,7 +161,7 @@ _PROMPT_DESTRUCTIVE = frozenset({
     'circuit_delete_netlist',
 })
 
-_PROMPT_SHELL = frozenset({'run_command', 'run_commands', 'simulate_circuit', 'circuit_simulate', 'circuit_test', 'circuit_export_vcd', 'circuit_annotate', 'firmware_compile', 'firmware_run', 'hdl_lint', 'hdl_simulate', 'hdl_test', 'fpga_compile', 'kicad_checks'})
+_PROMPT_SHELL = frozenset({'run_command', 'run_commands', 'simulate_circuit', 'circuit_simulate', 'circuit_test', 'circuit_export_vcd', 'circuit_annotate', 'firmware_compile', 'firmware_run', 'hdl_lint', 'hdl_simulate', 'hdl_test', 'fpga_compile', 'kicad_checks', 'board_monitor'})
 
 _PROMPT_AGENT = frozenset({
     'create_agent', 'list_agents', 'list_daemons', 'spawn_daemon',
@@ -252,6 +264,11 @@ _SHELL_EXACT = frozenset({
     'simulate_circuit', 'circuit_simulate', 'circuit_test',
     'circuit_export_vcd', 'circuit_annotate', 'firmware_compile',
     'firmware_run', 'hdl_lint', 'hdl_simulate', 'hdl_test',
+    # board_monitor holds the serial port open for a bounded read window —
+    # a child process that has to be stopped, so it is shell-gated like the
+    # other spawners. board_list is NOT here: it is a read-only probe of
+    # the port table, the same shape as circuit_env.
+    'board_monitor',
     # Quartus full-flow compile (map→fit→asm→sta) — spawns quartus_sh.
     # fpga_program (JTAG download) is intentionally NOT here or anywhere:
     # a hardware action that stays confirm-gated and agent-uncharted.
