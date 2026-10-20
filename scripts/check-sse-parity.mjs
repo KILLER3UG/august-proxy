@@ -62,7 +62,7 @@ function discoverEmitters() {
       } else if (entry.endsWith('.py')) {
         const text = readFileSync(full, 'utf8');
         // emit( { ... 'type': 'x' ... } — the dict may span lines.
-        if (/emit\s*\(\s*\{[^}]{0,600}?['"]type['"]\s*:\s*f?['"][A-Za-z_]/.test(text)) {
+        if (/emit\s*\(\s*(\{|[A-Za-z_][A-Za-z0-9_]*)/.test(text)) {
           found.push(full);
         }
       }
@@ -146,6 +146,24 @@ function backendFrames() {
  */
 function frameLiteralsIn(text) {
   const names = [];
+  // A frame built into a variable and then emitted: `frame = {'type': 'x'};
+  // emit(frame)`. The dict is not inside the call, so the call-site scan
+  // alone misses it - and a missed frame is a frame the gate cannot say
+  // anything about. So the names passed to emit() are collected first, and
+  // their assignments are read too.
+  const prebuilt = new Set();
+  for (const m of text.matchAll(/emit\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*[,)]/g)) {
+    prebuilt.add(m[1]);
+  }
+  for (const name of prebuilt) {
+    const assign = new RegExp(
+      `\\b${name}\\s*=\\s*\\{([\\s\\S]{0,600}?)\\}`,
+    );
+    const m = assign.exec(text);
+    if (!m) continue;
+    const literal = m[1].match(/['"]type['"]\s*:\s*f?['"]([A-Za-z_][A-Za-z0-9_]*)['"]/);
+    if (literal) names.push(literal[1]);
+  }
   const re = /emit\s*\(\s*\{/g;
   let m;
   while ((m = re.exec(text)) !== null) {
@@ -244,11 +262,75 @@ function suppliedHandlers() {
     const text = readFileSync(file, 'utf8');
     for (const m of text.matchAll(/(?<![.\w])on([A-Z][A-Za-z0-9]*)\s*:/g)) {
       const name = `on${m[1]}`;
+      // A handler whose body is only comments is an ACKNOWLEDGEMENT, not a
+      // supply. The background session subscriber acknowledges `onRecovery`
+      // and `onCompaction` so the SSE stream stays healthy - and that
+      // acknowledgement was satisfying this check, so DELETING the real
+      // per-turn handler would have left the gate green while the notice
+      // vanished. An acknowledgement keeps the stream alive; it does not
+      // render anything, and it does not count.
+      if (isAcknowledgementOnly(text, m.index + m[0].length)) continue;
       if (!out.has(name)) out.set(name, new Set());
       out.get(name).add(rel);
     }
   }
   return out;
+}
+
+/**
+ * True when a handler's body is a comment and nothing else.
+ *
+ * `onRecovery: (_data) => { /* the per-turn handler renders it *\/ }` is an
+ * acknowledgement: it exists so the optional call is not a no-op that
+ * breaks the stream, and it renders nothing. A handler with an expression
+ * body (`=> doThing()`) is real by definition.
+ */
+function isAcknowledgementOnly(text, from) {
+  let i = from;
+  while (i < text.length && /\s/.test(text[i])) i++;
+  // Skip the parameter list: `onRecovery: (data, seq) => {`.
+  if (text[i] === '(') {
+    let depth = 0;
+    let close = -1;
+    for (let j = i; j < text.length; j++) {
+      if (text[j] === '(') depth++;
+      else if (text[j] === ')') {
+        depth--;
+        if (depth === 0) {
+          close = j;
+          break;
+        }
+      }
+    }
+    if (close === -1) return false;
+    i = close + 1;
+    while (i < text.length && /\s/.test(text[i])) i++;
+  }
+  // Skip the arrow.
+  if (text[i] === '=' && text[i + 1] === '>') {
+    i += 2;
+    while (i < text.length && /\s/.test(text[i])) i++;
+  }
+  if (i >= text.length) return false;
+  if (text[i] !== '{') return false; // an expression body does something
+  let depth = 0;
+  let end = -1;
+  for (let j = i; j < text.length; j++) {
+    if (text[j] === '{') depth++;
+    else if (text[j] === '}') {
+      depth--;
+      if (depth === 0) {
+        end = j;
+        break;
+      }
+    }
+  }
+  if (end === -1) return false;
+  const body = text
+    .slice(i + 1, end)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '');
+  return body.trim().length === 0;
 }
 
 const backend = backendFrames();
@@ -368,7 +450,15 @@ if (errors.length > 0) {
   process.exit(1);
 }
 
+// The count has to be honest. An earlier version of this line said "all N
+// backend SSE frame(s) are schematised and dispatched" while the lines
+// above it said two of them are deliberately undispatched - a green check
+// claiming something the same check had just contradicted.
+const emitted = [...backend.keys()];
+const handled = emitted.filter((n) => schema.has(n) && dispatch.has(n)).length;
+const deliberate = emitted.filter((n) => SCHEMA_ONLY.has(n)).length;
 console.log(
-  `\nAll ${backend.size} backend SSE frame(s) are schematised and dispatched; ` +
+  `\n${emitted.length} backend SSE frame(s): ${handled} schematised and dispatched, ` +
+    `${deliberate} deliberately undispatched (recorded in SCHEMA_ONLY); ` +
     `${dispatch.size} dispatcher case(s) accounted for.`
 );
