@@ -7,6 +7,7 @@
 /*     older lines dimming away Claude-style. While the model is          */
 /*     between steps the last line carries animated ellipsis dots.        */
 
+import { phaseLabel } from '@/lib/phase-labels';
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Check, ChevronDown, Circle, Loader2, Minus } from 'lucide-react';
@@ -129,8 +130,17 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
               aria-expanded={todosOpen}
               className="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-px text-2xs font-medium tracking-wide text-primary transition-colors hover:bg-primary/15"
               data-testid="working-todos-toggle"
+              title="Todo list"
             >
-              <span className="max-w-[240px] truncate">{todos?.title || 'Plan'}</span>
+              {/* The CURRENT STEP, not the model's name for its own list.
+                  The reference's working line is "··· <the work> <elapsed> >"
+                  -- "Fathoming  21s" -- and the work there is the TODO item.
+                  The pill's label used to be the model's OPTIONAL list title,
+                  which is free text the model writes, so the same feature
+                  could be called "Plan", "Research" or "Fix the charts"
+                  depending on the turn. The feature is a TODO list, it is
+                  named "Todo", and the step says what the work IS. */}
+              <span className="max-w-[240px] truncate">{todoCurrent?.content || 'Todo'}</span>
               <span className="tabular-nums opacity-80">
                 {todosDone}/{todoList.length}
               </span>
@@ -141,6 +151,13 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
             </button>
             {todosOpen ? (
               <div className="w-full max-w-md rounded-lg border border-border/50 bg-card/80 px-3 py-1.5 text-left">
+                {/* The list's NAME, so the feature is called what it is. */}
+                <div
+                  className="mb-1 text-2xs font-medium uppercase tracking-wide text-muted-foreground/70"
+                  data-testid="working-todo-caption"
+                >
+                  Todo
+                </div>
                 {todoList.map((t) => (
                   <div
                     key={t.id}
@@ -185,11 +202,15 @@ export function WorkingIndicator({ className, sessionId }: WorkingIndicatorProps
             ) : null}
           </div>
         ) : execution ? (
+          /* The PHASE, humanised and QUIET. It rendered the raw enum value
+             in caps, so the pill literally read "RESEARCH" and looked like
+             the name of a feature rather than a piece of progress
+             bookkeeping. The phase is a status, not a title. */
           <div
-            className="rounded-full border border-primary/25 bg-primary/10 px-2 py-px text-2xs font-medium uppercase tracking-wide text-primary"
+            className="rounded-full border border-primary/25 bg-primary/10 px-2 py-px text-2xs font-medium text-primary"
             data-testid="working-phase"
           >
-            {execution.phase}
+            {phaseLabel(execution.phase)}
             {execution.step > 0 ? ` · step ${execution.step}` : ''}
           </div>
         ) : null}

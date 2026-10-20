@@ -1,3 +1,4 @@
+import { phaseLabel } from '@/lib/phase-labels';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { Brain, ChevronDown, Settings } from 'lucide-react';
@@ -280,8 +281,11 @@ function PlanPhaseGroup({
           )}
           aria-hidden
         />
-        <span className="min-w-0 flex-1 truncate" title={phase}>
-          {phase}
+        {/* The phase's NAME, humanised. The heading rendered the raw enum
+            value, so a group read "research" in lower case — a value from
+            the tool contract, not a title. */}
+        <span className="min-w-0 flex-1 truncate" title={phaseLabel(phase)}>
+          {phaseLabel(phase)}
           {typeof step === 'number' ? (
             <span className="ml-1 font-normal text-muted-foreground/70">
               · step {step}

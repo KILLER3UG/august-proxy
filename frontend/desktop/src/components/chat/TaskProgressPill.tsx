@@ -148,12 +148,29 @@ export function TaskProgressPill({ sessionId, className }: TaskProgressPillProps
           >
             {totalTodos > 0 && (
               <div className="mb-2.5">
+                {/* The list's NAME, and it is "Todo".
+                    The header used to render the model's OPTIONAL list title
+                    -- free text the model writes -- in caps, so the same
+                    feature could be headed "RESEARCH", "PLAN" or "FIX THE
+                    CHARTS" depending on the turn, and it read like the name
+                    of a feature rather than of a checklist. The model may
+                    still SAY what the list is about, but as a muted subject
+                    under the name, never as the name. */}
                 <div className="flex items-center justify-between pb-1.5 border-b border-border/30 text-2xs font-semibold text-foreground/75 uppercase tracking-wider">
-                  <span>{todos?.title || 'Planned Steps'}</span>
+                  <span>Todo</span>
                   <span className="tabular-nums text-muted-foreground font-mono">
                     {todosDone}/{totalTodos}
                   </span>
                 </div>
+                {todos?.title?.trim() ? (
+                  <div
+                    className="mt-1 truncate text-2xs text-muted-foreground"
+                    data-testid="task-progress-subject"
+                    title={todos.title}
+                  >
+                    {todos.title}
+                  </div>
+                ) : null}
                 <div className="mt-1.5 max-h-48 overflow-y-auto chat-scroll space-y-1">
                   {todoList.map((t) => (
                     <div
