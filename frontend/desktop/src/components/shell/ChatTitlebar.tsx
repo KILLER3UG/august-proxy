@@ -85,6 +85,7 @@ export function ChatTitlebar({
       "/board": "Board",
       "/live": "Live",
       "/history": "History",
+      "/learning": "Learning",
       "/_design": "Design system",
     };
     return routeLabels[path] ?? "August";

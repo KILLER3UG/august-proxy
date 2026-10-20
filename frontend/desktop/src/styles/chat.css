@@ -716,7 +716,12 @@ details[open] > summary .disclosure-chevron {
   outline-offset: 1px;
 }
 .activity-summary-counts {
-  flex: 1;
+  /* NOT `flex: 1`. The reference keeps the whole header a COMPACT run --
+     "Fathoming  21s >" -- with the chevron immediately after the duration
+     and the rest of the row empty. Growing the counts span stranded the
+     chevron at the far right of the content column, which is a different
+     row. It still shrinks (`min-width: 0` + the inner `truncate`). */
+  flex: 0 1 auto;
   min-width: 0;
   letter-spacing: 0.01em;
 }

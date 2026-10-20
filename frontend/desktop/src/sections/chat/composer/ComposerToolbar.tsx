@@ -15,8 +15,9 @@
  * `visibleModels` stay because the send gate and the subagent modal still
  * need them. */
 
-import { useState, useEffect, type Dispatch, type ReactNode, type SetStateAction } from 'react';
-import { ArrowUp, Square } from 'lucide-react';
+import { useState, useEffect, useRef, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { ArrowUp, ChevronDown, Mic, Square } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchAgentMode } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
 import {
@@ -135,6 +136,10 @@ export function ComposerToolbar({
     window.addEventListener('august:open-spawn', onOpen);
     return () => window.removeEventListener('august:open-spawn', onOpen);
   }, []);
+
+  // The right-hand chevron re-anchors the actions menu to itself, so it
+  // needs a ref of its own to point the menu's trigger at.
+  const chevronRef = useRef<HTMLButtonElement | null>(null);
 
   const canSend =
     !!sessionId &&
@@ -315,6 +320,49 @@ export function ComposerToolbar({
             uses", and the stop button that replaces it while generating is a
             "filled light circle with a dark rounded square inside". */}
         <div className="flex shrink-0 items-center gap-1">
+          {/* The reference's RIGHT-HAND CLUSTER, which August was missing
+              entirely: "at the right a voice glyph and a small chevron"
+              (docs/plans/2026-10-11-ui-reference-capture.md, §Composer), and
+              every captured screenshot shows the two side by side at the far
+              right of the card.
+              The MIC is a real affordance, not decoration: August already has
+              voice input, and it lived TWO levels down inside the `+` menu,
+              so the reference's one-click path did not exist. The CHEVRON is
+              the second entry point to the composer's menu -- the reference
+              shows the `+` on the left AND a chevron on the right -- and it
+              RE-ANCHORS that menu to itself, because the popover's position
+              is measured from its trigger's rect. */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={onVoice}
+            title="Voice input"
+            aria-label="Voice input"
+            data-testid="composer-voice-button"
+            className="rounded-full text-muted-foreground hover:bg-muted/50 hover:text-foreground [&_svg]:size-4"
+          >
+            <Mic aria-hidden />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            ref={chevronRef}
+            onClick={() => {
+              // The menu is positioned from its trigger's rect, so the
+              // trigger is re-pointed at THIS button before it opens.
+              (actionsTriggerRef as { current: HTMLButtonElement | null }).current =
+                chevronRef.current;
+              onToggleActions();
+            }}
+            title="More options"
+            aria-label="More options"
+            data-testid="composer-more-button"
+            className="rounded-full text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+          >
+            <ChevronDown aria-hidden />
+          </Button>
           {streaming ? (
             <button
               type="button"

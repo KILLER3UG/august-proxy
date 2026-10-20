@@ -233,9 +233,14 @@ export function ActivitySummary({
               aria-hidden
             />
             <span className="activity-summary-counts flex min-w-0 flex-1 items-center gap-1.5">
+              {/* The reference's activity header is MUTED: "the activity
+                  title in muted grey, a duration (25s), and a chevron"
+                  (§Transcript). The title was bright white and bold, which
+                  made the row read as a badge rather than as the quiet
+                  process marker the reference shows. */}
               <span
                 className={cn(
-                  'shrink-0 font-semibold text-foreground',
+                  'shrink-0 font-medium text-muted-foreground',
                   live && 'activity-working-text',
                 )}
               >

@@ -73,8 +73,14 @@ export function ActivityGroup({
           ) : (
             <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/50" aria-hidden />
           )}
+          {/* NOT `flex-1`. The reference puts the duration and the chevron
+              IMMEDIATELY after the title -- "Comparing two lesser-known
+              language models  9s >" -- and the rest of the row is empty. A
+              growing summary span pushed the chevron to the far right of the
+              content column instead, which is a different row. It still
+              shrinks (`min-w-0` + `truncate`), it just no longer GROWS. */}
           <span
-            className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium text-foreground/85"
+            className="min-w-0 truncate text-[0.8125rem] font-medium text-foreground/85"
             data-testid="activity-group-summary"
           >
             {summary}

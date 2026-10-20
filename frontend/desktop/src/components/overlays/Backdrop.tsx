@@ -170,7 +170,18 @@ export function Backdrop({
       ref={scrimRef}
       data-august-backdrop=""
       className={cn(
-        'fixed inset-0 flex items-center justify-center bg-foreground/40 backdrop-blur-sm',
+        /* `bg-scrim` is the app's OWN scrim token (`--dt-overlay-scrim`: 32%
+         * over the light ground, 55% over the dark one) and the class the
+         * settings panel's own backdrop already uses.
+         *
+         * This was `bg-foreground/40`, which is a 40% wash of the FOREGROUND
+         * colour -- and the foreground is near-WHITE in dark mode, so the
+         * scrim inverted the app's brightness: a dark app behind a modal was
+         * washed out to a light grey, and the modal read as if the whole
+         * product had switched to light mode. The token is the veil the
+         * reference shows: the chat is DIMMED behind the panel, not
+         * bleached. */
+        'fixed inset-0 flex items-center justify-center bg-scrim backdrop-blur-sm',
         layerClass,
         className,
       )}
