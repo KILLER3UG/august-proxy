@@ -65,6 +65,7 @@ type NotificationItem =
       title: string;
       detail: string;
       when?: string;
+      url?: string;
       tone?: 'error' | 'arena' | 'routing' | 'info';
     };
 
