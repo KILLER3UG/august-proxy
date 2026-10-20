@@ -190,6 +190,13 @@ async def lifespan(app: FastAPI):
     settings.reload()
     # Mirror Google OAuth keys from .env / process env into durable mcpGlobalEnv
     # so Integrations UI and MCP subprocesses keep them across restarts.
+    #
+    # The SENSITIVE half of that map (the OAuth client secret) is a credential:
+    # `set_mcp_env` writes it to the encrypted store, not to config.json — see
+    # app/services/service_connections.py. The public half (client id, redirect
+    # URI) stays in the settings file. Either way the values are exported into
+    # the process environment, so an MCP subprocess inherits what it inherited
+    # before.
     try:
         import os
 

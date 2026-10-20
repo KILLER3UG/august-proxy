@@ -17,8 +17,14 @@ neither can be closed from here:
     store at any time (``sync_google_tokens_to_workspace_mcp``), so it can be
     deleted without losing the connection. While it exists, it is plaintext,
     and no change here pretends otherwise.
-  * ``mcpGlobalEnv`` in ``config.json`` — a different store with different
-    consumers (MCP subprocess environments). Out of scope for this track.
+  * ``mcpGlobalEnv`` in ``config.json`` — the PUBLIC half of the MCP global
+    env (an OAuth client id, a redirect URI, a directory path) stays in the
+    settings file, where it can be read and edited like any other setting.
+    Its SENSITIVE half — an OAuth client secret — is a credential and lives
+    in the encrypted store, under ``mcpGlobalEnv.<NAME>``. The value still
+    reaches an MCP subprocess: it is exported into the process environment
+    exactly as before, and the store's half is merged back on every read.
+    See ``set_mcp_env`` and ``_mcp_global_env_map``.
 """
 
 from __future__ import annotations
@@ -627,12 +633,24 @@ def connect_google(email: str = '') -> dict[str, Any]:
 
 
 def _mcp_global_env_map() -> dict[str, str]:
+    """The MCP global env: ``config.json``'s public half + the store's secrets.
+
+    A SENSITIVE value (``_is_sensitive``) is a credential and lives in the
+    encrypted store, not in ``config.json``. A plaintext value still sitting
+    in ``config.json`` is moved into the store on the way through — the same
+    lazy, idempotent migration the service connections use — and a failure
+    leaves it where it was rather than losing it.
+    """
     try:
         cfg = getConfig()
         raw = as_dict(cfg.get('mcpGlobalEnv')) if cfg.get('mcpGlobalEnv') is not None else {}
-        return {str(k): str(v) for k, v in raw.items() if str(k).strip()}
+        public = {str(k): str(v) for k, v in raw.items() if str(k).strip()}
     except Exception:
         return {}
+    plain_secrets = {k: v for k, v in public.items() if _is_sensitive(k)}
+    if plain_secrets:
+        public = _absorb_mcp_env_secrets(cfg, public, plain_secrets)
+    return _merge_mcp_env(public)
 
 
 def _google_client_id() -> str:
@@ -1453,11 +1471,83 @@ def _is_sensitive(key: str) -> bool:
     return any(part in upper for part in _SENSITIVE_KEYS)
 
 
+#: The store-key prefix for an MCP global env value that is a SECRET.
+#:
+#: A sensitive name holds a credential: it goes to the encrypted store, not to
+#: ``config.json``. A public name — an OAuth client id, a redirect URI, a
+#: directory path — stays in the settings file, where it can be read and
+#: edited like any other setting.
+_MCP_ENV_STORE_PREFIX = 'mcpGlobalEnv.'
+
+
+def _mcp_env_store_key(name: str) -> str:
+    return f'{_MCP_ENV_STORE_PREFIX}{name}'
+
+
+def _split_mcp_env(env: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
+    """``(public values, secret values)`` for one MCP global env map.
+
+    The split is by NAME, not by content: a sensitive name is a credential
+    wherever it appears, and a public name is not one however secret it
+    looks.
+    """
+    public: dict[str, str] = {}
+    secrets: dict[str, str] = {}
+    for key, value in env.items():
+        if _is_sensitive(key):
+            secrets[key] = value
+        else:
+            public[key] = value
+    return public, secrets
+
+
+def _merge_mcp_env(public: dict[str, str]) -> dict[str, str]:
+    """The store's secrets merged back into the public half."""
+    merged = dict(public)
+    try:
+        storeKeys = secret_store.listSecretKeys()
+    except Exception as exc:  # noqa: BLE001 — an unreadable store is an empty one
+        logger.warning('could not list the stored MCP env secrets: %s', exc)
+        return merged
+    for storeKey in storeKeys:
+        if not storeKey.startswith(_MCP_ENV_STORE_PREFIX):
+            continue
+        value = secret_store.getSecret(storeKey)
+        if value:
+            merged[storeKey[len(_MCP_ENV_STORE_PREFIX) :]] = value
+    return merged
+
+
+def _absorb_mcp_env_secrets(
+    cfg: dict[str, Any], public: dict[str, str], secrets: dict[str, str]
+) -> dict[str, str]:
+    """Move plaintext MCP env secrets into the store; keep them if that fails.
+
+    Returns the public half to keep using. On a store failure the plaintext
+    stays in ``config.json`` — degraded, but working: a user must never be
+    left with no OAuth secret because an encryption call went wrong.
+    """
+    try:
+        secret_store.setSecrets({_mcp_env_store_key(k): v for k, v in secrets.items()})
+    except Exception as exc:  # noqa: BLE001 — the fail-safe below is the point
+        logger.error('MCP env secret migration failed; the plaintext stays in config.json: %s', exc)
+        return public
+    cfg['mcpGlobalEnv'] = {k: v for k, v in public.items() if k not in secrets}
+    saveConfig(cfg)
+    try:
+        from app.config import settings
+
+        settings.reload()
+    except Exception:
+        pass
+    logger.info('moved %d MCP global env secret(s) into the encrypted store', len(secrets))
+    return {k: v for k, v in public.items() if k not in secrets}
+
+
 def get_mcp_env() -> dict[str, Any]:
     from app.lib.secrets import mask
 
-    cfg = getConfig()
-    raw = as_dict(cfg.get('mcpGlobalEnv')) if cfg.get('mcpGlobalEnv') is not None else {}
+    raw = _mcp_global_env_map()
     env_list: list[dict[str, Any]] = []
     for key, value in sorted(raw.items(), key=lambda kv: str(kv[0]).lower()):
         k = str(key)
@@ -1492,10 +1582,20 @@ def set_mcp_env(
     Sensitive keys are masked in GET responses; if the UI round-trips those
     masked previews back here, the stored full value is kept instead of
     overwriting the secret with its own preview.
+
+    A SENSITIVE value is a CREDENTIAL: it is written to the encrypted store,
+    not to ``config.json``. The store is written FIRST, and if it refuses the
+    value stays in ``config.json`` — degraded, but working, and never lost.
+
+    The full map is exported into the process environment either way, so an
+    MCP subprocess inherits exactly what it inherited before this split.
     """
+    # The stored value of a sensitive key may live in the STORE, not in
+    # config.json — the masked-preview check below has to see the real thing,
+    # and a merge has to keep the secrets that are already stored.
+    existing_full = _mcp_global_env_map()
     cfg = getConfig()
-    existing = as_dict(cfg.get('mcpGlobalEnv')) if cfg.get('mcpGlobalEnv') is not None else {}
-    base: dict[str, str] = {str(k): str(v) for k, v in existing.items()} if merge else {}
+    base: dict[str, str] = dict(existing_full) if merge else {}
     if isinstance(env, dict):
         for k, v in env.items():
             key = str(k).strip()
@@ -1506,7 +1606,7 @@ def set_mcp_env(
                 base.pop(key, None)
             else:
                 if _is_sensitive(key):
-                    stored = existing.get(key)
+                    stored = existing_full.get(key)
                     if stored and _value_is_masked_preview(val, str(stored)):
                         val = str(stored)  # keep the stored full secret
                 base[key] = val
@@ -1522,11 +1622,32 @@ def set_mcp_env(
                 base.pop(k, None)
             else:
                 if _is_sensitive(k):
-                    stored = existing.get(k)
+                    stored = existing_full.get(k)
                     if stored and _value_is_masked_preview(val, str(stored)):
                         val = str(stored)  # keep the stored full secret
                 base[k] = val
-    cfg['mcpGlobalEnv'] = base
+    public, secrets = _split_mcp_env(base)
+    storeWritten = True
+    if secrets:
+        try:
+            secret_store.setSecrets({_mcp_env_store_key(k): v for k, v in secrets.items()})
+        except Exception as exc:  # noqa: BLE001 — the fail-safe below is the point
+            logger.error('MCP env secret store write failed; keeping the value in config.json: %s', exc)
+            storeWritten = False
+    if storeWritten:
+        # A sensitive key that is gone must not linger in the store.
+        try:
+            secret_store.pruneSecrets(
+                _MCP_ENV_STORE_PREFIX,
+                keep={_mcp_env_store_key(k) for k in secrets},
+            )
+        except Exception as exc:  # noqa: BLE001 — a stale secret is not fatal
+            logger.warning('could not prune the stored MCP env secrets: %s', exc)
+        cfg['mcpGlobalEnv'] = public
+    else:
+        # Fail-safe: the whole map, plaintext included, so the user keeps a
+        # working configuration.
+        cfg['mcpGlobalEnv'] = base
     saveConfig(cfg)
     # Export into process env for MCP subprocess inheritance.
     for k, v in base.items():

@@ -143,28 +143,39 @@ _outboundStamp: tuple[object, ...] | None = None
 _outboundWired = False
 
 
-def _storeStamp() -> tuple[object, ...] | None:
-    """(mtime_ns, size) of BOTH files a credential can be written to, or None.
+def _storeStamp() -> tuple[object, ...]:
+    """(mtime_ns, size) of EVERY file a credential can be written to.
 
-    providers.json holds the per-provider keys and fires the invalidation
-    callback on save; the gateway key does not — `routers/config.py` mints it
-    through `saveConfig`, which busts neither the callback nor a providers.json
-    stamp. Without config.json in the stamp, a rotated gateway key would be
-    shipped forever and the retired one rewritten forever, which is the exact
-    staleness this cache has to avoid.
+    providers.json holds the per-provider configuration and fires the
+    invalidation callback on save; the gateway key does not — `routers/config.py`
+    mints it through `saveConfig`, which busts neither the callback nor a
+    providers.json stamp. Without config.json in the stamp, a rotated gateway
+    key would be shipped forever and the retired one rewritten forever, which
+    is the exact staleness this cache has to avoid.
+
+    secrets.json is in the stamp for the same reason and one more: the
+    service-connection tokens live there now (they used to live in
+    config.json), and a token that was rotated must stop being scrubbed out
+    of the body the moment it is retired — and a token that was ADDED must
+    start being scrubbed at once.
+
+    A file that is not there yet contributes (-1, -1) rather than failing the
+    whole stamp: a fresh install has no store yet, and a stamp that cannot be
+    taken would freeze the credential set for the life of the process (and
+    turn every outbound body into a full re-read of every store).
 
     The stat is taken once per body, never per leaf (see `scrubOutboundBody`).
     """
-    try:
-        from app.lib.paths import dataPath
+    from app.lib.paths import dataPath
 
-        stamps: list[object] = []
-        for name in ('providers.json', 'config.json'):
+    stamps: list[object] = []
+    for name in ('providers.json', 'config.json', 'secrets.json'):
+        try:
             stat = dataPath(name).stat()
             stamps.extend((int(stat.st_mtime_ns), int(stat.st_size)))
-        return tuple(stamps)
-    except Exception:  # noqa: BLE001 — an unreadable store just rebuilds each call
-        return None
+        except OSError:
+            stamps.extend((-1, -1))
+    return tuple(stamps)
 
 
 def _outboundLabel(name: str, value: str = '') -> str:
@@ -181,9 +192,15 @@ def _collectOutboundSecrets() -> list[tuple[str, str]]:
     """(value, marker) for every credential this install holds.
 
     Sources: the providers store (where Settings writes every configured key),
-    the gateway key, and environment variables NAMED like credentials — the last
-    is a name heuristic, not a registry, because a dev install exports keys the
-    store never sees; a key held only in a keyring is out of reach here.
+    the ENCRYPTED STORE — which is where the service-connection tokens and the
+    provider keys live now — the gateway key, and environment variables NAMED
+    like credentials. The last is a name heuristic, not a registry, because a
+    dev install exports keys the store never sees; a key held only in a
+    keyring is out of reach here.
+
+    The store is read AFTER the providers, so a provider key that is in both
+    is labelled with the provider it belongs to — a marker the user can act
+    on — rather than with a store key.
 
     Longest first: replacing a short value before a longer one that contains it
     would leave the longer secret's remainder on the wire.
@@ -209,6 +226,18 @@ def _collectOutboundSecrets() -> list[tuple[str, str]]:
         # provider's reason, and nobody would know the gate was off.
         logger.warning('outbound scrub: provider store unreadable', exc_info=True)
     try:
+        from app.services import secret_store
+
+        # Every value the store holds is a credential this install works FROM,
+        # so every one of them belongs in the collection set. A token pasted
+        # into a transcript used to ride out to whichever gateway was active
+        # on every later turn, because this collector had never heard of the
+        # service connections.
+        for storeKey in secret_store.listSecretKeys():
+            add(secret_store.getSecret(storeKey), storeKey)
+    except Exception:  # noqa: BLE001 — fails open, but logged
+        logger.warning('outbound scrub: secret store unreadable', exc_info=True)
+    try:
         from app.config import settings
 
         add(getattr(settings, 'gatewayApiKey', None), 'gateway')
@@ -229,12 +258,12 @@ def _outboundSecrets() -> list[tuple[str, str]]:
     """The credential set, rebuilt when the store changes.
 
     Two triggers, because neither alone is enough. The file stamp catches every
-    writer (a hand-edit of providers.json, or `provider_credentials.invalidate()`,
-    neither of which fires the callback); the callback catches a key minted
-    without touching the file (the gateway key is written through
-    `saveConfig`, which busts neither). Registration is only marked done once it
-    actually succeeded — setting the flag first meant one import hiccup disabled
-    cache-busting for the life of the process.
+    writer (a hand-edit of providers.json or secrets.json, or
+    `provider_credentials.invalidate()`, none of which fires the callback); the
+    callback catches a key minted without touching the file (the gateway key is
+    written through `saveConfig`, which busts neither). Registration is only
+    marked done once it actually succeeded — setting the flag first meant one
+    import hiccup disabled cache-busting for the life of the process.
 
     An EMPTY result is never cached: an unreadable store would otherwise turn
     the gate off permanently and silently, which is the blindness this whole

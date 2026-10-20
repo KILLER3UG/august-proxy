@@ -65,13 +65,30 @@ def saveConfig(config: dict[str, object]) -> None:
 
 
 def getProvidersStore() -> dict[str, object]:
-    return _readJson(dataPath('providers.json'))
+    """The providers store, with the API keys merged back in.
+
+    The keys live in the encrypted store, not in ``providers.json`` — see
+    ``app/services/provider_credentials.py``, which owns the split. The view
+    returned here is the MERGED one (every reader below expects an entry's
+    ``apiKey`` to be there), so the file on disk holds the provider's
+    configuration and the key lives beside it, encrypted.
+    """
+    from app.services import provider_credentials
+
+    return provider_credentials.loadStore()
 
 
 def saveProvidersStore(data: dict[str, object]) -> None:
-    _writeJson(dataPath('providers.json'), data)
+    """Persist the providers store, with the API keys written through to the
+    encrypted store first (again: ``app/services/provider_credentials.py``).
+
+    The caller's dict is NOT modified — the routers read ``apiKeySet`` and
+    ``apiKeyMasked`` off it after the save.
+    """
+    from app.services import provider_credentials
     from app.services.provider_credentials import _fireInvalidation
 
+    provider_credentials.saveStore(data)
     _fireInvalidation()
     # Bust model-list cache + reload settings so chat picks up contextWindow edits.
     try:
