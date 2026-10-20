@@ -1,11 +1,54 @@
+> **Open items are tracked in `docs/ROADMAP.md`. This document is a record of the
+> measurements and the design, not a task list** — the open items live in the
+> roadmap; the reasoning that produced them lives here.
+>
+> **Corrected 2026-10-20 against the tree at `5cdae644`.** Three claims in this
+> document are false and each one has had live code written to match it:
+>
+> - **The status bar never existed.** §1.3 and §9 phase 1 claim
+>   "Status / footer bar | **1** (was 0) | `components/shell/StatusBar.tsx`,
+>   mounted by `ChatLayout`" and "done — `StatusBar.tsx`". **The file does not
+>   exist and nothing references it.** `c5748da0` (2026-10-12) added it and
+>   `96fc04aa` (2026-10-12) deleted it — the same day, in the same week. It was
+>   **never rendered**: `git log --all -S '<StatusBar'` over `ChatLayout.tsx`
+>   returns **no commit at all**, and the file's own comment said so —
+>   "`StatusBar` itself is left on disk but no longer rendered here." It has
+>   never been in the app.
+> - **The settings modal does NOT leave the app at full brightness.** §11.6
+>   records the reference as "none — app stays at full brightness", and
+>   `WorkspaceShell.tsx` was written to match that sentence — the backdrop
+>   carried no tint and its comment repeated the claim. **The repo's own
+>   capture says the opposite, twice**:
+>   `docs/plans/2026-10-11-ui-reference-capture.md:20` — "A **centred modal**
+>   on a dimmed chat behind it" — and `:252` — "The chat is dimmed behind it".
+>   **The code has since been corrected** — the backdrop carries `bg-scrim`
+>   again and the comment now cites the capture — so the false measurement
+>   below is the record of what the code was built to match, not the state of
+>   the tree.
+> - **There IS model UI, and the model editor IS reachable.** §11.9 says "there
+>   is NO UI left" for effort and that "the `ModelVisibilityModal` … is
+>   unreachable. The editor and its Refresh button are gone from the product".
+>   Both are false now: the composer footer renders `ModelEffortMenu` with
+>   `onEffortChange` and `onEditModels`
+>   (`frontend/desktop/src/sections/chat/ChatThreadComposer.tsx:593-601`), and
+>   the modal is mounted at `frontend/desktop/src/sections/chat/ChatThread.tsx:1639`
+>   with its opener at `:1386`. §11.9 also says `ContextRing` is "untouched and
+>   still exported" — it was **deleted** in `9c014058`.
+>
+> **The whole test suite was deleted on 2026-10-17**, so every test count in
+> this document (1678 vitest, 5143 pytest) is historical. The live gates are
+> the static ones listed in §11.1.
+
 # August Desktop UI Redesign Spec — minimalist, clean, still powerful
 
 **Status: Approved by the user; implementation applied.** Core shell, composer,
 navigation, Appearance, Skills/Plugins, and drawer changes are in the working
 tree, plus the per-session token delta (L4), the transcript fixups, and the
-settings IA/a11y corrections. Green: `tsc -b`, **1678/1678 vitest**, **5143
-backend pytest**, ruff, mypy, `check:design`, `check:docs`, `check:version`,
-`check:api`. **Still open: the packaged-Tauri pixel pass** (screenshots need a
+settings IA/a11y corrections. Green at the time: `tsc -b`, **1678/1678 vitest**,
+**5143 backend pytest**, ruff, mypy, `check:design`, `check:docs`, `check:version`,
+`check:api`. **The two test counts are HISTORICAL — the whole suite was deleted
+on 2026-10-17**; the live gates are the static ones listed in §11.1.
+**Still open: the packaged-Tauri pixel pass** (screenshots need a
 visible desktop window this environment does not have — §11.3 says what was
 verified instead, and what that does not cover) and one settings accessibility
 sweep that needs the user's ruling (§4.1).
@@ -158,7 +201,7 @@ carries 105 buttons, most of which are the sidebar and the composer toolbar.
 | UI Designer colour controls | **18** | `lib/ui-customization.ts` `UI_TOKEN_DEFS` |
 | UI Designer theme presets | **6**, of which **5 dark-only** | `lib/ui-customization.ts:185+` |
 | Per-surface font-size controls | **4** (was 1) | `sections/settings/AppearanceSection.tsx` F2 |
-| Status / footer bar | **1** (was 0) | `components/shell/StatusBar.tsx`, mounted by `ChatLayout` |
+| Status / footer bar | **0** | **The "1 (was 0)" was WRONG — there has never been a status bar in the app.** `components/shell/StatusBar.tsx` **does not exist**: `c5748da0` (2026-10-12) added it and `96fc04aa` (2026-10-12) deleted it, the same day, in the same week — and it was **never rendered** (`git log --all -S '<StatusBar'` over `ChatLayout.tsx` returns no commit; the file's own comment said "`StatusBar` itself is left on disk but no longer rendered here"). The only trace left is the comment where it used to be: `components/shell/ChatLayout.tsx:714-720` — "The full-width status bar … is removed … The dead `StatusBar` component was deleted with this comment." |
 
 ---
 
@@ -509,7 +552,7 @@ and two unrelated callers — `ToolCallItem` renders inside `SubagentTimeline`,
 `SessionSidebar`, `SessionList`/`SessionRow`/`FolderTree`, `RightDrawer` + all 13
 sections, `BottomTerminalDock`, `ChatThread`/`ChatThreadMessagePane`/
 `VirtualizedMessageList`, `ToolCallItem` + `ToolCallItemBody`, `ClarifyTool`,
-`ChangesCard`, `ContextRing` (moving to the status bar), `ModelEffortMenu` (merging),
+`ChangesCard`, `ModelEffortMenu` (merging),
 `SettingsPage`/`settings-registry`, `WorkspaceShell`, `CommandPalette`, the shadcn
 `ui/*` set, `tokens.css` + `tailwind.config.cjs`, `check-design.mjs`.
 
@@ -538,7 +581,7 @@ untouched by phases 1–9; phase 10 touches none either.
 | Phase | Work | Kind | Risk | Verify after | Status |
 |---|---|---|---|---|---|
 | **0. Defects** | §7, 9 items, no taste involved | bug fix | **Low** | G6: ⌘K shows 17 not 43; G2: a failed tool shows a cross; G3: the toggle is gone or works | done |
-| **1. Status bar** | §5.3 B1–B3 | **new capability** | Med | workspace · branch · model · token delta · context % all read correctly at rest and mid-stream | done — `StatusBar.tsx`; collapses, persists, verified in both modes |
+| **1. Status bar** | §5.3 B1–B3 | **new capability** | Med | workspace · branch · model · token delta · context % all read correctly at rest and mid-stream | **NOT DONE — and never was.** `StatusBar.tsx` was added by `c5748da0` (2026-10-12) and deleted by `96fc04aa` (2026-10-12), never mounted in any commit. The reference-fidelity pass put the model name on the composer footer instead (`ChatThreadComposer.tsx:589-602`) and left the token delta on the sidebar rows. **Do not report this phase as done.**
 | **2. Sidebar** | §5.1 L1–L10, incl. workspace switcher + nav rows + TERMINAL tab | **unlocks existing** + repaint | Med | switch workspace from the sidebar; every nav row navigates; Terminal tab opens the dock; update `SessionListNav.test.tsx` | done, L4 included this pass |
 | **3. Composer** | §6.1 C1–C11 | new capability + repaint | Med | send, stop, steer, attach, switch model, switch effort, queue, voice — all still work; count the visible controls and confirm 8 permanent | done; C11 (disclaimer) kept per decision 3 |
 | **4. Settings IA** | §4.1 S1–S6 | repaint + bug fix | Low | rail renders 17 rows and no group headers; every page has a title; the N-of-M counter is honest | S1–S3, S5, S6 done; **S4 assessed and declined** — see §4.1 |
@@ -579,11 +622,19 @@ The user asked to proceed with the redesign.
 | Gate | Result |
 |---|---|
 | `npm run typecheck -w frontend/desktop` | pass |
-| `npm run test:frontend` | **1678 / 1678** across 219 files |
-| `pytest -q -n auto` (`backend-py`) | **5143 passed**, 4 skipped, 0 failed |
+| `npm run test:frontend` | **1678 / 1678** across 219 files — **HISTORICAL: the suite was deleted 2026-10-17** |
+| `pytest -q -n auto` (`backend-py`) | **5143 passed**, 4 skipped, 0 failed — **HISTORICAL: the suite was deleted 2026-10-17** |
 | `ruff check .` / `mypy app/` | pass / pass (338 files) |
 | `npm run check:design` | pass — 497 baselined, **0 new** |
 | `npm run check:docs` / `check:version` / `check:api` | pass / pass / no schema drift |
+
+> **The two test rows are the record of what this was verified with, not a gate
+> that exists.** The whole test suite was deleted on 2026-10-17. **The live
+> gates now are:** `npm run check:docs`, `check:design`, `check:naming`,
+> `check:api`, `check:api-index`, `check:sse`, `check:version`, `check:doc-links`,
+> `check:minisign`, `check:truncate`, `check:brain-config`, `lint:ratchet`;
+> `npm run e2e:smoke`; `cd backend-py && uv run ruff check . && uv run mypy app/`;
+> and `npm run check -w frontend/desktop` (tsc + eslint).
 
 The handoff reported all test execution as environmentally blocked (`uv` missing, a
 Python launcher failure before collection, `EPERM` resolving `vitest/dist/spy.js` and
@@ -659,7 +710,7 @@ argued from taste, and both were structural, not cosmetic.
 |---|---|---|
 | Panel height | **92%** of the viewport, at any window size | ~57% (680px in a 1200px window) |
 | Panel width | up to 1180px | ~880px |
-| Backdrop | `rgb(0 0 0 / 0.55)` in dark mode | **none** — app stays at full brightness |
+| Backdrop | `rgb(0 0 0 / 0.55)` in dark mode | **none** — app stays at full brightness — **WRONG. The repo's own capture says the opposite, twice:** `docs/plans/2026-10-11-ui-reference-capture.md:20` — "A **centred modal** on a dimmed chat behind it" — and `:252` — "The chat is dimmed behind it". The reference DOES dim the app behind the modal. **The code was corrected to match the capture: the backdrop carries `bg-scrim` again.** |
 | Reading column | **361px** | ~640px |
 | Rail | 240px, correct | ~180px |
 
@@ -669,12 +720,31 @@ a near-full-window panel. Now `max-h-[min(680px,calc(100vh-4rem))]` — the refe
 measured height, with `min()` so a short window scrolls internally rather than overflowing.
 
 **Backdrop.** `bg-scrim` resolved to `--dt-overlay-scrim`, which is **55% black** in dark mode and
-32% in light. The reference leaves the sidebar, transcript and composer completely untouched.
-The tint is removed outright (`rgba(0, 0, 0, 0)` measured). Modality was never enforced by the
-tint — it is enforced by `aria-modal="true"` and the focus trap, neither of which is visual —
-and the dialog’s own hairline border plus `shadow-2xl` is the separation the reference uses.
-The backdrop element stays a `fixed inset-0` hit target, so click-outside-to-close and Escape
-are unaffected.
+32% in light. ~~The reference leaves the sidebar, transcript and composer completely untouched.~~
+**That is FALSE, and the code below was written to match it.** The repo's own reference capture
+says the opposite, in two places: `docs/plans/2026-10-11-ui-reference-capture.md:20` — "A
+**centred modal** on a dimmed chat behind it" — and `:252` — "The chat is dimmed behind it". The
+reference DOES dim the app behind the modal.
+
+The tint was therefore removed outright (`rgba(0, 0, 0, 0)` measured) on the strength of a
+sentence the repo's own capture contradicts, and `components/workspace/WorkspaceShell.tsx` carried
+the same wrong claim in a code comment: *"The backdrop carries NO tint. The reference settings
+modal floats over a completely unchanged app — sidebar, transcript and composer all stay at full
+brightness."* **That comment was the bug, and the capture was already in the repo to refute it** —
+`docs/plans/2026-10-11-ui-reference-capture.md:20` and `:252`, the same file the §11.6 "Reference
+(measured)" column was built from.
+
+**The code has since been corrected to match the capture**: the backdrop carries `bg-scrim` again
+(`--dt-overlay-scrim` — 32% over the light ground, 55% over the dark one, the same veil the
+responsive sidebar and drawer overlays already use), and the comment in its place cites the capture
+by line. **So the false statement in this section is the record of what the code was built to
+match — not the state of the tree.** Do not "fix" the backdrop back to transparent on the strength
+of the old text.
+
+What is still true in this paragraph: modality was never enforced by the tint — it is enforced by
+`aria-modal="true"` and the focus trap, neither of which is visual — and the backdrop element
+stays a `fixed inset-0` hit target, so click-outside-to-close and Escape are unaffected either
+way. The height and column-width findings below are unaffected by the tint question.
 
 **Column width — the one that had a test pinning it.** The region carried `pr-60`, mirroring the
 rail’s 240px on the right to centre the column on the *window* rather than in the space the rail
@@ -928,7 +998,13 @@ occupancy estimation — `maxContext`, `estTokens`, `pct`, `contextBreakdown`, a
 
 `ContextRing` and `estimateContextBreakdown` are **untouched and still exported** from
 `@/sections/chat/ChatComposer` with their tests passing — the request was to remove the indicator,
-not to delete a working component.
+not to delete a working component. — **WRONG about `ContextRing`, and it was deleted.** The file
+`frontend/desktop/src/sections/chat/ContextRing.tsx` (265 lines) and its test (273 lines) were
+removed in `9c014058`, whose own commit message is "fix(chat): delete the context gauge that was
+never mounted"; neither exists in the tree today. `estimateContextBreakdown` IS still exported
+(`frontend/desktop/src/sections/chat/ChatComposer.tsx:10`, re-exported from
+`frontend/desktop/src/sections/chat/context-breakdown.ts:37`) — but nothing consumes it for the
+composer any more.
 
 #### 3. Model selector below the composer removed
 
@@ -957,15 +1033,32 @@ listens for, which is exactly the dead code the request asked to remove.
 * **Model**: switching survives only as a per-message "answer with a different model" action, which
   regenerates that turn and cannot pick a model for a new message. `useChatModels.selectModel` — the
   one function that persisted a choice to both `localStorage` and the session — now has no callers.
+  — **RESTORED.** The composer footer renders `ModelEffortMenu`
+  (`frontend/desktop/src/sections/chat/ChatThreadComposer.tsx:593-602`) with
+  `onSelect={onSelectModel}`, so the model **is** selectable for a new message again. The live
+  comment in the file records the restoration and its reason: *"It was left unrendered when the
+  composer model row was removed, which removed the LAST way to change the model … Restoring only
+  the *text* made it worse — it rendered `qwen3.8-flash medium` as inert copy, so the model was
+  both visible and unchangeable."* (§11.5 describes the same change from the visual side.)
 * **Effort**: there is NO UI left. `setEffort` was deleted rather than left wired to nothing, so effort
   is seeded from `august_last_effort` and is otherwise immutable. A user who set an effort before the
   removal keeps it; nobody can change it after. **This is a real capability loss and the user’s call,
   not an oversight** — restoring a control is a product decision.
+  — **RESTORED, and the user's call was made: the control came back.**
+  `ModelEffortMenu` is rendered with `onEffortChange={onEffortChange}`
+  (`ChatThreadComposer.tsx:599`), and `ChatThread.tsx:1385` passes `onEffortChange={setEffort}`.
+  Effort is changeable in the product.
 * **Extended thinking**: `setThinkingEnabled` was likewise only ever called with `true`, so it is
-  always on and cannot be turned off.
+  always on and cannot be turned off. — **RESTORED as a control:** `ModelEffortMenu` is rendered
+  with `thinkingEnabled` / `onThinkingChange` (`ChatThreadComposer.tsx:600-601`), and
+  `ChatThread.tsx:1387-1388` wires them to `thinkingEnabled` / `setThinkingEnabled`.
 * **Model visibility**: the `ModelVisibilityModal` had exactly one opener, `onEditModels`, which went
   with the row, so the modal is unreachable. The editor and its Refresh button are gone from the
-  product.
+  product. — **WRONG NOW: the modal is REACHABLE.** `onEditModels` is passed again
+  (`ChatThreadComposer.tsx:597`), its opener is back
+  (`frontend/desktop/src/sections/chat/ChatThread.tsx:1386`,
+  `onEditModels={() => setShowModelVisibility(true)}`), and the modal is mounted at
+  `ChatThread.tsx:1639`. The editor and its Refresh button are **in** the product.
 
 Two code comments claiming Settings could still set the session model were wrong and have been
 corrected — Settings edits the model *catalog*, not `selectedModel`.

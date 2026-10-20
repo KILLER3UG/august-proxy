@@ -1,10 +1,43 @@
-> **Half shipped — and §0's module map is wrong in three places.**
-> Still unbuilt, verified by zero hits repo-wide for `superseded_by`
-> (M-3), `injected_count` (M-5), `verified_at` (M-7/M-8) and `factBudget`
-> (M-12). Stale in §0: `auto_memories` is not "overlap unresolved (OQ1)" — it was
+> **Open items are tracked in `docs/ROADMAP.md`. This document is a record of the
+> findings and the design, not a task list** — the open items live in the roadmap;
+> the reasoning that produced them lives here.
+>
+> **Corrected 2026-10-20 against the tree at `5cdae644`.** Two of the plan's own
+> proposals were **ruled and shipped in a different shape than specified**, and
+> following the text as written would re-open a decision the code deliberately
+> closed:
+>
+> - **M-2** specified a `project:<path>` scope. The shipped vocabulary is
+>   **only `global` and `bot:<agentId>`** — `backend-py/app/services/session_scope.py:44-57`
+>   (`normalize_scope`) maps anything else to `global` and says why in its
+>   docstring. **Do not add a `project:` scope.**
+> - **M-5** specified a `pinned` column and a 1 400-char "About-you block".
+>   **Neither exists.** What shipped is a `kind='profile'` always-on lane:
+>   `backend-py/app/services/memory_store/rest.py:26` (`PROFILE_FACT_KIND`),
+>   rendered by `backend-py/app/services/memory_store/fact_retrieval.py`
+>   (`build_profile_block`, `:688-754`) under a **600-char** cap
+>   (`fact_retrieval.py:54`, `_PROFILE_CHAR_CAP`) and injected **inside the
+>   `<memory>` block** (`build_profile_memory_block`, `:755-773`). There is no
+>   `<user>` block and no `pinned` column.
+> - **M-3, M-7, M-8, M-9 and M-12 are landing right now** (in the working tree,
+>   not yet committed): `backend-py/app/migrations/055_fact_lineage_and_signals.sql`
+>   adds the lineage and signal columns this plan specifies —
+>   `superseded_by` / `supersedes` (M-3), `injected_count` / `last_injected_at`
+>   (M-7) and `verified_at` / `contradicts` (M-8) — registered in
+>   `backend-py/app/services/memory_schema.py:1131-1136`, plus the automation
+>   SOURCE stamp (M-12). M-9 (the store budget) is landing too: the brain key
+>   `factBudget` is wired in `backend-py/app/services/brain_config_service.py`
+>   (`:129`, `:200`, `:326`, `:708`) and consumed by the consolidation sweep
+>   (`backend-py/app/services/memory_store/consolidation.py:236`, `:257`, `:1800`).
+>   The M-3/M-7/M-8/M-9/M-12 sections below are the design of record for that
+>   work; **check the working tree before rebuilding any of it.**
+>
+> Earlier note (2026-09-27) — Half shipped, and §0's module map is wrong in three
+> places. Still unbuilt, verified by zero hits repo-wide for `superseded_by`
+> (M-3), `injected_count` (M-7), `verified_at` (M-8) and `factBudget` (M-9).
+> Stale in §0: `auto_memories` is not "overlap unresolved (OQ1)" — it was
 > retired by `033_retire_auto_memories.sql`; M-1 `facts_fts` is a won't-build and
 > is absent; and `rest.py:519` is no longer the episodic writer.
-> _(Added during the docs audit 2026-09-27.)
 
 # Part 21 — Memory enhancements (schema + retrieval + hygiene)
 
@@ -18,7 +51,9 @@ ruling batch: **M-2** (`facts.scope` column, migration 032 — unblocks Part 19 
 **OQ1** (`auto_memories` retired — discard-after-export, migration 033, NOT migrate:
 production's 7 rows are all stale `conv_summary_wb_*` junk and `facts` is empty),
 **OQ5** (180d-untouched + never-quoted preference retire as a propose-only consolidation
-pass). M-3, M-5 (bounded-view half), M-7..M-9, M-12 remain open candidates. Written
+pass). M-3, M-7..M-9, M-12 remain open candidates. **M-5 shipped in a different shape
+than specified** — a `kind='profile'` always-on lane, not a `pinned` column and
+a `<user>` block (see §2 M-5). Written
 2026-09-01 after mapping the current memory
 subsystem end-to-end (all file:line verified against the tree); amended same day with M-11/M-12
 from the capability research pass (`2026-09-01-capability-research.md` §5/§7 — the reference's
@@ -33,12 +68,12 @@ Stores (all in the brain SQLite DB, `memory_schema.py` + `app/migrations/`):
 
 | Store | Shape | Notes |
 |---|---|---|
-| `facts` | `fact_key` UNIQUE, `fact_value` JSON, `category`, `source`, `confidence`, `expires_at`, `title`, `kind ∈ {fact,lesson,preference,skill-note}` (`rest.py:13`), `use_count`, `last_used_at`, `status` (`memory_schema.py:418-425`) | the user-visible memory; write door `save_fact` upsert (`rest.py:30-73`) |
+| `facts` | `fact_key` UNIQUE, `fact_value` JSON, `category`, `source`, `confidence`, `expires_at`, `title`, `kind ∈ {fact,lesson,preference,skill-note,**profile**}` (`backend-py/app/services/memory_store/rest.py:26-27` — `PROFILE_FACT_KIND` / `_FACT_KINDS`), `use_count`, `last_used_at`, `status`, `scope`, `description` (`backend-py/app/services/memory_schema.py:589-595`; `scope` is in the base DDL at `:54` with `UNIQUE(scope, fact_key)`, so one key per SCOPE) | the user-visible memory; write door `save_fact` upsert (`rest.py:30-73`) |
 | `memory_store` KV | key/value + FTS5 | machine state/registry, deliberately NOT memory (`kv.py:19-32`) |
 | `internal_state` | key/value | maintenance bookkeeping, hidden from Memory UI (migration 026 M1) |
-| `auto_memories` | key/content, importance, pinned, ttl, FTS5 | older auto path — overlap with facts unresolved (OQ1) |
+| `auto_memories` | key/content, importance, pinned, ttl, FTS5 | **RETIRED — HISTORICAL ROW.** OQ1 was ruled on 2026-09-04 (discard-after-export, do not migrate) and the table was dropped by `backend-py/app/migrations/033_retire_auto_memories.sql` ("create_core_schema no longer creates the table/triggers; this migration removes them from legacy DBs"). Do not treat it as a live store. |
 | `learned_heuristics` | rule/confidence | read-only legacy |
-| `episodic_timeline` | timestamp/session/event_summary/category | **no retention, no FTS** — open audit finding (writer: `rest.py:519`) |
+| `episodic_timeline` | timestamp/session/event_summary/category | **RETENTION SHIPPED — the "no retention" half of this row is HISTORICAL.** M-4's retention sweep landed: `backend-py/app/services/memory_store/consolidation.py:138-165` (`_sweep_episodic`) deletes rows older than the brain-config `episodicRetentionDays` (default 90). The FTS/index half of M-4 remains closed as won't-build (OQ2). The writer anchor `rest.py:519` has also drifted. |
 | `episodes` + `failure_fingerprints` | Part 16 mining (028) | |
 | `turn_outcomes` | per-turn telemetry, 30-day sweep (026 M5) | |
 | project memory | md files `<workspace>/.aug/` | Part 17 |
@@ -121,17 +156,32 @@ CREATE INDEX IF NOT EXISTS idx_facts_status_expires ON facts(status, expires_at)
 - `search_facts` (UI/tool) switches from LIKE to `bm25(facts_fts)` ranking, LIKE kept as
   fallback for `fact_key` substring.
 
-### M-2 — scope axis on facts [feat: prerequisite for Part 19 Phase E; cleaner project/global]
+### M-2 — scope axis on facts [feat: prerequisite for Part 19 Phase E; cleaner project/global] — **LANDED, with a NARROWER vocabulary than specified**
 
 ```sql
 ALTER TABLE facts ADD COLUMN scope TEXT DEFAULT 'global';  -- 'global' | 'project:<path>' | 'bot:<agentId>'
 CREATE INDEX IF NOT EXISTS idx_facts_scope ON facts(scope, status);
 ```
 
+> **The `scope` column landed (migration `032_facts_scope.sql`); the
+> `project:<path>` scope in the comment above DID NOT, and must not be
+> re-added.** The shipped vocabulary is **exactly two values: `global` and
+> `bot:<agentId>`**. The single rule lives in
+> `backend-py/app/services/session_scope.py:44-57` (`normalize_scope`), which
+> maps any unrecognized scope to `global` — and says why in its own docstring:
+> *"A `project:` prefix used to be accepted here and then refused at the write
+> door, because nothing ever produced it: per-project memory has its own home
+> (`<workspace>/.aug/memory`, written by `project_memory`), and this store is
+> for what travels with the user. Two answers to 'whose memory is this row?' was
+> already one too many."* The `scope` column is in the base DDL
+> (`backend-py/app/services/memory_schema.py:54`) with
+> `UNIQUE(scope, fact_key)` — one key per scope, not one key in the whole store.
+
 `save_fact` gains `scope` param (default `'global'`; sessions with `agentId`/workspace stamp
 their scope server-side at the write door). `retrieve_relevant_facts` filters
 `scope IN ('global', <this-scope>)`. One shared scope-resolution function with the skills
-root logic so the rule can't drift.
+root logic so the rule can't drift. — **Shipped as written, except for the
+`project:<path>` value, which was ruled out.**
 
 ### M-3 — supersession lineage [rel: undo + trust; UI can show "replaces X"]
 
@@ -160,22 +210,53 @@ default 90; lifecycle row per sweep). Session search (`brain_query` totals path)
 episodic FTS hits. If OQ2 rules the table redundant vs `episodes` + `messages_fts`, this
 shrinks to a one-line retention sweep + eventual drop.
 
-### M-5 — bounded user profile + pinned facts [feat: "what August knows about you", curated by construction]
+### M-5 — bounded user profile + pinned facts [feat: "what August knows about you", curated by construction] — **LANDED IN A DIFFERENT SHAPE: there is no `pinned` column and no `<user>` block**
 
 ```sql
 ALTER TABLE facts ADD COLUMN pinned INTEGER DEFAULT 0;
 ```
 
+> **The `pinned` column above was never created, and the `<user>` block below was
+> never built.** The `facts` columns are enumerated at
+> `backend-py/app/services/memory_schema.py:589-595` (plus `scope` and
+> `description`) — `pinned` is not among them. What shipped instead is a
+> **dedicated always-on lane** keyed on a new `kind` value:
+>
+> - **`kind='profile'`** — `backend-py/app/services/memory_store/rest.py:26`
+>   (`PROFILE_FACT_KIND = 'profile'`), added to `_FACT_KINDS` at `:27`.
+> - **The lane is never keyword-gated.** `build_profile_block`
+>   (`backend-py/app/services/memory_store/fact_retrieval.py`, `build_profile_block`,
+>   `:688-754`) returns the active, unexpired `kind='profile'` facts visible to the
+>   scope **with no query at all** — a fact about the user must not have to win a
+>   BM25 slot against every other fact to be recalled.
+> - **The budget is 600 chars, not 1 400** — `fact_retrieval.py:54`
+>   (`_PROFILE_CHAR_CAP = 600`), with the reasoning in the comment above it: the
+>   lane is the only bound, because a row-count cap would be a second budget and
+>   would drop facts nobody ever named.
+> - **It is injected INSIDE the `<memory>` block**, not as a separate `<user>`
+>   tier: `build_profile_memory_block` (`fact_retrieval.py:755-773`) returns
+>   `f'<memory>\n{lane}\n</memory>'`. There is no `<user>` block anywhere, and a
+>   fact dropped for budget is **named** in a `recall partial:` receipt rather
+>   than vanishing.
+> - **The lane is injected even when keyword auto-inject is off** — the
+>   `memoryAutoInject` gate covers the BM25 arm only. That is what makes August
+>   remember *who you are* without a keyword coincidence.
+>
+> **The preference-staleness proposal pass DID ship** (OQ5, propose-only, not a
+> silent delete) and is recorded in §4. What did not ship is the `pinned` pin
+> column and the `1 400`/`1 500`-char framing.
+
 - `pinned=1`: exempt from consolidation merge and from M-7's disuse penalty (mirrors the
-  reference's curator pin-bypass invariant). Set via `remember` on identity facts; UI toggle.
+  reference's curator pin-bypass invariant). Set via `remember` on identity facts; UI toggle. — **NOT BUILT: there is no `pinned` column.**
 - New **About-you block**: `SELECT … WHERE kind='preference' AND status='active' ORDER BY
   pinned DESC, updated_at DESC` assembled under a 1 400-char budget into a `<user>` tail
   block (volatile tier, same cache rule as `<memory>`). The budget is the point: overflow
   forces consolidation to merge/retire preferences instead of letting them pile up and
-  contradict.
+  contradict. — **NOT BUILT as written.** The `kind='profile'` lane above is what plays this
+  role, under a 600-char budget, inside `<memory>`.
 - Preference staleness pass in consolidation: `kind='preference'`, untouched 180 d, never
   quoted → propose retire (a `proposals` row, never silent delete — no answer-withholding
-  rule applies to memory too: the user decides).
+  rule applies to memory too: the user decides). — **SHIPPED** (OQ5, 2026-09-04 ruling batch).
 
 ### M-6 — output fence scrubber [rel: transcript purity; closes F-2]
 
@@ -360,7 +441,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_auto_incident_open
   present only when flagged. M-12: automation-sourced episodes stamped; fenced web content
   absent from session-search candidates.
 - Full suite + ruff + mypy; Memory UI smoke (lineage badge, about-you block, ttl wiring);
-  Automations UI smoke (incident badge, run history rows).
+  Automations UI smoke (incident badge, run history rows). — **HISTORICAL.** The
+  whole suite was deleted on 2026-10-17, so every `tests/…` path and every
+  "pinned by `test_x.py`" sentence in this document is a record of *why*, not a
+  live gate. The live gates are `uv run ruff check .` + `uv run mypy app/` and
+  the static doc/design checks. The "about-you block" this line names is the
+  `<user>` block that was never built — the shipped equivalent is the
+  `kind='profile'` lane described in §2 M-5.
 
 ---
 

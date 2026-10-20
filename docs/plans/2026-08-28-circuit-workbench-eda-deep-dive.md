@@ -1,14 +1,52 @@
-> **Partly shipped — the header's "Phases 5–6 pending" is wrong for Phase 5.1.**
-> `kicad_checks` and `kicad_render` are registered
+> **Open items are tracked in `docs/ROADMAP.md`. This document is a record of the
+> research and the design, not a task list** — the open items live in the roadmap;
+> the reasoning that produced them lives here.
+>
+> **Corrected 2026-10-20 against the tree at `5cdae644`.** §0's opening claim
+> ("no waveforms, no tests, no firmware, no HDL, no interactivity") was true on
+> 2026-08-28 and **every clause of it is now false** — see §0 for what shipped and
+> where it lives. The header's "Phases 5–6 (Quartus flow, advanced EDA tools)
+> pending" was wrong too: **the Quartus flow and the advanced EDA tools shipped in
+> `884506bd`, the very commit that line cites.** Q1 (KiCad infix values) is
+> **RULED and shipped** — the plan's "deliberate policy against" was reversed.
+> Part 2 and Part 3 are now labelled as the 2026-08-28 snapshot they are, and
+> the component-library row is corrected (28 parts + 9 XSPICE 74xx cards, not 15).
+> Earlier note (2026-09-27) — Partly shipped, the header's "Phases 5–6 pending"
+> was wrong for Phase 5.1: `kicad_checks` and `kicad_render` are registered
 > (`app/services/tool_registrations/circuit_tools.py`) and `kicad-cli` is probed
 > in `app/services/tools/circuit_tools.py`. Genuinely absent: 5.2–5.4 and Phase 6
 > (no `model-viewer`, `kicanvas`, `circuit-json` or `renode` anywhere). See also
 > `docs/CIRCUIT_SIMULATION_RESEARCH.md`.
-> _(Added during the docs audit 2026-09-27.)
+>
+> **A note on line anchors in this file.** `circuit_tools.py` and
+> `firmware_tools.py` are under active development, so their line numbers move
+> (they had already grown by several hundred lines while this correction was
+> being written). **Every anchor into those two files is given as of
+> `5cdae644`, and the enclosing SYMBOL is named beside it — the symbol is the
+> durable handle, the line number is the 2026-10-20 reading of it.** Every other
+> file's anchors in this document are current.
+>
+> | Symbol (the durable handle) | File | Line at `5cdae644` |
+> |---|---|---|
+> | `_TRACE_POINTS` | `backend-py/app/services/tools/circuit_tools.py` | 1312 |
+> | `sweepResults` (on the simulate result) | `backend-py/app/services/tools/circuit_tools.py` | 1968 |
+> | `circuit_test` | `backend-py/app/services/tools/circuit_tools.py` | 2053 |
+> | `inject_fault` | `backend-py/app/services/tools/circuit_tools.py` | 2157 |
+> | `circuit_symbolic` | `backend-py/app/services/tools/circuit_tools.py` | 2333 |
+> | `circuit_lint_diagram` | `backend-py/app/services/tools/circuit_tools.py` | 2578 |
+> | `circuit_annotate` | `backend-py/app/services/tools/circuit_tools.py` | 2803 |
+> | `circuit_export_vcd` | `backend-py/app/services/tools/circuit_tools.py` | 3011 |
+> | `_COMPONENT_LIBRARY` (28 parts) | `backend-py/app/services/tools/circuit_tools.py` | 3370-3403 |
+> | `_XSPICE_COMPONENT_LIBRARY` (9 cards) | `backend-py/app/services/tools/circuit_tools.py` | 3409-3421 |
+> | `is_kicad_infix` | `backend-py/app/services/tools/circuit_tools.py` | 969-971 |
+> | `parse_spice_value` | `backend-py/app/services/tools/circuit_tools.py` | 974-1000 |
+> | `firmware_compile` | `backend-py/app/services/tools/firmware_tools.py` | 262 |
+> | `firmware_run` | `backend-py/app/services/tools/firmware_tools.py` | 407 |
+> | `firmware_stimulus` | `backend-py/app/services/tools/firmware_tools.py` | 620 |
 
 # August Circuit Workbench — EDA Ecosystem Deep-Dive & Feature Plan
 
-**Date:** 2026-08-28 · **Status:** IMPLEMENTED 2026-08-28/29 — Phases 0–4 committed (`884506bd`, `25e1bb7b`: circuit_env/test/inject_fault/export_vcd, traces/sweep, golden tests). The ModelSim driver + hardened GHDL resolver (`hdl_tools.py`) and its test (`test_hdl_modelsim_driver.py`) — previously noted UNCOMMITTED — landed in `cb626b40` (corrected Part 25 Phase 7.3). Phases 5–6 (Quartus flow, advanced EDA tools) pending · **Scope:** `backend-py` circuit/HDL tools + desktop Circuit panel + FPGA flow
+**Date:** 2026-08-28 · **Status:** IMPLEMENTED 2026-08-28/29 — Phases 0–4 committed (`884506bd`, `25e1bb7b`: circuit_env/test/inject_fault/export_vcd, traces/sweep, golden tests). The ModelSim driver + hardened GHDL resolver (`hdl_tools.py`) and its test (`test_hdl_modelsim_driver.py`) — previously noted UNCOMMITTED — landed in `cb626b40` (corrected Part 25 Phase 7.3). **The Quartus flow and the advanced EDA tools SHIPPED, in `884506bd` itself** — that commit added `hdl_tools.py`, `fpga_tools.py`, `kicad_tools.py`, `firmware_tools.py` and `sidecar/firmware-runner.mjs`, and its own message reads "HDL/FPGA/KiCad/firmware tools, live Quartus flow". Genuinely still absent: Phase 5.2 (`<model-viewer>` GLB viewer), 5.3 (tscircuit Circuit JSON), 5.4 (KiCanvas embed) and Phase 6 (Renode, SymbiYosys, OSDI pipeline, LCSC part data) · **Scope:** `backend-py` circuit/HDL tools + desktop Circuit panel + FPGA flow
 
 **Review pass (2026-08-28, post-`471482a1`):** re-verified against the tree after the five commits that landed since this plan was written (workbench kernel split, `/verbose`, R-C billing, skill-template work, 7-bug batch + right-panel). Findings: `circuit_tools.py` / `artifact_tools.py` / the circuit frontend components are byte-identical, so every Part-2 anchor there still holds; the policy-table row mislabeled `_PROMPT_SHELL` as `_SHELL_EXACT` (corrected below); all planned tools remain greenfield; skills moved to root `skills/` (user correction folded in); and §5 now covers the new harness layer (`kernel.py` tool bridge, `edit_verification.py`, `read_before_edit.py`, `shadow_git.py`) that postdates the plan.
 
@@ -22,7 +60,17 @@ Research basis: three parallel web-research sweeps (2026-08-28) covering Quartus
 
 ## 0. Executive summary
 
-August's circuit workbench today is a **netlist-in, numbers-out SPICE bench**: ngspice batch runs with lint + convergence ladder + SOA scan (`circuit_tools.py:380-534`), a 15-part offline library (`:717-733`), schemdraw schematic PNGs, and a matplotlib 3D placeholder (`:802-901`). It is accurate but has **no waveforms, no tests, no firmware, no HDL, no interactivity**.
+August's circuit workbench is still a **netlist-in, numbers-out SPICE bench** at its core — ngspice batch runs with lint + convergence ladder + SOA scan, an offline component library, schemdraw schematic PNGs and a matplotlib 3D placeholder. But the sentence that followed this one in the original document — *"It is accurate but has **no waveforms, no tests, no firmware, no HDL, no interactivity**"* — described the tree on 2026-08-28, and **every clause of it is now false.** The original text, kept here for the record: *"a 15-part offline library (`:717-733`)"* — the library is **28 parts** plus **9 XSPICE 74xx cards** now (§2).
+
+| Clause that was false | What is true now (tree at `5cdae644`) |
+|---|---|
+| **no waveforms** | `circuit_simulate` returns sampled traces — `_TRACE_POINTS = 2000` per trace (`backend-py/app/services/tools/circuit_tools.py`, `_TRACE_POINTS`, `:1312`) — and parametric sweeps return `sweepResults` (`:1968`). The desktop panel renders them in `frontend/desktop/src/components/shell/CircuitWaveformViewer.tsx` and `frontend/desktop/src/components/shell/CircuitInstruments.tsx`. |
+| **no tests** | `circuit_test` (`circuit_tools.py`, `circuit_test`, `:2053`; registered `backend-py/app/services/tool_registrations/circuit_tools.py:703`) runs assertions over measures and returns a pass/fail verdict. |
+| **no firmware** | `firmware_compile` (`backend-py/app/services/tools/firmware_tools.py`, `firmware_compile`, `:262`) and `firmware_run` (`:407`) drive a Node sidecar (`backend-py/sidecar/firmware-runner.mjs`, avr8js) that reports GPIO state, serial capture and `expectText`/`failText` assertions. |
+| **no HDL** | The HDL family exists: `hdl_lint` (`backend-py/app/services/tools/hdl_tools.py:290`), `hdl_simulate` (`:375`), `vcd_parse` (`:553`), `hdl_test` (`:987`), `hdl_timing_diagram` (`:1166`). |
+| **no interactivity** | The interactive layer shipped too: `circuit_symbolic` (`circuit_tools.py`, `circuit_symbolic`, `:2333`), `inject_fault` (`:2157`; registered `tool_registrations/circuit_tools.py:724`), `circuit_lint_diagram` (`:2578`), `circuit_annotate` (`:2803`), `circuit_export_vcd` (`:3011`), the Quartus flow `fpga_compile` (`backend-py/app/services/tools/fpga_tools.py:228`) and the KiCad gates `kicad_checks` (`backend-py/app/services/tools/kicad_tools.py:154`) / `kicad_render` (`:204`). |
+
+Most of what the plan called greenfield landed in the two commits the plan itself cites (`884506bd`, `25e1bb7b`).
 
 What every computer-engineering student actually lives in is a superset of that: a SPICE simulator with **virtual instruments** (Electronics Workbench/Multisim's signature), **firmware running inside the schematic** (Proteus VSM, SimulIDE, Wokwi), and an **FPGA flow** (Quartus + HDL simulation + waveforms). The research shows all three layers are now reachable with permissively-licensed, headless, agent-drivable pieces:
 
@@ -33,7 +81,7 @@ What every computer-engineering student actually lives in is a superset of that:
 
 **License guardrail adopted throughout** (§1.14): *link* only MIT/BSD/LGPL (avr8js, rp2040js, @wokwi/elements, tscircuit/circuit-json, cocotb, lcapy LGPL-2.1, ngspice BSD-style, @o.z/ngspice-wasm BSD-3); *iframe-embed as separate programs* GPL/EUPL assets (CircuitJS1, Surfer, KiCanvas); take *ideas only* from proprietary/AGPL tools (Proteus, Multisim/EWB, SimulIDE AGPLv3, XOD AGPL, QucsStudio, LTspice).
 
-**The plan** is six phases (§4): P0 environment doctor + golden regression decks; P1 SPICE depth (waveforms, sweeps, assertions, symbolic, faults, library); P2 virtual instruments + interactive viewers; P3 firmware-in-the-loop (the CE headline); P4 HDL/FPGA workbench (GHDL/cocotb/Quartus CLI); P5 real PCB/3D via KiCad CLI + tscircuit. Fourteen new tools, each wired through the standard checklist (§5).
+**The plan** is six phases (§4): P0 environment doctor + golden regression decks; P1 SPICE depth (waveforms, sweeps, assertions, symbolic, faults, library); P2 virtual instruments + interactive viewers; P3 firmware-in-the-loop (the CE headline); P4 HDL/FPGA workbench (GHDL/cocotb/Quartus CLI); P5 real PCB/3D via KiCad CLI + tscircuit. Fourteen new tools, each wired through the standard checklist (§5). **Thirteen of the fourteen shipped; `fpga_program` did not** — the JTAG download is a hardware action and stays confirm-gated and agent-uncharted by design (`backend-py/app/services/tool_policy.py:303`: "fpga_program (JTAG download) is intentionally NOT here or anywhere").
 
 ---
 
@@ -161,6 +209,13 @@ Current stable **47**. Beyond what August uses today:
 
 ## Part 2 — Current-state audit (what August has today)
 
+> **This table is the 2026-08-28 SNAPSHOT, and it is historical.** Every anchor in
+> it has drifted or been overtaken, and two of its rows were wrong about the tree
+> even on the day it was written. Read it as "what the workbench was on the day
+> the plan was written", not as a map of the tree. The two rows that changed the
+> most — the component library and the SPICE value parser — are corrected inline
+> below with their current truth and a current anchor.
+
 All anchors re-verified against the working tree 2026-08-28 (post-`ccb7485c`; circuit files unchanged since the plan was written; policy anchors re-anchored after the Part 15 memory doors).
 
 | Capability | Where | Notes |
@@ -169,12 +224,12 @@ All anchors re-verified against the working tree 2026-08-28 (post-`ccb7485c`; ci
 | Prompt hint | `circuit_tools.py:59-79` (`CIRCUIT_HINT`) | lists the 9 tools + SPICE unit rules |
 | Netlist CRUD | `circuit_tools.py:145-231` | `.cir/.net/.ckt/.sp`, workspace-bound via `bind_path` |
 | ngspice resolution | `circuit_tools.py:115-139` | `AUGUST_NGSPICE_EXE` override, PATH, common dirs |
-| SPICE value parsing | `circuit_tools.py:244-272` | Table-2.1 scale factors; **KiCad infix (`4k7`) deliberately unsupported** (policy, see Q1) |
+| SPICE value parsing | `circuit_tools.py:244-272` | Table-2.1 scale factors; **KiCad infix (`4k7`) deliberately unsupported** (policy, see Q1) — **WRONG, and the policy was reversed.** Infix is now accepted and normalised: `is_kicad_infix()` at `backend-py/app/services/tools/circuit_tools.py` (`is_kicad_infix`, `:969-971` at `5cdae644`) and `parse_spice_value()` (`:974-1000`), whose docstring reads "KiCad infix values (`4k7`, `1R2`, `R47`, `2M2`) are accepted and normalized — note infix `M` means mega, `m` milli". The `:244-272` anchor quoted in this row is the 2026-08-28 docstring; the parser now lives at `:974-1000`. |
 | Lint | `circuit_tools.py:275-342` | refdes/node-count, ground, source, M-vs-Meg, C≥1F |
 | Convergence ladder + SOA | `circuit_tools.py:348-355, 477-511` | 5 rungs, `warn=1` on every rung |
 | Measure parsing | `circuit_tools.py:239, 493-500` | `_MEASURE_RE` handles `v(node)`/`i(vsrc)#branch` |
 | Board KB | `circuit_tools.py:541-596` | 26 boards (Arduino/ESP/Pi families) |
-| Component library | `circuit_tools.py:717-733` | **15 parts**; no 74xx, no MOSFETs, op-amps only lm358/lm741 |
+| Component library | `circuit_tools.py:717-733` | **15 parts**; no 74xx, no MOSFETs, op-amps only lm358/lm741 — **WRONG on the count and on the gaps.** The library is now **28 parts** in `_COMPONENT_LIBRARY` (`backend-py/app/services/tools/circuit_tools.py`, `_COMPONENT_LIBRARY`, `:3370-3403` at `5cdae644`): the original 15 plus 4 MOSFETs (2n7000, bs170, irf540, irf9540), 3 op-amps (tl072, op07, lm324), 4 regulators (lm7809, lm7833, lm337, lm7905) and 2 zeners (1n4728a, 1n4742a). A **second** table, `_XSPICE_COMPONENT_LIBRARY` (`:3409-3421`), adds **9 74xx digital cards** — 7400, 7402, 7404, 7408, 7432, 7474, 7476, 74161, 74595 — advertised only when the env doctor's inverter probe says the ngspice build ships XSPICE code models. |
 | 3D board render | `circuit_tools.py:777-901` | matplotlib mplot3d PNG; **sqrt-grid placement** (`:788`) |
 | Schematic PNG | `artifact_tools.py:303` (`draw_circuit`) | schemdraw, series-loop elements |
 | Charts | `artifact_tools.py:129` (`render_chart`) | matplotlib PNG from columns |
@@ -185,11 +240,31 @@ All anchors re-verified against the working tree 2026-08-28 (post-`ccb7485c`; ci
 
 **Environment fact:** ngspice is **not installed** on the user's machine — `circuit_simulate` currently degrades to install guidance. Quartus 18.1 **is** installed (the user's course tool).
 
-**What does not exist anywhere** (greenfield): waveform trace return, `.step` sweep wrapper, assertion/test tool, symbolic tool, fault injection, VCD export/parse, all HDL tools (`hdl_lint/hdl_simulate/hdl_test/fpga_compile/fpga_program`), firmware compile/run/co-sim, diagram.json, any embedded viewer.
+**What did not exist anywhere** (greenfield) — *this was the 2026-08-28 list; every item on it has since shipped or been ruled out of scope:*
+
+| Was greenfield on 2026-08-28 | Where it is now |
+|---|---|
+| waveform trace return | `circuit_simulate` returns traces (`circuit_tools.py`, `_TRACE_POINTS`, `:1312` at `5cdae644`) |
+| `.step` sweep wrapper | `sweepResults` on the simulate result (`:1968`) |
+| assertion/test tool | `circuit_test` (`:2053`) |
+| symbolic tool | `circuit_symbolic` (`:2333`) |
+| fault injection | `inject_fault` (`:2157`) |
+| VCD export/parse | `circuit_export_vcd` (`:3011`) + `vcd_parse` (`backend-py/app/services/tools/hdl_tools.py:553`) |
+| HDL tools | `hdl_lint` (`hdl_tools.py:290`), `hdl_simulate` (`:375`), `hdl_test` (`:987`), `hdl_timing_diagram` (`:1166`) |
+| `fpga_compile` / `fpga_program` | `fpga_compile` (`backend-py/app/services/tools/fpga_tools.py:228`) shipped; `fpga_program` is **not** in the tree — flashing is a hardware action and the plan's Q7 ruling is still open |
+| firmware compile/run/co-sim | `firmware_compile` (`backend-py/app/services/tools/firmware_tools.py:262`), `firmware_run` (`:407`) + `backend-py/sidecar/firmware-runner.mjs`. **The co-sim rung (P3.5, the ngspice↔MCU bridge) did NOT ship** — the firmware→PWL stimulus path did (`firmware_stimulus`, `firmware_tools.py:620`) |
+| diagram.json | `circuit_lint_diagram` (`circuit_tools.py:2578`) |
+| any embedded viewer | **Shipped, both of them.** `frontend/desktop/src/components/shell/CircuitWaveformViewer.tsx` is the P2.3 Surfer embed — its own header says "Phase 2.3 of the EDA deep-dive plan: embed the Surfer waveform viewer (EUPL-1.2, hosted WASM build) as a separate-program iframe", loading any workspace `.vcd/.fst/.ghw` via Surfer's `postMessage` `LoadUrl` API from `https://app.surfer-project.org/`. `frontend/desktop/src/components/shell/CircuitInstruments.tsx` is the P2.1 instrument set — "Phase 2.1 of the EDA deep-dive plan: bench-style presentation of real ngspice data", Scope/Bode/Meter over the traces, rendered with uPlot (MIT), exactly the Q4 recommendation. **The CircuitJS1 playground (P2.4) and the KiCanvas embed (P5.4) did NOT ship** — zero hits for `circuitjs`/`CircuitJS` and for `kicanvas`/`KiCanvas` in `frontend/desktop/src`. |
 
 ---
 
 ## Part 3 — Gap analysis: what every CE student uses vs. what August has
+
+> **Also a 2026-08-28 snapshot.** The "August today" column records the tree the
+> plan was written against. Most of the ❌ rows shipped since (see §0 for what
+> and where); the "Plan" column still names the phase that closed each gap,
+> which is the useful part of this table. A ✅/❌ here is a 2026-08-28 fact, not
+> a claim about the tree today.
 
 | Student need | Reference tool(s) | August today | Plan |
 |---|---|---|---|
@@ -346,18 +421,30 @@ Everything degrades gracefully: each tool's absence returns install guidance (th
 
 ## Part 7 — Validation plan
 
-- **Backend fast path** (per AGENTS.md): `cd backend-py && uv run ruff check . && uv run mypy app/ && uv run pytest -q` (with `--basetemp="$TEMP/august_pytest"`; suite ≈9.5 min).
-- **Golden decks** (P0.2) must pass with ngspice installed; skip-marked otherwise.
-- **Parity oracle** updated with every policy change (policy + oracle in one commit).
-- **Frontend:** `tsc` + vitest (`npm run test:frontend`); eslint has pre-existing errors at HEAD — compare, don't blame.
-- **Desktop verification** per AGENTS.md: `npm run dev:desktop` for panel/viewer work; packaged installs must include backend changes (version-sync across all 7 files only when shipping a release).
+> **The gates below are HISTORICAL.** The whole test suite was deleted on
+> 2026-10-17: `backend-py/tests/` (1,690 files), the 235 frontend `*.test.ts(x)`
+> files, `frontend/desktop/e2e/`, the `pytest` configuration, the coverage floor
+> and the `npm test` / `npm run test:frontend` scripts. **There is no `npm test`
+> and no `npm run test:frontend` any more**, and `uv run pytest` no longer runs
+> anything. The live gates are the static ones: `npm run check:docs`,
+> `check:design`, `check:naming`, `check:api`, `check:api-index`, `check:sse`,
+> `check:version`, `check:doc-links`, `check:minisign`, `check:truncate`,
+> `check:brain-config`, `lint:ratchet`; `npm run e2e:smoke`; `uv run ruff check .`
+> + `uv run mypy app/` for the backend; and `npm run check -w frontend/desktop`.
+> The reasoning below still holds; only the commands changed.
+
+- **Backend fast path** (per AGENTS.md): `cd backend-py && uv run ruff check . && uv run mypy app/` — and that is now the WHOLE backend gate. The `uv run pytest -q` (with `--basetemp="$TEMP/august_pytest"`; suite ≈9.5 min) that used to follow it was retired on 2026-10-17.
+- **Golden decks** (P0.2) must pass with ngspice installed; skip-marked otherwise. (The golden-deck *test file* is gone with the suite; the decks and their expected measures are the durable artifact.)
+- **Parity oracle** updated with every policy change (policy + oracle in one commit). (The oracle file is gone with the suite; the rule — policy and its oracle move together — is the durable part.)
+- **Frontend:** `npm run check -w frontend/desktop` (tsc + eslint). `tsc` + vitest (`npm run test:frontend`) was the old gate; vitest is gone.
+- **Desktop verification** per AGENTS.md: `npm run dev:desktop` for panel/viewer work; packaged installs must include backend changes (version-sync across all 9 files only when shipping a release).
 - **Firmware/HDL smoke tests** in CI are skip-unless-tool-present; local verification on the user's machine where Quartus exists.
 
 ---
 
 ## Part 8 — Open questions for ruling
 
-1. **Q1 — KiCad infix values (`4k7`, `1R2`).** Currently a deliberate policy *against* (`circuit_tools.py:250-272` docstring + lint advice). Options: (a) keep the ban (status quo, SPICE-purist); (b) accept-and-normalize in lint with an informational note (friendlier for students copying KiCad BOMs). Recommend (b) — normalization is lossless and removes a foot-gun the lint already has to explain.
+1. **Q1 — KiCad infix values (`4k7`, `1R2`).** **RULED: option (b) shipped — accept-and-normalize.** The plan's original text here read "Currently a deliberate policy *against* (`circuit_tools.py:250-272` docstring + lint advice)" and asked which way to go. That question is closed: the policy was **reversed**. `is_kicad_infix()` (`backend-py/app/services/tools/circuit_tools.py`, `is_kicad_infix`, `:969-971` at `5cdae644`) detects the convention, and `parse_spice_value()` (`:974-1000`) accepts and normalises it — "KiCad infix values (`4k7`, `1R2`, `R47`, `2M2`) are accepted and normalized — note infix `M` means mega, `m` milli". The `:250-272` anchor this question quotes was the 2026-08-28 docstring; the parser now lives at `:974-1000`. The reasoning that produced the reversal is unchanged and worth keeping: normalization is lossless and removes a foot-gun the lint already had to explain. **Do not re-open this.**
 2. **Q2 — diagram.json adoption.** Wokwi-compatible schema as a first-class artifact *alongside* `.cir` (recommended), or keep netlists as the only format (simpler, but forfeits the MCU-wiring + visuals path)?
 3. **Q3 — Bundle CircuitJS1 (GPL-2.0) as an iframed asset?** Separate-program iframe is license-compliant and matches the existing artifact sandbox posture; cost is a ~few-MB vendored asset. Recommend yes, optional P2.4.
 4. **Q4 — Waveform chart library.** uPlot (MIT, tiny, canvas, recommended) vs. staying PNG-only via `render_chart` (no new dep, no cursors/zoom).

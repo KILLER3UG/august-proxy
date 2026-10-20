@@ -1,11 +1,25 @@
-> **Still open (Phases 1–6) — but §2 contradicts its own Phase 0.**
-> §2 says "no authz at all"; Phase 0 shipped and is listed as implemented in the
-> header: `app/services/gateway/pairing.py` + `tests/test_gateway_pairing.py`
-> (allowlist + pairing codes, default-deny). Still genuinely absent: chunking,
-> markdown and streaming in `platforms/telegram.py`, and a Settings → Bot-mode
-> section. Anchors have drifted (`main.py:186-191` is now 232-237; `base.py:28` is
-> now :31) and §7 cites `tests/test_harness_evals.py`, which was deleted.
-> _(Added during the docs audit 2026-09-27.)
+> **Open items are tracked in `docs/ROADMAP.md`. This document is a record of the
+> design and the rulings, not a task list** — the open items live in the roadmap;
+> the reasoning that produced them lives here.
+>
+> **Corrected 2026-10-20 against the tree at `5cdae644`.** §2's gap list says
+> *"no authz at all"* and Phase 0's "Verified defect" paragraph says any sender's
+> text runs through the agent. **Both were true on 2026-08-31 and are false
+> now** — the allowlist and pairing gate have run *before* the bypass set since
+> 2026-09-02. See §2 for the current behaviour and the anchor.
+> **The whole test suite was deleted on 2026-10-17**, so every `tests/…` path
+> named in this document is historical: it records why the code has its shape,
+> it is not a live gate. The live gates are `uv run ruff check .` + `uv run
+> mypy app/` and the static doc/design checks.
+>
+> Earlier note (2026-09-27) — Still open (Phases 1–6), but §2 contradicts its
+> own Phase 0. §2 says "no authz at all"; Phase 0 shipped and is listed as
+> implemented in the header: `app/services/gateway/pairing.py` +
+> `tests/test_gateway_pairing.py` (allowlist + pairing codes, default-deny).
+> Still genuinely absent: chunking, markdown and streaming in
+> `platforms/telegram.py`, and a Settings → Bot-mode section. Anchors have
+> drifted (`main.py:186-191` is now 232-237; `base.py:28` is now :30) and §7
+> cites `tests/test_harness_evals.py`, which was deleted.
 
 # Part 20 — Messaging Gateway: August present in chat platforms
 
@@ -67,7 +81,7 @@ mechanisms 1–3:
 
 | Piece | File | State |
 |---|---|---|
-| Base adapter: queue, bypass cmds, session key | `backend-py/app/services/gateway/base.py` | works; `buildSessionKey` gives per-user group sessions (`base.py:61-69`); `/stop /new /reset /approve /deny /status` (`base.py:28`) |
+| Base adapter: queue, bypass cmds, session key | `backend-py/app/services/gateway/base.py` | works; `buildSessionKey` gives per-user group sessions (`base.py:61-69`); `/stop /new /reset /approve /deny /status` (`base.py:30` — the anchor has drifted from `:28`) — and the allowlist/pairing gate now runs **before** that bypass set (`base.py:115-141`) |
 | Session bridge → workbench | `backend-py/app/services/gateway/session_bridge.py` | works; maps key→workbench session, persists `gateway/session_map.json` + `metadata.gatewayKey` (`session_bridge.py:95-133`); runs turns via `sendWorkbenchMessageStream` (`workbench.py:2299`) |
 | Runner + config | `backend-py/app/services/gateway/runner.py` | works; boots from `config.json → gateway` (`runner.py:42-68`), wired in lifespan `main.py:186-191` |
 | Telegram adapter | `backend-py/app/services/gateway/platforms/telegram.py` | webhook w/ secret-token verify (`telegram.py:94-132`) + long-poll fallback (`telegram.py:139-162`); **text-only** — non-text messages dropped at `telegram.py:188-190` |
@@ -89,12 +103,26 @@ Primitives that already exist and get reused (no new subsystems):
   the bridge already accepts `agentId` (`runner.py:49`).
 - **Capability profiles**: per-model `toolSurface` full/reduced/bare (0.12.55 harness work).
 
-Gaps (each becomes a phase below): no authz at all (anyone who can DM the bot commands a
+Gaps (each becomes a phase below): **no authz at all** (anyone who can DM the bot commands a
 full-tool workbench session on the user's machine — and `/approve` is in the bypass set,
 `base.py:28`); no length chunking (a >4096-char reply 400s at the Telegram API and the answer
 is lost); no markdown dialect handling; no streaming; no media in/out; no proactive delivery
 path; no UI (the settings "Gateway" section is the *proxy* API key — `ExternalAccessSection.tsx`
 — a naming collision); disabled by default with no config surface.
+
+> **The first gap is CLOSED — it closed on 2026-09-02, and this paragraph is the
+> pre-Phase-0 state.** The allowlist and pairing gate run **BEFORE** the
+> bypass-command set: `backend-py/app/services/gateway/base.py:115-141`
+> (`dispatch`) calls `gateDecision(...)` at `:122` and returns on `'ignore'` or
+> `'pair'` **before** `shouldBypassActiveSession(cmd)` at `:131`. So
+> `BYPASS_COMMANDS` (`base.py:30`) still contains `approve` and `deny`, but
+> **only an allowlisted user reaches that line at all** — a stranger who
+> discovers the bot username cannot approve workbench plans. The gate itself is
+> `backend-py/app/services/gateway/pairing.py` (`gateDecision`).
+>
+> The gaps that are still open are the ones after it: length chunking, markdown
+> dialect handling, streaming, media in/out, the proactive delivery path, and the
+> Settings → Bot-mode UI. This is the list the roadmap carries.
 
 ## 3. Phases
 
@@ -104,10 +132,14 @@ the value check are in §5 Non-goals instead.
 
 ### Phase 0 — Trust gate (ship blocker; nothing else enables until this lands) [bug]
 
-Verified defect: `dispatch()` (`base.py:113-126`) runs any sender's text through the agent with
+Verified defect (**as of 2026-08-31; FIXED — this phase shipped 2026-09-02, so read
+this as the defect the phase was specced against, not as the tree today**):
+`dispatch()` (`base.py:113-126`) runs any sender's text through the agent with
 `guardMode` from config (default `full`, `runner.py:51`), and `/approve`/`/deny` bypass the
 queue (`base.py:180-195`) — a stranger who discovers the bot username can approve workbench
-plans and drive tools on the user's PC.
+plans and drive tools on the user's PC. **The fix is the allowlist + pairing gate that
+runs before the bypass set** (`base.py:115-141`, `gateDecision` at `:122`, bypass check at
+`:131`); the spec below is what shipped.
 
 Spec:
 

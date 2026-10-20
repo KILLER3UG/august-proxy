@@ -66,6 +66,31 @@ every other gate, and each has already caught a live bug:
   rejected) and a backend range that started at 1 while the panel's own
   default was 0.
 
+## Two standing rules (moved here from `docs/plans/2026-09-05-harness-maintenance.md`)
+
+These two rules used to live only in that one plan file, and nowhere in the
+tree or in this file — so a session that never opened the plan never saw
+them. They are rules about HOW to work, not about a feature, so this is where
+they belong.
+
+**Delete your scratch files before you commit.** When you finish a session,
+delete the scratch files *you* created — scan outputs, generator scripts,
+unused drafts, probe scripts left in the tree. The repo carries no `_*.py` /
+`*.txt` scratch artifacts on purpose; a leftover probe is debris, and the
+next reader cannot tell it from a real module. (Source: §6b of the harness
+maintenance plan, where the rule was first written down.)
+
+**New work rides under existing part numbers — never mint a new "Part N+".**
+The numbered Part series (Part 1–27) is CLOSED. A change whose scope fits
+an existing part's area ships under that part's number; a change that fits
+none of them gets a plan doc under `docs/plans/<date>-<slug>.md` with a
+descriptive slug, and code and commit messages reference that plan **by
+slug, never by number**. Comments and identifiers describe what the code
+does and why, not which plan document created it — so "Part 28" appearing
+in a comment or a commit message is a defect, not a citation. (Source: §8
+of the harness maintenance plan, which is why the numbered series stopped
+at 27.)
+
 ## Product surface
 
 **The product is the Tauri desktop app** (`frontend/desktop/` + bundled `backend-py/`).
