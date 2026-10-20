@@ -20,18 +20,142 @@ let fetchPatched = false;
  * cannot use. It is not on disk: a file in the data directory would be
  * readable by the very model this is meant to stop.
  *
- * `null` outside Tauri (the browser build, the mobile app) — and the backend
- * has no token configured in those deployments either, so the gate is a
- * no-op there by construction.
+ * A Tauri-LESS host has no IPC to ask, so the token travels with the page
+ * instead: in the URL fragment, in the query string, or in a global the host
+ * sets before boot. See `LOCAL_TOKEN_URL_PARAM` below. The token still never
+ * touches the disk from here — it lives in ONE module-level variable,
+ * `resolvedLocalToken`, for the lifetime of the page, and nowhere else.
  */
 let resolvedLocalToken: string | null = null;
 let localTokenPromise: Promise<string | null> | null = null;
 
+/** The parameter name the token travels under in a pairing URL. */
+export const LOCAL_TOKEN_URL_PARAM = 'august-token';
+
+/**
+ * A host page may set this global before the app boots. The mobile shell
+ * does exactly that, and it is the only path where the token never touches
+ * a URL at all.
+ */
+function hostGlobalToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  const value = (window as Window & { __AUGUST_LOCAL_TOKEN__?: string }).__AUGUST_LOCAL_TOKEN__;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Build the pairing URL a phone opens: the app's URL with the token in the
+ * FRAGMENT.
+ *
+ * A fragment is never sent to the server and never appears in a `Referer`
+ * header, so a token in the fragment cannot reach an access log the way the
+ * same token in a query parameter would. The web client reads it and takes
+ * it back out of the URL (see `captureTokenFromUrl`).
+ */
+export function buildPairingUrl(baseUrl: string, token: string): string {
+  const base = baseUrl.replace(/\/+$/, '');
+  return `${base}/#${LOCAL_TOKEN_URL_PARAM}=${encodeURIComponent(token)}`;
+}
+
+/**
+ * Remove the token from the visible URL and from the history entry.
+ *
+ * `history.replaceState` REWRITES the current entry instead of pushing a
+ * new one, so the entry that recorded the token is replaced rather than
+ * merely hidden one back-button away — a history walk would otherwise find
+ * it. A fragment that is a route (`#/settings/x`, no `=`) is left exactly
+ * as it is; only a fragment that actually carries the token is rebuilt.
+ */
+function stripTokenFromUrl(): void {
+  if (typeof window === 'undefined' || typeof window.history?.replaceState !== 'function') return;
+  const loc = window.location;
+  let search = loc.search;
+  let hash = loc.hash;
+
+  if (new RegExp(`(?:^|[?&])${LOCAL_TOKEN_URL_PARAM}=`).test(search)) {
+    const params = new URLSearchParams(search);
+    params.delete(LOCAL_TOKEN_URL_PARAM);
+    const rest = params.toString();
+    search = rest ? `?${rest}` : '';
+  }
+
+  if (hash) {
+    const parts = hash.slice(1).split('&');
+    if (parts.some((p) => p.startsWith(`${LOCAL_TOKEN_URL_PARAM}=`))) {
+      const kept = parts.filter((p) => !p.startsWith(`${LOCAL_TOKEN_URL_PARAM}=`));
+      hash = kept.length ? `#${kept.join('&')}` : '';
+    }
+  }
+
+  const next = `${loc.pathname}${search}${hash}`;
+  if (next === `${loc.pathname}${loc.search}${loc.hash}`) return;
+  try {
+    window.history.replaceState(window.history.state, '', next);
+  } catch {
+    /* a sandboxed frame may refuse replaceState — the token still leaves
+       the request path, and the in-memory copy is what the app uses. */
+  }
+}
+
+/**
+ * Take the token out of the URL and hand it back.
+ *
+ * Called ONCE at module load — before React renders — because the token
+ * must not survive in the address bar, in the browser history, or in a
+ * screenshot of the window. Stripping it here is also what keeps it out
+ * of a `Referer` to a third-party host: the first paint has already
+ * replaced the entry.
+ */
+function captureTokenFromUrl(): string | null {
+  if (typeof window === 'undefined' || !window.location) return null;
+  const loc = window.location;
+  let raw: string | null = null;
+
+  // Fragment first: it is the form the pairing surface prints, and it is
+  // the only form the server never sees.
+  const fragment = loc.hash.startsWith('#') ? loc.hash.slice(1) : loc.hash;
+  if (fragment) {
+    const match = new RegExp(`(?:^|&)${LOCAL_TOKEN_URL_PARAM}=([^&]*)`).exec(fragment);
+    if (match) raw = match[1];
+  }
+  // Query fallback, for a host that cannot set a fragment.
+  if (raw === null) {
+    const match = new RegExp(`(?:^|[?&])${LOCAL_TOKEN_URL_PARAM}=([^&#]*)`).exec(loc.search);
+    if (match) raw = match[1];
+  }
+  if (raw === null) return null;
+
+  let token = raw;
+  try {
+    token = decodeURIComponent(raw);
+  } catch {
+    /* a malformed escape is used as-is */
+  }
+  stripTokenFromUrl();
+  return token.trim() || null;
+}
+
+/**
+ * The token a Tauri-less host handed us in the URL, captured and stripped
+ * at module load. `null` when the page was not opened through a pairing
+ * URL — which is the ordinary case, and the case where the backend has no
+ * token configured and the gate is a no-op.
+ */
+const bootHostToken: string | null = captureTokenFromUrl();
+
 function localToken(): Promise<string | null> {
   if (resolvedLocalToken) return Promise.resolve(resolvedLocalToken);
+  // Outside Tauri there is no IPC to ask, and both host-supplied sources
+  // are synchronous reads — so there is nothing to await and no in-flight
+  // promise to keep. Re-read on every call until one is found, so a host
+  // that sets the global late still works.
+  if (!isTauri) {
+    const hostToken = bootHostToken ?? hostGlobalToken();
+    if (hostToken) resolvedLocalToken = hostToken;
+    return Promise.resolve(resolvedLocalToken);
+  }
   if (!localTokenPromise) {
     localTokenPromise = (async (): Promise<string | null> => {
-      if (!isTauri) return null;
       try {
         const token = await invoke<string>('local_api_token');
         if (token) resolvedLocalToken = token;
@@ -46,6 +170,18 @@ function localToken(): Promise<string | null> {
     })();
   }
   return localTokenPromise;
+}
+
+/**
+ * The per-install token this client will send, or null when there is none.
+ *
+ * Exported for the phone-pairing surface, which is the ONE place that
+ * shows the token to a human. Outside Tauri it is the token the host page
+ * supplied (URL fragment, query string, or `window.__AUGUST_LOCAL_TOKEN__`);
+ * inside Tauri it is the shell's, over the IPC.
+ */
+export function getLocalToken(): Promise<string | null> {
+  return localToken();
 }
 
 function rewriteApiUrl(url: string): string {
@@ -267,11 +403,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /** Multipart / binary upload: passes `body` through untouched (the browser
- *  sets the multipart boundary), unlike `api.post` which JSON-encodes. */
+ *  sets the multipart boundary), unlike `api.post` which JSON-encodes.
+ *  Carries the same local token as `request` — the gate is the gate, and a
+ *  route that ever moves behind it must not find a second, tokenless
+ *  transport in the same client. */
 async function requestRaw<T>(path: string, body: BodyInit, init?: RequestInit): Promise<T> {
   await ensureReady();
   const url = baseUrl ? `${baseUrl}${path}` : path;
-  const res = await fetch(url, { ...init, body });
+  const token = await localToken();
+  const res = await fetch(url, {
+    ...init,
+    body,
+    headers: {
+      ...(token ? { 'X-August-Local-Token': token } : {}),
+      ...(init?.headers ?? {}),
+    },
+  });
   if (!res.ok) throw new ApiError(res.status, 'unknown', res.statusText);
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

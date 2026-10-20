@@ -355,6 +355,7 @@ const KanbanWrapper = lazySection(() => import('./KanbanSection'), 'KanbanSectio
 const AgentSandboxWrapper = lazySection(() => import('./AccessHubSection'), 'AccessHubSection');
 const PromptTemplatesWrapper = lazySection(() => import('./PromptTemplatesSection'), 'PromptTemplatesSection');
 const PrivacyWrapper = lazySection(() => import('./PrivacySection'), 'PrivacySection');
+const PhonePairingWrapper = lazySection(() => import('./PhonePairingSection'), 'PhonePairingSection');
 const MemoryWrapper = lazySection(() => import('./MemorySection'), 'MemorySection');
 const HealthSimulatorWrapper = lazySection(() => import('./HealthSimulatorSection'), 'HealthSimulatorSection');
 const AISetupWizardWrapper = lazySection(() => import('./AISetupWizardSection'), 'AISetupWizardSection');
@@ -405,6 +406,7 @@ export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps
   'kernel-venv': AgentSandboxWrapper,
   'agent-sandbox': AgentSandboxWrapper,
   'app-updates': AppUpdatesWrapper,
+  'phone-pairing': PhonePairingWrapper,
   'prompt-templates': PromptTemplatesWrapper,
   'ai-setup': AISetupWizardWrapper,
   privacy: PrivacyWrapper,

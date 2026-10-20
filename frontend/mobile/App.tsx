@@ -13,6 +13,7 @@ import {
 import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import WebView from 'react-native-webview';
+import { parsePairingInput, tokenBootstrapScript } from './pairing';
 
 // Follow the desktop backend's port when overridden at build time
 // (EXPO_PUBLIC_PROXY_PORT, e.g. to match AUGUST_PROXY_PORT); default 8085.
@@ -164,16 +165,45 @@ export default function App() {
     normalizeProxyUrl(process.env.EXPO_PUBLIC_PROXY_URL || getDefaultProxyUrl()),
   );
   const [draftUrl, setDraftUrl] = useState(proxyUrl);
+  // The per-install token the backend's sensitive local routes require.
+  //
+  // It is held in MEMORY ONLY. `expo-secure-store` is not a dependency of
+  // this package, and the repo forbids a dependency change without the
+  // owner, so there is no secure store to put it in: the token lives in
+  // this one state variable for the lifetime of the process and is gone
+  // when the app is killed. Re-pairing after a restart is the price, and
+  // it is the price the "no dependency without the owner" rule buys.
+  const [localToken, setLocalToken] = useState<string | null>(null);
+  const [draftToken, setDraftToken] = useState('');
+  const [showConnect, setShowConnect] = useState(false);
   const [webViewKey, setWebViewKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // The address field accepts a PAIRING URL as well as a plain address.
+  // When the pasted text carries a token, take it out of the address and
+  // show it in the token field — the URL the WebView loads never has the
+  // token in it.
+  const onDraftUrlChange = (value: string) => {
+    setDraftUrl(value);
+    const parsed = parsePairingInput(value);
+    if (parsed.token) setDraftToken(parsed.token);
+  };
+
   const reload = () => {
-    const nextUrl = normalizeProxyUrl(draftUrl);
+    const parsed = parsePairingInput(draftUrl);
+    const nextUrl = normalizeProxyUrl(parsed.baseUrl || draftUrl);
+    const nextToken = (draftToken.trim() || parsed.token || '').trim() || null;
     setProxyUrl(nextUrl);
     setDraftUrl(nextUrl);
+    setLocalToken(nextToken);
+    setDraftToken(nextToken ?? '');
     setLoadError(null);
+    setShowConnect(false);
     setIsLoading(true);
+    // Remount rather than reload: the token is published by
+    // `injectedJavaScriptBeforeContentLoaded`, which only runs on a fresh
+    // document load, and a change of token has to reach the page.
     setWebViewKey((key) => key + 1);
   };
 
@@ -183,6 +213,20 @@ export default function App() {
       style={[styles.root, { backgroundColor: colors.background }]}
     >
       <StatusBar style={isDark ? 'light' : 'dark'} />
+      <View style={[styles.statusBar, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+        <View style={[styles.statusDot, { backgroundColor: localToken ? colors.button : colors.subtle }]} />
+        <Text style={[styles.statusText, { color: colors.muted }]} numberOfLines={1}>
+          {proxyUrl.replace(/^https?:\/\//, '')} · {localToken ? 'paired' : 'not paired'}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Pair with August"
+          onPress={() => setShowConnect(true)}
+          style={[styles.statusButton, { borderColor: colors.border }]}
+        >
+          <Text style={[styles.statusButtonText, { color: colors.text }]}>{localToken ? 'Pairing' : 'Pair'}</Text>
+        </Pressable>
+      </View>
       <WebView
         key={`${proxyUrl}-${webViewKey}`}
         ref={webViewRef}
@@ -196,7 +240,8 @@ export default function App() {
         pullToRefreshEnabled={false}
         setSupportMultipleWindows={false}
         applicationNameForUserAgent="AugustProxyMobile"
-        injectedJavaScriptBeforeContentLoaded={MOBILE_WEB_BOOTSTRAP}
+        injectedJavaScriptBeforeContentLoaded={`${MOBILE_WEB_BOOTSTRAP}
+${tokenBootstrapScript(localToken)}`}
         overScrollMode="never"
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
@@ -240,18 +285,21 @@ export default function App() {
         </View>
       ) : null}
 
-      {loadError ? (
+      {showConnect || loadError ? (
         <View accessibilityRole="alert" style={[styles.fallback, { backgroundColor: colors.background }]}>
           <View style={[styles.fallbackCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.eyebrow, { color: colors.subtle }]}>AUGUST PROXY</Text>
-            <Text style={[styles.title, { color: colors.text }]}>Connect to the web app</Text>
+            <Text style={[styles.title, { color: colors.text }]}>
+              {loadError ? 'Connect to the web app' : 'Pair with August'}
+            </Text>
             <Text style={[styles.body, { color: colors.muted }]}>
-              Mobile now runs the same dashboard and Workbench as the browser. Start the proxy, confirm the URL, then
-              reconnect.
+              {loadError
+                ? 'Mobile now runs the same dashboard and Workbench as the browser. Start the proxy, confirm the URL, then reconnect.'
+                : 'Paste the pairing URL from Settings → Phone pairing on the desktop, or type the address and the token separately. The token is read out of the URL and the URL is cleaned.'}
             </Text>
             <TextInput
               value={draftUrl}
-              onChangeText={setDraftUrl}
+              onChangeText={onDraftUrlChange}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="url"
@@ -268,11 +316,34 @@ export default function App() {
               ]}
               onSubmitEditing={reload}
             />
+            <TextInput
+              value={draftToken}
+              onChangeText={setDraftToken}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              accessibilityLabel="August Proxy local token"
+              placeholder="local token (optional)"
+              placeholderTextColor={colors.subtle}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.surfaceMuted,
+                  borderColor: colors.border,
+                  color: colors.text,
+                },
+              ]}
+            />
+            <Text style={[styles.hint, { color: colors.subtle }]}>
+              The token is kept in memory only — this app has no secure store, so re-pair after it restarts. A backend
+              started without a token needs none at all.
+            </Text>
             <View style={styles.actions}>
               <Pressable
                 accessibilityRole="button"
                 onPress={() => {
                   setDraftUrl(proxyUrl);
+                  setDraftToken(localToken ?? '');
                   webViewRef.current?.reload();
                   setLoadError(null);
                   setIsLoading(true);
@@ -289,9 +360,11 @@ export default function App() {
                 <Text style={[styles.primaryButtonText, { color: colors.buttonText }]}>Connect</Text>
               </Pressable>
             </View>
-            <Text style={[styles.error, { color: colors.danger }]} numberOfLines={3}>
-              {loadError}
-            </Text>
+            {loadError ? (
+              <Text style={[styles.error, { color: colors.danger }]} numberOfLines={3}>
+                {loadError}
+              </Text>
+            ) : null}
           </View>
         </View>
       ) : null}
@@ -302,6 +375,33 @@ export default function App() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  statusBar: {
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  statusDot: {
+    borderRadius: 4,
+    height: 8,
+    width: 8,
+  },
+  statusText: {
+    flex: 1,
+    fontSize: 12,
+  },
+  statusButton: {
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  statusButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   webviewContainer: {
     flex: 1,
@@ -355,6 +455,11 @@ const styles = StyleSheet.create({
   body: {
     fontSize: 14,
     lineHeight: 20,
+    marginTop: 10,
+  },
+  hint: {
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 10,
   },
   input: {
