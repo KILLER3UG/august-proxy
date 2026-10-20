@@ -55,8 +55,10 @@ export interface ActivitySummaryProps extends ActivitySummaryCounts {
   collapseWhen?: boolean;
   /**
    * 'activity' — legacy counts/prose header.
-   * 'completion' — §9 bar: chevron · bold "Task completed" · muted aggregate
-   * tally ("1 file, 1 search, and 1 command") · elapsed time on the right.
+   * 'completion' — §9 bar: chevron · the work's phrase · muted aggregate
+   * tally ("1 file, 1 search, and 1 command") · the elapsed time, WHILE THE
+   * TURN IS LIVE. A settled line carries no time: the reference's does not,
+   * and the run's own time is in the card, on the group row.
    */
   mode?: 'activity' | 'completion';
   className?: string;
@@ -275,7 +277,13 @@ export function ActivitySummary({
                   and the chevron follows it. The rest of the row is empty:
                   the ActivityGroup has always done this, and the two headers
                   are one row anatomy. */}
-              {durationLabel ? (
+              {/* The elapsed time is on the LIVE line. The reference's
+                  settled line reads "Ran 4 commands, read a file" with no
+                  time - every duration in the reference is on a line that
+                  is still running ("Running a command  1m 18s"). The
+                  settled run's own time is in the card, on the group row,
+                  where the reference puts it too. */}
+              {durationLabel && live ? (
                 <span
                   className="activity-summary-duration shrink-0 text-muted-foreground/70"
                   aria-hidden
@@ -346,7 +354,7 @@ export function ActivitySummary({
                   ))}
                 </span>
               )}
-              {durationLabel && !showLiveOnly ? (
+              {durationLabel && live && !showLiveOnly ? (
                 <span className="activity-summary-duration shrink-0 font-mono text-2xs opacity-70" aria-hidden>
                   {durationLabel}
                 </span>

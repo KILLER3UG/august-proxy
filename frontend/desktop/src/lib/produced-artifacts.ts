@@ -26,6 +26,8 @@
 
 import { classifyTool } from '@/lib/tool-classify';
 import { extractFilename } from '@/components/chat/tool/extractors';
+import { classifyFileKind } from '@/lib/file-kind';
+import type { MessageBlock } from '@/types/chat';
 import { parseToolResult } from '@/lib/circuit-artifacts';
 
 /** The subset of `ChatMessage['tools']` this module needs. */
@@ -62,6 +64,57 @@ export function producedFilePath(name: string, context?: string): string | null 
   if (!path) return null;
   if (AUG_INTERNAL.test(path)) return null;
   return path;
+}
+
+/**
+ * The tools that CREATE a file rather than change one.
+ *
+ * A file the turn WROTE is a deliverable - the user asked for it and
+ * wants to open it - whatever its extension. A file the turn CHANGED is
+ * a diff, and the changes card is where a diff belongs. The extension
+ * list cannot tell those apart (a .v is code, and a .v the agent just
+ * wrote is exactly the deliverable the reference shows), but the TOOL
+ * can: a write creates, a patch changes.
+ */
+const CREATE_TOOL_NAMES = new Set([
+  'write_file',
+  'write',
+  'write_to_file',
+  'create_file',
+]);
+
+/** True when the tool WROTE a new file rather than changing one. */
+export function isCreateTool(name: string | undefined): boolean {
+  if (!name) return false;
+  return CREATE_TOOL_NAMES.has(name.toLowerCase());
+}
+
+/**
+ * The paths the ARTIFACT card owns, from a turn's blocks: a file that is
+ * not a source file, plus a source file the turn CREATED.
+ *
+ * ONE implementation, so the artifact card and the changes card cannot
+ * disagree about who owns a file - the disagreement showed the same file
+ * twice on the same transcript, in two different shapes.
+ */
+export function artifactOwnedPaths(
+  blocks?: MessageBlock[] | null,
+  tools?: ProducedToolEntry[] | null,
+): Set<string> {
+  const out = new Set<string>();
+  /* The RESULT side: a tool that said it saved the file owns it. */
+  for (const a of collectResultArtifacts(tools)) {
+    out.add(a.path.replace(/\\/g, '/').toLowerCase());
+  }
+  for (const block of blocks ?? []) {
+    if (block.type !== 'toolCall' || !block.tool) continue;
+    const path = producedFilePath(block.tool.name || '', block.tool.context);
+    if (!path) continue;
+    const kind = classifyFileKind(path).kind;
+    if (kind === 'code' && !isCreateTool(block.tool.name)) continue;
+    out.add(path.replace(/\\/g, '/').toLowerCase());
+  }
+  return out;
 }
 
 /** A file a tool call produced, and the prose it wrote about it. */
@@ -167,7 +220,7 @@ function captionFrom(data: Record<string, unknown>): string | undefined {
  * a turn is one artifact.
  */
 export function collectResultArtifacts(
-  tools?: ProducedToolEntry[] | null,
+  tools?: readonly ProducedToolEntry[] | null,
 ): ProducedArtifact[] {
   if (!tools?.length) return [];
   const seen = new Set<string>();

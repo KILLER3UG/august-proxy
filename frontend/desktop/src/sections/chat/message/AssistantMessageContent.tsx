@@ -134,6 +134,7 @@ export function AssistantMessageContent({
         {!(isLast && streaming) && (
           <ChangesCard
             blocks={message.blocks}
+            tools={message.tools}
             changedFiles={message.changedFiles as GitDiffResult | null}
             sessionId={sessionId}
           />

@@ -15,6 +15,10 @@ import { DiffView } from '@/components/chat/DiffView';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { classifyFileKind, openFileInDrawer } from '@/lib/file-kind';
 import { collectProducedFiles } from '@/lib/produced-files';
+import {
+  artifactOwnedPaths,
+  type ProducedToolEntry,
+} from '@/lib/produced-artifacts';
 import { useRevertAllChanges } from '@/lib/git-revert';
 import { openRightDrawer, setRightDrawerDiff } from '@/components/shell/RightDrawerState';
 import type { GitDiffFile, GitDiffResult } from '@/api/git';
@@ -24,6 +28,7 @@ const MAX_ROWS = 8;
 
 export function ChangesCard({
   blocks,
+  tools,
   changedFiles,
   sessionId,
   onReview,
@@ -36,6 +41,8 @@ export function ChangesCard({
   changedFiles?: GitDiffResult | null;
   /** Owning session (Undo target). Falls back to the `/c/:sessionId` route. */
   sessionId?: string | null;
+  /** The turn's tool entries - the result side of the artifact rule. */
+  tools?: ProducedToolEntry[] | null;
   /** Override the default Review action (open diff in right drawer). */
   onReview?: (path: string) => void;
   /** Override the default Open action (right-drawer file viewer). */
@@ -45,6 +52,13 @@ export function ChangesCard({
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const effectiveSessionId = sessionId ?? routeSessionId ?? null;
 
+  /* The files the artifact card owns - one rule, so the two cards cannot
+     disagree about who shows a file. */
+  const artifactOwned = useMemo(
+    () => artifactOwnedPaths(blocks, tools),
+    [blocks, tools],
+  );
+
   const paths = useMemo(() => {
     const produced = collectProducedFiles(blocks);
     if (produced.length > 0) return produced;
@@ -52,6 +66,19 @@ export function ChangesCard({
     // the sandbox) — keep the aggregate + Undo usable from the diff alone.
     return (changedFiles?.files ?? []).map((f) => f.path);
   }, [blocks, changedFiles]);
+
+  /* The files this card LISTS: the ones it owns. A file the artifact
+     card owns - a document, an image, or a source file the turn CREATED -
+     is not a row here, so the count in the header has to count the same
+     set. A header that said "2 files changed" above an empty list was
+     worse than no header at all. */
+  const ownedPaths = useMemo(
+    () =>
+      paths.filter(
+        (p) => !artifactOwned.has(p.replace(/\\/g, '/').toLowerCase()),
+      ),
+    [paths, artifactOwned],
+  );
 
   const diffMap = useMemo(() => {
     const m = new Map<string, GitDiffFile>();
@@ -71,7 +98,7 @@ export function ChangesCard({
   // Default open state follows the reference: small change sets show their
   // rows immediately, large ones stay collapsed. Only a user toggle sticks.
   const [expandedOverride, setExpandedOverride] = useState<boolean | null>(null);
-  const expanded = expandedOverride ?? paths.length <= 3;
+  const expanded = expandedOverride ?? ownedPaths.length <= 3;
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(() => new Set());
   const [busyPath, setBusyPath] = useState<string | null>(null);
 
@@ -82,8 +109,8 @@ export function ChangesCard({
 
   if (paths.length === 0) return null;
 
-  const visible = paths.slice(0, MAX_ROWS);
-  const overflow = paths.length - visible.length;
+  const visible = ownedPaths.slice(0, MAX_ROWS);
+  const overflow = ownedPaths.length - visible.length;
   const hasTotals = totals.added > 0 || totals.removed > 0;
 
   const handleReview = (path: string) => {
@@ -134,12 +161,14 @@ export function ChangesCard({
           ) : (
             <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
           )}
-          <span className="shrink-0 text-2xs text-foreground/85">
-            <span className="font-medium">{paths.length}</span>
-            <span className="text-muted-foreground/70">
-              {' '}file{paths.length === 1 ? '' : 's'} changed
+          {ownedPaths.length > 0 ? (
+            <span className="shrink-0 text-2xs text-foreground/85">
+              <span className="font-medium">{ownedPaths.length}</span>
+              <span className="text-muted-foreground/70">
+                {' '}file{ownedPaths.length === 1 ? '' : 's'} changed
+              </span>
             </span>
-          </span>
+          ) : null}
           {hasTotals && (
             <span className="flex shrink-0 items-center gap-1.5 font-mono text-2xs tabular-nums">
               {totals.added > 0 && (
@@ -181,13 +210,15 @@ export function ChangesCard({
             const hit = diffMap.get(path);
             const info = classifyFileKind(path);
             const isCodeRow = info.kind === 'code' && !!hit;
-            /* A NON-CODE file is a DELIVERABLE, not a change. It has no
-             * diff to show, and the artifact card already lists it with its
-             * kind and a Download - so rendering it here too put the same
-             * produced file on the transcript twice, in two different
-             * shapes. This card is the diff list; a document is the
-             * artifact card's row. */
+            /* A file the ARTIFACT card owns is not a row here. It is
+             * either not a source file (a document, an image - it has no
+             * diff to show) or a source file the turn CREATED (a deliverable
+             * the user asked for). Either way the artifact card lists it
+             * with its kind and a Download, and showing it here too put the
+             * same file on the transcript twice, in two shapes. This card
+             * is the diff list. */
             if (!isCodeRow) return null;
+            if (artifactOwned.has(path.replace(/\\/g, '/').toLowerCase())) return null;
             return (
               <CodeFileRow
                 key={path}

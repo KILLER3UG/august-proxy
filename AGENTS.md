@@ -134,8 +134,12 @@ at 27.)
   `docs/UPDATE_VERIFICATION.md` is the check, and it has not been run.
 - **A run of tool calls is ONE line in the transcript, not N.** The
   reference transcript collapses consecutive tool calls into an activity line
-  — a warm dot, one phrase ("Ran 4 commands"), the elapsed time, a chevron —
-  and reveals them in a bordered card. That grouping is a RENDER-TIME
+  — a warm dot, one phrase ("Ran 4 commands"), the elapsed time WHILE THE
+  LINE IS STILL RUNNING, a chevron — and reveals them in a bordered card. A
+  SETTLED line carries no time: the reference's reads "Ran 4 commands, read
+  a file" with no duration, and every duration it shows is on a line that is
+  still running ("Running a command  1m 18s"). The run's own time is in the
+  card, on the group row. That grouping is a RENDER-TIME
   arrangement (`components/chat/ActivityGroup.tsx` + `lib/tool-summary.ts`),
   not a new persisted block kind: the transcript still stores one block per
   tool call, so a reload produces the same grouping and the backend knows

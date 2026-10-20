@@ -24,7 +24,7 @@ import { SearchResultsTask } from '@/components/chat/SearchResultsCard';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { SubagentDelegateRow } from '@/components/chat/SubagentDelegateRow';
 import { ActivityGroup } from '@/components/chat/ActivityGroup';
-import { summarizeToolRun } from '@/lib/tool-summary';
+import { countSharedFiles, summarizeToolRun } from '@/lib/tool-summary';
 import { splitThinkingSentences } from '@/lib/process-summary';
 import { collectSnapshots, fromSnapshot, readSnapshot } from '../stream/subagent-blocks';
 import { classifyTool, normalizeToolName } from '@/lib/tool-classify';
@@ -909,6 +909,11 @@ export function AssistantBlockTimeline({
             (sum, t) => sum + (typeof t.duration === 'number' ? t.duration : 0),
             0,
           );
+          /* The files this run SHARED. The reference's expanded card ends
+             with a row naming them - "Presented 2 files" - and the count is
+             the same rule the phrase and the artifact cards use, so the
+             three cannot disagree about what the turn produced. */
+          const sharedFiles = countSharedFiles(runTools);
           const groupKey = `activity_${toolId}`;
           const groupOpen =
             groupKey in expandOverrides
@@ -960,6 +965,16 @@ export function AssistantBlockTimeline({
                     </ToolStepRow>
                   );
                 })}
+                {sharedFiles > 0 ? (
+                  <div
+                    key={`presented_${groupKey}`}
+                    className="py-1.5 text-[0.71875rem] text-muted-foreground"
+                    data-testid="activity-group-presented"
+                  >
+                    Presented{' '}
+                    {sharedFiles} {sharedFiles === 1 ? 'file' : 'files'}
+                  </div>
+                ) : null}
               </ActivityGroup>
             ),
           });

@@ -19,7 +19,12 @@
 
 import type { ToolEntry } from '@/components/chat/tool/types';
 import { classifyTool, type ToolBucket } from '@/lib/tool-classify';
-import { producedFilePath } from '@/lib/produced-artifacts';
+import {
+  collectResultArtifacts,
+  isCreateTool,
+  producedFilePath,
+  type ProducedToolEntry,
+} from '@/lib/produced-artifacts';
 import { classifyFileKind } from '@/lib/file-kind';
 
 /** Per-bucket phrasing. Lower case, so a joined phrase reads as one clause
@@ -58,12 +63,20 @@ function phrase(bucket: ToolBucket, n: number): string {
  * input, and a kind that is not code. A source file the turn edited is a
  * diff, not a share, and the changes card is where it belongs.
  */
-export function countSharedFiles(tools: readonly ToolEntry[]): number {
+export function countSharedFiles(tools: readonly ProducedToolEntry[]): number {
   const produced = new Set<string>();
+  /* The RESULT side: a tool that said it saved the file owns it. */
+  for (const a of collectResultArtifacts(tools)) {
+    produced.add(a.path.replace(/\\/g, '/').toLowerCase());
+  }
+  /* The ARGUMENT side: a path in the call's input. It is a deliverable
+     when it is not a source file, or when the turn CREATED it - a write
+     creates, a patch changes, and the extension list cannot tell those
+     apart. The same rule the artifact card and the changes card read. */
   for (const t of tools) {
-    const path = producedFilePath(t.name, t.context);
+    const path = producedFilePath(t.name ?? '', t.context);
     if (!path) continue;
-    if (classifyFileKind(path).kind === 'code') continue;
+    if (classifyFileKind(path).kind === 'code' && !isCreateTool(t.name)) continue;
     produced.add(path.replace(/\\/g, '/').toLowerCase());
   }
   return produced.size;

@@ -40,6 +40,7 @@ import {
 import { classifyFileKind, openFileInDrawer, type FileKind } from '@/lib/file-kind';
 import { collectProducedFiles, producedFileLabel } from '@/lib/produced-files';
 import {
+  artifactOwnedPaths,
   collectResultArtifacts,
   producedFilePath,
   proseFromResult,
@@ -125,6 +126,10 @@ function collectDeliverables(
   tools?: CircuitToolEntry[] | null,
 ): Artifact[] {
   const circuit = circuitArtifactPathKeys(tools);
+  /* The files this turn CREATED - a source file the user asked for is a
+     deliverable, and the extension list cannot tell it from a source
+     file the agent merely edited. The tool can. */
+  const created = artifactOwnedPaths(blocks);
   const out = new Map<string, Artifact>();
   /* `reported` is the difference between the two sides.
    *
@@ -140,7 +145,7 @@ function collectDeliverables(
     const key = artifactPathKey(path);
     if (out.has(key) || circuit.has(key)) return;
     const info = classifyFileKind(path);
-    if (!reported && info.kind === 'code') return;
+    if (!reported && info.kind === 'code' && !created.has(key)) return;
     out.set(key, { path, name: producedFileLabel(path), kind: info.label, caption });
   };
   // The result side first: it is the side that knows the tool's prose.
@@ -159,7 +164,7 @@ function collectDeliverables(
     if (line) prose.set(artifactPathKey(written), line);
   }
   for (const path of collectProducedFiles(blocks)) {
-    add(path, prose.get(artifactPathKey(path)));
+    add(path, prose.get(artifactPathKey(path)), created.has(artifactPathKey(path)));
   }
   return [...out.values()];
 }

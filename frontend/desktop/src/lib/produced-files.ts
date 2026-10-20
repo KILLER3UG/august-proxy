@@ -7,33 +7,25 @@
  * its args. Internal `.aug/` bookkeeping paths are excluded.
  */
 
-import { classifyTool } from '@/lib/tool-classify';
-import { extractFilename } from '@/components/chat/tool/extractors';
+import { producedFilePath } from '@/lib/produced-artifacts';
 import type { MessageBlock } from '@/types/chat';
 
-const AUG_INTERNAL = /(^|[\\/])\.aug([\\/]|$)/;
-
-/** Unique, de-duplicated, display-ready paths in first-seen order. */
+/** Unique, de-duplicated, display-ready paths in first-seen order.
+ *
+ *  The rule for "a file a tool wrote" is ONE implementation, in
+ *  lib/produced-artifacts.ts (`producedFilePath`): an EDIT-classified
+ *  call, an office deliverable (`pptx_*`) or `create_html_artifact`,
+ *  carrying a path. This file used to hold its own copy of that rule and
+ *  the artifact collector held a third; they agreed by luck, and a
+ *  disagreement would have shown the same file in two places at once. */
 export function collectProducedFiles(blocks?: MessageBlock[] | null): string[] {
   if (!blocks) return [];
   const seen = new Set<string>();
   const files: string[] = [];
   for (const block of blocks) {
     if (block.type !== 'toolCall' || !block.tool) continue;
-    const name = block.tool.name || '';
-    const bucket = classifyTool(name);
-    // Edit-classified calls carry file paths in args. Office/creation tools
-    // (pptx_*, docx generation via run_command scripts writing decks/docs)
-    // surface their output path too — those are deliverables like any other.
-    const isEdit = bucket === 'edit';
-    const isOfficeDeliverable =
-      typeof name === 'string' &&
-      /^pptx_/i.test(name) &&
-      extractFilename(block.tool.context) != null;
-    if (!isEdit && !isOfficeDeliverable && !/^create_html_artifact$/i.test(name)) continue;
-    const path = extractFilename(block.tool.context);
+    const path = producedFilePath(block.tool.name || '', block.tool.context);
     if (!path) continue;
-    if (AUG_INTERNAL.test(path)) continue;
     const key = path.replace(/\\/g, '/').replace(/\/+$/, '');
     if (seen.has(key)) continue;
     seen.add(key);
