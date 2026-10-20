@@ -224,6 +224,15 @@ _PLAN_BLOCKED_EXACT = frozenset({
     'circuit_create_netlist', 'circuit_update_netlist',
     # Schematic sidecar edits — a workspace file write (layout only).
     'circuit_edit_schematic',
+    # Flashing a physical board. It changes the state of a real thing and
+    # there is no undo, so the modes a user picks to keep the agent off the
+    # machine must see it as a mutation: plan mode refuses it and ask mode
+    # asks. It is in _PROMPT_WRITE as well, so the prompt describes it as
+    # a write, but the prompt bucket alone does NOT gate anything — the
+    # gate is this set. Deliberately NOT in _SHELL_EXACT: a blanket shell
+    # gate would make it edit-mode-blocked too, and the spawn it does is
+    # part of the action rather than the action itself.
+    'board_flash',
 })
 
 _PLAN_BLOCKED_BULK_PLURALS = frozenset({
