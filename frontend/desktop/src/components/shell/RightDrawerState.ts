@@ -34,6 +34,11 @@ export interface RightDrawerState {
   diff?: GitDiffResult;
   selectedDiffPath?: string;
   file?: FileAttachment;
+  /** The reference's panel carries a muted line of prose under the content:
+   *  the producing tool's own words about the artifact it made. It travels
+   *  with the FILE (not with the section), so it is the file view that
+   *  shows it and nothing else carries it. */
+  artifactCaption?: string;
   /** ZCode-style "Open tab" card-grid chooser replaces the body while set. */
   chooserActive?: boolean;
   /** JetBrains-style terminal docked at the BOTTOM of the main column
@@ -97,6 +102,7 @@ export function useRightDrawer(): RightDrawerState {
   const diff = useRightDrawerStore((s) => s.diff);
   const selectedDiffPath = useRightDrawerStore((s) => s.selectedDiffPath);
   const file = useRightDrawerStore((s) => s.file);
+  const artifactCaption = useRightDrawerStore((s) => s.artifactCaption);
   const chooserActive = useRightDrawerStore((s) => s.chooserActive);
   const bottomTerminal = useRightDrawerStore((s) => s.bottomTerminal);
   const hidden = useRightDrawerStore((s) => s.hidden);
@@ -107,6 +113,7 @@ export function useRightDrawer(): RightDrawerState {
     diff,
     selectedDiffPath,
     file,
+    artifactCaption,
     chooserActive,
     bottomTerminal,
     hidden,
@@ -151,6 +158,7 @@ export function openRightDrawer(section?: Exclude<RightDrawerSectionId, 'file'>,
     activeSection: target,
     sections: nextSections,
     file: undefined,
+    artifactCaption: undefined,
   });
 }
 
@@ -164,6 +172,7 @@ export function closeRightDrawer() {
     sections: [],
     activeSection: undefined,
     file: undefined,
+    artifactCaption: undefined,
     chooserActive: false,
     bottomTerminal: false,
   });
@@ -177,8 +186,20 @@ export function openRightDrawerFile(file: FileAttachment) {
     sections: ['file'],
     activeSection: 'file',
     file,
+    // A new file has no caption until the artifact card that opened it says
+    // one — the caption belongs to the artifact, not to the file view.
+    artifactCaption: undefined,
     chooserActive: false,
   });
+}
+
+/**
+ * The caption under the preview: the producing tool's own words about the
+ * artifact. Set by the artifact card right after it opens the file, and
+ * cleared by every door that changes what the drawer shows.
+ */
+export function setRightDrawerArtifactCaption(caption?: string) {
+  useRightDrawerStore.setState({ artifactCaption: caption });
 }
 
 /** Open the drawer straight into the ZCode-style "Open tab" chooser. */
@@ -324,6 +345,7 @@ export function addRightDrawerSection(section: RightDrawerSectionId) {
   useRightDrawerStore.setState({
     ...current,
     file: undefined,
+    artifactCaption: undefined,
   });
   setSectionsOrClose(nextSections, section);
 }

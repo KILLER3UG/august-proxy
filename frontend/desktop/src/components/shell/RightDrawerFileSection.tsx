@@ -25,16 +25,11 @@ import { isTauri } from '@/lib/tauri-detect';
 import { cn } from '@/lib/utils';
 import { backendOriginSync } from '@/api/client';
 import { PdfPager } from './PdfPager';
-import { closeRightDrawer } from './RightDrawerState';
+import { closeRightDrawer, useRightDrawerStore } from './RightDrawerState';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import type { FileAttachment } from '@/types/chat';
 
 const MAX_PREVIEW_LINES = 5000;
-
-function extensionLabel(name: string): string {
-  const extension = name.split('.').pop()?.toUpperCase();
-  return extension && extension.length <= 8 ? extension : 'FILE';
-}
 
 function TextPreview({ content }: { content: string }) {
   const allLines = content.split('\n');
@@ -458,6 +453,11 @@ export function RightDrawerFileSection({ file, bare = false }: { file: FileAttac
   // canvas (drawer + fullscreen) share one state.
   const { hasText, isHtml, isSvg, isMarkdown, isPdf } = describePreview(file);
   const [showSource, setShowSource] = useState(false);
+  /* The reference's panel carries a muted line of prose under the content —
+     the producing tool's own words about the artifact. It lives in the
+     drawer state beside the file, so the file view shows it and nothing
+     else carries it. */
+  const caption = useRightDrawerStore((s) => s.artifactCaption);
   useEffect(() => {
     setShowSource(false);
   }, [file.id, file.name]);
@@ -541,6 +541,14 @@ export function RightDrawerFileSection({ file, bare = false }: { file: FileAttac
         <div className="min-h-0 flex-1 overflow-auto">
           <PreviewCanvas file={file} zoom={zoom} showSource={showSource} />
         </div>
+        {caption ? (
+          <p
+            className="shrink-0 border-t border-border/60 px-4 py-2 text-2xs leading-relaxed text-muted-foreground"
+            data-testid="file-preview-caption"
+          >
+            {caption}
+          </p>
+        ) : null}
       </div>
 
       {fullscreen &&
@@ -584,6 +592,14 @@ export function RightDrawerFileSection({ file, bare = false }: { file: FileAttac
             <div className="min-h-0 flex-1 overflow-auto">
               <PreviewCanvas file={file} zoom={zoom} showSource={showSource} />
             </div>
+            {caption ? (
+              <p
+                className="shrink-0 border-t border-border/60 px-4 py-2 text-2xs leading-relaxed text-muted-foreground"
+                data-testid="file-preview-caption"
+              >
+                {caption}
+              </p>
+            ) : null}
           </div>,
           document.body,
         )}

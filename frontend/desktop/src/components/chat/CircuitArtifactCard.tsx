@@ -149,7 +149,7 @@ export function CircuitArtifactCard({ tools }: { tools?: CircuitToolEntry[] | nu
               path={item.path}
               name={item.label}
               subline={item.detail}
-              icon={<Icon className="size-4 text-muted-foreground" />}
+              icon={<Icon className="size-4" />}
               onOpen={() => open(item.path)}
               testId={`circuit-chip-${item.kind}`}
             />

@@ -1,4 +1,5 @@
 import { ChangesCard } from '@/components/chat/ChangesCard';
+import { ArtifactCards } from '@/components/chat/ArtifactCard';
 import { CircuitArtifactCard } from '@/components/chat/CircuitArtifactCard';
 import { TurnProvenanceChip } from '@/components/chat/TurnProvenanceChip';
 import { SavePointChip } from '@/components/chat/SavePointChip';
@@ -137,11 +138,27 @@ export function AssistantMessageContent({
             sessionId={sessionId}
           />
         )}
-        {/* Claude-style circuit deliverable cards: one compact clickable chip
-            per schematic/3D/netlist/simulation output; content opens in the
-            right side panel, never inline in chat. */}
+        {/* The reference's artifact card: a file this turn produced, as one
+            compact card, opening its content in the side panel — never
+            inline in the chat.
+
+            The circuit deliverables sit in the SAME list, under their own
+            label: one list of artifacts per turn, instead of two groups
+            with the changes card between them. (They were mounted in
+            different components, so a turn that produced both read as
+            answer → general artifacts → changes card → circuit artifacts.)
+
+            The changes card keeps its place above them — it is the turn's
+            diff summary, and it is not an artifact. */}
         {!(isLast && streaming) && (
-          <CircuitArtifactCard tools={message.tools} />
+          <>
+            <ArtifactCards
+              blocks={message.blocks}
+              tools={message.tools}
+              sessionId={sessionId}
+            />
+            <CircuitArtifactCard tools={message.tools} />
+          </>
         )}
         {/* End-of-turn recap card removed by user request (2026-08-25):
             the chat area stays clean — activity lives in the right panel. */}

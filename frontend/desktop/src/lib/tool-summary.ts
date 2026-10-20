@@ -19,6 +19,8 @@
 
 import type { ToolEntry } from '@/components/chat/tool/types';
 import { classifyTool, type ToolBucket } from '@/lib/tool-classify';
+import { producedFilePath } from '@/lib/produced-artifacts';
+import { classifyFileKind } from '@/lib/file-kind';
 
 /** Per-bucket phrasing. Lower case, so a joined phrase reads as one clause
  *  ("ran 4 commands, read a file"); the whole phrase is capitalised once at
@@ -48,6 +50,25 @@ function phrase(bucket: ToolBucket, n: number): string {
  * mixed run reads as a list of what it did rather than as a count of
  * unrelated names.
  */
+/**
+ * The files a run SHARED - a deliverable the user can open, which is what
+ * the reference's "shared files" clause means.
+ *
+ * The rule is the artifact card's: a path in an edit-classified call's
+ * input, and a kind that is not code. A source file the turn edited is a
+ * diff, not a share, and the changes card is where it belongs.
+ */
+export function countSharedFiles(tools: readonly ToolEntry[]): number {
+  const produced = new Set<string>();
+  for (const t of tools) {
+    const path = producedFilePath(t.name, t.context);
+    if (!path) continue;
+    if (classifyFileKind(path).kind === 'code') continue;
+    produced.add(path.replace(/\\/g, '/').toLowerCase());
+  }
+  return produced.size;
+}
+
 export function summarizeToolRun(tools: readonly ToolEntry[]): string {
   const counts = new Map<ToolBucket, number>();
   for (const t of tools) {
@@ -56,8 +77,26 @@ export function summarizeToolRun(tools: readonly ToolEntry[]): string {
   }
   const parts: string[] = [];
   for (const bucket of BUCKET_ORDER) {
+    /* The edit clause is emitted below, and only when nothing was
+       shared - the reference says it once, as a share. */
+    if (bucket === 'edit') continue;
     const n = counts.get(bucket);
     if (n) parts.push(phrase(bucket, n));
+  }
+  /* The reference's phrase names the files the run SHARED: "Ran 4
+     commands, shared files". "Shared" is a DELIVERABLE, not an edit - a
+     turn that edited a source file shared nothing, and claiming it did
+     would be a lie the artifact card would contradict. So the rule is the
+     artifact card's: a path in an edit-classified call's input, and a
+     kind that is not code. A file produced twice is one file.
+     The edit clause steps aside when files were shared, because the
+     reference's "Ran 4 commands, shared files" has no edit clause
+     either - the share IS the edit, said once. */
+  const shared = countSharedFiles(tools);
+  if (shared > 0) parts.push('shared files');
+  else {
+    const n = counts.get('edit');
+    if (n) parts.push(phrase('edit', n));
   }
   if (parts.length === 0) return 'Ran a tool';
   const joined = parts.join(', ');

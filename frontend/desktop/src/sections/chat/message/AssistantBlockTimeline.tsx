@@ -24,7 +24,6 @@ import { SearchResultsTask } from '@/components/chat/SearchResultsCard';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { SubagentDelegateRow } from '@/components/chat/SubagentDelegateRow';
 import { ActivityGroup } from '@/components/chat/ActivityGroup';
-import { ArtifactCards } from '@/components/chat/ArtifactCard';
 import { summarizeToolRun } from '@/lib/tool-summary';
 import { splitThinkingSentences } from '@/lib/process-summary';
 import { collectSnapshots, fromSnapshot, readSnapshot } from '../stream/subagent-blocks';
@@ -1480,17 +1479,6 @@ export function AssistantBlockTimeline({
         </ActivitySummary>
       )}
       {hasFinalOutput && renderFinal(finalBlocks)}
-      {/* The reference's artifact card: a file this turn produced, as one
-          compact card under the answer, opening its content in the side
-          panel. Gated on the same frame as the other turn-close cards — the
-          file list is unsettled while the turn is still running. */}
-      {!(isLast && streaming) && (
-        <ArtifactCards
-          blocks={message.blocks}
-          tools={message.tools}
-          sessionId={sessionId ?? liveSessionKey}
-        />
-      )}
       {renderOrphanSubagentRows(persistedSubagentBlocks)}
       {noticeBlocks.length > 0 && renderSystemNotices(noticeBlocks)}
       {errorBlocks.length > 0 && renderErrorBubble(errorBlocks)}

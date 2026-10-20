@@ -17,22 +17,67 @@
 /* purple the reference's own image tile uses.                               */
 
 import { useMemo, useState, type ReactNode } from 'react';
-import { ChevronDown, Copy, Download, FolderOpen, PanelRight } from 'lucide-react';
+import {
+  ChevronDown,
+  Copy,
+  Download,
+  FileCode,
+  FileText,
+  FileVideo,
+  FolderOpen,
+  Image as ImageIcon,
+  PanelRight,
+  type LucideIcon,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { FileIcon } from '@/components/ui/FileIcon';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { classifyFileKind, openFileInDrawer } from '@/lib/file-kind';
+import { classifyFileKind, openFileInDrawer, type FileKind } from '@/lib/file-kind';
 import { collectProducedFiles, producedFileLabel } from '@/lib/produced-files';
-import { circuitArtifactPathKeys, type CircuitToolEntry } from '@/lib/circuit-artifacts';
+import {
+  collectResultArtifacts,
+  producedFilePath,
+  proseFromResult,
+} from '@/lib/produced-artifacts';
+import {
+  artifactPathKey,
+  circuitArtifactPathKeys,
+  type CircuitToolEntry,
+} from '@/lib/circuit-artifacts';
+import { setRightDrawerArtifactCaption } from '@/components/shell/RightDrawerState';
 import { copyFilesToDir, revealInFolder, selectDirectory } from '@/lib/tauri-shell';
 import { isTauri } from '@/lib/tauri-detect';
+import { cn } from '@/lib/utils';
 import type { MessageBlock } from '@/types/chat';
+
+/**
+ * The tile's accent and its glyph, by the file's kind.
+ *
+ * The reference's tile is a FILLED accent square with a WHITE glyph on it —
+ * a filled purple square for an image, a filled blue one for a document. A
+ * filled tile is not a bordered box, so the bar's "icons are borderless"
+ * still holds; what changed is that the accent is the FILL, not the glyph.
+ */
+const TILE_ACCENT: Record<FileKind, string> = {
+  image: 'bg-violet-600',
+  document: 'bg-blue-600',
+  pdf: 'bg-blue-600',
+  video: 'bg-blue-600',
+  code: 'bg-blue-600',
+};
+
+const TILE_GLYPH: Record<FileKind, LucideIcon> = {
+  image: ImageIcon,
+  document: FileText,
+  pdf: FileText,
+  video: FileVideo,
+  code: FileCode,
+};
 
 /** A file the agent produced, in the terms the card shows. */
 interface Artifact {
@@ -41,14 +86,26 @@ interface Artifact {
   name: string;
   /** The muted kind line: "Image · SVG", "Document · MD". */
   kind: string;
+  /** The producing tool's own words about the file, when it wrote any. */
+  caption?: string;
 }
 
 /**
  * The deliverables a turn produced.
  *
- * `collectProducedFiles` is the app's one collector for "a file a tool
- * wrote", so this card and the turn's changes card can never disagree about
- * what a turn produced.
+ * TWO collectors feed ONE list, because a file can be produced two ways:
+ *
+ *  - the RESULT side (`collectResultArtifacts`): a tool that says in its
+ *    RESULT what it made — `create_html_artifact`, a pptx deck, a tool of
+ *    someone's own. Reading the result is what keeps a `read_file` out: it
+ *    carries a path ARGUMENT and produces nothing.
+ *  - the ARGUMENT side (`collectProducedFiles`): an edit-classified call
+ *    that wrote a file. Its result is often the bare word "ok", so the path
+ *    is only in the arguments — and the call's CLASS is what says the file
+ *    was written.
+ *
+ * Both are de-duplicated by path, so a tool whose result names the file its
+ * arguments named is ONE card.
  *
  * Two filters, each for a reason:
  *
@@ -68,23 +125,50 @@ function collectDeliverables(
   tools?: CircuitToolEntry[] | null,
 ): Artifact[] {
   const circuit = circuitArtifactPathKeys(tools);
-  const out: Artifact[] = [];
-  const seen = new Set<string>();
-  for (const path of collectProducedFiles(blocks)) {
-    const key = path.replace(/\\/g, '/').toLowerCase();
-    if (seen.has(key) || circuit.has(key)) continue;
-    seen.add(key);
+  const out = new Map<string, Artifact>();
+  /* `reported` is the difference between the two sides.
+   *
+   * The RESULT side: a tool that says "I saved decoder_3to8.v" is
+   * DELIVERING that file, whatever the app's extension list knows about
+   * .v. The kind still chooses the tile and the kind line; it does not
+   * decide whether the file is shown.
+   *
+   * The ARGUMENT side: a path in an edit-classified call's input. That is
+   * a diff as often as it is a deliverable - a .ts the agent edited is
+   * the changes card's row - so only a non-code kind gets a card here. */
+  const add = (path: string, caption?: string, reported = false) => {
+    const key = artifactPathKey(path);
+    if (out.has(key) || circuit.has(key)) return;
     const info = classifyFileKind(path);
-    if (info.kind === 'code') continue;
-    out.push({ path, name: producedFileLabel(path), kind: info.label });
+    if (!reported && info.kind === 'code') return;
+    out.set(key, { path, name: producedFileLabel(path), kind: info.label, caption });
+  };
+  // The result side first: it is the side that knows the tool's prose.
+  for (const produced of collectResultArtifacts(tools)) {
+    add(produced.path, produced.caption, true);
   }
-  return out;
+  /* The argument side: the path is in the call's input, so the caption —
+     the tool's own sentence about what it made — has to come from the SAME
+     call. The rule for "this call wrote a file" is the collector's own, so
+     the phrase, the cards and this caption cannot disagree. */
+  const prose = new Map<string, string>();
+  for (const t of tools ?? []) {
+    const written = producedFilePath(t.name ?? '', t.context);
+    if (!written) continue;
+    const line = proseFromResult(t.result);
+    if (line) prose.set(artifactPathKey(written), line);
+  }
+  for (const path of collectProducedFiles(blocks)) {
+    add(path, prose.get(artifactPathKey(path)));
+  }
+  return [...out.values()];
 }
 
 export function ArtifactCard({
   path,
   name,
   subline,
+  caption,
   icon,
   sessionId,
   onOpen,
@@ -96,6 +180,8 @@ export function ArtifactCard({
   name: string;
   /** The muted line under it: "Image · SVG", "Native schematic". */
   subline: string;
+  /** The producing tool's own words about the file, when it wrote any. */
+  caption?: string;
   /** A kind-specific glyph; the file's own icon when absent. */
   icon?: ReactNode;
   /** Owning session — the backend read door for a file outside the shell. */
@@ -105,6 +191,8 @@ export function ArtifactCard({
   testId?: string;
 }) {
   const [busy, setBusy] = useState(false);
+  const kind = classifyFileKind(path).kind;
+  const Glyph = TILE_GLYPH[kind];
 
   const open = async () => {
     if (onOpen) {
@@ -114,6 +202,10 @@ export function ArtifactCard({
     setBusy(true);
     try {
       await openFileInDrawer(path, sessionId ?? undefined);
+      /* The reference's panel carries a muted line of prose under the
+         content — the producing tool's own words about what it made. A tool
+         that wrote none has no caption, and none is invented. */
+      if (caption) setRightDrawerArtifactCaption(caption);
     } finally {
       setBusy(false);
     }
@@ -174,8 +266,13 @@ export function ArtifactCard({
         title={`Open ${name} in the side panel`}
         className="h-auto min-w-0 flex-1 shrink justify-start gap-2.5 p-0 text-left font-normal hover:bg-transparent hover:text-foreground"
       >
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted/60">
-          {icon ?? <FileIcon name={path} size={16} />}
+        <span
+          className={cn(
+            'grid size-9 shrink-0 place-items-center rounded-lg text-white',
+            TILE_ACCENT[kind],
+          )}
+        >
+          {icon ?? <Glyph className="size-4" />}
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold text-foreground">{name}</span>
@@ -244,15 +341,58 @@ export function ArtifactCards({
   sessionId?: string | null;
 }) {
   const artifacts = useMemo(() => collectDeliverables(blocks, tools), [blocks, tools]);
+
+  /* The reference puts "Download all" ABOVE the cards when a turn produced
+     more than one file. It is the same door the per-card button and the
+     drawer's gallery use: a folder the user picks, and a Rust copy — the
+     bytes never cross the webview. */
+  const downloadAll = async () => {
+    if (!isTauri) {
+      toast.message(
+        'Downloading needs the desktop build — open August to copy these files into a folder.',
+      );
+      return;
+    }
+    const dest = await selectDirectory();
+    if (!dest) return; // the picker was dismissed; silence is the answer
+    const report = await copyFilesToDir(dest, artifacts.map((a) => a.path));
+    if (!report || report.copied === 0) {
+      toast.error('Could not download the files');
+      return;
+    }
+    const parts = [`Copied ${report.copied} of ${artifacts.length}`];
+    if (report.failed > 0) parts.push(`${report.failed} failed`);
+    if (report.skipped > 0) parts.push(`${report.skipped} skipped (name already taken)`);
+    toast.success(parts.join(' · '));
+    await revealInFolder(dest);
+  };
+
   if (artifacts.length === 0) return null;
   return (
     <div className="mt-2 space-y-1.5" data-slot="artifact-cards">
+      {artifacts.length > 1 ? (
+        <div className="flex items-center justify-start">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => { void downloadAll(); }}
+            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+            title="Copy the shown files into a folder you pick"
+            data-testid="artifact-download-all"
+          >
+            <Download className="size-3.5" />
+            Download all
+          </Button>
+        </div>
+      ) : null}
       {artifacts.map((a) => (
         <ArtifactCard
           key={a.path}
           path={a.path}
           name={a.name}
           subline={a.kind}
+          caption={a.caption}
           sessionId={sessionId}
         />
       ))}

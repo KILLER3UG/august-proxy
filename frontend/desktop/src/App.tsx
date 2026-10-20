@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { Route, Routes, useNavigate } from 'react-router-dom';
 import { ChatLayout } from '@/components/shell/ChatLayout';
 import { ALL_ROUTES, SECTION_ROUTES } from '@/routes';
 import { CommandPalette } from '@/components/overlays/CommandPalette';
