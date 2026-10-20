@@ -240,11 +240,18 @@ export function ActivitySummary({
                   process marker the reference shows. */}
               <span
                 className={cn(
-                  'shrink-0 font-medium text-muted-foreground',
+                  'min-w-0 truncate font-medium text-muted-foreground',
                   live && 'activity-working-text',
                 )}
               >
-                {live ? 'Working…' : 'Task completed'}
+                {/* The reference's activity line NAMES THE WORK - "Running
+                    a command  1m 18s" - and carries the elapsed time.
+                    "Task completed" named no work at all, and the bare
+                    tally ("1 command") is a COUNT, not a description. When
+                    the caller knows what happened, the line says it; the
+                    generic label is the fallback for a turn that did
+                    nothing nameable. */}
+                {live ? 'Working…' : prose || 'Task completed'}
               </span>
               {!live && errors > 0 ? (
                 <AlertCircle
@@ -258,14 +265,31 @@ export function ActivitySummary({
                     {liveDetail.trim()}
                   </span>
                 ) : null
-              ) : completionText ? (
-                <span
-                  className="min-w-0 truncate text-muted-foreground"
-                  title={hasProse ? prose : undefined}
-                >
+              ) : completionText && !hasProse ? (
+                <span className="min-w-0 truncate text-muted-foreground">
                   {completionText}
                 </span>
               ) : null}
+              {/* The elapsed time sits IMMEDIATELY after the phrase, the way
+                  the reference's line reads - "Running a command  1m 18s" -
+                  and the chevron follows it. The rest of the row is empty:
+                  the ActivityGroup has always done this, and the two headers
+                  are one row anatomy. */}
+              {durationLabel ? (
+                <span
+                  className="activity-summary-duration shrink-0 text-muted-foreground/70"
+                  aria-hidden
+                >
+                  {durationLabel}
+                </span>
+              ) : null}
+              <ChevronDown
+                className={cn(
+                  'size-3 shrink-0 text-muted-foreground transition-transform duration-200',
+                  open && 'rotate-180',
+                )}
+                aria-hidden
+              />
             </span>
             {live ? (
               <span
@@ -276,22 +300,6 @@ export function ActivitySummary({
                 <span className="activity-summary-live-dot" aria-hidden />
               </span>
             ) : null}
-            {durationLabel ? (
-              <span className="activity-summary-duration" aria-hidden>
-                {durationLabel}
-              </span>
-            ) : null}
-            {/* The chevron CLOSES the row in the reference — title, duration,
-                then the affordance at the far right. It led this header for no
-                reason the other mode shares: the activity header below has
-                always ended with it. */}
-            <ChevronDown
-              className={cn(
-                'size-3 shrink-0 text-muted-foreground transition-transform duration-200',
-                open && 'rotate-180',
-              )}
-              aria-hidden
-            />
           </>
         ) : (
           <>

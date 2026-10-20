@@ -54,7 +54,15 @@ export function ActivityGroup({
 
   return (
     <div className="row-enter my-0.5" data-slot="activity-group" data-group-key={groupKey}>
-      <div className="overflow-hidden rounded-lg border border-white/[0.07] bg-white/[0.02]">
+      {/* NOT A BOX. This runs inside the activity CARD, and the reference's
+          card is ONE container whose children are hairline-separated rows -
+          "one rounded container with hairline children, not N bordered
+          cards". The group brought its own rounded border and background,
+          so the card held a bordered box inside a bordered card. The group
+          is now a section of the card: the card's own hairline separates it
+          from its neighbours, and the group's header and body rows are
+          separated by the hairline below. */}
+      <div className="overflow-hidden">
         <Button
           type="button"
           variant="ghost"
@@ -112,7 +120,10 @@ export function ActivityGroup({
         </Button>
 
         {expanded && rows.length > 0 ? (
-          <div className="border-t border-white/[0.06] px-2 py-1" data-testid="activity-group-body">
+          <div className="border-t border-white/[0.06] px-2.5 py-1" data-testid="activity-group-body">
+            {/* The header's own left padding is px-2.5; the body used px-2,
+                which put the rows 2px off the header's text - a hairline
+                misalignment in the one place the eye checks alignment. */}
             {rows.map((row, i) => (
               <div key={i} className={cn(i > 0 && 'border-t border-white/[0.05]')}>
                 {row}

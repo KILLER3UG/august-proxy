@@ -24,7 +24,9 @@ import { SearchResultsTask } from '@/components/chat/SearchResultsCard';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { SubagentDelegateRow } from '@/components/chat/SubagentDelegateRow';
 import { ActivityGroup } from '@/components/chat/ActivityGroup';
+import { ArtifactCards } from '@/components/chat/ArtifactCard';
 import { summarizeToolRun } from '@/lib/tool-summary';
+import { splitThinkingSentences } from '@/lib/process-summary';
 import { collectSnapshots, fromSnapshot, readSnapshot } from '../stream/subagent-blocks';
 import { classifyTool, normalizeToolName } from '@/lib/tool-classify';
 import { Markdown } from '../ChatMarkdown';
@@ -63,15 +65,6 @@ const PHASE_ACTION_TITLES: Record<string, string> = {
 function RevealedMarkdown({ content, live }: { content: string; live: boolean }) {
   const revealed = useSmoothReveal(content, live);
   return <Markdown content={revealed} variant="assistant" live={live} />;
-}
-
-/** Split running thinking text into sentence-ish parts (period + whitespace
- *  or paragraph breaks). The final part is the still-in-flight tail. */
-function splitThinkingSentences(content: string): string[] {
-  return content
-    .split(/\.\s+|\n+/)
-    .map((p) => p.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
 }
 
 function isFinalOutput(block: DisplayBlock): boolean {
@@ -471,6 +464,15 @@ export function AssistantBlockTimeline({
     .filter((b) => b.type === 'thinking' && b.content?.trim())
     .map((b) => b.content!.trim());
   const processSummary = buildProcessSummaryLine(thinkingParts);
+  // The phrase the collapsed line will carry: what the turn DID, in the
+  // reference's words ("Running a command", "Ran a command, edited a
+  // file"). A run of two or more groupable calls has a phrase; a lone
+  // call renders as its own row, and the thinking gist stands in for it.
+  const groupableTools = processBlocks
+    .filter((b) => isGroupableToolBlock(b) && b.tool)
+    .map((b) => b.tool!);
+  const workPhrase =
+    groupableTools.length > 1 ? summarizeToolRun(groupableTools) : null;
 
   let toolsCount = 0;
   let viewedCount = 0;
@@ -545,12 +547,28 @@ export function AssistantBlockTimeline({
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [livePacked]);
+  // The tool durations are the OTHER clock. A tool block that carries a
+  // duration but no startedAt - a restored transcript, a merged one - still
+  // knows how long it took, and the ActivityGroup's own elapsed already
+  // uses that number. The header must not disagree with the group it sits
+  // above, so the wall-clock span is preferred and the durations are the
+  // fallback, not a second answer.
+  const summedToolMs = processBlocks.reduce(
+    (sum, b) =>
+      sum +
+      ((b.type === 'toolCall' || b.type === 'command') && b.tool
+        ? (b.tool.duration ?? 0)
+        : 0),
+    0,
+  );
   const sequenceDurationLabel =
     Number.isFinite(seqStart) && (anyToolRunning || seqEnd > seqStart)
       ? formatSequenceDuration(
           (anyToolRunning ? nowMs : seqEnd) - seqStart,
         )
-      : null;
+      : summedToolMs > 0
+        ? formatSequenceDuration(summedToolMs)
+        : null;
 
   const { liveDetail, liveItems } = useMemo(() => {
     const items: LiveActivityItem[] = [];
@@ -1432,7 +1450,7 @@ export function AssistantBlockTimeline({
           commands={commandsCount}
           errors={errorsCount}
           memoriesCount={memoriesCount}
-          summary={livePacked ? null : processSummary}
+          summary={livePacked ? null : workPhrase || processSummary}
           live={livePacked}
           liveDetail={
             livePacked && processBlocks.length === 0 && !liveDetail
@@ -1462,6 +1480,17 @@ export function AssistantBlockTimeline({
         </ActivitySummary>
       )}
       {hasFinalOutput && renderFinal(finalBlocks)}
+      {/* The reference's artifact card: a file this turn produced, as one
+          compact card under the answer, opening its content in the side
+          panel. Gated on the same frame as the other turn-close cards — the
+          file list is unsettled while the turn is still running. */}
+      {!(isLast && streaming) && (
+        <ArtifactCards
+          blocks={message.blocks}
+          tools={message.tools}
+          sessionId={sessionId ?? liveSessionKey}
+        />
+      )}
       {renderOrphanSubagentRows(persistedSubagentBlocks)}
       {noticeBlocks.length > 0 && renderSystemNotices(noticeBlocks)}
       {errorBlocks.length > 0 && renderErrorBubble(errorBlocks)}

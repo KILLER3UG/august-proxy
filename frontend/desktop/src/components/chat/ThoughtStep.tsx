@@ -22,7 +22,10 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Clock, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { summarizeThoughtHeader } from '@/lib/process-summary';
+import {
+  splitThinkingSentences,
+  summarizeThoughtHeader,
+} from '@/lib/process-summary';
 import {
   THOUGHT_CLAMP_LINES,
   THOUGHT_CLAMP_CHARS,
@@ -96,6 +99,22 @@ export function ThoughtStep({
     return summarizeThoughtHeader(text, false);
   }, [text, isGenerating]);
 
+  // The reference's thinking card is a LIST of the model's sentences -
+  // "Fixing a schematic diagram for a 3-to-8 decoder." / "Designing the
+  // gate layout and wiring for the corrected circuit." / ... - one per
+  // line, not a single distilled line. The one-line summary is what a
+  // COLLAPSED card shows; the sentences are the card.
+  //
+  // A LIVE thought has no settled sentence list yet, so it keeps the one
+  // rotating line until it settles.
+  const summaryLines = useMemo(() => {
+    if (isGenerating) return summaryLine ? [summaryLine] : [];
+    return splitThinkingSentences(text)
+      .map((s) => summarizeThoughtHeader(s, false))
+      .filter((s) => s.length > 0)
+      .slice(0, 6);
+  }, [text, isGenerating, summaryLine]);
+
   if (!text && !isGenerating) return null;
 
   // Clamp long thoughts whether streaming or settled: once the reasoning passes
@@ -147,7 +166,22 @@ export function ThoughtStep({
               )}
               data-slot="thought-summary"
             >
-              <span className="thought-summary-text">{summaryLine}</span>
+              {/* One sentence per line, the way the reference's thinking
+                  card reads. The FIRST line is the header; the rest are the
+                  card's body. */}
+              <span className="thought-summary-text">
+                {summaryLines.map((line, i) => (
+                  <span
+                    key={i}
+                    className={cn(
+                      'thought-summary-line block',
+                      i === 0 && 'thought-summary-line--first',
+                    )}
+                  >
+                    {line}
+                  </span>
+                ))}
+              </span>
               {canReveal ? (
                 <button
                   type="button"

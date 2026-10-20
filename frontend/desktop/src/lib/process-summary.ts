@@ -4,6 +4,20 @@
  * fall back to count segments when this returns null.
  */
 
+/** Split running thinking text into sentence-ish parts (period + whitespace
+ *  or paragraph breaks). The final part is the still-in-flight tail.
+ *
+ *  ONE owner: the live working indicator and the settled thinking card
+ *  both need "the model's thinking, one sentence at a time", and two
+ *  splitters would drift - the live list would show a different set of
+ *  sentences from the card that claims to be the same thought. */
+export function splitThinkingSentences(content: string): string[] {
+  return content
+    .split(/\.\s+|\n+/)
+    .map((p) => p.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
 export function buildProcessSummaryLine(thinkingParts: string[]): string | null {
   const joined = thinkingParts
     .map((t) =>
