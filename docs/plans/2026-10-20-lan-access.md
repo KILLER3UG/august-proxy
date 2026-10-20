@@ -1,7 +1,7 @@
 # Opt-in LAN access — the design, and why it is shaped this way
 
-Date: 2026-10-20 · Status: **approved by the owner on 2026-10-20, NOT yet
-built** · Companion to `docs/plans/2026-10-20-after-this-round.md` §1
+Date: 2026-10-20 · Status: **approved by the owner on 2026-10-20, BUILT and
+verified** · Companion to `docs/plans/2026-10-20-after-this-round.md` §1
 
 ---
 
@@ -275,7 +275,40 @@ wifi". Those are very different decisions, and the owner's ruling of
 
 ## Status
 
-**Approved, not built.** The design above is complete; the implementation
-is not started. It is a precondition for the mobile companion being
-useful, and it is sequenced after the token plumbing — the token is
-needed either way, because the phone has no other way to authenticate.
+**Built and verified (2026-10-20).** The implementation shipped in
+`590d5edb` (the backend gate, the shell switch, the health payload) and
+`6ec08f49` (the client's half: the token on every `/api` request, the two
+`EventSource` streams, the phone's panel reading the shape the backend
+actually emits). The operational summary is `docs/LAN_ACCESS.md`.
+
+Two things in the design above were **changed by the tree**, and both are
+recorded rather than quietly dropped:
+
+- **"Bind the SPECIFIC LAN ADDRESS, not 0.0.0.0" is not viable in this
+  tree.** The desktop app's base URL is `http://127.0.0.1:<port>` and the
+  supervisor's own health probe is also `127.0.0.1`; this uvicorn's CLI has
+  a single `--host` and no `--bind`. A LAN-only bind would leave the app
+  unable to reach its own backend and would put the supervisor into an
+  endless respawn loop. The shipped shape keeps `0.0.0.0` and closes the
+  added reach with the token plus an EXACT origin allowlist — the DHCP
+  problem the specific-address shape was solving is solved instead by the
+  backend re-discovering the address per request, so no CIDR rule was
+  needed in the origin guard.
+- **"The token CANNOT gate the WebSocket doors at all" is true for a
+  BROWSER, not for a script.** A non-browser client can set a header on a
+  handshake. So a socket from the network must present EITHER the token OR
+  a trusted browser origin; a socket with neither is refused, and a
+  foreign origin is closed with 4403 and a reason.
+
+The **third** browser transport turned up during implementation and is not
+in the design above: an `EventSource` cannot set a header either, so the
+two live-stream GET surfaces carry the token in the query string, and the
+backend accepts it there for those two paths ONLY. Exempting them would
+have been worse: a same-origin GET carries no `Origin`, so the origin
+guard cannot tell the phone's stream from a script on the LAN.
+
+Verified with a 24-check harness over the real ASGI app (LAN on and LAN
+off, HTTP and WebSocket) and a 16-check harness for the query-token path,
+both against throwaway data directories. **Not verified:** the desktop app
+was never launched, so the `set_lan_access` -> restart path is
+code-reviewed only, and there was no phone and no LAN client.
