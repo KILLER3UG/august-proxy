@@ -139,6 +139,18 @@ def _load():
     return _crypt32, _kernel32
 
 
+def _last_error() -> int:
+    """The Win32 error from the last ctypes call, or 0 off Windows.
+
+    ``ctypes.get_last_error`` exists only on Windows; referencing it
+    directly makes Linux mypy (the CI platform) fail even though this module
+    is never called there. The ``getattr`` keeps one body type-checkable on
+    both hosts without a platform-specific ignore.
+    """
+    getter = getattr(ctypes, 'get_last_error', None)
+    return int(getter()) if getter is not None else 0
+
+
 def is_supported() -> bool:
     """True when this host has a usable Windows DPAPI."""
     if os.name != 'nt':
@@ -182,7 +194,7 @@ def protect(data: bytes, *, entropy: bytes = ENTROPY) -> bytes:
         ctypes.byref(out),
     )
     if not ok:
-        raise DpapiError(f'CryptProtectData failed (Windows error {ctypes.get_last_error()})')
+        raise DpapiError(f'CryptProtectData failed (Windows error {_last_error()})')
     try:
         return ctypes.string_at(out.pbData, out.cbData)
     finally:
@@ -216,7 +228,7 @@ def unprotect(blob: bytes, *, entropy: bytes = ENTROPY) -> bytes:
         ctypes.byref(out),
     )
     if not ok:
-        raise DpapiError(f'CryptUnprotectData failed (Windows error {ctypes.get_last_error()})')
+        raise DpapiError(f'CryptUnprotectData failed (Windows error {_last_error()})')
     try:
         return ctypes.string_at(out.pbData, out.cbData)
     finally:
