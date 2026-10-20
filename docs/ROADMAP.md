@@ -641,6 +641,82 @@ panel. One grammar now, and the hard cut is a real CSS ellipsis.
   chevron-less primitive and the Skills tab uses it; the rest use the
   listbox, which is a real trade and not yet settled.
 
+## The round after that: what the chat looks like WHILE it is working
+
+The owner sent a capture of Claude's own transcript doing exactly the
+job August does - fixing a schematic - and asked what August's UI
+should look like "when thinking or outputing output". The same capture
+was the chance to check the memory loop, which the Settings rewrite had
+touched the top of.
+
+**THE MEMORY LOOP WAS INTACT, AND THE AUDIT FOUND A REAL BUG IN IT.**
+The write, read, always-in lane, consolidation, recall and paging doors
+all still round-trip. But the human write door accepted a `details`
+field and then dropped it silently - the response said `{"ok": true}`
+and the stored value was the bare sentence. A fact renders its Details
+section only when its stored value is the JSON object `{"fact": ...,
+"details": ...}`, and the MODEL's own `remember` tool stores exactly
+that shape - so the same fact written by the model had a details body
+and the same fact written by a human did not. The door now stores the
+shape the read side already understands, and the edit form grew a
+Details box so a person can fill one in at all.
+
+**THE ACTIVITY LINE SAID "TASK COMPLETED  1 COMMAND".** A status and a
+count, and neither of them a description of what happened. The
+reference's line reads "Running a command  1m 18s", and this repo's own
+rule says the line is "a warm dot, one phrase, the elapsed time, a
+chevron". The line now carries the phrase the turn's tools already had
+("Ran a command, edited a file") and the elapsed time - which the
+header could not show before, because it read the wall-clock span of
+the tools' `startedAt` while the group below it read the tools' own
+durations, so a transcript with one and not the other showed a
+duration inside the card and nothing on the line above it.
+
+**THE THINKING CARD SHOWED ONE LINE WHERE THE REFERENCE SHOWS A
+LIST.** The reference's card is the model's sentences, one per line.
+August distilled the whole thought to a single line; the card now
+lists the distilled sentences, and "Show full reasoning" still reaches
+the raw prose.
+
+**THE ACTIVITY CARD HELD A BOX INSIDE A BOX.** The run of tool calls
+brought its own rounded border and background - the same "N bordered
+cards" shape the Settings round had just removed, in the one place a
+user reads a turn.
+
+**THE ARTIFACT CARD EXISTS NOW.** A file a turn produced is one compact
+card under the answer - a borderless tinted icon tile, a bold name, a
+muted kind line, a filled Download and a chevron - and it does not
+render the payload. The preview reuses the right drawer, which already
+IS the reference's preview panel (the eye and `</>` toggle, Copy, zoom
+in/out/fit, the fullscreen icon and the ✕ over a canvas that renders an
+image, a live SVG, Markdown, text and a paged PDF); a second floating
+panel would be a second viewer of the same file. The produced file
+also appeared TWICE for a moment - the changes card's document row and
+the new artifact card - so the changes card is now the diff list it
+always meant to be and the artifact card owns the deliverables.
+
+### Still open, and named after this round
+
+- **A produced file only gets a card when the tool that made it was
+  edit-classified.** A file written by a tool August does not classify
+  as an edit is invisible to the card, because the collector reads the
+  tool's ARGUMENTS and a general result-side collector does not exist
+  yet. The circuit family solved it by reading the tool RESULT.
+- **The circuit cards are mounted in a different component from the
+  general ones**, so a turn that produced both reads as answer →
+  general artifacts → changes → circuit artifacts. Moving the two
+  mounts together is a two-line change.
+- **The preview panel has no caption.** The reference's carried "Wires
+  that cross without a dot are not connected; a dot marks a
+  connection." - a line of prose from the producing tool, and the app
+  has no field that carries one.
+- **The reference's message footer is a row of borderless action icons**
+  (copy, speak, approve, reject, regenerate) beside the timestamp.
+  August's `AssistantMessageActions` already renders that row under the
+  message body; the artifact card inherits it by sitting at the end of
+  the body rather than duplicating it.
+
+
 ## Deliberately not done
 
 - **No test suite was restored.** The suite was removed on 2026-10-17 at the
