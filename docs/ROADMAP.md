@@ -251,17 +251,24 @@ count was checked against the tree one key at a time.
 
 ### Still open, and named
 
-- **The composer has NO live context meter.** `store/contextLive.ts`,
-  `store/promptCacheLive.ts` and `store/contextSectionsLive.ts` are all
-  written on every turn -- and all three are read by NOTHING. The
+- **The composer had NO live context meter.** `store/contextLive.ts`,
+  `store/promptCacheLive.ts` and `store/contextSectionsLive.ts` were all
+  written on every turn -- and all three were read by NOTHING. The
   `estimateContextBreakdown` helper, the `ContextBreakdown` type and the
-  `ChatComposer.tsx` shim that exists only to export them are all
-  unreachable too. The pieces of a context breakdown are all present; the
-  reader that would render it was never written. The composer shows COST
+  `ChatComposer.tsx` shim that exists only to export them were all
+  unreachable too. The pieces of a context breakdown were all present; the
+  reader that would render it was never written. The composer showed COST
   from the persisted session-usage poll, not context.
-  *Deferred*: the reader belongs in `sections/chat/**`, which another
-  track owns. Finishing it is a FEATURE (a context meter the reference
-  shows), not a fix.
+  **done** -- the composer's row under the card now carries the
+  reference's right-aligned context percentage, rendered from the
+  backend's own per-turn `contextPressure` measurement. The absence rule
+  is the part that matters: no measurement renders NOTHING, never `0%`,
+  because `Number(null)` is `0` and a missing measurement must not become
+  a confident "0% used". The two stores that feed the detail panel are
+  kept, each with exactly one reader; the ESTIMATOR and the shim were
+  deleted, because they split a total the backend measures exactly into
+  rows the backend never measures, and the capture shows no per-category
+  breakdown.
 - **The provider API keys WERE still PLAINTEXT** in `data/providers.json`
   and are now in the store. `provider_credentials.py` owns the file end to
   end and returns a MERGED view, so the ~15 readers that pull
@@ -316,6 +323,107 @@ carries only an `aria-label` -- but `SessionSidebar.tsx` is now 2.5 KB
 and the separator is not in it, so the claim describes a file that no
 longer holds it. The accessibility track is told to re-measure before
 it "fixes" it.
+
+## The round after that: a second census, and the one that mattered
+
+The first census counted STORES with no reader. The second counted
+STYLESHEETS with no cascade — and found that the app's own stylesheet
+had been overriding Tailwind across the whole product.
+
+### The one that was app-wide
+
+**`base.css` had a rule that beat every border utility in August.**
+
+    .border, .border-t, .border-b, .border-l, .border-r {
+      border-color: var(--dt-border);
+    }
+
+It exists to catch the bare `.border` utility that carries no colour
+argument, and its comment says that dropping `!important` "lets the
+`!important`-free Tailwind utilities win on source order". That was the
+wrong reason. `styles.css` imports `tokens.css` first, and `tokens.css`
+holds the `@tailwind` directives — so Tailwind's utilities live in
+`@layer utilities`, and a rule that is **not in a layer** beats every
+layered rule regardless of where it appears in the file.
+
+Measured in Chromium against this app's own **production** CSS bundle
+(`vite build`, which is what ships), before and after:
+
+| class | before | after |
+|---|---|---|
+| `border border-transparent` | `rgb(236,236,234)` opaque | `rgba(0, 0, 0, 0)` |
+| `border border-border/50` | `rgb(236,236,234)` | `rgba(236,236,234, 0.5)` |
+| `border border-border/60` | `rgb(236,236,234)` | `rgba(236,236,234, 0.6)` |
+| `border border-warning/30` | `rgb(236,236,234)` | `color(srgb .788 .541 .078 / 0.3)` |
+| `border border-white/[0.06]` | `rgb(236,236,234)` | `rgba(255, 255, 255, 0.06)` |
+| bare `border` (the guard's purpose) | `rgb(236,236,234)` | `rgb(236,236,234)` |
+
+So every tinted border in the product was painted one flat colour, the
+app's "transparent border" chips had a visible edge, and the `white/[0.06]`
+hairlines were not faint — they were full-strength lines. The
+`divide-y divide-border/60` hairlines were never affected, because the
+divider's own selector outranks `.border`, which is why some hairlines
+looked right and others did not.
+
+**The fix is one line of CSS**: the rule moves into `@layer base`. Inside a
+layer, source order decides again — `tokens.css` is imported first, so the
+rule still beats Tailwind's preflight and still catches the bare `.border`,
+while the utilities in a later layer win, and win with their alpha.
+
+**Why it hid for so long:** the dev server and the production build
+disagree. The dev server keeps the layers, and the unlayered rule wins
+there too; the production build flattens them and hoists the unlayered
+rule to the end of the bundle, where it wins by source order. Both were
+broken. A defect that behaves differently in the two environments is a
+defect that is easy to misattribute — the earlier "white/[0.0x] is
+invisible in light mode" reading was WRONG: the hairline was not
+invisible, it was a full-strength line in both themes.
+
+### Also found in this round
+
+- **The provider API keys, the MCP env secret and the outbound scrubber**
+  were three plaintext holes left open by the secret-store round. All
+  three are closed; see "Still open, and named" above for what each one
+  was.
+- **The composer had no context percentage**, and the three stores that
+  hold the data were written every turn and read by nothing. The reader
+  is written; the estimator that could not be honest is deleted.
+- **The focus trap read its root once** and went dead if the root was
+  replaced; five dialogs claimed `aria-modal` without having a trap, and
+  one claimed nothing at all. The model editor's hardcoded `z-[80]` also
+  put it above the prompt rung, so a confirmation raised over it rendered
+  UNDERNEATH the editor's own scrim and was invisible.
+- **The Integrations panel promised a list it did not have.**
+  `GET /api/mcp/servers` never carries a per-server `tools` array, so the
+  catalog fallback always won and the "Tools" list on a RUNNING server was
+  the CATALOG's. The pane now says which list it is.
+- **Installing Workspace MCP silently enabled three Google facets.**
+  The key it wrote is read by nothing outside its own file, so it could
+  not have been what made the server work.
+- **The four double-mounted sections** (Memory, Skills, Harness
+  Improvements, Learning) were reworked to the reference's density, and
+  the Skills detail's "Review inbox" link used to throw the reader out of
+  the Learning hub into the Settings overlay.
+
+### Still open, and named after this round
+
+- **`mcp-servers.json`'s per-server `env` map** can hold a token in the
+  clear. A different file, with different consumers, not yet absorbed.
+- **`providers.json`'s `defaultHeaders`** can carry an
+  `Authorization: Bearer` value in the clear. A credential-shaped MAP
+  cannot be split without a new per-field convention.
+- **`GITHUB_TOKEN` / `SLACK_BOT_TOKEN`** are still exported to
+  `os.environ` by the connect handlers, so they are in the process
+  environment and in every child process.
+- **`~/.google_workspace_mcp/credentials/<account>.json`** is a third-party
+  format and stays plaintext. It is now a DERIVED copy, which is the
+  honest description of it.
+- **A DOWNGRADE to an older August** shows a provider as having no key
+  and a service connection as disconnected: the old build reads
+  `providers.json` and `config.json` only. Upgrade is fine.
+- **The `services/settings` header grammar** is now ONE component, but
+  `DecisionsSection` still owns its own heading rather than the shared
+  one. Its icon is gone; the shared component is not yet adopted there.
 
 ## Deliberately not done
 
