@@ -59,7 +59,7 @@ export function RecurringTasksSection() {
   const tasks = data?.tasks ?? [];
 
   return (
-    <div className="space-y-4 max-w-2xl">
+    <div className="space-y-4">
       <div className="flex items-center gap-2">
         <Bell className="size-4 text-primary" />
         <div>

@@ -66,7 +66,7 @@ export function HealthSimulatorSection() {
   };
 
   return (
-    <div className="px-8 py-6 max-w-3xl space-y-6">
+    <div className="px-8 py-6 space-y-6">
       <div className="flex items-center gap-3">
         <Stethoscope className="size-6 text-primary" />
         <div>

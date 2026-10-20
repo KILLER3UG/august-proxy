@@ -743,29 +743,6 @@ export function MemorySection({ active }: { active: { id: string } }) {
     return out;
   }, [storeA, storeB, storeC, unifiedQa.data, unifiedQb.data, unifiedQc.data]);
 
-  const kindCounts = useMemo(() => {
-    const counts: Record<'all' | EntryKind | 'expiring', number> = {
-      all: flatEntries.length,
-      profile: 0,
-      fact: 0,
-      lesson: 0,
-      pref: 0,
-      note: 0,
-      expiring: 0,
-    };
-    // The explainer's claim is about what the model SEES. Retired profile
-    // rows are parked by consolidation and both recall lanes filter on
-    // status, so they count toward the chip but not toward "always in
-    // context" — claiming them was the bug.
-    let activeProfile = 0;
-    for (const e of flatEntries) {
-      counts[e.kind] += 1;
-      if (e.expiring) counts.expiring += 1;
-      if (e.kind === 'profile' && !e.retired) activeProfile += 1;
-    }
-    return { ...counts, activeProfile };
-  }, [flatEntries]);
-
   // C-8: expired rows separate to the bottom of the list, live rows first.
   // (The kind FILTER is gone: the sections are the grouping now, so a chip
   // row would say the same thing twice.)
@@ -997,7 +974,13 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const detailRow: Row = liveSelected ?? selected ?? {};
 
   return (
-    <div className="px-8 py-6 max-w-3xl">
+    <div className="px-8 py-6">
+      {/* No width cap. The reference's memory rows SPAN its content column -
+          that is what puts the value column's right edge on one straight
+          line down the page, with the date at the far right of every row.
+          `max-w-3xl` held the rows at 720px inside a 1080px column, so
+          the value column was still a third shorter than the
+          reference's and every value truncated. */}
       {pane.kind === 'file' ? (
         <ProjectFilePane
           workspace={pane.workspace}
@@ -1076,10 +1059,13 @@ export function MemorySection({ active }: { active: { id: string } }) {
           <h3 className="text-sm font-semibold text-foreground">
             Import memory from other AI providers
           </h3>
+          {/* One line. The reference's page header is a title and a
+              subtitle - "Extend ChatGPT with task-specific skills" - and
+              nothing more; this banner had three sentences where the
+              reference has one, on a page whose job is showing what August
+              remembers. */}
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Bring relevant context and data from another AI provider into August. Drop a
-            Markdown or JSON memory export — August parses it into entries you can review
-            before importing.
+            Bring context from another AI provider — drop a Markdown or JSON memory export
           </p>
         </div>
         <Button
@@ -1287,17 +1273,27 @@ export function MemorySection({ active }: { active: { id: string } }) {
               once instead of stamping a chip on every row. */}
           {sections.you.length > 0 && (
             <section data-testid="memory-section-you">
-              <MemorySectionHeader
-                title="You"
-                hint={`always in the model's context on every turn · ${sections.you.length}`}
-              />
+              {/* The reference's section headers are BARE: "You", "Topics",
+                  "Areas" and nothing on the right. This one carried a
+                  thirteen-word sentence where a count belongs, and the
+                  "Topics" header beside it carried a bare number - so two
+                  headers in the same list were set in two different
+                  languages. The count is the metadata; the sentence moved
+                  to the one muted line under the section, where the
+                  reference keeps its occasional asides. */}
+              <MemorySectionHeader title="You" hint={`${sections.you.length}`} />
               <div className="divide-y divide-border/60">
                 {sections.you.map((e) => rowFor(e))}
               </div>
+              {/* ONE muted line, not two. The reference's list is a list:
+                  the rows, and nothing between them that is not a row. A
+                  two-line paragraph under the first section read as a
+                  paragraph in the middle of a table, and it repeated the
+                  header's own sentence. What is left is the part that is
+                  NOT obvious from the rows themselves: that a parked row is
+                  recalled by nothing. */}
               <p className="pt-1.5 text-[0.65625rem] leading-relaxed text-muted-foreground/60" data-testid="memory-profile-explainer">
-                {kindCounts.activeProfile === 1 ? 'This row is' : 'These rows are'} injected into every turn, not
-                recalled by keyword. Parked rows are recalled by nothing until restored — open one to
-                add or remove it from the lane.
+                Injected into every turn, not recalled by keyword · a parked row is recalled by nothing
               </p>
             </section>
           )}
@@ -2459,11 +2455,18 @@ function FlatEntryRow({
         title={detail || entry.title}
         data-testid="memory-row-open"
       >
-        <span className="min-w-0 shrink-0 basis-[38%] truncate text-[0.8125rem] font-medium text-foreground/90">
+        {/* The reference's row is THREE COLUMNS at ONE type size: the name
+            and the value are set the same, and only the date is muted. The
+            name column is a FIXED width so every value in the list starts
+            at the same x - that is what makes the list a table you can
+            scan down instead of a ragged edge. It was 38% of the row, which
+            in the reference's proportions is three times too wide: the
+            value lost a third of its width to a column nothing needed. */}
+        <span className="min-w-0 w-[13rem] shrink-0 truncate text-[0.8125rem] font-medium text-foreground/90">
           {entry.title}
         </span>
         {detail && (
-          <span className="hidden min-w-0 flex-1 truncate text-[0.71875rem] text-muted-foreground/70 sm:block">
+          <span className="hidden min-w-0 flex-1 truncate text-[0.8125rem] text-foreground/70 sm:block">
             {detail}
           </span>
         )}
@@ -2693,12 +2696,6 @@ function DetailView({
    * below, where the reference puts it, and this line carries the rest. */
   const metaBits: Array<{ key: string; node: ReactNode }> = [];
   if (category) metaBits.push({ key: 'category', node: <span>{category}</span> });
-  if (source) {
-    metaBits.push({
-      key: 'source',
-      node: <span data-testid="memory-detail-source">source: {source}</span>,
-    });
-  }
   if (meta.legacy) metaBits.push({ key: 'legacy', node: <span>retired writer</span> });
   if (retired) {
     metaBits.push({
@@ -2737,28 +2734,15 @@ function DetailView({
             both true at once, and the layout test that pinned DOM-before as a
             proxy for visually-above is gone with the rest of the suite. */}
         <div className="min-w-0 order-2">
-          <h2 className="text-[1.0625rem] font-semibold leading-snug tracking-tight text-foreground [overflow-wrap:anywhere]">
+          {/* The title, and then the reference's FIELDS - Last updated,
+              Summary, Details - with nothing wedged between them. The key
+              and the provenance line used to sit here, under the title,
+              which put two lines of bookkeeping in front of the one field
+              a reader came for. They moved to the bottom, with the rest of
+              the provenance, where a footnote belongs. */}
+          <h2 className="text-[1.25rem] font-semibold leading-snug tracking-tight text-foreground [overflow-wrap:anywhere]">
             {title}
           </h2>
-          {entryKey && entryKey !== title && (
-            <p className="mt-0.5 truncate text-2xs text-muted-foreground/55" data-testid="memory-detail-key">
-              {entryKey}
-            </p>
-          )}
-          {metaBits.length > 0 && (
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted-foreground/60">
-              {metaBits.map((bit, i) => (
-                <span key={bit.key} className="inline-flex items-center gap-2">
-                  {i > 0 && (
-                    <span aria-hidden className="text-muted-foreground/35">
-                      ·
-                    </span>
-                  )}
-                  {bit.node}
-                </span>
-              ))}
-            </p>
-          )}
         </div>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 order-1">
           <button
@@ -2798,7 +2782,7 @@ function DetailView({
                 type="button"
                 onClick={onToggleLane}
                 disabled={laneBusy}
-                className="inline-flex items-center gap-1 rounded-lg border border-violet-500/30 bg-violet-500/10 px-2 py-1.5 text-2xs text-violet-300 transition hover:bg-violet-500/20 disabled:opacity-40"
+                className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2 py-1.5 text-2xs text-primary transition hover:bg-primary/20 disabled:opacity-40"
                 data-testid="memory-detail-toggle-lane"
               >
                 <UserRoundCog className="size-3" /> {laneBusy ? 'Saving…' : laneLabel}
@@ -2925,18 +2909,46 @@ function DetailView({
             </div>
           )}
 
-          <p
-            className="text-2xs text-muted-foreground/80"
-            title={[str(row.createdAt), str(row.updatedAt)].filter(Boolean).join('  →  ')}
+          {/* The provenance footnote, with the key and the entry's own
+              badges. `source` appears ONCE now: it was in the header line
+              AND in this line, so the same fact was printed twice a
+              screen apart. */}
+          <div
+            className="space-y-1 border-t border-border/40 pt-3"
+            data-testid="memory-detail-provenance"
           >
-            {[
-              source ? `source: ${source}` : '',
-              confidence ? `confidence: ${confidence}` : '',
-              created ? `created ${absoluteDay(created) || created}` : '',
-            ]
-              .filter(Boolean)
-              .join('  ·  ') || 'No provenance recorded.'}
-          </p>
+            {entryKey && entryKey !== title && (
+              <p className="truncate font-mono text-2xs text-muted-foreground/55" data-testid="memory-detail-key">
+                {entryKey}
+              </p>
+            )}
+            {metaBits.length > 0 && (
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted-foreground/60">
+                {metaBits.map((bit, i) => (
+                  <span key={bit.key} className="inline-flex items-center gap-2">
+                    {i > 0 && (
+                      <span aria-hidden className="text-muted-foreground/35">
+                        ·
+                      </span>
+                    )}
+                    {bit.node}
+                  </span>
+                ))}
+              </p>
+            )}
+            <p
+              className="text-2xs text-muted-foreground/80"
+              title={[str(row.createdAt), str(row.updatedAt)].filter(Boolean).join('  →  ')}
+            >
+              {[
+                source ? `source: ${source}` : '',
+                confidence ? `confidence: ${confidence}` : '',
+                created ? `created ${absoluteDay(created) || created}` : '',
+              ]
+                .filter(Boolean)
+                .join('  ·  ') || 'No provenance recorded.'}
+            </p>
+          </div>
         </div>
       )}
     </div>

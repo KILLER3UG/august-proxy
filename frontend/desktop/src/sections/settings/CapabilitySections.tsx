@@ -128,7 +128,7 @@ export function SubagentsSection() {
   };
 
   return (
-    <div className="px-8 py-6 max-w-2xl">
+    <div className="px-8 py-6">
       <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
         <Users className="size-6 text-primary" /> Subagents
       </h2>
@@ -230,7 +230,7 @@ export function PluginsSection() {
   const skillCount = skills.data?.skills?.length ?? 0;
 
   return (
-    <div className="px-8 py-6 max-w-2xl">
+    <div className="px-8 py-6">
       <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
         <Layers className="size-6 text-primary" /> Plugins
       </h2>
@@ -333,7 +333,7 @@ export function BrowserUseSection() {
   );
 
   return (
-    <div className="px-8 py-6 max-w-2xl">
+    <div className="px-8 py-6">
       <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
         <Globe className="size-6 text-primary" /> Browser Use
       </h2>

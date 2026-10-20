@@ -135,7 +135,7 @@ export function LiveSettingsTab() {
   const ttsReady = Boolean(initial.ttsReady);
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6">
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
         <div>
           <p className="text-sm font-semibold">Live (STT/TTS) settings</p>

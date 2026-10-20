@@ -244,7 +244,7 @@ export function TurnLimitsSection() {
   }
 
   return (
-    <div className="px-8 py-6 max-w-2xl">
+    <div className="px-8 py-6">
       <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
         <Gauge className="size-6 text-primary" /> Turn Limits
       </h2>

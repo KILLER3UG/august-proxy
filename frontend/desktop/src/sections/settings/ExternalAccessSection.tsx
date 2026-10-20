@@ -172,7 +172,7 @@ export function ExternalAccessSection() {
   -d '{"model":"claude-sonnet-4-5","max_tokens":256,"messages":[{"role":"user","content":"Hello"}]}'`;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-8 py-12 space-y-10">
+    <div className="w-full px-8 py-12 space-y-10">
       <header>
         <h2 className="text-2xl font-semibold tracking-tight">API Access</h2>
         <p className="mt-2 text-sm text-muted-foreground">

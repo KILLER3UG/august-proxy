@@ -67,7 +67,7 @@ export function UpdateSection() {
   const ready = progress.phase === 'ready';
 
   return (
-    <div className="px-8 py-6 max-w-2xl">
+    <div className="px-8 py-6">
       {/* Identity header */}
       <div className="flex flex-col items-center pt-2 text-center">
         <div className="grid size-16 place-items-center rounded-2xl border border-white/10 bg-white/[0.04]">

@@ -305,18 +305,32 @@ export function WorkspaceShell({
       onClick={closeToWorkspace}
       data-testid="settings-backdrop"
     >
-      {/* 920x680 — the reference panel's exact measured size. It used to be
-       * `h-full max-h-full` inside a `fixed inset-0` flex box, which pinned it
-       * to the full viewport height minus padding: 92% of the window at ANY
-       * window size, so opening settings covered essentially the whole app.
-       * `min()` keeps the cap honest on a short window, where the panel
-       * scrolls internally instead of overflowing. */}
+      {/* The panel is sized by the ROWS it has to hold, and the rows are
+       * three-column: a name, a value, and a date. At 920px the content
+       * column was 616px, so the name took 210px and the value - the
+       * informative column, the one the row exists for - was squeezed into
+       * ~300px and truncated after ~48 characters, while the name sat in a
+       * gap. The reference's settings is a WIDE panel (the owner's capture
+       * measures ~1600px across) whose content column gives the value
+       * ~690px.
+       *
+       * So the panel is wide now: 1440px, which is inside the reference's
+       * own 860-1600px range, and the content column goes from 616px to
+       * ~1080px. It is still a CENTRED modal over a live chat - that is
+       * August's identity and the reference's shape too - and `w-full` plus
+       * the padding keeps it honest on a narrow window.
+       *
+       * It used to be `h-full max-h-full` inside a `fixed inset-0` flex box,
+       * which pinned it to the full viewport height minus padding: 92% of the
+       * window at ANY window size, so opening settings covered essentially
+       * the whole app. `min()` keeps the cap honest on a short window,
+       * where the panel scrolls internally instead of overflowing. */}
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
         ref={trapRef}
-        className="relative flex max-h-[min(680px,calc(100vh-4rem))] w-full max-w-[920px] overflow-hidden rounded-2xl border border-hairline-strong bg-background shadow-2xl"
+        className="relative flex max-h-[min(880px,calc(100vh-3rem))] w-full max-w-[1440px] overflow-hidden rounded-2xl border border-hairline-strong bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Left rail.
@@ -422,8 +436,20 @@ export function WorkspaceShell({
           className="flex min-h-0 flex-1 justify-center overflow-y-auto overflow-x-hidden"
           data-testid="settings-content-region"
         >
+          {/* The 680px cap was calibrated, but to the reference dialog as
+              it was MEASURED THEN: a ~848px panel with a ~640px content
+              column. The reference the owner attached is a different shape
+              - a ~1600px settings panel whose content column is ~1290px,
+              and whose memory rows are three columns at ONE type size with
+              the VALUE column getting ~690px of them.
+              At 680px the value column was 303px, so every value in the
+              memory list truncated after ~48 characters while the name sat
+              in a gap the width of a sentence. The cap is 1080px now,
+              which is the same PROPORTION of the panel the reference has
+              (81% of its width; 75% here), and the panels that carry
+              their own inner measure are unaffected. */}
           <div
-            className="flex min-h-full w-full max-w-[680px] flex-col"
+            className="flex min-h-full w-full max-w-[1080px] flex-col"
             data-testid="settings-content-column"
           >
             {children}
