@@ -13,7 +13,10 @@ is the gap between what the reference shows and what August shows now.
 | Change | Where |
 |---|---|
 | A run of tool calls collapses into one activity line + a bordered card | `components/chat/ActivityGroup.tsx`, `lib/tool-summary.ts` |
-| The run phrase ("Ran 4 commands", "Ran 4 commands, read a file") | `lib/tool-summary.ts` |
+| **A run of tool calls collapses into ONE line whatever the kind** — reads, commands, edits, memory writes, plain tool calls. A MIXED run (a read, a command, a read) is one line, and the phrase names each kind. The `ExploreGroup` and its "Explore · 2 searches, 3 files" vocabulary are gone, merged into the activity line. | `components/chat/ActivityGroup.tsx`, `lib/tool-summary.ts`, `sections/chat/message/AssistantBlockTimeline.tsx` |
+| **A run containing a FAILURE is grouped too, and the group OPENS on it** — the line is marked and the red is on screen without a click. The old rule kept a failure out of the group so it could never be hidden; opening the group answers that objection without giving up the grouping. | `components/chat/ActivityGroup.tsx`, `sections/chat/message/AssistantBlockTimeline.tsx` |
+| The run phrase ("Ran 4 commands", "Ran 4 commands, read a file", "Ran a command, edited a file") | `lib/tool-summary.ts` |
+| **The disclosure owns its body** — the trigger advertises a real `aria-controls` and `aria-expanded` in BOTH states, and the body is mounted-and-hidden rather than absent from the DOM. `ThinkingDisclosure`, `tool/ToolCallItem` and `CompactionNoticeCard` pass `content`; `ChangesCard` is the last. | `components/chat/DisclosureRow.tsx` |
 | The self-correction frame is visible in the transcript | `lib/recovery-copy.ts`, `makeStreamHandlers.ts` |
 | The model list no longer paints a long id over its own badges | `sections/workspace/models/ModelRow.tsx` |
 | The tool label is ONE span that is not dimmed, and the dots beside it animate | `components/chat/tool/ToolCallItem.tsx` |
@@ -47,12 +50,31 @@ into the code.
 
 | Decision | The question | What it affects |
 |---|---|---|
-| **Group every tool kind, not just commands.** | A run of *reads* is already collapsed by `ExploreGroup` ("Explore · 2 searches, 3 files"), and a run of *commands* is now collapsed by `ActivityGroup` ("Ran 4 commands"). Should a MIXED run — a read, a command, a read — become one line, or stay two? | The reference collapses everything into one line. Doing that here means `ExploreGroup` and `ActivityGroup` merge, and the Explore group's own vocabulary ("Explore") goes away. |
 | **Group across a turn boundary.** | Today a run is a run of *consecutive* blocks. A turn that reads a file, answers, and reads another file is two groups, because the answer is between them. | Grouping across an answer would put unrelated work under one line, and the elapsed time would be the sum of two things that never ran together. |
-| **Should a failed command be grouped at all?** | Today a run containing a failure is NOT grouped: each command keeps its own row, so the red line is always visible. | The reference groups failures too and marks the line. Grouping a failure is only safe if the group opens on failure, which is a different default state. |
 | **Apply the update without a restart.** | The download is automatic; the restart is the user's click, because it interrupts whatever is running. | Restarting on idle ("no turn has run for 60 s") is possible, and is the natural next step. It needs the app to know it is idle, which it partly does (`liveActivity`). |
 | **Update on a schedule, not on launch.** | The download starts 60 s after launch. | A scheduled check (nightly) would find builds published while the app was closed. It needs a task scheduler, which the app does not have on the desktop. |
 | **`/mcp/harness` by default.** | It is closed unless the user enables external access. | An outer agent that drives August needs the key. If August is meant to be a harness for other agents, closing it by default is wrong — and the default is a one-line change. |
+
+### Decided this round — and no longer open
+
+Two of the three chat-surface decisions are now made and implemented, so they
+have left the table above. The owner's direction was the reference's own
+behaviour: **collapse everything, and open on a failure.** The reasoning is
+kept here because the code's shape depends on it:
+
+- **"Group every tool kind, not just commands"** — DECIDED: a run of tool
+  calls collapses into ONE line whatever the kind, and the phrase names each
+  kind. The `ExploreGroup` and its "Explore" vocabulary are gone; the Explore
+  group's own search/file split went with them, so a run of web searches now
+  reads as "read N files".
+- **"Should a failed command be grouped at all?"** — DECIDED: yes, and the
+  group OPENS on a failure. The old rule kept a failure out of the group
+  because "a failure hidden behind a collapsed line is one nobody sees" — and
+  opening the group answers that objection instead of giving up the grouping.
+  The line is marked as failed, and the failing row opens with it.
+- **"Group across a turn boundary"** is still open, and is deliberately so: a
+  run is still a run of *consecutive* blocks, and the answer between two reads
+  is still two groups.
 
 ## NEXT — after this round: the mobile companion
 
@@ -142,7 +164,7 @@ the state below is the tree's, not the plan's memory.
 
 | Item | State on 2026-10-20 |
 |---|---|
-| **B4's `<DisclosureRow>` consumers.** Five call sites; only `HandoffNoticeCard` passes the `content` prop, so four still own their bodies as siblings — and the trigger of a closed one advertises no `aria-controls`. | **being fixed** — `ThinkingDisclosure`, `tool/ToolCallItem` and `CompactionNoticeCard` are being migrated; `ChangesCard` is the fourth. The trap: `content`'s `forceMount` kills the mount animation of a body that animates itself (`ThinkingDisclosure`, `CompactionNoticeCard`). |
+| **B4's `<DisclosureRow>` consumers.** Five call sites; only `HandoffNoticeCard` passed the `content` prop, so four still owned their bodies as siblings — and the trigger of a closed one advertised no `aria-controls`. | **fixed for three of the four** — `ThinkingDisclosure`, `tool/ToolCallItem` and `CompactionNoticeCard` now pass `content`, so every one of them advertises a real `aria-controls` and `aria-expanded` in BOTH states; `ChangesCard` is the last, and it belongs to the changes-card work. The trap was **measured, not assumed**: with the motion element mounted eagerly, `forceMount`+`hidden` plays the mount animation inside a `display:none` region, so the row opens on an element already at its final state (opacity flat at 1.000, measured in Chromium). Mounted lazily — created in the same commit that un-hides the region — the animation plays (opacity 0.000 → 1.000). The EXIT collapse needed a second fix: the region's `hidden` must not land on the frame the exit starts, so a body that leaves on its own keeps the region rendered until it reports that it is gone (`DisclosureBodyApi`). |
 | **The Settings scrim.** `components/workspace/WorkspaceShell.tsx:277-287` says the reference "floats over a completely unchanged app — sidebar, transcript and composer all stay at full brightness" and deliberately drops the tint. | **The code is wrong and the comment is wrong with it.** The repo's own capture says the opposite, twice: `docs/plans/2026-10-11-ui-reference-capture.md:20` — "A **centred modal** on a dimmed chat behind it" — and `:252` — "The chat is dimmed behind it". Being fixed. |
 | **The jobs tray.** `components/shell/RightDrawerJobsSection.tsx:100-102` renders `useBackgroundTasksStore`, and `store/background-tasks.ts` has no `persist` — so the tray is in-memory and empties on every reload. | **open** — "move it to a global surface" is a FEATURE (persistence + a surface that survives a reload), not a relocation. The audit's premise was wrong and the measurement says what the feature is. |
 | **The composer row and the sidebar density.** No measured target exists. | **open** — an owner's-eye judgement against the reference, not a defect list. |

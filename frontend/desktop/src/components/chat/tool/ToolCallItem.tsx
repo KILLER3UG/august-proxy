@@ -201,6 +201,20 @@ export const ToolCallItem = memo(function ToolCallItem({
             </span>
           ) : undefined
         }
+        /* The body goes through the disclosure instead of sitting beside it as
+           a sibling the trigger knows nothing about: that is what gives the
+           pill an `aria-controls` and the body a real hidden state, in BOTH
+           states — the closed row is the one a screen reader navigates.
+
+           The body is mounted whether the row is open or closed (that is
+           what `forceMount` means), so a settled read — which has no body at
+           all — passes `undefined` and gets no region rather than an empty
+           one. */
+        content={
+          hasBody ? (
+            <ToolCallItemBody tool={tool} progress={progress} sessionId={sessionId} />
+          ) : undefined
+        }
       >
         <span className="flex min-w-0 items-center gap-2">
           {filename ? (
@@ -243,10 +257,6 @@ export const ToolCallItem = memo(function ToolCallItem({
         >
           {inlineContextText}
         </div>
-      )}
-
-      {open && hasBody && (
-        <ToolCallItemBody tool={tool} progress={progress} sessionId={sessionId} />
       )}
     </div>
   );

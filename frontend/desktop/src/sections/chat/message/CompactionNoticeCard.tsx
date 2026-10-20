@@ -60,7 +60,50 @@ export function CompactionNoticeCard({ info }: { info: CompactionNoticeInfo }) {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={t.spring}
     >
-      <DisclosureRow onToggle={() => setOpen(!open)} open={open}>
+      <DisclosureRow
+        onToggle={() => setOpen(!open)}
+        open={open}
+        /* The body goes through the disclosure instead of sitting beside it as
+           a sibling the trigger knows nothing about: that is what gives the
+           pill an `aria-controls` and the body a real hidden state, in BOTH
+           states — the closed row is the one a screen reader navigates.
+
+           The body mounts LAZILY (`open ? … : null`). That is what keeps the
+           mount animation alive: a motion element that is mounted eagerly
+           would start animating inside the still-hidden region and finish
+           where nobody can see it, and the row would then open on an
+           element already at its final state. Mounted here, the motion
+           element is created in the same commit that un-hides the region,
+           so the animation is seen. */
+        content={
+          open ? (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              transition={t.smooth}
+              className={cn(
+                'ml-5 mt-1 mb-1 rounded-lg border border-border/50 bg-muted/20 px-3 py-2',
+                'text-[0.78125rem] leading-relaxed text-muted-foreground/85',
+              )}
+            >
+              {rotate
+                ? (info.tailCount != null
+                    ? `Rotated onto the handoff note — kept the last ${info.tailCount} messages` +
+                      (info.replayedCount
+                        ? ` and replayed the opening ${info.replayedCount === 1 ? 'ask' : 'asks'}`
+                        : '')
+                    : `Rotated onto the handoff note; summarized ${info.compressedCount} messages into it`)
+                : info.headCount != null && info.tailCount != null
+                  ? `Kept the first ${info.headCount} and last ${info.tailCount} messages; summarized ${info.compressedCount} in the middle`
+                  : `Summarized ${info.compressedCount} messages in the middle`}
+              {info.contextWindow
+                ? ` to stay within ${formatContextWindow(info.contextWindow)} context`
+                : ''}
+              . The full transcript is archived — chat shows a compact projection only.
+            </motion.div>
+          ) : null
+        }
+      >
         <span className="flex min-w-0 items-center gap-2">
           <motion.span
             className="inline-flex shrink-0"
@@ -79,32 +122,6 @@ export function CompactionNoticeCard({ info }: { info: CompactionNoticeInfo }) {
           </span>
         </span>
       </DisclosureRow>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: 'auto' }}
-          transition={t.smooth}
-          className={cn(
-            'ml-5 mt-1 mb-1 rounded-lg border border-border/50 bg-muted/20 px-3 py-2',
-            'text-[0.78125rem] leading-relaxed text-muted-foreground/85',
-          )}
-        >
-          {rotate
-            ? (info.tailCount != null
-                ? `Rotated onto the handoff note — kept the last ${info.tailCount} messages` +
-                  (info.replayedCount
-                    ? ` and replayed the opening ${info.replayedCount === 1 ? 'ask' : 'asks'}`
-                    : '')
-                : `Rotated onto the handoff note; summarized ${info.compressedCount} messages into it`)
-            : info.headCount != null && info.tailCount != null
-              ? `Kept the first ${info.headCount} and last ${info.tailCount} messages; summarized ${info.compressedCount} in the middle`
-              : `Summarized ${info.compressedCount} messages in the middle`}
-          {info.contextWindow
-            ? ` to stay within ${formatContextWindow(info.contextWindow)} context`
-            : ''}
-          . The full transcript is archived — chat shows a compact projection only.
-        </motion.div>
-      )}
     </motion.div>
   );
 }

@@ -132,23 +132,41 @@ at 27.)
   published signature, against the bytes it is about to publish.
   The whole flow is unverified on a packaged NSIS install: the matrix in
   `docs/UPDATE_VERIFICATION.md` is the check, and it has not been run.
-- **A run of COMMANDS is ONE line in the transcript, not N.** The
+- **A run of tool calls is ONE line in the transcript, not N.** The
   reference transcript collapses consecutive tool calls into an activity line
   — a warm dot, one phrase ("Ran 4 commands"), the elapsed time, a chevron —
   and reveals them in a bordered card. That grouping is a RENDER-TIME
   arrangement (`components/chat/ActivityGroup.tsx` + `lib/tool-summary.ts`),
   not a new persisted block kind: the transcript still stores one block per
   tool call, so a reload produces the same grouping and the backend knows
-  nothing about it. **Commands only, for now**: a run of READS keeps the
-  Explore group it already had, and a run of edits, memory writes, search
-  hits or subagents keeps its own row. Grouping every kind is the open
-  decision in `docs/ROADMAP.md` — the reference collapses everything into
-  one line, and merging the two groupings means dropping the Explore
-  group's own vocabulary. A command that FAILED, is waiting for approval, or
-  carries an action widget stays on its own — a group collapses to a single
-  line, and a failure hidden behind a collapsed line is one nobody sees.
+  nothing about it. **EVERY kind collapses into the one line** — a read, a
+  command and an edit in a row is ONE line whose phrase names each kind
+  ("Ran a command, read 2 files"), and the card reveals every row. The
+  separate Explore group is gone; its vocabulary went with it, so a run of
+  web searches reads "read N files" rather than naming searches — the one
+  cost of the merge, named rather than hidden.
+  A run containing a FAILURE is still one line, but it **opens by default**
+  and carries a "failed" marker, because a failure hidden behind a collapsed
+  line is one nobody sees. A call that is waiting for approval, or carries an
+  action widget, stays on its own (an interactive control must be visible and
+  clickable) — and so do a subagent launch and `update_state`. A run of ONE
+  is not a group. A run is still a run of *consecutive* blocks: grouping
+  across a turn boundary remains an open decision in `docs/ROADMAP.md`.
   The live indicator (`WorkingIndicator`) and the persisted activity line are
   BOTH kept: one is what is happening, the other is what happened.
+- **A DISCLOSURE OWNS ITS BODY, and the body mounts lazily.** Every
+  `DisclosureRow` call site passes its body as the `content` prop, so the
+  trigger advertises a real `aria-controls` and `aria-expanded` in BOTH
+  states and the region is a Radix `CollapsibleContent` rather than a
+  sibling subtree that is merely absent from the DOM. The one non-obvious
+  consequence: `forceMount` + `hidden` kills the mount animation of a body
+  that animates ITSELF, because the motion element would already be at its
+  final state on the frame the region un-hides. The fix is to mount the body
+  LAZILY — created in the same React commit that un-hides the region — and
+  to let a body that leaves on its own keep the region rendered until it
+  reports it is gone (the `DisclosureBodyApi` channel on `DisclosureRow`).
+  Both were measured in Chromium against the real components, including the
+  eager-mount counterfactual, which reproduces the flat curve.
 - Provider **baseUrl** is used exactly as pasted; August only appends the API format leaf (`chat/completions` / `v1/messages` / `responses` / `models`). It never invents `/v1` on the base — Anthropic’s format already includes `v1` in the leaf; OpenAI-compatible hosts include `/v1` in the paste when needed.
 
 ## Recent desktop fix (0.12.21)

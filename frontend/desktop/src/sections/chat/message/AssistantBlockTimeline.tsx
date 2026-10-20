@@ -22,7 +22,6 @@ import { ActivitySummary } from '@/components/chat/ActivitySummary';
 import { SearchResultsTask } from '@/components/chat/SearchResultsCard';
 import { isSubagentToolName } from '@/components/chat/subagent-tools';
 import { SubagentDelegateRow } from '@/components/chat/SubagentDelegateRow';
-import { ExploreGroup } from '@/components/chat/ExploreGroup';
 import { ActivityGroup } from '@/components/chat/ActivityGroup';
 import { summarizeToolRun } from '@/lib/tool-summary';
 import { collectSnapshots, fromSnapshot, readSnapshot } from '../stream/subagent-blocks';
@@ -82,21 +81,52 @@ function isFinalOutput(block: DisplayBlock): boolean {
 }
 
 /**
- * A command block that can join an activity group.
+ * A tool block that can join an activity group.
  *
- * A command that FAILED, is waiting for approval, or carries an action
- * widget stays on its own. A group collapses to a single line, so a failure
- * or a prompt hidden behind a collapsed line is one nobody sees — and the
- * whole point of the run grouping is that the transcript stays quiet, which
- * is only safe while everything in it succeeded.
+ * The reference transcript collapses the WHOLE run of tool work into one
+ * line — a read, a command, a read is one thing that happened — and the
+ * phrase names each kind. Three kinds stay OUT of a group:
+ *
+ *   - a subagent launch: it renders its own delegate row (and its own
+ *     drawer), and that row is already a disclosure
+ *   - `update_state`: bookkeeping, represented by the phase marker
+ *   - a call that is waiting for approval, or that carries an action
+ *     widget: an INTERACTIVE control the user has to see and click, and
+ *     a collapsed line hides both
+ *
+ * A FAILURE is groupable. The reference groups failures and marks the
+ * line, and the group OPENS on one, so the red is on screen without a
+ * click. The old rule refused to group a failure at all, on the grounds
+ * that a failure hidden behind a collapsed line is one nobody sees —
+ * that reasoning is answered by opening the group, not by keeping the
+ * failure out of it.
  */
-function isGroupableCommand(block: DisplayBlock): boolean {
+function isGroupableToolBlock(block: DisplayBlock): boolean {
+  if (block.type !== 'toolCall' && block.type !== 'command') return false;
+  const tool = block.tool;
+  if (!tool) return false;
+  if (isSubagentToolName(tool.name)) return false;
+  if (normalizeToolName(tool.name) === 'update_state') return false;
+  if (tool.pendingApproval || tool.actionNeeded) return false;
+  return true;
+}
+
+/**
+ * A tool call that renders as NOTHING at all.
+ *
+ * `update_state` is bookkeeping: the phase marker already says the turn
+ * moved on, so a duplicate row is noise. A block that renders as nothing
+ * must not BREAK a run either — the blocks on either side of it are
+ * adjacent on screen, and adjacent work is one line. A FAILED
+ * `update_state` does render, so it is not invisible bookkeeping and it
+ * does break the run.
+ */
+function isInvisibleBookkeeping(block: DisplayBlock): boolean {
   return (
-    block.type === 'command' &&
+    block.type === 'toolCall' &&
     !!block.tool &&
-    block.tool.status !== 'error' &&
-    !block.tool.pendingApproval &&
-    !block.tool.actionNeeded
+    normalizeToolName(block.tool.name) === 'update_state' &&
+    block.tool.status !== 'error'
   );
 }
 
@@ -812,70 +842,108 @@ export function AssistantBlockTimeline({
           continue;
         }
 
-        // A run of consecutive commands collapses into ONE activity line —
-        // the reference's "Ran 4 commands" — with the individual commands
-        // inside a bordered card when it is opened.
+        // A run of tool work collapses into ONE activity line — the
+        // reference's "Ran 4 commands, read a file" — with the individual
+        // calls inside a bordered card when it is opened.
         //
         // The grouping is a RENDER-TIME arrangement, not a new persisted
-        // block kind: the transcript still stores one block per command, so
-        // a reload produces the same grouping and the backend needs to know
-        // nothing about it. Reads keep their own Explore group, edits and
-        // memory writes keep their rail rows, and a search keeps its results
-        // card.
-        if (isCommand && isGroupableCommand(block)) {
-          let tj = ti;
-          while (tj < blocks.length && isGroupableCommand(blocks[tj])) tj += 1;
-          if (tj - ti >= 2) {
-            const runTools = blocks
-              .slice(ti, tj)
-              .map((b) => b.tool)
-              .filter((t): t is NonNullable<typeof t> => !!t);
-            const anyRunning = runTools.some((t) => t.status === 'running');
-            const elapsedMs = runTools.reduce(
-              (sum, t) => sum + (typeof t.duration === 'number' ? t.duration : 0),
-              0,
-            );
-            const groupKey = `activity_${toolId}`;
-            const groupOpen =
-              groupKey in expandOverrides ? expandOverrides[groupKey] : anyRunning;
-            tagged.push({
-              kind: 'block',
-              node: (
-                <ActivityGroup
-                  key={groupKey}
-                  groupKey={groupKey}
-                  summary={summarizeToolRun(runTools)}
-                  elapsedMs={elapsedMs}
-                  running={anyRunning}
-                  expanded={groupOpen}
-                  onToggle={(next) => toggleExpand(groupKey, next)}
-                >
-                  {runTools.map((rt, ri) => {
-                    const rtId = rt.id || `activity_child_${ti + ri}`;
-                    return (
-                      <ToolStepRow
-                        key={rtId}
-                        tool={rt}
-                        label={getToolLabel(rt.name, {
-                          command: extractCommand(rt.context) ?? undefined,
-                          status: rt.status,
-                        })}
-                        isCommand
-                        expanded={rtId in expandOverrides ? expandOverrides[rtId] : false}
-                        verbose={verbose}
-                        onToggle={(next) => toggleExpand(rtId, next)}
-                        progress={rt.id ? toolProgress?.get(rt.id) : undefined}
-                      >
-                        <ToolCallItemBody tool={rt} verbose={verbose} />
-                      </ToolStepRow>
-                    );
-                  })}
-                </ActivityGroup>
-              ),
-            });
-            ti = tj;
+        // block kind: the transcript still stores one block per call, so a
+        // reload produces the same grouping and the backend needs to know
+        // nothing about it.
+        //
+        // EVERY kind joins: reads, commands, edits, memory writes, plain
+        // tool calls. A mixed run (a read, a command, a read) is one thing
+        // that happened, so it is one line — and the phrase names each
+        // kind. A run of reads used to keep the Explore group it had
+        // ("Explore · 2 searches, 3 files"); that group and its vocabulary
+        // are gone, merged into this one.
+        const runBlocks: DisplayBlock[] = [];
+        let tj = ti;
+        while (tj < blocks.length) {
+          const nb = blocks[tj];
+          if (isGroupableToolBlock(nb)) {
+            runBlocks.push(nb);
+            tj += 1;
             continue;
           }
+          // A call that renders as nothing must not break the run: the
+          // blocks on either side of it are adjacent on screen.
+          if (isInvisibleBookkeeping(nb)) {
+            tj += 1;
+            continue;
+          }
+          break;
+        }
+        if (runBlocks.length >= 2) {
+          const runTools = runBlocks
+            .map((b) => b.tool)
+            .filter((t): t is NonNullable<typeof t> => !!t);
+          const anyRunning = runTools.some((t) => t.status === 'running');
+          // A run that FAILED opens. The group used to refuse to group a
+          // failure at all, because a failure behind a collapsed line is
+          // one nobody sees; opening the group answers that, so the
+          // failure is grouped AND visible without a click.
+          const hasFailure = runTools.some((t) => t.status === 'error');
+          const elapsedMs = runTools.reduce(
+            (sum, t) => sum + (typeof t.duration === 'number' ? t.duration : 0),
+            0,
+          );
+          const groupKey = `activity_${toolId}`;
+          const groupOpen =
+            groupKey in expandOverrides
+              ? expandOverrides[groupKey]
+              : anyRunning || hasFailure;
+          tagged.push({
+            kind: 'block',
+            node: (
+              <ActivityGroup
+                key={groupKey}
+                groupKey={groupKey}
+                summary={summarizeToolRun(runTools)}
+                elapsedMs={elapsedMs}
+                running={anyRunning}
+                failed={hasFailure}
+                expanded={groupOpen}
+                onToggle={(next) => toggleExpand(groupKey, next)}
+              >
+                {runBlocks.map((rb, ri) => {
+                  const rt = rb.tool!;
+                  const rtId = rt.id || `activity_child_${ti + ri}`;
+                  const rbIsCommand = rb.type === 'command';
+                  return (
+                    <ToolStepRow
+                      key={rtId}
+                      tool={rt}
+                      label={getToolLabel(rt.name, {
+                        command: rbIsCommand
+                          ? extractCommand(rt.context) ?? undefined
+                          : undefined,
+                        filename: !rbIsCommand
+                          ? extractFilename(rt.context) ?? undefined
+                          : undefined,
+                        status: rt.status,
+                      })}
+                      isCommand={rbIsCommand}
+                      /* A failed row opens with the group, so the error
+                         text is on screen without a second click. */
+                      expanded={
+                        rtId in expandOverrides
+                          ? expandOverrides[rtId]
+                          : rt.status === 'error'
+                      }
+                      verbose={verbose}
+                      onToggle={(next) => toggleExpand(rtId, next)}
+                      progress={rt.id ? toolProgress?.get(rt.id) : undefined}
+                    >
+                      <ToolCallItemBody tool={rt} verbose={verbose} />
+                    </ToolStepRow>
+                  );
+                })}
+              </ActivityGroup>
+            ),
+          });
+          ti = tj;
+          continue;
         }
 
         // update_state bookkeeping is represented by the phase marker
@@ -889,84 +957,6 @@ export function AssistantBlockTimeline({
         ) {
           ti++;
           continue;
-        }
-
-        // A run of ≥2 consecutive read-only rows (file views +
-        // web searches, no errors) collapses into one Explore group. A lone
-        // read falls through to the existing ×N / single-row logic.
-        const isReadTool = (t: NonNullable<DisplayBlock['tool']>) =>
-          t.status !== 'error' &&
-          !isSubagentToolName(t.name) &&
-          (classifyTool(t.name) === 'view' ||
-            (t.searchHits?.length ?? 0) > 0 ||
-            normalizeToolName(t.name).includes('web_search'));
-        if (!isCommand && isReadTool(tool)) {
-          const run: NonNullable<DisplayBlock['tool']>[] = [];
-          let tj = ti;
-          while (tj < blocks.length) {
-            const nb = blocks[tj];
-            if (nb.type !== 'toolCall' || !nb.tool) break;
-            if (!isReadTool(nb.tool)) break;
-            run.push(nb.tool);
-            tj += 1;
-          }
-          if (run.length >= 2) {
-            const searches = run.filter(
-              (t) => (t.searchHits?.length ?? 0) > 0 || normalizeToolName(t.name).includes('web_search'),
-            ).length;
-            const fileSet = new Set(
-              run
-                .map((t) => extractFilename(t.context))
-                .filter((f): f is string => !!f)
-                .map((f) => f.toLowerCase()),
-            );
-            // A same-file-only run belongs to the ×N consolidation path below,
-            // not an Explore group — group only MIXED read runs (searches or
-            // more than one file).
-            const mixed = searches > 0 || fileSet.size > 1;
-            if (mixed) {
-              const anyRunning = run.some((t) => t.status === 'running');
-              const groupKey = `explore_${toolId}`;
-              const groupOpen = groupKey in expandOverrides ? expandOverrides[groupKey] : anyRunning;
-              tagged.push({
-                kind: 'block',
-                node: (
-                  <ExploreGroup
-                    key={groupKey}
-                    groupKey={groupKey}
-                    searches={searches}
-                    files={fileSet.size}
-                    running={anyRunning}
-                    expanded={groupOpen}
-                    onToggle={(next) => toggleExpand(groupKey, next)}
-                  >
-                    {run.map((rt) => {
-                      const rtId = rt.id || `explore_child_${ti}`;
-                      const rtFilename = extractFilename(rt.context);
-                      return (
-                        <ToolStepRow
-                          key={rtId}
-                          tool={rt}
-                          label={getToolLabel(rt.name, {
-                            filename: rtFilename ?? undefined,
-                            status: rt.status,
-                          })}
-                          isCommand={false}
-                          expanded={rtId in expandOverrides ? expandOverrides[rtId] : false}
-                          verbose={verbose}
-                          onToggle={(next) => toggleExpand(rtId, next)}
-                        >
-                          <ToolCallItemBody tool={rt} verbose={verbose} />
-                        </ToolStepRow>
-                      );
-                    })}
-                  </ExploreGroup>
-                ),
-              });
-              ti = tj;
-              continue;
-            }
-          }
         }
 
         const promptEntries =
@@ -1031,52 +1021,11 @@ export function AssistantBlockTimeline({
           status: tool.status,
         });
 
-        // Consecutive reads of the same file collapse into one row:
-        // `read consolidation.py ×4`. Errored reads stay
-        // individual so the failure stays visible.
-        if (
-          !isCommand &&
-          classifyTool(tool.name) === 'view' &&
-          tool.status !== 'error' &&
-          filename
-        ) {
-          let count = 1;
-          let totalDuration = typeof tool.duration === 'number' ? tool.duration : 0;
-          let tj = ti + 1;
-          while (tj < blocks.length) {
-            const nb = blocks[tj];
-            if (nb.type !== 'toolCall' || !nb.tool) break;
-            const nt = nb.tool;
-            if (nt.status === 'error' || classifyTool(nt.name) !== 'view') break;
-            if (extractFilename(nt.context) !== filename) break;
-            count += 1;
-            if (typeof nt.duration === 'number') totalDuration += nt.duration;
-            tj += 1;
-          }
-          if (count > 1) {
-            tagged.push({
-              kind: 'block',
-              node: (
-                <ToolStepRow
-                  key={toolId}
-                  tool={{ ...tool, duration: totalDuration }}
-                  label={`${label} ×${count}`}
-                  isCommand={false}
-                  expanded={false}
-                  verbose={verbose}
-                  onToggle={(next) => toggleExpand(toolId, next)}
-                >
-                  <ToolCallItemBody
-                    tool={tool}
-                    verbose={verbose}
-                  />
-                </ToolStepRow>
-              ),
-            });
-            ti = tj;
-            continue;
-          }
-        }
+        // Consecutive reads of the same file used to collapse into one row:
+        // `read consolidation.py ×4`. That path is gone — a run of two or
+        // more reads is an activity group now, so the consolidation could
+        // only ever have fired for a single read, which is not a
+        // consolidation. The group shows every call, one row each.
 
         tagged.push({
           kind: 'block',

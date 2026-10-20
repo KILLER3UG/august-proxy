@@ -3,6 +3,13 @@
  * activity line — a warm dot, one phrase, the elapsed time, a chevron — and
  * reveals the individual calls in a bordered card when it is opened.
  *
+ * Every kind of tool work joins the line: reads, commands, edits, memory
+ * writes, plain tool calls. A mixed run (a read, a command, a read) is one
+ * thing that happened, and the phrase names each kind.
+ *
+ * A run that FAILED is grouped too, and the line is marked and OPENS: a
+ * failure behind a collapsed line is one nobody sees.
+ *
  * The grouping is a RENDER-TIME arrangement, not a new persisted block kind:
  * the transcript still stores one block per tool call, so a reload produces
  * the same grouping and nothing in the backend has to know about it.
@@ -12,7 +19,7 @@
  * rather than as a stack of separate rows that happen to be adjacent. */
 
 import { Children, type ReactNode } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { AlertCircle, ChevronDown } from 'lucide-react';
 import { cn, fmtElapsed } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
@@ -20,17 +27,21 @@ export function ActivityGroup({
   summary,
   elapsedMs,
   running,
+  failed,
   expanded,
   onToggle,
   groupKey,
   children,
 }: {
-  /** The phrase for the whole run — "Ran 4 commands". */
+  /** The phrase for the whole run — "Ran 4 commands, read a file". */
   summary: string;
   /** Total time for the run, in ms. Hidden under a second: a sub-second
    *  duration reads as noise, and the reference shows whole seconds. */
   elapsedMs?: number;
   running: boolean;
+  /** The run contains a failure. The line is MARKED, and the group opens
+   *  on it: a failure behind a collapsed line is one nobody sees. */
+  failed?: boolean;
   expanded: boolean;
   onToggle: (next: boolean) => void;
   /** Stable key for the manual expand override. */
@@ -68,6 +79,15 @@ export function ActivityGroup({
           >
             {summary}
           </span>
+          {failed && (
+            <span
+              className="inline-flex shrink-0 items-center gap-1 text-2xs font-medium text-danger-fg"
+              data-testid="activity-group-failed"
+            >
+              <AlertCircle className="size-3 text-danger" aria-hidden />
+              failed
+            </span>
+          )}
           {elapsed ? (
             <span
               className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground/60"

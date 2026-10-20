@@ -91,6 +91,78 @@ export const ThinkingDisclosure = memo(function ThinkingDisclosure({
       <DisclosureRow
         onToggle={() => setUserOpen(!open)}
         open={open}
+        /* The body goes through the disclosure instead of sitting beside it as
+           a sibling the trigger knows nothing about: that is what gives the
+           pill an `aria-controls` and the body a real hidden state.
+
+           The function form is the "my body leaves on its own" channel. The
+           region is `hidden` while the row is closed, and `hidden` is
+           `display:none` — a body that collapses itself could not be seen
+           collapsing inside one, because the hidden lands on the same frame
+           the exit starts. The region therefore stays rendered until
+           `onBodyExitComplete` says the body is gone, and the collapse is
+           seen rather than cut.
+
+           The MOUNT animation is a different problem and it is solved by the
+           body mounting lazily: `{open && …}` means the motion element is
+           created in the same commit that un-hides the region, so it animates
+           where it can be seen. (A body that was mounted eagerly — while the
+           region was still hidden — would finish animating inside a
+           `display:none` box and the row would open on an element already
+           at its final state.) */
+        content={(api) => (
+          <AnimatePresence initial={false} onExitComplete={api.onBodyExitComplete}>
+            {open && (
+              <motion.div
+                key="thinking-content"
+                initial={pending ? false : { opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={pending ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                transition={
+                  pending
+                    ? { duration: 0.1, ease: 'easeOut' }
+                    : { duration: 0.18, ease: [0.16, 1, 0.3, 1] }
+                }
+                className={cn(
+                  'mt-0.5 w-full min-w-0 max-w-full wrap-anywhere pb-1 text-muted-foreground/65',
+                )}
+              >
+                {/* Claude-parity truncation: while streaming the live preview
+                    scroll-pins (existing behavior). Once DONE the reasoning is
+                    CLAMPED to a short window with a "Show more / Show less"
+                    expander — long reasoning must never dominate the transcript. */}
+                {!pending && (
+                  <button
+                    type="button"
+                    onClick={() => setExpanded((v) => !v)}
+                    data-testid="thinking-show-more"
+                    className="mb-0.5 text-2xs text-muted-foreground/60 hover:text-primary"
+                  >
+                    {expanded ? 'Show less' : 'Show more'}
+                  </button>
+                )}
+                <div
+                  ref={scrollRef}
+                  className={cn(
+                    'tool-result-scroll overscroll-contain thinking-scroll',
+                    pending
+                      ? 'max-h-36 overflow-y-auto'
+                      : expanded
+                        ? ''
+                        : 'relative max-h-16 overflow-hidden',
+                  )}
+                  onWheel={(e) => {
+                    if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) {
+                      e.stopPropagation();
+                    }
+                  }}
+                >
+                  <div ref={contentRef}>{children}</div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
       >
         <span className="flex min-w-0 items-baseline gap-1.5">
           {icon}
@@ -117,57 +189,6 @@ export const ThinkingDisclosure = memo(function ThinkingDisclosure({
           </span>
         </span>
       </DisclosureRow>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            key="thinking-content"
-            initial={pending ? false : { opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={pending ? { opacity: 0 } : { opacity: 0, height: 0 }}
-            transition={
-              pending
-                ? { duration: 0.1, ease: 'easeOut' }
-                : { duration: 0.18, ease: [0.16, 1, 0.3, 1] }
-            }
-            className={cn(
-              'mt-0.5 w-full min-w-0 max-w-full wrap-anywhere pb-1 text-muted-foreground/65',
-            )}
-          >
-            {/* Claude-parity truncation: while streaming the live preview
-                scroll-pins (existing behavior). Once DONE the reasoning is
-                CLAMPED to a short window with a "Show more / Show less"
-                expander — long reasoning must never dominate the transcript. */}
-            {!pending && (
-              <button
-                type="button"
-                onClick={() => setExpanded((v) => !v)}
-                data-testid="thinking-show-more"
-                className="mb-0.5 text-2xs text-muted-foreground/60 hover:text-primary"
-              >
-                {expanded ? 'Show less' : 'Show more'}
-              </button>
-            )}
-            <div
-              ref={scrollRef}
-              className={cn(
-                'tool-result-scroll overscroll-contain thinking-scroll',
-                pending
-                  ? 'max-h-36 overflow-y-auto'
-                  : expanded
-                    ? ''
-                    : 'relative max-h-16 overflow-hidden',
-              )}
-              onWheel={(e) => {
-                if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) {
-                  e.stopPropagation();
-                }
-              }}
-            >
-              <div ref={contentRef}>{children}</div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 });
