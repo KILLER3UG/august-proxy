@@ -571,22 +571,31 @@ if (editing) {
   }
 
   const ctxLabel = fmtContextWindow(model.contextWindow);
+  /* The leading text is the model's NAME when it has one that says something
+   * the id does not, and its ID otherwise. A fetched model usually carries the
+   * id AS its name (`beam-free`), so "has a name" is not the test — "has a
+   * name that is not the id" is. */
+  const isIdentifier = !model.name || model.name === model.id;
 
   return (
     <div className="px-3 py-2.5 text-sm transition-colors hover:bg-muted/20">
       <div className="flex items-center gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-1">
-          {model.pinned && (
-            <Pin className="size-3 shrink-0 text-primary" aria-label="Pinned" />
-          )}
+          {/* A name is prose, so it is set in the sans face; an identifier is
+            set in mono. The row says which of the two it is showing. The full
+            id stays in the tooltip AND in the action buttons' accessible
+            names, so an identifier is never only in a hover. */}
           {/* `truncate` needs a BLOCK-level box: `overflow:hidden` and
             `text-overflow:ellipsis` do not apply to an inline element, so
             the id used to overflow this cell and paint over the context
             badge, the source badge and the action buttons beside it. A
             flex item is blockified, so this span is one either way. */}
           <span
-            className="block min-w-0 truncate font-mono text-[0.8125rem]"
-            title={model.name || model.id}
+            className={cn(
+              'block min-w-0 truncate text-[0.8125rem] text-foreground',
+              isIdentifier ? 'font-mono' : 'font-medium',
+            )}
+            title={isIdentifier ? model.id : `${model.name} — ${model.id}`}
           >
             {model.name || model.id}
           </span>
@@ -599,13 +608,12 @@ if (editing) {
             {ctxLabel}
           </span>
         )}
+        {/* `fetched` / `manual` is a LABEL, not a status: the same muted chip
+          as the context window. It used to be the one blue chip on the row,
+          which made a discovered model look like a different KIND of model
+          rather than one August found for itself. */}
         <span
-          className={cn(
-            'inline-flex items-center rounded px-1.5 py-0.5 text-2xs font-mono',
-            model.source === 'fetched'
-              ? 'bg-blue-500/15 text-blue-400'
-              : 'bg-muted text-muted-foreground',
-          )}
+          className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-2xs font-mono text-muted-foreground"
           title={`source: ${model.source}`}
         >
           {model.source}
@@ -618,66 +626,75 @@ if (editing) {
             {apiFormatShortLabel(model.apiFormat)}
           </span>
         )}
-        <button
-          onClick={() => {
-            void providersApi
-              .updateModel(providerId, model.id, { pinned: !model.pinned })
-              .then(onChanged);
-          }}
-          aria-label={model.pinned ? `Unpin ${model.id}` : `Pin ${model.id} to top`}
-          title={
-            model.pinned
-              ? 'Unpin — remove from top'
-              : 'Pin — always on top here and in the model dropdown'
-          }
-          className={cn(
-            'grid size-7 place-items-center rounded transition',
-            model.pinned
-              ? 'text-primary hover:bg-muted/60'
-              : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-          )}
-        >
-          <Pin className="size-3" />
-        </button>
-        <button
-          onClick={() => connect.mutate()}
-          disabled={connect.isPending}
-          aria-label="Test model connection"
-          title="Test connection to this model"
-          className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground transition disabled:opacity-50"
-        >
-          {connect.isPending ? (
-            <Loader2 className="size-3 animate-spin" />
-          ) : (
-            <Plug className="size-3" />
-          )}
-        </button>
-        <button
-          onClick={() => setEditing(true)}
-          aria-label="Edit model"
-          title="Edit display name and metadata"
-          className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground transition"
-        >
-          <Pencil className="size-3" />
-        </button>
-        <button
-          onClick={async () => {
-            if (
-              await confirmStyled({
-                title: 'Remove model?',
-                message: `Remove model "${model.id}"?`,
-                confirmLabel: 'Remove',
-                variant: 'destructive',
-              })
-            )
-              remove.mutate();
-          }}
-          aria-label="Delete model"
-          title="Remove this model"
-          className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition"
-        >
-          <Trash2 className="size-3" />
-        </button>
+        {/* The action cluster: pin · test · edit · delete, right-aligned and
+          always visible. It is the reference row's arrangement, and it is
+          why the PIN is not also a glyph beside the name — one signal, one
+          place. The buttons are the shared `Button` primitive, so they
+          carry the focus ring the four raw buttons had to re-invent. */}
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => {
+              void providersApi
+                .updateModel(providerId, model.id, { pinned: !model.pinned })
+                .then(onChanged);
+            }}
+            aria-label={model.pinned ? `Unpin ${model.id}` : `Pin ${model.id} to top`}
+            title={
+              model.pinned
+                ? 'Unpin — remove from top'
+                : 'Pin — always on top here and in the model dropdown'
+            }
+            className={cn(
+              'text-muted-foreground hover:text-foreground',
+              model.pinned && 'text-primary hover:text-primary',
+            )}
+          >
+            <Pin />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => connect.mutate()}
+            disabled={connect.isPending}
+            aria-label={`Test connection to ${model.id}`}
+            title="Test connection to this model"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            {connect.isPending ? <Loader2 className="animate-spin" /> : <Plug />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setEditing(true)}
+            aria-label={`Edit ${model.id}`}
+            title="Edit display name and metadata"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Pencil />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={async () => {
+              if (
+                await confirmStyled({
+                  title: 'Remove model?',
+                  message: `Remove model "${model.id}"?`,
+                  confirmLabel: 'Remove',
+                  variant: 'destructive',
+                })
+              )
+                remove.mutate();
+            }}
+            aria-label={`Delete ${model.id}`}
+            title="Remove this model"
+            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 />
+          </Button>
+        </div>
       </div>
       {testResult && (
         <div

@@ -1,13 +1,22 @@
-/* All models view — flat catalog of every model across providers.
- * Supports search/filter, per-provider grouping, and Discover all (refresh
- * baseUrl/models on each configured provider and merge into the catalog).
+/* All models view — the whole catalog, one row per model.
+ *
+ * It was a card grid: a rounded card per model, a hover-revealed pin, and
+ * nothing else. The reference is a LIST — a row per model, a context-window
+ * chip, and a right-aligned cluster of four actions (pin · test · edit ·
+ * delete). The row itself already existed (`ModelRow`, the provider's own
+ * model list), so this view renders THAT rather than a second card: one model
+ * row, used by both lists, so a model pinned in one is the same row in the
+ * other.
+ *
+ * Provider groups are kept (the reference's flat list is not adopted), and
+ * within a group the order is pinned → free → name — the same rule the
+ * provider's own list uses, so one model cannot sit in two places at once.
  */
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Boxes,
-  Pin,
   Search,
   Asterisk,
   Server,
@@ -18,24 +27,26 @@ import { providersApi, type Provider } from '@/api/providers';
 import { WorkspaceEmptyState } from '@/components/workspace/WorkspaceEmptyState';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
-import { fmtContextWindow } from './modelSettingsShared';
+import { compareProviderModels } from './modelSettingsShared';
+import { ModelRow } from './ModelRow';
 
-interface AllModelRow {
-  id: string;
-  name?: string;
-  contextWindow?: number;
-  reasoning?: boolean;
-  free?: boolean;
-  pinned?: boolean;
-  source: 'manual' | 'fetched';
-  providerId: string;
-  providerName: string;
-  enabled: boolean;
-  apiKeySet: boolean;
-  baseUrl: string;
-}
+/**
+ * How many rows ONE provider group renders.
+ *
+ * This tab is the only surface that mounts the whole catalog in one tree: the
+ * catalog on the machine this was measured on holds 982 models across four
+ * providers (OpenRouter 470, KiloCode 402, B.A.I 61, OpenCode Zen 49), and
+ * every row carries an edit dialog, a test flow and a delete confirmation.
+ * A provider's own model list is bounded by one provider and already mounts
+ * 470 of them, so the cost is not new — but the WHOLE catalog in one tree is,
+ * and the cap is what keeps it honest.
+ *
+ * The filter above the list searches ids, names and provider names, so a
+ * capped-out model is one query away, and the footer says exactly what was
+ * held back rather than quietly truncating.
+ */
+const GROUP_ROW_CAP = 100;
 
 export function AllModelsTab() {
   const qc = useQueryClient();
@@ -46,72 +57,78 @@ export function AllModelsTab() {
   const [query, setQuery] = useState('');
   const [discovering, setDiscovering] = useState(false);
 
-  const rows = useMemo<AllModelRow[]>(() => {
-    const out: AllModelRow[] = [];
-    for (const p of listQ.data ?? []) {
-      for (const m of p.models ?? []) {
-        out.push({
-          id: m.id,
-          name: m.name,
-          contextWindow: m.contextWindow,
-          reasoning: !!m.reasoning,
-          free: !!m.free,
-          pinned: !!m.pinned,
-          source: m.source,
-          providerId: p.id,
-          providerName: p.name,
-          enabled: !!p.enabled,
-          apiKeySet: !!p.apiKeySet,
-          baseUrl: p.baseUrl,
-        });
-      }
-    }
-    // Pinned first, then free, then provider/id — matches the chat dropdown.
-    out.sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      if (a.free && !b.free) return -1;
-      if (!a.free && b.free) return 1;
-      if (a.providerName !== b.providerName) return a.providerName.localeCompare(b.providerName);
-      return a.id.localeCompare(b.id);
-    });
-    return out;
-  }, [listQ.data]);
+  // Memoised, not `listQ.data ?? []` inline: an empty array is a NEW object
+  // on every render, so every memo keyed on it would rebuild on every render
+  // — which is how a 982-model catalog turns into a re-sort on each keystroke.
+  const providers = useMemo(() => listQ.data ?? [], [listQ.data]);
 
-  const filtered = useMemo(() => {
+  /** Provider groups, each ordered by the shared rule, each filtered by the
+   *  query. The provider's own model list sorts the same way, so the same
+   *  model is in the same place in both. */
+  const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
-      (r) =>
-        r.id.toLowerCase().includes(q) ||
-        (r.name?.toLowerCase().includes(q) ?? false) ||
-        r.providerName.toLowerCase().includes(q) ||
-        r.providerId.toLowerCase().includes(q),
-    );
-  }, [rows, query]);
+    return providers.map((provider) => {
+      const models = [...(provider.models ?? [])].sort(compareProviderModels);
+      const filtered = q
+        ? models.filter(
+            (m) =>
+              m.id.toLowerCase().includes(q) ||
+              (m.name ?? '').toLowerCase().includes(q) ||
+              provider.name.toLowerCase().includes(q) ||
+              provider.id.toLowerCase().includes(q),
+          )
+        : models;
+      return { provider, models: filtered };
+    });
+  }, [providers, query]);
 
-  // Group filtered rows by provider for display
-  const grouped = useMemo(() => {
-    const map = new Map<string, AllModelRow[]>();
-    for (const r of filtered) {
-      if (!map.has(r.providerId)) map.set(r.providerId, []);
-      map.get(r.providerId)!.push(r);
-    }
-    return Array.from(map.entries());
-  }, [filtered]);
+  const totalModels = useMemo(
+    () => providers.reduce((n, p) => n + (p.models?.length ?? 0), 0),
+    [providers],
+  );
+  const totalVisible = useMemo(
+    () => groups.reduce((n, g) => n + g.models.length, 0),
+    [groups],
+  );
+  const fetchedCount = useMemo(
+    () =>
+      providers.reduce(
+        (n, p) => n + (p.models ?? []).filter((m) => m.source === 'fetched').length,
+        0,
+      ),
+    [providers],
+  );
+  const manualCount = useMemo(
+    () =>
+      providers.reduce(
+        (n, p) => n + (p.models ?? []).filter((m) => m.source === 'manual').length,
+        0,
+      ),
+    [providers],
+  );
+  const reasoningCount = useMemo(
+    () =>
+      providers.reduce(
+        (n, p) => n + (p.models ?? []).filter((m) => m.reasoning).length,
+        0,
+      ),
+    [providers],
+  );
 
-  const totalModels = rows.length;
-  const fetchedCount = rows.filter((r) => r.source === 'fetched').length;
-  const manualCount = rows.filter((r) => r.source === 'manual').length;
-  const reasoningCount = rows.filter((r) => r.reasoning).length;
+  /** Every mutation on a row — pin, edit, delete — pushes the change to the
+   *  rest of the app: the composer dropdown, the aliases, the fleet and the
+   *  provider list all read the same catalog. */
+  const invalidate = useCallback(() => {
+    void refreshProviderCatalog(qc);
+  }, [qc]);
 
   const refreshAll = useMutation({
     mutationFn: async () => {
-      const providers = (listQ.data ?? []).filter(
+      const list = (listQ.data ?? []).filter(
         (p) => p.enabled && p.apiKeySet && p.baseUrl,
       );
       const results: Array<{ provider: string; added: number; updated: number; removed: number; error?: string }> = [];
-      for (const p of providers) {
+      for (const p of list) {
         try {
           const res = await providersApi.refreshModels(p.id);
           results.push({ provider: p.name, added: res.added.length, updated: res.updated.length, removed: res.removed.length });
@@ -157,10 +174,10 @@ export function AllModelsTab() {
     refreshAll.mutate();
   }
 
-    return (
+  return (
     <div className="space-y-3 flex-1 min-h-0 flex flex-col overflow-hidden">
       {/* Summary + actions */}
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
+      <div className="rounded-xl border border-border/60 bg-card/60 p-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
         <div className="flex items-center gap-6 flex-wrap">
           <div>
             <p className="text-2xs uppercase tracking-wider text-muted-foreground">All models</p>
@@ -205,7 +222,6 @@ export function AllModelsTab() {
         </div>
       </div>
 
-      {/* Card grid (skills / integrations style — no heavy white rules) */}
       {totalModels === 0 ? (
         <WorkspaceEmptyState
           icon={Boxes}
@@ -224,114 +240,57 @@ export function AllModelsTab() {
           }
           className="py-8"
         />
-      ) : grouped.length === 0 ? (
-        <div className="rounded-xl border border-white/[0.06] bg-card/40 p-8 text-center text-sm text-muted-foreground">
+      ) : totalVisible === 0 ? (
+        <div className="rounded-xl border border-border/60 bg-card/40 p-8 text-center text-sm text-muted-foreground">
           No models match &quot;{query}&quot;.
         </div>
       ) : (
-        <div className="space-y-6 flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1">
-          {grouped.map(([providerId, providerRows]) => {
-            const first = providerRows[0];
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1">
+          {groups.map((g) => {
+            const shown = g.models.slice(0, GROUP_ROW_CAP);
+            const held = g.models.length - shown.length;
             return (
-              <section key={providerId} className="space-y-3">
-                <div className="flex items-center gap-2 px-0.5">
-                  <Server className="size-3 text-muted-foreground" />
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {first.providerName}
+              <section key={g.provider.id} className="mb-4">
+                {/* The group label: a quiet uppercase muted name, the gateway
+                    id beside it, the count at the far right. */}
+                <div className="flex items-center gap-2 px-0.5 pb-1.5">
+                  <Server className="size-3 shrink-0 text-muted-foreground/60" />
+                  <h4 className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {g.provider.name}
                   </h4>
-                  <span className="text-2xs font-mono text-muted-foreground/60">{providerId}</span>
-                  {!first.enabled && (
-                    <span className="rounded-md bg-white/[0.05] px-1.5 py-0.5 text-2xs text-muted-foreground">
+                  <span className="text-2xs font-mono text-muted-foreground/50">{g.provider.id}</span>
+                  {!g.provider.enabled && (
+                    <span className="rounded-md bg-muted px-1.5 py-0.5 text-2xs text-muted-foreground">
                       disabled
                     </span>
                   )}
-                  <span className="ml-auto text-2xs font-mono text-muted-foreground/70">
-                    {providerRows.length} model{providerRows.length === 1 ? '' : 's'}
+                  <span className="ml-auto text-2xs font-mono text-muted-foreground/60">
+                    {g.models.length} model{g.models.length === 1 ? '' : 's'}
                   </span>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {providerRows.map((r) => (
-                    <AllModelCard key={`${r.providerId}::${r.id}`} row={r} />
+                {/* The rows. Hairline-separated, no card chrome, and the
+                    reference's action cluster lives on each row. */}
+                <div className="divide-y divide-border/50 overflow-hidden rounded-lg border border-border/60 bg-card/30">
+                  {shown.map((m) => (
+                    <ModelRow
+                      key={m.id}
+                      providerId={g.provider.id}
+                      model={m}
+                      onChanged={invalidate}
+                    />
                   ))}
                 </div>
+                {held > 0 && (
+                  <p className="px-0.5 pt-1.5 text-2xs text-muted-foreground">
+                    Showing the first {GROUP_ROW_CAP} of {g.models.length} models — filter
+                    to narrow.
+                  </p>
+                )}
               </section>
             );
           })}
         </div>
       )}
-    </div>
-  );
-}
-
-function AllModelCard({ row }: { row: AllModelRow }) {
-  const qc = useQueryClient();
-  const ctx = fmtContextWindow(row.contextWindow);
-  const togglePin = () => {
-    void providersApi
-      .updateModel(row.providerId, row.id, { pinned: !row.pinned })
-      .then(() => refreshProviderCatalog(qc));
-  };
-  return (
-    <div className="group relative rounded-xl border border-white/[0.06] bg-card/60 p-4 transition hover:border-white/[0.12] hover:bg-card">
-      <button
-        type="button"
-        onClick={togglePin}
-        aria-label={row.pinned ? `Unpin ${row.id}` : `Pin ${row.id} to top`}
-        title={
-          row.pinned
-            ? 'Unpin — remove from top'
-            : 'Pin — always on top here and in the model dropdown'
-        }
-        className={cn(
-          'absolute right-2 top-2 rounded-md p-1 transition',
-          row.pinned
-            ? 'text-primary'
-            : 'text-muted-foreground/30 hover:text-muted-foreground/70 opacity-0 group-hover:opacity-100',
-        )}
-      >
-        <Pin className="size-3" />
-      </button>
-      <p
-        className="text-sm font-medium font-mono text-foreground break-words leading-snug pr-6"
-        title={row.name || row.id}
-      >
-        {row.name || row.id}
-      </p>
-      {row.name && row.name !== row.id && (
-        <p className="mt-0.5 text-2xs font-mono text-muted-foreground/70 truncate">{row.id}</p>
-      )}
-      <div className="mt-2.5 flex flex-wrap gap-1.5">
-        {row.pinned && (
-          <span className="rounded-md border border-primary/30 px-1.5 py-0.5 text-2xs text-primary">
-            pinned
-          </span>
-        )}
-        {ctx && (
-          <span className="rounded-md bg-white/[0.04] px-1.5 py-0.5 text-2xs font-mono text-muted-foreground">
-            {ctx} ctx
-          </span>
-        )}
-        <span
-          className={cn(
-            'rounded-md px-1.5 py-0.5 text-2xs font-mono',
-            row.source === 'fetched'
-              ? 'bg-sky-500/15 text-sky-300'
-              : 'bg-white/[0.04] text-muted-foreground',
-          )}
-        >
-          {row.source}
-        </span>
-        {row.reasoning && (
-          <span className="rounded-md bg-warning/15 px-1.5 py-0.5 text-2xs font-mono text-warning">
-            reasoning
-          </span>
-        )}
-        {row.free && (
-          <span className="rounded-md border border-success/30 px-1.5 py-0.5 text-2xs text-success">
-            free
-          </span>
-        )}
-      </div>
     </div>
   );
 }

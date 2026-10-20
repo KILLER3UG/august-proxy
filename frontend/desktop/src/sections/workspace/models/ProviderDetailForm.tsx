@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
-import { API_FORMATS } from './modelSettingsShared';
+import { API_FORMATS, compareProviderModels } from './modelSettingsShared';
 import { ModelDiscoveryActions } from './ModelDiscoveryActions';
 import { ModelRow } from './ModelRow';
 import { AddModelForm } from './AddModelForm';
@@ -56,7 +56,9 @@ export function ProviderDetailForm({
   }, [provider.id, provider.name, provider.baseUrl, provider.apiFormat, provider.apiKeySet, provider.autoFetch, setShowAddModel]);
 
   // Model list: search by id/name, ranked pinned → free → name so the most
-  // relevant models sit at the top for editing.
+  // relevant models sit at the top for editing. The comparator is the shared
+  // one, so this list and Settings → Models → All models file a model in the
+  // same place — they used to sort two different ways.
   const visibleModels = useMemo(() => {
     const q = modelQuery.trim().toLowerCase();
     const list = q
@@ -66,13 +68,7 @@ export function ProviderDetailForm({
             (m.name ?? '').toLowerCase().includes(q),
         )
       : [...provider.models];
-    return list.sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      if (a.free && !b.free) return -1;
-      if (!a.free && b.free) return 1;
-      return (a.name || a.id).localeCompare(b.name || b.id);
-    });
+    return list.sort(compareProviderModels);
   }, [provider.models, modelQuery]);
 
   const update = useMutation({

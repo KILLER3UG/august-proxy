@@ -3,7 +3,7 @@
  * shortens token windows for list and detail badges.
  */
 
-import type { ApiFormat } from '@/api/providers';
+import type { ApiFormat, ProviderModel } from '@/api/providers';
 import type { LucideIcon } from 'lucide-react';
 import { Server, Boxes, ArrowRightLeft, ShieldCheck, Brain, Gauge } from 'lucide-react';
 import type { AggregatedModel } from '@/api/api-client';
@@ -56,6 +56,26 @@ export function fmtContextWindow(n?: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
   return n.toString();
+}
+
+/**
+ * One ordering for the lists that read the PROVIDER STORE — the provider's
+ * own model list and Settings → Models → All models. Pinned first, then free,
+ * then the display name.
+ *
+ * It is deliberately NOT `compareModelsRanked` (`sections/chat/model-display.ts`),
+ * which is the pickers' contract: that one sorts the AGGREGATED catalog, whose
+ * rows carry `isFree`, while a provider-store row carries `free`. Two
+ * comparators with two names is better than one that silently means different
+ * things in two places — and the two lists must agree, or a model pinned in
+ * one is filed in a different spot in the other.
+ */
+export function compareProviderModels(a: ProviderModel, b: ProviderModel): number {
+  if (a.pinned && !b.pinned) return -1;
+  if (!a.pinned && b.pinned) return 1;
+  if (a.free && !b.free) return -1;
+  if (!a.free && b.free) return 1;
+  return (a.name || a.id).localeCompare(b.name || b.id);
 }
 
 /**
