@@ -27,7 +27,7 @@ export function SettingsSearch({
         placeholder={placeholder}
         aria-label="Search settings"
         className={
-          'h-8 pl-8 pr-7 text-xs shadow-none ' +
+          'h-8 rounded-full pl-8 pr-7 text-xs shadow-none ' +
           'border-white/[0.08] bg-white/[0.06] text-foreground ' +
           'placeholder:text-muted-foreground ' +
           'focus-visible:ring-primary/30 ' +

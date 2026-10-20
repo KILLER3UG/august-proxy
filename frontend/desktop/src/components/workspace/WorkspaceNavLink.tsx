@@ -51,9 +51,14 @@ export function WorkspaceNavLink({
       )}
     >
       <motion.span
+        /* Monochrome either way. The reference's nav row is "a monochrome
+           icon + label, borderless, no background", and the selected row
+           is distinguished by the lighter FILL - so a blue icon made the
+           selection two signals at once, and the blue was the only
+           saturated thing on the rail. */
         className={cn(
-          'inline-flex shrink-0',
-          active ? 'text-primary' : 'text-muted-foreground',
+          'inline-flex shrink-0 text-muted-foreground',
+          active && 'text-foreground',
         )}
         variants={iconMotion}
       >

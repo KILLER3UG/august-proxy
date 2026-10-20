@@ -47,7 +47,10 @@ export function SettingsCard({
       <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3">
         <div className="flex items-start gap-3 min-w-0">
           {Icon && (
-            <div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl border border-border bg-muted text-muted-foreground transition group-hover:border-primary/20 group-hover:text-primary">
+            <div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground transition group-hover:text-foreground">
+              {/* Borderless: "icons are borderless unless they are a search
+                  or action pill". The tile was a rounded box with a border
+                  AND a background - a box around a glyph. */}
               <Icon className="size-4" />
             </div>
           )}
