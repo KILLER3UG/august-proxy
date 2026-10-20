@@ -27,11 +27,9 @@ export function ProviderListRail({
   error?: unknown;
 }) {
   return (
-    <div className="rounded-xl border border-border/60 bg-card/60 flex flex-col overflow-hidden md:max-h-[calc(100vh-9rem)]">
+    <div className="flex flex-col overflow-hidden md:max-h-[calc(100vh-9rem)]">
       <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between shrink-0">
-        <p className="text-2xs uppercase tracking-widest text-muted-foreground/70 font-semibold">
-          Providers
-        </p>
+        <p className="text-2xs font-semibold text-muted-foreground/70">Providers</p>
         <button
           onClick={onRefresh}
           aria-label="Refresh providers"

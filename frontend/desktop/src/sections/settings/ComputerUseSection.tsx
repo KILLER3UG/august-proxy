@@ -6,12 +6,12 @@ import {
   RefreshCw,
   CheckCircle,
   AlertCircle,
-  Info,
   Shield,
   MousePointer,
   Keyboard,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { SectionHeader } from '@/components/SectionHeader';
 import { PageLoader } from '@/components/PageLoader';
 import { useComputerUseHealth, useComputerUseConfig } from '@/hooks/useComputerUse';
 
@@ -31,162 +31,157 @@ export function ComputerUseSection() {
   }
 
   return (
-    <div className="px-8 py-6 space-y-6 h-full flex flex-col overflow-auto">
-      <header className="shrink-0">
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-          Computer Use
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Desktop automation with SOM overlay, cross-platform support, and safe approval workflows.
-        </p>
-      </header>
+    <div className="px-8 py-6 h-full flex flex-col overflow-auto">
+      <SectionHeader
+        title="Computer Use"
+        subtitle="Desktop automation with SOM overlay, cross-platform support, and safe approval workflows."
+        className="mb-4"
+      />
 
       {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+        <p className="text-sm text-danger-fg" role="alert">
           {error instanceof Error ? error.message : String(error)}
-        </div>
+        </p>
       )}
 
-      {/* Status Overview */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatusCard
-          icon={<Monitor className="size-4" />}
-          label="Status"
-          value={config?.enabled ? 'Enabled' : 'Disabled'}
-          tone={config?.enabled ? 'good' : 'muted'}
-        />
-        <StatusCard
-          icon={<Shield className="size-4" />}
-          label="Health"
-          value={health?.overall || 'Unknown'}
-          tone={health?.overall === 'ok' ? 'good' : health?.overall === 'warning' ? 'warn' : 'muted'}
-        />
-        <StatusCard
-          icon={<MousePointer className="size-4" />}
-          label="Backend"
-          value={config?.backend || 'cua'}
-          tone="muted"
-        />
-        <StatusCard
-          icon={<Keyboard className="size-4" />}
-          label="Platform"
-          value={health?.platform || 'Unknown'}
-          tone="muted"
-        />
-      </div>
-
-      {/* Health Checks */}
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Health Checks</h3>
-          <button
-            onClick={() => { void handleRefresh(); }}
-            aria-label="Refresh health checks"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            <RefreshCw className="size-4" />
-          </button>
+      {/* ONE container, hairline-separated children. The four stat cards, the
+          health panel, the configuration and the explainer were four bordered
+          boxes (and a box inside a box); the reference's shape is one rounded
+          container with hairline children. */}
+      <div className="rounded-xl border border-white/[0.06] bg-card/60">
+        {/* Status */}
+        <div className="flex flex-col divide-y divide-white/[0.06] sm:flex-row sm:divide-y-0 sm:divide-x">
+          <StatusCell
+            icon={<Monitor className="size-4" />}
+            label="Status"
+            value={config?.enabled ? 'Enabled' : 'Disabled'}
+            tone={config?.enabled ? 'good' : 'muted'}
+          />
+          <StatusCell
+            icon={<Shield className="size-4" />}
+            label="Health"
+            value={health?.overall || 'Unknown'}
+            tone={
+              health?.overall === 'ok'
+                ? 'good'
+                : health?.overall === 'warning' || health?.overall === 'error'
+                  ? 'warn'
+                  : 'muted'
+            }
+          />
+          <StatusCell
+            icon={<MousePointer className="size-4" />}
+            label="Backend"
+            value={config?.backend || 'cua'}
+            tone="muted"
+          />
+          <StatusCell
+            icon={<Keyboard className="size-4" />}
+            label="Platform"
+            value={health?.platform || 'Unknown'}
+            tone="muted"
+          />
         </div>
-        <div className="space-y-3">
-          {health?.checks.map((check, i) => (
-            <div
-              key={i}
-              className="flex items-start gap-3 rounded-lg border border-white/[0.06] bg-card/40 p-3"
+
+        {/* Health Checks */}
+        <section className="border-t border-white/[0.06] p-5">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground">Health Checks</h3>
+            <button
+              onClick={() => { void handleRefresh(); }}
+              aria-label="Refresh health checks"
+              className="text-sm text-muted-foreground hover:text-foreground"
             >
-              {check.status === 'ok' ? (
-                <CheckCircle className="size-4 text-success mt-0.5 shrink-0" />
-              ) : check.status === 'warning' ? (
-                <AlertCircle className="size-4 text-warning mt-0.5 shrink-0" />
-              ) : (
-                <AlertCircle className="size-4 text-destructive mt-0.5 shrink-0" />
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">{check.name}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{check.message}</p>
-                {check.details.solution != null && (
-                  <p className="text-xs text-muted-foreground mt-1 italic">
-                    Solution: {check.details.solution as string}
-                  </p>
+              <RefreshCw className="size-4" />
+            </button>
+          </div>
+          <div className="mt-3 divide-y divide-white/[0.04]">
+            {health?.checks.map((check, i) => (
+              <div key={i} className="flex items-start gap-3 py-2">
+                {check.status === 'ok' ? (
+                  <CheckCircle className="size-4 text-success mt-0.5 shrink-0" />
+                ) : check.status === 'warning' ? (
+                  <AlertCircle className="size-4 text-warning mt-0.5 shrink-0" />
+                ) : (
+                  <AlertCircle className="size-4 text-destructive mt-0.5 shrink-0" />
                 )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{check.name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{check.message}</p>
+                  {check.details.solution != null && (
+                    <p className="text-xs text-muted-foreground mt-1 italic">
+                      Solution: {check.details.solution as string}
+                    </p>
+                  )}
+                </div>
+                {/* The status is a WORD, not a coloured chip: the reference
+                    keeps metadata muted, and the word carries the meaning. */}
+                <Badge variant="outline" className="text-muted-foreground">
+                  {check.status}
+                </Badge>
               </div>
-              <Badge
-                variant="outline"
-                className={
-                  check.status === 'ok'
-                    ? 'bg-success/20 text-success'
-                    : check.status === 'warning'
-                    ? 'bg-warning/20 text-warning'
-                    : 'bg-destructive/20 text-destructive'
-                }
-              >
-                {check.status}
-              </Badge>
-            </div>
-          ))}
-          {(!health?.checks || health.checks.length === 0) && (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              No health checks available
-            </p>
-          )}
-        </div>
-      </div>
+            ))}
+            {(!health?.checks || health.checks.length === 0) && (
+              <p className="text-sm text-muted-foreground py-2">
+                No health checks available
+              </p>
+            )}
+          </div>
+        </section>
 
-      {/* Configuration */}
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
-        <h3 className="text-sm font-semibold">Configuration</h3>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">Auto-approve actions</p>
-            <div className="flex flex-wrap gap-1">
-              {config?.autoApprove.map((action) => (
-                <Badge key={action} variant="outline" className="text-xs">
-                  {action}
-                </Badge>
-              ))}
-              {(!config?.autoApprove || config.autoApprove.length === 0) && (
-                <span className="text-xs text-muted-foreground">None</span>
-              )}
+        {/* Configuration */}
+        <section className="border-t border-white/[0.06] p-5">
+          <h3 className="text-sm font-semibold text-foreground">Configuration</h3>
+          <div className="mt-3 divide-y divide-white/[0.04]">
+            <div className="flex items-center justify-between gap-4 py-2">
+              <span className="text-sm text-foreground">Auto-approve actions</span>
+              {/* One bordered pill showing the value — the reference's value
+                  control — not a row of four chips. */}
+              <span className="inline-flex items-center rounded-lg border border-border/70 bg-background px-2.5 py-1 text-sm text-foreground">
+                {config?.autoApprove?.length ? config.autoApprove.join(', ') : 'None'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-4 py-2">
+              <span className="text-sm text-foreground">Blocked key combos</span>
+              <span className="inline-flex items-center rounded-lg border border-border/70 bg-background px-2.5 py-1 text-sm text-foreground">
+                {config?.blocklistKeys?.length ? config.blocklistKeys.join(', ') : 'None'}
+              </span>
             </div>
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">Blocked key combos</p>
-            <div className="flex flex-wrap gap-1">
-              {config?.blocklistKeys.map((key) => (
-                <Badge key={key} variant="outline" className="text-xs bg-destructive/10">
-                  {key}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+        </section>
 
-      {/* Info */}
-      <div className="rounded-lg border border-white/[0.06] bg-card/40 p-4 text-sm text-muted-foreground">
-        <div className="flex items-start gap-2">
-          <Info className="size-4 mt-0.5 shrink-0" />
-          <div>
-            <p className="font-medium text-foreground mb-1">How it works</p>
-            <ul className="space-y-1 list-disc list-inside">
-              <li>Computer use captures your screen and identifies interactable elements</li>
-              <li>SOM (Set of Mark) overlay numbers each element for reliable clicking</li>
-              <li>Safe actions (capture) are auto-approved; dangerous actions require confirmation</li>
-              <li>Works on macOS, Windows, and Linux with platform-specific optimizations</li>
-            </ul>
-          </div>
-        </div>
+        {/* How it works */}
+        <section className="border-t border-white/[0.06] p-5">
+          <h3 className="text-sm font-semibold text-foreground">How it works</h3>
+          <ul className="mt-2 space-y-1 list-disc list-inside text-sm text-muted-foreground">
+            <li>Computer use captures your screen and identifies interactable elements</li>
+            <li>SOM (Set of Mark) overlay numbers each element for reliable clicking</li>
+            <li>Safe actions (capture) are auto-approved; dangerous actions require confirmation</li>
+            <li>Works on macOS, Windows, and Linux with platform-specific optimizations</li>
+          </ul>
+        </section>
       </div>
     </div>
   );
 }
 
-/* ── Sub-components ─────────────────────────────────────────────────── */
+/* The value's tone. The caller has always computed one; it used to be
+ * accepted and thrown away (`tone: _tone`), so "Disabled", "error",
+ * "pyautogui" and "windows" all rendered the same white and the signal was
+ * lost. `good` is the plain foreground, `warn` the amber status colour, and
+ * `muted` the quiet one. */
+const TONE_CLASS: Record<'good' | 'warn' | 'muted', string> = {
+  good: 'text-foreground',
+  warn: 'text-warning-fg',
+  muted: 'text-muted-foreground',
+};
 
-function StatusCard({
+/** One stat, as a CELL of the single container — not a card of its own. */
+function StatusCell({
   icon,
   label,
   value,
-  tone: _tone,
+  tone,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -194,12 +189,12 @@ function StatusCard({
   tone: 'good' | 'warn' | 'muted';
 }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4">
-      <div className="flex items-center gap-2 mb-2">
+    <div className="min-w-0 p-4">
+      <div className="flex items-center gap-2 mb-1">
         <span className="text-muted-foreground">{icon}</span>
         <span className="text-sm font-medium text-muted-foreground">{label}</span>
       </div>
-      <p className="text-lg font-semibold">{value}</p>
+      <p className={`text-lg font-semibold ${TONE_CLASS[tone]}`}>{value}</p>
     </div>
   );
 }

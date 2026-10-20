@@ -22,6 +22,7 @@ import {
 } from '@/settings/settings-registry';
 import { WorkspaceShell, type WorkspaceSectionMeta } from '@/components/workspace/WorkspaceShell';
 import { useProviderOnboardingState } from '@/hooks/useProviderOnboardingState';
+import { SectionHeader as PanelHeader } from '@/components/SectionHeader';
 
 /** Header IA: 4 header groups (Setup / Agent / Data / App), the fourth added
  *  after the 2026-08-28 restructure. They head search results; `c5748da0` made
@@ -241,10 +242,11 @@ const HEADERLESS_SECTION_IDS = new Set([
 
 function SectionHeader({ active }: { active: SettingsSection }) {
   if (!HEADERLESS_SECTION_IDS.has(active.id)) return null;
+  /* The shipped standard, not a second set of sizes: 20px title, 13px
+     muted subtitle, no icon. This header was rolling its own 22px title. */
   return (
-    <div className="mx-auto w-full max-w-5xl px-8 pt-6 pb-3">
-      <h2 className="text-[1.375rem] font-semibold tracking-tight text-foreground">{active.label}</h2>
-      <p className="mt-1 text-[0.8125rem] text-muted-foreground max-w-xl">{active.description}</p>
+    <div className="mx-auto w-full max-w-5xl px-8 pt-6">
+      <PanelHeader title={active.label} subtitle={active.description} className="mb-3" />
     </div>
   );
 }

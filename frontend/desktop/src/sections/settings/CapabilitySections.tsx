@@ -12,7 +12,6 @@ import {
   Bot,
   Check,
   ExternalLink,
-  Globe,
   Layers,
   Loader2,
   Plug,
@@ -23,18 +22,50 @@ import { api } from '@/api/client';
 import { listActive } from '@/api/subagents';
 import { Button } from '@/components/ui/button';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
+import { SectionHeader } from '@/components/SectionHeader';
+import { cn } from '@/lib/utils';
 import { openExternal } from '@/lib/tauri-shell';
 
 const PLUGINS_URL = 'https://github.com/KILLER3UG/august-proxy#readme';
 
 /* ── shared bits ─────────────────────────────────────────────────────── */
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+/**
+ * A settings row, in the reference's three-column grammar: NAME on the left
+ * (fixed width when `fixedName`, so every value in the list starts at the
+ * same x), the VALUE in the flexible middle at THE SAME TYPE SIZE as the
+ * name, and the control at the row's RIGHT edge.
+ *
+ * The value is truncated with a real CSS ellipsis. The old shape cut the
+ * string in JS (`slice(0, 110)`), which cut mid-word with no ellipsis at
+ * all — "…you need page content — web_s".
+ */
+function Row({
+  label,
+  hint,
+  fixedName,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  /** Give the name a fixed width so the value column is a straight line. */
+  fixedName?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex items-center justify-between gap-4 py-2">
-      <div className="min-w-0">
-        <p className="text-sm text-foreground">{label}</p>
-        {hint ? <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p> : null}
+      <div className="flex min-w-0 flex-1 items-baseline gap-3">
+        <p
+          className={cn(
+            'min-w-0 truncate text-sm font-medium text-foreground',
+            fixedName && 'w-40 shrink-0',
+          )}
+        >
+          {label}
+        </p>
+        {hint ? (
+          <p className="min-w-0 flex-1 truncate text-sm text-foreground/70">{hint}</p>
+        ) : null}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -67,7 +98,7 @@ function NumInput({
   );
 }
 
-function Card({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+function Card({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5">
       <p className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -129,8 +160,11 @@ export function SubagentsSection() {
 
   return (
     <div className="px-8 py-6">
-      <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
-        <Users className="size-6 text-primary" /> Subagents
+      {/* The shared page header: a 20px title and NO icon -- the nav item
+          already carries the icon, and the reference's settings header has
+          none. This one rolled its own 24px title and a coloured glyph. */}
+      <h2 className="text-xl font-semibold tracking-tight text-foreground">
+        Subagents
       </h2>
       <p className="mt-1 text-sm text-muted-foreground">
         How the model delegates work to parallel sub-agents (spawn_subagents).
@@ -231,8 +265,8 @@ export function PluginsSection() {
 
   return (
     <div className="px-8 py-6">
-      <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
-        <Layers className="size-6 text-primary" /> Plugins
+      <h2 className="text-xl font-semibold tracking-tight text-foreground">
+        Plugins
       </h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Everything that extends the agent: MCP servers, skills, and integrations.
@@ -334,18 +368,17 @@ export function BrowserUseSection() {
 
   return (
     <div className="px-8 py-6">
-      <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
-        <Globe className="size-6 text-primary" /> Browser Use
-      </h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Browser automation, web search, and page reading tools the agent can use.
-      </p>
+      {/* The standard settings header: a bold title and ONE muted subtitle,
+          no icon. The section's own icon lived here and the reference's page
+          header has none. */}
+      <SectionHeader
+        title="Browser Use"
+        subtitle="Browser automation, web search, and page reading tools the agent can use."
+        className="mb-4"
+      />
 
-      <div className="mt-5">
-        <Card
-          title={`Offered tools (${browserTools.length})`}
-          icon={<RefreshCw className={tools.isFetching ? 'size-4 animate-spin text-primary' : 'size-4 text-primary'} />}
-        >
+      <div>
+        <Card title={`Offered tools (${browserTools.length})`}>
           {tools.isLoading ? (
             <Loader2 className="my-3 size-4 animate-spin text-muted-foreground" />
           ) : browserTools.length === 0 ? (
@@ -354,7 +387,7 @@ export function BrowserUseSection() {
             </p>
           ) : (
             browserTools.map((t) => (
-              <Row key={t.name} label={t.name} hint={t.description?.slice(0, 110)}>
+              <Row key={t.name} label={t.name} hint={t.description} fixedName>
                 <span className="rounded-full border border-success/30 bg-success/10 px-1.5 py-px text-2xs text-success-fg">
                   on
                 </span>
@@ -364,14 +397,11 @@ export function BrowserUseSection() {
         </Card>
       </div>
 
-      <div className="mt-4 rounded-xl border border-white/[0.06] bg-card/60 p-4">
-        <p className="text-sm font-medium text-foreground">How it works</p>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          browser_open / browser_get_content / browser_screenshot drive a headless browser for page
-          inspection; web_search and web_fetch cover search and clean Markdown extraction. Desktop
-          open-in-visible-browser lives under Computer Use.
-        </p>
-      </div>
+      {/* One line, no box. A bordered panel holding a paragraph of prose was
+          the loudest thing on a page whose job is a list of tools. */}
+      <p className="mt-4 text-2xs leading-relaxed text-muted-foreground">
+        browser_open, browser_get_content and browser_screenshot drive a headless browser; web_search and web_fetch cover search and clean Markdown extraction. Desktop open-in-visible-browser lives under Computer Use.
+      </p>
     </div>
   );
 }

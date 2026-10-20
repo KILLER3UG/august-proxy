@@ -76,7 +76,10 @@ export function ProvidersTab() {
         page (same as every other settings section). The provider rail sticks
         below the header while the taller detail form scrolls past it.
       */}
-      <div className="grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] gap-4">
+      {/* ONE container, with the rail and the pane as hairline children.
+          The detail pane was a bordered box inside the settings' own
+          bordered chrome, and the rail was a third box beside it. */}
+      <div className="grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] gap-0 overflow-hidden rounded-xl border border-border/70 bg-card/40">
         <div>
           <div className="md:sticky md:top-4">
             <ProviderListRail
@@ -91,7 +94,7 @@ export function ProvidersTab() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-border/60 bg-card/60 flex flex-col overflow-hidden">
+        <div className="flex flex-col overflow-hidden border-l border-border/60">
           {listFailed && mode !== 'add' ? (
             <QueryErrorState
               className="m-4"

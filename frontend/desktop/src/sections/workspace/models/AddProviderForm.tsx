@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { providersApi, type Provider, type ApiFormat } from '@/api/providers';
 import { WorkspaceField } from '@/components/workspace/WorkspaceField';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
+import { SettingsSelect } from '@/components/settings/SettingsSelect';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { API_FORMATS, DEFAULT_API_FORMAT } from './modelSettingsShared';
@@ -53,10 +54,9 @@ export function AddProviderForm({
     <div className="flex flex-col min-h-0 h-full max-h-full">
       <div className="px-5 pt-4 pb-3 border-b border-white/[0.06] flex items-center justify-between gap-3 shrink-0">
         <div>
+          {/* A bare label. The reference's section headers carry a count or
+              nothing; this one carried a sentence under the title. */}
           <h3 className="text-base font-semibold">Add model provider</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Configure a custom API endpoint and initial model.
-          </p>
         </div>
         <Button variant="ghost" size="sm" onClick={onCancel}>
           Cancel
@@ -75,7 +75,7 @@ export function AddProviderForm({
 
         <WorkspaceField
           label="Base URL"
-          hint="Used exactly as pasted — we only append the API format leaf (chat/completions, v1/messages, responses). For OpenAI-compatible hosts include /v1 in the base if needed (e.g. https://opencode.ai/zen/v1). Anthropic format already adds v1/messages."
+          hint="Used exactly as pasted — only the API format leaf is appended."
         >
           <Input
             value={baseUrl}
@@ -105,10 +105,15 @@ export function AddProviderForm({
         </WorkspaceField>
 
         <WorkspaceField label="API format">
-          <WorkspaceSelect
+          {/* The app's own listbox, not a native <select>: a native one
+              renders the OS popup, which is the loudest element on a page
+              that is supposed to be four quiet rows -- the same reason
+              every other select in Settings was moved in c365c586. */}
+          <SettingsSelect
             value={apiFormat}
-            onChange={(e) => setApiFormat(e.target.value as ApiFormat)}
-            options={API_FORMATS}
+            onChange={(v) => setApiFormat(v as ApiFormat)}
+            options={API_FORMATS.map((f) => ({ value: f.value, label: f.label }))}
+            aria-label="API format"
           />
         </WorkspaceField>
 

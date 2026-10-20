@@ -5,6 +5,7 @@ import type { SurfaceFontKey, ThemeMode } from '@/lib/theme';
 import { applyExternalCustomization, resetAppliedCustomization, THEME_PRESETS } from '@/lib/ui-customization';
 import { cn } from '@/lib/utils';
 import { UiDesignerSection } from './UiDesignerSection';
+import { SectionHeader } from '@/components/SectionHeader';
 import { ValuePill } from '@/components/ui/ValuePill';
 import type { SettingsSection } from '@/settings/settings-registry';
 
@@ -49,14 +50,21 @@ export function AppearanceSection({ active }: { active?: SettingsSection }) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="shrink-0 px-6 pb-3 pt-5">
-        <h2 className="text-lg font-semibold tracking-tight text-foreground">Appearance</h2>
-        <p className="mt-1 text-sm leading-5 text-muted-foreground">Set your theme and tune reading sizes across the app.</p>
-      </header>
+      <div className="shrink-0 px-6 pt-5">
+        <SectionHeader
+          title="Appearance"
+          subtitle="Set your theme and tune reading sizes across the app."
+          className="mb-3"
+        />
+      </div>
 
-      <div className="flex-1 space-y-5 overflow-auto px-6 pb-7">
-        <section className="rounded-xl border border-border/70 bg-card/40 p-4" aria-labelledby="appearance-theme-heading">
-          <h3 id="appearance-theme-heading" className="text-sm font-semibold">Theme</h3>
+      {/* ONE container with hairline-separated children, not three bordered
+          boxes. Section labels are bare — the reference carries a count or
+          nothing, never a sentence. */}
+      <div className="flex-1 overflow-auto px-6 pb-7">
+        <div className="divide-y divide-border/60 rounded-xl border border-border/70 bg-card/40">
+        <section className="px-5 py-4" aria-labelledby="appearance-theme-heading">
+          <h3 id="appearance-theme-heading" className="text-sm font-semibold tracking-tight text-foreground">Theme</h3>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
             {APPEARANCE_THEMES.map((theme) => {
               const selected = selectedThemeId === theme.id;
@@ -82,48 +90,34 @@ export function AppearanceSection({ active }: { active?: SettingsSection }) {
             })}
           </div>
 
-          {/* `flex-wrap` because the segmented control is `shrink-0`: on a row that
-            cannot shrink, a narrow content column pushed "Light" and "Dark"
-            outside it rather than letting the control wrap to its own line.
-            Measured at a 420px panel: the column was 237px and both buttons
-            overflowed. Wrapping drops the control below the label, which is
-            what the reference's stacked rows do. */}
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <div>
-              <p className="text-sm font-medium">Mode</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Choose how August resolves light and dark surfaces.</p>
-            </div>
-            {/* `flex-wrap` and NO `shrink-0`. `shrink-0` pinned the group to its
-            content width, so the wrap could never engage no matter how narrow
-            the column got — the buttons just overflowed instead. Letting it
-            shrink is what makes the wrap real; it still sits right-aligned at
-            every width where the row fits on one line, which is every width
-            above ~480px of column. */}
-            <div className="inline-flex flex-wrap rounded-lg border border-border bg-muted/40 p-0.5" role="group" aria-label="Theme mode">
-              {([
-                ['system', Monitor, 'System'],
-                ['light', Sun, 'Light'],
-                ['dark', Moon, 'Dark'],
-              ] as const).map(([mode, Icon, label]) => (
-                <button
-                  key={mode}
-                  type="button"
-                  aria-pressed={themeMode === mode}
-                  onClick={() => setThemeMode(mode)}
-                  className={cn('inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition', themeMode === mode ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
-                >
-                  <Icon className="size-3" />{label}
-                </button>
-              ))}
-            </div>
+        </section>
+
+        <section className="px-5 py-4" aria-labelledby="appearance-mode-heading">
+          <h3 id="appearance-mode-heading" className="text-sm font-semibold tracking-tight text-foreground">Mode</h3>
+          {/* The reference stacks the section label ABOVE its control, and the
+            segmented control is a group of bare labels with a LIGHTER fill on
+            the active one — not a bordered box around three buttons. */}
+          <div className="mt-3 inline-flex flex-wrap items-center gap-0.5" role="group" aria-label="Theme mode">
+            {([
+              ['system', Monitor, 'System'],
+              ['light', Sun, 'Light'],
+              ['dark', Moon, 'Dark'],
+            ] as const).map(([mode, Icon, label]) => (
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={themeMode === mode}
+                onClick={() => setThemeMode(mode)}
+                className={cn('inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition', themeMode === mode ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground')}
+              >
+                <Icon className="size-3" />{label}
+              </button>
+            ))}
           </div>
         </section>
 
-        <section className="rounded-xl border border-border/70 bg-card/40 p-4" aria-labelledby="appearance-font-heading">
-          <div>
-            <h3 id="appearance-font-heading" className="text-sm font-semibold">Font size</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Adjust each surface independently. Chat input stays at least 16 px.</p>
-          </div>
+        <section className="px-5 py-4" aria-labelledby="appearance-font-heading">
+          <h3 id="appearance-font-heading" className="text-sm font-semibold tracking-tight text-foreground">Font size</h3>
           <div className="mt-3 divide-y divide-border/60">
             {FONT_ROWS.map(({ key, label, values }) => (
               <div
@@ -145,21 +139,19 @@ export function AppearanceSection({ active }: { active?: SettingsSection }) {
           </div>
         </section>
 
-        <section id="settings-colors" className="scroll-mt-4 rounded-xl border border-border/70 bg-card/40">
+        <section id="settings-colors" className="scroll-mt-4">
           <button
             type="button"
             aria-expanded={designerOpen}
             onClick={() => setDesignerOpen((value) => !value)}
-            className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
+            className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left"
           >
-            <span>
-              <span className="block text-sm font-semibold">Colour designer</span>
-              <span className="mt-0.5 block text-xs text-muted-foreground">Fine-tune individual interface colours.</span>
-            </span>
+            <span className="text-sm font-semibold tracking-tight text-foreground">Colour designer</span>
             <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', designerOpen && 'rotate-180')} />
           </button>
           {designerOpen ? <div className="border-t border-border/60 p-3"><UiDesignerSection /></div> : null}
         </section>
+        </div>
       </div>
     </div>
   );

@@ -40,6 +40,8 @@ import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
 import { Button } from '@/components/ui/button';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
+import { SettingsSelect } from '@/components/settings/SettingsSelect';
+import { SectionHeader } from '@/components/SectionHeader';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
@@ -488,7 +490,7 @@ function MemorySectionHeader({
   return (
     <div className={cn('mt-6 border-b border-border/60 pb-1.5', className)}>
       <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-[0.9375rem] font-semibold tracking-tight text-foreground">{title}</h2>
+        <h3 className="text-[0.9375rem] font-semibold tracking-tight text-foreground">{title}</h3>
         {hint && (
           <span className="truncate text-2xs tabular-nums text-muted-foreground/60" data-testid={hintTestId}>
             {hint}
@@ -1047,6 +1049,16 @@ export function MemorySection({ active }: { active: { id: string } }) {
           the page whose job is showing what August remembers open with a
           row ABOUT the list instead of the list. */}
 
+      {/* The page header is the standard one: a bold title and ONE muted
+          subtitle. It used to be an <h3> banner whose heading level sat
+          ABOVE the <h2> section headers below it — inverted, and a feature
+          name doing the work of the page's name. */}
+      <SectionHeader
+        title="Memory"
+        subtitle="Auto-captured memories and key-value notes August has learned, per project or global."
+        className="mb-4"
+      />
+
       {/* Import from another AI — the reference's banner position: one
           prominent row at the very top, before the list it feeds. It is a
           ROW, not a card: a filled box above the list was the loudest
@@ -1056,9 +1068,9 @@ export function MemorySection({ active }: { active: { id: string } }) {
         data-testid="memory-import-banner"
       >
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-foreground">
+          <p className="text-sm font-medium text-foreground">
             Import memory from other AI providers
-          </h3>
+          </p>
           {/* One line. The reference's page header is a title and a
               subtitle - "Extend ChatGPT with task-specific skills" - and
               nothing more; this banner had three sentences where the
@@ -1112,77 +1124,87 @@ export function MemorySection({ active }: { active: { id: string } }) {
             )}
           </summary>
           <div className="absolute left-0 top-full z-30 mt-1.5 flex w-64 flex-col gap-2 rounded-lg border border-border/60 bg-card p-3 shadow-xl">
-            <label className="block">
+            {/* The app's own listbox, not a native <select>: a native control
+                draws the OS's own chrome in the middle of a themed panel,
+                which is the reason SettingsSelect exists at all. */}
+            <div className="block">
               <span className="text-2xs text-muted-foreground/70">Category</span>
-              <select
-                value={catFilter}
-                onChange={(e) => {
-                  setCatFilter(e.target.value);
-                  setUnifiedOffset(0);
-                }}
-                className="mt-1 w-full rounded-lg border border-border/60 bg-background px-2 py-1.5 text-xs text-foreground outline-none"
-                data-testid="memory-category-filter"
-                aria-label="Filter by category"
-              >
-                <option value="">All categories</option>
-                {['general', 'user', 'project', 'workflow', 'preference'].map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
+              <div className="mt-1" data-testid="memory-category-filter">
+                <SettingsSelect
+                  value={catFilter}
+                  onChange={(v) => {
+                    setCatFilter(v);
+                    setUnifiedOffset(0);
+                  }}
+                  options={[
+                    { value: '', label: 'All categories' },
+                    ...['general', 'user', 'project', 'workflow', 'preference'].map((c) => ({
+                      value: c,
+                      label: c,
+                    })),
+                  ]}
+                  aria-label="Filter by category"
+                  size="sm"
+                  className="w-full"
+                />
+              </div>
+            </div>
+            <div className="block">
               <span className="text-2xs text-muted-foreground/70">Source</span>
-              <select
-                value={srcFilter}
-                onChange={(e) => {
-                  setSrcFilter(e.target.value);
-                  setUnifiedOffset(0);
-                }}
-                className="mt-1 w-full rounded-lg border border-border/60 bg-background px-2 py-1.5 text-xs text-foreground outline-none"
-                data-testid="memory-source-filter"
-                aria-label="Filter by source"
-              >
-                <option value="">All sources</option>
-                {['remember', 'user', 'extracted', 'lesson'].map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
+              <div className="mt-1" data-testid="memory-source-filter">
+                <SettingsSelect
+                  value={srcFilter}
+                  onChange={(v) => {
+                    setSrcFilter(v);
+                    setUnifiedOffset(0);
+                  }}
+                  options={[
+                    { value: '', label: 'All sources' },
+                    ...['remember', 'user', 'extracted', 'lesson'].map((s) => ({ value: s, label: s })),
+                  ]}
+                  aria-label="Filter by source"
+                  size="sm"
+                  className="w-full"
+                />
+              </div>
+            </div>
+            <div className="block">
               <span className="text-2xs text-muted-foreground/70">Confidence</span>
-              <select
-                value={confFilter}
-                onChange={(e) => {
-                  setConfFilter(e.target.value);
-                  setUnifiedOffset(0);
-                }}
-                className="mt-1 w-full rounded-lg border border-border/60 bg-background px-2 py-1.5 text-xs text-foreground outline-none"
-                data-testid="memory-confidence-filter"
-                aria-label="Filter by confidence"
-              >
-                <option value="">All confidence</option>
-                <option value="high">high</option>
-                <option value="medium">medium</option>
-                <option value="low">low</option>
-              </select>
-            </label>
-            <label className="block">
+              <div className="mt-1" data-testid="memory-confidence-filter">
+                <SettingsSelect
+                  value={confFilter}
+                  onChange={(v) => {
+                    setConfFilter(v);
+                    setUnifiedOffset(0);
+                  }}
+                  options={[
+                    { value: '', label: 'All confidence' },
+                    { value: 'high', label: 'high' },
+                    { value: 'medium', label: 'medium' },
+                    { value: 'low', label: 'low' },
+                  ]}
+                  aria-label="Filter by confidence"
+                  size="sm"
+                  className="w-full"
+                />
+              </div>
+            </div>
+            <div className="block">
               <span className="text-2xs text-muted-foreground/70">Sort</span>
-              <select
-                value={sort}
-                onChange={(e) => {
-                  setSort(e.target.value);
-                  setUnifiedOffset(0);
-                }}
-                className="mt-1 w-full rounded-lg border border-border/60 bg-background px-2 py-1.5 text-xs text-foreground outline-none"
-                data-testid="memory-sort"
-                aria-label="Sort order"
-              >
-                {SORTS.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
-              </select>
-            </label>
+              <div className="mt-1" data-testid="memory-sort">
+                <SettingsSelect
+                  value={sort}
+                  onChange={(v) => {
+                    setSort(v);
+                    setUnifiedOffset(0);
+                  }}
+                  options={SORTS.map((s) => ({ value: s.value, label: s.label }))}
+                  aria-label="Sort order"
+                  size="sm"
+                  className="w-full"
+                />
+              </div>
+            </div>
           </div>
         </details>
         <Button
@@ -1293,7 +1315,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
                   NOT obvious from the rows themselves: that a parked row is
                   recalled by nothing. */}
               <p className="pt-1.5 text-[0.65625rem] leading-relaxed text-muted-foreground/60" data-testid="memory-profile-explainer">
-                Injected into every turn, not recalled by keyword · a parked row is recalled by nothing
+                Injected every turn; a parked row is recalled by nothing.
               </p>
             </section>
           )}
@@ -1305,9 +1327,9 @@ export function MemorySection({ active }: { active: { id: string } }) {
               {sections.topicGroups.map(([category, entries]) => (
                 <div key={category || 'uncategorized'} className="pt-2 first:pt-0">
                   {sections.topicGroups.length > 1 && (
-                    <h3 className="pb-0.5 text-2xs font-medium uppercase tracking-widest text-muted-foreground/45">
+                    <h4 className="pb-0.5 text-2xs font-medium uppercase tracking-widest text-muted-foreground/45">
                       {category || 'uncategorized'}
-                    </h3>
+                    </h4>
                   )}
                   <div className="divide-y divide-border/60">
                     {entries.map((e) => rowFor(e))}
@@ -1416,8 +1438,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
             className="py-3 text-[0.71875rem] text-muted-foreground"
             data-testid="memory-project-group-empty"
           >
-            No project memories yet. Open a project and chat with August — its memory folder
-            appears here.
+            No project memories yet.
           </p>
         ) : (
           <div className="divide-y divide-border/60" data-testid="memory-project-rows">
@@ -1641,10 +1662,16 @@ function MemoryRow({
     (onClick ? ' cursor-pointer transition hover:bg-muted/40' : '');
   const body = (
     <>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[0.8125rem] text-foreground/90">{title}</span>
+      {/* The same grammar as the list rows: a fixed-width name, a value at
+          the SAME type size, and a muted third column. This row used to be
+          two sizes of name, a smaller detail and a smaller meta — a second
+          grammar in the same panel. */}
+      <span className="flex min-w-0 flex-1 items-baseline gap-3">
+        <span className="w-[13rem] shrink-0 truncate text-[0.8125rem] font-medium text-foreground/90">
+          {title}
+        </span>
         {detail && (
-          <span className="mt-0.5 block truncate text-[0.71875rem] text-muted-foreground/75" title={detail}>
+          <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-foreground/70" title={detail}>
             {detail}
           </span>
         )}
@@ -1948,7 +1975,7 @@ function BottomAddBar({
           onClick={onSubmit}
           disabled={pending || !value.trim()}
           aria-label="Save memory"
-          className="rounded-lg bg-primary p-1.5 text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
+          className="grid size-6 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
           data-testid={`${testId}-submit`}
         >
           <ArrowUp className="size-3" />
@@ -2375,7 +2402,7 @@ function MemoryComposeBar({
           onClick={() => void submit()}
           disabled={busy || !text.trim()}
           aria-label="Save memory"
-          className="rounded-lg bg-primary p-1.5 text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
+          className="grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
           data-testid={`${testId}-submit`}
         >
           {busy ? <Loader2 className="size-3 animate-spin" /> : <ArrowUp className="size-3" />}
