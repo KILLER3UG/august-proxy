@@ -16,15 +16,25 @@
  *
  *   appOwned  — a surface the app put up by itself (the first-run surfaces).
  *   userOwned — a surface the user navigated to (the Settings panel).
- *   prompt    — a confirmation raised ON TOP of either.
+ *   dialog    — a modal DIALOG raised over one of those (the model editor).
+ *   prompt    — a confirmation raised ON TOP of any of them.
  *
  * A user-owned surface is ABOVE an app-owned one, because the user asked for
  * it: the first-run surfaces yield to it (see `useUserOwnedPanelOpen`).
+ *
+ * A `dialog` sits ABOVE the surface it was opened from and BELOW a
+ * `prompt` raised over it, and both halves matter. The editor used to sit
+ * on a hardcoded `z-[80]`, ABOVE the prompt rung — so a confirmation
+ * raised over it (the quit-confirm, a delete-confirm) rendered UNDERNEATH
+ * the editor's own scrim and was invisible. On the `dialog` rung the
+ * editor is above the panel it came from and below every confirmation, so
+ * the two can no longer be ordered by whichever mounted last.
  */
 
 export const MODAL_LAYER = {
   appOwned: 50,
   userOwned: 60,
+  dialog: 65,
   prompt: 70,
 } as const;
 
@@ -38,6 +48,7 @@ export type ModalLayer = (typeof MODAL_LAYER)[keyof typeof MODAL_LAYER];
 const LAYER_CLASS: Record<ModalLayer, string> = {
   50: 'z-50',
   60: 'z-[60]',
+  65: 'z-[65]',
   70: 'z-[70]',
 };
 

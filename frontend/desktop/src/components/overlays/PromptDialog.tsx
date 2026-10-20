@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { Backdrop } from './Backdrop';
 import { BackdropEscape } from './BackdropEscape';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 /**
  * PromptDialog — the styled replacement for `window.prompt`.
@@ -39,6 +40,14 @@ export function PromptDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState(initialValue);
 
+  /* The trap lives on the DIALOG BOX, not on the `Backdrop`'s `trapFocus`,
+   * because this dialog already owns its initial focus (the input, focused
+   * and preselected below): the two would fight over it. What the trap adds
+   * is the half of `aria-modal="true"` this dialog did not have — Tab and
+   * Shift+Tab cycle INSIDE the dialog instead of walking out into the page
+   * behind it — and focus returns to the opener when it closes. */
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
+
   // Re-seed when (re)opened for a different target.
   useEffect(() => {
     if (open) setValue(initialValue);
@@ -68,11 +77,17 @@ export function PromptDialog({
   };
 
   return (
-    <Backdrop onClose={onCancel} className="z-[70]">
+    /* The LAYER comes from the modal ladder (`Backdrop`'s default rung is
+     * `prompt`), not from a `z-[70]` literal here: the ladder is the one
+     * place the z-order is decided, and a hardcoded value beside it is how
+     * two surfaces end up sharing a rung and letting mount order pick the
+     * winner. The trap is attached to the dialog box itself — see above. */
+    <Backdrop onClose={onCancel}>
       {/* Same one-layer Escape contract as ConfirmDialog: capture-phase, so an
           enclosing window-level handler never double-fires. */}
       <BackdropEscape onEscape={onCancel} />
       <div
+        ref={trapRef}
         className="w-[min(92vw,400px)] rounded-2xl border border-border bg-card shadow-2xl px-5 pt-5 pb-4"
         role="dialog"
         aria-modal="true"

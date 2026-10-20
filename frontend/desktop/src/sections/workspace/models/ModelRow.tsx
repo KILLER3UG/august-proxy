@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
+import { MODAL_LAYER, modalLayerClass } from '@/components/overlays/modal-layers';
 import { API_FORMATS, apiFormatShortLabel, fmtContextWindow } from './modelSettingsShared';
 import { ModalityPills } from './AddModelForm';
 
@@ -258,8 +259,20 @@ function useModalDismiss(open: boolean, onClose: () => void) {
 
 if (editing) {
     return createPortal(
+      /* The LAYER comes from the modal ladder, not from a `z-[80]` literal:
+       * the ladder is the ONE place the z-order is decided, and a hardcoded
+       * value beside it is a surface outside the ladder. This editor used to
+       * claim a rung of its own, ABOVE the prompt rung — so a confirmation
+       * raised over it (the quit-confirm, a delete-confirm) rendered
+       * UNDERNEATH this scrim and was invisible. On the `dialog` rung the
+       * editor is above the Settings panel it was opened from and below
+       * every confirmation, and the two can no longer be ordered by
+       * whichever mounted last. */
       <div
-        className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"
+        className={cn(
+          'fixed inset-0 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]',
+          modalLayerClass(MODAL_LAYER.dialog),
+        )}
         onClick={() => setEditing(false)}
         data-testid="model-edit-scrim"
       >

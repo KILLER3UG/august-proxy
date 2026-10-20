@@ -77,9 +77,19 @@ function ObservationCard({ item, onOpen }: { item: PostObservation; onOpen: () =
 
 function ObservationModal({ item, onClose }: { item: PostObservation; onClose: () => void }) {
     return (
-        <Backdrop onClose={onClose}>
+        /* `trapFocus` installs the app's own `useFocusTrap`: focus moves into
+           the modal on open, Tab and Shift+Tab cycle inside it, and focus
+           returns to the card that opened it on close. The modal box used to
+           carry NO `role` and NO `aria-modal` at all — it was a styled div
+           with a Close button, so a screen reader announced nothing and the
+           keyboard walked straight out of it. The role/name/claim below
+           make it the dialog it always looked like. */
+        <Backdrop onClose={onClose} trapFocus>
             <div
                 onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-label={item.focusedApp ? `Observation — ${item.focusedApp}` : 'Observation'}
                 className="relative max-w-5xl w-[92vw] max-h-[90vh] rounded-2xl border border-white/[0.08] bg-card shadow-2xl overflow-hidden flex flex-col"
             >
                 <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">

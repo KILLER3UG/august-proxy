@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { Backdrop } from '@/components/overlays/Backdrop';
 import { BackdropEscape } from '@/components/overlays/BackdropEscape';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { cn } from '@/lib/utils';
 
 export interface ConfirmDialogProps {
@@ -31,6 +32,20 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const confirmRef = useRef<HTMLButtonElement>(null);
 
+  /* The trap lives on the DIALOG BOX, not on the `Backdrop`'s
+   * `trapFocus`, because this dialog already owns its initial focus: the
+   * two would fight over it. Measured in Chromium — with the trap on the
+   * Backdrop, React's StrictMode remount re-ran the trap's effect after its
+   * cleanup restored focus, and the dialog came up on the FIRST control
+   * (Cancel) in development and on the confirm button in production. Taking
+   * the trap directly gives the same answer in both: the confirm button,
+   * as this dialog always intended.
+   *
+   * What the trap adds is the half of `aria-modal="true"` this dialog did
+   * not have: Tab and Shift+Tab cycle inside it, and focus returns to the
+   * opener when it closes. */
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
+
   // Escape closes exactly this layer. BackdropEscape listens on document
   // CAPTURE and stops propagation, so the enclosing surface's own
   // window-level handler (Settings, the right drawer) cannot also fire.
@@ -48,9 +63,15 @@ export function ConfirmDialog({
   if (!open) return null;
 
   return (
-    <Backdrop onClose={onCancel} className="z-[70]">
+    /* The LAYER comes from the modal ladder (`Backdrop`'s default rung is
+     * `prompt`), not from a `z-[70]` literal here: the ladder is the one
+     * place the z-order is decided, and a hardcoded value beside it is how
+     * two surfaces end up sharing a rung and letting mount order pick the
+     * winner. The trap is attached to the dialog box itself — see above. */
+    <Backdrop onClose={onCancel}>
       <BackdropEscape onEscape={onCancel} />
       <div
+        ref={trapRef}
         className={cn(
           'w-[min(92vw,400px)] rounded-2xl border border-border bg-card shadow-2xl',
           'px-5 pt-5 pb-4',

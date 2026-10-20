@@ -61,7 +61,13 @@ export function WhatsNewModal({ open, onClose }: Props) {
     releases.length === 0;
 
   return (
-    <Backdrop onClose={onClose}>
+    /* `aria-modal="true"` is a PROMISE to a screen reader: the rest of the
+     * app is inert while this is open and the keyboard cannot leave it.
+     * `trapFocus` makes the promise true — it installs the app's own
+     * `useFocusTrap`, so focus moves into the dialog on open, Tab and
+     * Shift+Tab cycle inside it, and focus returns to the opener on
+     * close. Without it the dialog advertised modality it did not have. */
+    <Backdrop onClose={onClose} trapFocus>
       <div
         className="relative flex max-h-[min(80vh,640px)] w-[min(92vw,440px)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
         role="dialog"
