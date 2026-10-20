@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { API_FORMATS, apiFormatShortLabel, fmtContextWindow } from './modelSettingsShared';
 import { ModalityPills } from './AddModelForm';
@@ -148,6 +149,17 @@ export function ModelRow({
 
   useModalDismiss(editing, () => setEditing(false));
 
+  /* The edit modal claims `aria-modal="true"`, which is a PROMISE to a
+   * screen reader: the rest of the app is inert while it is open and the
+   * keyboard cannot leave it. It used to keep neither half — no focus trap,
+   * so Tab walked straight out of the dialog into the page behind it, and
+   * no initial focus, so a keyboard user opened the modal and was left
+   * wherever they were. `useFocusTrap` (the app's own helper — the same one
+   * the overlays use) supplies both: focus moves into the dialog on open,
+   * Tab/Shift+Tab cycle inside it, and focus returns to the pencil button
+   * on close. */
+  const trapRef = useFocusTrap<HTMLDivElement>(editing);
+
   const update = useMutation({
     mutationFn: (body: {
       name?: string;
@@ -248,15 +260,20 @@ if (editing) {
     return createPortal(
       <div
         className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Edit model ${model.id}`}
         onClick={() => setEditing(false)}
-        data-testid="model-edit-modal"
+        data-testid="model-edit-scrim"
       >
+        {/* The DIALOG carries `role`/`aria-modal` — the scrim is a plain
+            backdrop, exactly as every `Backdrop` call site does it. Putting
+            the role on the scrim made the whole viewport the dialog. */}
         <div
+          ref={trapRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Edit model ${model.id}`}
           className="w-full max-w-lg rounded-xl border border-border bg-card shadow-2xl animate-in fade-in zoom-in-95 duration-150"
           onClick={(e) => e.stopPropagation()}
+          data-testid="model-edit-modal"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-5 pt-4">
@@ -282,6 +299,10 @@ if (editing) {
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Display name"
                 aria-label="Display name"
+                /* Initial focus for the modal: the name is the field the
+                   user came here to change, and the trap leaves an element
+                   that already holds focus alone. */
+                autoFocus
                 className="h-9"
               />
             </label>

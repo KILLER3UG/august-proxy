@@ -671,7 +671,9 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
       {showModal && <BotCreateModal onClose={() => setShowModal(false)} />}
 
       {profileBot && (
-        <Backdrop onClose={() => setProfileBot(null)} className="z-[60]">
+        /* `trapFocus`: this modal claims `aria-modal="true"`, so Tab must
+           stay inside it. */
+        <Backdrop onClose={() => setProfileBot(null)} className="z-[60]" trapFocus>
           <div
             className="relative w-[min(94vw,420px)] rounded-2xl border border-border/70 bg-card p-6 text-center shadow-2xl"
             role="dialog"
@@ -733,6 +735,13 @@ export function BotsRail({ onOpenSession, activeSessionId, onNewGroupChat }: Bot
         </Backdrop>
       )}
 
+      {/* The rooms panel gets NO `trapFocus`, deliberately: it HOSTS
+          `RoomView`, which can raise its own room-settings modal, and that
+          modal is portaled to `document.body` — outside this dialog's DOM.
+          Two live traps would then fight over every Tab press (the outer one
+          pulls focus back into this panel, the inner one pulls it into the
+          settings modal). The settings modal owns the trap instead; this
+          panel still closes on Escape. */}
       {showRooms && (
         <Backdrop onClose={() => setShowRooms(false)} className="z-[60]">
           <div

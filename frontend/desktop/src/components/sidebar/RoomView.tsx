@@ -421,7 +421,9 @@ export function RoomView() {
       </div>
 
       {settingsOpen && room && (
-        <Backdrop onClose={() => setSettingsOpen(false)} className="z-[70]">
+        /* `trapFocus`: this modal claims `aria-modal="true"`, so Tab must
+           stay inside it. */
+        <Backdrop onClose={() => setSettingsOpen(false)} className="z-[70]" trapFocus>
           <div
             role="dialog"
             aria-modal="true"

@@ -197,7 +197,9 @@ export function BotCreateModal({
   };
 
   return (
-    <Backdrop onClose={onClose} className="z-[60]">
+    /* `trapFocus`: this modal claims `aria-modal="true"`, so the keyboard
+       must not be able to walk out of it into the page behind. */
+    <Backdrop onClose={onClose} className="z-[60]" trapFocus>
       <div
         role="dialog"
         aria-modal="true"

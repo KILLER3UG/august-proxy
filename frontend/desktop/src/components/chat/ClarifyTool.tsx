@@ -110,59 +110,20 @@ export function ClarifyTool({
     setMultiSelections(new Set());
   }, [currentIndex]);
 
-  // Keyboard: Esc / ← / → / 1-9 — scoped to THIS card. The handler was
-  // document-wide, so digits and arrows typed into any other surface
-  // (a contenteditable search box, another card) could pick an answer, and
-  // several mounted ClarifyTools each raced to consume the key (audit A2 §9).
+  // Keyboard: Esc / ← / → / 1-9 — scoped to THIS card.
+  //
+  // The handler used to be a DOCUMENT-WIDE listener. It was torn down on
+  // unmount (that part was always right) and it did refuse keys typed into
+  // another field (the card-containment test), but it also claimed any key
+  // whose target was `document.body` — i.e. a digit typed when nothing in
+  // the app had focus picked an answer in a card the user was not looking
+  // at, and with several ClarifyTools mounted every one of them raced for
+  // the same key. The card is a NON-MODAL dialog (`aria-modal="false"`):
+  // it does not own the keyboard, so it must not answer keys pressed
+  // outside itself. The handler now lives on the card element, which is
+  // exactly "scoped to this card" — the card takes focus when it mounts
+  // (the textarea below), so its own shortcuts still work.
   const cardRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (submitting) return;
-      const card = cardRef.current;
-      if (!card) return;
-      const target = e.target as HTMLElement | null;
-      const ownsKey =
-        card.contains(target ?? null) || target === document.body || target === null;
-      if (!ownsKey) return;
-      // Escape is the one gesture that must always work (dismiss = submit a
-      // skip), so it is handled before the typing guard.
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        handleDismiss();
-        return;
-      }
-      const tag = target?.tagName;
-      if (
-        tag === 'INPUT' ||
-        tag === 'TEXTAREA' ||
-        target?.isContentEditable ||
-        target?.getAttribute?.('role') === 'textbox'
-      ) {
-        return;
-      }
-      if (e.key === 'ArrowLeft' && currentIndex > 0) {
-        e.preventDefault();
-        setCurrentIndex((i) => i - 1);
-        setSelectedChoice(null);
-        setDraft('');
-      } else if (e.key === 'ArrowRight' && currentIndex < totalQuestions - 1) {
-        e.preventDefault();
-        setCurrentIndex((i) => i + 1);
-        setSelectedChoice(null);
-        setDraft('');
-      } else if (/^[1-9]$/.test(e.key)) {
-        const idx = parseInt(e.key, 10) - 1;
-        if (current.choices && idx < Math.min(current.choices.length, 5)) {
-          e.preventDefault();
-          pickChoice(current.choices[idx]);
-        }
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentIndex, totalQuestions, current?.choices, submitting]);
 
   const pickChoice = useCallback(
     (choice: string) => {
@@ -243,6 +204,53 @@ export function ClarifyTool({
     }
   }, [onDismiss, onSubmit]);
 
+  /** The card's own keyboard contract. Attached to the card element, so it
+   *  can only ever see a key pressed while the focus is inside this card —
+   *  a document-wide listener could also see keys pressed anywhere else. */
+  const onCardKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (submitting) return;
+      // Escape is the one gesture that must always work (dismiss = submit a
+      // skip), so it is handled before the typing guard.
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleDismiss();
+        return;
+      }
+      // Typing wins over the shortcuts: a digit typed into the answer box
+      // is an answer, not a choice.
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        target?.isContentEditable ||
+        target?.getAttribute?.('role') === 'textbox'
+      ) {
+        return;
+      }
+      if (e.key === 'ArrowLeft' && currentIndex > 0) {
+        e.preventDefault();
+        setCurrentIndex((i) => i - 1);
+        setSelectedChoice(null);
+        setDraft('');
+      } else if (e.key === 'ArrowRight' && currentIndex < totalQuestions - 1) {
+        e.preventDefault();
+        setCurrentIndex((i) => i + 1);
+        setSelectedChoice(null);
+        setDraft('');
+      } else if (/^[1-9]$/.test(e.key)) {
+        const idx = parseInt(e.key, 10) - 1;
+        if (current.choices && idx < Math.min(current.choices.length, 5)) {
+          e.preventDefault();
+          pickChoice(current.choices[idx]);
+        }
+      }
+    },
+    [currentIndex, current.choices, handleDismiss, pickChoice, submitting, totalQuestions],
+  );
+
   if (!current || !current.question) return null;
 
   const headerLabel =
@@ -253,6 +261,7 @@ export function ClarifyTool({
   return (
     <div
       ref={cardRef}
+      onKeyDown={onCardKeyDown}
       className="mx-auto my-3 w-full max-w-3xl px-2"
       role="dialog"
       aria-modal="false"
