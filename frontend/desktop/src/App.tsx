@@ -96,24 +96,50 @@ export default function App() {
     <>
       <BackendBootstrapGate>
         <Routes>
-          <Route element={<ChatLayout />}>
-            {SECTION_ROUTES.map((route) => (
-              <Route key={route.path} path={route.path} element={route.element} />
-            ))}
+          {/* The layout route's path ends in a SPLAT and its children are
+              RELATIVE. It used to be a pathless parent with absolute
+              children, and React Router warned that "the parent won't
+              match anymore and therefore the child routes will never
+              render" - and it was right, twice over.
+
+              The descendant <Routes> that ChatLayout renders (the
+              background-location split) is what actually draws the app,
+              and React Router only lets a descendant <Routes> match
+              deeper locations when the parent route's path ends in "*".
+
+              And the catch-all cannot live up here at all: ChatLayout
+              renders NO <Outlet/> - the surfaces come from its own
+              <Routes> - so a catch-all nested under this route was a
+              branch that matched and then rendered NOTHING. An unknown
+              URL (a stale bookmark, a mistyped path) showed the app
+              shell with no chat in it. The catch-all is in ChatLayout's
+              background <Routes>, where it can actually render.
+
+              The route table's paths stay ABSOLUTE because the nav links
+              to them; they are made relative HERE, at the one place
+              that needs them to be. The app's own URL shape is
+              unchanged. */}
+          <Route path="/*" element={<ChatLayout />}>
+            {SECTION_ROUTES.map((route) => {
+              const rel = route.path === '/' ? '' : route.path.replace(/^\//, '');
+              if (rel === '') {
+                return <Route key={route.path} index element={route.element} />;
+              }
+              return <Route key={route.path} path={rel} element={route.element} />;
+            })}
             {/* Single parent keeps the settings match stable across tab
                 changes. The element is null ON PURPOSE: ChatLayout renders
                 the settings dialog from its own <Routes> (background-location
                 split — the chat stays live behind the dialog), so anything
                 mounted here via the layout's never-rendered <Outlet> would
                 be dead code. */}
-            <Route path="/settings" element={null}>
+            <Route path="settings" element={null}>
               <Route index element={null} />
               <Route path=":section" element={null} />
             </Route>
             {ALL_ROUTES.filter((r) => r.path === '/_design').map((route) => (
-              <Route key={route.path} path={route.path} element={route.element} />
+              <Route key={route.path} path={route.path.replace(/^\//, '')} element={route.element} />
             ))}
-            <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
         <CommandPalette />

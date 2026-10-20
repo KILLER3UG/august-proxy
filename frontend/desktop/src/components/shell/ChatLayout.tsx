@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useShellWidth } from '@/hooks/useShellWidth';
-import { Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionsStore, createSession, getOrCreateEmptySession, createEmptySessionInFolder, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions, toggleFolderCollapse, ensureFolderForWorkspacePath, resolveActiveSession } from "@/store/sessions";
@@ -686,6 +686,15 @@ export function ChatLayout() {
                       {CHAT_SURFACE_ROUTES.map((route) => (
                         <Route key={route.path} path={route.path} element={route.element} />
                       ))}
+                      {/* The catch-all lives HERE, in the Routes that
+                          actually render. App.tsx's tree declares the
+                          matching, but this layout renders NO <Outlet/> -
+                          the surfaces come from the <Routes> below - so a
+                          catch-all up there was a branch that matched and
+                          then rendered NOTHING: an unknown URL (a stale
+                          bookmark, a mistyped path) showed the app shell
+                          with no chat in it instead of going home. */}
+                      <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </motion.div>
                 </div>

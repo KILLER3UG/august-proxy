@@ -285,7 +285,7 @@ export function RunsPage() {
           the "N bordered boxes" shape the reference's list views do not use. */}
       {!listFailed && (
         <p className="text-2xs text-muted-foreground" data-testid="runs-stat">
-          {stats.total} runs · {stats.active + stats.awaiting} active · {stats.done} done ·{' '}
+          {stats.total} {stats.total === 1 ? 'run' : 'runs'} · {stats.active + stats.awaiting} active · {stats.done} done ·{' '}
           {fmtTokens(stats.tokens)} tokens · {fmtCost(stats.cost)}
         </p>
       )}
