@@ -275,12 +275,21 @@ async def postDecisionsResolve():
 async def getMemoryMetrics(days: int = Query(7, ge=1, le=30)):
     """Phase D item 4: recall + latency instrument.
 
-    Two sections, both read-only diagnostics:
-      * ``recall`` — per-turn counts from internal_state (global facts
-        recalled, project entries recalled, block sizes): the before/after
-        instrument for this plan and every later retrieval change.
+    Three sections, all read-only diagnostics:
+      * ``recall`` — accumulated counts from internal_state (global facts
+        recalled, project entries recalled): the before/after instrument for
+        this plan and every later retrieval change.
+      * ``lastTurn`` — the PER-TURN recall blob (facts recalled, memory block
+        size) for the last turn that ran. It was written on every turn and
+        read by NOTHING: this route read the accumulated totals instead, so
+        the per-turn number the docstring promised was never returned. It is
+        the number a user actually wants -- "how much did the last turn
+        pull in?" -- so it is read here.
       * ``latency`` — the Phase L section: TTFT / duration / prompt-cache
         hit split aggregated over ``days`` from turn_outcomes.
+
+    ``consolidationLastRun`` is the timestamp of the last memory
+    consolidation pass. It was written by the pass and read by nothing.
     """
     import json as _json
 
@@ -303,6 +312,24 @@ async def getMemoryMetrics(days: int = Query(7, ge=1, le=30)):
         'globalFactsRecalled': int(totals.get('globalFactsRecalled') or 0),
         'projectEntriesRecalled': int(totals.get('projectEntriesRecalled') or 0),
     }
+
+    def _readJsonState(key: str) -> object | None:
+        try:
+            raw = get_internal_state(key)
+            val = _json.loads(str(raw)) if isinstance(raw, str) else raw
+            return val if isinstance(val, dict) else None
+        except Exception:
+            return None
+
+    # Written every turn by the workbench, read by nothing until now.
+    last_turn = _readJsonState('memory:recall:last_turn')
+    # Written by the consolidation pass, read by nothing until now.
+    consolidation_last_run: str | None = None
+    try:
+        raw = get_internal_state('consolidation:last_run')
+        consolidation_last_run = str(raw) if raw else None
+    except Exception:
+        consolidation_last_run = None
     latency: dict[str, object] = {'turns': 0}
     try:
         rows = _mem_conn().execute(
@@ -333,7 +360,13 @@ async def getMemoryMetrics(days: int = Query(7, ge=1, le=30)):
             }
     except Exception:
         latency = {'turns': 0, 'error': 'turn_outcomes unavailable'}
-    return {'days': days, 'recall': recall, 'latency': latency}
+    return {
+        'days': days,
+        'recall': recall,
+        'lastTurn': last_turn,
+        'latency': latency,
+        'consolidationLastRun': consolidation_last_run,
+    }
 
 
 @router.get('/memory/preview')

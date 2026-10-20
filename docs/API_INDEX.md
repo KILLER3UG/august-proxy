@@ -257,7 +257,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/models/capabilities` | Model Capabilities |
 | `GET` | `/api/models/catalog` | Model Catalog |
 | `POST` | `/api/models/estimate-cost` | Bill a token count through the same estimator the composer chip and the spend ceiling use, and report which p… |
-| `POST` | `/api/models/profile` | Persist a per-model capability profile (toolSurface) suggested by the harness's capability auto-detect (model… |
+| `POST` | `/api/models/profile` | Persist a per-model capability profile (toolSurface). |
 | `GET` | `/api/providers` | Listproviders |
 | `POST` | `/api/providers` | body: JSON |
 | `GET` | `/api/providers/{providerId}` | path: providerId |

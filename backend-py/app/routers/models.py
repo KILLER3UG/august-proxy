@@ -221,9 +221,21 @@ class ModelProfileApplyBody(CamelModel):
 
 @router.post('/api/models/profile')
 async def apply_model_profile(body: ModelProfileApplyBody):
-    """Persist a per-model capability profile (toolSurface) suggested by the
-    harness's capability auto-detect (modelProfileSuggestion SSE). An empty
-    ``toolSurface`` removes the override (revert to provider default)."""
+    """Persist a per-model capability profile (toolSurface).
+
+    The suggestion comes from the model PROBE endpoint
+    (``GET /api/providers/{id}/models/{modelId}/probe``), whose response
+    carries ``suggestedToolSurface``; the UI applies it from that response.
+
+    There is no SSE producer for this. An earlier version of this docstring
+    named a ``modelProfileSuggestion`` event, and because a FastAPI
+    docstring becomes the OpenAPI description, the phantom was PUBLISHED --
+    a client reading the served schema was told to wait for an event that
+    nothing emits. The name survives in one comment in the web client; the
+    comment says the same wrong thing.
+
+    An empty ``toolSurface`` removes the override (revert to provider
+    default)."""
     from app.services import config_service
 
     if body.tool_surface:

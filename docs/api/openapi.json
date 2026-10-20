@@ -6751,7 +6751,7 @@
     },
     "/api/brain/memory/metrics": {
       "get": {
-        "description": "Phase D item 4: recall + latency instrument.\n\nTwo sections, both read-only diagnostics:\n  * ``recall`` — per-turn counts from internal_state (global facts\n    recalled, project entries recalled, block sizes): the before/after\n    instrument for this plan and every later retrieval change.\n  * ``latency`` — the Phase L section: TTFT / duration / prompt-cache\n    hit split aggregated over ``days`` from turn_outcomes.",
+        "description": "Phase D item 4: recall + latency instrument.\n\nThree sections, all read-only diagnostics:\n  * ``recall`` — accumulated counts from internal_state (global facts\n    recalled, project entries recalled): the before/after instrument for\n    this plan and every later retrieval change.\n  * ``lastTurn`` — the PER-TURN recall blob (facts recalled, memory block\n    size) for the last turn that ran. It was written on every turn and\n    read by NOTHING: this route read the accumulated totals instead, so\n    the per-turn number the docstring promised was never returned. It is\n    the number a user actually wants -- \"how much did the last turn\n    pull in?\" -- so it is read here.\n  * ``latency`` — the Phase L section: TTFT / duration / prompt-cache\n    hit split aggregated over ``days`` from turn_outcomes.\n\n``consolidationLastRun`` is the timestamp of the last memory\nconsolidation pass. It was written by the pass and read by nothing.",
         "operationId": "getMemoryMetrics_api_brain_memory_metrics_get",
         "parameters": [
           {
@@ -11362,7 +11362,7 @@
     },
     "/api/models/profile": {
       "post": {
-        "description": "Persist a per-model capability profile (toolSurface) suggested by the\nharness's capability auto-detect (modelProfileSuggestion SSE). An empty\n``toolSurface`` removes the override (revert to provider default).",
+        "description": "Persist a per-model capability profile (toolSurface).\n\nThe suggestion comes from the model PROBE endpoint\n(``GET /api/providers/{id}/models/{modelId}/probe``), whose response\ncarries ``suggestedToolSurface``; the UI applies it from that response.\n\nThere is no SSE producer for this. An earlier version of this docstring\nnamed a ``modelProfileSuggestion`` event, and because a FastAPI\ndocstring becomes the OpenAPI description, the phantom was PUBLISHED --\na client reading the served schema was told to wait for an event that\nnothing emits. The name survives in one comment in the web client; the\ncomment says the same wrong thing.\n\nAn empty ``toolSurface`` removes the override (revert to provider\ndefault).",
         "operationId": "apply_model_profile_api_models_profile_post",
         "requestBody": {
           "content": {

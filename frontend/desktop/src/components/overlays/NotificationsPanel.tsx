@@ -2,7 +2,7 @@
 /* Opens from Settings → Notifications. Same visual language as the model  */
 /* / agent-mode panels: rounded popover card, staggered rows, no settings. */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { api } from '@/api/client';
+import { markAllNotificationsRead, useNotificationsStore } from '@/store/notifications';
 import { Backdrop } from '@/components/overlays/Backdrop';
 import { PageLoader } from '@/components/PageLoader';
 import { UpdateProgressBar } from '@/components/ui/UpdateProgressBar';
@@ -57,9 +58,24 @@ type NotificationItem =
       detail: string;
       when?: string;
       url?: string;
+    }
+  | {
+      id: string;
+      kind: 'notice';
+      title: string;
+      detail: string;
+      when?: string;
+      tone?: 'error' | 'arena' | 'routing' | 'info';
     };
 
 export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
+  // The LOCAL notifications -- a turn that failed, an arena lane that
+  // finished, a reminder. `pushNotification` has been writing these to
+  // `useNotificationsStore` since the store was built, and NOTHING read
+  // that store: the panel it was written for had become the What's New
+  // list instead, so every one of them went nowhere. A turn failure the
+  // user was told about, in a bell, disappeared.
+  const localItems = useNotificationsStore((s) => s.items);
   const {
     available: update,
     installing,
@@ -74,8 +90,26 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
     staleTime: 5 * 60_000,
   });
 
+  // Opening the panel is what marks them read -- the bell is the inbox.
+  useEffect(() => {
+    if (open) markAllNotificationsRead();
+  }, [open]);
+
   const items = useMemo((): NotificationItem[] => {
     const list: NotificationItem[] = [];
+    // The local notifications FIRST: they are the events the user just
+    // caused, and they are the reason the bell exists. The updates and the
+    // repo activity below are ambient.
+    for (const n of localItems) {
+      list.push({
+        id: n.id,
+        kind: 'notice',
+        title: n.title,
+        detail: n.body?.trim() ?? '',
+        when: new Date(n.at).toISOString(),
+        tone: n.kind,
+      });
+    }
     if (update) {
       list.push({
         id: `update-${update.version}`,
@@ -96,7 +130,7 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
       list.push(commitToItem(commit));
     }
     return list;
-  }, [update, query.data]);
+  }, [update, query.data, localItems]);
 
   if (!open) return null;
 
@@ -194,7 +228,7 @@ export function NotificationsPanel({ open, onClose }: NotificationsPanelProps) {
                 <Bell className="mx-auto mb-2 size-5 text-muted-foreground/40" />
                 <p className="text-sm text-muted-foreground">You&apos;re all caught up</p>
                 <p className="mt-1 text-2xs text-muted-foreground/70">
-                  App updates and recent repo activity will show up here.
+                  Notifications, app updates and recent repo activity will show up here.
                 </p>
               </div>
             )}
@@ -281,7 +315,9 @@ function NotificationRow({
       ? Download
       : item.kind === 'release'
         ? Package
-        : GitCommitHorizontal;
+        : item.kind === 'notice'
+          ? Bell
+          : GitCommitHorizontal;
 
   const clickable = item.kind !== 'update' && Boolean(item.url);
   const updateBusy = item.kind === 'update' && installing && progressPhase !== 'ready';
@@ -309,7 +345,11 @@ function NotificationRow({
           <Icon
             className={cn(
               'mt-0.5 size-3 shrink-0',
-              item.kind === 'update' ? 'text-warning-fg' : 'text-muted-foreground',
+              item.kind === 'update'
+                ? 'text-warning-fg'
+                : item.kind === 'notice' && item.tone === 'error'
+                  ? 'text-destructive'
+                  : 'text-muted-foreground',
             )}
           />
           <div className="min-w-0 flex-1">
@@ -323,9 +363,11 @@ function NotificationRow({
                 </span>
               )}
             </div>
-            <p className="mt-0.5 line-clamp-2 text-2xs leading-snug text-muted-foreground">
-              {item.detail}
-            </p>
+            {item.detail ? (
+              <p className="mt-0.5 line-clamp-2 text-2xs leading-snug text-muted-foreground">
+                {item.detail}
+              </p>
+            ) : null}
             <div className="mt-1 flex items-center gap-2 text-2xs text-muted-foreground/70">
               {item.when ? <span>{formatTimeAgo(item.when)}</span> : null}
               {item.kind === 'update' && (

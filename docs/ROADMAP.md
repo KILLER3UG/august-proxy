@@ -230,6 +230,88 @@ that a track discovered along the way.
   That is the trust the origin guard has always given a browser request;
   the HTTP half of the terminal is behind the token.
 
+## The round after that: a census, and what it found
+
+A census is not an argument check. A scanner gate that passes on zero
+matches is not a gate, and a plan that says "this key is written but
+nothing reads it" is a claim until it is re-measured. So the two
+write-only facts and the write-only stores were counted, and the
+count was checked against the tree one key at a time.
+
+### Shipped
+
+| Item | State |
+|---|---|
+| **The notifications bell showed "What's New" and the chat's own notifications went nowhere.** `pushNotification` writes a turn failure, an arena lane that finished and a reminder into `useNotificationsStore` -- and NOTHING read that store. The panel it was written for had become the What's New list, so the store's own docstring ("a small bell fed by notable events from the chat stream") described a feature that did not exist. | **done** -- the bell is the inbox it was meant to be: the local notifications render first (they are the events the user just caused), with the error tone distinct, and opening the panel marks them read. |
+| **A docstring that names an event nothing emits.** `POST /api/models/profile` said the suggestion came from a `modelProfileSuggestion` SSE frame -- and because a FastAPI docstring becomes the OpenAPI description, the phantom was PUBLISHED: a client reading the served schema was told to wait for an event that does not exist. The name survives in one comment in the web client, saying the same wrong thing. | **done** -- the description now names the probe endpoint that actually produces the suggestion, and the client's comment says the same thing. |
+| **The web branch of `search()` handed the model a truncated JSON blob.** `_webSearch` returns a JSON DOCUMENT; the branch did `str(wres)[:6000]`, so the model read escaped quotes, a raw `results` array, and whichever half of the document survived the cut -- and had to parse escaped JSON to learn a title and a URL. | **done** -- the document is parsed and each result renders as one readable line (title - url: snippet). A result that is not the expected shape (a timeout note, an instant answer) still falls through to the old text path. |
+| **Two `internal_state` keys written and never read.** `memory:recall:last_turn` is written on EVERY turn -- a DB upsert for a value nobody reads -- and `consolidation:last_run` is written by the consolidation pass. The metrics route read the accumulated `totals` instead, so the per-turn number its own docstring promised was never returned. | **done** -- both are read by `GET /api/brain/memory/metrics` now, which is where a user of the memory system would look for them. The per-turn write stops being a write to nowhere. |
+| **The OAuth tokens were plaintext in `config.json`.** | **done** -- Windows DPAPI via `ctypes` (no new dependency), a `<dataDir>/secrets.json` store beside `providers.json`, a lazy idempotent migration on the read path, and a labelled plaintext fallback off Windows so the Docker deployment keeps working. On Windows there is no fallback: a failed encryption leaves the plaintext exactly where it was. |
+| **A new secret store that could be listed.** | **done** -- the store is refused by the listing doors and by the shell gate, and the code-mode port carries the rule with it. |
+
+### Still open, and named
+
+- **The composer has NO live context meter.** `store/contextLive.ts`,
+  `store/promptCacheLive.ts` and `store/contextSectionsLive.ts` are all
+  written on every turn -- and all three are read by NOTHING. The
+  `estimateContextBreakdown` helper, the `ContextBreakdown` type and the
+  `ChatComposer.tsx` shim that exists only to export them are all
+  unreachable too. The pieces of a context breakdown are all present; the
+  reader that would render it was never written. The composer shows COST
+  from the persisted session-usage poll, not context.
+  *Deferred*: the reader belongs in `sections/chat/**`, which another
+  track owns. Finishing it is a FEATURE (a context meter the reference
+  shows), not a fix.
+- **The provider API keys are still PLAINTEXT** in `data/providers.json`.
+  The file is refused by name at every listing door, but the bytes on disk
+  are plain. The secret store built this round could absorb them
+  unchanged -- the key names are stable.
+- **`mcpGlobalEnv` still holds a real `GOOGLE_OAUTH_CLIENT_SECRET` in
+  plaintext** in `config.json`. It is mirrored from the process env into
+  the config at startup, and it is exported to the MCP subprocess
+  environment -- so encrypting it changes MCP-door semantics and deserves
+  its own change.
+- **The outbound scrubber has never known about the service-connection
+  tokens.** It collects `providers.json`, `settings.gatewayApiKey` and
+  `*_API_KEY` env vars; a Google refresh token pasted into a transcript
+  still rides out on every later turn.
+- **`GITHUB_TOKEN` / `SLACK_BOT_TOKEN` are exported to `os.environ`** by
+  the connect handlers, so they are in the process environment and in
+  every child process.
+- **The second plaintext copy of the Google token** at
+  `~/.google_workspace_mcp/credentials/` is the credential-store contract
+  of a THIRD-PARTY tool that cannot decrypt DPAPI. It could not be
+  solved. What changed: the copy is now DERIVED (August can rewrite it
+  from the encrypted store at any time), and the eager write is GATED on
+  workspace-mcp actually being installed -- a user who never installs it
+  gets no plaintext copy at all.
+- **A DOWNGRADE to an older August is not survivable** for the service
+  connections: the old build reads `config.json` only and will show the
+  connection as disconnected. Upgrade is fine.
+
+### Four claims that turned out NOT to be defects
+
+Recorded so nobody re-opens them. Each was measured, not argued:
+
+- **`browserAllowlist` is "a reader with no writer"** -- FALSE. It is a
+  USER-SET `config.json` key, documented as one in `CONFIGURATION.md`.
+  There is no writer by design, because the user writes it.
+- **`GET/PUT /api/config/web` does not exist** -- FALSE. It exists, at
+  `backend-py/app/routers/config.py:501` and `:509`. A grep for the
+  full path misses it, because the route is declared as `@router.get('/web')`
+  on a router that carries the `/api/config` prefix.
+- **`_SKILLS_OVERFLOW_STATE_KEY` is written and never read** -- FALSE. The
+  curator report reads it BY VALUE (`get_internal_state('skillsIndexOverflow')`),
+  not by the constant, and a grep for the constant name misses it.
+- **A finished turn's todos are rendered nowhere** -- FALSE. They render
+  in the layout-level Workbench sidebar.
+
+And one that is real but was re-scoped: **the sidebar's resize separator**
+carries only an `aria-label` -- but `SessionSidebar.tsx` is now 2.5 KB
+and the separator is not in it, so the claim describes a file that no
+longer holds it. The accessibility track is told to re-measure before
+it "fixes" it.
+
 ## Deliberately not done
 
 - **No test suite was restored.** The suite was removed on 2026-10-17 at the

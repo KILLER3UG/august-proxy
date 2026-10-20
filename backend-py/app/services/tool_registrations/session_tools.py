@@ -50,15 +50,51 @@ async def _search(query: str, scope: str = 'files', limit: int = 10) -> str:
             pass
     if 'web' in scopes:
         try:
+            import json as _json
+
             from app.services.tool_registrations.web_tools import _webSearch
 
             wres = await _webSearch(query)
-            text = str(wres)[:6000]
-            for line in text.splitlines():
-                k = _dedupe_key(line)
-                if k and k not in seen and len(line.strip()) > 20:
-                    seen.add(k)
-                    blocks.append(f'[web] {line[:300]}')
+            # The web search returns a JSON DOCUMENT. Handing the model
+            # `str(wres)[:6000]` gave it a truncated blob of it -- escaped
+            # quotes, a raw `results` array, and whichever half of the
+            # document survived the cut -- so it had to parse escaped JSON
+            # to learn a title and a URL. Parse it here and render one
+            # readable line per result.
+            payload: object = None
+            try:
+                payload = _json.loads(wres) if isinstance(wres, str) else wres
+            except Exception:
+                payload = None
+            hits = payload.get('results') if isinstance(payload, dict) else None
+            if isinstance(hits, list):
+                for hit in hits:
+                    if not isinstance(hit, dict):
+                        continue
+                    title = as_str(hit.get('title'), '').strip()
+                    url = as_str(hit.get('url'), '').strip()
+                    snippet = as_str(hit.get('snippet'), '').strip()
+                    if not title and not url:
+                        continue
+                    k = _dedupe_key(url or title)
+                    if k:
+                        if k in seen:
+                            continue
+                        seen.add(k)
+                    head = title or url
+                    line = f'{head} - {url}' if url and url != head else head
+                    if snippet:
+                        line = f'{line}: {snippet}'
+                    blocks.append(f'[web] {line[:400]}')
+            else:
+                # Not the expected shape -- a timeout note, an instant
+                # answer, an error. Pass the text through, as before.
+                text = str(wres)[:6000]
+                for line in text.splitlines():
+                    k = _dedupe_key(line)
+                    if k and k not in seen and len(line.strip()) > 20:
+                        seen.add(k)
+                        blocks.append(f'[web] {line[:300]}')
         except Exception:
             pass
     if not blocks:

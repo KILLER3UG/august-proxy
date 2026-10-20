@@ -1255,12 +1255,21 @@ export interface paths {
          * Getmemorymetrics
          * @description Phase D item 4: recall + latency instrument.
          *
-         *     Two sections, both read-only diagnostics:
-         *       * ``recall`` — per-turn counts from internal_state (global facts
-         *         recalled, project entries recalled, block sizes): the before/after
-         *         instrument for this plan and every later retrieval change.
+         *     Three sections, all read-only diagnostics:
+         *       * ``recall`` — accumulated counts from internal_state (global facts
+         *         recalled, project entries recalled): the before/after instrument for
+         *         this plan and every later retrieval change.
+         *       * ``lastTurn`` — the PER-TURN recall blob (facts recalled, memory block
+         *         size) for the last turn that ran. It was written on every turn and
+         *         read by NOTHING: this route read the accumulated totals instead, so
+         *         the per-turn number the docstring promised was never returned. It is
+         *         the number a user actually wants -- "how much did the last turn
+         *         pull in?" -- so it is read here.
          *       * ``latency`` — the Phase L section: TTFT / duration / prompt-cache
          *         hit split aggregated over ``days`` from turn_outcomes.
+         *
+         *     ``consolidationLastRun`` is the timestamp of the last memory
+         *     consolidation pass. It was written by the pass and read by nothing.
          */
         get: operations["getMemoryMetrics_api_brain_memory_metrics_get"];
         put?: never;
@@ -3778,9 +3787,21 @@ export interface paths {
         put?: never;
         /**
          * Apply Model Profile
-         * @description Persist a per-model capability profile (toolSurface) suggested by the
-         *     harness's capability auto-detect (modelProfileSuggestion SSE). An empty
-         *     ``toolSurface`` removes the override (revert to provider default).
+         * @description Persist a per-model capability profile (toolSurface).
+         *
+         *     The suggestion comes from the model PROBE endpoint
+         *     (``GET /api/providers/{id}/models/{modelId}/probe``), whose response
+         *     carries ``suggestedToolSurface``; the UI applies it from that response.
+         *
+         *     There is no SSE producer for this. An earlier version of this docstring
+         *     named a ``modelProfileSuggestion`` event, and because a FastAPI
+         *     docstring becomes the OpenAPI description, the phantom was PUBLISHED --
+         *     a client reading the served schema was told to wait for an event that
+         *     nothing emits. The name survives in one comment in the web client; the
+         *     comment says the same wrong thing.
+         *
+         *     An empty ``toolSurface`` removes the override (revert to provider
+         *     default).
          */
         post: operations["apply_model_profile_api_models_profile_post"];
         delete?: never;
