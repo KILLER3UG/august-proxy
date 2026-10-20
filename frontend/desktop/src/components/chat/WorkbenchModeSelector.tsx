@@ -505,8 +505,40 @@ export function WorkbenchModeSelector({
           }
         }}
         className={cn(
-          'h-8 px-2.5 py-1 rounded-full text-2xs font-medium bg-muted hover:bg-muted/70 text-foreground border border-border/50 inline-flex items-center gap-1.5 max-w-[240px]',
-          harness === 'orchestrator' && 'border-primary/35 bg-primary/10',
+          /* Borderless at rest, and NO fill at rest.
+           *
+           * The chip was `bg-muted border border-border/50 rounded-full` —
+           * a filled, bordered pill, the loudest thing left in the composer.
+           * The capture's composer row is one quiet row with one filled
+           * control ("a `+` glyph at the left, placeholder … and at the
+           * right a voice glyph and a small chevron"); the filled control is
+           * the send circle, and nothing else in that row carries a box.
+           *
+           * So the edge is revealed on hover and on keyboard focus instead of
+           * being drawn at rest, and the text sits at the muted tier.
+           *
+            * The bare `border` + `border-transparent` is the app's own
+            * "borderless chip" idiom (see `ComposerWorkspaceChips.tsx`), and
+            * it works because the stylesheet's own guard --
+            *   `.border, .border-t, .border-b, .border-l, .border-r
+            *    { border-color: var(--dt-border); }`
+            * (src/styles/base.css) -- now lives in `@layer base`. It used to
+            * be UNLAYERED, which in the cascade means it beat every Tailwind
+            * border-colour utility of equal specificity: measured in Chromium
+            * against this app's own PRODUCTION build, `border
+            * border-transparent` rendered an OPAQUE rgb(38,38,38) edge and
+            * `border border-border/50` rendered that same opaque edge, with
+            * the alpha discarded. The 1px box is kept, so nothing shifts when
+            * the edge appears.
+           *
+           * The MODE SWITCH ITSELF IS NOT REMOVED — it is the only place the
+           * app says "Ask before changes / Full access / Orchestrator / tool
+           * reach". This is a density change, not a deletion. */
+          'h-8 px-2.5 py-1 rounded-full text-2xs font-medium text-muted-foreground border border-transparent hover:border-border/50 hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:border-border/50 focus-visible:bg-muted/40 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 transition-colors inline-flex items-center gap-1.5 max-w-[240px]',
+          /* The orchestrator is still called out — in the TEXT, not with a
+           * box. A fill plus a tinted border was a second box on top of the
+           * pill's own. */
+          harness === 'orchestrator' && 'text-primary hover:text-primary',
         )}
         title={`${harnessMeta.label}. ${guard.description}\nTool reach: ${sandbox.description}`}
         aria-label={`${harnessMeta.label}. Approvals: ${guard.label}. Tool reach: ${sandbox.shortLabel}`}

@@ -119,6 +119,12 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
           </button>
         )}
       </div>
+      {/* The rows are the repo's own hairline-separated list row — the Runs
+        * and History idiom (`<ul className="divide-y divide-border/60">` with
+        * borderless rows that fill lighter on hover). There is no reference
+        * surface for a queue, so there is nothing to match, and three bordered
+        * tinted cards is not what this app does with a list anywhere else. */}
+      <div className="divide-y divide-border/60">
       {items.map((q, i) => {
         // A subagent receipt addressed to the model is neither a warning nor
         // something the user should edit — render it as what it is.
@@ -126,19 +132,17 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
         return (
         <div
           key={q.id}
-          className={cn(
-            'flex items-center gap-2 px-2 py-1.5 rounded-xl border text-2xs transition',
-            q.kind === 'steer'
-              ? 'border-primary/35 bg-primary/10'
-              : receipt
-                ? 'border-border/60 bg-muted/25'
-                : 'border-warning/30 bg-warning/5',
-          )}
+          className="flex items-center gap-2 px-2 py-1.5 text-2xs transition-colors hover:bg-muted/40"
         >
           <span
             className={cn(
               'font-semibold uppercase tracking-wider shrink-0',
-              q.kind === 'steer' ? 'text-primary' : receipt ? 'text-muted-foreground' : 'text-warning',
+              /* The kind is named in words, so the row needs no tint to say
+               * it. Only "Direction" keeps a colour — it is a live
+               * instruction that applies at the next step, not a thing
+               * waiting. A queued message is not a warning, and saying so in
+               * amber made the strip look like an error. */
+              q.kind === 'steer' ? 'text-primary' : 'text-muted-foreground',
             )}
           >
             {q.kind === 'steer' ? 'Direction' : receipt ? 'Receipt' : 'Queued'}
@@ -219,6 +223,7 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
         </div>
         );
       })}
+      </div>
     </div>
   );
 }

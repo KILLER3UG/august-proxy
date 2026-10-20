@@ -204,6 +204,35 @@ export function useIntegrations() {
     refetchInterval: 8_000,
   });
 
+  /* The DISCOVERED tools, keyed by the server that exposes them.
+   *
+   * `GET /api/mcp/servers` does NOT carry a per-server `tools` array — the
+   * backend keeps discovery results in its in-memory tool cache and serves
+   * them from `GET /api/mcp/tools`, each tagged with `_mcp_server_id`. The
+   * server row carries a `toolCount` and nothing else, so before this query
+   * the UI had no way to tell a tool list READ FROM THE SERVER from the
+   * CATALOG's list of what a recipe is expected to expose — and the detail
+   * pane showed the catalog's under a bare "Tools" heading, which reads as
+   * "available now". */
+  const toolsQuery = useQuery({
+    queryKey: ['integrations-mcp-tools'],
+    queryFn: async () => {
+      const data = await api.get<{ tools?: Array<Record<string, unknown>> }>('/api/mcp/tools');
+      const byServer = new Map<string, string[]>();
+      for (const t of data.tools ?? []) {
+        const name = asString(t['name']);
+        const sid = asString(t['_mcp_server_id']);
+        if (!name || !sid) continue;
+        const list = byServer.get(sid);
+        if (list) list.push(name);
+        else byServer.set(sid, [name]);
+      }
+      return byServer;
+    },
+    refetchInterval: 8_000,
+    retry: false,
+  });
+
   const refreshEnabled = useCallback(() => {
     setEnabledIds(loadEnabledIntegrationIds());
   }, []);
@@ -212,6 +241,7 @@ export function useIntegrations() {
     const out: IntegrationItem[] = [];
     const conns = connsQuery.data?.connections ?? {};
     const servers = mcpQuery.data ?? [];
+    const discoveredByServer = toolsQuery.data ?? new Map<string, string[]>();
 
     // Account facets the user has explicitly added
     for (const id of enabledIds) {
@@ -241,7 +271,11 @@ export function useIntegrations() {
         status: connected ? 'connected' : (conn?.status ?? 'disconnected'),
         catalogId: entry.id,
         meta: {
-          tools: entry.tools,
+          /* NO `tools` on an account facet, on purpose. A facet is a SIGN-IN
+           * slot: August ships no Gmail, Calendar, Drive, GitHub or Slack
+           * tools at all, so a tool list on one could only ever be a promise
+           * the app cannot keep. The catalog's `tools` array belongs to the
+           * RECIPE entries (a third-party server's own tools), not here. */
           developer: entry.developer,
           provider: entry.accountProvider,
           account: conn?.account,
@@ -271,6 +305,21 @@ export function useIntegrations() {
               e.mcp?.args?.some((a) => s.command?.includes(a) || s.args?.join(' ').includes(a))),
         );
       const brand = catalog?.brand ?? 'generic';
+      /* Which tool list this server's tools are, in words:
+       *   'discovered' — read from the running server (the fact),
+       *   'recipe'     — the CATALOG's expectation, because the server has
+       *                  not been started and nothing has been discovered,
+       *   'none'       — the server is running and reported no tools.
+       * The detail pane words each of these; a bare "Tools" heading over a
+       * recipe list read as "available now". */
+      const discovered = discoveredByServer.get(s.id ?? '') ?? [];
+      const serverHasRun = s.status === 'running' || s.status === 'starting';
+      const toolsSource: 'discovered' | 'recipe' | 'none' = discovered.length
+        ? 'discovered'
+        : serverHasRun
+          ? 'none'
+          : 'recipe';
+      const tools = toolsSource === 'discovered' ? discovered : toolsSource === 'none' ? [] : catalog?.tools ?? [];
       out.push({
         id: `mcp:${s.id ?? s.name}`,
         kind: 'mcp-server',
@@ -288,8 +337,9 @@ export function useIntegrations() {
         status: s.status,
         catalogId: catalog?.id,
         meta: {
-          toolCount: s.toolCount,
-          tools: s.tools?.length ? s.tools : catalog?.tools,
+          toolCount: toolsSource === 'discovered' ? discovered.length : s.toolCount,
+          tools,
+          toolsSource,
           command: s.command,
           args: s.args,
           env: s.env,
@@ -305,7 +355,7 @@ export function useIntegrations() {
     }
 
     return out;
-  }, [connsQuery.data, mcpQuery.data, enabledIds]);
+  }, [connsQuery.data, mcpQuery.data, toolsQuery.data, enabledIds]);
 
   const accounts = items.filter((i) => i.kind === 'account-facet');
   const mcpServers = items.filter((i) => i.kind === 'mcp-server');
@@ -380,12 +430,29 @@ export function useIntegrations() {
         );
       }
       enableIntegrationId(entry.id);
-      // Auto-enable Google account facets when Workspace MCP is installed
-      if (entry.id === 'mcp-google-workspace') {
-        for (const facet of ['google-gmail', 'google-calendar', 'google-drive']) {
-          enableIntegrationId(facet);
-        }
-      }
+      /* NO auto-enable of the Google account facets here.
+       *
+       * This used to add `google-gmail`, `google-calendar` and
+       * `google-drive` to the installed list the moment Workspace MCP was
+       * installed: three account slots the user never picked, appearing
+       * without a word — into a section that says "add only the ones you
+       * need from the directory".
+       *
+       * It was also pointless. `enableIntegrationId` writes ONE
+       * localStorage key (`august-enabled-integrations-v1`), which nothing
+       * outside this file reads: it grants no scope, starts no sign-in and
+       * creates no backend state, so it could not have been what made
+       * Workspace MCP work. What that server actually needs is a Google
+       * TOKEN carrying the right scopes, and August's own "Sign in with
+       * Google" mints that per service — reachable from the directory at
+       * any time, without the slots being pre-added.
+       *
+       * The dependency itself is real, and it is already stated where the
+       * user meets it: this recipe's own description and requirements (both
+       * rendered by the installed integration's detail pane) say that the
+       * auth is August's own "Sign in with Google" and that the tools exist
+       * only while the server runs. That is the place for it — not three
+       * surprise rows on the panel. */
       return { kind: 'mcp' as const, id: sid };
     },
     onSuccess: () => {

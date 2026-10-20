@@ -281,13 +281,36 @@ input::placeholder {
  * `rgb(38,38,38)` on a `rgb(15,15,15)` sidebar: an ~7% lift at 1px, i.e. an
  * invisible "hollow circle bullet" that the Claude reference clearly shows.
  *
- * Dropping `!important` lets the `!important`-free Tailwind utilities win on
- * source order, which is how they were meant to work. `!important` is kept
- * ONLY for the bare utilities with no colour argument (`.border` with no
- * Tailwind colour class), which are exactly the ones this rule exists to
- * catch. */
-.border, .border-t, .border-b, .border-l, .border-r {
-  border-color: var(--dt-border);
+ * Dropping `!important` was the first half of the fix and it was NOT
+ * enough, because the reason was never source order.
+ *
+ * This file is imported AFTER `tokens.css`, which holds the `@tailwind`
+ * directives — so Tailwind's utilities are emitted inside `@layer
+ * utilities`, and a rule that is NOT in a layer beats EVERY layered rule
+ * regardless of where it appears in the file. An unlayered
+ * `border-color: var(--dt-border)` therefore beat `border-transparent`,
+ * `border-border/50`, `border-warning/30` and every other border-colour
+ * utility in the app, and the alpha modifier went with it: measured in
+ * Chromium, `border border-transparent` rendered an OPAQUE
+ * `rgb(38,38,38)` edge, and `border border-border/50` rendered the same
+ * opaque edge. The "transparent border" idiom was not transparent, and a
+ * tinted border was not tinted — which also meant the white-alpha
+ * hairlines elsewhere in the app were never invisible in light mode,
+ * because this rule was painting them all `--dt-border` anyway.
+ *
+ * So the rule goes in `@layer base`. Inside a layer, source order decides
+ * again: `tokens.css` is imported first, so this rule still beats
+ * Tailwind's preflight, and it still catches the bare `.border` with no
+ * colour argument — which is the only thing it exists for. The utilities
+ * live in a LATER layer, so they win, and they win with their alpha.
+ *
+ * `divide-y divide-border/60` was never affected: the divider's own
+ * selector outranks `.border`, so it always carried its alpha.
+ */
+@layer base {
+  .border, .border-t, .border-b, .border-l, .border-r {
+    border-color: var(--dt-border);
+  }
 }
 
 /* 4. Disable focus ring blue highlights — only on elements that manage their own focus */

@@ -84,8 +84,26 @@ export function TaskProgressPill({ sessionId, className }: TaskProgressPillProps
         aria-haspopup="dialog"
         data-testid="task-progress-pill-btn"
         className={cn(
-          'inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/85 backdrop-blur-sm px-3 py-1 text-xs font-medium text-foreground/80 shadow-xs transition-colors hover:bg-card hover:text-foreground cursor-pointer',
-          open && 'border-primary/50 bg-card shadow-sm',
+          /* Borderless at rest, and no fill at rest.
+           *
+           * The POSITION is the reference's: the capture puts a row above the
+           * bottom bar ("Above the bar: a branch selector `main ⌄` on its own
+           * hairline row"), and this pill sits in exactly that slot. The BOX
+           * was not in the reference — that row is bare text on the page
+           * background, so the pill drops its `border border-border/60
+           * bg-card/85 backdrop-blur-sm shadow-xs` and reveals the edge on
+           * hover and on keyboard focus instead.
+           *
+           * The bare `border` + `border-transparent` works because the
+           * stylesheet's own guard (src/styles/base.css) now lives in
+           * `@layer base`. It used to be UNLAYERED, and an unlayered rule
+           * beats every Tailwind border-colour utility of equal specificity:
+           * measured in Chromium against this app's own PRODUCTION build,
+           * `border border-transparent` rendered an OPAQUE rgb(38,38,38)
+           * edge. The 1px box is kept, so nothing shifts when the edge
+           * appears. */
+          'inline-flex items-center gap-1.5 rounded-full border border-transparent px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-border/60 hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:border-border/60 focus-visible:bg-muted/40 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 cursor-pointer',
+          open && 'border-border/60 bg-muted/40 text-foreground',
         )}
       >
         {totalTodos > 0 && (

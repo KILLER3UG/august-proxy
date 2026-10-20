@@ -39,6 +39,15 @@ interface IntegrationDetailProps {
 
 export function IntegrationDetail({ item, onBack, onRemove }: IntegrationDetailProps) {
   const tools = (item.meta.tools as string[] | undefined) ?? [];
+  /* Which list these names are, in words:
+   *   'discovered' — read from the running server (the fact),
+   *   'recipe'     — the CATALOG's expectation, because the server has not
+   *                  been started and nothing has been discovered,
+   *   'none'       — the server is running and reported no tools.
+   * A bare "Tools" heading over the recipe's list read as "available now",
+   * which is the same class of lie the catalog fixed. */
+  const toolsSource =
+    (item.meta.toolsSource as 'discovered' | 'recipe' | 'none' | undefined) ?? 'discovered';
   const packageName = item.meta.packageName as string | undefined;
   const packageVersion = item.meta.packageVersion as string | undefined;
   const developer = (item.meta.developer as string | undefined) ?? 'Unknown';
@@ -93,12 +102,24 @@ export function IntegrationDetail({ item, onBack, onRemove }: IntegrationDetailP
         )}
       </div>
 
-      {tools.length > 0 && (
+      {(tools.length > 0 || toolsSource === 'none') && (
         <section className="space-y-2">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-            <Wrench className="size-3" /> Tools
+            <Wrench className="size-3" />
+            {toolsSource === 'recipe' ? 'Expected tools' : 'Tools'}
             <span className="font-mono font-normal text-muted-foreground">{tools.length}</span>
           </div>
+          {toolsSource === 'recipe' && (
+            <p className="text-2xs leading-snug text-muted-foreground">
+              Not discovered yet — this server has not started. These are the tools the
+              recipe is expected to expose, not a list read from the server.
+            </p>
+          )}
+          {toolsSource === 'none' && (
+            <p className="text-2xs leading-snug text-muted-foreground">
+              The server is running and reported no tools.
+            </p>
+          )}
           <div className="flex flex-wrap gap-1.5">
             {tools.map((t) => (
               <span
