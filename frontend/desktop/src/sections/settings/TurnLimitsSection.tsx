@@ -22,9 +22,10 @@
 
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Gauge, Loader2, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Gauge, Loader2, RotateCcw, Shuffle } from 'lucide-react';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
+import { SettingsToggle } from '@/components/settings/SettingsToggle';
 
 interface BrainConfigResponse {
   source: string;
@@ -159,6 +160,29 @@ export function TurnLimitsSection() {
       // settings form is the only window.alert left in this surface, and it
       // put the failure in a separate window the user had to dismiss before
       // they could see which input was rejected.
+      setSaveError(err.message);
+    },
+  });
+
+  /* The context-relief route is a SWITCH, not a number, so it cannot ride
+   * the field table above: it has its own mutation and its own card, and it
+   * saves the moment it is flipped (a toggle with a Save button two inches
+   * away is a toggle nobody flips).
+   *
+   * `contextReliefRotate` is a BOOL brain-config key, already accepted by the
+   * backend (`brain_config_service.boolKeys` + a fieldTable entry), and it
+   * had NO door at all: the only way to arm it was to hand-edit config.json.
+   * `npm run check:brain-config` reads the keys this panel writes and asks
+   * the backend whether it accepts them, so this control cannot drift from
+   * the backend's accepted set without the gate failing.
+   */
+  const reliefMut = useMutation({
+    mutationFn: (next: Record<string, boolean>) =>
+      api.put<{ ok: boolean }>('/api/brain/config', next),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['brain-config'] });
+    },
+    onError: (err: Error) => {
       setSaveError(err.message);
     },
   });
@@ -340,6 +364,41 @@ export function TurnLimitsSection() {
           A stopped turn is always explained in the transcript — expand the reason under the
           amber badge to see what to do next.
         </p>
+      </div>
+
+      {/* Context relief — the SECOND route, and the only one that is a choice.
+          Everything above is a bound; this is a different way to make room.
+          Off (the default) a long chat is compacted in place: the first few
+          messages stay verbatim forever and everything after them is folded
+          into a running summary, so from the second relief onward the
+          summary describes a follow-up rather than the original ask. On, a
+          relief that already has a note RE-ANCHORS the chat onto that note
+          instead of stacking another one — the opening is claimed back
+          verbatim and the newest turns keep the room. */}
+      <div className="mt-6 rounded-xl border border-white/[0.06] bg-card/60 p-5">
+        <div className="flex items-center gap-2">
+          <Shuffle className="size-4 text-primary" />
+          <h3 className="text-sm font-semibold text-foreground">Context relief</h3>
+        </div>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          How August makes room when a conversation outgrows the model&rsquo;s context
+          window. Off is the shipped behaviour and nothing changes unless you turn it on.
+        </p>
+        <div className="mt-3">
+          <SettingsToggle
+            checked={Boolean(config.contextReliefRotate)}
+            onCheckedChange={(next) => reliefMut.mutate({ contextReliefRotate: next })}
+            label="Rotate onto a handoff note"
+            description="After the first summary exists, a long chat re-anchors onto that note instead of stacking a new summary on top of it. The original ask is claimed back verbatim, and the newest turns keep the room. Your chat keeps its history either way."
+            disabled={configQ.isLoading || reliefMut.isPending}
+            data-testid="context-relief-rotate-toggle"
+          />
+        </div>
+        {reliefMut.isError ? (
+          <p role="alert" className="mt-2 text-2xs text-danger-fg" data-testid="context-relief-error">
+            Could not save the context-relief setting: {reliefMut.error?.message}
+          </p>
+        ) : null}
       </div>
     </div>
   );

@@ -45,7 +45,112 @@ def _bot_record(agent: dict[str, object]) -> dict[str, object]:
     """View of a registry record with normalized uiMeta."""
     out = dict(agent)
     out['uiMeta'] = _normalize_ui_meta(agent.get('uiMeta'))
+    out['workDir'] = as_str(agent.get('workDir'))
     return out
+
+
+# ── per-bot working folder ────────────────────────────────────────────────
+#
+# Where a Bot's work belongs. The reference harness gates this behind an
+# approval because it is a CAPABILITY WIDENING: a Bot that owns a folder
+# reads and writes inside it.
+#
+# In August the widening is NOT granted here. This is a RECORD — a place the
+# roster remembers, so a session bound to this Bot can be rooted there — and
+# the tool surface still roots at the session workspace
+# (``sandbox/policy.py``). Naming a folder therefore grants nothing until a
+# session is actually bound to it, which is the same separation the reference
+# keeps: the folder is set by the human, the binding is a separate door.
+#
+# The MODEL door cannot set it (the same rule as the capability definition:
+# whoever is talking is not the user). The human door is ``actor='ui'``.
+
+# The actors allowed to set a Bot's working folder. 'system' is the boot
+# backfill, which never sets one.
+_WORK_DIR_ACTORS = frozenset({'ui', 'system'})
+
+
+def validate_work_dir(raw: str) -> tuple[str, str]:
+    """Validate a candidate working folder. Returns ``(path, error)``.
+
+    Empty in, empty out — "no working folder" is a valid state and is not an
+    error.
+
+    The rules, in order:
+      * an ABSOLUTE path (a relative one would resolve against whatever
+        process the turn runs in — the Bot's files would land somewhere
+        different every time);
+      * it must EXIST and be a directory (a folder that does not exist yet
+        is a typo, and creating it silently would scatter directories);
+      * it must not be a CREDENTIAL STORE — ``is_credential_directory`` is the
+        one helper that answers that, and it is the same one the listing
+        doors use, so "can a Bot be pointed at a store" has one answer;
+      * it must not be inside this install's own data directory, which holds
+        the user's keys and their brain.
+    """
+    path = as_str(raw).strip()
+    if not path:
+        return '', ''
+    from pathlib import Path
+
+    try:
+        candidate = Path(path).expanduser()
+    except Exception:
+        return '', 'That working folder is not a usable path.'
+    if not candidate.is_absolute():
+        return '', 'A working folder must be an absolute path.'
+    try:
+        resolved = candidate.resolve()
+    except Exception:
+        return '', 'That working folder could not be resolved.'
+    if not resolved.exists():
+        return '', 'That working folder does not exist.'
+    if not resolved.is_dir():
+        return '', 'A working folder must be a directory.'
+    try:
+        from app.services.sandbox.hardline import is_credential_directory
+
+        if is_credential_directory(str(resolved)):
+            return '', 'Refused: that is a credential store, not a working folder.'
+    except Exception:
+        logger.debug('credential-store check skipped', exc_info=True)
+    try:
+        from app.lib.paths import dataPath
+
+        dataDir = Path(dataPath('')).resolve()
+        if resolved == dataDir or dataDir in resolved.parents:
+            return '', 'Refused: a working folder cannot be inside August\'s own data folder.'
+    except Exception:
+        logger.debug('data-dir check skipped', exc_info=True)
+    return str(resolved), ''
+
+
+def bot_work_dir(agent_id: str) -> str:
+    """The Bot's working folder ('' when it has none)."""
+    agent = agent_registry.getAgent(agent_id)
+    return as_str(agent.get('workDir')) if agent else ''
+
+
+def set_bot_work_dir(agent_id: str, work_dir: str, actor: str = 'ui') -> dict[str, object] | None:
+    """Point a Bot at a working folder (human door only).
+
+    Returns the updated record, or None when the agent is unknown. A refusal
+    is a ``ValueError`` — the same shape the rest of the roster's write
+    doors use — so the caller can report it instead of half-applying it.
+    """
+    if actor not in _WORK_DIR_ACTORS:
+        raise ValueError(
+            "Refused: a Bot's working folder is the user's to set (Settings → Agents). "
+            'A turn may create a Bot, but it may not point that Bot at a folder.'
+        )
+    if not agent_registry.getAgent(agent_id):
+        return None
+    resolved, error = validate_work_dir(work_dir)
+    if error:
+        raise ValueError(error)
+    agent_registry.updateAgent(agent_id, {'workDir': resolved}, actor=actor)
+    updated = agent_registry.getAgent(agent_id)
+    return _bot_record(updated) if updated else None
 
 
 def _is_bot(agent: dict[str, object]) -> bool:
@@ -97,6 +202,7 @@ def create_bot(
     clone_from: str = '',
     actor: str = 'ui',
     intro: bool = True,
+    work_dir: str = '',
 ) -> dict[str, object]:
     """Create a Bot (idempotent on name) and its canonical Bot Chat.
 
@@ -104,6 +210,11 @@ def create_bot(
     toolsets — a fork of the record, not a link (Phase A roster context).
     With ``intro=True`` the Bot introduces itself in its new chat via one
     headless turn.
+
+    ``work_dir`` is the Bot's working folder (see :func:`validate_work_dir`).
+    It is a RECORD, not a capability: the tool surface still roots at the
+    session workspace. Only the human door may set one — a turn calling
+    ``create_agent`` cannot point a Bot at a folder.
     """
     existing = _find_by_name(name)
     if existing is not None:
@@ -116,6 +227,15 @@ def create_bot(
             model = model or as_str(src.get('model'))
             provider = provider or as_str(src.get('provider'))
             toolsets = toolsets or [as_str(t) for t in as_list(src.get('toolsets'), [])]
+    resolvedWorkDir = ''
+    if work_dir:
+        if actor not in _WORK_DIR_ACTORS:
+            raise ValueError(
+                "Refused: a Bot's working folder is the user's to set (Settings → Agents)."
+            )
+        resolvedWorkDir, error = validate_work_dir(work_dir)
+        if error:
+            raise ValueError(error)
 
     agent = agent_registry.createAgent(
         name=name,
@@ -128,6 +248,10 @@ def create_bot(
     )
     agent['uiMeta'] = _normalize_ui_meta({'title': title or name})
     agent_registry.updateAgent(as_str(agent['id']), {'uiMeta': agent['uiMeta']}, actor=actor)
+    if resolvedWorkDir:
+        agent_registry.updateAgent(
+            as_str(agent['id']), {'workDir': resolvedWorkDir}, actor=actor
+        )
 
     bot = _bot_record(agent)
     if intro:

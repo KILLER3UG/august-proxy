@@ -1531,6 +1531,55 @@ def branch_workbench_session(
     return new
 
 
+def _emit_manual_compaction_frame(
+    session_id: str,
+    *,
+    original_tokens: int,
+    compressed_tokens: int,
+    compressed_count: int,
+    relief: str,
+    stats: dict[str, int],
+) -> None:
+    """Publish the manual path's ``compaction`` frame on the session event log.
+
+    The frame is the SAME vocabulary the automatic paths emit
+    (``workbench/loop/events.py::_emitCompactionEvent``): the reader cannot
+    tell the manual route from the pre-turn one except by ``trigger``, and
+    ``trigger`` is the discriminator that field exists for. A missing field
+    is a missing fact, so the split the compressor actually used is carried
+    over verbatim and ``contextWindow`` is omitted rather than zeroed.
+
+    Best-effort by construction: a chat that was compacted must not fail
+    because the notification could not be published.
+    """
+    try:
+        from app.services import event_log
+        from app.services.workbench.context_compressor import reliefHeadCount
+
+        frame: dict[str, object] = {
+            'type': 'compaction',
+            'trigger': 'manual',
+            'originalTokens': int(original_tokens),
+            'compressedTokens': int(compressed_tokens),
+            # Messages REMOVED, not messages remaining — the card renders this
+            # as "summarized N messages".
+            'compressedCount': max(0, int(compressed_count)),
+            # The split the compressor actually used, with the same fallback
+            # the response body uses — the route and the frame must not report
+            # different head counts for the same compaction.
+            'headCount': int(stats.get('head', reliefHeadCount(relief)) or 0),
+            'tailCount': int(stats.get('tail', 6) or 0),
+            'pinnedCount': int(stats.get('pinned', 0) or 0),
+            'replayedCount': int(stats.get('replayed', 0) or 0),
+            'underThreshold': False,
+        }
+        if relief:
+            frame['relief'] = relief
+        event_log.event_log.append(session_id, 'compaction', frame)
+    except Exception:
+        logger.debug('manual compaction frame emit failed', exc_info=True)
+
+
 async def compact_workbench_session_now(session_id: str) -> dict[str, object] | None:
     """Force context compression on a session (user-triggered \"Free up memory\")."""
     session = get_workbench_session(session_id)
@@ -1600,6 +1649,28 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
     session._last_compaction_turn = getattr(session, 'turnCount', 0) or 0
     save_sessions()
     _emit_session_status(session_id)
+    # The `compaction` frame, on the same channel every other compaction
+    # path uses. The automatic paths emit one inside the turn's emit callback
+    # (`workbench.py` pre-turn, `loop/recovery.py` budget rung and the reactive
+    # rescue), and the manual button emitted NONE — so a manual compaction
+    # deleted rows from the user's chat and left no trace of it, while an
+    # automatic one rendered a card. The inconsistency a user can see.
+    #
+    # It is published on the session's event log (the SSE frame source, and
+    # durable for a `sinceSeq` replay), NOT synthesised in the browser: the
+    # card is a transcript artefact, and a client-side one vanishes on reload.
+    #
+    # `contextWindow` is OMITTED, not zero: this path deliberately runs with
+    # `context_window=0` (the count-budgeted tail), so the model's real
+    # window is unknown here and the card must not claim "within 0 context".
+    _emit_manual_compaction_frame(
+        session_id,
+        original_tokens=original_tokens,
+        compressed_tokens=compressed_tokens,
+        compressed_count=compressed_count,
+        relief=relief,
+        stats=stats,
+    )
     try:
         from app.services.realtime_bus import emit_invalidate, emit_realtime
 

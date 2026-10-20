@@ -123,8 +123,18 @@ numKeys: tuple[str, ...] = (
     # same convention as the two keys above, and it must be listed here or a PUT
     # naming it is rejected and the guard is unreachable through the API.
     'maxUnattendedTurns',
+    # M-9 store budget: how many active facts the store may hold before the
+    # consolidation pass curates it back down. 0 = no budget (the shipped
+    # state — see the fieldTable entry for why the default is 0 and not 1500).
+    'factBudget',
+    # M-7 negative recall signal: the constants of the disuse penalty. All
+    # three are the ranker's, and the ranker reads them from this config, so
+    # they are settable here rather than hardcoded in the scorer.
+    'memoryDisuseWeight',
+    'memoryDisuseCap',
+    'memoryDisuseRescue',
 )
-floatKeys: tuple[str, ...] = ('flagRateCap',)
+floatKeys: tuple[str, ...] = ('flagRateCap', 'memoryDisuseWeight')
 strKeys: tuple[str, ...] = (
     'titleModel',
     'skillLearning',
@@ -183,6 +193,19 @@ unattendedTurnsRange = (0, 500)
 # exactly, so the API door cannot accept a value the sweep then silently
 # rewrites behind the caller's back.
 usageRetentionDaysRange = (30, 3650)
+# M-9 store budget: how many ACTIVE facts the store may hold before the
+# consolidation pass curates it back down. 0 = no budget, and 0 must stay
+# writable so an armed budget can always be disarmed. The ceiling is far above
+# any real store: a budget nobody could reach is a silently dead knob.
+factBudgetRange = (0, 100_000)
+# M-7 disuse penalty: the weight of ONE unused injection, the ceiling on the
+# penalty, and how many quotes rescue one injection. All three are the
+# ranker's, so they are config rather than constants in the scorer. The
+# weight is a FLOAT (0.01 per unused injection), so it cannot ride the
+# numeric range branch — it has its own float range below.
+memoryDisuseCapRange = (0, 500)
+memoryDisuseRescueRange = (0, 20)
+memoryDisuseWeightRange = (0.0, 1.0)
 fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('enabled', 'enabled', DEFAULT_FEATURES.get('enabled', True), 'bool'),
     # The agent-jobs flag is gone: the registry job ledger is an in-memory
@@ -289,6 +312,27 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # M-4: episodic_timeline retention window in days — the sweep
     # in consolidation._sweep_episodic prunes rows older than this.
     ('episodicRetentionDays', 'episodic_retention_days', 90, 'num'),
+    # M-9 store budget: the ceiling on ACTIVE facts. 0 = no budget.
+    #
+    # The plan proposed a default of 1500; the shipped default is 0 (no
+    # budget) on purpose. This pass ARCHIVES the facts it curates away, and
+    # archiving a user's memories on the day they upgrade — with no way to
+    # see it happen and no setting having been chosen — is a destructive
+    # default in a codebase whose rule is that anything which removes what
+    # the user owns is opt-in (the OQ5 retirement pass is propose-only for
+    # the same reason). A budget that is OFF until someone sets it is a
+    # switch; a budget that starts curating is a decision the user never
+    # made. 0 also has to stay writable so an armed budget can be disarmed.
+    ('factBudget', 'fact_budget', 0, 'num'),
+    # M-7 negative recall signal: a fact that is injected again and again
+    # and never quoted is a stale-but-plausible entry holding rank. These
+    # three are the penalty's constants — weight (how much one unused
+    # injection costs), cap (the ceiling on that penalty) and rescue (how
+    # many quotes forgive one injection). The weight is a float because it
+    # is a fraction of a score, not a count.
+    ('memoryDisuseWeight', 'memory_disuse_weight', 0.01, 'float'),
+    ('memoryDisuseCap', 'memory_disuse_cap', 50, 'num'),
+    ('memoryDisuseRescue', 'memory_disuse_rescue', 3, 'num'),
     # Usage events are durable analytics, but not a second transcript store.
     # Keep a generous default and let operators shorten it for long-lived
     # installs; the consolidation pass owns the sweep.
@@ -593,7 +637,10 @@ def validatePatch(patch: object) -> tuple[bool, str]:
         elif kind == 'float':
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 return (False, f'{key!r} must be a number (got {type(value).__name__})')
-            lo, hi = flagRateCapRange
+            if key == 'memoryDisuseWeight':
+                lo, hi = memoryDisuseWeightRange
+            else:
+                lo, hi = flagRateCapRange
             if value < lo or value > hi:
                 return (False, f'{key!r} must be between {lo} and {hi} (got {value})')
         else:
@@ -658,6 +705,14 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 # disarming write (0) invalid — the exact bug the runaway keys
                 # above were added to avoid.
                 lo, hi = unattendedTurnsRange
+            elif key == 'factBudget':
+                # 0 = no budget, and it must be writable so an armed budget
+                # can be disarmed.
+                lo, hi = factBudgetRange
+            elif key == 'memoryDisuseCap':
+                lo, hi = memoryDisuseCapRange
+            elif key == 'memoryDisuseRescue':
+                lo, hi = memoryDisuseRescueRange
             else:
                 lo, hi = maxWorkbenchLoopsRange
             if value < lo or value > hi:

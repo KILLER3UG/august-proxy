@@ -18,7 +18,10 @@ loaded, so replay stays balanced (see WorkbenchSession.fromDict).
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
+
+from app.json_narrowing import as_str
 
 if TYPE_CHECKING:
     from app.services.workbench.sessions import WorkbenchSession
@@ -53,9 +56,95 @@ _TAIL_MARKERS = (
     '\n\n<workspace_map',
 )
 
+# The fences August INJECTS, and the ones a model can echo back.
+#
+# The tail blocks above are removed from USER messages by the recorded
+# boundary. Nothing removed them from ASSISTANT output: a model that quoted
+# its own memory block back persisted August's plumbing into the transcript,
+# and the echo was re-sent on every later turn — the memory block appearing
+# twice per turn, and (because the tail is BM25-indexed and the miner reads
+# the transcript) August's own plumbing feeding its own recall.
+#
+# Matched as a WHOLE fenced block, case-sensitively, and only in assistant
+# messages: a user asking "what does <memory> mean?" must keep their own
+# words. An opening tag with no closing tag is left alone too — half a fence
+# in prose is not an echo, and eating the rest of the answer over it would be
+# the more expensive mistake.
+_ECHO_FENCE_RE = re.compile(
+    r'<(memory|relevant_skills|session_state|memory_nudge|workspace_map|plan_state)>'
+    r'.*?</\1>',
+    re.DOTALL,
+)
+# Three or more blank lines where a fence used to be.
+_BLANK_RUN_RE = re.compile(r'\n{3,}')
+
+
+def scrub_injected_fences(text: str) -> str:
+    """Remove August's injected fences from a piece of assistant text.
+
+    Returns the text unchanged when it carries no fence, so the caller can
+    tell "nothing to do" from "something was removed" by comparing the two.
+    """
+    if not text or '<' not in text:
+        return text
+    cleaned = _ECHO_FENCE_RE.sub('', text)
+    if cleaned == text:
+        return text
+    # A fence that sat between two paragraphs left the gap behind it.
+    return _BLANK_RUN_RE.sub('\n\n', cleaned).strip()
+
+
+def _scrub_message_echo(msg: dict[str, object]) -> bool:
+    """Strip injected fences from one ASSISTANT message, in place.
+
+    In place on purpose: the caller hands this function the live transcript
+    list, and the model request is built from it. A copy would clean the
+    persisted transcript and leave the echo in the very request the model is
+    answering — the same defect one layer up.
+
+    Only assistant messages are touched. The USER's own text is never
+    rewritten: a question about the memory block must survive verbatim.
+    """
+    if as_str(msg.get('role')) != 'assistant':
+        return False
+    content = msg.get('content')
+    if isinstance(content, str):
+        cleaned = scrub_injected_fences(content)
+        if cleaned != content:
+            msg['content'] = cleaned
+            return True
+        return False
+    if isinstance(content, list):
+        changed = False
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get('type') not in ('text', 'output_text'):
+                continue
+            text = block.get('content')
+            if not isinstance(text, str):
+                text = block.get('text')
+            if not isinstance(text, str):
+                continue
+            cleaned = scrub_injected_fences(text)
+            if cleaned != text:
+                if 'content' in block and isinstance(block.get('content'), str):
+                    block['content'] = cleaned
+                else:
+                    block['text'] = cleaned
+                changed = True
+        return changed
+    return False
+
 
 def strip_tail_patches(messages: list[dict[str, object]]) -> list[dict[str, object]]:
-    """Return the list with tail-patched messages reverted to their base text."""
+    """Return the list with tail-patched messages reverted to their base text
+    and August's injected fences stripped from assistant output.
+
+    Two different leaks, one seam: the volatile tail blocks must not ride in
+    persisted history, and an assistant's echo of one must not ride in it
+    either.
+    """
     changed = False
     out: list[dict[str, object]] = []
     for msg in messages:
@@ -81,6 +170,8 @@ def strip_tail_patches(messages: list[dict[str, object]]) -> list[dict[str, obje
                 if cut is not None:
                     clean = {**clean, 'content': content[:cut].rstrip()}
             msg = clean
+        elif isinstance(msg, dict) and _scrub_message_echo(msg):
+            changed = True
         out.append(msg)
     return out if changed else messages
 

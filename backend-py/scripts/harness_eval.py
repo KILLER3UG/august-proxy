@@ -15,6 +15,7 @@ Run it:
     uv run python -m scripts.harness_eval --out /tmp/eval.json
     uv run python -m scripts.harness_eval --judge --provider <name> --model <id> \
                                           --confirm-tokens      # real model calls
+    uv run python -m scripts.harness_eval --overflow --context-window 4096
 
 Modes
 -----
@@ -32,6 +33,15 @@ That costs tokens and needs a key, so it is opt-in twice over (`--judge` plus
 `--confirm-tokens`). It answers the other question: does the judge, on today's
 prompt, still reach the verdict we hand-wrote for it? A case that flips is a
 prompt-contract change, not a test failure.
+
+`--overflow` runs the REACTIVE overflow bench: the rescue that only fires when
+a provider refuses a request for being too big, which is the least-measured
+path in the loop. The window is SHRUNK (`--context-window`) instead of the
+transcript being made enormous — the reference harness forces an overflow the
+same way (`ds-bot/dev/bench.sh` shrinks `CONTEXT_WINDOW`). It measures the
+detection (in the shapes gateways actually send) and the rescue (does the
+surface shrink, does it report its split, and does it DECLINE when there is
+nothing to gain) with the real functions. No tokens, no provider.
 """
 
 from __future__ import annotations
@@ -452,6 +462,197 @@ def run_judge(only: set[str] | None, model: str, provider: str) -> list[dict[str
     return results
 
 
+def _overflow_transcript(rounds: int = 16) -> list[dict[str, object]]:
+    """A transcript long enough to overflow a SHRUNK window.
+
+    The reference harness forces an overflow by shrinking `CONTEXT_WINDOW`
+    (`ds-bot/dev/bench.sh`) rather than by writing a huge transcript: a
+    transcript long enough to overflow a real 200k window is not a fixture
+    anybody can read, and the point is to make the RESCUE run, not to make
+    the prompt big.
+    """
+    filler = ' the weather in Berlin is unsettled and the forecast keeps changing. ' * 14
+    out: list[dict[str, object]] = []
+    for i in range(rounds):
+        out.append({'role': 'user', 'content': f'question {i} about the weather in Berlin{filler}'})
+        out.append(
+            {'role': 'assistant', 'content': f'answer {i}: it is raining in Berlin{filler}'}
+        )
+    return out
+
+
+def run_overflow_bench(contextWindow: int) -> list[dict[str, Any]]:
+    """Measure the REACTIVE overflow rescue — the least-measured one.
+
+    Three rescue paths exist (pre-turn auto-compact, the budget ladder's
+    middle rung, and this one) and this is the one with no measurement at
+    all: it only runs when a provider REFUSES a request for being too big,
+    which needs a provider that says no. So the bench measures the two
+    halves separately, with the real functions:
+
+    * the DETECTION — does the loop recognize an overflow (in the shapes
+      gateways actually send) and NOT confuse it with a shape refusal?
+      The two ladders must not both fire: a shape repair flattens the tool
+      pairing, an overflow rescue compacts, and running both on one error
+      is the confusion this bench exists to catch.
+    * the RESCUE — does `_reactiveContextReduction` actually shrink the
+      surface under a shrunken window, and does it DECLINE when there is
+      nothing to gain? A rescue that always reports a win is a rescue that
+      buys nothing, and the loop's own gate (`_reductionIsWorthwhile`)
+      exists precisely to stop that.
+    """
+    from app.providers.clients.base import estimateTokens
+    from app.services.workbench.loop.recovery import (
+        _isContextOverflowError,
+        _isShapeRefusal,
+        _reactiveContextReduction,
+    )
+    from app.services.workbench.sessions import create_workbench_session
+
+    results: list[dict[str, Any]] = []
+
+    def _case(
+        caseId: str,
+        note: str,
+        ok: bool,
+        got: str,
+        expected: str = 'ok',
+        error: str = '',
+    ) -> None:
+        results.append(
+            {
+                'id': caseId,
+                'note': note,
+                'expected': [expected],
+                'got': [got],
+                'proposals': 0,
+                'facts': 0,
+                'expectedProposals': 0,
+                'expectedFacts': 0,
+                'error': error,
+                'pass': bool(ok),
+            }
+        )
+
+    # ── detection ────────────────────────────────────────────────────────
+    # The shapes a gateway actually sends. A flat `error` string is the
+    # minority; most nest the message, and a probe that only reads the flat
+    # field misses every one of them.
+    overflowShapes: list[tuple[str, object]] = [
+        ('flat', {'error': 'context length exceeded'}),
+        ('nested', {'error': {'message': "This model's maximum context length is 8192 tokens"}}),
+        ('code-only', {'code': 'context_length_exceeded'}),
+        ('double-wrapped', {'error': {'error': {'message': 'prompt is too long'}}}),
+        ('list', {'error': [{'message': 'maximum context length is 4096 tokens'}]}),
+    ]
+    for shapeName, payload in overflowShapes:
+        try:
+            detected = _isContextOverflowError(payload)
+        except Exception as exc:  # noqa: BLE001 — the bench reports, never raises
+            _case(
+                f'overflow-detected-{shapeName}',
+                'the overflow probe must not raise',
+                False,
+                f'{type(exc).__name__}: {exc}'[:200],
+                expected='detected',
+                error=f'{type(exc).__name__}: {exc}'[:200],
+            )
+            continue
+        _case(
+            f'overflow-detected-{shapeName}',
+            f'an overflow in the {shapeName} shape must be recognized',
+            detected,
+            'detected' if detected else 'not detected',
+            expected='detected',
+        )
+    try:
+        shapeRefusal = _isShapeRefusal({'error': {'message': 'context length exceeded'}})
+    except Exception as exc:  # noqa: BLE001
+        shapeRefusal = True
+        _case('overflow-not-a-shape-refusal', 'the shape probe must not raise', False, str(exc)[:120])
+    else:
+        _case(
+            'overflow-not-a-shape-refusal',
+            'an overflow is not a shape refusal — the two ladders must not both fire',
+            not shapeRefusal,
+            'shape refusal' if shapeRefusal else 'overflow only',
+            expected='overflow only',
+        )
+
+    # ── the rescue ───────────────────────────────────────────────────────
+    session = create_workbench_session(
+        provider='local', agentId='', guardMode='full', goal='overflow bench'
+    )
+    messages = _overflow_transcript()
+    before = estimateTokens(messages)
+    split: dict[str, object] = {}
+    reduced = None
+    try:
+        import asyncio
+
+        reduced = asyncio.run(
+            _reactiveContextReduction(messages, contextWindow, session, statsOut=split)
+        )
+    except Exception as exc:  # noqa: BLE001
+        _case(
+            'overflow-rescue-shrinks',
+            'the rescue must not raise',
+            False,
+            f'{type(exc).__name__}: {exc}'[:200],
+            error=f'{type(exc).__name__}: {exc}'[:200],
+        )
+        reduced = None
+    if reduced is not None:
+        after = estimateTokens(reduced)
+        _case(
+            'overflow-rescue-shrinks',
+            f'with the window shrunk to {contextWindow} tokens the rescue must shrink '
+            'the surface',
+            after < before,
+            f'{before}->{after} tokens',
+            expected='smaller',
+        )
+        _case(
+            'overflow-rescue-reports-its-split',
+            'the rescue reports the split it used, so the card can name it',
+            bool(split.get('head') is not None and split.get('tail') is not None),
+            f"head={split.get('head')} tail={split.get('tail')}",
+            expected='split reported',
+        )
+    else:
+        _case(
+            'overflow-rescue-shrinks',
+            f'with the window shrunk to {contextWindow} tokens the rescue must shrink '
+            'the surface',
+            False,
+            'no reduction',
+            expected='smaller',
+        )
+    # The negative case: a window the transcript already fits buys nothing, and
+    # the rescue must SAY so rather than report a win.
+    bigWindow = max(contextWindow * 8, before * 4)
+    split2: dict[str, object] = {}
+    try:
+        import asyncio
+
+        declined = asyncio.run(
+            _reactiveContextReduction(messages, bigWindow, session, statsOut=split2)
+        )
+    except Exception as exc:  # noqa: BLE001
+        declined = None
+        _case('overflow-rescue-declines', 'the rescue must not raise', False, str(exc)[:120])
+    else:
+        _case(
+            'overflow-rescue-declines',
+            'a window the transcript already fits must buy no reduction, and the '
+            'rescue must decline rather than report a win',
+            declined is None,
+            'declined' if declined is None else 'reduced anyway',
+            expected='declined',
+        )
+    return results
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog='harness_eval', description=__doc__.splitlines()[0])
     ap.add_argument('--judge', action='store_true', help='ask a real model instead of the rails')
@@ -460,6 +661,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--confirm-tokens', action='store_true', help='required with --judge')
     ap.add_argument('--only', default='', help='comma-separated case ids')
     ap.add_argument('--out', default='', help='write the full result JSON here')
+    ap.add_argument(
+        '--overflow',
+        action='store_true',
+        help='run the reactive-overflow bench instead of the rails',
+    )
+    ap.add_argument(
+        '--context-window',
+        type=int,
+        default=4096,
+        help='the shrunken context window the overflow bench forces (default 4096)',
+    )
     args = ap.parse_args(argv)
 
     only = {s.strip() for s in args.only.split(',') if s.strip()}
@@ -487,7 +699,15 @@ def main(argv: list[str] | None = None) -> int:
     else:
         home = _isolateData()
         try:
-            results = run_rails(only)
+            if args.overflow:
+                # The overflow bench needs the store (it holds the session the
+                # rescue runs against), and it must not touch a real install.
+                from app.services import memory_store
+
+                memory_store.init()
+                results = run_overflow_bench(max(1, int(args.context_window or 4096)))
+            else:
+                results = run_rails(only)
         finally:
             # Close the store first: on Windows an open SQLite handle makes
             # `rmtree` fail, and it fails SILENTLY under `ignore_errors=True`, so

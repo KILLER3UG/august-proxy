@@ -31,6 +31,7 @@ import { toast } from 'sonner';
 import { ArchiveRestore, ArrowUp, ChevronLeft, ChevronRight, Download, Loader2, Pencil, RefreshCw, Search, Trash2, UserRoundCog } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
+import { Button } from '@/components/ui/button';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
@@ -326,6 +327,17 @@ interface FlatEntry {
    *  profile explainer's "always in context" claim was false for exactly
    *  these rows. */
   retired: boolean;
+  /** M-3: the keys this fact REPLACED (the winner's side of the lineage).
+   *  A superseded row is kept, not deleted, so "replaces N" is a fact about
+   *  this entry and not a guess. */
+  replaces: string[];
+  /** M-3: the key that replaced THIS fact (the loser's side). */
+  supersededBy: string;
+  /** M-8: the key this fact conflicts with. A conflict is not a
+   *  supersession — it waits for a human, so it gets its own badge. */
+  contradicts: string;
+  /** M-8: when the fact was last re-stated (empty = never). */
+  verifiedAt: string;
 }
 
 /** The row's right-hand date, the way the reference reads it: "Updated Aug 21"
@@ -376,6 +388,22 @@ function rowTitle(store: string, row: Row): string {
   }
   if (store === 'memory') return summarizeKvValue(row.value).summary || str(row.key);
   return STORE_META[store]?.title(row) || '(untitled)';
+}
+
+/** The `supersedes` column: a JSON array of fact keys in a TEXT column.
+ *  Parsed defensively — the column is written by the backend, but a row
+ *  that was hand-edited (or written by an older build) must not break the
+ *  list. An array that is already parsed passes through. */
+function parseKeyList(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map((x) => str(x)).filter(Boolean);
+  const s = str(raw).trim();
+  if (!s) return [];
+  try {
+    const parsed = JSON.parse(s);
+    return Array.isArray(parsed) ? parsed.map((x) => str(x)).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
 }
 
 function slugify(text: string): string {
@@ -577,6 +605,16 @@ export function MemorySection({ active }: { active: { id: string } }) {
     },
     onError: (e: Error) => toast.error(e.message || 'Could not update setting'),
   });
+  /* M-9: the store budget is a NUMBER, so it cannot ride the boolean
+   * mutation above (one PUT per keystroke). Its own mutation, its own
+   * draft, its own Save. */
+  const budgetMut = useMutation({
+    mutationFn: (patch: Record<string, number>) => api.put('/api/brain/config', patch),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['brain-config'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Could not save the store budget'),
+  });
   const deleteMut = useMutation({
     mutationFn: (p: { store: string; id: string }) =>
       api.delete(`/api/brain/stores/${encodeURIComponent(p.store)}/${encodeURIComponent(p.id)}`),
@@ -673,6 +711,14 @@ export function MemorySection({ active }: { active: { id: string } }) {
           source: m?.source?.(row) ?? '',
           category: m?.category?.(row) ?? '',
           retired: str(row.status) === 'retired',
+          // M-3 / M-8: the lineage and the trust signals, read off the
+          // columns migration 055 added. `supersedes` is a JSON array in a
+          // TEXT column, so it is parsed defensively — a row written by
+          // something else must not break the list.
+          replaces: parseKeyList(row.supersedes),
+          supersededBy: str(row.supersededBy),
+          contradicts: str(row.contradicts),
+          verifiedAt: str(row.verifiedAt),
         });
       }
     }
@@ -893,6 +939,13 @@ export function MemorySection({ active }: { active: { id: string } }) {
   };
 
   const cfg = configQ.data?.config;
+  /* M-9: the store-budget draft. Seeded from the saved value, and the
+   * "dirty" flag compares NUMBERS — a draft of "1500" against a saved 1500
+   * is not a change, and a Save button that is live for it would be a lie. */
+  const savedBudget = typeof cfg?.factBudget === 'number' ? cfg.factBudget : 0;
+  const [budgetDraft, setBudgetDraft] = useState('');
+  const effectiveBudget = budgetDraft === '' ? savedBudget : Number(budgetDraft) || 0;
+  const budgetDirty = budgetDraft !== '' && effectiveBudget !== savedBudget;
   const unifiedLoading = storeQueries.some((q) => q.isLoading);
   const unifiedError = storeQueries.reduce<unknown>(
     (acc, q) => acc ?? (q.isError ? q.error : null),
@@ -1379,6 +1432,59 @@ export function MemorySection({ active }: { active: { id: string } }) {
           disabled={configQ.isLoading || configMut.isPending}
           data-testid="memory-sensitive-toggle"
         />
+      </div>
+      {/* M-9: the store budget. 0 = no budget, which is the shipped state —
+          the pass that enforces it is the only automatic curation in the
+          store, so it waits until someone asks for it. A number cannot ride
+          the toggles above (a PUT per keystroke), so it has its own draft
+          and its own Save. */}
+      <div className="mt-3 border-t border-white/[0.06] pt-3" data-testid="memory-budget-group">
+        <label
+          htmlFor="memory-fact-budget"
+          className="text-sm font-medium text-foreground"
+        >
+          Store budget
+        </label>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+          How many active memories August may keep. Over the budget, the
+          consolidation pass archives the weakest ones — the least confident,
+          least used, oldest — and keeps them restorable rather than deleting
+          them. 0 (the default) means no budget: nothing is ever archived on
+          its own.
+        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            id="memory-fact-budget"
+            type="number"
+            min={0}
+            max={100000}
+            aria-label="Store budget (active memories)"
+            data-testid="memory-fact-budget-input"
+            value={budgetDraft}
+            onChange={(e) => setBudgetDraft(e.target.value)}
+            className="w-28 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-right text-xs text-foreground outline-none focus:border-primary/40"
+          />
+          <span className="text-2xs text-muted-foreground">
+            {budgetDraft === '' ? 'no budget' : `${budgetDraft} memories`}
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!budgetDirty || budgetMut.isPending}
+            onClick={() => {
+              const next = Math.max(0, Math.min(100000, Math.round(Number(budgetDraft) || 0)));
+              budgetMut.mutate({ factBudget: next });
+            }}
+            data-testid="memory-fact-budget-save"
+          >
+            {budgetMut.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+        {budgetMut.isError ? (
+          <p role="alert" className="mt-1.5 text-2xs text-danger-fg" data-testid="memory-fact-budget-error">
+            Could not save the store budget: {budgetMut.error?.message}
+          </p>
+        ) : null}
       </div>
       </MemoryGroup>
 
@@ -2333,6 +2439,36 @@ function FlatEntryRow({
           data-testid="memory-expiring-badge"
         >
           expiring
+        </span>
+      ) : null}
+      {/* M-3 / M-8: the lineage. A fact that REPLACED others says so (the
+          losers are kept, not deleted — so this is a fact about the entry,
+          not a guess), a fact that was REPLACED says so too, and a genuine
+          CONFLICT says so instead: a contradiction waits for a human, which
+          is not the same thing as being an older version of something. */}
+      {entry.contradicts ? (
+        <span
+          className="shrink-0 text-2xs text-warning"
+          title={`Conflicts with "${entry.contradicts}" — two entries that cannot both be right.`}
+          data-testid="memory-conflict-badge"
+        >
+          conflict
+        </span>
+      ) : entry.supersededBy ? (
+        <span
+          className="shrink-0 text-2xs text-muted-foreground/60"
+          title={`Replaced by "${entry.supersededBy}" — kept, not deleted, so it can be restored.`}
+          data-testid="memory-superseded-badge"
+        >
+          superseded
+        </span>
+      ) : entry.replaces.length > 0 ? (
+        <span
+          className="shrink-0 text-2xs text-muted-foreground/60"
+          title={`Replaces ${entry.replaces.join(', ')} — those entries are kept and are restored if this one is deleted.`}
+          data-testid="memory-replaces-badge"
+        >
+          replaces {entry.replaces.length}
         </span>
       ) : null}
       <span

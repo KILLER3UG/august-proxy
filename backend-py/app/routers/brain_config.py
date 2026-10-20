@@ -564,57 +564,29 @@ async def getSkillSuggestions(days: int = Query(30, ge=1, le=30), limit: int = Q
     not, over the retention window. ``lift`` is the difference — the honest
     number a demotion suggestion or a transcript provenance chip would quote.
     Rows predating 050 (NULL columns) never enter the aggregate.
+
+    The aggregation is ``turn_outcomes.skill_lift_detail`` — the SAME
+    function the per-turn demotion prior reads (``capabilities_prompt``).
+    This route used to carry its own copy of the SQL with ``COUNT(*)`` where
+    the ledger used ``COUNT(ok)``, so the Skills UI and the ranker could
+    disagree about the same skill's lift; one statement now backs both.
     """
-    from app.services.memory_conn import conn
+    from app.services.turn_outcomes import skill_lift_detail
 
     windowDays = max(1, min(int(days or 30), 30))
-    try:
-        rows = conn().execute(
-            """
-            WITH windowed AS (
-                SELECT ok, skills_injected FROM turn_outcomes
-                WHERE ts >= datetime('now', ?) AND skills_injected IS NOT NULL
-            ),
-            total AS (SELECT COUNT(*) AS n, SUM(ok) AS ok_n FROM windowed),
-            per AS (
-                SELECT je.value AS skill, COUNT(*) AS n, SUM(w.ok) AS ok_n
-                FROM windowed w, json_each(w.skills_injected) je
-                GROUP BY je.value
-            )
-            SELECT per.skill AS skill, per.n AS with_turns, per.ok_n AS ok_with,
-                   total.n AS total_turns, total.ok_n AS ok_total
-            FROM per, total
-            ORDER BY per.n DESC, per.skill ASC
-            LIMIT ?
-            """,
-            (f'-{windowDays} days', limit),
-        ).fetchall()
-    except Exception:
-        # A DB without 050 (or without json_each) yields no suggestions —
-        # the endpoint degrades to empty, never errors into the caller.
-        rows = []
+    # A DB without 050 (or without json_each) yields no suggestions — the
+    # aggregate degrades to empty, never errors into the caller.
+    rows = skill_lift_detail(windowDays, limit=limit)
     suggestions: list[dict[str, object]] = []
-    for r in rows:
-        withTurns = int(r['with_turns'] or 0)
-        totalTurns = int(r['total_turns'] or 0)
-        withoutTurns = max(0, totalTurns - withTurns)
-        okWith = int(r['ok_with'] or 0)
-        okTotal = int(r['ok_total'] or 0)
-        okRateWith = okWith / withTurns if withTurns else None
-        okRateWithout = (okTotal - okWith) / withoutTurns if withoutTurns else None
-        lift = (
-            round(okRateWith - okRateWithout, 3)
-            if okRateWith is not None and okRateWithout is not None
-            else None
-        )
+    for row in rows:
         suggestions.append(
             {
-                'skill': str(r['skill'] or ''),
-                'turnsWith': withTurns,
-                'okRateWith': round(okRateWith, 3) if okRateWith is not None else None,
-                'turnsWithout': withoutTurns,
-                'okRateWithout': round(okRateWithout, 3) if okRateWithout is not None else None,
-                'lift': lift,
+                'skill': str(row.get('skill') or ''),
+                'turnsWith': int(row.get('turnsWith') or 0),
+                'okRateWith': row.get('okRateWith'),
+                'turnsWithout': int(row.get('turnsWithout') or 0),
+                'okRateWithout': row.get('okRateWithout'),
+                'lift': row.get('lift'),
             }
         )
     return {'days': windowDays, 'suggestions': suggestions}

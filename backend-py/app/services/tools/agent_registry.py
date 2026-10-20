@@ -193,13 +193,14 @@ def _effectivePermissions(agentId: str, _seen: frozenset[str] = frozenset()) -> 
     under a read-only parent would otherwise inherit no limit at all, and the
     short-circuit here was exactly how the spawn-time ceiling came back empty.
 
-    ``_seen`` bounds the walk. ``parentId`` is not validated anywhere on write —
-    the model door can set it (``create_agent(parentAgent=…)``, and ``update_agent``
-    kept it writable so a Bot can re-attach a teammate) — so ``A→B→A`` is a
-    reachable record, and an unbounded walk answered it with ``RecursionError``.
-    The caller swallowed that to "no ceiling", which is the fail-OPEN direction:
-    a cycle in the lineage therefore erased the restriction instead of enforcing
-    it. A repeated id stops the walk and returns the intersection gathered so far.
+    ``_seen`` bounds the walk. ``parentId`` is written by the HUMAN door only
+    (``routers/agents.py`` — the agent editor, actor='ui'): the model door
+    cannot set it (``create_agent`` no longer advertises ``parentAgent`` and
+    refuses it at the handler; ``update_agent`` never wrote it), so a
+    ``A→B→A`` cycle is not reachable by a turn. A human can still make one,
+    and an unbounded walk answered it with ``RecursionError``, which the
+    ceiling swallowed into "no ceiling" — the fail-OPEN direction. A
+    repeated id stops the walk and returns the intersection gathered so far.
     """
     if agentId in _seen:
         return set()

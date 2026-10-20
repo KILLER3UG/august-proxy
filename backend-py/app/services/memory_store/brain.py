@@ -31,7 +31,14 @@ _BRAINStores: dict[str, dict[str, object]] = {
         'fts': None,
         'columns': (
             'id, fact_key, fact_value, title, kind, category, source, confidence, '
-            'use_count, last_used_at, status, expires_at, scope, created_at, updated_at'
+            'use_count, last_used_at, status, expires_at, scope, created_at, updated_at, '
+            # 055: the supersession lineage (M-3) and the trust signals
+            # (M-7, M-8). The Memory UI reads them to show "replaces N",
+            # "superseded by X" and a conflict badge, and the detail view
+            # offers the restore. The columns are guaranteed by
+            # `memory_schema._ensure_fact_signal_columns` on every boot.
+            'superseded_by, supersedes, contradicts, verified_at, '
+            'injected_count, last_injected_at'
         ),
         'search_cols': ['fact_key', 'fact_value', 'title'],
         'label': 'structured semantic facts',
@@ -897,12 +904,29 @@ def brain_delete_row(store: str, row_id: object) -> dict[str, object]:
         if before is None:
             return {'ok': False, 'error': 'row not found'}
         beforeWire = _row_as_wire(before)
+        # M-3: deleting a fact that REPLACED others brings those others back
+        # first. A superseded row is kept, not deleted — so without this it
+        # would stay parked against a winner that no longer exists, and the
+        # content it holds would be invisible to recall and to this list.
+        restored: list[str] = []
+        if resolved == 'facts':
+            try:
+                factKey = str(beforeWire.get('factKey') or '')
+                if factKey:
+                    from app.services.memory_store.rest import restore_superseded_losers
+
+                    restored = restore_superseded_losers(factKey)
+            except Exception:
+                restored = []
         cursor = conn.execute(f'DELETE FROM {table} WHERE {idCol} = ?', (row_id,))
         brain_commit(conn)
         if cursor.rowcount > 0:
             _record_row_rollback(resolved, str(row_id), beforeWire, None)
             _invalidate_fact_cache_if_facts(resolved)  # 2.6 (Part 25)
-        return {'ok': cursor.rowcount > 0, 'store': resolved}
+        out: dict[str, object] = {'ok': cursor.rowcount > 0, 'store': resolved}
+        if restored:
+            out['restoredSuperseded'] = restored
+        return out
     except Exception as exc:
         return {'ok': False, 'error': f'brain_delete_row({store}): {exc}'}
 
@@ -970,6 +994,14 @@ def brain_update_row(store: str, row_id: object, patch: dict[str, object]) -> di
                 params.append(val)
         if not sets:
             return {'ok': False, 'error': 'no writable fields in patch'}
+        # M-3: a row that is ACTIVE again is neither superseded nor in
+        # conflict, so lifting its status lifts the lineage with it. Leaving
+        # `superseded_by` pointing at the fact that replaced it would make a
+        # restored row claim a parent it no longer has.
+        if resolved == 'facts' and str(patch.get('status') or '').strip().lower() == 'active':
+            for col in ('superseded_by', 'contradicts'):
+                if col in colNames and col not in {s.split(' = ')[0] for s in sets}:
+                    sets.append(f'{col} = NULL')
         before = conn.execute(f'SELECT * FROM {table} WHERE {idCol} = ?', (row_id,)).fetchone()
         if before is None:
             return {'ok': False, 'error': 'row not found'}

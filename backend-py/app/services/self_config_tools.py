@@ -135,6 +135,23 @@ async def createAgent(
     refused = _authority_refusal({'permissions': permissions, 'tools': tools, 'model_alias': model_alias})
     if refused:
         return refused
+    # Lineage is the HUMAN's to set, for the same reason the capability
+    # definition is: `parentId` is the graph the permission ceiling walks
+    # (`agent_registry._effectivePermissions`), the "may not delete an
+    # ancestor" rule reads, and the "an agent with children may not be
+    # deleted" rule reads. A model that could write it could re-parent a
+    # stranger, shield an agent from the delete door by making it a parent,
+    # and edit the very graph the ceiling is derived from. The knob is GONE
+    # from the advertised schema (a knob that always refuses is a lie) and
+    # refused here in case an older model still sends it.
+    if parent_agent:
+        return _err(
+            'Refused: an agent\'s lineage (parentAgent) is the user\'s to set in Settings → '
+            'Agents. A turn may create an agent, but it may not decide who that agent '
+            'belongs to — the parent is what the permission ceiling and the delete rules '
+            'are derived from.',
+            refused=['parentAgent'],
+        )
 
     try:
         agent = roster.create_bot(
@@ -143,14 +160,6 @@ async def createAgent(
             role=role,
             actor='agent',
         )
-        if parent_agent:
-            from app.services.tools import agent_registry
-
-            agent_registry.updateAgent(
-                as_str(agent.get('id')),
-                {'parentId': parent_agent},
-                actor='agent',
-            )
         return _ok(agent=agent)
     except Exception as exc:
         return _err(f'Failed to create agent: {exc}')
@@ -374,7 +383,8 @@ def register() -> None:
         'create_agent',
         'Create a new agent (a Bot) with a name, role and description. The agent is persisted '
         'and immediately usable — bind it to a session or invoke it as a sub-agent. Its tool '
-        'surface is inherited from the turn that spawns it; capabilities are the user to set.',
+        'surface is inherited from the turn that spawns it; capabilities are the user to set, '
+        'and so is its place in the agent hierarchy.',
         createAgent,
         {
             'type': 'object',
@@ -382,7 +392,6 @@ def register() -> None:
                 'name': {'type': 'string', 'description': 'Human-readable agent name.'},
                 'description': {'type': 'string', 'description': 'What the agent does.'},
                 'role': {'type': 'string', 'description': "Role label (e.g. 'Researcher')."},
-                'parentAgent': {'type': 'string', 'description': 'Parent agent id (for hierarchy).'},
             },
             'required': ['name'],
         },

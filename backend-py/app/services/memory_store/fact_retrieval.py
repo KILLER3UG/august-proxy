@@ -371,6 +371,90 @@ def _usage_map(keys: list[str]) -> dict[str, tuple[int, str]]:
     return merged
 
 
+def _disuse_for(keys: list[str]) -> dict[str, int]:
+    """``injected_count`` per candidate key (M-7).
+
+    How many times a fact has been INJECTED into a ranked recall. A fact
+    that is injected again and again and never quoted is a stale-but-plausible
+    entry holding rank: the usage boost only ever rewards, so nothing in the
+    scorer ever pushed such a fact down.
+
+    Read fresh (not from the cached corpus) for the same reason usage is:
+    the counter changes on every injection, and a cached value would make
+    the penalty stale by exactly one turn.
+    """
+    out: dict[str, int] = {}
+    uniq = [k for k in dict.fromkeys(keys) if k][:200]
+    if not uniq:
+        return out
+    try:
+        placeholders = ','.join('?' for _ in uniq)
+        rows = _conn().execute(
+            f'SELECT fact_key, injected_count FROM facts WHERE fact_key IN ({placeholders})',
+            uniq,
+        ).fetchall()
+        for r in rows:
+            out[str(r['fact_key'])] = int(r['injected_count'] or 0)
+    except Exception as exc:
+        # A DB without migration 055 has no counter — no signal, no penalty.
+        logging.debug('candidate disuse fetch failed: %s', exc)
+    return out
+
+
+def record_injection(keys: list[str]) -> int:
+    """Count ONE injection for each key (M-7).
+
+    Called where the block is actually injected into a turn, never where it
+    is merely rendered for a preview. The counter is the negative half of
+    the usage signal: ``use_count`` says a fact was useful, this says a fact
+    was SHOWN and (maybe) never used.
+    """
+    uniq = [k for k in dict.fromkeys(keys) if k][:50]
+    if not uniq:
+        return 0
+    try:
+        placeholders = ','.join('?' for _ in uniq)
+        cur = _conn().execute(
+            'UPDATE facts SET injected_count = COALESCE(injected_count, 0) + 1, '
+            f"last_injected_at = datetime('now') WHERE fact_key IN ({placeholders})",
+            uniq,
+        )
+        from app.services.memory_conn import commit as _commit
+
+        _commit(_conn())
+        return cur.rowcount or 0
+    except Exception as exc:
+        logging.debug('injection counter write failed: %s', exc)
+        return 0
+
+
+def _disuse_constants() -> tuple[float, int, int]:
+    """``(weight, cap, rescue)`` of the disuse penalty, from brain-config.
+
+    The three constants are the ranker's, so they are config and not
+    constants in the scorer: an operator can weaken the penalty without a
+    code change. Absent config falls back to the shipped values, and a
+    weight of 0 disables the penalty entirely.
+    """
+    weight, cap, rescue = 0.01, 50, 3
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        cfg = getRuntimeConfig()
+        rawWeight = cfg.get('memoryDisuseWeight')
+        if isinstance(rawWeight, (int, float)) and not isinstance(rawWeight, bool):
+            weight = max(0.0, min(1.0, float(rawWeight)))
+        rawCap = cfg.get('memoryDisuseCap')
+        if isinstance(rawCap, int) and not isinstance(rawCap, bool):
+            cap = max(0, min(500, int(rawCap)))
+        rawRescue = cfg.get('memoryDisuseRescue')
+        if isinstance(rawRescue, int) and not isinstance(rawRescue, bool):
+            rescue = max(0, min(20, int(rawRescue)))
+    except Exception:
+        logging.debug('disuse constants unavailable; using defaults', exc_info=True)
+    return weight, cap, rescue
+
+
 def retrieve_relevant_facts(
     query: str,
     k: int = 5,
@@ -451,24 +535,41 @@ def retrieve_relevant_facts(
     # the candidate set — not from the (usage-free) cached corpus.
     usage = _usage_map([str(row.get('key')) for _, row in scored])
     confidence = _confidence_for([str(row.get('key')) for _, row in scored])
+    # M-7: the NEGATIVE half of the usage signal. A fact that keeps being
+    # injected and is never quoted is a stale-but-plausible entry holding
+    # rank — nothing in the scorer ever pushed one down, because the usage
+    # boost only ever rewards. `use_count * rescue` is the forgiveness: a
+    # quote rescues several injections, so a fact that IS used does not sink
+    # for having been shown before.
+    disuse = _disuse_for([str(row.get('key')) for _, row in scored])
+    disuseWeight, disuseCap, disuseRescue = _disuse_constants()
     boosted: list[tuple[float, dict[str, object]]] = []
     for s, row in scored:
-        use_count, last_used_at = usage.get(str(row.get('key')), (0, ''))
+        key = str(row.get('key'))
+        use_count, last_used_at = usage.get(key, (0, ''))
         # Dampen by the stored prior BEFORE the usage boost is added, and only
         # ever dampen: at 1.0 (the column default, and every explicitly-stated
         # fact) the factor is exactly 1, so this cannot move an existing
         # ranking. A 0.6 inferred lesson still surfaces when it is the only
         # match — it just loses a tie against a fact the user asserted.
-        conf = confidence.get(str(row.get('key')), 1.0)
+        conf = confidence.get(key, 1.0)
         s *= _CONF_FLOOR + (1.0 - _CONF_FLOOR) * max(0.0, min(1.0, conf))
         # A decayed boost is a tiny POSITIVE float, not zero: a fact last used
         # in 2000 gets ~9e-99, so filtering the final score on `> 0` promoted
         # it anyway. Usage may only promote a fact whose usage signal is still
         # alive — one use with no decay is the floor.
         boost = 0.05 * min(use_count, 20) * _usage_decay(last_used_at)
-        if s <= 0 and boost < _MIN_USEFUL_BOOST:
+        # The disuse penalty is bounded (the cap) and can never take a fact
+        # below zero: it demotes, it does not delete. A fact with no
+        # injection record pays nothing.
+        penalty = 0.0
+        if disuseWeight > 0:
+            unused = max(0, disuse.get(key, 0) - use_count * disuseRescue)
+            penalty = disuseWeight * min(unused, disuseCap)
+        final = s + boost - penalty
+        if final <= 0 and boost < _MIN_USEFUL_BOOST:
             continue
-        boosted.append((s + boost, row))
+        boosted.append((final, row))
     boosted.sort(key=lambda pair: pair[0], reverse=True)
     return [dict(row) for _, row in boosted[: max(1, k)]]
 
@@ -677,6 +778,8 @@ def build_memory_block(
     recalled: list[dict[str, object]] | None = None,
     prior_turn: str = '',
     scope: str = 'global',
+    *,
+    record: bool = True,
 ) -> tuple[str, list[tuple[str, str]]]:
     """Render the `<memory>` injection block for one turn.
 
@@ -713,6 +816,18 @@ def build_memory_block(
     Budget honesty note: the per-turn keyword auto-injection is the caller's
     gate (``memoryAutoInject``); a caller that keeps it off can still render
     the always-on lane by calling :func:`build_profile_block` directly.
+
+    M-7: ``record`` counts ONE injection for each fact this block actually
+    shipped, which is the negative half of the usage signal (a fact that is
+    injected again and again and never quoted must sink). A caller that is
+    only RENDERING the block (the Settings preview) passes ``record=False``:
+    a preview is not an injection, and counting it would penalise facts for
+    being looked at.
+
+    Only the KEYWORD lane is counted. The profile lane is injected on every
+    turn by design and is not ranked by BM25 (it is excluded from the
+    corpus), so a counter on it would measure "always shown" and mean
+    nothing.
     """
     profileLane, profileRows = build_profile_block(scope=scope)
     laneKeys = {str(r.get('key') or '') for r in profileRows}
@@ -783,6 +898,12 @@ def build_memory_block(
     lines.extend(factLines)
     injected: list[tuple[str, str]] = [_row_identity(r) for r in profileRows]
     injected.extend(_row_identity(f) for f in includedFacts)
+    if record and includedFacts:
+        # M-7: the injection counter, for the ranked lane only.
+        try:
+            record_injection([str(f.get('key') or '') for f in includedFacts])
+        except Exception:
+            logging.debug('injection counter write failed', exc_info=True)
     if projectSection and (
         budget - len(projectSection) >= 0 or (not factLines and not profileLane)
     ):
@@ -853,7 +974,7 @@ def memory_context_preview(
     injected: list[tuple[str, str]]
     if autoInject:
         turnBlock, injected = build_memory_block(
-            (query or '').strip(), workspace=workspace, scope=scope
+            (query or '').strip(), workspace=workspace, scope=scope, record=False
         )
     else:
         turnBlock, laneRows = build_profile_memory_block(scope=scope)

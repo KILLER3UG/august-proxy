@@ -633,24 +633,30 @@ def sweep_old_outcomes(days: int = _RETENTION_DAYS) -> int:
         return 0
 
 
-def skill_lift(days: int = 30) -> dict[str, float]:
-    """Per-skill measured lift: ok-rate on turns that carried the skill minus
-    ok-rate on turns that did not, over the window.
+def skill_lift_detail(days: int = 30, limit: int = 0) -> list[dict[str, Any]]:
+    """The ONE per-skill effect aggregation, with every number it rests on.
 
-    ONE aggregation for two consumers: ``GET /api/brain/skills/suggestions``
-    (the human read) and the per-turn demotion prior in
-    ``capabilities_prompt`` (the ranking read). They must not be able to
-    disagree — a skill the UI shows at ``+0.2`` and the ranker treats as
-    harmful is a bug, not two opinions.
-
-    A skill with no measurable denominator is ABSENT from the map, not 0.0:
-    "no evidence" and "measured, no effect" are different facts, and only the
-    second one may move a ranking. A DB without migration 050 (or without
-    ``json_each``) degrades to an empty map.
+    Two consumers read this and they must not be able to disagree: ``GET
+    /api/brain/skills/suggestions`` (the human read — the Skills UI) and the
+    per-turn demotion prior in ``capabilities_prompt`` (the ranking read). The
+    route used to run its OWN copy of this SQL with ``COUNT(*)`` where this
+    module used ``COUNT(ok)``, so the UI could show ``+0.2`` for a skill the
+    ranker treated as harmful — the exact failure the two-consumer rule
+    exists to prevent. The route reads this function now, so there is one
+    statement behind both reads.
 
     ``COUNT(ok)`` not ``COUNT(*)``: ``ok`` is NULL for a turn whose stop was
     never classified (see :func:`turn_ok`), and counting those rows in the
     denominator while SUM ignores them would understate every rate.
+
+    A skill with no measurable denominator is ABSENT from the result, not
+    0.0: "no evidence" and "measured, no effect" are different facts, and
+    only the second one may move a ranking. A DB without migration 050 (or
+    without ``json_each``) degrades to an empty list.
+
+    Ordered by turns-with DESC then name ASC, so the UI's "most measured
+    first" list is a stable order. ``limit`` caps the list (0 = no cap); the
+    demotion prior reads the whole map.
     """
     window_days = max(1, min(int(days or 30), _RETENTION_DAYS))
     try:
@@ -669,14 +675,15 @@ def skill_lift(days: int = 30) -> dict[str, float]:
             SELECT per.skill AS skill, per.n AS with_turns, per.ok_n AS ok_with,
                    total.n AS total_turns, total.ok_n AS ok_total
             FROM per, total
+            ORDER BY per.n DESC, per.skill ASC
             """
             ,
             (f'-{window_days} days',),
         ).fetchall()
     except Exception:
         logger.debug('skill_lift aggregate failed', exc_info=True)
-        return {}
-    out: dict[str, float] = {}
+        return []
+    out: list[dict[str, Any]] = []
     for r in rows:
         name = str(r['skill'] or '').strip()
         with_turns = int(r['with_turns'] or 0)
@@ -686,10 +693,48 @@ def skill_lift(days: int = 30) -> dict[str, float]:
             # No denominator on one side means the difference is undefined;
             # a 0.0 here would read as "measured, no effect".
             continue
-        ok_rate_with = int(r['ok_with'] or 0) / with_turns
-        ok_rate_without = (int(r['ok_total'] or 0) - int(r['ok_with'] or 0)) / without_turns
-        out[name] = round(ok_rate_with - ok_rate_without, 3)
+        ok_with = int(r['ok_with'] or 0)
+        ok_total = int(r['ok_total'] or 0)
+        ok_rate_with = ok_with / with_turns
+        ok_rate_without = (ok_total - ok_with) / without_turns
+        out.append(
+            {
+                'skill': name,
+                'turnsWith': with_turns,
+                'okRateWith': round(ok_rate_with, 3),
+                'turnsWithout': without_turns,
+                'okRateWithout': round(ok_rate_without, 3),
+                'lift': round(ok_rate_with - ok_rate_without, 3),
+            }
+        )
+    cap = int(limit or 0)
+    if cap > 0:
+        out = out[:cap]
     return out
+
+
+def skill_lift(days: int = 30) -> dict[str, float]:
+    """Per-skill measured lift: ok-rate on turns that carried the skill minus
+    ok-rate on turns that did not, over the window.
+
+    ONE aggregation for two consumers: ``GET /api/brain/skills/suggestions``
+    (the human read) and the per-turn demotion prior in
+    ``capabilities_prompt`` (the ranking read). They must not be able to
+    disagree — a skill the UI shows at ``+0.2`` and the ranker treats as
+    harmful is a bug, not two opinions. The route reads
+    :func:`skill_lift_detail`, the SAME function this map is built from, so
+    one SQL statement backs both reads.
+
+    A skill with no measurable denominator is ABSENT from the map, not 0.0:
+    "no evidence" and "measured, no effect" are different facts, and only the
+    second one may move a ranking. A DB without migration 050 (or without
+    ``json_each``) degrades to an empty map.
+    """
+    return {
+        str(row.get('skill') or ''): float(row.get('lift') or 0.0)
+        for row in skill_lift_detail(days)
+        if str(row.get('skill') or '')
+    }
 
 
 def error_rate_by_model(days: int = 7) -> list[dict[str, object]]:

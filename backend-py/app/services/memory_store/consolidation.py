@@ -230,6 +230,144 @@ _RETIRE_WINDOWS: dict[str, str] = {
 _RETIRE_TYPES = ('retire-fact', 'retire-preference')
 
 
+def _enforce_fact_budget() -> tuple[int, list[str]]:
+    """M-9 store budget: curate the active-fact store back under its ceiling.
+
+    The ceiling is the brain key ``factBudget`` (0 = no budget, which is the
+    shipped default — see the fieldTable entry for why the budget does not
+    start armed). When the store holds more active facts than the budget
+    allows, the WEAKEST ones are archived until it fits.
+
+    "Weakest" is ``confidence · decay · use``: a low-confidence fact, one
+    nobody has quoted, and one nobody has touched for a while goes first.
+    The profile lane (``kind='profile'``) is EXEMPT — it is injected into
+    every turn regardless of relevance, so it is not competing for rank,
+    and archiving it would silently shorten what August knows about the
+    user.
+
+    Archiving is not deleting: the row stays, ``status='archived'`` takes it
+    out of recall, and the Memory UI can put it back. This pass is the only
+    automatic curation in the store, which is why it is off until someone
+    asks for it.
+    """
+    notes: list[str] = []
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        raw = getRuntimeConfig().get('factBudget', 0)
+        budget = int(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) else 0
+    except Exception:
+        budget = 0
+    if budget <= 0:
+        return 0, notes
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            'SELECT id, fact_key, confidence, use_count, kind, updated_at FROM facts '
+            "WHERE (status IS NULL OR status = 'active') "
+            "AND (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
+            "AND COALESCE(kind, 'fact') != 'profile'"
+        ).fetchall()
+    except Exception:
+        logger.debug('fact budget scan failed', exc_info=True)
+        return 0, notes
+    if len(rows) <= budget:
+        return 0, notes
+    excess = len(rows) - budget
+    # Oldest first among the weakest: a fact nobody has touched in months
+    # is the one whose context is the least likely to be missed.
+    scored: list[tuple[float, int, str]] = []
+    for r in rows:
+        try:
+            confidence = float(r['confidence']) if r['confidence'] is not None else 0.5
+        except (TypeError, ValueError):
+            confidence = 0.5
+        try:
+            use = int(r['use_count'] or 0)
+        except (TypeError, ValueError):
+            use = 0
+        ageDays = 0.0
+        try:
+            updated = str(r['updated_at'] or '')
+            if updated:
+                ageDays = float(
+                    conn.execute(
+                        "SELECT MAX(0, julianday('now') - julianday(?))", (updated,)
+                    ).fetchone()[0]
+                    or 0.0
+                )
+        except Exception:
+            ageDays = 0.0
+        # 30-day half-life, the same shape the retrieval decay uses.
+        decay = 0.5 ** (ageDays / 30.0)
+        score = confidence * decay * use
+        scored.append((score, int(r['id']), str(r['fact_key'] or '')))
+    scored.sort(key=lambda item: (item[0], item[2]))
+    archived = 0
+    for _score, rowId, key in scored[:excess]:
+        try:
+            cur = conn.execute(
+                "UPDATE facts SET status = 'archived', updated_at = datetime('now') WHERE id = ? "
+                "AND (status IS NULL OR status = 'active')",
+                (rowId,),
+            )
+            if cur.rowcount:
+                archived += 1
+                notes.append(f'archived {key!r} (over the fact budget)')
+        except Exception:
+            logger.debug('fact budget archive failed', exc_info=True)
+    if archived:
+        brain_commit(conn)
+        try:
+            from app.services.memory_store.fact_retrieval import invalidate_fact_index
+
+            invalidate_fact_index()
+        except Exception:
+            pass
+    return archived, notes
+
+
+def _stamp_automation_sources() -> int:
+    """M-12: stamp the rows an AUTOMATION run produced.
+
+    ``episodes`` gained a ``scope`` column in 036 — a scope answers "whose
+    memory is this?", and a source answers "what produced this?". The
+    source was the missing half: an automation run is repetitive BY DESIGN,
+    so without a stamp its episodes dominate the mining and recurrence
+    meters exactly the way a user's own repetition does.
+
+    The automation ledger (``automation_runs``) already names the sessions
+    the runs used, so the stamp is a join and not a guess. Rows written
+    before the column existed stay NULL — "not recorded" is not the same as
+    "not an automation row", and it is never back-filled.
+    """
+    stamped = 0
+    try:
+        conn = _conn()
+    except Exception:
+        return 0
+    for table in ('episodes', 'turn_outcomes'):
+        try:
+            cols = {row['name'] for row in conn.execute(f'PRAGMA table_info({table})').fetchall()}
+            if 'source' not in cols or 'session_id' not in cols:
+                continue
+            cur = conn.execute(
+                f"UPDATE {table} SET source = 'automation' "
+                "WHERE (source IS NULL OR source = '') "
+                "AND session_id IN (SELECT session_id FROM automation_runs "
+                "WHERE session_id IS NOT NULL AND session_id != '')"
+            )
+            stamped += cur.rowcount or 0
+        except Exception:
+            logger.debug('automation source stamp failed for %s', table, exc_info=True)
+    if stamped:
+        try:
+            brain_commit(conn)
+        except Exception:
+            logger.debug('automation source stamp commit failed', exc_info=True)
+    return stamped
+
+
 def _retire_stale_memories() -> tuple[int, list[str]]:
     """OQ5 (Part 21, 2026-09-04), widened 2026-10-10: propose-only retire.
 
@@ -716,6 +854,13 @@ def _merge_duplicates(modelSummarize: bool = False) -> tuple[int, list[str]]:
             # took the write, so skipping the DELETE would leave two rows that
             # both claim the content.
             logger.debug('fact merge snapshot failed', exc_info=True)
+        # M-3: the winner's side of the lineage. The absorbed row is DELETED
+        # here (a merge is a fold, not a supersession — there is no loser row
+        # left to carry `superseded_by`), so the winner's `supersedes` list
+        # is the only place the absorption is recorded. The absorbed CONTENT
+        # itself is in the lifecycle snapshot above, which is what a restore
+        # reads.
+        _append_supersedes(conn, newerKey, str(older['key']))
         conn.execute('DELETE FROM facts WHERE fact_key = ?', (older['key'],))
         removedKeys.add(str(older['key']))
         merged += 1
@@ -726,9 +871,85 @@ def _merge_duplicates(modelSummarize: bool = False) -> tuple[int, list[str]]:
     return merged, notes
 
 
+def _append_supersedes(conn: Any, winner_key: str, loser_key: str) -> None:
+    """Record that ``winner_key`` replaced ``loser_key`` (M-3, winner side).
+
+    The loser's own row carries ``superseded_by``; the winner carries the
+    LIST of the rows it replaced, because one winner can replace several
+    (a near-duplicate merge folds N rows into one).
+
+    The list is a JSON array in a TEXT column, so it is read back with a
+    tolerant parse: a row whose value was written by something else (or
+    hand-edited) must not make this pass throw.
+    """
+    if not winner_key or not loser_key:
+        return
+    try:
+        row = conn.execute(
+            'SELECT supersedes FROM facts WHERE fact_key = ?', (winner_key,)
+        ).fetchone()
+        current: list[str] = []
+        if row is not None:
+            raw = row['supersedes'] if hasattr(row, 'keys') else row[0]
+            if isinstance(raw, list):
+                current = [str(x) for x in raw]
+            elif isinstance(raw, str) and raw.strip():
+                try:
+                    loaded = json.loads(raw)
+                    if isinstance(loaded, list):
+                        current = [str(x) for x in loaded]
+                except (json.JSONDecodeError, TypeError):
+                    current = []
+        if loser_key not in current:
+            current.append(loser_key)
+        conn.execute(
+            'UPDATE facts SET supersedes = ? WHERE fact_key = ?',
+            (json.dumps(current), winner_key),
+        )
+    except Exception:
+        logger.debug('supersedes lineage write failed', exc_info=True)
+
+
+def _bodiesOverlap(a: str, b: str) -> float:
+    """Word overlap of two fact bodies, 0.0..1.0.
+
+    The measure that separates "the same statement, reworded" from "two
+    statements that cannot both be true". A pure token-set Jaccard: the
+    bodies here are one or two sentences, and a shared proper noun or a
+    shared negation is exactly the signal that two entries are talking
+    about the same thing.
+    """
+    def _tokens(text: str) -> set[str]:
+        return {t for t in re.split(r'[^0-9a-z]+', (text or '').lower()) if len(t) > 2}
+
+    ta, tb = _tokens(a), _tokens(b)
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / len(ta | tb)
+
+
+# Above this overlap two same-title entries are the same statement said
+# twice: the older one is SUPERSEDED (a human can restore it). Below it they
+# are a genuine CONTRADICTION and wait for a human instead.
+_SAME_STATEMENT_OVERLAP = 0.5
+
+
 def _supersede_contradictions() -> tuple[int, list[str]]:
     """(c) same-title entries with different bodies: keep the newest, mark
-    older rows ``superseded`` (kept, not deleted — plan §3.5-c)."""
+    older rows ``superseded`` (kept, not deleted — plan §3.5-c).
+
+    M-3 wrote the lineage while this did not: the loser row now carries
+    ``superseded_by`` and the winner carries ``supersedes``, so the Memory UI
+    can show "replaces X" and a forget on the winner can offer to restore
+    the losers.
+
+    M-8 split the outcome in two. Two same-title entries whose bodies
+    OVERLAP are the same statement said twice — the older one is superseded.
+    Two whose bodies do NOT overlap cannot both be true, and silently
+    superseding one of them hides a conflict from the user: they are marked
+    ``contested`` and each names the other in ``contradicts``, so the
+    conflict is a thing a human can see and resolve.
+    """
     facts = _load_active_facts()
     # 2.5: partition by (scope, normalized-title) — a global fact and a bot
     # fact with the same title are not a contradiction to resolve together.
@@ -747,14 +968,40 @@ def _supersede_contradictions() -> tuple[int, list[str]]:
         if len(bodies) < 2:
             continue  # identical bodies are the merge pass's job, not conflict
         # updated_at DESC from the query: first row wins.
+        winner = group[0]
+        winnerKey = str(winner['key'])
         for older in group[1:]:
-            conn.execute(
-                "UPDATE facts SET status = 'superseded', updated_at = datetime('now') "
-                'WHERE fact_key = ?',
-                (older['key'],),
+            olderKey = str(older['key'])
+            overlap = _bodiesOverlap(
+                _fact_body_text(winner['value']), _fact_body_text(older['value'])
             )
+            contested = overlap < _SAME_STATEMENT_OVERLAP
+            # Both sides of the lineage, whatever the outcome: these two rows
+            # are about the same thing, and the link is what the UI reads.
+            _append_supersedes(conn, winnerKey, olderKey)
+            if contested:
+                conn.execute(
+                    "UPDATE facts SET status = 'contested', superseded_by = ?, contradicts = ?, "
+                    "updated_at = datetime('now') WHERE fact_key = ?",
+                    (winnerKey, winnerKey, olderKey),
+                )
+                conn.execute(
+                    "UPDATE facts SET contradicts = ?, updated_at = datetime('now') "
+                    'WHERE fact_key = ?',
+                    (olderKey, winnerKey),
+                )
+                notes.append(
+                    f'contested {olderKey!r} against {winnerKey!r} '
+                    f'(same title, unrelated bodies — needs a human)'
+                )
+            else:
+                conn.execute(
+                    "UPDATE facts SET status = 'superseded', superseded_by = ?, "
+                    "updated_at = datetime('now') WHERE fact_key = ?",
+                    (winnerKey, olderKey),
+                )
+                notes.append(f'superseded {olderKey!r} (same title: {norm[:40]!r})')
             superseded += 1
-            notes.append(f'superseded {older["key"]!r} (same title: {norm[:40]!r})')
     if superseded:
         brain_commit(conn)
         from app.services.memory_store.fact_retrieval import invalidate_fact_index
@@ -1550,6 +1797,21 @@ def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
             notes.extend(retireNotes)
         except Exception:
             logger.debug('preference retire pass failed', exc_info=True)
+        # M-9: the store budget. OFF unless `factBudget` is set — the one
+        # automatic curation pass in the store, so it waits for a human to
+        # arm it.
+        try:
+            budgetArchived, budgetNotes = _enforce_fact_budget()
+            summary['factsArchived'] = budgetArchived
+            notes.extend(budgetNotes)
+        except Exception:
+            logger.debug('fact budget pass failed', exc_info=True)
+        # M-12: the automation source stamp, so an automation's episodes and
+        # turns are distinguishable from a person's.
+        try:
+            summary['automationStamped'] = _stamp_automation_sources()
+        except Exception:
+            logger.debug('automation source stamp failed', exc_info=True)
         # The LLM read across global AND project memory. Propose-only: it files
         # findings for the Review Inbox and never edits a fact itself.
         try:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from collections.abc import Sequence
 from typing import cast
@@ -13,6 +14,8 @@ from app.services.memory_conn import conn as _conn
 from app.services.memory_conn import db_path as _db_path
 from app.services.memory_store.wire import _json, _row_as_wire
 from app.type_aliases import FactDict, JsonValue, ProposalDict
+
+logger = logging.getLogger('august.memory_store.rest')
 
 # The one durable-entry-kind vocabulary (the write door validates against it;
 # retrieval reads from it). '' on a write means "unspecified" — see save_fact.
@@ -176,6 +179,16 @@ def save_fact(
             confidence = excluded.confidence,
             expires_at = excluded.expires_at,
             status = 'active',
+            -- M-8: a RE-STATEMENT is the only verification this store can
+            -- observe. Today an update and a verification are the same
+            -- event, so nothing recorded either; `verified_at` separates
+            -- them: an INSERT leaves it NULL (nothing has confirmed this
+            -- fact yet) and re-stating an existing key stamps it. A model
+            -- writing the key is a re-statement, not a human confirmation —
+            -- the column says WHEN the fact was last restated, and the
+            -- contradiction flag (M-8) is what says whether it is in
+            -- dispute.
+            verified_at = datetime('now'),
             updated_at = datetime('now')
         """,
         (
@@ -415,8 +428,86 @@ def update_fact_value(
     return True
 
 
+def _superseded_keys(raw: object) -> list[str]:
+    """The keys a fact replaced, read back from the ``supersedes`` column.
+
+    Tolerant on purpose: the column is a JSON array in a TEXT column, and a
+    row written by something else (or hand-edited) must not make the delete
+    door throw.
+    """
+    if isinstance(raw, list):
+        return [str(x) for x in raw if str(x)]
+    if isinstance(raw, str) and raw.strip():
+        try:
+            loaded = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return []
+        if isinstance(loaded, list):
+            return [str(x) for x in loaded if str(x)]
+    return []
+
+
+def restore_superseded_losers(factKey: str) -> list[str]:
+    """Bring back the entries ``factKey`` replaced (M-3).
+
+    A superseded row is KEPT, not deleted — so the content that lost to a
+    newer statement is still stored. But if the WINNER is deleted, those rows
+    would stay parked forever with a link to a fact that no longer exists:
+    invisible to recall, invisible to the UI's active list, and never
+    proposed for anything. The content would be gone in every sense except
+    that the bytes are on disk.
+
+    So deleting a winner restores what it replaced: the status flips back to
+    ``active`` and the lineage is cleared. The user asked for one memory to
+    go; the entries that memory had replaced are a different memory, and
+    bringing them back is the conservative reading.
+
+    Returns the keys that were restored (empty when the fact replaced
+    nothing, or when the columns are not there).
+    """
+    conn = _conn()
+    try:
+        row = conn.execute('SELECT supersedes FROM facts WHERE fact_key = ?', (factKey,)).fetchone()
+    except Exception:
+        return []
+    if row is None:
+        return []
+    raw = row['supersedes'] if hasattr(row, 'keys') else row[0]
+    losers = [k for k in _superseded_keys(raw) if k and k != factKey]
+    if not losers:
+        return []
+    restored: list[str] = []
+    try:
+        for key in losers:
+            cur = conn.execute(
+                "UPDATE facts SET status = 'active', superseded_by = NULL, contradicts = NULL, "
+                "updated_at = datetime('now') "
+                "WHERE fact_key = ? AND (status IS NULL OR status IN ('superseded', 'contested', 'archived'))",
+                (key,),
+            )
+            if cur.rowcount:
+                restored.append(key)
+        if restored:
+            brain_commit(conn)
+            try:
+                from app.services.memory_store.fact_retrieval import invalidate_fact_index
+
+                invalidate_fact_index()
+            except Exception:
+                pass
+    except Exception:
+        logger.debug('superseded restore failed', exc_info=True)
+    return restored
+
+
 def delete_fact(factKey: str) -> bool:
-    """Delete a fact by key."""
+    """Delete a fact by key.
+
+    M-3: the entries this fact REPLACED are restored first (see
+    :func:`restore_superseded_losers`) — a winner that is deleted must not
+    leave its losers parked against a fact that no longer exists.
+    """
+    restore_superseded_losers(factKey)
     conn = _conn()
     cursor = conn.execute('DELETE FROM facts WHERE fact_key = ?', (factKey,))
     brain_commit(conn)

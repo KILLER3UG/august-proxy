@@ -53,6 +53,17 @@ _CORE_SCHEMA_SQL = """
             status TEXT DEFAULT 'active',
             scope TEXT NOT NULL DEFAULT 'global',
             description TEXT DEFAULT '',
+            -- 055: the supersession lineage (M-3) and the trust/recall
+            -- signals (M-7, M-8). A fresh database is born with them; the
+            -- 055 migration ALTERs them onto a legacy one and gets
+            -- "duplicate column name", which the runner records as
+            -- already-applied — the documented double-ownership pattern.
+            superseded_by TEXT,
+            supersedes TEXT DEFAULT '[]',
+            injected_count INTEGER DEFAULT 0,
+            last_injected_at TEXT,
+            verified_at TEXT,
+            contradicts TEXT,
             -- One key per SCOPE, not one key in the whole store. The old
             -- column-level UNIQUE forced every per-scope memory to be
             -- hand-namespaced by the caller, and the namespacing changed the
@@ -202,6 +213,12 @@ _CORE_SCHEMA_SQL = """
 
         CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category);
         CREATE INDEX IF NOT EXISTS idx_facts_updated ON facts(updated_at);
+        -- 055: the lineage and the conflict lookups. A fresh database is born
+        -- with them; a legacy one gets them from the 055 migration (and a
+        -- missing index costs a scan, never a lock — which is why the
+        -- per-boot `ensure_column` helper does NOT create indexes).
+        CREATE INDEX IF NOT EXISTS idx_facts_superseded_by ON facts(superseded_by);
+        CREATE INDEX IF NOT EXISTS idx_facts_contradicts ON facts(contradicts);
         CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals(session_id);
         CREATE INDEX IF NOT EXISTS idx_lifecycle_session ON lifecycle(session_id);
         CREATE INDEX IF NOT EXISTS idx_lifecycle_event ON lifecycle(event_type);
@@ -357,6 +374,47 @@ def _ensure_fact_scope_key(conn: sqlite3.Connection) -> None:
         except Exception:  # noqa: BLE001
             pass
         log.warning('facts scope-key rebuild skipped: %s', exc)
+
+
+def _ensure_fact_signal_columns(conn: sqlite3.Connection) -> None:
+    """The 055 columns: fact lineage, the trust/recall signals, the source stamp.
+
+    Called from BOTH paths of :func:`ensure_schema`, so the columns exist
+    before anything writes a fact — ``save_fact``'s UPSERT names
+    ``verified_at``, and a database missing it would refuse every fact write.
+
+    Why the code path owns this and not only the ``.sql`` migration: the
+    runner applies a ``.sql`` file with ``conn.executescript``, which ABORTS
+    at the first failing statement, and its own bookkeeping then records the
+    version as applied even though the REST of the script never ran. A
+    multi-column migration whose first statement is already satisfied (which
+    is exactly what the ``ensure_column`` fast path guarantees) therefore
+    skips its remaining statements — and a migration that half-ran is worse
+    than one that did not run, because the version table says it is done.
+
+    This is the same reasoning as :func:`_ensure_fact_scope_key`, for the
+    same family of reasons. The ``.sql`` file (055) is the numbered RECORD
+    of the change and the cold-path owner; this helper is the guarantee. The
+    two cover the SAME columns, so the executescript abort on a warm boot is
+    harmless.
+    """
+    ensure_column(conn, 'facts', 'superseded_by', 'TEXT')
+    ensure_column(conn, 'facts', 'supersedes', "TEXT DEFAULT '[]'")
+    ensure_column(conn, 'facts', 'injected_count', 'INTEGER DEFAULT 0')
+    ensure_column(conn, 'facts', 'last_injected_at', 'TEXT')
+    ensure_column(conn, 'facts', 'verified_at', 'TEXT')
+    ensure_column(conn, 'facts', 'contradicts', 'TEXT')
+    # 055: the automation SOURCE stamp (M-12). `episodes.scope` is "whose
+    # memory is this?"; the source is "what produced this?".
+    ensure_column(conn, 'episodes', 'source', 'TEXT')
+    ensure_column(conn, 'turn_outcomes', 'source', 'TEXT')
+    # NO index creation here. This helper runs on EVERY `memory_store.init()`
+    # — which the session snapshot writer calls on every save — and a
+    # `CREATE INDEX` takes a schema lock, so creating them here made the
+    # snapshot thread lose a race with the main thread's write and fail with
+    # "database is locked". The indexes belong to the 055 migration (once)
+    # and to the core DDL (a fresh database); a missing index costs a scan,
+    # not a lock.
 
 
 def ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
@@ -1113,6 +1171,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute(
                 'CREATE INDEX IF NOT EXISTS idx_facts_scope ON facts(scope, status)'
             )
+            # 055: the lineage/trust columns are ensured AFTER the migration
+            # runner (see the helper's docstring) — not here, so the 055
+            # .sql file is never a "duplicate column name" abort.
             ensure_column(conn, 'blackboard', 'workspace_path', "TEXT DEFAULT ''")
             ensure_column(conn, 'blackboard', 'folder_id', "TEXT DEFAULT ''")
             ensure_column(conn, 'learned_heuristics', 'confidence', 'REAL DEFAULT 0.5')
@@ -1128,6 +1189,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             _ensure_messages_fts(conn)
             repair_fts_sync(conn)
             _run_migrations_safe(conn)
+            # 055: the guarantee. The .sql migration owns the columns on a
+            # normal boot; this fills the gap when that migration was
+            # blacklisted, and it runs AFTER the runner so the migration
+            # itself never hits a "duplicate column name" abort (which
+            # would skip the REST of its statements).
+            _ensure_fact_signal_columns(conn)
             _ensure_fact_scope_key(conn)
             _drop_empty_legacy_heuristics(conn)
             conn.commit()
@@ -1138,6 +1205,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     _ensure_messages_fts(conn)
     repair_fts_sync(conn)
     _run_migrations_safe(conn)
+    # 055: after the runner, for the same reason as the warm path above.
+    _ensure_fact_signal_columns(conn)
     _ensure_fact_scope_key(conn)
     _drop_empty_legacy_heuristics(conn)
     conn.execute(f'PRAGMA user_version={_SCHEMA_USER_VERSION}')
