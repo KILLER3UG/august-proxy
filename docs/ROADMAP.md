@@ -499,6 +499,60 @@ surface that had invented its own. Fixed at the cause.
   phase of work. Changing the contract is a separate change and it is
   the owner's to call.
 
+## The round after that: the settings PANEL, measured against the reference
+
+The owner sent the Claude and ChatGPT settings captures and asked how
+August's should look. The cause was not the memory component. It was the
+panel the component lives in.
+
+**The settings panel was 920x680, and the reference is ~1600 wide.** The
+shell's comment said "920x680 -- the reference panel's exact measured
+size", and it was -- for the reference dialog as it was measured THEN.
+The reference the owner attached is a different shape: a ~1600px panel,
+a ~1290px content column, three-column rows at ONE type size, and a
+value column of ~690px.
+
+The panel is 1440px now (inside the reference's own 860-1600px range),
+the content column 1080px, and the memory list's rows span it: 1032px
+wide, a FIXED 208px name column so every value starts at the same x, and
+a 703px value column -- the reference's ~690px, measured. The name and
+the value are both 13px; only the date is muted, which is what the
+reference does.
+
+**Nine sections carried their own width cap** and were left stranded in
+the wider column -- a 672px card at the left of a 1080px column with
+400px of dead space beside it. Their caps came off. The reference's
+settings rows SPAN the content column: the label on the left, the
+control on the right, one straight edge down the page.
+
+**The memory list carried prose the reference does not have.** The "You"
+header held a thirteen-word sentence where the "Topics" header beside it
+held a bare number. The header carries a count now; the sentence is one
+muted line under the section.
+
+**The detail view put two lines of bookkeeping in front of the fields**
+and printed `source: user` twice. The reference goes title, "Last
+updated", "Summary", "Details" and nothing between; it does that now.
+
+**The profile-lane button was the only violet control in the app** -- the
+one hardcoded hue outside the palette. It is `primary` now.
+
+### Still open, and named after this round
+
+- **The settings panels use three to six font sizes each**, measured per
+  panel (Turn Limits 4, General 5, Model providers 6, Memory 7 before
+  this round, Agents & automation 3). The reference uses about two: a
+  body size and a metadata size. Collapsing the scale is a whole-app
+  change and it is not done.
+- **Turn Limits carries six explanatory paragraphs** of 150-465
+  characters. They explain backstops that can end a turn, which is real
+  information, and the reference's rule of low text volume argues
+  against them. A judgement call, not a defect, and they were left.
+- **Settings still shows N bordered cards** ("Profile", "Preferences",
+  "Notifications") where the reference's rule is one rounded container
+  with hairline children. The memory panel is a list and reads that way;
+  the form panels are still cards.
+
 ## Deliberately not done
 
 - **No test suite was restored.** The suite was removed on 2026-10-17 at the
