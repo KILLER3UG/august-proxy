@@ -570,6 +570,21 @@ async def manage_memory(body: ActionBody):
         before = copy.deepcopy(before_fact) if before_fact else None
         value_text = body.value if isinstance(body.value, str) else ''
         fact_title = (body.title or '').strip() or memory_store.derive_fact_title(value_text)
+        # The `details` field was ACCEPTED and DISCARDED here. The facts store
+        # has no `details` column — the detail lives INSIDE the value, as the
+        # {fact, details} object — so the body field had nowhere to go and the
+        # write dropped it silently. The consequence was that a fact written
+        # through this door could never carry a details body, and the Settings
+        # "Details" section (which reads exactly that object) never rendered
+        # for a human-written memory, while the same memory written by the
+        # `remember` tool or the bulk-import door did. One door, one shape: the
+        # two sibling writers already store {fact, details}, so this door does
+        # too. A write with no details is byte-identical to before — a plain
+        # string value.
+        details_text = (body.details or '').strip()
+        stored_value: object = body.value
+        if details_text and value_text.strip():
+            stored_value = {'fact': body.value, 'details': details_text}
         # The partial door: only an existing row can be corrected in place, so a
         # partial write against a key that is not there falls through to the
         # create below rather than reporting a phantom edit.
@@ -577,7 +592,7 @@ async def manage_memory(body: ActionBody):
             try:
                 memory_store.update_fact_value(
                     key,
-                    cast(JsonValue, body.value),
+                    cast(JsonValue, stored_value),
                     category=body.category or '',
                     title=fact_title,
                 )
@@ -590,14 +605,14 @@ async def manage_memory(body: ActionBody):
                     before=before,
                     after={
                         'key': key,
-                        'value': body.value,
+                        'value': stored_value,
                         'category': body.category or 'general',
                         'source': source,
                     },
                 )
             except Exception:
                 pass
-            return {'ok': True, 'key': key, 'value': body.value, 'partial': True}
+            return {'ok': True, 'key': key, 'value': stored_value, 'partial': True}
         # M-10: the UI's ttl_days was accepted but silently ignored —
         # a TTL selection now reaches the facts store as expires_at.
         expires_param: str | None = None
@@ -610,7 +625,7 @@ async def manage_memory(body: ActionBody):
             )
         try:
             memory_store.save_fact(
-                key, cast(JsonValue, body.value), category=body.category or 'general',
+                key, cast(JsonValue, stored_value), category=body.category or 'general',
                 source=source, title=fact_title, kind=(body.kind or '').strip().lower(),
                 expires_at=expires_param,
             )
@@ -624,11 +639,11 @@ async def manage_memory(body: ActionBody):
                 type='restore_memory_item',
                 target=key,
                 before=before,
-                after={'key': key, 'value': body.value, 'category': body.category or 'general', 'source': source},
+                after={'key': key, 'value': stored_value, 'category': body.category or 'general', 'source': source},
             )
         except Exception:
             pass
-        return {'ok': True, 'key': key, 'value': body.value}
+        return {'ok': True, 'key': key, 'value': stored_value}
     if action in ('delete', 'forget') and key:
         before_fact = memory_store.get_fact(key)
         before = copy.deepcopy(before_fact) if before_fact else None
