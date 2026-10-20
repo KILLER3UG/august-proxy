@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { providersApi, type Provider, type ProviderModel } from '@/api/providers';
 import { AddProviderForm } from '@/sections/workspace/models/AddProviderForm';
+import { SectionHeader } from '@/components/SectionHeader';
 import { useProviderOnboardingState } from '@/hooks/useProviderOnboardingState';
 import { useSessionsStore } from '@/store/sessions';
 import { PageLoader } from '@/components/PageLoader';
@@ -170,15 +171,13 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
 
   return (
     <div className="px-8 py-6 space-y-6">
-      <div className="flex items-center gap-3">
-        <Wand2 className="size-6 text-primary" />
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight text-foreground">AI Setup</h2>
-          <p className="text-sm text-muted-foreground">
-            {active.description} You can always change these later in Settings.
-          </p>
-        </div>
-      </div>
+      {/* The shared settings header: one title size, one subtitle size, no
+          icon — the nav item in front of it already carries the icon. */}
+      <SectionHeader
+        title="AI Setup"
+        subtitle={`${active.description} You can always change these later in Settings.`}
+        className="mb-0"
+      />
 
       {/* Step rail */}
       <ol className="flex items-center gap-1.5">
@@ -215,9 +214,9 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
               Anthropic, OpenAI, or any OpenAI-compatible endpoint. Your API key stays on this device.
             </p>
             {providers.length > 0 || addedProvider ? (
-              <div className="space-y-2">
+              <div className="divide-y divide-white/[0.06]">
                 {(providers.length > 0 ? providers : addedProvider ? [addedProvider] : []).map((p) => (
-                  <div key={p.id} className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-muted/30 px-3 py-2 text-xs">
+                  <div key={p.id} className="flex items-center gap-2 px-1 py-2 text-xs">
                     <Check className="size-3 text-success shrink-0" />
                     <span className="font-medium">{p.name}</span>
                     <span className="text-muted-foreground font-mono">{p.apiFormat}</span>
@@ -236,17 +235,15 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
               </div>
             ) : null}
             {providers.length === 0 && !addedProvider || showAddForm ? (
-              <div className="rounded-lg border border-white/[0.06] overflow-hidden">
-                <AddProviderForm
-                  onCancel={() => setShowAddForm(false)}
-                  onCreated={(p) => {
-                    setAddedProvider(p);
-                    setProviderId(p.id);
-                    setShowAddForm(false);
-                    void qc.invalidateQueries({ queryKey: ['providers'] });
-                  }}
-                />
-              </div>
+              <AddProviderForm
+                onCancel={() => setShowAddForm(false)}
+                onCreated={(p) => {
+                  setAddedProvider(p);
+                  setProviderId(p.id);
+                  setShowAddForm(false);
+                  void qc.invalidateQueries({ queryKey: ['providers'] });
+                }}
+              />
             ) : null}
           </div>
         )}
@@ -462,26 +459,31 @@ export function AISetupWizardSection({ active }: { active: SettingsSection }) {
         ) : (
           <span />
         )}
-        {step !== 'start' ? (
+        {/* The control sits at the row's RIGHT edge. The row used to have
+            THREE children — back, next, skip — so justify-between landed
+            "Next" in the middle of the panel. */}
+        <div className="flex items-center gap-3">
           <button
             type="button"
-            disabled={!canAdvance(step)}
-            onClick={goNext}
-            className="inline-flex items-center gap-1 rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground disabled:opacity-40"
-            data-testid="wizard-next"
+            onClick={() => { onboarding.skip(); void navigate('/'); }}
+            className="text-2xs text-muted-foreground/60 hover:text-muted-foreground"
+            data-testid="wizard-skip"
           >
-            Next
-            <ChevronRight className="size-3" />
+            Skip setup
           </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => { onboarding.skip(); void navigate('/'); }}
-          className="text-2xs text-muted-foreground/60 hover:text-muted-foreground"
-          data-testid="wizard-skip"
-        >
-          Skip setup
-        </button>
+          {step !== 'start' ? (
+            <button
+              type="button"
+              disabled={!canAdvance(step)}
+              onClick={goNext}
+              className="inline-flex items-center gap-1 rounded-md bg-primary px-4 py-2 text-xs text-primary-foreground disabled:opacity-40"
+              data-testid="wizard-next"
+            >
+              Next
+              <ChevronRight className="size-3" />
+            </button>
+          ) : null}
+        </div>
       </div>
     </div>
   );

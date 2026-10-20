@@ -786,7 +786,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
     id: 'harness-improve',
     label: 'Review Inbox',
-    description: 'Everything August wants a human to decide: harness proposals and memory retirements — review, approve, or reject.',
+    description: 'Proposals and memory retirements for a human to decide — review, approve, or reject.',
     icon: HeartPulse,
     category: 'data',
     // Was 'hidden': the only human-decision surface of the learning loop,
@@ -804,7 +804,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     // the field's job, so nothing depends on where the entry lives.
     id: 'model-families',
     label: 'Model Families',
-    description: 'Which wire parameters August may send per model — reasoning effort, thinking budget, default tier — and the family table that decides it.',
+    description: 'Which wire parameters August may send per model, and the family table that decides it.',
     icon: Blocks,
     category: 'capabilities',
     tier: 'basic',

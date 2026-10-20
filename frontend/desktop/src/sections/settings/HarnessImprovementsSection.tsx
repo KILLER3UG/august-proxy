@@ -444,15 +444,13 @@ export function HarnessImprovementsSection() {
         className="mb-0 shrink-0"
         subtitle={
           <span data-testid="inbox-header-note">
-            Everything August wants a human to decide: harness improvement proposals
-            (self-improvement, distiller drafts, cross-project promotions) and memory
-            retirements.{' '}
-            {/* The page's own promise has to track the switch. Saying "nothing
-                applies until you approve it" while autonomous apply is on
-                misdescribes when this machinery writes to your skills. */}
+            {/* ONE muted line, the reference's subtitle. The page's own promise
+                has to track the switch: saying "nothing applies until you
+                approve it" while autonomous apply is on misdescribes when this
+                machinery writes to your skills. */}
             {autonomyOn
-              ? 'Autonomous apply is on: the rails apply qualifying skill changes on their own, and every one of them is listed below and undoable.'
-              : 'Nothing applies until you approve it — approvable kinds run a deterministic applier, the rest are recorded for manual implementation.'}
+              ? 'Proposals and memory retirements for a human to decide — autonomous apply is on, and every change below is undoable.'
+              : 'Proposals and memory retirements for a human to decide — nothing applies until you approve it.'}
           </span>
         }
         actions={
@@ -795,7 +793,7 @@ export function HarnessImprovementsSection() {
                 >
                   <span className="block truncate text-sm text-foreground">{p.problem}</span>
                   {p.evidence && (
-                    <span className="block truncate text-2xs text-muted-foreground/80">
+                    <span className="block truncate text-sm text-muted-foreground/80">
                       {p.evidence}
                     </span>
                   )}

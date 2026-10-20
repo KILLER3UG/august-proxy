@@ -8,6 +8,8 @@ import { useQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { usageApi, type UsageRange } from '@/api/usage';
 import { QueryErrorState } from '@/components/QueryErrorState';
+import { SectionHeader } from '@/components/SectionHeader';
+import { Button } from '@/components/ui/button';
 import { WorkspaceHeatmap, type ActivityMode } from '@/components/workspace/WorkspaceHeatmap';
 import { WorkspaceTrendChart } from '@/components/workspace/WorkspaceTrendChart';
 import { WorkspaceDonut } from '@/components/workspace/WorkspaceDonut';
@@ -106,14 +108,23 @@ export function WorkspaceUsageSection() {
   };
 
   return (
-    <div className="px-8 py-6 space-y-6 max-w-5xl mx-auto pb-24 relative">
-      {/* Title Header with App usage pill badge */}
-      <div className="flex items-center gap-3">
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">Usage stats</h2>
-        <span className="rounded-full border border-white/[0.1] bg-white/[0.05] px-3 py-0.5 text-xs font-medium text-muted-foreground/80">
-          App usage
-        </span>
-      </div>
+    <div className="px-8 py-6 space-y-6 max-w-5xl mx-auto">
+      {/* The shared settings header: one title size, one subtitle size, and
+          the refresh control in the panel's flow. It used to be `fixed
+          bottom-6 right-8 z-30`, which is relative to the WINDOW, so the
+          button was drawn at the window's bottom-right — outside the
+          settings panel, over the dimmed app. */}
+      <SectionHeader
+        title="Usage stats"
+        subtitle="App usage — token volume, model cost, and per-model consumption."
+        actions={
+          <Button variant="ghost" size="sm" onClick={handleRefresh} title="Refresh">
+            <RefreshCw className={cn('size-3', statsQ.isFetching ? 'animate-spin' : '')} />
+            Refresh
+          </Button>
+        }
+        className="mb-0"
+      />
 
       {statsFailed ? (
         <QueryErrorState
@@ -125,9 +136,12 @@ export function WorkspaceUsageSection() {
         />
       ) : (
         <>
-      {/* 5-Card Metric Overview Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 text-center flex flex-col justify-center">
+      {/* ONE container: the metric strip and the panels below it are
+          hairline-separated children, not N bordered cards. */}
+      <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-card/60">
+      {/* Metric strip */}
+      <div className="flex divide-x divide-white/[0.06]">
+        <div className="p-4 text-center flex flex-col justify-center min-w-0 flex-1">
           <div className="text-xl font-bold tracking-tight text-foreground">{totalTokensDisplay}</div>
           {cacheDisplay && (
             <div className="mt-0.5 text-2xs text-muted-foreground/80" data-testid="usage-cache-split">
@@ -136,28 +150,28 @@ export function WorkspaceUsageSection() {
           )}
           <div className="mt-1 text-xs text-muted-foreground">Total tokens</div>
         </div>
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 text-center flex flex-col justify-center">
+        <div className="p-4 text-center flex flex-col justify-center min-w-0 flex-1">
           <div className="text-xl font-bold tracking-tight text-foreground">{peakTokensDisplay}</div>
           <div className="mt-1 text-xs text-muted-foreground">Peak tokens</div>
         </div>
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 text-center flex flex-col justify-center">
+        <div className="p-4 text-center flex flex-col justify-center min-w-0 flex-1">
           <div className="text-xl font-bold tracking-tight text-foreground">{sessionsCountDisplay}</div>
           <div className="mt-1 text-xs text-muted-foreground">Active sessions</div>
         </div>
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 text-center flex flex-col justify-center">
+        <div className="p-4 text-center flex flex-col justify-center min-w-0 flex-1">
           <div className="text-xl font-bold tracking-tight text-foreground">{currentStreakDisplay}</div>
           <div className="mt-1 text-xs text-muted-foreground">Current streak</div>
         </div>
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 text-center flex flex-col justify-center">
+        <div className="p-4 text-center flex flex-col justify-center min-w-0 flex-1">
           <div className="text-xl font-bold tracking-tight text-foreground">{longestStreakDisplay}</div>
           <div className="mt-1 text-xs text-muted-foreground">Longest streak</div>
         </div>
       </div>
 
-      {/* Token Activity Heatmap Card */}
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
+      {/* Token activity */}
+      <div className="border-t border-white/[0.06] p-5 space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <span className="text-sm font-semibold text-foreground">Token activity</span>
+          <span className="text-xs text-muted-foreground">Token activity</span>
           <div className="flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5 border border-white/[0.06]">
             {(['daily', 'weekly', 'cumulative'] as ActivityMode[]).map((mode) => (
               <button
@@ -189,9 +203,9 @@ export function WorkspaceUsageSection() {
         )}
       </div>
 
-      {/* Time Range Selector */}
-      <div className="flex items-center justify-between gap-4 flex-wrap pt-1">
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Time range</span>
+      {/* Time range */}
+      <div className="flex items-center justify-between gap-4 flex-wrap border-t border-white/[0.06] px-5 py-3">
+        <span className="text-xs text-muted-foreground">Time range</span>
         <div className="flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5 border border-white/[0.06]">
           {RANGES.map((r) => (
             <button
@@ -210,9 +224,9 @@ export function WorkspaceUsageSection() {
         </div>
       </div>
 
-      {/* Daily Token Trend Chart Card */}
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
-        <div className="text-sm font-semibold text-foreground">Daily token trend chart</div>
+      {/* Daily token trend chart */}
+      <div className="border-t border-white/[0.06] p-5 space-y-4">
+        <div className="text-xs text-muted-foreground">Daily token trend chart</div>
         {trendFailed ? (
           <QueryErrorState
             compact
@@ -231,9 +245,9 @@ export function WorkspaceUsageSection() {
         )}
       </div>
 
-      {/* Model Usage Donut Card */}
-      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-2">
-        <div className="text-sm font-semibold text-foreground mb-2">Model usage</div>
+      {/* Model usage */}
+      <div className="border-t border-white/[0.06] p-5 space-y-2">
+        <div className="text-xs text-muted-foreground">Model usage</div>
         {modelFailed ? (
           <QueryErrorState
             compact
@@ -255,19 +269,9 @@ export function WorkspaceUsageSection() {
           </div>
         )}
       </div>
+      </div>
         </>
       )}
-
-      {/* Floating Refresh Button in bottom right */}
-      <div className="fixed bottom-6 right-8 z-30">
-        <button
-          onClick={handleRefresh}
-          className="flex items-center gap-2 rounded-xl border border-white/[0.1] bg-[#1c1d22]/90 backdrop-blur-md px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-[#25272e] shadow-lg transition-all"
-        >
-          <RefreshCw className={cn('size-3', statsQ.isFetching ? 'animate-spin' : '')} />
-          <span>Refresh</span>
-        </button>
-      </div>
     </div>
   );
 }

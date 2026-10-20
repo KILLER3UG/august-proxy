@@ -83,7 +83,7 @@ function FamilyResolver() {
     <div className="space-y-1.5">
       <label className="block space-y-1 max-w-md">
         <span className="text-2xs text-muted-foreground">
-          Check what a model id gets — paste one from your provider
+          Model id
         </span>
         <input
           className="w-full rounded-md border border-border bg-background px-2 py-1 text-[0.75rem] font-mono outline-none focus:ring-1 focus:ring-primary"
@@ -154,9 +154,7 @@ export function ModelFamiliesSection() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground max-w-2xl">
-        August only sends a model a wire parameter its family accepts. Add a family to teach it a
-        new gateway — matched by substring against the model id, so it covers every deployment of
-        that name. An entry that reuses a built-in id replaces it.
+        Each family says which wire parameters August may send to a matching model id.
       </p>
 
       <FamilyResolver />
@@ -171,11 +169,9 @@ export function ModelFamiliesSection() {
           />
         ))}
         {rows.length === 0 && (
-          <Card>
-            <CardContent className="p-4 text-sm text-muted-foreground">
-              No overrides yet — every model is answered by the built-in table below.
-            </CardContent>
-          </Card>
+          <p className="text-sm text-muted-foreground">
+            No overrides yet — every model is answered by the built-in table below.
+          </p>
         )}
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={() => setDraft([...rows, { ...EMPTY }])}>
@@ -193,7 +189,9 @@ export function ModelFamiliesSection() {
       </div>
 
       <div>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2">
+        {/* Section labels are muted and small, in sentence case — the
+            reference's own section headers, not the admin-panel uppercase. */}
+        <div className="text-xs text-muted-foreground mb-2">
           Built-in table
         </div>
         {isLoading ? (
@@ -203,13 +201,13 @@ export function ModelFamiliesSection() {
             {error instanceof Error ? error.message : 'Could not read the family table.'}
           </p>
         ) : (
-          <div className="space-y-1.5">
+          <div className="overflow-hidden rounded-md border border-border/60 divide-y divide-border/60">
             {(data?.builtin ?? []).map((family) => {
               const overridden = rows.some((r) => r.id === family.id);
               return (
                 <div
                   key={family.id}
-                  className="flex items-center gap-3 rounded-md border border-border/60 px-2.5 py-1.5 text-[0.75rem]"
+                  className="flex items-center gap-3 px-2.5 py-1.5 text-[0.75rem]"
                 >
                   <span className="font-medium w-44 truncate">{family.id}</span>
                   <span className="text-muted-foreground flex-1 min-w-0 truncate font-mono">
@@ -225,7 +223,7 @@ export function ModelFamiliesSection() {
                       variant="ghost"
                       className="shrink-0"
                       onClick={() => addOverride(family)}
-                      title="Copy this family into your overrides and edit it"
+                      title="Copy this family into your overrides — an id that matches a built-in replaces it"
                     >
                       Override
                     </Button>

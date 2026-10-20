@@ -12,8 +12,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { ExternalLink, Kanban, MoreHorizontal, Plus, Trash2, X } from 'lucide-react';
+import { ExternalLink, MoreHorizontal, Plus, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SectionHeader } from '@/components/SectionHeader';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -80,21 +81,20 @@ export function KanbanSection({ showHeader = true }: { showHeader?: boolean }) {
   return (
     <div className={cn('px-8 py-6 space-y-4 h-full flex flex-col', !showHeader && 'px-0 py-0')} data-testid="kanban-section">
       {showHeader && (
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <Kanban className="size-5 text-primary" />
-              Agent board
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Durable kanban across agents and jobs
-            </p>
-          </div>
-          {/* flex-wrap: the two fixed-width inputs + two buttons need ~700px.
-              In a ~660px column (900px window) the row overflowed its
-              overflow-hidden ancestor and "Clear done" kept only a 27px sliver
-              visible — the dead-button-at-900px report. Inputs shrink first
-              (min-w-0), the buttons wrap whole. */}
+        <>
+          {/* The shared settings header: one title size, one subtitle size,
+              no icon — the nav item in front of it already carries the icon. */}
+          <SectionHeader
+            title="Agent board"
+            subtitle="Durable kanban across agents and jobs"
+            className="mb-0"
+          />
+          {/* The form gets its OWN row under the header. flex-wrap: the two
+              fixed-width inputs + two buttons need ~700px, and in a ~660px
+              column (900px window) the row overflowed its overflow-hidden
+              ancestor and "Clear done" kept only a 27px sliver visible — the
+              dead-button-at-900px report. Inputs shrink first (min-w-0), the
+              buttons wrap whole. */}
           <div className="flex flex-wrap items-center gap-2">
             <input
               value={draft}
@@ -115,14 +115,17 @@ export function KanbanSection({ showHeader = true }: { showHeader?: boolean }) {
               aria-label="New card detail"
               className="w-72 min-w-0 flex-1 rounded-md border border-border/60 bg-background px-2.5 py-1.5 text-xs sm:flex-none"
             />
-            <Button size="sm" onClick={onAdd}>
-              <Plus className="size-3" /> Add
-            </Button>
-            <Button size="sm" variant="outline" onClick={clearDone}>
-              <Trash2 className="size-3" /> Clear done
-            </Button>
+            {/* The control sits at the row's right edge. */}
+            <div className="ml-auto flex items-center gap-2">
+              <Button size="sm" onClick={onAdd}>
+                <Plus className="size-3" /> Add
+              </Button>
+              <Button size="sm" variant="outline" onClick={clearDone}>
+                <Trash2 className="size-3" /> Clear done
+              </Button>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* The roster query only fills the per-card "agent" picker; the board
@@ -206,11 +209,11 @@ function Column({
       <div className="border-b border-border/60 px-3 py-2 text-2xs text-muted-foreground">
         {label} · {cards.length}
       </div>
-      <ul className="flex-1 space-y-2 p-2 overflow-auto">
+      <ul className="flex-1 divide-y divide-border/60 p-2 overflow-auto">
         {cards.map((card) => (
           <li
             key={card.id}
-            className="group rounded-lg border border-border/60 bg-card p-2 text-xs"
+            className="group px-1 py-2 text-xs transition-colors hover:bg-muted/40"
             draggable
             onDragStart={(e) => {
               e.dataTransfer.setData('text/kanban-id', card.id);
