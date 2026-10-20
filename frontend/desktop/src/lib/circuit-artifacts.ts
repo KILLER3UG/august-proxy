@@ -129,6 +129,31 @@ export function collectArtifacts(
   return out;
 }
 
+/**
+ * Normalised key for a path.
+ *
+ * The collectors key on the path they were handed, so the same file written
+ * with backslashes and with forward slashes would be two files. Every
+ * collector that has to agree with another one keys through this.
+ */
+export function artifactPathKey(path: string): string {
+  return path.replace(/\\/g, '/').toLowerCase();
+}
+
+/**
+ * The paths the circuit family owns.
+ *
+ * The general artifact card skips them: the circuit family has its own
+ * collector (it reads the tool RESULT, which is where a render tool says
+ * what it saved) and its own kinds, so a schematic drawn by both cards would
+ * be two cards for one file.
+ */
+export function circuitArtifactPathKeys(
+  tools?: CircuitToolEntry[] | null,
+): Set<string> {
+  return new Set(collectArtifacts(tools).map((a) => artifactPathKey(a.path)));
+}
+
 /** Artifacts across a whole session. Deduped by path GLOBALLY, not per
  *  message — one deck re-simulated in five turns is one artifact, and the
  *  panel's count badge must not read five. */

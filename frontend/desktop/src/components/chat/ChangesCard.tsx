@@ -1,20 +1,20 @@
 /* ── ChangesCard ─ unified ZCode-style turn changes card ─ */
 /* Replaces ChangedFilesCard + ProducedFilesRow with one aggregate card:    */
 /* `X files changed +N −M [Undo]` header expanding to type-aware rows —     */
-/* code rows (FileIcon + ±chips + Review + Open, collapsible inline diff)   */
-/* and document rows (56×56 letter badge + kind label + Open). Always       */
-/* visible once an edit tool ran, including while streaming.                */
+/* code rows (FileIcon + ±chips + Review + Open, collapsible inline diff).   */
+/* A DOCUMENT is not a change - it has no diff - and the artifact card owns */
+/* it, so this card lists code only. Always visible once an edit tool ran,  */
+/* including while streaming.                                                */
 
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Loader2, PanelRight, Undo2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Undo2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { DiffView } from '@/components/chat/DiffView';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
-import { DocumentBadge } from '@/components/chat/DocumentBadge';
-import { classifyFileKind, openFileInDrawer, type FileKindInfo } from '@/lib/file-kind';
-import { collectProducedFiles, producedFileLabel } from '@/lib/produced-files';
+import { classifyFileKind, openFileInDrawer } from '@/lib/file-kind';
+import { collectProducedFiles } from '@/lib/produced-files';
 import { useRevertAllChanges } from '@/lib/git-revert';
 import { openRightDrawer, setRightDrawerDiff } from '@/components/shell/RightDrawerState';
 import type { GitDiffFile, GitDiffResult } from '@/api/git';
@@ -181,7 +181,14 @@ export function ChangesCard({
             const hit = diffMap.get(path);
             const info = classifyFileKind(path);
             const isCodeRow = info.kind === 'code' && !!hit;
-            return isCodeRow ? (
+            /* A NON-CODE file is a DELIVERABLE, not a change. It has no
+             * diff to show, and the artifact card already lists it with its
+             * kind and a Download - so rendering it here too put the same
+             * produced file on the transcript twice, in two different
+             * shapes. This card is the diff list; a document is the
+             * artifact card's row. */
+            if (!isCodeRow) return null;
+            return (
               <CodeFileRow
                 key={path}
                 path={path}
@@ -189,14 +196,6 @@ export function ChangesCard({
                 diffOpen={expandedFiles.has(path)}
                 onToggleDiff={() => toggleFileDiff(path)}
                 onReview={() => handleReview(path)}
-                onOpen={() => void handleOpen(path)}
-                busy={busyPath === path}
-              />
-            ) : (
-              <DocumentFileRow
-                key={path}
-                path={path}
-                info={info}
                 onOpen={() => void handleOpen(path)}
                 busy={busyPath === path}
               />
@@ -302,62 +301,6 @@ function CodeFileRow({
           {busy ? <Loader2 className="size-3 animate-spin" /> : 'Open'}
         </button>
       </div>
-    </div>
-  );
-}
-
-/* Document row: big letter badge + filename + kind label + single Open ▾.
-   Row click and the Open button are the same action; the chevron is a visual
-   affordance only (matches the reference), not a dropdown. */
-function DocumentFileRow({
-  path,
-  info,
-  onOpen,
-  busy,
-}: {
-  path: string;
-  info: FileKindInfo;
-  onOpen: () => void;
-  busy: boolean;
-}) {
-  return (
-    <div
-      className="flex items-center gap-3 rounded-xl px-2.5 py-1.5 transition-colors hover:bg-card/40"
-      data-testid="changes-card-row"
-      data-style="document"
-      data-kind={info.kind}
-    >
-      <DocumentBadge text={info.badgeText} tone={info.badgeTone} size={40} className="rounded-lg shadow-2xs" />
-      <button
-        type="button"
-        onClick={onOpen}
-        disabled={busy}
-        title={`Open in side panel — ${path}`}
-        className="min-w-0 flex-1 text-left disabled:opacity-50 cursor-pointer"
-      >
-        <span className="block truncate text-[0.8125rem] font-medium text-foreground">
-          {producedFileLabel(path)}
-        </span>
-        <span className="block truncate text-2xs text-muted-foreground/80">{info.label}</span>
-      </button>
-      <button
-        type="button"
-        onClick={onOpen}
-        disabled={busy}
-        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border/60 bg-background/60 px-2.5 py-1 text-2xs font-medium text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground disabled:opacity-50 cursor-pointer"
-        title="Open file in side panel" aria-label="Open file in side panel"
-        data-testid="changes-card-open"
-      >
-        {/* This button's label said "Download", its `aria-label` said "Open file
-            in side panel", its handler opened the drawer, and its icon was a
-            chevron-down that promised a menu. The label wins what a user reads,
-            so the control announced a save that never happened — and the file's
-            own header comment has described this row as "... + Open" all along.
-            The label now names the action, and the icon is the surface the
-            action opens. */}
-        Open
-        <PanelRight className="size-3 text-muted-foreground/70" />
-      </button>
     </div>
   );
 }

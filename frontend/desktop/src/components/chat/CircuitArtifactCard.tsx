@@ -1,12 +1,18 @@
-/* ── CircuitArtifactCard ─ Claude-style clickable artifact card ───────── */
-/* Chat shows ONE compact card per circuit deliverable (schematic, 3D      */
-/* board render, netlist, simulation report). Clicking opens the actual    */
-/* content in the right-drawer viewer / Circuit panel — the chat area      */
-/* never renders the payload itself, matching the Claude artifact pattern. */
+/* ── CircuitArtifactCard ─ circuit deliverables, one card each ─────────── */
+/* The circuit family (schematic, 3D board render, netlist, simulation,    */
+/* waveform, firmware) has its own collector: it reads the tool RESULT,    */
+/* which is where a render tool says what it saved.                         */
+/*                                                                          */
+/* The cards render through the shared ArtifactCard, so the transcript has   */
+/* ONE artifact card shape — and the general artifact card skips these paths */
+/* (circuitArtifactPathKeys), so a schematic is never drawn twice.           */
+/*                                                                          */
+/* Clicking a card opens the artifact's CONTENT in the side panel — never   */
+/* inline in the chat, matching the Claude artifact pattern.                */
 
 import { useMemo } from 'react';
 import { Cpu, FileText, Image as ImageIcon, Activity } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import { openRightDrawerFile, addRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { ChatAttachmentService } from '@/sections/chat/services/ChatAttachmentService';
 import { revealInFolder } from '@/lib/tauri-shell';
@@ -17,6 +23,7 @@ import {
   type CircuitArtifact,
   type CircuitToolEntry,
 } from '@/lib/circuit-artifacts';
+import { ArtifactCard } from './ArtifactCard';
 
 interface CircuitDeliverable {
   path: string;
@@ -128,53 +135,37 @@ export function CircuitArtifactCard({ tools }: { tools?: CircuitToolEntry[] | nu
 
   return (
     <div className="mt-2.5" data-slot="circuit-artifact-card">
-      <span className="mb-1 block text-2xs uppercase tracking-widest font-semibold text-muted-foreground/60">
+      {/* A group label, in sentence case — the capture's bar says section
+          labels are small, muted and NOT uppercase. */}
+      <span className="mb-1.5 block text-2xs font-semibold text-muted-foreground/70">
         Circuit
       </span>
-      <div className="flex flex-wrap gap-2">
+      <div className="space-y-1.5">
         {items.map((item) => {
           const Icon = KIND_ICON[item.kind];
           return (
-            <button
+            <ArtifactCard
               key={item.path}
-              type="button"
-              onClick={() => void open(item.path)}
-              title={`Open in side panel — ${item.path}`}
-              data-testid={`circuit-chip-${item.kind}`}
-              className={cn(
-                'group flex min-w-[200px] max-w-[280px] items-center gap-2.5 rounded-xl border border-border/60 bg-card/60 px-3 py-2 text-left transition',
-                'hover:border-primary/40 hover:bg-card cursor-pointer',
-              )}
-            >
-              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                <Icon className="size-4" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[0.78125rem] font-medium text-foreground">
-                  {item.label}
-                </span>
-                <span className="block truncate text-[0.65625rem] text-muted-foreground">
-                  {item.detail}
-                </span>
-              </span>
-              <span
-                className="shrink-0 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-2xs font-medium text-muted-foreground transition group-hover:border-primary/40 group-hover:text-primary"
-                title="Open in the right side panel"
-              >
-                Open panel ↗
-              </span>
-            </button>
+              path={item.path}
+              name={item.label}
+              subline={item.detail}
+              icon={<Icon className="size-4 text-muted-foreground" />}
+              onOpen={() => open(item.path)}
+              testId={`circuit-chip-${item.kind}`}
+            />
           );
         })}
-        <button
-          type="button"
-          onClick={() => addRightDrawerSection('circuit')}
-          className="self-center rounded-md px-1.5 py-0.5 text-2xs text-muted-foreground/70 hover:bg-muted/40 hover:text-foreground"
-          title="Open the Circuit workbench panel"
-        >
-          Open workbench
-        </button>
       </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => addRightDrawerSection('circuit')}
+        className="mt-1.5 h-auto px-1.5 py-0.5 text-2xs font-normal text-muted-foreground/70 hover:text-foreground"
+        title="Open the Circuit workbench panel"
+      >
+        Open workbench
+      </Button>
     </div>
   );
 }

@@ -66,11 +66,13 @@ function ArtifactRow({
   a,
   onOpen,
   onReveal,
+  onDownload,
   onJump,
 }: {
   a: SessionArtifact;
   onOpen: () => void;
   onReveal?: () => void;
+  onDownload?: () => void;
   onJump: () => void;
 }) {
   return (
@@ -104,6 +106,20 @@ function ArtifactRow({
           aria-label={`Reveal ${a.label} in folder`}
         >
           <FolderOpen className="size-3.5" />
+        </Button>
+      )}
+      {onDownload && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0 text-muted-foreground/60 hover:text-foreground"
+          onClick={onDownload}
+          title={`Download ${a.label}`}
+          aria-label={`Download ${a.label}`}
+          data-testid="artifact-row-download"
+        >
+          <Download className="size-3.5" />
         </Button>
       )}
       <Button
@@ -176,6 +192,32 @@ export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string |
     } catch (e) {
       console.warn('[Artifacts] reveal failed', e);
       toast.error('Could not reveal file');
+    }
+  };
+
+  /* One file, the card's own verb: the bytes never cross the webview — a
+     Rust copy puts the file in a folder the user picks. The same door the
+     transcript's artifact card uses. */
+  const download = async (a: SessionArtifact) => {
+    try {
+      if (!isTauri) {
+        toast.message(
+          'Downloading needs the desktop build — open August to copy this file into a folder.',
+        );
+        return;
+      }
+      const dest = await selectDirectory();
+      if (!dest) return; // the picker was dismissed; silence is the answer
+      const report = await copyFilesToDir(dest, [a.href]);
+      if (!report || report.copied === 0) {
+        toast.error(`Could not download ${a.label}`);
+        return;
+      }
+      toast.success(`Downloaded ${a.label}`);
+      await revealInFolder(dest);
+    } catch (e) {
+      console.warn('[Artifacts] download failed', e);
+      toast.error('Could not download the file');
     }
   };
 
@@ -312,6 +354,7 @@ export function RightDrawerArtifactsSection({ sessionId }: { sessionId: string |
                     a={a}
                     onOpen={() => void openArtifact(a)}
                     onReveal={a.kind === 'file' ? () => void reveal(a) : undefined}
+                    onDownload={a.kind === 'file' ? () => void download(a) : undefined}
                     onJump={() => jumpTo(a)}
                   />
                 ))}
