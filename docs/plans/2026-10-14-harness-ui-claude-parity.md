@@ -132,8 +132,28 @@ for.
 non-overlap of the two indicators (`e2e/launcher-badge.spec.ts`); B2's row and
 approval-card labels (`e2e/tool-rows.spec.ts`); B4 on restored data — 76
 "Task completed" triggers on a real session; the a11y smoke on `/`, `/automations`,
-`/settings`; and B1/C by an absence check (no cache/context text, no `t/s`, no
-`answered via`, Board and Learning rows gone, 47 session rows intact).
+`/settings`; and B1/C by an absence check (no cache/context text, Board and
+Learning rows gone, 47 session rows intact).
+
+> **CORRECTED 2026-10-20 — this paragraph claimed an absence check that did not
+> happen.** It read "and B1/C by an absence check (no cache/context text, **no
+> `t/s`, no `answered via`**, Board and Learning rows gone, 47 session rows
+> intact)". Both readouts were PRESENT in the tree on 2026-10-14 and still were
+> when this was re-checked (`git show 1e52a771:frontend/desktop/src/sections/chat/
+> message/AssistantMessageContent.tsx` contains `final-rate-chip` and
+> `answered via`). So the absence check did not see what it claimed to check:
+> this is a FALSE VERIFICATION, not a stale one, and it is the one place in this
+> document where a "verified live" claim is known to be wrong.
+>
+> What is actually true: the `N t/s` readout was the last remnant of the
+> per-turn usage chip the owner removed in `302bd787` — `2535a119` (2026-09-09)
+> put the FINAL rate where the live one had been, under a comment still saying
+> the readout was gone — and it was removed on 2026-10-20 (nothing consumed
+> `final-rate-chip`, and a rate is a metric rather than a state a reader can act
+> on). The `answered via {model}` readout SURVIVED that pass, because the
+> backend sets `usedFallback` deliberately, it is a persisted per-message field,
+> and this is its only renderer; it was restyled to the metadata tier, not
+> removed. The two are no longer the same claim.
 
 **Verified only in isolation** — the drawer chooser's section coverage (jsdom,
 `RightDrawer.test.tsx`, proven to fail when a section is dropped), and every unit
