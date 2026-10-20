@@ -28,12 +28,11 @@
  *    another device cannot open it at all, and the panel says so instead
  *    of printing a URL that would be refused at the socket.
  *
- * The backend does not report its bind address or its LAN address today
- * (neither /api/health nor /api/health/detailed carries one), so until it
- * does the panel falls back to the loopback truth and says LAN access is
- * off. The field names it reads are `network.bindHost`,
- * `network.lanAddress` and `network.lanEnabled`, on the health payload
- * or at its top level.
+ * The backend is the authority on its own reachability: `/api/health`
+ * carries `lan` — `{ enabled, origins, port }` — from
+ * `app/lib/lan_access.py::lan_status()`. The panel reads that and nothing
+ * else; it never guesses a LAN address, because an invented address
+ * produces a URL that answers nothing.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -55,36 +54,47 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-/** The network facts the panel reads off the health payload. Every field
- *  is optional: the backend reports none of them today, and the panel
- *  must stay honest (and keep working) until it does. */
+/** The network facts the panel reads off the health payload.
+ *
+ *  The backend owns the truth about its own reachability: `/api/health`
+ *  carries `lan` — `{ enabled, origins, port }` — from
+ *  `app/lib/lan_access.py::lan_status()`. `origins` is the list of
+ *  `http://<ip>:<port>` a phone on this network would use, and it is EMPTY
+ *  when the backend could not find a usable address (an invented address
+ *  would be worse than none, because the panel would print a URL that
+ *  answers nothing).
+ *
+ *  Every field is optional and the panel ERRS TOWARDS "not reachable": a
+ *  payload it does not understand leaves LAN access looking off, which is
+ *  the safe direction — a panel that claims reachability it cannot prove
+ *  teaches the user to believe something false. */
 interface NetworkInfo {
-  /** The address the backend listens on — '127.0.0.1' today. */
-  bindHost: string | null;
-  /** The machine's LAN address, when the backend can see it. */
-  lanAddress: string | null;
-  /** Whether LAN access is on. */
-  lanEnabled: boolean;
+  /** Whether the backend is reachable from the network at all. */
+  enabled: boolean;
+  /** The `http://<ip>:<port>` origins a phone on this network would use. */
+  origins: string[];
+  /** The port the backend is actually on. */
+  port: number | null;
 }
 
 interface HealthPayload {
+  status?: string;
   port?: number;
-  network?: {
-    bindHost?: string;
-    lanAddress?: string;
-    lanEnabled?: boolean;
+  lan?: {
+    enabled?: boolean;
+    origins?: string[];
+    port?: number;
   };
-  bindHost?: string;
-  lanAddress?: string;
-  lanEnabled?: boolean;
 }
 
 function readNetwork(payload: HealthPayload | undefined): NetworkInfo {
-  const net = payload?.network ?? {};
-  const bindHost = net.bindHost ?? payload?.bindHost ?? null;
-  const lanAddress = net.lanAddress ?? payload?.lanAddress ?? null;
-  const lanEnabled = net.lanEnabled ?? payload?.lanEnabled ?? false;
-  return { bindHost, lanAddress, lanEnabled };
+  const lan = payload?.lan ?? {};
+  const origins = Array.isArray(lan.origins) ? lan.origins.filter((o) => typeof o === 'string' && o) : [];
+  return {
+    enabled: lan.enabled === true,
+    origins,
+    port: lan.port ?? payload?.port ?? null,
+  };
 }
 
 /** Addresses that resolve to THIS machine and no other. The Android
@@ -170,28 +180,33 @@ export function PhonePairingSection() {
     };
   }, []);
 
-  // The backend owns the truth about its own network mode.
+  // The backend owns the truth about its own network mode. `/api/health`
+  // is where it reports it — and it is a route the backend keeps OPEN in
+  // LAN mode (`LAN_OPEN_PATHS` in app/lib/local_api_auth.py), so this
+  // query answers whether the token is configured or not.
   const health = useQuery({
-    queryKey: ['health', 'detailed'],
-    queryFn: () => api.get<HealthPayload>('/api/health/detailed'),
+    queryKey: ['health', 'basic'],
+    queryFn: () => api.get<HealthPayload>('/api/health'),
     refetchInterval: 5000,
   });
 
   const net = useMemo(() => readNetwork(health.data), [health.data]);
-  const port = proxyPort ?? health.data?.port ?? 8085;
+  const port = net.port ?? proxyPort ?? health.data?.port ?? 8085;
   const backendUp = health.isSuccess || proxyPort !== null;
 
-  // The LAN address, when the backend reports one, fills the address
-  // field — until the user types their own.
+  // The address the phone uses. When the backend reports a LAN origin, it
+  // fills the field — until the user types their own.
+  const lanOrigin = net.origins[0] ?? null;
   useEffect(() => {
     if (hostTouched) return;
-    if (net.lanAddress) setHost(net.lanAddress);
+    if (lanOrigin) setHost(normalizeHost(lanOrigin));
     else if (!host) setHost('127.0.0.1');
-  }, [host, hostTouched, net.lanAddress]);
+  }, [host, hostTouched, lanOrigin]);
 
   const effectiveHost = normalizeHost(host) || '127.0.0.1';
   const origin = `http://${effectiveHost}:${port}`;
-  const lanOn = net.lanEnabled && !!net.lanAddress;
+  const lanOn = net.enabled && net.origins.length > 0;
+  const lanOnNoAddress = net.enabled && net.origins.length === 0;
   const localOnly = LOCAL_ONLY_HOSTS.has(effectiveHost.toLowerCase());
   const originTrustedByDefault = DEFAULT_TRUSTED_HOSTS.has(effectiveHost.toLowerCase());
 
@@ -204,9 +219,21 @@ export function PhonePairingSection() {
         badge: 'reachable',
         headline: `Your phone can reach August at ${origin}`,
         detail:
-          `The backend is listening on the network, so the pairing URL below opens on a phone on the same ` +
-          `network. The backend must trust the origin ${origin} for the routes behind the token to answer ` +
-          `instead of refusing the call.`,
+          `LAN access is on, so the backend is listening on the network and the pairing URL below opens on ` +
+          `a phone on the same network. The backend trusts that origin (app/main.py adds the LAN origins ` +
+          `to its allowlist), and every management route requires this install's per-install token in ` +
+          `LAN mode — which is what the URL carries.`,
+      };
+    }
+    if (lanOnNoAddress) {
+      return {
+        tone: 'warning' as const,
+        badge: 'no LAN address',
+        headline: 'LAN access is on, but no LAN address was found',
+        detail:
+          `The backend is listening on the network but it could not work out this machine's address, so it ` +
+          `reports no origin a phone could use. Check the machine's network, or type the address below — ` +
+          `the backend trusts its own LAN origins, so an address it did not find may still be refused.`,
       };
     }
     if (!localOnly) {
@@ -215,10 +242,9 @@ export function PhonePairingSection() {
         badge: 'not reachable',
         headline: 'August is only reachable on this machine',
         detail:
-          `The backend listens on 127.0.0.1 today (src-tauri/src/backend.rs), so ${origin} is refused at the ` +
-          `socket and no phone on another device can open it. Turn on LAN access in Settings → Phone ` +
-          `pairing, or point the phone at a loopback address below for an emulator or simulator on this ` +
-          `machine.`,
+          `LAN access is off, so the backend listens on 127.0.0.1 and ${origin} is refused at the socket: ` +
+          `no phone on another device can open it. Turn on LAN access in Settings → Phone pairing, or ` +
+          `point the phone at a loopback address below for an emulator or simulator on this machine.`,
       };
     }
     if (!originTrustedByDefault) {
@@ -242,7 +268,7 @@ export function PhonePairingSection() {
         `trusted-origin list. An emulator or a simulator running HERE can open it; a phone on the network ` +
         `cannot. Turn on LAN access in Settings → Phone pairing to connect a real phone.`,
     };
-  }, [lanOn, localOnly, origin, originTrustedByDefault]);
+  }, [lanOn, lanOnNoAddress, localOnly, origin, originTrustedByDefault]);
 
   return (
     <div className="px-8 py-6 space-y-4 h-full flex flex-col overflow-auto">
@@ -360,9 +386,11 @@ export function PhonePairingSection() {
             </Button>
           ))}
           <span className="text-2xs text-muted-foreground">
-            {net.lanAddress
-              ? `The backend reports this machine's LAN address as ${net.lanAddress}.`
-              : 'The backend does not report a LAN address yet, so the address is typed in.'}
+            {net.origins.length > 0
+              ? `The backend reports this machine's LAN address as ${normalizeHost(net.origins[0])}.`
+              : net.enabled
+                ? 'LAN access is on, but the backend found no LAN address — the address is typed in.'
+                : 'LAN access is off, so the backend reports no LAN address — the address is typed in.'}
           </span>
         </div>
 

@@ -338,14 +338,49 @@ export function backendOriginSync(): string | null {
   return baseUrl;
 }
 
-/** WebSocket URL for the backend. Mirrors `apiUrl` but swaps the scheme to
- *  ws/wss — and in Tauri targets `ws://127.0.0.1:<port>`, which is the only
- *  ws origin the desktop CSP (`connect-src … ws://127.0.0.1:*`) permits. */
+/** True for a host that resolves to THIS machine. */
+function isLoopbackHost(url: string): boolean {
+  let hostname = url;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    /* not a URL — fall back to the raw string */
+  }
+  const host = hostname.toLowerCase();
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
+}
+
+/**
+ * WebSocket URL for the backend. Mirrors `apiUrl` but swaps the scheme to
+ * ws/wss — and in Tauri targets `ws://127.0.0.1:<port>`, which is the only
+ * ws origin the desktop CSP (`connect-src … ws://127.0.0.1:*`) permits.
+ *
+ * THE TOKEN RIDES IN THE QUERY STRING when the backend is NOT on
+ * loopback. A browser WebSocket handshake cannot set custom headers, and
+ * in LAN mode the backend requires the per-install token on every
+ * management route — the socket routes included
+ * (`require_lan_token` in backend-py/app/lib/local_api_auth.py). A query
+ * parameter is the only channel a browser socket has, and it does not
+ * reach a log: uvicorn's access logger is silenced
+ * (`app/lib/logging_config.py` sets `uvicorn.access` to WARNING) and
+ * nothing else logs a request's query string.
+ *
+ * On loopback the token is left off: the backend exempts a loopback peer
+ * (`_is_loopback_peer`), and the desktop's own sockets should not put a
+ * secret in a URL they do not need it in.
+ */
 export async function wsUrl(path: string): Promise<string> {
   const base = await whenReady();
-  if (base) return `${base.replace(/^http/, 'ws')}${path}`;
-  const proto = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${window.location.host}${path}`;
+  const url = base
+    ? `${base.replace(/^http/, 'ws')}${path}`
+    : `${typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}${path}`;
+  if (isLoopbackHost(url)) {
+    return url;
+  }
+  const token = await localToken();
+  if (!token) return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}${LOCAL_TOKEN_URL_PARAM}=${encodeURIComponent(token)}`;
 }
 
 export class ApiError extends Error {
